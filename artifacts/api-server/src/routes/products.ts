@@ -40,9 +40,10 @@ router.post("/products", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  const category = typeof req.body.category === "string" ? req.body.category.trim() || null : null;
   const [product] = await db
     .insert(productsTable)
-    .values({ ...parsed.data, unitPrice: String(parsed.data.unitPrice) })
+    .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice) })
     .returning();
   res.status(201).json({ ...product, unitPrice: parseFloat(product.unitPrice) });
 });
@@ -75,6 +76,9 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
   if (parsed.data.unitPrice !== undefined) {
     updateData.unitPrice = String(parsed.data.unitPrice);
+  }
+  if ("category" in req.body) {
+    updateData.category = typeof req.body.category === "string" ? req.body.category.trim() || null : null;
   }
   const [product] = await db
     .update(productsTable)

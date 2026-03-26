@@ -6,6 +6,7 @@ export const productsTable = pgTable("products", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   sku: text("sku"),
+  category: text("category"),
   description: text("description"),
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull().default("0"),
   stockQuantity: integer("stock_quantity"),

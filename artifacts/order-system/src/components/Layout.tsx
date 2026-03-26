@@ -22,33 +22,33 @@ export default function Layout({ children }: LayoutProps) {
   return (
     <div className="min-h-screen bg-background flex flex-col md:flex-row">
       {/* Sidebar Desktop */}
-      <aside className="hidden md:flex w-64 flex-col bg-card border-r border-border/60 shadow-sm fixed inset-y-0 z-10">
-        <div className="h-16 flex items-center px-6 border-b border-border/40">
-          <img 
-            src={`${import.meta.env.BASE_URL}images/logo.png`} 
-            alt="Nexus Logo" 
-            className="w-8 h-8 mr-3 object-contain"
+      <aside className="hidden md:flex w-64 flex-col fixed inset-y-0 z-10" style={{ backgroundColor: "hsl(var(--sidebar))" }}>
+        {/* Logo */}
+        <div className="h-20 flex items-center justify-center px-5 border-b border-white/10">
+          <img
+            src={`${import.meta.env.BASE_URL}images/sbs-logo.jpg`}
+            alt="Select Branding Solutions"
+            className="h-10 w-auto object-contain"
           />
-          <h1 className="font-display font-bold text-xl tracking-tight bg-gradient-to-br from-primary to-primary/70 bg-clip-text text-transparent">Nexus</h1>
         </div>
-        
-        <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
+
+        <nav className="flex-1 px-4 py-5 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
             return (
-              <Link 
-                key={item.name} 
+              <Link
+                key={item.name}
                 href={item.href}
                 className={cn(
                   "flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group",
-                  isActive 
-                    ? "bg-primary/10 text-primary shadow-sm shadow-primary/5" 
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  isActive
+                    ? "bg-white/15 text-white shadow-sm"
+                    : "text-white/60 hover:bg-white/10 hover:text-white"
                 )}
               >
                 <item.icon className={cn(
-                  "w-5 h-5 mr-3 transition-colors", 
-                  isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                  "w-5 h-5 mr-3 transition-colors",
+                  isActive ? "text-primary" : "text-white/50 group-hover:text-white/80"
                 )} />
                 {item.name}
               </Link>
@@ -56,9 +56,9 @@ export default function Layout({ children }: LayoutProps) {
           })}
         </nav>
 
-        <div className="p-4 border-t border-border/40">
-          <button className="flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-red-50 hover:text-red-600 transition-colors group">
-            <LogOut className="w-5 h-5 mr-3 text-muted-foreground group-hover:text-red-500 transition-colors" />
+        <div className="p-4 border-t border-white/10">
+          <button className="flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:bg-red-500/20 hover:text-red-300 transition-colors group">
+            <LogOut className="w-5 h-5 mr-3 transition-colors" />
             Sign Out
           </button>
         </div>
@@ -67,15 +67,14 @@ export default function Layout({ children }: LayoutProps) {
       {/* Main Content */}
       <main className="flex-1 md:ml-64 relative min-w-0">
         {/* Mobile Header */}
-        <header className="md:hidden h-16 flex items-center px-4 border-b border-border/60 bg-card sticky top-0 z-20">
-          <img 
-            src={`${import.meta.env.BASE_URL}images/logo.png`} 
-            alt="Nexus Logo" 
-            className="w-8 h-8 mr-3 object-contain"
+        <header className="md:hidden h-16 flex items-center px-4 border-b border-border/60 sticky top-0 z-20" style={{ backgroundColor: "hsl(var(--sidebar))" }}>
+          <img
+            src={`${import.meta.env.BASE_URL}images/sbs-logo.jpg`}
+            alt="Select Branding Solutions"
+            className="h-9 w-auto object-contain"
           />
-          <h1 className="font-display font-bold text-xl tracking-tight text-primary">Nexus</h1>
         </header>
-        
+
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
           {children}
         </div>
@@ -86,8 +85,8 @@ export default function Layout({ children }: LayoutProps) {
         {navItems.map((item) => {
           const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
           return (
-            <Link 
-              key={item.name} 
+            <Link
+              key={item.name}
               href={item.href}
               className={cn(
                 "flex flex-col items-center justify-center w-full h-full",

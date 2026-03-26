@@ -61,7 +61,7 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - `/customers/:id` → Customer detail (tabs: Delivery Addresses, Contacts, Order History, Processes, Finishes, Employees)
   - Processes tab: name, type, placement, price (£), process stock item link
   - Finishes tab: each finish shows constituent processes with prices + total cost badge; garment (product) assignments
-- `/products` → Products list (clickable rows)
+- `/products` → Products list — grouped by category with filter pills; category field on add/edit; clickable rows
 - `/products/:id` → Product detail (tabs: Details, Colours, Sizes)
 - `/process-stock` → Process Stock (physical materials for decoration)
 - `/suppliers` → Suppliers list
