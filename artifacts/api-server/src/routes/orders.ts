@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, sql } from "drizzle-orm";
+import { z } from "zod";
 import { db, ordersTable, orderItemsTable, customersTable, productsTable } from "@workspace/db";
 import {
-  CreateOrderBody,
   UpdateOrderBody,
   GetOrderParams,
   UpdateOrderParams,
@@ -14,6 +14,19 @@ import {
   UpdateOrderItemBody,
   DeleteOrderItemParams,
 } from "@workspace/api-zod";
+
+// Custom schema — generated CreateOrderBody uses zod.date() which rejects ISO strings from JSON
+const CreateOrderBodyFixed = z.object({
+  customerId: z.number().int().positive().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  orderDate: z.string().optional().nullable(),
+  items: z.array(z.object({
+    productId: z.number().optional().nullable(),
+    productName: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number(),
+  })).optional(),
+});
 
 const router: IRouter = Router();
 
@@ -72,7 +85,7 @@ router.get("/orders", async (req, res): Promise<void> => {
 });
 
 router.post("/orders", async (req, res): Promise<void> => {
-  const parsed = CreateOrderBody.safeParse(req.body);
+  const parsed = CreateOrderBodyFixed.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;

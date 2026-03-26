@@ -14,28 +14,34 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, ShoppingCart, Loader2, ArrowRight } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export default function Orders() {
   const [, setLocation] = useLocation();
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
+  const [customerComboOpen, setCustomerComboOpen] = useState(false);
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const { data: orders, isLoading } = useListOrders({ status: statusFilter === "all" ? undefined : statusFilter });
-  const { data: customers } = useListCustomers();
+  const { data: customers = [] } = useListCustomers();
   const createMutation = useCreateOrder();
+
+  const selectedCustomer = customers.find(c => c.id.toString() === selectedCustomerId);
 
   const handleCreateOrder = () => {
     if (!selectedCustomerId) {
-      toast({ title: "Error", description: "Please select a customer to create an order.", variant: "destructive" });
+      toast({ title: "Please select a customer", variant: "destructive" });
       return;
     }
 
@@ -44,17 +50,25 @@ export default function Orders() {
         data: { 
           customerId: parseInt(selectedCustomerId, 10),
           orderDate: new Date().toISOString(),
-          items: [] // Empty to start, user will add on detail page
         } 
       },
       {
         onSuccess: (newOrder) => {
           queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-          toast({ title: "Order Created", description: "Taking you to order details..." });
+          toast({ title: "Order created", description: `Taking you to ${newOrder.orderNumber}…` });
           setLocation(`/orders/${newOrder.id}`);
+        },
+        onError: (err: any) => {
+          toast({ title: "Failed to create order", description: err?.message ?? "Unknown error", variant: "destructive" });
         }
       }
     );
+  };
+
+  const openCreate = () => {
+    setSelectedCustomerId("");
+    setCustomerComboOpen(false);
+    setIsCreateOpen(true);
   };
 
   return (
@@ -65,7 +79,7 @@ export default function Orders() {
             <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Sales Orders</h1>
             <p className="text-muted-foreground mt-1">Manage and track customer orders.</p>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
+          <Button onClick={openCreate} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
             <Plus className="w-4 h-4 mr-2" /> New Order
           </Button>
         </div>
@@ -106,19 +120,17 @@ export default function Orders() {
                   </TableHeader>
                   <TableBody>
                     {orders.map((order) => (
-                      <TableRow key={order.id} className="group hover:bg-muted/30">
+                      <TableRow key={order.id} className="group hover:bg-muted/30 cursor-pointer" onClick={() => setLocation(`/orders/${order.id}`)}>
                         <TableCell>
-                          <Link href={`/orders/${order.id}`} className="font-semibold text-primary hover:underline">
-                            {order.orderNumber}
-                          </Link>
+                          <span className="font-semibold text-primary">{order.orderNumber}</span>
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">{formatDate(order.orderDate)}</TableCell>
-                        <TableCell className="font-medium text-foreground">{order.customerName || 'Unknown Customer'}</TableCell>
+                        <TableCell className="font-medium text-foreground">{order.customerName || 'Unknown'}</TableCell>
                         <TableCell><StatusBadge status={order.status} /></TableCell>
                         <TableCell className="text-right font-semibold text-foreground">
                           {formatCurrency(order.totalAmount)}
                         </TableCell>
-                        <TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
                           <Link href={`/orders/${order.id}`}>
                             <Button variant="ghost" size="sm" className="opacity-0 group-hover:opacity-100 transition-opacity">
                               View <ArrowRight className="w-4 h-4 ml-1" />
@@ -135,39 +147,69 @@ export default function Orders() {
                 <ShoppingCart className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
                 <h3 className="text-lg font-medium text-foreground">No orders found</h3>
                 <p className="mt-1">There are no orders matching your criteria.</p>
-                <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="mt-6">Create First Order</Button>
+                <Button onClick={openCreate} variant="outline" className="mt-6">Create First Order</Button>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-          <DialogContent className="sm:max-w-[425px]">
+        {/* ── Create Order Dialog ── */}
+        <Dialog open={isCreateOpen} onOpenChange={v => { if (!v) setIsCreateOpen(false); }}>
+          <DialogContent className="sm:max-w-[440px]">
             <DialogHeader>
-              <DialogTitle className="font-display text-xl">Create New Order</DialogTitle>
+              <DialogTitle className="font-display text-xl">New Sales Order</DialogTitle>
               <DialogDescription>
-                Select a customer to start a new draft order. You can add products on the next screen.
+                Select a customer to start a draft order. You'll add products on the next screen.
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="customer">Select Customer</Label>
-                <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
-                  <SelectTrigger id="customer">
-                    <SelectValue placeholder="Choose a customer..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers?.map(c => (
-                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            <div className="grid gap-3 py-4">
+              <Label>Customer</Label>
+              <Popover open={customerComboOpen} onOpenChange={setCustomerComboOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={customerComboOpen}
+                    className="w-full justify-between font-normal h-10"
+                  >
+                    {selectedCustomer ? selectedCustomer.name : "Search customers…"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[380px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Type to search…" />
+                    <CommandList>
+                      <CommandEmpty>No customers found.</CommandEmpty>
+                      <CommandGroup>
+                        {customers.map(c => (
+                          <CommandItem
+                            key={c.id}
+                            value={c.name}
+                            onSelect={() => {
+                              setSelectedCustomerId(c.id.toString());
+                              setCustomerComboOpen(false);
+                            }}
+                          >
+                            <Check className={cn("mr-2 h-4 w-4", selectedCustomerId === c.id.toString() ? "opacity-100" : "opacity-0")} />
+                            <div>
+                              <p className="font-medium">{c.name}</p>
+                              {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
               <Button onClick={handleCreateOrder} disabled={createMutation.isPending || !selectedCustomerId}>
-                {createMutation.isPending ? "Creating..." : "Create & Continue"}
+                {createMutation.isPending
+                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating…</>
+                  : "Create & Continue"}
               </Button>
             </DialogFooter>
           </DialogContent>
