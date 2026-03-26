@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { 
   useListCustomers, 
@@ -19,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, Users, Loader2 } from "lucide-react";
 
 export default function Customers() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -142,8 +144,8 @@ export default function Customers() {
                   </TableHeader>
                   <TableBody>
                     {customers.map((customer) => (
-                      <TableRow key={customer.id} className="group hover:bg-muted/30">
-                        <TableCell className="font-medium text-foreground">{customer.name}</TableCell>
+                      <TableRow key={customer.id} className="group hover:bg-muted/30 cursor-pointer" onClick={() => navigate(`/customers/${customer.id}`)}>
+                        <TableCell className="font-medium text-foreground text-primary hover:underline">{customer.name}</TableCell>
                         <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                           {customer.contactFirstName || customer.contactLastName
                             ? `${customer.contactFirstName || ''} ${customer.contactLastName || ''}`.trim()
@@ -158,7 +160,7 @@ export default function Customers() {
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                           {customer.city ? `${customer.city}, ${customer.state || ''}` : '-'}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => openEditDialog(customer)}>
                               <Edit2 className="w-4 h-4" />

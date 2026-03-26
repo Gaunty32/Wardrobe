@@ -1,0 +1,672 @@
+import { useState } from "react";
+import { useParams, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Layout from "@/components/Layout";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck } from "lucide-react";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { useGetCustomer } from "@workspace/api-client-react";
+import { Link } from "wouter";
+
+const API_BASE = "/api";
+
+async function apiFetch(path: string, opts?: RequestInit) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...opts?.headers },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+function useSubResource<T>(customerId: number | null, key: string) {
+  return useQuery<T[]>({
+    queryKey: ["customer", customerId, key],
+    queryFn: () => apiFetch(`/customers/${customerId}/${key}`),
+    enabled: !!customerId,
+  });
+}
+
+function SubTable({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <Table>{children}</Table>
+    </div>
+  );
+}
+
+function EmptyState({ icon: Icon, label, onAdd }: { icon: React.ElementType; label: string; onAdd: () => void }) {
+  return (
+    <div className="py-12 text-center text-muted-foreground">
+      <Icon className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
+      <p className="text-sm">No {label} yet</p>
+      <Button variant="outline" size="sm" className="mt-4" onClick={onAdd}>
+        <Plus className="w-3 h-3 mr-1" /> Add {label}
+      </Button>
+    </div>
+  );
+}
+
+// ─── Delivery Addresses Tab ───────────────────────────────────────────────────
+
+function AddressesTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: addresses, isLoading } = useSubResource<any>(customerId, "addresses");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { label: "", line1: "", line2: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "" };
+  const [form, setForm] = useState(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "addresses"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/addresses/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/addresses`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save address", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/addresses/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openEdit = (a: any) => { setForm({ label: a.label||"", line1: a.line1||"", line2: a.line2||"", city: a.city||"", county: a.county||"", postcode: a.postcode||"", country: a.country||"United Kingdom", notes: a.notes||"" }); setEditing(a); setOpen(true); };
+
+  return (
+    <>
+      <div className="flex justify-end mb-4">
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Address</Button>
+      </div>
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !addresses?.length ? <EmptyState icon={MapPin} label="delivery addresses" onAdd={openAdd} />
+        : <SubTable>
+          <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead>Label</TableHead>
+            <TableHead>Address</TableHead>
+            <TableHead className="hidden md:table-cell">City</TableHead>
+            <TableHead className="hidden md:table-cell">Postcode</TableHead>
+            <TableHead className="w-20 text-right">Actions</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {addresses.map((a: any) => (
+              <TableRow key={a.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium">{a.label || '—'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{[a.line1, a.line2].filter(Boolean).join(', ') || '—'}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{a.city || '—'}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{a.postcode || '—'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(a)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this address?") && del.mutate(a.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Address" : "Add Delivery Address"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Label (e.g. Warehouse, Head Office)</Label>
+              <Input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Address Line 1</Label>
+              <Input value={form.line1} onChange={e => setForm({ ...form, line1: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Address Line 2</Label>
+              <Input value={form.line2} onChange={e => setForm({ ...form, line2: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>City</Label><Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>County</Label><Input value={form.county} onChange={e => setForm({ ...form, county: e.target.value })} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Postcode</Label><Input value={form.postcode} onChange={e => setForm({ ...form, postcode: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Country</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Contacts Tab ─────────────────────────────────────────────────────────────
+
+function ContactsTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: contacts, isLoading } = useSubResource<any>(customerId, "contacts");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { firstName: "", lastName: "", jobTitle: "", email: "", phone: "", notes: "" };
+  const [form, setForm] = useState(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "contacts"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/contacts/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/contacts`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save contact", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/contacts/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openEdit = (c: any) => { setForm({ firstName: c.firstName||"", lastName: c.lastName||"", jobTitle: c.jobTitle||"", email: c.email||"", phone: c.phone||"", notes: c.notes||"" }); setEditing(c); setOpen(true); };
+
+  return (
+    <>
+      <div className="flex justify-end mb-4">
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Contact</Button>
+      </div>
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !contacts?.length ? <EmptyState icon={Users} label="contacts" onAdd={openAdd} />
+        : <SubTable>
+          <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead>Name</TableHead>
+            <TableHead className="hidden md:table-cell">Job Title</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead className="hidden md:table-cell">Phone</TableHead>
+            <TableHead className="w-20 text-right">Actions</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {contacts.map((c: any) => (
+              <TableRow key={c.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium">{[c.firstName, c.lastName].filter(Boolean).join(' ')}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{c.jobTitle || '—'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{c.email || '—'}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{c.phone || '—'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(c)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this contact?") && del.mutate(c.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Contact" : "Add Contact"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>First Name *</Label><Input value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Last Name</Label><Input value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Job Title</Label><Input value={form.jobTitle} onChange={e => setForm({ ...form, jobTitle: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.firstName}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Order History Tab ────────────────────────────────────────────────────────
+
+function OrderHistoryTab({ customerId }: { customerId: number }) {
+  const { data: orders, isLoading } = useSubResource<any>(customerId, "orders");
+
+  const statusColour: Record<string, string> = {
+    draft: "bg-gray-100 text-gray-700",
+    confirmed: "bg-blue-100 text-blue-700",
+    in_production: "bg-yellow-100 text-yellow-700",
+    dispatched: "bg-purple-100 text-purple-700",
+    delivered: "bg-green-100 text-green-700",
+    cancelled: "bg-red-100 text-red-700",
+  };
+
+  if (isLoading) return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+
+  if (!orders?.length) return (
+    <div className="py-12 text-center text-muted-foreground">
+      <History className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
+      <p className="text-sm">No orders found for this customer</p>
+    </div>
+  );
+
+  return (
+    <SubTable>
+      <TableHeader><TableRow className="hover:bg-transparent">
+        <TableHead>Order</TableHead>
+        <TableHead>Date</TableHead>
+        <TableHead>Status</TableHead>
+        <TableHead className="text-right">Total</TableHead>
+      </TableRow></TableHeader>
+      <TableBody>
+        {orders.map((o: any) => (
+          <TableRow key={o.id} className="hover:bg-muted/30">
+            <TableCell>
+              <Link href={`/orders/${o.id}`} className="text-primary hover:underline font-medium">{o.orderNumber}</Link>
+            </TableCell>
+            <TableCell className="text-sm text-muted-foreground">{formatDate(o.createdAt)}</TableCell>
+            <TableCell>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium uppercase tracking-wide ${statusColour[o.status] || statusColour.draft}`}>
+                {o.status?.replace(/_/g, ' ')}
+              </span>
+            </TableCell>
+            <TableCell className="text-right font-medium">{formatCurrency(o.totalAmount)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </SubTable>
+  );
+}
+
+// ─── Processes Tab ────────────────────────────────────────────────────────────
+
+const PROCESS_TYPES = ["embroidery", "print", "other"] as const;
+
+function ProcessesTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: processes, isLoading } = useSubResource<any>(customerId, "processes");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { name: "", type: "", placement: "", notes: "" };
+  const [form, setForm] = useState(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "processes"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/processes/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/processes`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save process", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/processes/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const typeColour: Record<string, string> = { embroidery: "bg-purple-100 text-purple-700", print: "bg-blue-100 text-blue-700", other: "bg-gray-100 text-gray-700" };
+
+  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openEdit = (p: any) => { setForm({ name: p.name||"", type: p.type||"", placement: p.placement||"", notes: p.notes||"" }); setEditing(p); setOpen(true); };
+
+  return (
+    <>
+      <div className="flex justify-end mb-4">
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Process</Button>
+      </div>
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !processes?.length ? <EmptyState icon={Layers} label="processes" onAdd={openAdd} />
+        : <SubTable>
+          <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead>Name</TableHead>
+            <TableHead>Type</TableHead>
+            <TableHead className="hidden md:table-cell">Placement</TableHead>
+            <TableHead className="hidden md:table-cell">Notes</TableHead>
+            <TableHead className="w-20 text-right">Actions</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {processes.map((p: any) => (
+              <TableRow key={p.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium">{p.name}</TableCell>
+                <TableCell>
+                  {p.type && <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${typeColour[p.type] || typeColour.other}`}>{p.type}</span>}
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.placement || '—'}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.notes || '—'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(p)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this process?") && del.mutate(p.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Process" : "Add Process"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Name *</Label>
+              <Input placeholder="e.g. Left Chest Embroidery Logo" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Type</Label>
+                <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <SelectContent>
+                    {PROCESS_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2"><Label>Placement</Label>
+                <Input placeholder="e.g. Left Chest" value={form.placement} onChange={e => setForm({ ...form, placement: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Notes</Label>
+              <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Finishes Tab ─────────────────────────────────────────────────────────────
+
+function FinishesTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: finishes, isLoading } = useSubResource<any>(customerId, "finishes");
+  const { data: processes } = useSubResource<any>(customerId, "processes");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { name: "", description: "", notes: "" };
+  const [form, setForm] = useState(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finishes"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/finishes/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/finishes`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save finish", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/finishes/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const addProcess = useMutation({
+    mutationFn: ({ finishId, processId }: { finishId: number; processId: number }) =>
+      apiFetch(`/customers/${customerId}/finishes/${finishId}/processes/${processId}`, { method: "POST" }),
+    onSuccess: () => inv(),
+    onError: () => toast({ title: "Error", description: "Could not add process", variant: "destructive" }),
+  });
+
+  const removeProcess = useMutation({
+    mutationFn: ({ finishId, processId }: { finishId: number; processId: number }) =>
+      apiFetch(`/customers/${customerId}/finishes/${finishId}/processes/${processId}`, { method: "DELETE" }),
+    onSuccess: () => inv(),
+  });
+
+  const typeColour: Record<string, string> = { embroidery: "bg-purple-100 text-purple-700", print: "bg-blue-100 text-blue-700", other: "bg-gray-100 text-gray-700" };
+
+  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openEdit = (f: any) => { setForm({ name: f.name||"", description: f.description||"", notes: f.notes||"" }); setEditing(f); setOpen(true); };
+
+  return (
+    <>
+      <div className="flex justify-end mb-4">
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Finish</Button>
+      </div>
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !finishes?.length ? <EmptyState icon={Shirt} label="finishes" onAdd={openAdd} />
+        : <div className="grid gap-4">
+          {finishes.map((f: any) => {
+            const attachedIds = new Set(f.processes?.map((p: any) => p.processId));
+            const available = (processes || []).filter((p: any) => !attachedIds.has(p.id));
+            return (
+              <Card key={f.id} className="border-border/50">
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="font-semibold text-foreground">{f.name}</h4>
+                      </div>
+                      {f.description && <p className="text-sm text-muted-foreground mb-3">{f.description}</p>}
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {f.processes?.map((p: any) => (
+                          <span key={p.id} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${typeColour[p.type] || typeColour.other}`}>
+                            {p.name}
+                            <button onClick={() => removeProcess.mutate({ finishId: f.id, processId: p.processId })} className="hover:opacity-70 ml-0.5">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                        {available.length > 0 && (
+                          <Select onValueChange={(v) => addProcess.mutate({ finishId: f.id, processId: Number(v) })}>
+                            <SelectTrigger className="h-6 text-xs px-2 w-auto border-dashed">
+                              <Plus className="w-3 h-3 mr-1" /><span>Add process</span>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {available.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {!processes?.length && <p className="text-xs text-muted-foreground italic">Add processes in the Processes tab first</p>}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(f)}><Edit2 className="w-3 h-3" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this finish?") && del.mutate(f.id)}><Trash2 className="w-3 h-3" /></Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Finish" : "Add Finish"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Name *</Label>
+              <Input placeholder="e.g. Full Company Branding Package" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Description</Label>
+              <Textarea rows={2} placeholder="Brief description of this finish" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Notes</Label>
+              <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Employees Tab ────────────────────────────────────────────────────────────
+
+function EmployeesTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: employees, isLoading } = useSubResource<any>(customerId, "employees");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { firstName: "", lastName: "", email: "", phone: "", department: "", notes: "" };
+  const [form, setForm] = useState(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/employees/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/employees`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save employee", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/employees/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openEdit = (e: any) => { setForm({ firstName: e.firstName||"", lastName: e.lastName||"", email: e.email||"", phone: e.phone||"", department: e.department||"", notes: e.notes||"" }); setEditing(e); setOpen(true); };
+
+  return (
+    <>
+      <div className="flex justify-end mb-4">
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Employee</Button>
+      </div>
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !employees?.length ? <EmptyState icon={UserCheck} label="employees" onAdd={openAdd} />
+        : <SubTable>
+          <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead>Name</TableHead>
+            <TableHead className="hidden md:table-cell">Department</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead className="hidden md:table-cell">Phone</TableHead>
+            <TableHead className="w-20 text-right">Actions</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {employees.map((e: any) => (
+              <TableRow key={e.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium">{[e.firstName, e.lastName].filter(Boolean).join(' ')}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.department || '—'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{e.email || '—'}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.phone || '—'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(e)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this employee?") && del.mutate(e.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Employee" : "Add Employee"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>First Name *</Label><Input value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Last Name</Label><Input value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Department</Label><Input value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.firstName}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Main CustomerDetail Page ─────────────────────────────────────────────────
+
+export default function CustomerDetail() {
+  const { id } = useParams<{ id: string }>();
+  const customerId = Number(id);
+  const [, navigate] = useLocation();
+
+  const { data: customer, isLoading } = useGetCustomer(customerId);
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="flex justify-center items-center h-64">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!customer) {
+    return (
+      <Layout>
+        <div className="text-center py-20">
+          <p className="text-muted-foreground">Customer not found.</p>
+          <Button variant="outline" className="mt-4" onClick={() => navigate("/customers")}>Back to Customers</Button>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      <div className="flex flex-col space-y-6">
+        <div className="flex items-start gap-4">
+          <Button variant="ghost" size="icon" className="mt-1 shrink-0" onClick={() => navigate("/customers")}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <Building2 className="w-6 h-6 text-muted-foreground" />
+              <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{customer.name}</h1>
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
+              {(customer.contactFirstName || customer.contactLastName) && (
+                <span>Contact: {[customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' ')}</span>
+              )}
+              {customer.email && <span>{customer.email}</span>}
+              {customer.phone && <span>{customer.phone}</span>}
+              {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
+            </div>
+          </div>
+        </div>
+
+        <Tabs defaultValue="addresses">
+          <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1">
+            <TabsTrigger value="addresses" className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Delivery Addresses</TabsTrigger>
+            <TabsTrigger value="contacts" className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Contacts</TabsTrigger>
+            <TabsTrigger value="orders" className="flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Order History</TabsTrigger>
+            <TabsTrigger value="processes" className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Processes</TabsTrigger>
+            <TabsTrigger value="finishes" className="flex items-center gap-1.5"><Shirt className="w-3.5 h-3.5" /> Finishes</TabsTrigger>
+            <TabsTrigger value="employees" className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Employees</TabsTrigger>
+          </TabsList>
+
+          <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
+            <TabsContent value="addresses" className="mt-0"><AddressesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="contacts" className="mt-0"><ContactsTab customerId={customerId} /></TabsContent>
+            <TabsContent value="orders" className="mt-0"><OrderHistoryTab customerId={customerId} /></TabsContent>
+            <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="finishes" className="mt-0"><FinishesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="employees" className="mt-0"><EmployeesTab customerId={customerId} /></TabsContent>
+          </div>
+        </Tabs>
+      </div>
+    </Layout>
+  );
+}

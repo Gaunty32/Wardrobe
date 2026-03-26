@@ -7,6 +7,7 @@ import Dashboard from "@/pages/Dashboard";
 import Orders from "@/pages/Orders";
 import OrderDetail from "@/pages/OrderDetail";
 import Customers from "@/pages/Customers";
+import CustomerDetail from "@/pages/CustomerDetail";
 import Products from "@/pages/Products";
 import NotFound from "@/pages/not-found";
 
@@ -26,6 +27,7 @@ function Router() {
       <Route path="/orders" component={Orders} />
       <Route path="/orders/:id" component={OrderDetail} />
       <Route path="/customers" component={Customers} />
+      <Route path="/customers/:id" component={CustomerDetail} />
       <Route path="/products" component={Products} />
       <Route component={NotFound} />
     </Switch>
