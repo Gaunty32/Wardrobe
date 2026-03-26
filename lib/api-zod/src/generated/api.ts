@@ -136,6 +136,7 @@ export const ListProductsResponseItem = zod.object({
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullable(),
   supplierId: zod.number().nullable(),
+  secondarySupplierId: zod.number().nullable(),
   supplierCode: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
@@ -152,6 +153,7 @@ export const CreateProductBody = zod.object({
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullish(),
   supplierId: zod.number().nullish(),
+  secondarySupplierId: zod.number().nullish(),
   supplierCode: zod.string().nullish(),
 });
 
@@ -170,6 +172,7 @@ export const GetProductResponse = zod.object({
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullable(),
   supplierId: zod.number().nullable(),
+  secondarySupplierId: zod.number().nullable(),
   supplierCode: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
@@ -189,6 +192,7 @@ export const UpdateProductBody = zod.object({
   unitPrice: zod.number().optional(),
   stockQuantity: zod.number().nullish(),
   supplierId: zod.number().nullish(),
+  secondarySupplierId: zod.number().nullish(),
   supplierCode: zod.string().nullish(),
 });
 
@@ -200,6 +204,7 @@ export const UpdateProductResponse = zod.object({
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullable(),
   supplierId: zod.number().nullable(),
+  secondarySupplierId: zod.number().nullable(),
   supplierCode: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),

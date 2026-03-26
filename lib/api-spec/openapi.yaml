@@ -747,6 +747,8 @@ components:
           type: ["integer", "null"]
         supplierId:
           type: ["integer", "null"]
+        secondarySupplierId:
+          type: ["integer", "null"]
         supplierCode:
           type: ["string", "null"]
         createdAt:
@@ -763,6 +765,7 @@ components:
         - unitPrice
         - stockQuantity
         - supplierId
+        - secondarySupplierId
         - supplierCode
         - createdAt
         - updatedAt
@@ -781,6 +784,8 @@ components:
         stockQuantity:
           type: ["integer", "null"]
         supplierId:
+          type: ["integer", "null"]
+        secondarySupplierId:
           type: ["integer", "null"]
         supplierCode:
           type: ["string", "null"]
@@ -802,6 +807,8 @@ components:
         stockQuantity:
           type: ["integer", "null"]
         supplierId:
+          type: ["integer", "null"]
+        secondarySupplierId:
           type: ["integer", "null"]
         supplierCode:
           type: ["string", "null"]

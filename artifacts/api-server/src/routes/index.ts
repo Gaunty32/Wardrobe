@@ -4,6 +4,7 @@ import customersRouter from "./customers";
 import customerDetailsRouter from "./customer-details";
 import productsRouter from "./products";
 import productAttributesRouter from "./product-attributes";
+import productVariantsRouter from "./product-variants";
 import suppliersRouter from "./suppliers";
 import ordersRouter from "./orders";
 
@@ -14,6 +15,7 @@ router.use(customersRouter);
 router.use(customerDetailsRouter);
 router.use(productsRouter);
 router.use(productAttributesRouter);
+router.use(productVariantsRouter);
 router.use(suppliersRouter);
 router.use(ordersRouter);
 

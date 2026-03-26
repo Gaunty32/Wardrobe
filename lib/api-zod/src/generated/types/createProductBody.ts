@@ -18,5 +18,7 @@ export interface CreateProductBody {
   /** @nullable */
   supplierId?: number | null;
   /** @nullable */
+  secondarySupplierId?: number | null;
+  /** @nullable */
   supplierCode?: string | null;
 }

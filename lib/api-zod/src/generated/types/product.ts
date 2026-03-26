@@ -19,6 +19,8 @@ export interface Product {
   /** @nullable */
   supplierId: number | null;
   /** @nullable */
+  secondarySupplierId: number | null;
+  /** @nullable */
   supplierCode: string | null;
   createdAt: Date;
   updatedAt: Date;

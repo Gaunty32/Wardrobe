@@ -95,6 +95,8 @@ export interface Product {
   /** @nullable */
   supplierId: number | null;
   /** @nullable */
+  secondarySupplierId: number | null;
+  /** @nullable */
   supplierCode: string | null;
   createdAt: string;
   updatedAt: string;
@@ -112,6 +114,8 @@ export interface CreateProductBody {
   /** @nullable */
   supplierId?: number | null;
   /** @nullable */
+  secondarySupplierId?: number | null;
+  /** @nullable */
   supplierCode?: string | null;
 }
 
@@ -126,6 +130,8 @@ export interface UpdateProductBody {
   stockQuantity?: number | null;
   /** @nullable */
   supplierId?: number | null;
+  /** @nullable */
+  secondarySupplierId?: number | null;
   /** @nullable */
   supplierCode?: string | null;
 }
