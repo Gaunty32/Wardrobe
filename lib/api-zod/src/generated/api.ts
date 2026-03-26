@@ -25,6 +25,8 @@ export const ListCustomersQueryParams = zod.object({
 export const ListCustomersResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
+  contactFirstName: zod.string().nullable(),
+  contactLastName: zod.string().nullable(),
   email: zod.string().nullable(),
   phone: zod.string().nullable(),
   address: zod.string().nullable(),
@@ -42,6 +44,8 @@ export const ListCustomersResponse = zod.array(ListCustomersResponseItem);
  */
 export const CreateCustomerBody = zod.object({
   name: zod.string(),
+  contactFirstName: zod.string().nullish(),
+  contactLastName: zod.string().nullish(),
   email: zod.string().nullish(),
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
@@ -61,6 +65,8 @@ export const GetCustomerParams = zod.object({
 export const GetCustomerResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
+  contactFirstName: zod.string().nullable(),
+  contactLastName: zod.string().nullable(),
   email: zod.string().nullable(),
   phone: zod.string().nullable(),
   address: zod.string().nullable(),
@@ -81,6 +87,8 @@ export const UpdateCustomerParams = zod.object({
 
 export const UpdateCustomerBody = zod.object({
   name: zod.string().optional(),
+  contactFirstName: zod.string().nullish(),
+  contactLastName: zod.string().nullish(),
   email: zod.string().nullish(),
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
@@ -93,6 +101,8 @@ export const UpdateCustomerBody = zod.object({
 export const UpdateCustomerResponse = zod.object({
   id: zod.number(),
   name: zod.string(),
+  contactFirstName: zod.string().nullable(),
+  contactLastName: zod.string().nullable(),
   email: zod.string().nullable(),
   phone: zod.string().nullable(),
   address: zod.string().nullable(),

@@ -23,7 +23,7 @@ export default function Customers() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   
-  const initialForm = { name: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "" };
+  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "" };
   const [formData, setFormData] = useState(initialForm);
 
   const queryClient = useQueryClient();
@@ -42,6 +42,8 @@ export default function Customers() {
   const openEditDialog = (customer: Customer) => {
     setFormData({
       name: customer.name,
+      contactFirstName: customer.contactFirstName || "",
+      contactLastName: customer.contactLastName || "",
       email: customer.email || "",
       phone: customer.phone || "",
       address: customer.address || "",
@@ -131,7 +133,8 @@ export default function Customers() {
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
-                      <TableHead>Name</TableHead>
+                      <TableHead>Company Name</TableHead>
+                      <TableHead className="hidden lg:table-cell">Primary Contact</TableHead>
                       <TableHead>Contact Info</TableHead>
                       <TableHead className="hidden md:table-cell">Location</TableHead>
                       <TableHead className="w-[100px] text-right">Actions</TableHead>
@@ -141,6 +144,11 @@ export default function Customers() {
                     {customers.map((customer) => (
                       <TableRow key={customer.id} className="group hover:bg-muted/30">
                         <TableCell className="font-medium text-foreground">{customer.name}</TableCell>
+                        <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                          {customer.contactFirstName || customer.contactLastName
+                            ? `${customer.contactFirstName || ''} ${customer.contactLastName || ''}`.trim()
+                            : '—'}
+                        </TableCell>
                         <TableCell>
                           <div className="flex flex-col text-sm text-muted-foreground">
                             <span>{customer.email || 'No email'}</span>
@@ -187,6 +195,21 @@ export default function Customers() {
               <div className="grid gap-2">
                 <Label htmlFor="name">Company / Full Name *</Label>
                 <Input id="name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+              </div>
+
+              <div className="grid gap-2 mt-1">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Primary Contact</h4>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="contactFirstName">First Name</Label>
+                  <Input id="contactFirstName" value={formData.contactFirstName} onChange={(e) => setFormData({...formData, contactFirstName: e.target.value})} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="contactLastName">Last Name</Label>
+                  <Input id="contactLastName" value={formData.contactLastName} onChange={(e) => setFormData({...formData, contactLastName: e.target.value})} />
+                </div>
               </div>
               
               <div className="grid grid-cols-2 gap-4">

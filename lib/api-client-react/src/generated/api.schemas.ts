@@ -17,6 +17,10 @@ export interface Customer {
   id: number;
   name: string;
   /** @nullable */
+  contactFirstName: string | null;
+  /** @nullable */
+  contactLastName: string | null;
+  /** @nullable */
   email: string | null;
   /** @nullable */
   phone: string | null;
@@ -37,6 +41,10 @@ export interface Customer {
 export interface CreateCustomerBody {
   name: string;
   /** @nullable */
+  contactFirstName?: string | null;
+  /** @nullable */
+  contactLastName?: string | null;
+  /** @nullable */
   email?: string | null;
   /** @nullable */
   phone?: string | null;
@@ -54,6 +62,10 @@ export interface CreateCustomerBody {
 
 export interface UpdateCustomerBody {
   name?: string;
+  /** @nullable */
+  contactFirstName?: string | null;
+  /** @nullable */
+  contactLastName?: string | null;
   /** @nullable */
   email?: string | null;
   /** @nullable */

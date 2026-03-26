@@ -520,6 +520,10 @@ components:
           type: integer
         name:
           type: string
+        contactFirstName:
+          type: ["string", "null"]
+        contactLastName:
+          type: ["string", "null"]
         email:
           type: ["string", "null"]
         phone:
@@ -543,6 +547,8 @@ components:
       required:
         - id
         - name
+        - contactFirstName
+        - contactLastName
         - email
         - phone
         - address
@@ -558,6 +564,10 @@ components:
       properties:
         name:
           type: string
+        contactFirstName:
+          type: ["string", "null"]
+        contactLastName:
+          type: ["string", "null"]
         email:
           type: ["string", "null"]
         phone:
@@ -580,6 +590,10 @@ components:
       properties:
         name:
           type: string
+        contactFirstName:
+          type: ["string", "null"]
+        contactLastName:
+          type: ["string", "null"]
         email:
           type: ["string", "null"]
         phone:

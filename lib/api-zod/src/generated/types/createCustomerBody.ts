@@ -9,6 +9,10 @@
 export interface CreateCustomerBody {
   name: string;
   /** @nullable */
+  contactFirstName?: string | null;
+  /** @nullable */
+  contactLastName?: string | null;
+  /** @nullable */
   email?: string | null;
   /** @nullable */
   phone?: string | null;

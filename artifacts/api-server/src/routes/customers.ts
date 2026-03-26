@@ -20,7 +20,13 @@ router.get("/customers", async (req, res): Promise<void> => {
     customers = await db
       .select()
       .from(customersTable)
-      .where(or(ilike(customersTable.name, term), ilike(customersTable.email, term), ilike(customersTable.phone, term)))
+      .where(or(
+        ilike(customersTable.name, term),
+        ilike(customersTable.email, term),
+        ilike(customersTable.phone, term),
+        ilike(customersTable.contactFirstName, term),
+        ilike(customersTable.contactLastName, term),
+      ))
       .orderBy(customersTable.name);
   } else {
     customers = await db.select().from(customersTable).orderBy(customersTable.name);
