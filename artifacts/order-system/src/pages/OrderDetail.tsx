@@ -43,7 +43,7 @@ async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<
 
 interface ProductAttribute { id: number; productId: number; type: string; value: string; }
 interface ProductVariant { id: number; productId: number; colour: string | null; size: string | null; stockQty: number | null; price: number | null; }
-interface CustomerFinish { id: number; customerId: number; name: string; description: string | null; }
+interface CustomerFinish { id: number; customerId: number; name: string; description: string | null; totalCost: number; processes: { id: number; name: string; price: number | null }[]; }
 interface CustomerEmployee { id: number; customerId: number; firstName: string; lastName: string | null; department: string | null; }
 
 function useProductAttributes(productId: number | null) {
@@ -85,10 +85,12 @@ const EMPTY_ITEM = {
   size: "",
   finishId: null as number | null,
   finishName: null as string | null,
+  finishCost: 0,
   recipientType: "stock" as "stock" | "person",
   recipientName: "",
   quantity: 1,
   unitPrice: "",
+  baseUnitPrice: "",
 };
 
 export default function OrderDetail() {
@@ -124,7 +126,9 @@ export default function OrderDetail() {
     if (item.productId && productVariants) {
       const match = productVariants.find(v => v.colour === item.colour && v.size === item.size);
       if (match?.price != null) {
-        setItem(i => ({ ...i, unitPrice: match.price!.toString() }));
+        const base = match.price!.toString();
+        const total = (match.price! + item.finishCost).toString();
+        setItem(i => ({ ...i, baseUnitPrice: base, unitPrice: total }));
       }
     }
   }, [item.colour, item.size, item.productId, productVariants]);
@@ -132,16 +136,21 @@ export default function OrderDetail() {
   const handleProductSelect = (productId: number) => {
     const prod = products?.find(p => p.id === productId);
     if (!prod) return;
-    setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: prod.unitPrice.toString() });
+    setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: prod.unitPrice.toString(), baseUnitPrice: prod.unitPrice.toString() });
     setProductSearchOpen(false);
   };
 
   const handleFinishSelect = (value: string) => {
     if (value === "plain") {
-      setItem(i => ({ ...i, finishId: null, finishName: null }));
+      const base = item.baseUnitPrice || item.unitPrice;
+      setItem(i => ({ ...i, finishId: null, finishName: null, finishCost: 0, unitPrice: base, baseUnitPrice: base }));
     } else {
       const finish = customerFinishes?.find(f => f.id.toString() === value);
-      if (finish) setItem(i => ({ ...i, finishId: finish.id, finishName: finish.name }));
+      if (finish) {
+        const base = parseFloat(item.baseUnitPrice || item.unitPrice) || 0;
+        const total = base + finish.totalCost;
+        setItem(i => ({ ...i, finishId: finish.id, finishName: finish.name, finishCost: finish.totalCost, unitPrice: total.toFixed(2) }));
+      }
     }
   };
 
@@ -485,13 +494,34 @@ export default function OrderDetail() {
                   <SelectContent>
                     <SelectItem value="plain">Plain (no finish)</SelectItem>
                     {customerFinishes && customerFinishes.length > 0 && customerFinishes.map(f => (
-                      <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
+                      <SelectItem key={f.id} value={f.id.toString()}>
+                        <span className="flex items-center justify-between w-full gap-4">
+                          <span>{f.name}</span>
+                          {f.totalCost > 0 && <span className="text-xs text-muted-foreground ml-2">+{formatCurrency(f.totalCost)}</span>}
+                        </span>
+                      </SelectItem>
                     ))}
                     {(!customerFinishes || customerFinishes.length === 0) && (
                       <SelectItem value="plain" disabled>No finishes set up for this customer</SelectItem>
                     )}
                   </SelectContent>
                 </Select>
+                {item.finishId && item.finishCost > 0 && (
+                  <div className="text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2 space-y-0.5">
+                    <div className="flex justify-between">
+                      <span>Garment</span>
+                      <span className="tabular-nums">{formatCurrency(parseFloat(item.baseUnitPrice) || 0)}</span>
+                    </div>
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Finish ({item.finishName})</span>
+                      <span className="tabular-nums">+{formatCurrency(item.finishCost)}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold text-foreground border-t border-border/40 pt-0.5 mt-0.5">
+                      <span>Unit price</span>
+                      <span className="tabular-nums">{formatCurrency(parseFloat(item.unitPrice) || 0)}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Recipient */}

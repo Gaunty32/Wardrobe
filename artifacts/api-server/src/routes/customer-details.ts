@@ -8,9 +8,11 @@ import {
   customerProcessesTable,
   customerFinishesTable,
   customerFinishProcessesTable,
+  customerFinishProductsTable,
   customerEmployeesTable,
   customersTable,
   ordersTable,
+  productsTable,
 } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -25,6 +27,11 @@ const finishProcessParam = z.object({
 const finishIdParam = z.object({
   customerId: z.coerce.number().int().positive(),
   finishId: z.coerce.number().int().positive(),
+});
+const finishProductParam = z.object({
+  customerId: z.coerce.number().int().positive(),
+  finishId: z.coerce.number().int().positive(),
+  productId: z.coerce.number().int().positive(),
 });
 
 // ── Helper: verify customer exists ──────────────────────────────────────────
@@ -232,11 +239,26 @@ router.get("/customers/:customerId/finishes", async (req, res): Promise<void> =>
       name: customerProcessesTable.name,
       type: customerProcessesTable.type,
       placement: customerProcessesTable.placement,
+      price: customerProcessesTable.price,
     })
       .from(customerFinishProcessesTable)
       .innerJoin(customerProcessesTable, eq(customerFinishProcessesTable.processId, customerProcessesTable.id))
       .where(eq(customerFinishProcessesTable.finishId, finish.id));
-    return { ...finish, processes: fps };
+
+    const processes = fps.map(fp => ({ ...fp, price: fp.price != null ? parseFloat(fp.price) : null }));
+    const totalCost = processes.reduce((sum, fp) => sum + (fp.price ?? 0), 0);
+
+    const garmentRows = await db.select({
+      id: customerFinishProductsTable.id,
+      productId: customerFinishProductsTable.productId,
+      name: productsTable.name,
+      sku: productsTable.sku,
+    })
+      .from(customerFinishProductsTable)
+      .innerJoin(productsTable, eq(customerFinishProductsTable.productId, productsTable.id))
+      .where(eq(customerFinishProductsTable.finishId, finish.id));
+
+    return { ...finish, processes, totalCost, garments: garmentRows };
   }));
 
   res.json(result);
@@ -291,6 +313,34 @@ router.delete("/customers/:customerId/finishes/:finishId/processes/:processId", 
     .where(and(
       eq(customerFinishProcessesTable.finishId, p.data.finishId),
       eq(customerFinishProcessesTable.processId, p.data.processId)
+    ));
+  res.sendStatus(204);
+});
+
+// ─── Finish Garments (product assignments) ───────────────────────────────────
+
+router.post("/customers/:customerId/finishes/:finishId/products/:productId", async (req, res): Promise<void> => {
+  const p = finishProductParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const existing = await db.select().from(customerFinishProductsTable)
+    .where(and(
+      eq(customerFinishProductsTable.finishId, p.data.finishId),
+      eq(customerFinishProductsTable.productId, p.data.productId)
+    ));
+  if (existing.length > 0) { res.status(409).json({ error: "Product already assigned to this finish" }); return; }
+  const [row] = await db.insert(customerFinishProductsTable)
+    .values({ finishId: p.data.finishId, productId: p.data.productId })
+    .returning();
+  res.status(201).json(row);
+});
+
+router.delete("/customers/:customerId/finishes/:finishId/products/:productId", async (req, res): Promise<void> => {
+  const p = finishProductParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  await db.delete(customerFinishProductsTable)
+    .where(and(
+      eq(customerFinishProductsTable.finishId, p.data.finishId),
+      eq(customerFinishProductsTable.productId, p.data.productId)
     ));
   res.sendStatus(204);
 });

@@ -60,6 +60,13 @@ export const customerFinishProcessesTable = pgTable("customer_finish_processes",
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const customerFinishProductsTable = pgTable("customer_finish_products", {
+  id: serial("id").primaryKey(),
+  finishId: integer("finish_id").notNull().references(() => customerFinishesTable.id, { onDelete: "cascade" }),
+  productId: integer("product_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const customerEmployeesTable = pgTable("customer_employees", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),

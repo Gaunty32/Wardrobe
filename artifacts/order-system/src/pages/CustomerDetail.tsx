@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { useGetCustomer } from "@workspace/api-client-react";
+import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
 import { Link } from "wouter";
 
 const API_BASE = "/api";
@@ -466,6 +466,7 @@ function FinishesTab({ customerId }: { customerId: number }) {
   const { toast } = useToast();
   const { data: finishes, isLoading } = useSubResource<any>(customerId, "finishes");
   const { data: processes } = useSubResource<any>(customerId, "processes");
+  const { data: allProducts } = useListProducts();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const blank = { name: "", description: "", notes: "" };
@@ -499,7 +500,25 @@ function FinishesTab({ customerId }: { customerId: number }) {
     onSuccess: () => inv(),
   });
 
-  const typeColour: Record<string, string> = { embroidery: "bg-purple-100 text-purple-700", print: "bg-blue-100 text-blue-700", other: "bg-gray-100 text-gray-700" };
+  const addGarment = useMutation({
+    mutationFn: ({ finishId, productId }: { finishId: number; productId: number }) =>
+      apiFetch(`/customers/${customerId}/finishes/${finishId}/products/${productId}`, { method: "POST" }),
+    onSuccess: () => inv(),
+    onError: () => toast({ title: "Error", description: "Could not add garment", variant: "destructive" }),
+  });
+
+  const removeGarment = useMutation({
+    mutationFn: ({ finishId, productId }: { finishId: number; productId: number }) =>
+      apiFetch(`/customers/${customerId}/finishes/${finishId}/products/${productId}`, { method: "DELETE" }),
+    onSuccess: () => inv(),
+  });
+
+  const typeColour: Record<string, string> = {
+    embroidery: "bg-purple-100 text-purple-700",
+    print: "bg-blue-100 text-blue-700",
+    transfer: "bg-orange-100 text-orange-700",
+    other: "bg-gray-100 text-gray-700",
+  };
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
   const openEdit = (f: any) => { setForm({ name: f.name||"", description: f.description||"", notes: f.notes||"" }); setEditing(f); setOpen(true); };
@@ -513,44 +532,143 @@ function FinishesTab({ customerId }: { customerId: number }) {
         : !finishes?.length ? <EmptyState icon={Shirt} label="finishes" onAdd={openAdd} />
         : <div className="grid gap-4">
           {finishes.map((f: any) => {
-            const attachedIds = new Set(f.processes?.map((p: any) => p.processId));
-            const available = (processes || []).filter((p: any) => !attachedIds.has(p.id));
+            const attachedProcessIds = new Set(f.processes?.map((p: any) => p.processId));
+            const availableProcesses = (processes || []).filter((p: any) => !attachedProcessIds.has(p.id));
+            const attachedProductIds = new Set(f.garments?.map((g: any) => g.productId));
+            const availableProducts = (allProducts || []).filter((p: any) => !attachedProductIds.has(p.id));
+
             return (
               <Card key={f.id} className="border-border/50">
-                <CardContent className="p-4">
+                <CardContent className="p-4 space-y-4">
+                  {/* Header */}
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h4 className="font-semibold text-foreground">{f.name}</h4>
-                      </div>
-                      {f.description && <p className="text-sm text-muted-foreground mb-3">{f.description}</p>}
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {f.processes?.map((p: any) => (
-                          <span key={p.id} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${typeColour[p.type] || typeColour.other}`}>
-                            {p.name}
-                            <button onClick={() => removeProcess.mutate({ finishId: f.id, processId: p.processId })} className="hover:opacity-70 ml-0.5">
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        ))}
-                        {available.length > 0 && (
-                          <Select onValueChange={(v) => addProcess.mutate({ finishId: f.id, processId: Number(v) })}>
-                            <SelectTrigger className="h-6 text-xs px-2 w-auto border-dashed">
-                              <Plus className="w-3 h-3 mr-1" /><span>Add process</span>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {available.map((p: any) => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        )}
-                        {!processes?.length && <p className="text-xs text-muted-foreground italic">Add processes in the Processes tab first</p>}
-                      </div>
+                    <div>
+                      <h4 className="font-semibold text-foreground">{f.name}</h4>
+                      {f.description && <p className="text-sm text-muted-foreground mt-0.5">{f.description}</p>}
                     </div>
-                    <div className="flex gap-1 shrink-0">
+                    <div className="flex items-center gap-2 shrink-0">
+                      {f.totalCost > 0 && (
+                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold tabular-nums">
+                          <PoundSterling className="w-3 h-3 mr-0.5" />{f.totalCost.toFixed(2)} total
+                        </Badge>
+                      )}
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(f)}><Edit2 className="w-3 h-3" /></Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this finish?") && del.mutate(f.id)}><Trash2 className="w-3 h-3" /></Button>
                     </div>
                   </div>
+
+                  {/* Processes section */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Processes</p>
+                    {f.processes?.length > 0 ? (
+                      <div className="border border-border/50 rounded-md overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/40">
+                            <tr>
+                              <th className="text-left px-3 py-1.5 text-xs font-medium text-muted-foreground">Process</th>
+                              <th className="text-left px-3 py-1.5 text-xs font-medium text-muted-foreground hidden sm:table-cell">Placement</th>
+                              <th className="text-right px-3 py-1.5 text-xs font-medium text-muted-foreground">Price</th>
+                              <th className="w-8"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-border/30">
+                            {f.processes.map((p: any) => (
+                              <tr key={p.id} className="bg-background">
+                                <td className="px-3 py-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${typeColour[p.type] || typeColour.other}`}>
+                                      {p.type || "other"}
+                                    </span>
+                                    <span className="font-medium text-foreground">{p.name}</span>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{p.placement || "—"}</td>
+                                <td className="px-3 py-2 text-right tabular-nums font-medium">
+                                  {p.price != null ? formatCurrency(p.price) : <span className="text-muted-foreground">—</span>}
+                                </td>
+                                <td className="px-2 py-2">
+                                  <button
+                                    onClick={() => removeProcess.mutate({ finishId: f.id, processId: p.processId })}
+                                    className="text-muted-foreground hover:text-red-500 transition-colors"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                            {f.totalCost > 0 && (
+                              <tr className="bg-muted/20 font-semibold">
+                                <td className="px-3 py-2 text-sm" colSpan={2}>Total finish cost</td>
+                                <td className="px-3 py-2 text-right tabular-nums text-emerald-700 hidden sm:table-cell">{formatCurrency(f.totalCost)}</td>
+                                <td></td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic">No processes added yet</p>
+                    )}
+                    {availableProcesses.length > 0 && (
+                      <div className="mt-2">
+                        <Select onValueChange={(v) => addProcess.mutate({ finishId: f.id, processId: Number(v) })}>
+                          <SelectTrigger className="h-7 text-xs w-auto border-dashed text-muted-foreground">
+                            <Plus className="w-3 h-3 mr-1" /><span>Add process</span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableProcesses.map((p: any) => (
+                              <SelectItem key={p.id} value={String(p.id)}>
+                                {p.name}{p.price != null ? ` — ${formatCurrency(p.price)}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {!processes?.length && (
+                      <p className="text-xs text-muted-foreground italic mt-1">Set up processes in the Processes tab first</p>
+                    )}
+                  </div>
+
+                  {/* Garments section */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Garments</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {f.garments?.map((g: any) => (
+                        <span key={g.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                          {g.name}
+                          {g.sku && <span className="text-blue-400 text-[10px]">({g.sku})</span>}
+                          <button
+                            onClick={() => removeGarment.mutate({ finishId: f.id, productId: g.productId })}
+                            className="hover:opacity-70 ml-0.5"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                      {availableProducts.length > 0 && (
+                        <Select onValueChange={(v) => addGarment.mutate({ finishId: f.id, productId: Number(v) })}>
+                          <SelectTrigger className="h-6 text-xs px-2 w-auto border-dashed text-muted-foreground">
+                            <Plus className="w-3 h-3 mr-1" /><span>Add garment</span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableProducts.map((p: any) => (
+                              <SelectItem key={p.id} value={String(p.id)}>
+                                {p.name}{p.sku ? ` (${p.sku})` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {!f.garments?.length && !availableProducts?.length && (
+                        <p className="text-xs text-muted-foreground italic">No garments — add products first</p>
+                      )}
+                      {!f.garments?.length && availableProducts?.length > 0 && (
+                        <p className="text-xs text-muted-foreground italic">No garments assigned yet</p>
+                      )}
+                    </div>
+                  </div>
+
                 </CardContent>
               </Card>
             );
