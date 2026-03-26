@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { 
   useListProducts, 
@@ -21,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, PackageSearch, Loader2 } from "lucide-react";
 
 export default function Products() {
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -140,9 +142,9 @@ export default function Products() {
                   </TableHeader>
                   <TableBody>
                     {products.map((product) => (
-                      <TableRow key={product.id} className="group hover:bg-muted/30">
+                      <TableRow key={product.id} className="group hover:bg-muted/30 cursor-pointer" onClick={() => navigate(`/products/${product.id}`)}>
                         <TableCell className="font-mono text-xs text-muted-foreground">{product.sku || '-'}</TableCell>
-                        <TableCell className="font-medium text-foreground">{product.name}</TableCell>
+                        <TableCell className="font-medium text-foreground hover:text-primary transition-colors">{product.name}</TableCell>
                         <TableCell className="text-muted-foreground text-sm hidden md:table-cell max-w-[200px] truncate">
                           {product.description || '-'}
                         </TableCell>
@@ -152,7 +154,7 @@ export default function Products() {
                             {product.stockQuantity ?? '-'}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => openEditDialog(product)}>
                               <Edit2 className="w-4 h-4" />

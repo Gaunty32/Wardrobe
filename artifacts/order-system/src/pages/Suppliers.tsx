@@ -1,0 +1,218 @@
+import { useState } from "react";
+import Layout from "@/components/Layout";
+import {
+  useListSuppliers,
+  useCreateSupplier,
+  useUpdateSupplier,
+  useDeleteSupplier,
+  getListSuppliersQueryKey,
+  Supplier
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { Plus, Search, Edit2, Trash2, Truck, Loader2 } from "lucide-react";
+
+export default function Suppliers() {
+  const [search, setSearch] = useState("");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+
+  const blank = { name: "", contactName: "", email: "", phone: "", address: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "" };
+  const [form, setForm] = useState(blank);
+
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: suppliers, isLoading } = useListSuppliers({ search });
+  const createMutation = useCreateSupplier();
+  const updateMutation = useUpdateSupplier();
+  const deleteMutation = useDeleteSupplier();
+
+  const openCreate = () => { setForm(blank); setIsCreateOpen(true); };
+  const openEdit = (s: Supplier) => {
+    setForm({
+      name: s.name,
+      contactName: s.contactName || "",
+      email: s.email || "",
+      phone: s.phone || "",
+      address: s.address || "",
+      city: s.city || "",
+      county: s.county || "",
+      postcode: s.postcode || "",
+      country: s.country || "United Kingdom",
+      notes: s.notes || "",
+    });
+    setEditingSupplier(s);
+  };
+
+  const handleSave = () => {
+    if (!form.name) {
+      toast({ title: "Validation Error", description: "Supplier name is required", variant: "destructive" });
+      return;
+    }
+    const inv = () => qc.invalidateQueries({ queryKey: getListSuppliersQueryKey() });
+
+    if (editingSupplier) {
+      updateMutation.mutate(
+        { id: editingSupplier.id, data: form },
+        { onSuccess: () => { inv(); toast({ title: "Supplier updated" }); setEditingSupplier(null); } }
+      );
+    } else {
+      createMutation.mutate(
+        { data: form },
+        { onSuccess: () => { inv(); toast({ title: "Supplier added" }); setIsCreateOpen(false); } }
+      );
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Delete this supplier? This cannot be undone.")) {
+      deleteMutation.mutate(
+        { id },
+        { onSuccess: () => { qc.invalidateQueries({ queryKey: getListSuppliersQueryKey() }); toast({ title: "Supplier deleted" }); } }
+      );
+    }
+  };
+
+  const close = () => { setIsCreateOpen(false); setEditingSupplier(null); };
+
+  return (
+    <Layout>
+      <div className="flex flex-col space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Suppliers</h1>
+            <p className="text-muted-foreground mt-1">Manage your purchasing suppliers.</p>
+          </div>
+          <Button onClick={openCreate} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
+            <Plus className="w-4 h-4 mr-2" /> Add Supplier
+          </Button>
+        </div>
+
+        <Card className="shadow-sm border-border/50">
+          <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search suppliers..."
+                className="pl-9 bg-background"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+            ) : suppliers && suppliers.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead>Supplier Name</TableHead>
+                      <TableHead className="hidden md:table-cell">Contact</TableHead>
+                      <TableHead>Email / Phone</TableHead>
+                      <TableHead className="hidden lg:table-cell">Location</TableHead>
+                      <TableHead className="w-[100px] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {suppliers.map((s) => (
+                      <TableRow key={s.id} className="group hover:bg-muted/30">
+                        <TableCell className="font-medium text-foreground">{s.name}</TableCell>
+                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{s.contactName || '—'}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col text-sm text-muted-foreground">
+                            <span>{s.email || 'No email'}</span>
+                            <span>{s.phone || 'No phone'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                          {s.city ? `${s.city}${s.county ? `, ${s.county}` : ''}` : '—'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => openEdit(s)}>
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(s.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-muted-foreground">
+                <Truck className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
+                <h3 className="text-lg font-medium text-foreground">No suppliers yet</h3>
+                <p className="mt-1">Add your first supplier to start linking products.</p>
+                <Button onClick={openCreate} variant="outline" className="mt-6">Add Supplier</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={isCreateOpen || !!editingSupplier} onOpenChange={(open) => { if (!open) close(); }}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle className="font-display text-xl">{editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Supplier Name *</Label>
+                <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="e.g. Acme Wholesale Ltd" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Contact Name</Label>
+                <Input value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Email</Label>
+                  <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Phone</Label>
+                  <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
+                </div>
+              </div>
+              <div className="grid gap-2 mt-1">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Address</h4>
+              </div>
+              <div className="grid gap-2">
+                <Label>Street Address</Label>
+                <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-2"><Label>City</Label><Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
+                <div className="grid gap-2"><Label>County</Label><Input value={form.county} onChange={e => setForm({ ...form, county: e.target.value })} /></div>
+                <div className="grid gap-2"><Label>Postcode</Label><Input value={form.postcode} onChange={e => setForm({ ...form, postcode: e.target.value })} /></div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Notes</Label>
+                <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={close}>Cancel</Button>
+              <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
+                {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save Supplier"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </Layout>
+  );
+}

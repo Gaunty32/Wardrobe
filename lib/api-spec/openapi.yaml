@@ -13,6 +13,8 @@ tags:
     description: Customer management
   - name: products
     description: Product management
+  - name: suppliers
+    description: Supplier management
   - name: orders
     description: Order management
 
@@ -251,6 +253,124 @@ paths:
       operationId: deleteProduct
       tags: [products]
       summary: Delete a product
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Suppliers ───────────────────────────────────────────────────────────────
+  /suppliers:
+    get:
+      operationId: listSuppliers
+      tags: [suppliers]
+      summary: List all suppliers
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of suppliers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Supplier"
+    post:
+      operationId: createSupplier
+      tags: [suppliers]
+      summary: Create a new supplier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSupplierBody"
+      responses:
+        "201":
+          description: Supplier created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /suppliers/{id}:
+    get:
+      operationId: getSupplier
+      tags: [suppliers]
+      summary: Get a supplier by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Supplier found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateSupplier
+      tags: [suppliers]
+      summary: Update a supplier
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSupplierBody"
+      responses:
+        "200":
+          description: Supplier updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Supplier"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteSupplier
+      tags: [suppliers]
+      summary: Delete a supplier
       parameters:
         - name: id
           in: path
@@ -625,6 +745,10 @@ components:
           type: number
         stockQuantity:
           type: ["integer", "null"]
+        supplierId:
+          type: ["integer", "null"]
+        supplierCode:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time
@@ -638,6 +762,8 @@ components:
         - description
         - unitPrice
         - stockQuantity
+        - supplierId
+        - supplierCode
         - createdAt
         - updatedAt
 
@@ -654,6 +780,10 @@ components:
           type: number
         stockQuantity:
           type: ["integer", "null"]
+        supplierId:
+          type: ["integer", "null"]
+        supplierCode:
+          type: ["string", "null"]
       required:
         - name
         - unitPrice
@@ -671,6 +801,107 @@ components:
           type: number
         stockQuantity:
           type: ["integer", "null"]
+        supplierId:
+          type: ["integer", "null"]
+        supplierCode:
+          type: ["string", "null"]
+
+    # ─── Supplier ──────────────────────────────────────────────────────────────
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contactName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        county:
+          type: ["string", "null"]
+        postcode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - contactName
+        - email
+        - phone
+        - address
+        - city
+        - county
+        - postcode
+        - country
+        - notes
+        - createdAt
+        - updatedAt
+
+    CreateSupplierBody:
+      type: object
+      properties:
+        name:
+          type: string
+        contactName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        county:
+          type: ["string", "null"]
+        postcode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+      required:
+        - name
+
+    UpdateSupplierBody:
+      type: object
+      properties:
+        name:
+          type: string
+        contactName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        city:
+          type: ["string", "null"]
+        county:
+          type: ["string", "null"]
+        postcode:
+          type: ["string", "null"]
+        country:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
 
     # ─── Order ─────────────────────────────────────────────────────────────────
     Order:

@@ -92,6 +92,10 @@ export interface Product {
   unitPrice: number;
   /** @nullable */
   stockQuantity: number | null;
+  /** @nullable */
+  supplierId: number | null;
+  /** @nullable */
+  supplierCode: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -105,6 +109,10 @@ export interface CreateProductBody {
   unitPrice: number;
   /** @nullable */
   stockQuantity?: number | null;
+  /** @nullable */
+  supplierId?: number | null;
+  /** @nullable */
+  supplierCode?: string | null;
 }
 
 export interface UpdateProductBody {
@@ -116,6 +124,79 @@ export interface UpdateProductBody {
   unitPrice?: number;
   /** @nullable */
   stockQuantity?: number | null;
+  /** @nullable */
+  supplierId?: number | null;
+  /** @nullable */
+  supplierCode?: string | null;
+}
+
+export interface Supplier {
+  id: number;
+  name: string;
+  /** @nullable */
+  contactName: string | null;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  phone: string | null;
+  /** @nullable */
+  address: string | null;
+  /** @nullable */
+  city: string | null;
+  /** @nullable */
+  county: string | null;
+  /** @nullable */
+  postcode: string | null;
+  /** @nullable */
+  country: string | null;
+  /** @nullable */
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSupplierBody {
+  name: string;
+  /** @nullable */
+  contactName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  county?: string | null;
+  /** @nullable */
+  postcode?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface UpdateSupplierBody {
+  name?: string;
+  /** @nullable */
+  contactName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  address?: string | null;
+  /** @nullable */
+  city?: string | null;
+  /** @nullable */
+  county?: string | null;
+  /** @nullable */
+  postcode?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  notes?: string | null;
 }
 
 export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
@@ -249,6 +330,10 @@ export type ListCustomersParams = {
 };
 
 export type ListProductsParams = {
+  search?: string;
+};
+
+export type ListSuppliersParams = {
   search?: string;
 };
 

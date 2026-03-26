@@ -16,6 +16,10 @@ export interface Product {
   unitPrice: number;
   /** @nullable */
   stockQuantity: number | null;
+  /** @nullable */
+  supplierId: number | null;
+  /** @nullable */
+  supplierCode: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

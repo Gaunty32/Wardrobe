@@ -135,6 +135,8 @@ export const ListProductsResponseItem = zod.object({
   description: zod.string().nullable(),
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullable(),
+  supplierId: zod.number().nullable(),
+  supplierCode: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -149,6 +151,8 @@ export const CreateProductBody = zod.object({
   description: zod.string().nullish(),
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullish(),
+  supplierId: zod.number().nullish(),
+  supplierCode: zod.string().nullish(),
 });
 
 /**
@@ -165,6 +169,8 @@ export const GetProductResponse = zod.object({
   description: zod.string().nullable(),
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullable(),
+  supplierId: zod.number().nullable(),
+  supplierCode: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -182,6 +188,8 @@ export const UpdateProductBody = zod.object({
   description: zod.string().nullish(),
   unitPrice: zod.number().optional(),
   stockQuantity: zod.number().nullish(),
+  supplierId: zod.number().nullish(),
+  supplierCode: zod.string().nullish(),
 });
 
 export const UpdateProductResponse = zod.object({
@@ -191,6 +199,8 @@ export const UpdateProductResponse = zod.object({
   description: zod.string().nullable(),
   unitPrice: zod.number(),
   stockQuantity: zod.number().nullable(),
+  supplierId: zod.number().nullable(),
+  supplierCode: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -199,6 +209,112 @@ export const UpdateProductResponse = zod.object({
  * @summary Delete a product
  */
 export const DeleteProductParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary List all suppliers
+ */
+export const ListSuppliersQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+});
+
+export const ListSuppliersResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  contactName: zod.string().nullable(),
+  email: zod.string().nullable(),
+  phone: zod.string().nullable(),
+  address: zod.string().nullable(),
+  city: zod.string().nullable(),
+  county: zod.string().nullable(),
+  postcode: zod.string().nullable(),
+  country: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+export const ListSuppliersResponse = zod.array(ListSuppliersResponseItem);
+
+/**
+ * @summary Create a new supplier
+ */
+export const CreateSupplierBody = zod.object({
+  name: zod.string(),
+  contactName: zod.string().nullish(),
+  email: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  county: zod.string().nullish(),
+  postcode: zod.string().nullish(),
+  country: zod.string().nullish(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Get a supplier by ID
+ */
+export const GetSupplierParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetSupplierResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  contactName: zod.string().nullable(),
+  email: zod.string().nullable(),
+  phone: zod.string().nullable(),
+  address: zod.string().nullable(),
+  city: zod.string().nullable(),
+  county: zod.string().nullable(),
+  postcode: zod.string().nullable(),
+  country: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+/**
+ * @summary Update a supplier
+ */
+export const UpdateSupplierParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateSupplierBody = zod.object({
+  name: zod.string().optional(),
+  contactName: zod.string().nullish(),
+  email: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  address: zod.string().nullish(),
+  city: zod.string().nullish(),
+  county: zod.string().nullish(),
+  postcode: zod.string().nullish(),
+  country: zod.string().nullish(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateSupplierResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  contactName: zod.string().nullable(),
+  email: zod.string().nullable(),
+  phone: zod.string().nullable(),
+  address: zod.string().nullable(),
+  city: zod.string().nullable(),
+  county: zod.string().nullable(),
+  postcode: zod.string().nullable(),
+  country: zod.string().nullable(),
+  notes: zod.string().nullable(),
+  createdAt: zod.date(),
+  updatedAt: zod.date(),
+});
+
+/**
+ * @summary Delete a supplier
+ */
+export const DeleteSupplierParams = zod.object({
   id: zod.coerce.number(),
 });
 

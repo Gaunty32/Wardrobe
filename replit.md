@@ -12,7 +12,7 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **TypeScript version**: 5.9
 - **API framework**: Express 5
 - **Database**: PostgreSQL + Drizzle ORM
-- **Validation**: Zod (`zod/v4`), `drizzle-zod`
+- **Validation**: Zod (use `import { z } from "zod"` — NOT `zod/v4` in api-server), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
 - **Frontend**: React + Vite (TailwindCSS, shadcn/ui, React Query, Recharts, React Hook Form)
@@ -48,14 +48,20 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - Sales Orders: create, view, and manage orders with status tracking (draft → confirmed → shipped → delivered → cancelled)
 - Order Detail: add/remove line items, update status, view order total
 - Customers: full CRUD with search, name/email/phone/address fields
-- Products: full CRUD with SKU, description, unit price, stock quantity
+- Products: full CRUD with SKU, description, unit price, stock quantity; clickable rows → Product Detail page
+- Product Detail: tabbed page — Details (name/SKU/price/stock/description/supplier link), Colours (tag-based), Sizes (tag-based)
+- Product Attributes: `product_attributes` table — type (colour/size) + value; managed via tags UI on Product Detail
+- Suppliers: full CRUD — name, contact, email, phone, address; linked to products via supplierId/supplierCode
 
 **Pages:**
 - `/` → Dashboard
 - `/orders` → Orders list
 - `/orders/:id` → Order detail with line items
 - `/customers` → Customers list
-- `/products` → Products list
+- `/customers/:id` → Customer detail (tabs: Delivery Addresses, Contacts, Order History, Processes, Finishes, Employees)
+- `/products` → Products list (clickable rows)
+- `/products/:id` → Product detail (tabs: Details, Colours, Sizes)
+- `/suppliers` → Suppliers list
 
 ### API Server (`artifacts/api-server`)
 
@@ -66,6 +72,10 @@ Express 5 REST API serving the order system frontend.
 - `GET/PATCH/DELETE /api/customers/:id` — customer operations
 - `GET/POST /api/products` — list and create products
 - `GET/PATCH/DELETE /api/products/:id` — product operations
+- `GET/POST /api/products/:productId/attributes` — product colour/size attributes
+- `DELETE /api/products/:productId/attributes/:id` — delete an attribute
+- `GET/POST /api/suppliers` — list and create suppliers
+- `GET/PATCH/DELETE /api/suppliers/:id` — supplier operations
 - `GET/POST /api/orders` — list and create orders
 - `GET/PATCH/DELETE /api/orders/:id` — order operations
 - `POST /api/orders/:id/items` — add line item
