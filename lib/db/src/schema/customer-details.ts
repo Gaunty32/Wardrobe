@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean, numeric } from "drizzle-orm/pg-core";
 import { customersTable } from "./customers";
 
 export const customerDeliveryAddressesTable = pgTable("customer_delivery_addresses", {
@@ -36,6 +36,8 @@ export const customerProcessesTable = pgTable("customer_processes", {
   name: text("name").notNull(),
   type: text("type"),
   placement: text("placement"),
+  price: numeric("price", { precision: 10, scale: 2 }),
+  processStockId: integer("process_stock_id"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

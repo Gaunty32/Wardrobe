@@ -150,8 +150,17 @@ const processBody = z.object({
   name: z.string().min(1),
   type: z.string().optional().nullable(),
   placement: z.string().optional().nullable(),
+  price: z.number().min(0).optional().nullable(),
+  processStockId: z.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
+
+function processToJson(row: Record<string, unknown>) {
+  return {
+    ...row,
+    price: row.price != null ? parseFloat(row.price as string) : null,
+  };
+}
 
 router.get("/customers/:customerId/processes", async (req, res): Promise<void> => {
   const p = customerIdParam.safeParse(req.params);
@@ -160,7 +169,7 @@ router.get("/customers/:customerId/processes", async (req, res): Promise<void> =
   const rows = await db.select().from(customerProcessesTable)
     .where(eq(customerProcessesTable.customerId, p.data.customerId))
     .orderBy(customerProcessesTable.name);
-  res.json(rows);
+  res.json(rows.map(processToJson));
 });
 
 router.post("/customers/:customerId/processes", async (req, res): Promise<void> => {
@@ -169,8 +178,10 @@ router.post("/customers/:customerId/processes", async (req, res): Promise<void> 
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
   const body = processBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const [row] = await db.insert(customerProcessesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
-  res.status(201).json(row);
+  const insertData: Record<string, unknown> = { ...body.data, customerId: p.data.customerId };
+  if (body.data.price != null) insertData.price = String(body.data.price);
+  const [row] = await db.insert(customerProcessesTable).values(insertData).returning();
+  res.status(201).json(processToJson(row as Record<string, unknown>));
 });
 
 router.patch("/customers/:customerId/processes/:id", async (req, res): Promise<void> => {
@@ -178,12 +189,14 @@ router.patch("/customers/:customerId/processes/:id", async (req, res): Promise<v
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   const body = processBody.partial().safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const updateData: Record<string, unknown> = { ...body.data, updatedAt: new Date() };
+  if (body.data.price != null) updateData.price = String(body.data.price);
   const [row] = await db.update(customerProcessesTable)
-    .set({ ...body.data, updatedAt: new Date() })
+    .set(updateData)
     .where(and(eq(customerProcessesTable.id, p.data.id), eq(customerProcessesTable.customerId, p.data.customerId)))
     .returning();
   if (!row) { res.status(404).json({ error: "Process not found" }); return; }
-  res.json(row);
+  res.json(processToJson(row as Record<string, unknown>));
 });
 
 router.delete("/customers/:customerId/processes/:id", async (req, res): Promise<void> => {

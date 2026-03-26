@@ -7,6 +7,7 @@ import productAttributesRouter from "./product-attributes";
 import productVariantsRouter from "./product-variants";
 import suppliersRouter from "./suppliers";
 import ordersRouter from "./orders";
+import processStockRouter from "./process-stock";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(productAttributesRouter);
 router.use(productVariantsRouter);
 router.use(suppliersRouter);
 router.use(ordersRouter);
+router.use(processStockRouter);
 
 export default router;

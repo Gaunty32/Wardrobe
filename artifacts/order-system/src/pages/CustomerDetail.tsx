@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useGetCustomer } from "@workspace/api-client-react";
 import { Link } from "wouter";
@@ -292,13 +292,19 @@ function OrderHistoryTab({ customerId }: { customerId: number }) {
 
 const PROCESS_TYPES = ["embroidery", "print", "other"] as const;
 
+interface ProcessStockItem { id: number; name: string; sku: string | null; unitCost: number; }
+
 function ProcessesTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: processes, isLoading } = useSubResource<any>(customerId, "processes");
+  const { data: allProcessStock } = useQuery<ProcessStockItem[]>({
+    queryKey: ["process-stock"],
+    queryFn: () => apiFetch("/process-stock"),
+  });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", type: "", placement: "", notes: "" };
+  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", notes: "" };
   const [form, setForm] = useState(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "processes"] });
@@ -319,7 +325,34 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   const typeColour: Record<string, string> = { embroidery: "bg-purple-100 text-purple-700", print: "bg-blue-100 text-blue-700", other: "bg-gray-100 text-gray-700" };
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (p: any) => { setForm({ name: p.name||"", type: p.type||"", placement: p.placement||"", notes: p.notes||"" }); setEditing(p); setOpen(true); };
+  const openEdit = (p: any) => {
+    setForm({
+      name: p.name || "",
+      type: p.type || "",
+      placement: p.placement || "",
+      price: p.price != null ? String(p.price) : "",
+      processStockId: p.processStockId != null ? String(p.processStockId) : "",
+      notes: p.notes || "",
+    });
+    setEditing(p);
+    setOpen(true);
+  };
+
+  const handleSave = () => {
+    save.mutate({
+      name: form.name,
+      type: form.type || null,
+      placement: form.placement || null,
+      price: form.price ? parseFloat(form.price) : null,
+      processStockId: form.processStockId ? parseInt(form.processStockId, 10) : null,
+      notes: form.notes || null,
+    });
+  };
+
+  const getStockName = (id: number | null) => {
+    if (!id || !allProcessStock) return null;
+    return allProcessStock.find(s => s.id === id)?.name ?? null;
+  };
 
   return (
     <>
@@ -333,7 +366,8 @@ function ProcessesTab({ customerId }: { customerId: number }) {
             <TableHead>Name</TableHead>
             <TableHead>Type</TableHead>
             <TableHead className="hidden md:table-cell">Placement</TableHead>
-            <TableHead className="hidden md:table-cell">Notes</TableHead>
+            <TableHead className="text-right">Price</TableHead>
+            <TableHead className="hidden lg:table-cell">Process Stock</TableHead>
             <TableHead className="w-20 text-right">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
@@ -344,7 +378,16 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   {p.type && <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${typeColour[p.type] || typeColour.other}`}>{p.type}</span>}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.placement || '—'}</TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.notes || '—'}</TableCell>
+                <TableCell className="text-right text-sm font-medium tabular-nums">
+                  {p.price != null ? formatCurrency(p.price) : <span className="text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {p.processStockId ? (
+                    <span className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
+                      <Boxes className="w-3 h-3" />{getStockName(p.processStockId) ?? `#${p.processStockId}`}
+                    </span>
+                  ) : <span className="text-muted-foreground text-sm">—</span>}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(p)}><Edit2 className="w-3 h-3" /></Button>
@@ -365,9 +408,10 @@ function ProcessesTab({ customerId }: { customerId: number }) {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Type</Label>
-                <Select value={form.type} onValueChange={v => setForm({ ...form, type: v })}>
+                <Select value={form.type || "none"} onValueChange={v => setForm({ ...form, type: v === "none" ? "" : v })}>
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">Not specified</SelectItem>
                     {PROCESS_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -375,12 +419,39 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               <div className="grid gap-2"><Label>Placement</Label>
                 <Input placeholder="e.g. Left Chest" value={form.placement} onChange={e => setForm({ ...form, placement: e.target.value })} /></div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Price (£)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={form.price}
+                  onChange={e => setForm({ ...form, price: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><Boxes className="w-3 h-3" /> Process Stock Item</Label>
+                <Select value={form.processStockId || "none"} onValueChange={v => setForm({ ...form, processStockId: v === "none" ? "" : v })}>
+                  <SelectTrigger><SelectValue placeholder="Link stock item" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {allProcessStock?.map(s => (
+                      <SelectItem key={s.id} value={s.id.toString()}>
+                        {s.name}{s.sku ? ` (${s.sku})` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="grid gap-2"><Label>Notes</Label>
               <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+            <Button onClick={handleSave} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
