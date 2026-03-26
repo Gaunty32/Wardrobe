@@ -1,0 +1,238 @@
+import { useState } from "react";
+import Layout from "@/components/Layout";
+import { 
+  useListCustomers, 
+  useCreateCustomer, 
+  useUpdateCustomer, 
+  useDeleteCustomer,
+  getListCustomersQueryKey,
+  Customer
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import { Plus, Search, Edit2, Trash2, Users, Loader2 } from "lucide-react";
+
+export default function Customers() {
+  const [search, setSearch] = useState("");
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  
+  const initialForm = { name: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "" };
+  const [formData, setFormData] = useState(initialForm);
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: customers, isLoading } = useListCustomers({ search });
+  const createMutation = useCreateCustomer();
+  const updateMutation = useUpdateCustomer();
+  const deleteMutation = useDeleteCustomer();
+
+  const openCreateDialog = () => {
+    setFormData(initialForm);
+    setIsCreateOpen(true);
+  };
+
+  const openEditDialog = (customer: Customer) => {
+    setFormData({
+      name: customer.name,
+      email: customer.email || "",
+      phone: customer.phone || "",
+      address: customer.address || "",
+      city: customer.city || "",
+      state: customer.state || "",
+      postcode: customer.postcode || "",
+      notes: customer.notes || ""
+    });
+    setEditingCustomer(customer);
+  };
+
+  const handleSave = () => {
+    if (!formData.name) {
+      toast({ title: "Validation Error", description: "Customer name is required", variant: "destructive" });
+      return;
+    }
+
+    if (editingCustomer) {
+      updateMutation.mutate(
+        { id: editingCustomer.id, data: formData },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+            toast({ title: "Success", description: "Customer updated successfully." });
+            setEditingCustomer(null);
+          }
+        }
+      );
+    } else {
+      createMutation.mutate(
+        { data: formData },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+            toast({ title: "Success", description: "Customer added successfully." });
+            setIsCreateOpen(false);
+          }
+        }
+      );
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    if (confirm("Delete this customer? This cannot be undone.")) {
+      deleteMutation.mutate(
+        { id },
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+            toast({ title: "Success", description: "Customer deleted successfully." });
+          }
+        }
+      );
+    }
+  };
+
+  return (
+    <Layout>
+      <div className="flex flex-col space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Customers</h1>
+            <p className="text-muted-foreground mt-1">Manage your client relationships.</p>
+          </div>
+          <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
+            <Plus className="w-4 h-4 mr-2" /> Add Customer
+          </Button>
+        </div>
+
+        <Card className="shadow-sm border-border/50">
+          <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+            <div className="relative max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search customers..." 
+                className="pl-9 bg-background"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-12 flex justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
+            ) : customers && customers.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead>Name</TableHead>
+                      <TableHead>Contact Info</TableHead>
+                      <TableHead className="hidden md:table-cell">Location</TableHead>
+                      <TableHead className="w-[100px] text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {customers.map((customer) => (
+                      <TableRow key={customer.id} className="group hover:bg-muted/30">
+                        <TableCell className="font-medium text-foreground">{customer.name}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col text-sm text-muted-foreground">
+                            <span>{customer.email || 'No email'}</span>
+                            <span>{customer.phone || 'No phone'}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                          {customer.city ? `${customer.city}, ${customer.state || ''}` : '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => openEditDialog(customer)}>
+                              <Edit2 className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => handleDelete(customer.id)}>
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="py-16 text-center text-muted-foreground">
+                <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
+                <h3 className="text-lg font-medium text-foreground">No customers found</h3>
+                <p className="mt-1">Add your first customer to get started.</p>
+                <Button onClick={openCreateDialog} variant="outline" className="mt-6">Add Customer</Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Dialog open={isCreateOpen || !!editingCustomer} onOpenChange={(open) => {
+          if (!open) { setIsCreateOpen(false); setEditingCustomer(null); }
+        }}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle className="font-display text-xl">{editingCustomer ? 'Edit Customer' : 'Add New Customer'}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="name">Company / Full Name *</Label>
+                <Input id="name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input id="email" type="email" value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="phone">Phone Number</Label>
+                  <Input id="phone" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid gap-2 mt-2">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Address</h4>
+              </div>
+              
+              <div className="grid gap-2">
+                <Label htmlFor="address">Street Address</Label>
+                <Input id="address" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="city">City</Label>
+                  <Input id="city" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="state">State</Label>
+                  <Input id="state" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="postcode">ZIP/Postcode</Label>
+                  <Input id="postcode" value={formData.postcode} onChange={(e) => setFormData({...formData, postcode: e.target.value})} />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setIsCreateOpen(false); setEditingCustomer(null); }}>Cancel</Button>
+              <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending}>
+                {createMutation.isPending || updateMutation.isPending ? "Saving..." : "Save Customer"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </Layout>
+  );
+}
