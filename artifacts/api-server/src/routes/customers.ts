@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, ilike, or } from "drizzle-orm";
-import { db, customersTable } from "@workspace/db";
+import { db, customersTable, customerFinishesTable, customerEmployeesTable } from "@workspace/db";
+import { z } from "zod";
 import {
   CreateCustomerBody,
   UpdateCustomerBody,
@@ -93,6 +94,34 @@ router.delete("/customers/:id", async (req, res): Promise<void> => {
     return;
   }
   res.sendStatus(204);
+});
+
+router.get("/customers/:id/finishes", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const finishes = await db
+    .select()
+    .from(customerFinishesTable)
+    .where(eq(customerFinishesTable.customerId, parsed.data.id))
+    .orderBy(customerFinishesTable.name);
+  res.json(finishes);
+});
+
+router.get("/customers/:id/employees", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const employees = await db
+    .select()
+    .from(customerEmployeesTable)
+    .where(eq(customerEmployeesTable.customerId, parsed.data.id))
+    .orderBy(customerEmployeesTable.lastName, customerEmployeesTable.firstName);
+  res.json(employees);
 });
 
 export default router;

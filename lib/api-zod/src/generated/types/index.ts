@@ -9,6 +9,7 @@
 export * from "./createCustomerBody";
 export * from "./createOrderBody";
 export * from "./createOrderItemBody";
+export * from "./createOrderItemBodyRecipientType";
 export * from "./createProductBody";
 export * from "./createSupplierBody";
 export * from "./customer";
@@ -24,6 +25,7 @@ export * from "./order";
 export * from "./orderDetail";
 export * from "./orderDetailStatus";
 export * from "./orderItem";
+export * from "./orderItemRecipientType";
 export * from "./orderStatus";
 export * from "./product";
 export * from "./supplier";

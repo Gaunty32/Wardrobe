@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { useRoute } from "wouter";
-import { 
-  useGetOrder, 
+import {
+  useGetOrder,
   useUpdateOrder,
   useAddOrderItem,
   useDeleteOrderItem,
@@ -10,7 +10,7 @@ import {
   getGetOrderQueryKey,
   UpdateOrderBodyStatus
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -18,31 +18,208 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, Save, FileText, PackageX, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon } from "lucide-react";
 import { Link } from "wouter";
+import { cn } from "@/lib/utils";
+
+const API_BASE = "/api";
+
+async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...opts?.headers },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 204) return null as T;
+  return res.json();
+}
+
+interface ProductAttribute { id: number; productId: number; type: string; value: string; }
+interface ProductVariant { id: number; productId: number; colour: string | null; size: string | null; stockQty: number | null; price: number | null; }
+interface CustomerFinish { id: number; customerId: number; name: string; description: string | null; }
+interface CustomerEmployee { id: number; customerId: number; firstName: string; lastName: string | null; department: string | null; }
+
+function useProductAttributes(productId: number | null) {
+  return useQuery<ProductAttribute[]>({
+    queryKey: ["product-attributes", productId],
+    queryFn: () => apiFetch(`/products/${productId}/attributes`),
+    enabled: productId !== null && productId > 0,
+  });
+}
+
+function useProductVariants(productId: number | null) {
+  return useQuery<ProductVariant[]>({
+    queryKey: ["product-variants-detail", productId],
+    queryFn: () => apiFetch(`/products/${productId}/variants`),
+    enabled: productId !== null && productId > 0,
+  });
+}
+
+function useCustomerFinishes(customerId: number | null) {
+  return useQuery<CustomerFinish[]>({
+    queryKey: ["customer-finishes", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/finishes`),
+    enabled: customerId !== null && customerId > 0,
+  });
+}
+
+function useCustomerEmployees(customerId: number | null) {
+  return useQuery<CustomerEmployee[]>({
+    queryKey: ["customer-employees", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/employees`),
+    enabled: customerId !== null && customerId > 0,
+  });
+}
+
+const EMPTY_ITEM = {
+  productId: null as number | null,
+  productName: "",
+  colour: "",
+  size: "",
+  finishId: null as number | null,
+  finishName: null as string | null,
+  recipientType: "stock" as "stock" | "person",
+  recipientName: "",
+  quantity: 1,
+  unitPrice: "",
+};
 
 export default function OrderDetail() {
   const [, params] = useRoute("/orders/:id");
   const orderId = params?.id ? parseInt(params.id, 10) : 0;
-  
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const { data: order, isLoading: isOrderLoading } = useGetOrder(orderId);
   const { data: products } = useListProducts();
-  
+
   const updateOrderMutation = useUpdateOrder();
   const addItemMutation = useAddOrderItem();
   const deleteItemMutation = useDeleteOrderItem();
 
-  // Add Item State
+  const customerId = order?.customerId ?? null;
+
+  const { data: customerFinishes } = useCustomerFinishes(customerId);
+  const { data: customerEmployees } = useCustomerEmployees(customerId);
+
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
-  const [selectedProductId, setSelectedProductId] = useState<string>("");
-  const [quantity, setQuantity] = useState<number>(1);
-  const [priceOverride, setPriceOverride] = useState<string>("");
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [item, setItem] = useState({ ...EMPTY_ITEM });
+
+  const { data: productAttributes } = useProductAttributes(item.productId);
+  const { data: productVariants } = useProductVariants(item.productId);
+
+  const colours = [...new Set((productAttributes ?? []).filter(a => a.type === "colour").map(a => a.value))];
+  const sizes = [...new Set((productAttributes ?? []).filter(a => a.type === "size").map(a => a.value))];
+
+  useEffect(() => {
+    if (item.productId && productVariants) {
+      const match = productVariants.find(v => v.colour === item.colour && v.size === item.size);
+      if (match?.price != null) {
+        setItem(i => ({ ...i, unitPrice: match.price!.toString() }));
+      }
+    }
+  }, [item.colour, item.size, item.productId, productVariants]);
+
+  const handleProductSelect = (productId: number) => {
+    const prod = products?.find(p => p.id === productId);
+    if (!prod) return;
+    setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: prod.unitPrice.toString() });
+    setProductSearchOpen(false);
+  };
+
+  const handleFinishSelect = (value: string) => {
+    if (value === "plain") {
+      setItem(i => ({ ...i, finishId: null, finishName: null }));
+    } else {
+      const finish = customerFinishes?.find(f => f.id.toString() === value);
+      if (finish) setItem(i => ({ ...i, finishId: finish.id, finishName: finish.name }));
+    }
+  };
+
+  const handleEmployeeSelect = (value: string) => {
+    if (value === "__custom__") {
+      setItem(i => ({ ...i, recipientName: "" }));
+    } else {
+      const emp = customerEmployees?.find(e => e.id.toString() === value);
+      if (emp) {
+        const name = [emp.firstName, emp.lastName].filter(Boolean).join(" ");
+        setItem(i => ({ ...i, recipientName: name }));
+      }
+    }
+  };
+
+  const resetDialog = () => {
+    setItem({ ...EMPTY_ITEM });
+    setIsAddItemOpen(false);
+  };
+
+  const handleAddItem = () => {
+    if (!item.productId || !item.productName) return;
+    const price = parseFloat(item.unitPrice);
+    if (isNaN(price)) return;
+
+    addItemMutation.mutate(
+      {
+        id: orderId,
+        data: {
+          productId: item.productId,
+          productName: item.productName,
+          colour: item.colour || null,
+          size: item.size || null,
+          finishId: item.finishId ?? null,
+          finishName: item.finishName ?? null,
+          recipientType: item.recipientType,
+          recipientName: item.recipientType === "person" ? (item.recipientName || null) : null,
+          quantity: item.quantity,
+          unitPrice: price,
+        }
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          toast({ title: "Item Added", description: `${item.productName} added to order.` });
+          resetDialog();
+        },
+        onError: (err) => {
+          toast({ title: "Error", description: err.message, variant: "destructive" });
+        }
+      }
+    );
+  };
+
+  const handleDeleteItem = (itemId: number) => {
+    if (!confirm("Remove this item from the order?")) return;
+    deleteItemMutation.mutate(
+      { id: orderId, itemId },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          toast({ title: "Item Removed" });
+        }
+      }
+    );
+  };
+
+  const handleStatusChange = (newStatus: UpdateOrderBodyStatus) => {
+    updateOrderMutation.mutate(
+      { id: orderId, data: { status: newStatus } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          toast({ title: "Status Updated", description: `Order is now ${newStatus}` });
+        }
+      }
+    );
+  };
 
   if (isOrderLoading) {
     return (
@@ -62,66 +239,7 @@ export default function OrderDetail() {
     );
   }
 
-  const handleStatusChange = (newStatus: UpdateOrderBodyStatus) => {
-    updateOrderMutation.mutate(
-      { id: orderId, data: { status: newStatus } },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-          toast({ title: "Status Updated", description: `Order is now ${newStatus}` });
-        }
-      }
-    );
-  };
-
-  const handleProductSelect = (productIdStr: string) => {
-    setSelectedProductId(productIdStr);
-    const prod = products?.find(p => p.id.toString() === productIdStr);
-    if (prod) {
-      setPriceOverride(prod.unitPrice.toString());
-    }
-  };
-
-  const handleAddItem = () => {
-    if (!selectedProductId) return;
-    const prod = products?.find(p => p.id.toString() === selectedProductId);
-    if (!prod) return;
-
-    addItemMutation.mutate(
-      {
-        id: orderId,
-        data: {
-          productId: prod.id,
-          productName: prod.name,
-          quantity: quantity,
-          unitPrice: parseFloat(priceOverride) || prod.unitPrice
-        }
-      },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-          toast({ title: "Item Added", description: `${prod.name} added to order.` });
-          setIsAddItemOpen(false);
-          setSelectedProductId("");
-          setQuantity(1);
-        }
-      }
-    );
-  };
-
-  const handleDeleteItem = (itemId: number) => {
-    if (confirm("Remove this item from the order?")) {
-      deleteItemMutation.mutate(
-        { id: orderId, itemId },
-        {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-            toast({ title: "Item Removed" });
-          }
-        }
-      );
-    }
-  };
+  const selectedProduct = products?.find(p => p.id === item.productId);
 
   return (
     <Layout>
@@ -139,7 +257,7 @@ export default function OrderDetail() {
               <p className="text-muted-foreground mt-1">{formatDate(order.orderDate)} &bull; {order.customerName}</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <Select value={order.status} onValueChange={(val) => handleStatusChange(val as UpdateOrderBodyStatus)}>
               <SelectTrigger className="w-[160px] bg-background">
@@ -157,7 +275,6 @@ export default function OrderDetail() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Items Section */}
           <Card className="lg:col-span-2 shadow-sm border-border/50 flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
               <div>
@@ -175,6 +292,8 @@ export default function OrderDetail() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Product</TableHead>
+                        <TableHead>Finish</TableHead>
+                        <TableHead>Recipient</TableHead>
                         <TableHead className="text-right">Price</TableHead>
                         <TableHead className="text-center">Qty</TableHead>
                         <TableHead className="text-right">Total</TableHead>
@@ -182,14 +301,48 @@ export default function OrderDetail() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {order.items.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell className="font-medium">{item.productName}</TableCell>
-                          <TableCell className="text-right">{formatCurrency(item.unitPrice)}</TableCell>
-                          <TableCell className="text-center font-semibold">{item.quantity}</TableCell>
-                          <TableCell className="text-right font-bold text-primary">{formatCurrency(item.lineTotal)}</TableCell>
+                      {order.items.map((orderItem) => (
+                        <TableRow key={orderItem.id}>
+                          <TableCell>
+                            <p className="font-medium text-foreground">{orderItem.productName}</p>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {orderItem.colour && (
+                                <Badge variant="outline" className="text-xs gap-1 font-normal">
+                                  <Palette className="w-3 h-3" />{orderItem.colour}
+                                </Badge>
+                              )}
+                              {orderItem.size && (
+                                <Badge variant="outline" className="text-xs gap-1 font-normal">
+                                  <Ruler className="w-3 h-3" />{orderItem.size}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {orderItem.finishName ? (
+                              <Badge variant="secondary" className="text-xs gap-1 font-normal">
+                                <Sparkles className="w-3 h-3" />{orderItem.finishName}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Plain</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {orderItem.recipientType === "person" && orderItem.recipientName ? (
+                              <Badge variant="outline" className="text-xs gap-1 border-blue-200 text-blue-700 bg-blue-50 font-normal">
+                                <User className="w-3 h-3" />{orderItem.recipientName}
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs gap-1 border-muted-foreground/20 text-muted-foreground font-normal">
+                                <Archive className="w-3 h-3" />Stock
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{formatCurrency(orderItem.unitPrice)}</TableCell>
+                          <TableCell className="text-center font-semibold">{orderItem.quantity}</TableCell>
+                          <TableCell className="text-right font-bold text-primary tabular-nums">{formatCurrency(orderItem.lineTotal)}</TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteItem(item.id)}>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteItem(orderItem.id)}>
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </TableCell>
@@ -214,7 +367,6 @@ export default function OrderDetail() {
             )}
           </Card>
 
-          {/* Sidebar Section */}
           <div className="flex flex-col gap-6">
             <Card className="shadow-sm border-border/50">
               <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
@@ -223,12 +375,14 @@ export default function OrderDetail() {
               <CardContent className="py-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold font-display">
-                    {order.customerName ? order.customerName.charAt(0).toUpperCase() : '?'}
+                    {order.customerName ? order.customerName.charAt(0).toUpperCase() : "?"}
                   </div>
                   <div>
-                    <p className="font-semibold text-foreground">{order.customerName || 'Unknown Customer'}</p>
+                    <p className="font-semibold text-foreground">{order.customerName || "Unknown Customer"}</p>
                     {order.customerId && (
-                      <Link href={`/customers`} className="text-sm text-primary hover:underline">View profile</Link>
+                      <Link href="/customers" className="text-sm text-primary hover:underline flex items-center gap-1">
+                        <LinkIcon className="w-3 h-3" />View profile
+                      </Link>
                     )}
                   </div>
                 </div>
@@ -245,61 +399,190 @@ export default function OrderDetail() {
                 <div className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50 min-h-[100px]">
                   {order.notes || "No notes for this order."}
                 </div>
-                <div className="mt-3 flex justify-end">
-                  <Button variant="outline" size="sm">Edit Notes</Button>
-                </div>
               </CardContent>
             </Card>
           </div>
         </div>
 
-        {/* Add Item Dialog */}
-        <Dialog open={isAddItemOpen} onOpenChange={setIsAddItemOpen}>
-          <DialogContent>
+        <Dialog open={isAddItemOpen} onOpenChange={(open) => { if (!open) resetDialog(); else setIsAddItemOpen(true); }}>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle className="font-display">Add Line Item</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-5 py-2">
+
+              {/* Product picker */}
               <div className="grid gap-2">
-                <Label htmlFor="product">Product</Label>
-                <Select value={selectedProductId} onValueChange={handleProductSelect}>
-                  <SelectTrigger id="product">
-                    <SelectValue placeholder="Select a product..." />
+                <Label>Product</Label>
+                <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                      {selectedProduct ? selectedProduct.name : "Search products..."}
+                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Type product name or SKU..." />
+                      <CommandList>
+                        <CommandEmpty>No products found.</CommandEmpty>
+                        <CommandGroup>
+                          {products?.map(p => (
+                            <CommandItem key={p.id} value={`${p.name} ${p.sku ?? ""}`} onSelect={() => handleProductSelect(p.id)}>
+                              <Check className={cn("mr-2 h-4 w-4", item.productId === p.id ? "opacity-100" : "opacity-0")} />
+                              <span className="flex-1">{p.name}</span>
+                              {p.sku && <span className="text-xs text-muted-foreground mr-2">{p.sku}</span>}
+                              <span className="text-xs font-semibold">{formatCurrency(p.unitPrice)}</span>
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Colour + Size */}
+              {item.productId && (colours.length > 0 || sizes.length > 0) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {colours.length > 0 && (
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
+                      <Select value={item.colour || "none"} onValueChange={v => setItem(i => ({ ...i, colour: v === "none" ? "" : v }))}>
+                        <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Any / Not specified</SelectItem>
+                          {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {sizes.length > 0 && (
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
+                      <Select value={item.size || "none"} onValueChange={v => setItem(i => ({ ...i, size: v === "none" ? "" : v }))}>
+                        <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Any / Not specified</SelectItem>
+                          {sizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Finish */}
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> Finish</Label>
+                <Select
+                  value={item.finishId ? item.finishId.toString() : "plain"}
+                  onValueChange={handleFinishSelect}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Plain (no finish)" />
                   </SelectTrigger>
                   <SelectContent>
-                    {products?.map(p => (
-                      <SelectItem key={p.id} value={p.id.toString()}>{p.name} ({formatCurrency(p.unitPrice)})</SelectItem>
+                    <SelectItem value="plain">Plain (no finish)</SelectItem>
+                    {customerFinishes && customerFinishes.length > 0 && customerFinishes.map(f => (
+                      <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
                     ))}
+                    {(!customerFinishes || customerFinishes.length === 0) && (
+                      <SelectItem value="plain" disabled>No finishes set up for this customer</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Recipient */}
+              <div className="grid gap-3">
+                <Label>Ordered for</Label>
+                <RadioGroup
+                  value={item.recipientType}
+                  onValueChange={(v) => setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }))}
+                  className="flex gap-6"
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="stock" id="for-stock" />
+                    <Label htmlFor="for-stock" className="font-normal cursor-pointer flex items-center gap-1">
+                      <Archive className="w-3.5 h-3.5 text-muted-foreground" /> Stock
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="person" id="for-person" />
+                    <Label htmlFor="for-person" className="font-normal cursor-pointer flex items-center gap-1">
+                      <User className="w-3.5 h-3.5 text-muted-foreground" /> Specific person
+                    </Label>
+                  </div>
+                </RadioGroup>
+                {item.recipientType === "person" && (
+                  <div className="grid gap-2">
+                    {customerEmployees && customerEmployees.length > 0 && (
+                      <Select onValueChange={handleEmployeeSelect} defaultValue="">
+                        <SelectTrigger>
+                          <SelectValue placeholder="Pick from employees..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__custom__">Enter name manually</SelectItem>
+                          {customerEmployees.map(e => (
+                            <SelectItem key={e.id} value={e.id.toString()}>
+                              {[e.firstName, e.lastName].filter(Boolean).join(" ")}
+                              {e.department ? ` — ${e.department}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                    <Input
+                      placeholder="Recipient name"
+                      value={item.recipientName}
+                      onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Qty + Price */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="qty">Quantity</Label>
-                  <Input 
-                    id="qty" 
-                    type="number" 
-                    min="1" 
-                    value={quantity} 
-                    onChange={(e) => setQuantity(parseInt(e.target.value, 10) || 1)} 
+                  <Input
+                    id="qty"
+                    type="number"
+                    min="1"
+                    value={item.quantity}
+                    onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="price">Unit Price ($)</Label>
-                  <Input 
-                    id="price" 
-                    type="number" 
-                    step="0.01" 
-                    value={priceOverride} 
-                    onChange={(e) => setPriceOverride(e.target.value)} 
+                  <Label htmlFor="price">Unit Price (£)</Label>
+                  <Input
+                    id="price"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={item.unitPrice}
+                    onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))}
                   />
                 </div>
               </div>
+
+              {item.unitPrice && item.quantity && (
+                <div className="flex justify-end">
+                  <span className="text-sm text-muted-foreground">
+                    Line total: <span className="font-semibold text-foreground">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span>
+                  </span>
+                </div>
+              )}
             </div>
+
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddItemOpen(false)}>Cancel</Button>
-              <Button onClick={handleAddItem} disabled={!selectedProductId || addItemMutation.isPending}>
-                {addItemMutation.isPending ? "Adding..." : "Add to Order"}
+              <Button variant="outline" onClick={resetDialog}>Cancel</Button>
+              <Button
+                onClick={handleAddItem}
+                disabled={!item.productId || !item.unitPrice || addItemMutation.isPending}
+              >
+                {addItemMutation.isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Adding...</> : "Add to Order"}
               </Button>
             </DialogFooter>
           </DialogContent>

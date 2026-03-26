@@ -231,12 +231,31 @@ export interface Order {
   updatedAt: string;
 }
 
+export type OrderItemRecipientType =
+  (typeof OrderItemRecipientType)[keyof typeof OrderItemRecipientType];
+
+export const OrderItemRecipientType = {
+  stock: "stock",
+  person: "person",
+} as const;
+
 export interface OrderItem {
   id: number;
   orderId: number;
   /** @nullable */
   productId: number | null;
   productName: string;
+  /** @nullable */
+  colour: string | null;
+  /** @nullable */
+  size: string | null;
+  /** @nullable */
+  finishId: number | null;
+  /** @nullable */
+  finishName: string | null;
+  recipientType: OrderItemRecipientType;
+  /** @nullable */
+  recipientName: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;
@@ -270,10 +289,29 @@ export interface OrderDetail {
   items: OrderItem[];
 }
 
+export type CreateOrderItemBodyRecipientType =
+  (typeof CreateOrderItemBodyRecipientType)[keyof typeof CreateOrderItemBodyRecipientType];
+
+export const CreateOrderItemBodyRecipientType = {
+  stock: "stock",
+  person: "person",
+} as const;
+
 export interface CreateOrderItemBody {
   /** @nullable */
   productId?: number | null;
   productName: string;
+  /** @nullable */
+  colour?: string | null;
+  /** @nullable */
+  size?: string | null;
+  /** @nullable */
+  finishId?: number | null;
+  /** @nullable */
+  finishName?: string | null;
+  recipientType?: CreateOrderItemBodyRecipientType;
+  /** @nullable */
+  recipientName?: string | null;
   quantity: number;
   unitPrice: number;
 }

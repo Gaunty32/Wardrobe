@@ -5,6 +5,7 @@
  * Sales Order System API
  * OpenAPI spec version: 0.1.0
  */
+import type { OrderItemRecipientType } from "./orderItemRecipientType";
 
 export interface OrderItem {
   id: number;
@@ -12,6 +13,17 @@ export interface OrderItem {
   /** @nullable */
   productId: number | null;
   productName: string;
+  /** @nullable */
+  colour: string | null;
+  /** @nullable */
+  size: string | null;
+  /** @nullable */
+  finishId: number | null;
+  /** @nullable */
+  finishName: string | null;
+  recipientType: OrderItemRecipientType;
+  /** @nullable */
+  recipientName: string | null;
   quantity: number;
   unitPrice: number;
   lineTotal: number;

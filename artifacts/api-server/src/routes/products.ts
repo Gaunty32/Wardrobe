@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, ilike, or } from "drizzle-orm";
-import { db, productsTable } from "@workspace/db";
+import { db, productsTable, productAttributesTable, productVariantsTable } from "@workspace/db";
+import { z } from "zod";
 import {
   CreateProductBody,
   UpdateProductBody,
@@ -99,6 +100,33 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
     return;
   }
   res.sendStatus(204);
+});
+
+router.get("/products/:id/attributes", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const attributes = await db
+    .select()
+    .from(productAttributesTable)
+    .where(eq(productAttributesTable.productId, parsed.data.id))
+    .orderBy(productAttributesTable.type, productAttributesTable.value);
+  res.json(attributes);
+});
+
+router.get("/products/:id/variants", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  const variants = await db
+    .select()
+    .from(productVariantsTable)
+    .where(eq(productVariantsTable.productId, parsed.data.id));
+  res.json(variants.map(v => ({ ...v, price: v.price ? parseFloat(v.price) : null })));
 });
 
 export default router;

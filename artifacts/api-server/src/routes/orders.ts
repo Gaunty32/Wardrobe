@@ -221,7 +221,20 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     return;
   }
 
-  const parsed = AddOrderItemBody.safeParse(req.body);
+  const addItemSchema = z.object({
+    productId: z.number().int().positive().optional().nullable(),
+    productName: z.string(),
+    colour: z.string().optional().nullable(),
+    size: z.string().optional().nullable(),
+    finishId: z.number().int().positive().optional().nullable(),
+    finishName: z.string().optional().nullable(),
+    recipientType: z.enum(["stock", "person"]).default("stock"),
+    recipientName: z.string().optional().nullable(),
+    quantity: z.number().int().positive(),
+    unitPrice: z.number().min(0),
+  });
+
+  const parsed = addItemSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -234,6 +247,12 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       orderId: params.data.id,
       productId: parsed.data.productId ?? null,
       productName: parsed.data.productName,
+      colour: parsed.data.colour ?? null,
+      size: parsed.data.size ?? null,
+      finishId: parsed.data.finishId ?? null,
+      finishName: parsed.data.finishName ?? null,
+      recipientType: parsed.data.recipientType,
+      recipientName: parsed.data.recipientName ?? null,
       quantity: parsed.data.quantity,
       unitPrice: String(parsed.data.unitPrice),
       lineTotal: String(lineTotal),

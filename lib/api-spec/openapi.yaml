@@ -961,6 +961,19 @@ components:
           type: ["integer", "null"]
         productName:
           type: string
+        colour:
+          type: ["string", "null"]
+        size:
+          type: ["string", "null"]
+        finishId:
+          type: ["integer", "null"]
+        finishName:
+          type: ["string", "null"]
+        recipientType:
+          type: string
+          enum: [stock, person]
+        recipientName:
+          type: ["string", "null"]
         quantity:
           type: integer
         unitPrice:
@@ -972,6 +985,12 @@ components:
         - orderId
         - productId
         - productName
+        - colour
+        - size
+        - finishId
+        - finishName
+        - recipientType
+        - recipientName
         - quantity
         - unitPrice
         - lineTotal
@@ -1056,6 +1075,19 @@ components:
           type: ["integer", "null"]
         productName:
           type: string
+        colour:
+          type: ["string", "null"]
+        size:
+          type: ["string", "null"]
+        finishId:
+          type: ["integer", "null"]
+        finishName:
+          type: ["string", "null"]
+        recipientType:
+          type: string
+          enum: [stock, person]
+        recipientName:
+          type: ["string", "null"]
         quantity:
           type: integer
         unitPrice:
