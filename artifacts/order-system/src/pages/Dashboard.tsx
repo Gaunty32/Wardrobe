@@ -21,7 +21,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import {
-  DollarSign,
+  PoundSterling,
   ShoppingCart,
   Users,
   Package,
@@ -315,7 +315,7 @@ export default function Dashboard() {
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
               <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                <DollarSign className="w-5 h-5 text-blue-600" />
+                <PoundSterling className="w-5 h-5 text-blue-600" />
               </div>
             </CardHeader>
             <CardContent>
