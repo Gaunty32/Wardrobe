@@ -11,9 +11,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
 import { Link } from "wouter";
@@ -783,6 +786,277 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   );
 }
 
+// ─── Wardrobe (Finished Items) Tab ───────────────────────────────────────────
+
+interface FinishedItem {
+  id: number;
+  customerId: number;
+  name: string;
+  productId: number;
+  productName: string | null;
+  productSku: string | null;
+  finishId: number | null;
+  finishName: string | null;
+  colour: string | null;
+  size: string | null;
+  unitPrice: number;
+  notes: string | null;
+}
+
+function WardrobeTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: products } = useListProducts();
+  const { data: items, isLoading } = useSubResource<FinishedItem>(customerId, "finished-items");
+  const { data: finishes } = useSubResource<any>(customerId, "finishes");
+
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<FinishedItem | null>(null);
+  const [productSearchOpen, setProductSearchOpen] = useState(false);
+
+  const blank = { name: "", productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", notes: "" };
+  const [form, setForm] = useState<typeof blank>(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finished-items"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/finished-items/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/finished-items`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: (e: any) => toast({ title: "Error", description: e.message || "Could not save item", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/finished-items/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setOpen(true); };
+  const openEdit = (item: FinishedItem) => {
+    setForm({
+      name: item.name,
+      productId: item.productId,
+      finishId: item.finishId ?? null,
+      colour: item.colour ?? "",
+      size: item.size ?? "",
+      unitPrice: item.unitPrice.toFixed(2),
+      notes: item.notes ?? "",
+    });
+    setEditing(item);
+    setProductSearchOpen(false);
+    setOpen(true);
+  };
+
+  const selectedProduct = products?.find(p => p.id === form.productId);
+
+  const handleProductSelect = (productId: number) => {
+    const prod = products?.find(p => p.id === productId);
+    if (!prod) return;
+    setProductSearchOpen(false);
+    const currentFinishCost = form.finishId
+      ? ((finishes as any[])?.find((f: any) => f.id === form.finishId)?.totalCost ?? 0)
+      : 0;
+    const newPrice = prod.unitPrice + currentFinishCost;
+    setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2) }));
+  };
+
+  const handleFinishChange = (value: string) => {
+    const base = selectedProduct?.unitPrice ?? parseFloat(form.unitPrice) ?? 0;
+    if (value === "none") {
+      setForm(f => ({ ...f, finishId: null, unitPrice: base.toFixed(2) }));
+    } else {
+      const finish = (finishes as any[])?.find((f: any) => f.id.toString() === value);
+      const total = base + (finish?.totalCost ?? 0);
+      setForm(f => ({ ...f, finishId: Number(value), unitPrice: total.toFixed(2) }));
+    }
+  };
+
+  const handleSave = () => {
+    if (!form.name || !form.productId || !form.unitPrice) return;
+    save.mutate({
+      name: form.name,
+      productId: form.productId,
+      finishId: form.finishId || null,
+      colour: form.colour || null,
+      size: form.size || null,
+      unitPrice: parseFloat(form.unitPrice),
+      notes: form.notes || null,
+    });
+  };
+
+  return (
+    <>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm text-muted-foreground">Pre-built items that default when creating orders for this customer.</p>
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Finished Item</Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+      ) : !items?.length ? (
+        <EmptyState icon={ShoppingBag} label="finished items" onAdd={openAdd} />
+      ) : (
+        <SubTable>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Name</TableHead>
+              <TableHead className="hidden sm:table-cell">Product</TableHead>
+              <TableHead className="hidden md:table-cell">Finish</TableHead>
+              <TableHead className="hidden md:table-cell">Colour / Size</TableHead>
+              <TableHead className="text-right">Unit Price</TableHead>
+              <TableHead className="w-20 text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map(item => (
+              <TableRow key={item.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium">{item.name}</TableCell>
+                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                  {item.productName || "—"}
+                  {item.productSku && <span className="ml-1 text-xs text-muted-foreground/60">({item.productSku})</span>}
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  {item.finishName
+                    ? <span className="inline-flex items-center gap-1"><Sparkles className="w-3 h-3 text-amber-500" />{item.finishName}</span>
+                    : <span className="text-muted-foreground/50">Plain</span>}
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
+                </TableCell>
+                <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(item.unitPrice)}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(item)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this finished item?") && del.mutate(item.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>
+      )}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Finished Item" : "Add Finished Item"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+
+            <div className="grid gap-2">
+              <Label>Name *</Label>
+              <input
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="e.g. Navy Polo — Full Logo"
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Product *</Label>
+              <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                    {selectedProduct ? selectedProduct.name : "Search products..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Type product name or SKU..." />
+                    <CommandList>
+                      <CommandEmpty>No products found.</CommandEmpty>
+                      <CommandGroup>
+                        {products?.map(p => (
+                          <CommandItem key={p.id} value={`${p.name} ${p.sku ?? ""}`} onSelect={() => handleProductSelect(p.id)}>
+                            <Check className={cn("mr-2 h-4 w-4", form.productId === p.id ? "opacity-100" : "opacity-0")} />
+                            <span className="flex-1">{p.name}</span>
+                            {p.sku && <span className="text-xs text-muted-foreground mr-2">{p.sku}</span>}
+                            <span className="text-xs font-semibold">{formatCurrency(p.unitPrice)}</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> Finish</Label>
+              <Select
+                value={form.finishId ? form.finishId.toString() : "none"}
+                onValueChange={handleFinishChange}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Plain (no finish)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Plain (no finish)</SelectItem>
+                  {(finishes as any[])?.map((f: any) => (
+                    <SelectItem key={f.id} value={f.id.toString()}>
+                      {f.name}
+                      {f.totalCost > 0 && <span className="ml-2 text-xs text-muted-foreground">+{formatCurrency(f.totalCost)}</span>}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
+                <input
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="e.g. Navy Blue"
+                  value={form.colour}
+                  onChange={e => setForm(f => ({ ...f, colour: e.target.value }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
+                <input
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="e.g. M"
+                  value={form.size}
+                  onChange={e => setForm(f => ({ ...f, size: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Unit Price *</Label>
+              <input
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={form.unitPrice}
+                onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">Auto-calculated from product + finish — adjust if needed.</p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Notes</Label>
+              <Textarea rows={2} placeholder="Optional notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={save.isPending || !form.name || !form.productId || !form.unitPrice}>
+              {save.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // ─── Main CustomerDetail Page ─────────────────────────────────────────────────
 
 export default function CustomerDetail() {
@@ -843,6 +1117,7 @@ export default function CustomerDetail() {
             <TabsTrigger value="orders" className="flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Order History</TabsTrigger>
             <TabsTrigger value="processes" className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Processes</TabsTrigger>
             <TabsTrigger value="finishes" className="flex items-center gap-1.5"><Shirt className="w-3.5 h-3.5" /> Finishes</TabsTrigger>
+            <TabsTrigger value="wardrobe" className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5" /> Wardrobe</TabsTrigger>
             <TabsTrigger value="employees" className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Employees</TabsTrigger>
           </TabsList>
 
@@ -852,6 +1127,7 @@ export default function CustomerDetail() {
             <TabsContent value="orders" className="mt-0"><OrderHistoryTab customerId={customerId} /></TabsContent>
             <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>
             <TabsContent value="finishes" className="mt-0"><FinishesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="wardrobe" className="mt-0"><WardrobeTab customerId={customerId} /></TabsContent>
             <TabsContent value="employees" className="mt-0"><EmployeesTab customerId={customerId} /></TabsContent>
           </div>
         </Tabs>

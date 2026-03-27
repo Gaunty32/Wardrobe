@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -45,6 +46,7 @@ interface ProductAttribute { id: number; productId: number; type: string; value:
 interface ProductVariant { id: number; productId: number; colour: string | null; size: string | null; stockQty: number | null; price: number | null; }
 interface CustomerFinish { id: number; customerId: number; name: string; description: string | null; totalCost: number; processes: { id: number; name: string; price: number | null }[]; }
 interface CustomerEmployee { id: number; customerId: number; firstName: string; lastName: string | null; department: string | null; }
+interface CustomerFinishedItem { id: number; name: string; productId: number; productName: string | null; productSku: string | null; finishId: number | null; finishName: string | null; colour: string | null; size: string | null; unitPrice: number; notes: string | null; }
 
 function useProductAttributes(productId: number | null) {
   return useQuery<ProductAttribute[]>({
@@ -74,6 +76,14 @@ function useCustomerEmployees(customerId: number | null) {
   return useQuery<CustomerEmployee[]>({
     queryKey: ["customer-employees", customerId],
     queryFn: () => apiFetch(`/customers/${customerId}/employees`),
+    enabled: customerId !== null && customerId > 0,
+  });
+}
+
+function useCustomerFinishedItems(customerId: number | null) {
+  return useQuery<CustomerFinishedItem[]>({
+    queryKey: ["customer-finished-items", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/finished-items`),
     enabled: customerId !== null && customerId > 0,
   });
 }
@@ -111,9 +121,11 @@ export default function OrderDetail() {
 
   const { data: customerFinishes } = useCustomerFinishes(customerId);
   const { data: customerEmployees } = useCustomerEmployees(customerId);
+  const { data: customerFinishedItems } = useCustomerFinishedItems(customerId);
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom">("wardrobe");
   const [item, setItem] = useState({ ...EMPTY_ITEM });
 
   const { data: productAttributes } = useProductAttributes(item.productId);
@@ -169,6 +181,22 @@ export default function OrderDetail() {
   const resetDialog = () => {
     setItem({ ...EMPTY_ITEM });
     setIsAddItemOpen(false);
+    setDialogTab("wardrobe");
+  };
+
+  const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
+    setItem({
+      ...EMPTY_ITEM,
+      productId: fi.productId,
+      productName: fi.name,
+      colour: fi.colour ?? "",
+      size: fi.size ?? "",
+      finishId: fi.finishId ?? null,
+      finishName: fi.finishName ?? null,
+      finishCost: 0,
+      unitPrice: fi.unitPrice.toString(),
+      baseUnitPrice: fi.unitPrice.toString(),
+    });
   };
 
   const handleAddItem = () => {
@@ -414,199 +442,293 @@ export default function OrderDetail() {
         </div>
 
         <Dialog open={isAddItemOpen} onOpenChange={(open) => { if (!open) resetDialog(); else setIsAddItemOpen(true); }}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+            <DialogHeader className="shrink-0">
               <DialogTitle className="font-display">Add Line Item</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-5 py-2">
 
-              {/* Product picker */}
-              <div className="grid gap-2">
-                <Label>Product</Label>
-                <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
-                      {selectedProduct ? selectedProduct.name : "Search products..."}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                    <Command>
-                      <CommandInput placeholder="Type product name or SKU..." />
-                      <CommandList>
-                        <CommandEmpty>No products found.</CommandEmpty>
-                        <CommandGroup>
-                          {products?.map(p => (
-                            <CommandItem key={p.id} value={`${p.name} ${p.sku ?? ""}`} onSelect={() => handleProductSelect(p.id)}>
-                              <Check className={cn("mr-2 h-4 w-4", item.productId === p.id ? "opacity-100" : "opacity-0")} />
-                              <span className="flex-1">{p.name}</span>
-                              {p.sku && <span className="text-xs text-muted-foreground mr-2">{p.sku}</span>}
-                              <span className="text-xs font-semibold">{formatCurrency(p.unitPrice)}</span>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              {/* Colour + Size */}
-              {item.productId && (colours.length > 0 || sizes.length > 0) && (
-                <div className="grid grid-cols-2 gap-4">
-                  {colours.length > 0 && (
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
-                      <Select value={item.colour || "none"} onValueChange={v => setItem(i => ({ ...i, colour: v === "none" ? "" : v }))}>
-                        <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Any / Not specified</SelectItem>
-                          {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
+            <Tabs value={dialogTab} onValueChange={(v) => { setDialogTab(v as "wardrobe" | "custom"); if (v === "custom") setItem({ ...EMPTY_ITEM }); }} className="flex flex-col flex-1 overflow-hidden">
+              <TabsList className="shrink-0 w-full grid grid-cols-2">
+                <TabsTrigger value="wardrobe" className="flex items-center gap-1.5">
+                  <ShoppingBag className="w-3.5 h-3.5" /> Wardrobe
+                  {(customerFinishedItems?.length ?? 0) > 0 && (
+                    <span className="ml-1 inline-flex items-center justify-center rounded-full bg-primary/15 px-1.5 text-[10px] font-semibold text-primary">
+                      {customerFinishedItems!.length}
+                    </span>
                   )}
-                  {sizes.length > 0 && (
-                    <div className="grid gap-2">
-                      <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                      <Select value={item.size || "none"} onValueChange={v => setItem(i => ({ ...i, size: v === "none" ? "" : v }))}>
-                        <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Any / Not specified</SelectItem>
-                          {sizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-                </div>
-              )}
+                </TabsTrigger>
+                <TabsTrigger value="custom" className="flex items-center gap-1.5">
+                  <Package className="w-3.5 h-3.5" /> Custom Item
+                </TabsTrigger>
+              </TabsList>
 
-              {/* Finish */}
-              <div className="grid gap-2">
-                <Label className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> Finish</Label>
-                <Select
-                  value={item.finishId ? item.finishId.toString() : "plain"}
-                  onValueChange={handleFinishSelect}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Plain (no finish)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="plain">Plain (no finish)</SelectItem>
-                    {customerFinishes && customerFinishes.length > 0 && customerFinishes.map(f => (
-                      <SelectItem key={f.id} value={f.id.toString()}>
-                        <span className="flex items-center justify-between w-full gap-4">
-                          <span>{f.name}</span>
-                          {f.totalCost > 0 && <span className="text-xs text-muted-foreground ml-2">+{formatCurrency(f.totalCost)}</span>}
-                        </span>
-                      </SelectItem>
-                    ))}
-                    {(!customerFinishes || customerFinishes.length === 0) && (
-                      <SelectItem value="plain" disabled>No finishes set up for this customer</SelectItem>
-                    )}
-                  </SelectContent>
-                </Select>
-                {item.finishId && item.finishCost > 0 && (
-                  <div className="text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2 space-y-0.5">
-                    <div className="flex justify-between">
-                      <span>Garment</span>
-                      <span className="tabular-nums">{formatCurrency(parseFloat(item.baseUnitPrice) || 0)}</span>
-                    </div>
-                    <div className="flex justify-between text-emerald-700">
-                      <span>Finish ({item.finishName})</span>
-                      <span className="tabular-nums">+{formatCurrency(item.finishCost)}</span>
-                    </div>
-                    <div className="flex justify-between font-semibold text-foreground border-t border-border/40 pt-0.5 mt-0.5">
-                      <span>Unit price</span>
-                      <span className="tabular-nums">{formatCurrency(parseFloat(item.unitPrice) || 0)}</span>
-                    </div>
+              {/* ── WARDROBE TAB ───────────────────────────────────────────── */}
+              <TabsContent value="wardrobe" className="flex-1 overflow-y-auto mt-0 pt-3 data-[state=inactive]:hidden">
+                {!customerFinishedItems?.length ? (
+                  <div className="py-10 text-center text-muted-foreground">
+                    <ShoppingBag className="w-10 h-10 mx-auto mb-3 opacity-20" />
+                    <p className="text-sm font-medium">No wardrobe items yet</p>
+                    <p className="text-xs mt-1 text-muted-foreground/70">Go to this customer's Wardrobe tab to build their wardrobe.</p>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 pb-2">
+                    {customerFinishedItems.map(fi => {
+                      const isSelected = item.productId === fi.productId && item.productName === fi.name && item.unitPrice === fi.unitPrice.toString();
+                      return (
+                        <button
+                          key={fi.id}
+                          type="button"
+                          className={cn(
+                            "w-full text-left rounded-lg border px-4 py-3 transition-all hover:bg-muted/40",
+                            isSelected
+                              ? "border-primary bg-primary/5 ring-1 ring-primary/50"
+                              : "border-border hover:border-muted-foreground/30"
+                          )}
+                          onClick={() => handleWardrobeSelect(fi)}
+                        >
+                          <div className="flex justify-between items-start gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                <p className="font-medium text-sm truncate">{fi.name}</p>
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {fi.productName}
+                                {fi.colour && <span> · {fi.colour}</span>}
+                                {fi.size && <span> · {fi.size}</span>}
+                                {fi.finishName && <span className="text-amber-600"> · <Sparkles className="w-2.5 h-2.5 inline -mt-0.5" /> {fi.finishName}</span>}
+                              </p>
+                            </div>
+                            <span className="text-sm font-semibold shrink-0">{formatCurrency(fi.unitPrice)}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
-              </div>
 
-              {/* Recipient */}
-              <div className="grid gap-3">
-                <Label>Ordered for</Label>
-                <RadioGroup
-                  value={item.recipientType}
-                  onValueChange={(v) => setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }))}
-                  className="flex gap-6"
-                >
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="stock" id="for-stock" />
-                    <Label htmlFor="for-stock" className="font-normal cursor-pointer flex items-center gap-1">
-                      <Archive className="w-3.5 h-3.5 text-muted-foreground" /> Stock
-                    </Label>
+                {/* Qty + Recipient shown once a wardrobe item is selected */}
+                {item.productId && dialogTab === "wardrobe" && (
+                  <div className="border-t border-border/50 pt-4 mt-2 grid gap-4">
+                    <div className="rounded-md bg-muted/40 px-3 py-2 text-sm flex items-center justify-between">
+                      <span className="font-medium truncate">{item.productName}</span>
+                      <span className="font-semibold ml-3 shrink-0">{formatCurrency(parseFloat(item.unitPrice) || 0)} ea</span>
+                    </div>
+
+                    <div className="grid gap-3">
+                      <Label>Ordered for</Label>
+                      <RadioGroup
+                        value={item.recipientType}
+                        onValueChange={(v) => setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }))}
+                        className="flex gap-6"
+                      >
+                        <div className="flex items-center gap-2">
+                          <RadioGroupItem value="stock" id="w-for-stock" />
+                          <Label htmlFor="w-for-stock" className="font-normal cursor-pointer flex items-center gap-1">
+                            <Archive className="w-3.5 h-3.5 text-muted-foreground" /> Stock
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <RadioGroupItem value="person" id="w-for-person" />
+                          <Label htmlFor="w-for-person" className="font-normal cursor-pointer flex items-center gap-1">
+                            <User className="w-3.5 h-3.5 text-muted-foreground" /> Specific person
+                          </Label>
+                        </div>
+                      </RadioGroup>
+                      {item.recipientType === "person" && (
+                        <div className="grid gap-2">
+                          {customerEmployees && customerEmployees.length > 0 && (
+                            <Select onValueChange={handleEmployeeSelect} defaultValue="">
+                              <SelectTrigger><SelectValue placeholder="Pick from employees..." /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__custom__">Enter name manually</SelectItem>
+                                {customerEmployees.map(e => (
+                                  <SelectItem key={e.id} value={e.id.toString()}>
+                                    {[e.firstName, e.lastName].filter(Boolean).join(" ")}
+                                    {e.department ? ` — ${e.department}` : ""}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                          <Input placeholder="Recipient name" value={item.recipientName} onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))} />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="w-qty">Quantity</Label>
+                        <Input id="w-qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="w-price">Unit Price (£)</Label>
+                        <Input id="w-price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
+                      </div>
+                    </div>
+
+                    {item.unitPrice && item.quantity && (
+                      <div className="flex justify-end text-sm text-muted-foreground">
+                        Line total: <span className="font-semibold text-foreground ml-1">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <RadioGroupItem value="person" id="for-person" />
-                    <Label htmlFor="for-person" className="font-normal cursor-pointer flex items-center gap-1">
-                      <User className="w-3.5 h-3.5 text-muted-foreground" /> Specific person
-                    </Label>
-                  </div>
-                </RadioGroup>
-                {item.recipientType === "person" && (
+                )}
+              </TabsContent>
+
+              {/* ── CUSTOM ITEM TAB ────────────────────────────────────────── */}
+              <TabsContent value="custom" className="flex-1 overflow-y-auto mt-0 pt-3 data-[state=inactive]:hidden">
+                <div className="grid gap-5">
+                  {/* Product picker */}
                   <div className="grid gap-2">
-                    {customerEmployees && customerEmployees.length > 0 && (
-                      <Select onValueChange={handleEmployeeSelect} defaultValue="">
-                        <SelectTrigger>
-                          <SelectValue placeholder="Pick from employees..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__custom__">Enter name manually</SelectItem>
-                          {customerEmployees.map(e => (
-                            <SelectItem key={e.id} value={e.id.toString()}>
-                              {[e.firstName, e.lastName].filter(Boolean).join(" ")}
-                              {e.department ? ` — ${e.department}` : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                    <Input
-                      placeholder="Recipient name"
-                      value={item.recipientName}
-                      onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))}
-                    />
+                    <Label>Product</Label>
+                    <Popover open={productSearchOpen} onOpenChange={setProductSearchOpen}>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                          {selectedProduct ? selectedProduct.name : "Search products..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Type product name or SKU..." />
+                          <CommandList>
+                            <CommandEmpty>No products found.</CommandEmpty>
+                            <CommandGroup>
+                              {products?.map(p => (
+                                <CommandItem key={p.id} value={`${p.name} ${p.sku ?? ""}`} onSelect={() => handleProductSelect(p.id)}>
+                                  <Check className={cn("mr-2 h-4 w-4", item.productId === p.id ? "opacity-100" : "opacity-0")} />
+                                  <span className="flex-1">{p.name}</span>
+                                  {p.sku && <span className="text-xs text-muted-foreground mr-2">{p.sku}</span>}
+                                  <span className="text-xs font-semibold">{formatCurrency(p.unitPrice)}</span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </div>
-                )}
-              </div>
 
-              {/* Qty + Price */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="qty">Quantity</Label>
-                  <Input
-                    id="qty"
-                    type="number"
-                    min="1"
-                    value={item.quantity}
-                    onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="price">Unit Price (£)</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={item.unitPrice}
-                    onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))}
-                  />
-                </div>
-              </div>
+                  {/* Colour + Size */}
+                  {item.productId && (colours.length > 0 || sizes.length > 0) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {colours.length > 0 && (
+                        <div className="grid gap-2">
+                          <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
+                          <Select value={item.colour || "none"} onValueChange={v => setItem(i => ({ ...i, colour: v === "none" ? "" : v }))}>
+                            <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Any / Not specified</SelectItem>
+                              {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {sizes.length > 0 && (
+                        <div className="grid gap-2">
+                          <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
+                          <Select value={item.size || "none"} onValueChange={v => setItem(i => ({ ...i, size: v === "none" ? "" : v }))}>
+                            <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Any / Not specified</SelectItem>
+                              {sizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-              {item.unitPrice && item.quantity && (
-                <div className="flex justify-end">
-                  <span className="text-sm text-muted-foreground">
-                    Line total: <span className="font-semibold text-foreground">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span>
-                  </span>
-                </div>
-              )}
-            </div>
+                  {/* Finish */}
+                  <div className="grid gap-2">
+                    <Label className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> Finish</Label>
+                    <Select value={item.finishId ? item.finishId.toString() : "plain"} onValueChange={handleFinishSelect}>
+                      <SelectTrigger><SelectValue placeholder="Plain (no finish)" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="plain">Plain (no finish)</SelectItem>
+                        {customerFinishes?.map(f => (
+                          <SelectItem key={f.id} value={f.id.toString()}>
+                            <span className="flex items-center gap-2">
+                              {f.name}
+                              {f.totalCost > 0 && <span className="text-xs text-muted-foreground">+{formatCurrency(f.totalCost)}</span>}
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {(!customerFinishes || customerFinishes.length === 0) && (
+                          <SelectItem value="plain" disabled>No finishes set up for this customer</SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {item.finishId && item.finishCost > 0 && (
+                      <div className="text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2 space-y-0.5">
+                        <div className="flex justify-between"><span>Garment</span><span className="tabular-nums">{formatCurrency(parseFloat(item.baseUnitPrice) || 0)}</span></div>
+                        <div className="flex justify-between text-emerald-700"><span>Finish ({item.finishName})</span><span className="tabular-nums">+{formatCurrency(item.finishCost)}</span></div>
+                        <div className="flex justify-between font-semibold text-foreground border-t border-border/40 pt-0.5 mt-0.5"><span>Unit price</span><span className="tabular-nums">{formatCurrency(parseFloat(item.unitPrice) || 0)}</span></div>
+                      </div>
+                    )}
+                  </div>
 
-            <DialogFooter>
+                  {/* Recipient */}
+                  <div className="grid gap-3">
+                    <Label>Ordered for</Label>
+                    <RadioGroup
+                      value={item.recipientType}
+                      onValueChange={(v) => setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }))}
+                      className="flex gap-6"
+                    >
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="stock" id="for-stock" />
+                        <Label htmlFor="for-stock" className="font-normal cursor-pointer flex items-center gap-1"><Archive className="w-3.5 h-3.5 text-muted-foreground" /> Stock</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="person" id="for-person" />
+                        <Label htmlFor="for-person" className="font-normal cursor-pointer flex items-center gap-1"><User className="w-3.5 h-3.5 text-muted-foreground" /> Specific person</Label>
+                      </div>
+                    </RadioGroup>
+                    {item.recipientType === "person" && (
+                      <div className="grid gap-2">
+                        {customerEmployees && customerEmployees.length > 0 && (
+                          <Select onValueChange={handleEmployeeSelect} defaultValue="">
+                            <SelectTrigger><SelectValue placeholder="Pick from employees..." /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__custom__">Enter name manually</SelectItem>
+                              {customerEmployees.map(e => (
+                                <SelectItem key={e.id} value={e.id.toString()}>
+                                  {[e.firstName, e.lastName].filter(Boolean).join(" ")}
+                                  {e.department ? ` — ${e.department}` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        <Input placeholder="Recipient name" value={item.recipientName} onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))} />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Qty + Price */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="qty">Quantity</Label>
+                      <Input id="qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="price">Unit Price (£)</Label>
+                      <Input id="price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  {item.unitPrice && item.quantity && (
+                    <div className="flex justify-end text-sm text-muted-foreground">
+                      Line total: <span className="font-semibold text-foreground ml-1">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            <DialogFooter className="shrink-0 border-t border-border/40 pt-4 mt-2">
               <Button variant="outline" onClick={resetDialog}>Cancel</Button>
               <Button
                 onClick={handleAddItem}

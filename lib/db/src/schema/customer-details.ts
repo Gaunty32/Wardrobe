@@ -67,6 +67,20 @@ export const customerFinishProductsTable = pgTable("customer_finish_products", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const customerFinishedItemsTable = pgTable("customer_finished_items", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  productId: integer("product_id").notNull(),
+  finishId: integer("finish_id"),
+  colour: text("colour"),
+  size: text("size"),
+  unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 export const customerEmployeesTable = pgTable("customer_employees", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),

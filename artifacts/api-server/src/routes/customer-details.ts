@@ -9,6 +9,7 @@ import {
   customerFinishesTable,
   customerFinishProcessesTable,
   customerFinishProductsTable,
+  customerFinishedItemsTable,
   customerEmployeesTable,
   customersTable,
   ordersTable,
@@ -396,6 +397,91 @@ router.delete("/customers/:customerId/employees/:id", async (req, res): Promise<
     .where(and(eq(customerEmployeesTable.id, p.data.id), eq(customerEmployeesTable.customerId, p.data.customerId)))
     .returning();
   if (!row) { res.status(404).json({ error: "Employee not found" }); return; }
+  res.sendStatus(204);
+});
+
+// ─── Finished Items (Wardrobe) ────────────────────────────────────────────────
+
+const finishedItemBody = z.object({
+  name: z.string().min(1),
+  productId: z.number().int().positive(),
+  finishId: z.number().int().positive().optional().nullable(),
+  colour: z.string().optional().nullable(),
+  size: z.string().optional().nullable(),
+  unitPrice: z.number().min(0),
+  notes: z.string().optional().nullable(),
+});
+
+router.get("/customers/:customerId/finished-items", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+
+  const rows = await db.select({
+    id: customerFinishedItemsTable.id,
+    customerId: customerFinishedItemsTable.customerId,
+    name: customerFinishedItemsTable.name,
+    productId: customerFinishedItemsTable.productId,
+    productName: productsTable.name,
+    productSku: productsTable.sku,
+    finishId: customerFinishedItemsTable.finishId,
+    colour: customerFinishedItemsTable.colour,
+    size: customerFinishedItemsTable.size,
+    unitPrice: customerFinishedItemsTable.unitPrice,
+    notes: customerFinishedItemsTable.notes,
+    createdAt: customerFinishedItemsTable.createdAt,
+  })
+    .from(customerFinishedItemsTable)
+    .leftJoin(productsTable, eq(customerFinishedItemsTable.productId, productsTable.id))
+    .where(eq(customerFinishedItemsTable.customerId, p.data.customerId))
+    .orderBy(customerFinishedItemsTable.name);
+
+  const finishes = await db.select({ id: customerFinishesTable.id, name: customerFinishesTable.name })
+    .from(customerFinishesTable)
+    .where(eq(customerFinishesTable.customerId, p.data.customerId));
+  const finishMap = new Map(finishes.map(f => [f.id, f.name]));
+
+  res.json(rows.map(r => ({
+    ...r,
+    unitPrice: r.unitPrice != null ? parseFloat(r.unitPrice) : 0,
+    finishName: r.finishId ? (finishMap.get(r.finishId) ?? null) : null,
+  })));
+});
+
+router.post("/customers/:customerId/finished-items", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const body = finishedItemBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.insert(customerFinishedItemsTable)
+    .values({ ...body.data, customerId: p.data.customerId, unitPrice: String(body.data.unitPrice) })
+    .returning();
+  res.status(201).json({ ...row, unitPrice: parseFloat(row.unitPrice!) });
+});
+
+router.patch("/customers/:customerId/finished-items/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = finishedItemBody.partial().safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const updateData: Record<string, unknown> = { ...body.data, updatedAt: new Date() };
+  if (body.data.unitPrice != null) updateData.unitPrice = String(body.data.unitPrice);
+  const [row] = await db.update(customerFinishedItemsTable)
+    .set(updateData)
+    .where(and(eq(customerFinishedItemsTable.id, p.data.id), eq(customerFinishedItemsTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Finished item not found" }); return; }
+  res.json({ ...row, unitPrice: parseFloat(row.unitPrice!) });
+});
+
+router.delete("/customers/:customerId/finished-items/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const [row] = await db.delete(customerFinishedItemsTable)
+    .where(and(eq(customerFinishedItemsTable.id, p.data.id), eq(customerFinishedItemsTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Finished item not found" }); return; }
   res.sendStatus(204);
 });
 

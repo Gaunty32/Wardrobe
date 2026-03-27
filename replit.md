@@ -58,9 +58,10 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - `/orders` → Orders list
 - `/orders/:id` → Order detail with line items (finish cost auto-added to unit price)
 - `/customers` → Customers list
-- `/customers/:id` → Customer detail (tabs: Delivery Addresses, Contacts, Order History, Processes, Finishes, Employees)
+- `/customers/:id` → Customer detail (tabs: Delivery Addresses, Contacts, Order History, Processes, Finishes, Wardrobe, Employees)
   - Processes tab: name, type, placement, price (£), process stock item link
   - Finishes tab: each finish shows constituent processes with prices + total cost badge; garment (product) assignments
+  - Wardrobe tab: per-customer list of Finished Items (product + finish + colour/size + price); used to pre-populate orders
 - `/products` → Products list — grouped by category with filter pills; category field on add/edit; clickable rows
 - `/products/:id` → Product detail (tabs: Details, Colours, Sizes)
 - `/process-stock` → Process Stock (physical materials for decoration)
