@@ -24,11 +24,11 @@ export default function Layout({ children }: LayoutProps) {
       {/* Sidebar Desktop */}
       <aside className="hidden md:flex w-64 flex-col fixed inset-y-0 z-10" style={{ backgroundColor: "hsl(var(--sidebar))" }}>
         {/* Logo */}
-        <div className="h-20 flex items-center justify-center px-5 border-b border-white/10">
+        <div className="flex items-center justify-center px-4 py-5 border-b border-white/10">
           <img
-            src={`${import.meta.env.BASE_URL}images/sbs-logo.jpg`}
+            src={`${import.meta.env.BASE_URL}images/sbs-logo.png`}
             alt="Select Branding Solutions"
-            className="h-10 w-auto object-contain"
+            className="w-full h-auto object-contain"
           />
         </div>
 
@@ -69,7 +69,7 @@ export default function Layout({ children }: LayoutProps) {
         {/* Mobile Header */}
         <header className="md:hidden h-16 flex items-center px-4 border-b border-border/60 sticky top-0 z-20" style={{ backgroundColor: "hsl(var(--sidebar))" }}>
           <img
-            src={`${import.meta.env.BASE_URL}images/sbs-logo.jpg`}
+            src={`${import.meta.env.BASE_URL}images/sbs-logo.png`}
             alt="Select Branding Solutions"
             className="h-9 w-auto object-contain"
           />
