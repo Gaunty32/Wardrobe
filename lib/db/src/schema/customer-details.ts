@@ -67,28 +67,56 @@ export const customerFinishProductsTable = pgTable("customer_finish_products", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const customerFinishedItemsTable = pgTable("customer_finished_items", {
+// ─── Roles ────────────────────────────────────────────────────────────────────
+
+export const customerRolesTable = pgTable("customer_roles", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  productId: integer("product_id").notNull(),
-  finishId: integer("finish_id"),
-  colour: text("colour"),
-  size: text("size"),
-  unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
-  notes: text("notes"),
+  description: text("description"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
+
+// ─── Employees ────────────────────────────────────────────────────────────────
 
 export const customerEmployeesTable = pgTable("customer_employees", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
   firstName: text("first_name").notNull(),
   lastName: text("last_name"),
+  jobTitle: text("job_title"),
+  roleId: integer("role_id"),
   email: text("email"),
   phone: text("phone"),
   department: text("department"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const customerEmployeeSizesTable = pgTable("customer_employee_sizes", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employee_id").notNull().references(() => customerEmployeesTable.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  size: text("size").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+// ─── Finished Items (Wardrobe) ────────────────────────────────────────────────
+
+export const customerFinishedItemsTable = pgTable("customer_finished_items", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
+  roleId: integer("role_id"),
+  name: text("name").notNull(),
+  productId: integer("product_id").notNull(),
+  finishId: integer("finish_id"),
+  colour: text("colour"),
+  size: text("size"),
+  unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

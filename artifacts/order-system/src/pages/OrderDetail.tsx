@@ -45,8 +45,9 @@ async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<
 interface ProductAttribute { id: number; productId: number; type: string; value: string; }
 interface ProductVariant { id: number; productId: number; colour: string | null; size: string | null; stockQty: number | null; price: number | null; }
 interface CustomerFinish { id: number; customerId: number; name: string; description: string | null; totalCost: number; processes: { id: number; name: string; price: number | null }[]; }
-interface CustomerEmployee { id: number; customerId: number; firstName: string; lastName: string | null; department: string | null; }
-interface CustomerFinishedItem { id: number; name: string; productId: number; productName: string | null; productSku: string | null; finishId: number | null; finishName: string | null; colour: string | null; size: string | null; unitPrice: number; notes: string | null; }
+interface EmployeeSize { id: number; label: string; size: string; }
+interface CustomerEmployee { id: number; customerId: number; firstName: string; lastName: string | null; jobTitle: string | null; roleId: number | null; roleName: string | null; department: string | null; sizes: EmployeeSize[]; }
+interface CustomerFinishedItem { id: number; name: string; productId: number; roleId: number | null; roleName: string | null; productName: string | null; productSku: string | null; finishId: number | null; finishName: string | null; colour: string | null; size: string | null; unitPrice: number; notes: string | null; }
 
 function useProductAttributes(productId: number | null) {
   return useQuery<ProductAttribute[]>({
@@ -127,6 +128,8 @@ export default function OrderDetail() {
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom">("wardrobe");
   const [item, setItem] = useState({ ...EMPTY_ITEM });
+  const [selectedEmployee, setSelectedEmployee] = useState<CustomerEmployee | null>(null);
+  const [isNewPerson, setIsNewPerson] = useState(false);
 
   const { data: productAttributes } = useProductAttributes(item.productId);
   const { data: productVariants } = useProductVariants(item.productId);
@@ -167,12 +170,16 @@ export default function OrderDetail() {
   };
 
   const handleEmployeeSelect = (value: string) => {
-    if (value === "__custom__") {
+    if (value === "__new__") {
+      setSelectedEmployee(null);
+      setIsNewPerson(true);
       setItem(i => ({ ...i, recipientName: "" }));
     } else {
       const emp = customerEmployees?.find(e => e.id.toString() === value);
       if (emp) {
         const name = [emp.firstName, emp.lastName].filter(Boolean).join(" ");
+        setSelectedEmployee(emp);
+        setIsNewPerson(false);
         setItem(i => ({ ...i, recipientName: name }));
       }
     }
@@ -180,6 +187,8 @@ export default function OrderDetail() {
 
   const resetDialog = () => {
     setItem({ ...EMPTY_ITEM });
+    setSelectedEmployee(null);
+    setIsNewPerson(false);
     setIsAddItemOpen(false);
     setDialogTab("wardrobe");
   };
@@ -472,38 +481,49 @@ export default function OrderDetail() {
                   </div>
                 ) : (
                   <div className="grid gap-2 pb-2">
-                    {customerFinishedItems.map(fi => {
-                      const isSelected = item.productId === fi.productId && item.productName === fi.name && item.unitPrice === fi.unitPrice.toString();
-                      return (
-                        <button
-                          key={fi.id}
-                          type="button"
-                          className={cn(
-                            "w-full text-left rounded-lg border px-4 py-3 transition-all hover:bg-muted/40",
-                            isSelected
-                              ? "border-primary bg-primary/5 ring-1 ring-primary/50"
-                              : "border-border hover:border-muted-foreground/30"
-                          )}
-                          onClick={() => handleWardrobeSelect(fi)}
-                        >
-                          <div className="flex justify-between items-start gap-3">
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                                <p className="font-medium text-sm truncate">{fi.name}</p>
+                    {selectedEmployee?.roleId && (
+                      <p className="text-xs text-primary font-medium flex items-center gap-1 mb-1">
+                        <User className="w-3 h-3" /> Showing {selectedEmployee.roleName ? `"${selectedEmployee.roleName}"` : "company-wide"} items for {[selectedEmployee.firstName, selectedEmployee.lastName].filter(Boolean).join(" ")}
+                      </p>
+                    )}
+                    {customerFinishedItems
+                      .filter(fi => !selectedEmployee?.roleId || fi.roleId === null || fi.roleId === selectedEmployee.roleId)
+                      .map(fi => {
+                        const isSelected = item.productId === fi.productId && item.productName === fi.name && item.unitPrice === fi.unitPrice.toString();
+                        const isRoleMatch = selectedEmployee?.roleId && fi.roleId === selectedEmployee.roleId;
+                        return (
+                          <button
+                            key={fi.id}
+                            type="button"
+                            className={cn(
+                              "w-full text-left rounded-lg border px-4 py-3 transition-all hover:bg-muted/40",
+                              isSelected
+                                ? "border-primary bg-primary/5 ring-1 ring-primary/50"
+                                : isRoleMatch
+                                  ? "border-primary/30 bg-primary/5"
+                                  : "border-border hover:border-muted-foreground/30"
+                            )}
+                            onClick={() => handleWardrobeSelect(fi)}
+                          >
+                            <div className="flex justify-between items-start gap-3">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
+                                  <p className="font-medium text-sm truncate">{fi.name}</p>
+                                  {fi.roleName && <span className="text-[10px] font-medium text-primary/70 bg-primary/10 rounded px-1 shrink-0">{fi.roleName}</span>}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                  {fi.productName}
+                                  {fi.colour && <span> · {fi.colour}</span>}
+                                  {fi.size && <span> · {fi.size}</span>}
+                                  {fi.finishName && <span className="text-amber-600"> · <Sparkles className="w-2.5 h-2.5 inline -mt-0.5" /> {fi.finishName}</span>}
+                                </p>
                               </div>
-                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                {fi.productName}
-                                {fi.colour && <span> · {fi.colour}</span>}
-                                {fi.size && <span> · {fi.size}</span>}
-                                {fi.finishName && <span className="text-amber-600"> · <Sparkles className="w-2.5 h-2.5 inline -mt-0.5" /> {fi.finishName}</span>}
-                              </p>
+                              <span className="text-sm font-semibold shrink-0">{formatCurrency(fi.unitPrice)}</span>
                             </div>
-                            <span className="text-sm font-semibold shrink-0">{formatCurrency(fi.unitPrice)}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
+                          </button>
+                        );
+                      })}
                   </div>
                 )}
 
@@ -519,7 +539,10 @@ export default function OrderDetail() {
                       <Label>Ordered for</Label>
                       <RadioGroup
                         value={item.recipientType}
-                        onValueChange={(v) => setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }))}
+                        onValueChange={(v) => {
+                          setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }));
+                          if (v !== "person") { setSelectedEmployee(null); setIsNewPerson(false); }
+                        }}
                         className="flex gap-6"
                       >
                         <div className="flex items-center gap-2">
@@ -535,23 +558,42 @@ export default function OrderDetail() {
                           </Label>
                         </div>
                       </RadioGroup>
+
                       {item.recipientType === "person" && (
                         <div className="grid gap-2">
                           {customerEmployees && customerEmployees.length > 0 && (
-                            <Select onValueChange={handleEmployeeSelect} defaultValue="">
+                            <Select onValueChange={handleEmployeeSelect} value={selectedEmployee ? selectedEmployee.id.toString() : isNewPerson ? "__new__" : ""}>
                               <SelectTrigger><SelectValue placeholder="Pick from employees..." /></SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="__custom__">Enter name manually</SelectItem>
                                 {customerEmployees.map(e => (
                                   <SelectItem key={e.id} value={e.id.toString()}>
-                                    {[e.firstName, e.lastName].filter(Boolean).join(" ")}
-                                    {e.department ? ` — ${e.department}` : ""}
+                                    <div className="flex flex-col items-start">
+                                      <span>{[e.firstName, e.lastName].filter(Boolean).join(" ")}</span>
+                                      {(e.jobTitle || e.roleName) && <span className="text-xs text-muted-foreground">{[e.jobTitle, e.roleName].filter(Boolean).join(" · ")}</span>}
+                                    </div>
                                   </SelectItem>
                                 ))}
+                                <SelectItem value="__new__">+ Add new person...</SelectItem>
                               </SelectContent>
                             </Select>
                           )}
-                          <Input placeholder="Recipient name" value={item.recipientName} onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))} />
+
+                          {selectedEmployee?.sizes && selectedEmployee.sizes.length > 0 && (
+                            <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700">
+                              <p className="font-medium mb-1">Saved sizes for {selectedEmployee.firstName}:</p>
+                              <div className="flex flex-wrap gap-2">
+                                {selectedEmployee.sizes.map(s => (
+                                  <span key={s.id} className="bg-white border border-blue-200 rounded px-2 py-0.5 font-medium">{s.label}: {s.size}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <Input
+                            placeholder={customerEmployees && customerEmployees.length > 0 ? "Or type a name..." : "Recipient name"}
+                            value={item.recipientName}
+                            onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))}
+                          />
                         </div>
                       )}
                     </div>
@@ -674,7 +716,10 @@ export default function OrderDetail() {
                     <Label>Ordered for</Label>
                     <RadioGroup
                       value={item.recipientType}
-                      onValueChange={(v) => setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }))}
+                      onValueChange={(v) => {
+                        setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }));
+                        if (v !== "person") { setSelectedEmployee(null); setIsNewPerson(false); }
+                      }}
                       className="flex gap-6"
                     >
                       <div className="flex items-center gap-2">
@@ -689,20 +734,36 @@ export default function OrderDetail() {
                     {item.recipientType === "person" && (
                       <div className="grid gap-2">
                         {customerEmployees && customerEmployees.length > 0 && (
-                          <Select onValueChange={handleEmployeeSelect} defaultValue="">
+                          <Select onValueChange={handleEmployeeSelect} value={selectedEmployee ? selectedEmployee.id.toString() : isNewPerson ? "__new__" : ""}>
                             <SelectTrigger><SelectValue placeholder="Pick from employees..." /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="__custom__">Enter name manually</SelectItem>
                               {customerEmployees.map(e => (
                                 <SelectItem key={e.id} value={e.id.toString()}>
-                                  {[e.firstName, e.lastName].filter(Boolean).join(" ")}
-                                  {e.department ? ` — ${e.department}` : ""}
+                                  <div className="flex flex-col items-start">
+                                    <span>{[e.firstName, e.lastName].filter(Boolean).join(" ")}</span>
+                                    {(e.jobTitle || e.roleName) && <span className="text-xs text-muted-foreground">{[e.jobTitle, e.roleName].filter(Boolean).join(" · ")}</span>}
+                                  </div>
                                 </SelectItem>
                               ))}
+                              <SelectItem value="__new__">+ Add new person...</SelectItem>
                             </SelectContent>
                           </Select>
                         )}
-                        <Input placeholder="Recipient name" value={item.recipientName} onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))} />
+                        {selectedEmployee?.sizes && selectedEmployee.sizes.length > 0 && (
+                          <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700">
+                            <p className="font-medium mb-1">Saved sizes for {selectedEmployee.firstName}:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedEmployee.sizes.map(s => (
+                                <span key={s.id} className="bg-white border border-blue-200 rounded px-2 py-0.5 font-medium">{s.label}: {s.size}</span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <Input
+                          placeholder={customerEmployees && customerEmployees.length > 0 ? "Or type a name..." : "Recipient name"}
+                          value={item.recipientName}
+                          onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))}
+                        />
                       </div>
                     )}
                   </div>

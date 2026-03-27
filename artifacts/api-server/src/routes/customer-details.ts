@@ -10,7 +10,9 @@ import {
   customerFinishProcessesTable,
   customerFinishProductsTable,
   customerFinishedItemsTable,
+  customerRolesTable,
   customerEmployeesTable,
+  customerEmployeeSizesTable,
   customersTable,
   ordersTable,
   productsTable,
@@ -25,17 +27,21 @@ const finishProcessParam = z.object({
   finishId: z.coerce.number().int().positive(),
   processId: z.coerce.number().int().positive(),
 });
-const finishIdParam = z.object({
-  customerId: z.coerce.number().int().positive(),
-  finishId: z.coerce.number().int().positive(),
-});
 const finishProductParam = z.object({
   customerId: z.coerce.number().int().positive(),
   finishId: z.coerce.number().int().positive(),
   productId: z.coerce.number().int().positive(),
 });
+const employeeSizeParam = z.object({
+  customerId: z.coerce.number().int().positive(),
+  employeeId: z.coerce.number().int().positive(),
+  sizeId: z.coerce.number().int().positive(),
+});
+const employeeSubParam = z.object({
+  customerId: z.coerce.number().int().positive(),
+  employeeId: z.coerce.number().int().positive(),
+});
 
-// ── Helper: verify customer exists ──────────────────────────────────────────
 async function getCustomer(id: number) {
   const [c] = await db.select().from(customersTable).where(eq(customersTable.id, id));
   return c;
@@ -164,10 +170,7 @@ const processBody = z.object({
 });
 
 function processToJson(row: Record<string, unknown>) {
-  return {
-    ...row,
-    price: row.price != null ? parseFloat(row.price as string) : null,
-  };
+  return { ...row, price: row.price != null ? parseFloat(row.price as string) : null };
 }
 
 router.get("/customers/:customerId/processes", async (req, res): Promise<void> => {
@@ -318,8 +321,6 @@ router.delete("/customers/:customerId/finishes/:finishId/processes/:processId", 
   res.sendStatus(204);
 });
 
-// ─── Finish Garments (product assignments) ───────────────────────────────────
-
 router.post("/customers/:customerId/finishes/:finishId/products/:productId", async (req, res): Promise<void> => {
   const p = finishProductParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
@@ -346,14 +347,67 @@ router.delete("/customers/:customerId/finishes/:finishId/products/:productId", a
   res.sendStatus(204);
 });
 
+// ─── Roles ────────────────────────────────────────────────────────────────────
+
+const roleBody = z.object({
+  name: z.string().min(1),
+  description: z.string().optional().nullable(),
+});
+
+router.get("/customers/:customerId/roles", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const rows = await db.select().from(customerRolesTable)
+    .where(eq(customerRolesTable.customerId, p.data.customerId))
+    .orderBy(customerRolesTable.name);
+  res.json(rows);
+});
+
+router.post("/customers/:customerId/roles", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const body = roleBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.insert(customerRolesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
+  res.status(201).json(row);
+});
+
+router.patch("/customers/:customerId/roles/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = roleBody.partial().safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.update(customerRolesTable)
+    .set({ ...body.data, updatedAt: new Date() })
+    .where(and(eq(customerRolesTable.id, p.data.id), eq(customerRolesTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Role not found" }); return; }
+  res.json(row);
+});
+
+router.delete("/customers/:customerId/roles/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const [row] = await db.delete(customerRolesTable)
+    .where(and(eq(customerRolesTable.id, p.data.id), eq(customerRolesTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Role not found" }); return; }
+  res.sendStatus(204);
+});
+
 // ─── Employees ───────────────────────────────────────────────────────────────
 
 const employeeBody = z.object({
   firstName: z.string().min(1),
   lastName: z.string().optional().nullable(),
+  jobTitle: z.string().optional().nullable(),
+  roleId: z.number().int().positive().optional().nullable(),
   email: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   department: z.string().optional().nullable(),
+  isActive: z.boolean().optional(),
   notes: z.string().optional().nullable(),
 });
 
@@ -361,10 +415,46 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
   const p = customerIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
-  const rows = await db.select().from(customerEmployeesTable)
+
+  const showInactive = req.query.showInactive === "true";
+
+  const allEmployees = await db.select({
+    id: customerEmployeesTable.id,
+    customerId: customerEmployeesTable.customerId,
+    firstName: customerEmployeesTable.firstName,
+    lastName: customerEmployeesTable.lastName,
+    jobTitle: customerEmployeesTable.jobTitle,
+    roleId: customerEmployeesTable.roleId,
+    email: customerEmployeesTable.email,
+    phone: customerEmployeesTable.phone,
+    department: customerEmployeesTable.department,
+    isActive: customerEmployeesTable.isActive,
+    notes: customerEmployeesTable.notes,
+    createdAt: customerEmployeesTable.createdAt,
+    updatedAt: customerEmployeesTable.updatedAt,
+  })
+    .from(customerEmployeesTable)
     .where(eq(customerEmployeesTable.customerId, p.data.customerId))
     .orderBy(customerEmployeesTable.lastName);
-  res.json(rows);
+
+  const roles = await db.select().from(customerRolesTable)
+    .where(eq(customerRolesTable.customerId, p.data.customerId));
+  const roleMap = new Map(roles.map(r => [r.id, r.name]));
+
+  const filtered = showInactive ? allEmployees : allEmployees.filter(e => e.isActive);
+
+  const withRoles = await Promise.all(filtered.map(async (emp) => {
+    const sizes = await db.select().from(customerEmployeeSizesTable)
+      .where(eq(customerEmployeeSizesTable.employeeId, emp.id))
+      .orderBy(customerEmployeeSizesTable.label);
+    return {
+      ...emp,
+      roleName: emp.roleId ? (roleMap.get(emp.roleId) ?? null) : null,
+      sizes,
+    };
+  }));
+
+  res.json(withRoles);
 });
 
 router.post("/customers/:customerId/employees", async (req, res): Promise<void> => {
@@ -374,7 +464,7 @@ router.post("/customers/:customerId/employees", async (req, res): Promise<void> 
   const body = employeeBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const [row] = await db.insert(customerEmployeesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
-  res.status(201).json(row);
+  res.status(201).json({ ...row, roleName: null, sizes: [] });
 });
 
 router.patch("/customers/:customerId/employees/:id", async (req, res): Promise<void> => {
@@ -400,10 +490,58 @@ router.delete("/customers/:customerId/employees/:id", async (req, res): Promise<
   res.sendStatus(204);
 });
 
+// ─── Employee Sizes ───────────────────────────────────────────────────────────
+
+const sizeBody = z.object({
+  label: z.string().min(1),
+  size: z.string().min(1),
+});
+
+router.get("/customers/:customerId/employees/:employeeId/sizes", async (req, res): Promise<void> => {
+  const p = employeeSubParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const rows = await db.select().from(customerEmployeeSizesTable)
+    .where(eq(customerEmployeeSizesTable.employeeId, p.data.employeeId))
+    .orderBy(customerEmployeeSizesTable.label);
+  res.json(rows);
+});
+
+router.post("/customers/:customerId/employees/:employeeId/sizes", async (req, res): Promise<void> => {
+  const p = employeeSubParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = sizeBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.insert(customerEmployeeSizesTable)
+    .values({ ...body.data, employeeId: p.data.employeeId })
+    .returning();
+  res.status(201).json(row);
+});
+
+router.patch("/customers/:customerId/employees/:employeeId/sizes/:sizeId", async (req, res): Promise<void> => {
+  const p = employeeSizeParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = sizeBody.partial().safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.update(customerEmployeeSizesTable)
+    .set({ ...body.data, updatedAt: new Date() })
+    .where(eq(customerEmployeeSizesTable.id, p.data.sizeId))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Size not found" }); return; }
+  res.json(row);
+});
+
+router.delete("/customers/:customerId/employees/:employeeId/sizes/:sizeId", async (req, res): Promise<void> => {
+  const p = employeeSizeParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  await db.delete(customerEmployeeSizesTable).where(eq(customerEmployeeSizesTable.id, p.data.sizeId));
+  res.sendStatus(204);
+});
+
 // ─── Finished Items (Wardrobe) ────────────────────────────────────────────────
 
 const finishedItemBody = z.object({
   name: z.string().min(1),
+  roleId: z.number().int().positive().optional().nullable(),
   productId: z.number().int().positive(),
   finishId: z.number().int().positive().optional().nullable(),
   colour: z.string().optional().nullable(),
@@ -420,6 +558,7 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
   const rows = await db.select({
     id: customerFinishedItemsTable.id,
     customerId: customerFinishedItemsTable.customerId,
+    roleId: customerFinishedItemsTable.roleId,
     name: customerFinishedItemsTable.name,
     productId: customerFinishedItemsTable.productId,
     productName: productsTable.name,
@@ -441,10 +580,16 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
     .where(eq(customerFinishesTable.customerId, p.data.customerId));
   const finishMap = new Map(finishes.map(f => [f.id, f.name]));
 
+  const roles = await db.select({ id: customerRolesTable.id, name: customerRolesTable.name })
+    .from(customerRolesTable)
+    .where(eq(customerRolesTable.customerId, p.data.customerId));
+  const roleMap = new Map(roles.map(r => [r.id, r.name]));
+
   res.json(rows.map(r => ({
     ...r,
     unitPrice: r.unitPrice != null ? parseFloat(r.unitPrice) : 0,
     finishName: r.finishId ? (finishMap.get(r.finishId) ?? null) : null,
+    roleName: r.roleId ? (roleMap.get(r.roleId) ?? null) : null,
   })));
 });
 

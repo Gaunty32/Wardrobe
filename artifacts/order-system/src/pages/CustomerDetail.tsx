@@ -699,61 +699,59 @@ function FinishesTab({ customerId }: { customerId: number }) {
   );
 }
 
-// ─── Employees Tab ────────────────────────────────────────────────────────────
+// ─── Roles Tab ────────────────────────────────────────────────────────────────
 
-function EmployeesTab({ customerId }: { customerId: number }) {
+function RolesTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: employees, isLoading } = useSubResource<any>(customerId, "employees");
+  const { data: roles, isLoading } = useSubResource<any>(customerId, "roles");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { firstName: "", lastName: "", email: "", phone: "", department: "", notes: "" };
+  const blank = { name: "", description: "" };
   const [form, setForm] = useState(blank);
 
-  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] });
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "roles"] });
 
   const save = useMutation({
     mutationFn: (data: any) => editing
-      ? apiFetch(`/customers/${customerId}/employees/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
-      : apiFetch(`/customers/${customerId}/employees`, { method: "POST", body: JSON.stringify(data) }),
+      ? apiFetch(`/customers/${customerId}/roles/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/roles`, { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
-    onError: () => toast({ title: "Error", description: "Could not save employee", variant: "destructive" }),
+    onError: () => toast({ title: "Error", description: "Could not save role", variant: "destructive" }),
   });
 
   const del = useMutation({
-    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/employees/${id}`, { method: "DELETE" }),
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/roles/${id}`, { method: "DELETE" }),
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (e: any) => { setForm({ firstName: e.firstName||"", lastName: e.lastName||"", email: e.email||"", phone: e.phone||"", department: e.department||"", notes: e.notes||"" }); setEditing(e); setOpen(true); };
+  const openEdit = (r: any) => { setForm({ name: r.name || "", description: r.description || "" }); setEditing(r); setOpen(true); };
 
   return (
     <>
-      <div className="flex justify-end mb-4">
-        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Employee</Button>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm text-muted-foreground">Roles define job types — each role can have its own wardrobe in the Wardrobe tab.</p>
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Role</Button>
       </div>
+
       {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-        : !employees?.length ? <EmptyState icon={UserCheck} label="employees" onAdd={openAdd} />
+        : !roles?.length ? <EmptyState icon={Layers} label="roles" onAdd={openAdd} />
         : <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
-            <TableHead>Name</TableHead>
-            <TableHead className="hidden md:table-cell">Department</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead className="hidden md:table-cell">Phone</TableHead>
+            <TableHead>Role Name</TableHead>
+            <TableHead className="hidden md:table-cell">Description</TableHead>
             <TableHead className="w-20 text-right">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            {employees.map((e: any) => (
-              <TableRow key={e.id} className="group hover:bg-muted/30">
-                <TableCell className="font-medium">{[e.firstName, e.lastName].filter(Boolean).join(' ')}</TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.department || '—'}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{e.email || '—'}</TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.phone || '—'}</TableCell>
+            {roles.map((r: any) => (
+              <TableRow key={r.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium">{r.name}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{r.description || '—'}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(e)}><Edit2 className="w-3 h-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this employee?") && del.mutate(e.id)}><Trash2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(r)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this role?") && del.mutate(r.id)}><Trash2 className="w-3 h-3" /></Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -762,18 +760,220 @@ function EmployeesTab({ customerId }: { customerId: number }) {
         </SubTable>}
 
       <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Role" : "Add Role"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Role Name *</Label><Input placeholder="e.g. Manager, Driver, Sales Rep" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Description</Label><Textarea rows={2} placeholder="Optional description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ─── Employees Tab ────────────────────────────────────────────────────────────
+
+function EmployeesTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [showInactive, setShowInactive] = useState(false);
+  const { data: roles } = useSubResource<any>(customerId, "roles");
+
+  const { data: employees, isLoading } = useQuery<any[]>({
+    queryKey: ["customer", customerId, "employees", showInactive],
+    queryFn: () => apiFetch(`/customers/${customerId}/employees${showInactive ? "?showInactive=true" : ""}`),
+    enabled: !!customerId,
+  });
+
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [sizes, setSizes] = useState<{ label: string; size: string }[]>([]);
+
+  const blank = { firstName: "", lastName: "", jobTitle: "", roleId: null as number | null, email: "", phone: "", department: "", notes: "" };
+  const [form, setForm] = useState<typeof blank>(blank);
+
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] });
+    qc.invalidateQueries({ queryKey: ["customer", customerId, "employees", true] });
+    qc.invalidateQueries({ queryKey: ["customer", customerId, "employees", false] });
+  };
+
+  const save = useMutation({
+    mutationFn: async (data: any) => {
+      const emp = editing
+        ? await apiFetch(`/customers/${customerId}/employees/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+        : await apiFetch(`/customers/${customerId}/employees`, { method: "POST", body: JSON.stringify(data) });
+      const empAny = emp as any;
+      const empId = empAny.id;
+      if (editing) {
+        await apiFetch(`/customers/${customerId}/employees/${empId}/sizes`, { method: "DELETE" }).catch(() => {});
+        const existingSizes = editing.sizes || [];
+        for (const s of existingSizes) {
+          await apiFetch(`/customers/${customerId}/employees/${empId}/sizes/${s.id}`, { method: "DELETE" }).catch(() => {});
+        }
+      }
+      for (const s of sizes) {
+        if (s.label && s.size) {
+          await apiFetch(`/customers/${customerId}/employees/${empId}/sizes`, { method: "POST", body: JSON.stringify(s) });
+        }
+      }
+      return emp;
+    },
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save employee", variant: "destructive" }),
+  });
+
+  const setActive = useMutation({
+    mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
+      apiFetch(`/customers/${customerId}/employees/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
+    onSuccess: () => { inv(); toast({ title: "Updated" }); },
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/employees/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const openAdd = () => { setForm(blank); setSizes([]); setEditing(null); setOpen(true); };
+  const openEdit = (e: any) => {
+    setForm({
+      firstName: e.firstName || "", lastName: e.lastName || "",
+      jobTitle: e.jobTitle || "", roleId: e.roleId ?? null,
+      email: e.email || "", phone: e.phone || "",
+      department: e.department || "", notes: e.notes || "",
+    });
+    setSizes((e.sizes || []).map((s: any) => ({ label: s.label, size: s.size })));
+    setEditing(e);
+    setOpen(true);
+  };
+
+  const addSizeRow = () => setSizes(s => [...s, { label: "", size: "" }]);
+  const updateSize = (i: number, field: "label" | "size", val: string) =>
+    setSizes(s => s.map((row, idx) => idx === i ? { ...row, [field]: val } : row));
+  const removeSize = (i: number) => setSizes(s => s.filter((_, idx) => idx !== i));
+
+  const activeCount = employees?.filter(e => e.isActive).length ?? 0;
+  const inactiveCount = employees?.filter(e => !e.isActive).length ?? 0;
+
+  return (
+    <>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowInactive(false)}
+            className={cn("px-3 py-1 rounded-full text-xs font-medium transition-colors",
+              !showInactive ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+          >
+            Active {activeCount > 0 && `(${activeCount})`}
+          </button>
+          <button
+            onClick={() => setShowInactive(true)}
+            className={cn("px-3 py-1 rounded-full text-xs font-medium transition-colors",
+              showInactive ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+          >
+            All incl. inactive {inactiveCount > 0 && `(+${inactiveCount} hidden)`}
+          </button>
+        </div>
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Employee</Button>
+      </div>
+
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !employees?.length ? <EmptyState icon={UserCheck} label="employees" onAdd={openAdd} />
+        : <SubTable>
+          <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead>Name</TableHead>
+            <TableHead className="hidden sm:table-cell">Job Title / Role</TableHead>
+            <TableHead className="hidden md:table-cell">Email</TableHead>
+            <TableHead className="text-right w-28">Actions</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {employees.map((e: any) => (
+              <TableRow key={e.id} className={cn("group hover:bg-muted/30", !e.isActive && "opacity-50")}>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="font-medium">{[e.firstName, e.lastName].filter(Boolean).join(' ')}</p>
+                      {!e.isActive && <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-100 rounded px-1">Inactive</span>}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                  <div>
+                    {e.jobTitle && <p>{e.jobTitle}</p>}
+                    {e.roleName && <p className="text-xs text-primary/70">{e.roleName}</p>}
+                    {!e.jobTitle && !e.roleName && '—'}
+                  </div>
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {!e.isActive ? (
+                      <Button variant="ghost" size="sm" className="h-7 text-xs text-green-600 hover:bg-green-50 px-2" onClick={() => setActive.mutate({ id: e.id, isActive: true })}>
+                        Reactivate
+                      </Button>
+                    ) : (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50" title="Deactivate" onClick={() => confirm("Deactivate this employee? They will be hidden from orders but kept for reporting.") && setActive.mutate({ id: e.id, isActive: false })}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(e)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Permanently delete this employee?") && del.mutate(e.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? "Edit Employee" : "Add Employee"}</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>First Name *</Label><Input value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} /></div>
               <div className="grid gap-2"><Label>Last Name</Label><Input value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} /></div>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>Job Title</Label><Input placeholder="e.g. Sales Manager" value={form.jobTitle} onChange={e => setForm({ ...form, jobTitle: e.target.value })} /></div>
+              <div className="grid gap-2">
+                <Label>Role</Label>
+                <Select value={form.roleId ? form.roleId.toString() : "none"} onValueChange={v => setForm({ ...form, roleId: v === "none" ? null : Number(v) })}>
+                  <SelectTrigger><SelectValue placeholder="No role" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No role</SelectItem>
+                    {(roles as any[])?.map((r: any) => <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="grid gap-2"><Label>Department</Label><Input value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
               <div className="grid gap-2"><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
             </div>
+
+            <div className="border-t pt-3">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-sm font-medium">Preferred Sizes</Label>
+                <Button type="button" variant="ghost" size="sm" className="h-6 text-xs" onClick={addSizeRow}><Plus className="w-3 h-3 mr-1" />Add size</Button>
+              </div>
+              {sizes.length === 0 && <p className="text-xs text-muted-foreground italic">No sizes saved — click "Add size" to add one.</p>}
+              <div className="grid gap-2">
+                {sizes.map((s, i) => (
+                  <div key={i} className="flex gap-2 items-center">
+                    <Input className="flex-1" placeholder="Label (e.g. Shirt)" value={s.label} onChange={e => updateSize(i, "label", e.target.value)} />
+                    <Input className="flex-1" placeholder="Size (e.g. L)" value={s.size} onChange={e => updateSize(i, "size", e.target.value)} />
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-red-600 shrink-0" onClick={() => removeSize(i)}><X className="w-3 h-3" /></Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="grid gap-2"><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
           <DialogFooter>
@@ -791,6 +991,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
 interface FinishedItem {
   id: number;
   customerId: number;
+  roleId: number | null;
+  roleName: string | null;
   name: string;
   productId: number;
   productName: string | null;
@@ -809,12 +1011,14 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const { data: products } = useListProducts();
   const { data: items, isLoading } = useSubResource<FinishedItem>(customerId, "finished-items");
   const { data: finishes } = useSubResource<any>(customerId, "finishes");
+  const { data: roles } = useSubResource<any>(customerId, "roles");
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FinishedItem | null>(null);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<number | null | "all">("all");
 
-  const blank = { name: "", productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", notes: "" };
+  const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finished-items"] });
@@ -836,6 +1040,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const openEdit = (item: FinishedItem) => {
     setForm({
       name: item.name,
+      roleId: item.roleId ?? null,
       productId: item.productId,
       finishId: item.finishId ?? null,
       colour: item.colour ?? "",
@@ -876,6 +1081,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     if (!form.name || !form.productId || !form.unitPrice) return;
     save.mutate({
       name: form.name,
+      roleId: form.roleId || null,
       productId: form.productId,
       finishId: form.finishId || null,
       colour: form.colour || null,
@@ -885,16 +1091,62 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     });
   };
 
+  const filteredItems = items?.filter(item => {
+    if (roleFilter === "all") return true;
+    if (roleFilter === null) return item.roleId === null;
+    return item.roleId === roleFilter;
+  }) ?? [];
+
+  const WardrobeItemRow = ({ item }: { item: FinishedItem }) => (
+    <TableRow key={item.id} className="group hover:bg-muted/30">
+      <TableCell className="font-medium">
+        <div>
+          <p>{item.name}</p>
+          {item.roleName && <span className="text-[10px] font-medium text-primary/70 bg-primary/5 border border-primary/10 rounded px-1">{item.roleName}</span>}
+        </div>
+      </TableCell>
+      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+        {item.productName || "—"}
+        {item.productSku && <span className="ml-1 text-xs text-muted-foreground/60">({item.productSku})</span>}
+      </TableCell>
+      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+        {item.finishName
+          ? <span className="inline-flex items-center gap-1"><Sparkles className="w-3 h-3 text-amber-500" />{item.finishName}</span>
+          : <span className="text-muted-foreground/50">Plain</span>}
+      </TableCell>
+      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+        {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
+      </TableCell>
+      <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(item.unitPrice)}</TableCell>
+      <TableCell className="text-right">
+        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(item)}><Edit2 className="w-3 h-3" /></Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this finished item?") && del.mutate(item.id)}><Trash2 className="w-3 h-3" /></Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
   return (
     <>
-      <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-muted-foreground">Pre-built items that default when creating orders for this customer.</p>
-        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Finished Item</Button>
+      <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+        <p className="text-sm text-muted-foreground">Pre-configured items — company-wide or specific to a role.</p>
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Item</Button>
       </div>
+
+      {(roles as any[])?.length > 0 && (
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <button onClick={() => setRoleFilter("all")} className={cn("px-3 py-1 rounded-full text-xs font-medium transition-colors", roleFilter === "all" ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All</button>
+          <button onClick={() => setRoleFilter(null)} className={cn("px-3 py-1 rounded-full text-xs font-medium transition-colors", roleFilter === null ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>Company-wide</button>
+          {(roles as any[]).map((r: any) => (
+            <button key={r.id} onClick={() => setRoleFilter(r.id)} className={cn("px-3 py-1 rounded-full text-xs font-medium transition-colors", roleFilter === r.id ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{r.name}</button>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : !items?.length ? (
+      ) : !filteredItems.length ? (
         <EmptyState icon={ShoppingBag} label="finished items" onAdd={openAdd} />
       ) : (
         <SubTable>
@@ -909,30 +1161,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {items.map(item => (
-              <TableRow key={item.id} className="group hover:bg-muted/30">
-                <TableCell className="font-medium">{item.name}</TableCell>
-                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                  {item.productName || "—"}
-                  {item.productSku && <span className="ml-1 text-xs text-muted-foreground/60">({item.productSku})</span>}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                  {item.finishName
-                    ? <span className="inline-flex items-center gap-1"><Sparkles className="w-3 h-3 text-amber-500" />{item.finishName}</span>
-                    : <span className="text-muted-foreground/50">Plain</span>}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                  {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
-                </TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(item.unitPrice)}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(item)}><Edit2 className="w-3 h-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this finished item?") && del.mutate(item.id)}><Trash2 className="w-3 h-3" /></Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {filteredItems.map(item => <WardrobeItemRow key={item.id} item={item} />)}
           </TableBody>
         </SubTable>
       )}
@@ -952,6 +1181,18 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               />
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Assign to Role</Label>
+              <Select value={form.roleId ? form.roleId.toString() : "none"} onValueChange={v => setForm(f => ({ ...f, roleId: v === "none" ? null : Number(v) }))}>
+                <SelectTrigger><SelectValue placeholder="Company-wide (no role)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Company-wide (no role)</SelectItem>
+                  {(roles as any[])?.map((r: any) => <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Company-wide items appear for all orders; role items are shown when ordering for that role.</p>
             </div>
 
             <div className="grid gap-2">
@@ -1110,25 +1351,27 @@ export default function CustomerDetail() {
           </div>
         </div>
 
-        <Tabs defaultValue="addresses">
+        <Tabs defaultValue="employees">
           <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1">
+            <TabsTrigger value="employees" className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Employees</TabsTrigger>
+            <TabsTrigger value="roles" className="flex items-center gap-1.5"><Boxes className="w-3.5 h-3.5" /> Roles</TabsTrigger>
+            <TabsTrigger value="wardrobe" className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5" /> Wardrobe</TabsTrigger>
             <TabsTrigger value="addresses" className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Delivery Addresses</TabsTrigger>
             <TabsTrigger value="contacts" className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Contacts</TabsTrigger>
             <TabsTrigger value="orders" className="flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Order History</TabsTrigger>
             <TabsTrigger value="processes" className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Processes</TabsTrigger>
             <TabsTrigger value="finishes" className="flex items-center gap-1.5"><Shirt className="w-3.5 h-3.5" /> Finishes</TabsTrigger>
-            <TabsTrigger value="wardrobe" className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5" /> Wardrobe</TabsTrigger>
-            <TabsTrigger value="employees" className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Employees</TabsTrigger>
           </TabsList>
 
           <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
+            <TabsContent value="employees" className="mt-0"><EmployeesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="roles" className="mt-0"><RolesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="wardrobe" className="mt-0"><WardrobeTab customerId={customerId} /></TabsContent>
             <TabsContent value="addresses" className="mt-0"><AddressesTab customerId={customerId} /></TabsContent>
             <TabsContent value="contacts" className="mt-0"><ContactsTab customerId={customerId} /></TabsContent>
             <TabsContent value="orders" className="mt-0"><OrderHistoryTab customerId={customerId} /></TabsContent>
             <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>
             <TabsContent value="finishes" className="mt-0"><FinishesTab customerId={customerId} /></TabsContent>
-            <TabsContent value="wardrobe" className="mt-0"><WardrobeTab customerId={customerId} /></TabsContent>
-            <TabsContent value="employees" className="mt-0"><EmployeesTab customerId={customerId} /></TabsContent>
           </div>
         </Tabs>
       </div>

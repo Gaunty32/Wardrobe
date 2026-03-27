@@ -58,10 +58,12 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - `/orders` → Orders list
 - `/orders/:id` → Order detail with line items (finish cost auto-added to unit price)
 - `/customers` → Customers list
-- `/customers/:id` → Customer detail (tabs: Delivery Addresses, Contacts, Order History, Processes, Finishes, Wardrobe, Employees)
+- `/customers/:id` → Customer detail (tabs: Employees, Roles, Wardrobe, Delivery Addresses, Contacts, Order History, Processes, Finishes)
+  - **Employees tab**: active/inactive filter, job title, role assignment, preferred sizes (key-value pairs), reactivate button for inactive employees
+  - **Roles tab**: CRUD for job roles (name, description); roles are used to assign employees and wardrobe items
+  - **Wardrobe tab**: per-customer Finished Items with optional role assignment; filter pills to show all, company-wide, or per-role items
   - Processes tab: name, type, placement, price (£), process stock item link
   - Finishes tab: each finish shows constituent processes with prices + total cost badge; garment (product) assignments
-  - Wardrobe tab: per-customer list of Finished Items (product + finish + colour/size + price); used to pre-populate orders
 - `/products` → Products list — grouped by category with filter pills; category field on add/edit; clickable rows
 - `/products/:id` → Product detail (tabs: Details, Colours, Sizes)
 - `/process-stock` → Process Stock (physical materials for decoration)
@@ -90,9 +92,23 @@ Express 5 REST API serving the order system frontend.
 
 Tables in PostgreSQL:
 - `customers` — name, email, phone, address, city, state, postcode, notes
-- `products` — name, sku, description, unit_price, stock_quantity
+- `customer_delivery_addresses` — label, line1-2, city, county, postcode, country, isDefault
+- `customer_contacts` — firstName, lastName, jobTitle, email, phone, notes
+- `customer_roles` — customerId, name, description (job roles for grouping employees/wardrobe)
+- `customer_employees` — customerId, firstName, lastName, jobTitle, roleId, email, phone, department, isActive, notes
+- `customer_employee_sizes` — employeeId, label, size (preferred sizes for size suggestions)
+- `customer_processes` — customerId, name, type, placement, price, processStockId
+- `customer_finishes` — customerId, name, description
+- `customer_finish_processes` — finishId → processId (many-to-many)
+- `customer_finish_products` — finishId → productId (garment assignments)
+- `customer_finished_items` — customerId, roleId (nullable), name, productId, finishId, colour, size, unitPrice (Wardrobe)
+- `products` — name, sku, description, unit_price, stock_quantity, category, supplier_id
+- `product_attributes` — productId, type (colour/size), value
+- `product_variants` — productId, colour, size, stockQty, price
 - `orders` — order_number, customer_id, customer_name, status, total_amount, notes, order_date
-- `order_items` — order_id, product_id, product_name, quantity, unit_price, line_total
+- `order_items` — order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, quantity, unit_price, line_total
+- `suppliers` — name, contactName, email, phone, address
+- `process_stock` — name, description, unit, stockQty, unitCost
 
 ## TypeScript & Composite Projects
 
