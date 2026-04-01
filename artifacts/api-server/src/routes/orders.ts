@@ -1,7 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, ordersTable, orderItemsTable, customersTable, productsTable } from "@workspace/db";
+import {
+  db, ordersTable, orderItemsTable, customersTable, productsTable,
+  worksheetsTable, worksheetItemsTable, customerEmployeesTable,
+} from "@workspace/db";
 import {
   UpdateOrderBody,
   GetOrderParams,
@@ -234,6 +237,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     finishName: z.string().optional().nullable(),
     recipientType: z.enum(["stock", "person"]).default("stock"),
     recipientName: z.string().optional().nullable(),
+    recipientEmployeeId: z.number().int().positive().optional().nullable(),
     quantity: z.number().int().positive(),
     unitPrice: z.number().min(0),
     purchaseRequired: z.boolean().optional().default(false),
@@ -272,6 +276,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       finishName: parsed.data.finishName ?? null,
       recipientType: parsed.data.recipientType,
       recipientName: parsed.data.recipientName ?? null,
+      recipientEmployeeId: parsed.data.recipientEmployeeId ?? null,
       quantity: parsed.data.quantity,
       unitPrice: String(parsed.data.unitPrice),
       lineTotal: String(lineTotal),
@@ -399,6 +404,83 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
     totalProducts,
     ordersByStatus,
     recentOrders: recentOrders.map((o) => ({ ...o, totalAmount: numericToFloat(o.totalAmount) })),
+  });
+});
+
+router.get("/orders/:id/pack-status", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const orderId = parsed.data.id;
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+  if (items.length === 0) { res.json({ recipients: [] }); return; }
+
+  const itemIds = items.map((i) => i.id);
+  const wsItems = await db
+    .select({ wsItem: worksheetItemsTable, ws: worksheetsTable })
+    .from(worksheetItemsTable)
+    .innerJoin(worksheetsTable, eq(worksheetItemsTable.worksheetId, worksheetsTable.id))
+    .where(inArray(worksheetItemsTable.orderItemId, itemIds));
+
+  const employeeIds = [...new Set(items.filter((i) => i.recipientEmployeeId).map((i) => i.recipientEmployeeId!))];
+  const employees = employeeIds.length > 0
+    ? await db.select().from(customerEmployeesTable).where(inArray(customerEmployeesTable.id, employeeIds))
+    : [];
+  const empMap = new Map(employees.map((e) => [e.id, e]));
+
+  const wsItemMap = new Map<number, { worksheetNumber: string; status: string }>();
+  for (const { wsItem, ws } of wsItems) {
+    if (wsItem.orderItemId) wsItemMap.set(wsItem.orderItemId, { worksheetNumber: ws.worksheetNumber, status: ws.status });
+  }
+
+  const stockItems: {
+    orderItemId: number; productName: string; colour: string | null; size: string | null;
+    quantity: number; isComplete: boolean; worksheetNumber: string | null;
+  }[] = [];
+
+  type PersonGroup = {
+    recipientName: string;
+    employeeId: number | null;
+    jobTitle: string | null;
+    department: string | null;
+    allComplete: boolean;
+    items: { orderItemId: number; productName: string; colour: string | null; size: string | null; quantity: number; isComplete: boolean; worksheetNumber: string | null; }[];
+  };
+
+  const personMap = new Map<string, PersonGroup>();
+
+  for (const oi of items) {
+    const wsInfo = wsItemMap.get(oi.id);
+    const isComplete = wsInfo?.status === "complete";
+    const entry = { orderItemId: oi.id, productName: oi.productName, colour: oi.colour, size: oi.size, quantity: oi.quantity, isComplete, worksheetNumber: wsInfo?.worksheetNumber ?? null };
+
+    if (oi.recipientType === "person" && oi.recipientName) {
+      const key = oi.recipientName;
+      if (!personMap.has(key)) {
+        const emp = oi.recipientEmployeeId ? empMap.get(oi.recipientEmployeeId) : undefined;
+        personMap.set(key, { recipientType: "person" as const, recipientName: key, employeeId: oi.recipientEmployeeId ?? null, jobTitle: emp?.jobTitle ?? null, department: emp?.department ?? null, allComplete: true, items: [] });
+      }
+      const group = personMap.get(key)!;
+      group.items.push(entry);
+      if (!isComplete) group.allComplete = false;
+    } else {
+      stockItems.push(entry);
+    }
+  }
+
+  const stockAllComplete = stockItems.length > 0 && stockItems.every((i) => i.isComplete);
+
+  res.json({
+    orderId,
+    orderNumber: order.orderNumber,
+    customerName: order.customerName,
+    recipients: [
+      ...(stockItems.length > 0 ? [{ recipientType: "stock", recipientName: null, employeeId: null, jobTitle: null, department: null, allComplete: stockAllComplete, items: stockItems }] : []),
+      ...[...personMap.values()],
+    ],
   });
 });
 

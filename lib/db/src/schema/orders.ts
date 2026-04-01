@@ -32,6 +32,7 @@ export const orderItemsTable = pgTable("order_items", {
   quantity: integer("quantity").notNull().default(1),
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull().default("0"),
   lineTotal: numeric("line_total", { precision: 10, scale: 2 }).notNull().default("0"),
+  recipientEmployeeId: integer("recipient_employee_id"),
   purchaseRequired: boolean("purchase_required").notNull().default(false),
   purchaseQuantity: integer("purchase_quantity"),
   supplierId: integer("supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),

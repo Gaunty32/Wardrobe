@@ -69,6 +69,7 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - `/process-stock` → Process Stock (physical materials for decoration)
 - `/purchasing` → Purchasing — consolidated purchase requirements by supplier with matrix view and email PO
 - `/production` → Production — worksheet management with Pre-WIP / WIP / Complete tabs, A4 print view
+- Order detail: Pack & Dispatch section — groups items by recipient, shows completion status per person, "Print 4×6 Label" button when all a person's items are on completed worksheets
 - `/suppliers` → Suppliers list
 
 ### API Server (`artifacts/api-server`)

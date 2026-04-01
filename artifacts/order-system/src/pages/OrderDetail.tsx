@@ -26,7 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -99,6 +99,7 @@ const EMPTY_ITEM = {
   finishCost: 0,
   recipientType: "stock" as "stock" | "person",
   recipientName: "",
+  recipientEmployeeId: null as number | null,
   quantity: 1,
   unitPrice: "",
   baseUnitPrice: "",
@@ -148,6 +149,60 @@ export default function OrderDetail() {
   const [pendingItemData, setPendingItemData] = useState<Record<string, unknown> | null>(null);
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
+
+  interface PackItem { orderItemId: number; productName: string; colour: string | null; size: string | null; quantity: number; isComplete: boolean; worksheetNumber: string | null; }
+  interface PackRecipient { recipientType: "stock" | "person"; recipientName: string | null; employeeId: number | null; jobTitle: string | null; department: string | null; allComplete: boolean; items: PackItem[]; }
+  interface PackStatus { orderId: number; orderNumber: string; customerName: string | null; recipients: PackRecipient[]; }
+
+  const { data: packStatus, refetch: refetchPackStatus } = useQuery<PackStatus>({
+    queryKey: ["pack-status", orderId],
+    queryFn: () => apiFetch(`/orders/${orderId}/pack-status`),
+    enabled: orderId > 0,
+  });
+
+  const printLabel = (recipient: PackRecipient) => {
+    const win = window.open("", "_blank", "width=600,height=900");
+    if (!win) return;
+    const lines = recipient.items.map(i => `<tr><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px">${i.productName}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px;color:#555">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px;text-align:center;font-weight:bold">${i.quantity}</td></tr>`).join("");
+    win.document.write(`<!DOCTYPE html><html><head>
+      <meta charset="UTF-8"><title>Pack Label — ${recipient.recipientName}</title>
+      <style>
+        @page { size: 4in 6in; margin: 0; }
+        body { margin: 0; font-family: Arial, sans-serif; width: 4in; height: 6in; display: flex; flex-direction: column; box-sizing: border-box; padding: 0; }
+        * { box-sizing: border-box; }
+      </style>
+    </head><body>
+      <div style="background:#1e3a5f;color:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;opacity:.8">Select Branding Solutions</div><div style="font-size:11px;font-weight:bold;margin-top:2px">Order: ${order?.orderNumber ?? ""}</div></div>
+        <div style="font-size:10px;opacity:.7;text-align:right">${order?.customerName ?? ""}</div>
+      </div>
+      <div style="padding:14px;background:#f0f4fa;border-bottom:2px solid #1e3a5f">
+        <div style="font-size:24px;font-weight:900;color:#1e3a5f;line-height:1.1">${recipient.recipientName}</div>
+        ${recipient.jobTitle ? `<div style="font-size:13px;color:#444;margin-top:3px">${recipient.jobTitle}</div>` : ""}
+        ${recipient.department ? `<div style="font-size:11px;color:#888">${recipient.department}</div>` : ""}
+      </div>
+      <div style="padding:10px 14px;flex:1">
+        <div style="font-size:11px;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;color:#888;margin-bottom:6px">Pack Contents</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:#e8edf5">
+            <th style="padding:4px 6px;text-align:left;font-size:11px;color:#555">Product</th>
+            <th style="padding:4px 6px;text-align:left;font-size:11px;color:#555">Variant</th>
+            <th style="padding:4px 6px;text-align:center;font-size:11px;color:#555">Qty</th>
+          </tr></thead>
+          <tbody>${lines}</tbody>
+        </table>
+      </div>
+      <div style="padding:10px 14px;border-top:1px solid #ddd;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-size:9px;color:#aaa">Packed by:</div>
+        <div style="width:100px;border-bottom:1px solid #ccc;height:16px"></div>
+        <div style="font-size:9px;color:#aaa">Date:</div>
+        <div style="width:70px;border-bottom:1px solid #ccc;height:16px"></div>
+      </div>
+    </body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
 
   const sendToProductionMutation = useMutation({
     mutationFn: async (itemIds: number[]) => {
@@ -220,7 +275,7 @@ export default function OrderDetail() {
         const name = [emp.firstName, emp.lastName].filter(Boolean).join(" ");
         setSelectedEmployee(emp);
         setIsNewPerson(false);
-        setItem(i => ({ ...i, recipientName: name }));
+        setItem(i => ({ ...i, recipientName: name, recipientEmployeeId: emp.id }));
       }
     }
   };
@@ -265,6 +320,7 @@ export default function OrderDetail() {
           finishName: item.finishName ?? null,
           recipientType: item.recipientType,
           recipientName: item.recipientType === "person" ? (item.recipientName || null) : null,
+          recipientEmployeeId: item.recipientType === "person" ? (item.recipientEmployeeId ?? null) : null,
           quantity: item.quantity,
           unitPrice: price,
           ...overrides,
@@ -531,6 +587,85 @@ export default function OrderDetail() {
             </Card>
           </div>
         </div>
+
+        {packStatus && packStatus.recipients.length > 0 && (
+          <Card className="shadow-sm border-border/50 mt-6">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
+              <div className="flex items-center gap-2">
+                <PackageCheck className="w-5 h-5 text-primary" />
+                <div>
+                  <CardTitle className="font-display text-lg">Pack &amp; Dispatch</CardTitle>
+                  <CardDescription>Pick and pack status by recipient</CardDescription>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetchPackStatus()}>
+                <ClipboardList className="w-4 h-4 text-muted-foreground" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-4 space-y-4">
+              {packStatus.recipients.map((recipient, idx) => (
+                <div key={idx} className={`rounded-xl border p-4 space-y-3 ${recipient.allComplete ? "border-green-300 bg-green-50/50" : "border-border bg-muted/20"}`}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      {recipient.recipientType === "person" ? (
+                        <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
+                          {recipient.recipientName?.charAt(0).toUpperCase()}
+                        </div>
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                          <Archive className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-semibold">
+                          {recipient.recipientType === "person" ? recipient.recipientName : "Stock / General"}
+                        </div>
+                        {recipient.recipientType === "person" && (recipient.jobTitle || recipient.department) && (
+                          <div className="text-xs text-muted-foreground">
+                            {[recipient.jobTitle, recipient.department].filter(Boolean).join(" · ")}
+                          </div>
+                        )}
+                      </div>
+                      <Badge className={`text-xs ml-2 gap-1 ${recipient.allComplete ? "bg-green-100 text-green-800 border-green-300" : "bg-amber-100 text-amber-800 border-amber-300"}`}>
+                        {recipient.allComplete ? <><CheckCircle2 className="w-3 h-3" /> Ready to Pack</> : <><Clock className="w-3 h-3" /> Pending</>}
+                      </Badge>
+                    </div>
+                    {recipient.recipientType === "person" && recipient.allComplete && (
+                      <Button size="sm" variant="outline" className="gap-1.5 border-primary/40 text-primary hover:bg-primary/5 text-xs" onClick={() => printLabel(recipient)}>
+                        <Printer className="w-3.5 h-3.5" /> Print 4×6 Label
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    {recipient.items.map((pi) => (
+                      <div key={pi.orderItemId} className="flex items-center gap-2 text-sm">
+                        {pi.isComplete ? (
+                          <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+                        ) : (
+                          <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                        )}
+                        <span className={`font-medium flex-1 ${pi.isComplete ? "text-foreground" : "text-muted-foreground"}`}>{pi.productName}</span>
+                        <span className="text-xs text-muted-foreground">{[pi.colour, pi.size].filter(Boolean).join(" / ")}</span>
+                        <Badge variant="secondary" className="text-xs">× {pi.quantity}</Badge>
+                        {pi.worksheetNumber && (
+                          <Badge variant="outline" className={`text-xs font-mono ${pi.isComplete ? "border-green-300 text-green-700" : "border-amber-300 text-amber-700"}`}>
+                            {pi.worksheetNumber}
+                          </Badge>
+                        )}
+                        {!pi.worksheetNumber && (
+                          <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">
+                            No worksheet
+                          </Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         <Dialog open={isAddItemOpen} onOpenChange={(open) => { if (!open) resetDialog(); else setIsAddItemOpen(true); }}>
           <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
