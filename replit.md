@@ -37,6 +37,16 @@ artifacts-monorepo/
 └── package.json            # Root package with hoisted devDeps
 ```
 
+## White-Label Intent
+
+This application is being developed for white-labelling to other businesses. Keep the following in mind throughout development:
+
+- **Branding must be configurable**: logo, business name, and brand colours should come from a config/settings layer, not be hard-coded. Currently SBS branding is in place as the first instance.
+- **No hard-coded business names** in email templates, printed documents (labels, worksheets, purchase orders), or UI copy. Reference a `businessName` config value instead.
+- **Domain-agnostic data model**: field names, categories, and terminology should stay generic enough to apply across different industries where possible.
+- **Avoid assumptions** about the specific business (e.g. "garment", "embroidery") in shared code — keep those as configurable labels or confined to instance-specific configuration.
+- Future work will include a settings/configuration page for business name, logo upload, contact details, and colour scheme.
+
 ## Applications
 
 ### Sales Order System (`artifacts/order-system`)
