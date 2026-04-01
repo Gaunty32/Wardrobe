@@ -68,6 +68,7 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - `/products/:id` → Product detail (tabs: Details, Colours, Sizes)
 - `/process-stock` → Process Stock (physical materials for decoration)
 - `/purchasing` → Purchasing — consolidated purchase requirements by supplier with matrix view and email PO
+- `/production` → Production — worksheet management with Pre-WIP / WIP / Complete tabs, A4 print view
 - `/suppliers` → Suppliers list
 
 ### API Server (`artifacts/api-server`)

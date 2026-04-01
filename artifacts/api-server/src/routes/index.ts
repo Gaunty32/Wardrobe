@@ -9,6 +9,7 @@ import suppliersRouter from "./suppliers";
 import ordersRouter from "./orders";
 import processStockRouter from "./process-stock";
 import purchasingRouter from "./purchasing";
+import worksheetsRouter from "./worksheets";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(suppliersRouter);
 router.use(ordersRouter);
 router.use(processStockRouter);
 router.use(purchasingRouter);
+router.use(worksheetsRouter);
 
 export default router;

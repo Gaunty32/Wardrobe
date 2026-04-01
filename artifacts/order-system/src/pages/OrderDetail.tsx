@@ -10,7 +10,7 @@ import {
   getGetOrderQueryKey,
   UpdateOrderBodyStatus
 } from "@workspace/api-client-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -146,6 +146,30 @@ export default function OrderDetail() {
   }
   const [stockPrompt, setStockPrompt] = useState<StockCheckResult | null>(null);
   const [pendingItemData, setPendingItemData] = useState<Record<string, unknown> | null>(null);
+  const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
+  const [productionNotes, setProductionNotes] = useState("");
+
+  const sendToProductionMutation = useMutation({
+    mutationFn: async (itemIds: number[]) => {
+      return apiFetch("/worksheets", {
+        method: "POST",
+        body: JSON.stringify({
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          customerId: order.customerId,
+          customerName: order.customerName,
+          notes: productionNotes || null,
+          itemIds,
+        }),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Sent to Production", description: "Worksheet created in Pre-WIP." });
+      setIsSendToProductionOpen(false);
+      setProductionNotes("");
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
 
   const { data: productAttributes } = useProductAttributes(item.productId);
   const { data: productVariants } = useProductVariants(item.productId);
@@ -369,9 +393,17 @@ export default function OrderDetail() {
                 <CardTitle className="font-display">Line Items</CardTitle>
                 <CardDescription>Products included in this order</CardDescription>
               </div>
-              <Button size="sm" onClick={() => setIsAddItemOpen(true)}>
-                <Plus className="w-4 h-4 mr-1" /> Add Item
-              </Button>
+              <div className="flex items-center gap-2">
+                {order.items && order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length > 0 && (
+                  <Button size="sm" variant="outline" className="gap-1.5 border-green-400 text-green-700 hover:bg-green-50" onClick={() => setIsSendToProductionOpen(true)}>
+                    <ClipboardList className="w-4 h-4" />
+                    Send to Production ({order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length})
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => setIsAddItemOpen(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> Add Item
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0 flex-1">
               {order.items && order.items.length > 0 ? (
@@ -899,6 +931,57 @@ export default function OrderDetail() {
           </DialogContent>
         </Dialog>
       )}
+
+      <Dialog open={isSendToProductionOpen} onOpenChange={setIsSendToProductionOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-700">
+              <ClipboardList className="w-5 h-5" />
+              Send to Production
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              This will create a production worksheet for all stock-confirmed items (no purchase required). The worksheet will appear in <strong>Pre-WIP</strong> until goods arrive.
+            </p>
+            {order.items && (
+              <div className="rounded-lg border border-green-200 bg-green-50 divide-y divide-green-100 text-sm">
+                {order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).map((oi: { id: number; productName: string; colour?: string; size?: string; quantity: number }) => (
+                  <div key={oi.id} className="flex items-center justify-between px-3 py-2">
+                    <span className="font-medium">{oi.productName}</span>
+                    <span className="text-muted-foreground text-xs">{[oi.colour, oi.size].filter(Boolean).join(" / ")} × {oi.quantity}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Production Notes (optional)</Label>
+              <textarea
+                className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="Any special instructions for the production team..."
+                value={productionNotes}
+                onChange={(e) => setProductionNotes(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsSendToProductionOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+              onClick={() => {
+                if (!order.items) return;
+                const eligibleIds = order.items
+                  .filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired)
+                  .map((oi: { id: number }) => oi.id);
+                sendToProductionMutation.mutate(eligibleIds);
+              }}
+              disabled={sendToProductionMutation.isPending}
+            >
+              {sendToProductionMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</> : <><ClipboardList className="w-4 h-4" /> Create Worksheet</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

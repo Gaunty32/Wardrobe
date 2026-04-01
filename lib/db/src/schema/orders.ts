@@ -51,6 +51,37 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+export const worksheetsTable = pgTable("worksheets", {
+  id: serial("id").primaryKey(),
+  worksheetNumber: text("worksheet_number").notNull().unique(),
+  status: text("status").notNull().default("pre_wip"),
+  orderId: integer("order_id").references(() => ordersTable.id, { onDelete: "set null" }),
+  orderNumber: text("order_number"),
+  customerId: integer("customer_id"),
+  customerName: text("customer_name"),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export const worksheetItemsTable = pgTable("worksheet_items", {
+  id: serial("id").primaryKey(),
+  worksheetId: integer("worksheet_id").notNull().references(() => worksheetsTable.id, { onDelete: "cascade" }),
+  orderItemId: integer("order_item_id").references(() => orderItemsTable.id, { onDelete: "set null" }),
+  productName: text("product_name").notNull(),
+  colour: text("colour"),
+  size: text("size"),
+  quantity: integer("quantity").notNull().default(1),
+  recipientType: text("recipient_type").notNull().default("stock"),
+  recipientName: text("recipient_name"),
+  finishId: integer("finish_id"),
+  finishName: text("finish_name"),
+  processesSnapshot: text("processes_snapshot"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;
