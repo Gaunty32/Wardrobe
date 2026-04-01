@@ -80,6 +80,8 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - `/purchasing` → Purchasing — consolidated purchase requirements by supplier with matrix view and email PO
 - `/production` → Production — worksheet management with Pre-WIP / WIP / Complete tabs, A4 print view
 - Order detail: Pack & Dispatch section — groups items by recipient, shows completion status per person, "Print 4×6 Label" button when all a person's items are on completed worksheets
+- `/dispatch` → Post-Production Dispatch — order queue of all orders with ≥1 complete worksheet (not yet shipped), 3-stat summary bar (ready/pending/urgent), per-order production progress, smart banners (all complete → green; due today/overdue → amber), Print Wearer Labels (4×6 thermal, one per garment per named recipient), Print Delivery Note (A4 with delivery address, items by wearer, signature block), Mark Dispatched → sets status to "shipped" with timestamp
+- Order detail: Required Date card in sidebar — editable date field (pencil icon), persists to DB, shows on Dispatch page for urgency calculation
 - `/suppliers` → Suppliers list
 
 ### API Server (`artifacts/api-server`)
@@ -118,7 +120,7 @@ Tables in PostgreSQL:
 - `products` — name, sku, description, unit_price, stock_quantity, category, supplier_id
 - `product_attributes` — productId, type (colour/size), value
 - `product_variants` — productId, colour, size, stockQty, price
-- `orders` — order_number, customer_id, customer_name, status, total_amount, notes, order_date
+- `orders` — order_number, customer_id, customer_name, status, total_amount, notes, order_date, required_date, delivery_address_id, dispatched_at
 - `order_items` — order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, quantity, unit_price, line_total, purchase_required (bool), purchase_quantity, supplier_id, supplier_name
 - `purchase_orders` — po_number, supplier_id, supplier_name, supplier_email, status, notes, sent_at
 - `suppliers` — name, contactName, email, phone, address

@@ -26,7 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -149,6 +149,20 @@ export default function OrderDetail() {
   const [pendingItemData, setPendingItemData] = useState<Record<string, unknown> | null>(null);
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
+
+  const [editingRequiredDate, setEditingRequiredDate] = useState(false);
+  const [requiredDateValue, setRequiredDateValue] = useState("");
+
+  const updateRequiredDateMutation = useMutation({
+    mutationFn: (date: string | null) =>
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ requiredDate: date || null }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingRequiredDate(false);
+      toast({ title: "Required date updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
   interface PackItem { orderItemId: number; productName: string; colour: string | null; size: string | null; quantity: number; isComplete: boolean; worksheetNumber: string | null; }
   interface PackRecipient { recipientType: "stock" | "person"; recipientName: string | null; employeeId: number | null; jobTitle: string | null; department: string | null; allComplete: boolean; items: PackItem[]; }
@@ -570,6 +584,51 @@ export default function OrderDetail() {
                     )}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-display text-lg flex items-center">
+                    <Calendar className="w-4 h-4 mr-2 text-muted-foreground" /> Required Date
+                  </CardTitle>
+                  {!editingRequiredDate && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                      setRequiredDateValue(order.requiredDate ? new Date(order.requiredDate).toISOString().split("T")[0] : "");
+                      setEditingRequiredDate(true);
+                    }}>
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="py-4">
+                {editingRequiredDate ? (
+                  <div className="space-y-2">
+                    <Input
+                      type="date"
+                      value={requiredDateValue}
+                      onChange={(e) => setRequiredDateValue(e.target.value)}
+                      className="text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <Button size="sm" className="flex-1 h-7 text-xs" onClick={() => updateRequiredDateMutation.mutate(requiredDateValue || null)} disabled={updateRequiredDateMutation.isPending}>Save</Button>
+                      <Button size="sm" variant="ghost" className="flex-1 h-7 text-xs" onClick={() => setEditingRequiredDate(false)}>Cancel</Button>
+                    </div>
+                    {(order as { requiredDate?: string | null }).requiredDate && (
+                      <Button size="sm" variant="ghost" className="w-full h-7 text-xs text-muted-foreground" onClick={() => updateRequiredDateMutation.mutate(null)}>Clear date</Button>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm">
+                    {(order as { requiredDate?: string | null }).requiredDate ? (
+                      <span className="font-medium">{formatDate((order as { requiredDate: string }).requiredDate)}</span>
+                    ) : (
+                      <span className="text-muted-foreground italic">Not set</span>
+                    )}
+                  </p>
+                )}
               </CardContent>
             </Card>
 

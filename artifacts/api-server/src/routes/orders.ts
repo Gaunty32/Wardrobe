@@ -188,6 +188,12 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
   if (parsed.data.orderDate) {
     updateData.orderDate = new Date(parsed.data.orderDate);
   }
+  if (req.body.requiredDate !== undefined) {
+    updateData.requiredDate = req.body.requiredDate ? new Date(req.body.requiredDate) : null;
+  }
+  if (req.body.deliveryAddressId !== undefined) {
+    updateData.deliveryAddressId = req.body.deliveryAddressId ?? null;
+  }
 
   const [order] = await db
     .update(ordersTable)

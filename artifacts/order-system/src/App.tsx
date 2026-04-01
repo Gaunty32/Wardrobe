@@ -14,6 +14,7 @@ import ProcessStock from "@/pages/ProcessStock";
 import Purchasing from "@/pages/Purchasing";
 import Production from "@/pages/Production";
 import Suppliers from "@/pages/Suppliers";
+import Dispatch from "@/pages/Dispatch";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
@@ -40,6 +41,7 @@ function Router() {
       <Route path="/purchasing" component={Purchasing} />
       <Route path="/production" component={Production} />
       <Route path="/suppliers" component={Suppliers} />
+      <Route path="/dispatch" component={Dispatch} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

@@ -11,6 +11,7 @@ import processStockRouter from "./process-stock";
 import purchasingRouter from "./purchasing";
 import worksheetsRouter from "./worksheets";
 import settingsRouter from "./settings";
+import dispatchRouter from "./dispatch";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(processStockRouter);
 router.use(purchasingRouter);
 router.use(worksheetsRouter);
 router.use(settingsRouter);
+router.use(dispatchRouter);
 
 export default router;
