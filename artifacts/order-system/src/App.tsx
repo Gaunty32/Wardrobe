@@ -14,6 +14,7 @@ import ProcessStock from "@/pages/ProcessStock";
 import Purchasing from "@/pages/Purchasing";
 import Production from "@/pages/Production";
 import Suppliers from "@/pages/Suppliers";
+import Settings from "@/pages/Settings";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -39,6 +40,7 @@ function Router() {
       <Route path="/purchasing" component={Purchasing} />
       <Route path="/production" component={Production} />
       <Route path="/suppliers" component={Suppliers} />
+      <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>
   );

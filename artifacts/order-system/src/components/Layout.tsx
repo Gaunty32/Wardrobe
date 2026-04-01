@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LayoutProps {
@@ -19,6 +19,10 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Production", href: "/production", icon: ClipboardList },
     { name: "Purchasing", href: "/purchasing", icon: ShoppingBag },
     { name: "Suppliers", href: "/suppliers", icon: Truck },
+  ];
+
+  const bottomNavItems = [
+    { name: "Settings", href: "/settings", icon: Settings2 },
   ];
 
   return (
@@ -58,7 +62,28 @@ export default function Layout({ children }: LayoutProps) {
           })}
         </nav>
 
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-white/10 space-y-1">
+          {bottomNavItems.map((item) => {
+            const isActive = location === item.href || location.startsWith(item.href);
+            return (
+              <Link
+                key={item.name}
+                href={item.href}
+                className={cn(
+                  "flex items-center px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group",
+                  isActive
+                    ? "bg-white/15 text-white shadow-sm"
+                    : "text-white/60 hover:bg-white/10 hover:text-white"
+                )}
+              >
+                <item.icon className={cn(
+                  "w-5 h-5 mr-3 transition-colors",
+                  isActive ? "text-primary" : "text-white/50 group-hover:text-white/80"
+                )} />
+                {item.name}
+              </Link>
+            );
+          })}
           <button className="flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:bg-red-500/20 hover:text-red-300 transition-colors group">
             <LogOut className="w-5 h-5 mr-3 transition-colors" />
             Sign Out
