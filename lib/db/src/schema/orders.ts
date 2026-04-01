@@ -52,6 +52,23 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+export const purchaseOrderItemsTable = pgTable("purchase_order_items", {
+  id: serial("id").primaryKey(),
+  poId: integer("po_id").notNull().references(() => purchaseOrdersTable.id, { onDelete: "cascade" }),
+  orderItemId: integer("order_item_id").references(() => orderItemsTable.id, { onDelete: "set null" }),
+  orderId: integer("order_id").references(() => ordersTable.id, { onDelete: "set null" }),
+  orderNumber: text("order_number"),
+  productName: text("product_name").notNull(),
+  colour: text("colour"),
+  size: text("size"),
+  quantityOrdered: integer("quantity_ordered").notNull().default(1),
+  quantityDelivered: integer("quantity_delivered").notNull().default(0),
+  estimatedDueDate: timestamp("estimated_due_date", { withTimezone: true }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 export const worksheetsTable = pgTable("worksheets", {
   id: serial("id").primaryKey(),
   worksheetNumber: text("worksheet_number").notNull().unique(),
