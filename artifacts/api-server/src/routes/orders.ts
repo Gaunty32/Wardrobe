@@ -152,6 +152,10 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       ...item,
       unitPrice: numericToFloat(item.unitPrice),
       lineTotal: numericToFloat(item.lineTotal),
+      purchaseRequired: item.purchaseRequired,
+      purchaseQuantity: item.purchaseQuantity,
+      supplierId: item.supplierId,
+      supplierName: item.supplierName,
     })),
   });
 });
@@ -232,12 +236,27 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     recipientName: z.string().optional().nullable(),
     quantity: z.number().int().positive(),
     unitPrice: z.number().min(0),
+    purchaseRequired: z.boolean().optional().default(false),
+    purchaseQuantity: z.number().int().min(0).optional().nullable(),
+    supplierId: z.number().int().positive().optional().nullable(),
+    supplierName: z.string().optional().nullable(),
   });
 
   const parsed = addItemSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
+  }
+
+  if (parsed.data.productId && parsed.data.quantity > 0) {
+    const [product] = await db.select().from(productsTable).where(eq(productsTable.id, parsed.data.productId));
+    if (product && product.stockQuantity !== null) {
+      const stockToDeduct = parsed.data.quantity - (parsed.data.purchaseQuantity ?? 0);
+      if (stockToDeduct > 0) {
+        const newStock = Math.max(0, product.stockQuantity - stockToDeduct);
+        await db.update(productsTable).set({ stockQuantity: newStock }).where(eq(productsTable.id, parsed.data.productId));
+      }
+    }
   }
 
   const lineTotal = parsed.data.quantity * parsed.data.unitPrice;
@@ -256,6 +275,10 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       quantity: parsed.data.quantity,
       unitPrice: String(parsed.data.unitPrice),
       lineTotal: String(lineTotal),
+      purchaseRequired: parsed.data.purchaseRequired ?? false,
+      purchaseQuantity: parsed.data.purchaseQuantity ?? null,
+      supplierId: parsed.data.supplierId ?? null,
+      supplierName: parsed.data.supplierName ?? null,
     })
     .returning();
 

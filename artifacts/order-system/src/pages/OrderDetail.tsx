@@ -131,6 +131,22 @@ export default function OrderDetail() {
   const [selectedEmployee, setSelectedEmployee] = useState<CustomerEmployee | null>(null);
   const [isNewPerson, setIsNewPerson] = useState(false);
 
+  interface StockCheckResult {
+    productId: number;
+    productName: string;
+    stockQuantity: number;
+    requested: number;
+    available: number;
+    shortfall: number;
+    purchaseRequired: boolean;
+    supplierId: number | null;
+    supplierName: string | null;
+    supplierEmail: string | null;
+    supplierCode: string | null;
+  }
+  const [stockPrompt, setStockPrompt] = useState<StockCheckResult | null>(null);
+  const [pendingItemData, setPendingItemData] = useState<Record<string, unknown> | null>(null);
+
   const { data: productAttributes } = useProductAttributes(item.productId);
   const { data: productVariants } = useProductVariants(item.productId);
 
@@ -208,7 +224,7 @@ export default function OrderDetail() {
     });
   };
 
-  const handleAddItem = () => {
+  const doAddItem = (overrides: Record<string, unknown> = {}) => {
     if (!item.productId || !item.productName) return;
     const price = parseFloat(item.unitPrice);
     if (isNaN(price)) return;
@@ -227,19 +243,45 @@ export default function OrderDetail() {
           recipientName: item.recipientType === "person" ? (item.recipientName || null) : null,
           quantity: item.quantity,
           unitPrice: price,
-        }
+          ...overrides,
+        } as Parameters<typeof addItemMutation.mutate>[0]["data"]
       },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
           toast({ title: "Item Added", description: `${item.productName} added to order.` });
           resetDialog();
+          setStockPrompt(null);
+          setPendingItemData(null);
         },
         onError: (err) => {
           toast({ title: "Error", description: err.message, variant: "destructive" });
         }
       }
     );
+  };
+
+  const handleAddItem = async () => {
+    if (!item.productId || !item.productName) return;
+    const price = parseFloat(item.unitPrice);
+    if (isNaN(price)) return;
+
+    try {
+      const stockCheck = await apiFetch<{
+        stockQuantity: number; requested: number; available: number; shortfall: number;
+        purchaseRequired: boolean; supplierId: number | null; supplierName: string | null;
+        supplierEmail: string | null; supplierCode: string | null;
+      }>(`/purchasing/stock-check?productId=${item.productId}&quantity=${item.quantity}`);
+
+      if (stockCheck.purchaseRequired) {
+        setStockPrompt({ productId: item.productId, productName: item.productName, ...stockCheck });
+        setPendingItemData({ purchaseRequired: true, purchaseQuantity: stockCheck.shortfall, supplierId: stockCheck.supplierId, supplierName: stockCheck.supplierName });
+        return;
+      }
+    } catch {
+    }
+
+    doAddItem();
   };
 
   const handleDeleteItem = (itemId: number) => {
@@ -388,9 +430,17 @@ export default function OrderDetail() {
                           <TableCell className="text-center font-semibold">{orderItem.quantity}</TableCell>
                           <TableCell className="text-right font-bold text-primary tabular-nums">{formatCurrency(orderItem.lineTotal)}</TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteItem(orderItem.id)}>
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
+                            <div className="flex items-center justify-end gap-1">
+                              {(orderItem as { purchaseRequired?: boolean }).purchaseRequired && (
+                                <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1 font-normal">
+                                  <ShoppingBag className="w-3 h-3" />
+                                  Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
+                                </Badge>
+                              )}
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteItem(orderItem.id)}>
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -801,6 +851,54 @@ export default function OrderDetail() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {stockPrompt && (
+        <Dialog open={!!stockPrompt} onOpenChange={() => { setStockPrompt(null); setPendingItemData(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-700">
+                <ShoppingBag className="w-5 h-5" />
+                Insufficient Stock
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                You requested <span className="font-semibold text-foreground">{stockPrompt.requested}</span> units of <span className="font-semibold text-foreground">{stockPrompt.productName}</span>, but only <span className="font-semibold text-foreground">{stockPrompt.stockQuantity}</span> are in stock.
+              </p>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Available in stock:</span>
+                  <span className="font-semibold text-green-700">{stockPrompt.available}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Needs purchasing:</span>
+                  <span className="font-semibold text-amber-700">{stockPrompt.shortfall}</span>
+                </div>
+                {stockPrompt.supplierName && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Supplier:</span>
+                    <span className="font-semibold">{stockPrompt.supplierName}</span>
+                  </div>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Would you like to add this item and flag <span className="font-semibold text-amber-700">{stockPrompt.shortfall} units</span> as purchase required?
+              </p>
+            </div>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setStockPrompt(null); setPendingItemData(null); }}>Cancel</Button>
+              <Button
+                onClick={() => doAddItem(pendingItemData ?? {})}
+                disabled={addItemMutation.isPending}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {addItemMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ShoppingBag className="w-4 h-4 mr-1" />}
+                Add &amp; Flag for Purchase
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </Layout>
   );
 }

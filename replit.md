@@ -67,6 +67,7 @@ A modern web-based sales order management system replacing an old Microsoft Acce
 - `/products` → Products list — grouped by category with filter pills; category field on add/edit; clickable rows
 - `/products/:id` → Product detail (tabs: Details, Colours, Sizes)
 - `/process-stock` → Process Stock (physical materials for decoration)
+- `/purchasing` → Purchasing — consolidated purchase requirements by supplier with matrix view and email PO
 - `/suppliers` → Suppliers list
 
 ### API Server (`artifacts/api-server`)
@@ -106,7 +107,8 @@ Tables in PostgreSQL:
 - `product_attributes` — productId, type (colour/size), value
 - `product_variants` — productId, colour, size, stockQty, price
 - `orders` — order_number, customer_id, customer_name, status, total_amount, notes, order_date
-- `order_items` — order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, quantity, unit_price, line_total
+- `order_items` — order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, quantity, unit_price, line_total, purchase_required (bool), purchase_quantity, supplier_id, supplier_name
+- `purchase_orders` — po_number, supplier_id, supplier_name, supplier_email, status, notes, sent_at
 - `suppliers` — name, contactName, email, phone, address
 - `process_stock` — name, description, unit, stockQty, unitCost
 
