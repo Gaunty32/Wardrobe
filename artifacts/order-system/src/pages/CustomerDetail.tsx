@@ -16,7 +16,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
 import { Link } from "wouter";
@@ -1328,6 +1328,18 @@ export default function CustomerDetail() {
     );
   }
 
+  const xeroContactId = (customer as any).xeroContactId as string | null;
+
+  const { data: xeroBalance, isLoading: xeroBalanceLoading } = useQuery<{
+    arOutstanding: number; arOverdue: number; apOutstanding: number; apOverdue: number;
+  }>({
+    queryKey: ["xero-balance-customer", customerId],
+    queryFn: () => apiFetch(`/xero/balance/customer/${customerId}`),
+    enabled: !!xeroContactId,
+    staleTime: 1000 * 60 * 5,
+    retry: false,
+  });
+
   return (
     <Layout>
       <div className="flex flex-col space-y-6">
@@ -1350,6 +1362,35 @@ export default function CustomerDetail() {
             </div>
           </div>
         </div>
+
+        {/* Xero balance card — only shown when customer is linked to Xero */}
+        {xeroContactId && (
+          <div className="flex flex-wrap gap-4 px-0">
+            {xeroBalanceLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading Xero balance…
+              </div>
+            ) : xeroBalance ? (
+              <>
+                <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm ${xeroBalance.arOutstanding > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"}`}>
+                  <TrendingUp className={`w-4 h-4 ${xeroBalance.arOutstanding > 0 ? "text-amber-600" : "text-green-600"}`} />
+                  <div>
+                    <div className="font-semibold text-foreground">
+                      {formatCurrency(xeroBalance.arOutstanding)} outstanding
+                    </div>
+                    <div className="text-xs text-muted-foreground">Accounts Receivable (Xero)</div>
+                  </div>
+                  {xeroBalance.arOverdue > 0 && (
+                    <div className="flex items-center gap-1 ml-2 text-red-600 text-xs font-medium">
+                      <AlertCircle className="w-3.5 h-3.5" />
+                      {formatCurrency(xeroBalance.arOverdue)} overdue
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+        )}
 
         <Tabs defaultValue="employees">
           <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1">

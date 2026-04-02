@@ -16,14 +16,22 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS image_url text;
   `);
 
-  // Clear any sync logs that are stuck in "running" state from a previous crashed run
+  await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS xero_contact_id text;
+    ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS xero_contact_id text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_id text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_status text;
+  `);
+
+  // Clear ALL sync logs stuck in "running" — if the server restarted, every in-flight
+  // sync was killed by the OS. There is no such thing as a legitimately "running" sync
+  // across a process restart.
   await db.execute(sql`
     UPDATE sync_logs
     SET status = 'failed',
-        message = 'Interrupted — server was restarted during sync',
+        message = 'Interrupted — server was restarted while sync was in progress',
         completed_at = NOW()
     WHERE status = 'running'
-      AND started_at < NOW() - INTERVAL '10 minutes'
   `);
 
   console.log("[startup] Migrations complete");

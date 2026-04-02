@@ -26,7 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -391,6 +391,15 @@ export default function OrderDetail() {
     );
   };
 
+  const postToXeroMutation = useMutation({
+    mutationFn: () => apiFetch<{ xeroInvoiceId: string; xeroInvoiceStatus: string }>(`/xero/invoices/${orderId}`, { method: "POST" }),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Invoice posted to Xero", description: `Invoice ${res.xeroInvoiceId} created as ${res.xeroInvoiceStatus}.` });
+    },
+    onError: (e: Error) => toast({ title: "Xero error", description: e.message, variant: "destructive" }),
+  });
+
   const handleStatusChange = (newStatus: UpdateOrderBodyStatus) => {
     updateOrderMutation.mutate(
       { id: orderId, data: { status: newStatus } },
@@ -440,7 +449,26 @@ export default function OrderDetail() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+            {/* Xero invoice status or post button */}
+            {(order as any).xeroInvoiceId ? (
+              <Badge variant="outline" className="gap-1.5 text-indigo-700 border-indigo-300 bg-indigo-50">
+                <BookOpen className="w-3.5 h-3.5" />
+                Xero: {(order as any).xeroInvoiceStatus ?? "DRAFT"}
+              </Badge>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                onClick={() => postToXeroMutation.mutate()}
+                disabled={postToXeroMutation.isPending}
+              >
+                {postToXeroMutation.isPending
+                  ? <><Loader2 className="w-4 h-4 animate-spin" />Posting…</>
+                  : <><BookOpen className="w-4 h-4" />Post to Xero</>}
+              </Button>
+            )}
             <Select value={order.status} onValueChange={(val) => handleStatusChange(val as UpdateOrderBodyStatus)}>
               <SelectTrigger className="w-[160px] bg-background">
                 <SelectValue placeholder="Update Status" />

@@ -12,6 +12,7 @@ import purchasingRouter from "./purchasing";
 import worksheetsRouter from "./worksheets";
 import settingsRouter from "./settings";
 import dispatchRouter from "./dispatch";
+import xeroRouter from "./xero";
 
 const router: IRouter = Router();
 
@@ -28,5 +29,6 @@ router.use(purchasingRouter);
 router.use(worksheetsRouter);
 router.use(settingsRouter);
 router.use(dispatchRouter);
+router.use(xeroRouter);
 
 export default router;
