@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler } from "./services/scheduler";
+import { runStartupMigrations } from "./services/startup-migrations";
 
 const rawPort = process.env["PORT"];
 
@@ -23,6 +24,12 @@ app.listen(port, async (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  try {
+    await runStartupMigrations();
+  } catch (e) {
+    logger.warn({ err: e }, "Startup migrations failed");
+  }
 
   try {
     await initScheduler();

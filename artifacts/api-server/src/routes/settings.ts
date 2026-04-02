@@ -44,12 +44,22 @@ router.get("/woo-sync/logs", async (req, res): Promise<void> => {
 
 router.post("/woo-sync/run", async (req, res): Promise<void> => {
   const full = req.query.full === "true";
-  try {
-    const result = await runWooSync({ full });
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : "Sync failed" });
+
+  // Check whether a sync is already running
+  const [running] = await db.select().from(syncLogsTable)
+    .where(eq(syncLogsTable.status, "running"))
+    .limit(1);
+  if (running) {
+    res.status(409).json({ error: "A sync is already in progress" });
+    return;
   }
+
+  // Respond immediately — the sync runs entirely in the background
+  res.status(202).json({ message: "Sync started" });
+
+  runWooSync({ full }).catch(async (err) => {
+    console.error("[sync] Background sync failed:", err);
+  });
 });
 
 export default router;
