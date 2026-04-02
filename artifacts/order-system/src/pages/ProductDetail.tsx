@@ -71,7 +71,10 @@ function TagInput({
           <p className="text-sm text-muted-foreground italic">No {type === "colour" ? "colours" : "sizes"} added yet</p>
         )}
         {items.map(a => (
-          <span key={a.id} className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border ${colourMap[type]}`}>
+          <span key={a.id} className={`inline-flex items-center gap-1.5 pr-2 py-1 rounded-full text-sm font-medium border ${colourMap[type]} ${a.imageUrl ? "pl-1" : "pl-3"}`}>
+            {type === "colour" && a.imageUrl && (
+              <img src={a.imageUrl} alt={a.value} className="w-5 h-5 rounded-full object-cover border border-white/60 flex-shrink-0" />
+            )}
             {a.value}
             <button onClick={() => delMut.mutate(a.id)} className="hover:opacity-60 ml-0.5"><X className="w-3 h-3" /></button>
           </span>
@@ -442,9 +445,19 @@ export default function ProductDetail() {
             <Button variant="ghost" size="icon" className="mt-1 shrink-0" onClick={() => navigate("/products")}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
+            {(product as any).imageUrl ? (
+              <img
+                src={(product as any).imageUrl}
+                alt={product.name}
+                className="w-16 h-16 object-cover rounded-lg border border-border/50 flex-shrink-0"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-lg border border-border/50 bg-muted flex items-center justify-center flex-shrink-0">
+                <Package className="w-7 h-7 text-muted-foreground/40" />
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
-                <Package className="w-6 h-6 text-muted-foreground shrink-0" />
                 <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{product.name}</h1>
                 {product.sku && <span className="font-mono text-sm text-muted-foreground bg-muted px-2 py-0.5 rounded">{product.sku}</span>}
               </div>

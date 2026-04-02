@@ -20,6 +20,7 @@ interface WooProduct {
   manage_stock: boolean;
   type: "simple" | "variable" | string;
   categories: { id: number; name: string; slug: string }[];
+  images: { id: number; src: string; alt: string; position: number }[];
   attributes: { id: number; name: string; options: string[]; variation: boolean }[];
   variations: number[];
 }
@@ -29,6 +30,7 @@ interface WooVariation {
   sku: string;
   price: string;
   stock_quantity: number | null;
+  image: { id: number; src: string; alt: string } | null;
   attributes: { id: number; name: string; option: string }[];
 }
 
@@ -156,6 +158,7 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
         const priceStr = wooProduct.regular_price || wooProduct.price || "0";
         const price = parseFloat(priceStr) || 0;
         const stockQty = wooProduct.manage_stock ? (wooProduct.stock_quantity ?? null) : null;
+        const imageUrl = wooProduct.images?.[0]?.src ?? null;
 
         const existing = await db.select({ id: productsTable.id }).from(productsTable)
           .where(eq(productsTable.wooCommerceId, wooId))
@@ -169,6 +172,7 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
             name: wooProduct.name,
             sku: wooProduct.sku || null,
             category,
+            imageUrl,
             description: wooProduct.short_description || wooProduct.description || null,
             unitPrice: String(price),
             stockQuantity: stockQty,
@@ -180,6 +184,7 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
             name: wooProduct.name,
             sku: wooProduct.sku || null,
             category,
+            imageUrl,
             description: wooProduct.short_description || wooProduct.description || null,
             unitPrice: String(price),
             stockQuantity: stockQty,
@@ -190,13 +195,22 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
 
         const colours = new Set<string>();
         const sizes = new Set<string>();
+        // Maps colour name → first variation image URL found for that colour
+        const colourImages = new Map<string, string>();
 
         if (wooProduct.type === "variable" && wooProduct.variations?.length > 0) {
           const variations = await fetchVariations(baseUrl, ck, cs, wooId);
           for (const v of variations) {
             for (const attr of v.attributes) {
-              if (isColourAttr(attr.name)) colours.add(attr.option);
-              else if (isSizeAttr(attr.name)) sizes.add(attr.option);
+              if (isColourAttr(attr.name)) {
+                colours.add(attr.option);
+                // Store the first image we see for each colour
+                if (v.image?.src && !colourImages.has(attr.option)) {
+                  colourImages.set(attr.option, v.image.src);
+                }
+              } else if (isSizeAttr(attr.name)) {
+                sizes.add(attr.option);
+              }
             }
           }
         } else {
@@ -207,10 +221,10 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
         }
 
         await db.delete(productAttributesTable).where(eq(productAttributesTable.productId, productId));
-        const attrValues: { productId: number; type: string; value: string; sortOrder: number }[] = [];
+        const attrValues: { productId: number; type: string; value: string; imageUrl: string | null; sortOrder: number }[] = [];
         let i = 0;
-        for (const c of colours) attrValues.push({ productId, type: "colour", value: c, sortOrder: i++ });
-        for (const s of sizes) attrValues.push({ productId, type: "size", value: s, sortOrder: i++ });
+        for (const c of colours) attrValues.push({ productId, type: "colour", value: c, imageUrl: colourImages.get(c) ?? null, sortOrder: i++ });
+        for (const s of sizes) attrValues.push({ productId, type: "size", value: s, imageUrl: null, sortOrder: i++ });
         if (attrValues.length > 0) await db.insert(productAttributesTable).values(attrValues);
 
       } catch (err) {

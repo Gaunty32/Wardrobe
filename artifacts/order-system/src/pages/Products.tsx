@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Loader2, Tag, ChevronRight } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, Tag, ChevronRight } from "lucide-react";
 
 const UNCATEGORISED = "Uncategorised";
 
@@ -345,6 +345,7 @@ function ProductTable({
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
+            <TableHead className="w-[48px]"></TableHead>
             <TableHead className="w-[100px]">SKU</TableHead>
             <TableHead>Product Name</TableHead>
             <TableHead className="hidden md:table-cell">Description</TableHead>
@@ -360,6 +361,15 @@ function ProductTable({
               className="group hover:bg-muted/30 cursor-pointer"
               onClick={() => onNavigate(product.id)}
             >
+              <TableCell className="py-2 pl-4 pr-0">
+                {(product as any).imageUrl ? (
+                  <img src={(product as any).imageUrl} alt={product.name} className="w-9 h-9 rounded object-cover border border-border/50" />
+                ) : (
+                  <div className="w-9 h-9 rounded bg-muted border border-border/50 flex items-center justify-center">
+                    <Package className="w-4 h-4 text-muted-foreground/40" />
+                  </div>
+                )}
+              </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">{product.sku || "—"}</TableCell>
               <TableCell className="font-medium text-foreground hover:text-primary transition-colors">
                 {product.name}

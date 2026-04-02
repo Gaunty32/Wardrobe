@@ -6,6 +6,7 @@ export const productAttributesTable = pgTable("product_attributes", {
   productId: integer("product_id").notNull().references(() => productsTable.id, { onDelete: "cascade" }),
   type: text("type").notNull(),
   value: text("value").notNull(),
+  imageUrl: text("image_url"),
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

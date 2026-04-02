@@ -13,6 +13,7 @@ export const productsTable = pgTable("products", {
   supplierId: integer("supplier_id"),
   secondarySupplierId: integer("secondary_supplier_id"),
   supplierCode: text("supplier_code"),
+  imageUrl: text("image_url"),
   wooCommerceId: integer("woo_commerce_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
