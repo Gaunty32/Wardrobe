@@ -11,6 +11,8 @@ const subIdParam = z.object({ productId: z.coerce.number().int().positive(), id:
 const variantBody = z.object({
   colour: z.string().optional().nullable(),
   size: z.string().optional().nullable(),
+  sku: z.string().optional().nullable(),
+  price: z.number().positive().optional().nullable(),
   stockQuantity: z.number().int().min(0).default(0),
   primarySupplierId: z.number().int().positive().optional().nullable(),
   secondarySupplierId: z.number().int().positive().optional().nullable(),

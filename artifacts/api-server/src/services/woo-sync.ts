@@ -1,5 +1,5 @@
-import { eq, inArray } from "drizzle-orm";
-import { db, productsTable, productAttributesTable, settingsTable, syncLogsTable } from "@workspace/db";
+import { eq, inArray, isNotNull, and } from "drizzle-orm";
+import { db, productsTable, productAttributesTable, productVariantsTable, settingsTable, syncLogsTable } from "@workspace/db";
 
 interface WooCategory {
   id: number;
@@ -29,6 +29,8 @@ interface WooVariation {
   id: number;
   sku: string;
   price: string;
+  regular_price: string;
+  manage_stock: boolean;
   stock_quantity: number | null;
   image: { id: number; src: string; alt: string } | null;
   attributes: { id: number; name: string; option: string }[];
@@ -234,31 +236,50 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
         // Maps colour name → first variation image URL found for that colour
         const colourImages = new Map<string, string>();
 
+        // Fetch variations for variable products and upsert product_variants
+        const variantRows: {
+          productId: number; wooVariationId: number; colour: string | null; size: string | null;
+          sku: string | null; price: string | null; imageUrl: string | null; stockQuantity: number;
+        }[] = [];
+
         if (wooProduct.type === "variable" && wooProduct.variations?.length > 0) {
           const variations = await fetchVariations(baseUrl, ck, cs, wooId);
           const mainImageSrc = wooProduct.images?.[0]?.src ?? null;
+
           for (const v of variations) {
+            let vColour: string | null = null;
+            let vSize: string | null = null;
             for (const attr of v.attributes) {
-              if (isColourAttr(attr.name)) {
-                colours.add(attr.option);
-                if (!colourImages.has(attr.option)) {
-                  // Use the variation's own image only if it differs from the main product image
-                  const varImg = v.image?.src;
-                  if (varImg && varImg !== mainImageSrc) {
-                    colourImages.set(attr.option, varImg);
-                  } else {
-                    // Fallback: search gallery images whose alt text matches the colour name
-                    const colourKey = attr.option.toLowerCase().trim();
-                    const galleryMatch =
-                      galleryByAlt.get(colourKey) ??
-                      [...galleryByAlt.entries()].find(([alt]) => alt.includes(colourKey) || colourKey.includes(alt))?.[1];
-                    if (galleryMatch) colourImages.set(attr.option, galleryMatch);
-                  }
-                }
-              } else if (isSizeAttr(attr.name)) {
-                sizes.add(attr.option);
-              }
+              if (isColourAttr(attr.name)) vColour = attr.option;
+              else if (isSizeAttr(attr.name)) vSize = attr.option;
             }
+
+            // Resolve variation image
+            let vImageUrl: string | null = null;
+            const varImg = v.image?.src;
+            if (varImg && varImg !== mainImageSrc) {
+              vImageUrl = varImg;
+            } else if (vColour) {
+              const colourKey = vColour.toLowerCase().trim();
+              vImageUrl = galleryByAlt.get(colourKey) ??
+                [...galleryByAlt.entries()].find(([alt]) => alt.includes(colourKey) || colourKey.includes(alt))?.[1] ?? null;
+            }
+
+            if (vColour) colours.add(vColour);
+            if (vSize) sizes.add(vSize);
+            if (vColour && vImageUrl && !colourImages.has(vColour)) colourImages.set(vColour, vImageUrl);
+
+            const vPrice = v.price || v.regular_price || null;
+            variantRows.push({
+              productId,
+              wooVariationId: v.id,
+              colour: vColour,
+              size: vSize,
+              sku: v.sku || null,
+              price: vPrice ? String(parseFloat(vPrice)) : null,
+              imageUrl: vImageUrl,
+              stockQuantity: v.manage_stock ? (v.stock_quantity ?? 0) : 0,
+            });
           }
         } else {
           for (const attr of wooProduct.attributes) {
@@ -267,6 +288,18 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           }
         }
 
+        // Replace WooCommerce-managed variants; keep any manually created ones (no wooVariationId)
+        await db.delete(productVariantsTable).where(
+          and(
+            eq(productVariantsTable.productId, productId),
+            isNotNull(productVariantsTable.wooVariationId)
+          )
+        );
+        if (variantRows.length > 0) {
+          await db.insert(productVariantsTable).values(variantRows);
+        }
+
+        // Update product_attributes colour/size palette from synced data
         await db.delete(productAttributesTable).where(eq(productAttributesTable.productId, productId));
         const attrValues: { productId: number; type: string; value: string; imageUrl: string | null; sortOrder: number }[] = [];
         let i = 0;

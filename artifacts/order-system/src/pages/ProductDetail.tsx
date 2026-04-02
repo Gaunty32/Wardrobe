@@ -168,14 +168,24 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
     <>
       <TableRow className="group hover:bg-muted/20">
         <TableCell>
-          {variant.colour
-            ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200">{variant.colour}</span>
-            : <span className="text-muted-foreground text-sm italic">Any</span>}
+          <div className="flex items-center gap-2">
+            {variant.imageUrl ? (
+              <img src={variant.imageUrl} alt={variant.colour ?? ""} className="w-8 h-8 rounded object-cover border border-border/50 flex-shrink-0" />
+            ) : (
+              <div className="w-8 h-8 rounded bg-pink-100 border border-pink-200 flex-shrink-0" />
+            )}
+            {variant.colour
+              ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200">{variant.colour}</span>
+              : <span className="text-muted-foreground text-sm italic">Any</span>}
+          </div>
         </TableCell>
         <TableCell>
           {variant.size
             ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">{variant.size}</span>
             : <span className="text-muted-foreground text-sm italic">Any</span>}
+        </TableCell>
+        <TableCell className="font-mono text-xs text-muted-foreground">
+          {variant.sku ?? <span className="italic">—</span>}
         </TableCell>
         <TableCell>
           <Input
@@ -588,9 +598,10 @@ export default function ProductDetail() {
                       <Table>
                         <TableHeader>
                           <TableRow className="hover:bg-transparent">
-                            <TableHead className="w-[140px]">Colour</TableHead>
-                            <TableHead className="w-[120px]">Size</TableHead>
-                            <TableHead className="w-[100px]">Stock</TableHead>
+                            <TableHead className="w-[180px]">Colour</TableHead>
+                            <TableHead className="w-[110px]">Size</TableHead>
+                            <TableHead className="w-[130px]">SKU</TableHead>
+                            <TableHead className="w-[90px]">Stock</TableHead>
                             <TableHead>Primary Supplier</TableHead>
                             <TableHead>Secondary Supplier</TableHead>
                             <TableHead className="w-[80px] text-right">Actions</TableHead>
