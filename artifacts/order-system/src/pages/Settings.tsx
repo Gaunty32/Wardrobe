@@ -39,6 +39,7 @@ interface SyncLog {
   itemsCreated: string | null;
   itemsUpdated: string | null;
   errors: string | null;
+  progressPct: number | null;
   startedAt: string;
   completedAt: string | null;
 }
@@ -379,8 +380,34 @@ export default function Settings() {
                 <strong>Sync Changes</strong> is fast — it only fetches products modified since the last run. Use <strong>Full Sync</strong> when you've made bulk changes in WooCommerce or want to be sure everything is up to date.
               </p>
 
-              {/* Last sync summary */}
-              {lastLog && (
+              {/* Live progress bar — shown while a sync is running */}
+              {isSyncRunning && (() => {
+                const pct = logs[0]?.progressPct ?? 0;
+                const phase = pct === 0 ? "Connecting to WooCommerce…" :
+                              pct < 10 ? "Fetching product catalogue…" :
+                              pct < 99 ? `Processing products… ${pct}%` :
+                              "Finishing up…";
+                return (
+                  <div className="space-y-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2 text-blue-800 font-medium">
+                        <Loader2 className="w-4 h-4 animate-spin" />{phase}
+                      </span>
+                      {pct > 0 && <span className="text-blue-600 font-mono text-xs">{pct}%</span>}
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-700 ease-out"
+                        style={{ width: pct > 0 ? `${pct}%` : "8%", animation: pct === 0 ? "pulse 1.5s infinite" : undefined }}
+                      />
+                    </div>
+                    <p className="text-xs text-blue-600">Updates every few seconds — you can leave this page and come back.</p>
+                  </div>
+                );
+              })()}
+
+              {/* Last sync summary — shown when idle */}
+              {lastLog && !isSyncRunning && (
                 <div className={`flex items-start gap-3 px-4 py-3 rounded-lg border text-sm ${
                   lastLog.status === "completed" ? "bg-green-50 border-green-200" :
                   lastLog.status === "failed" ? "bg-red-50 border-red-200" :

@@ -178,13 +178,27 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
   let updated = 0;
   const errors: string[] = [];
 
+  /** Write progress to the log row, throttled to at most one DB write per 5% step */
+  let lastReportedPct = 0;
+  async function reportProgress(done: number, total: number): Promise<void> {
+    if (total === 0) return;
+    const pct = Math.min(99, Math.floor((done / total) * 100));
+    if (pct >= lastReportedPct + 5) {
+      lastReportedPct = pct;
+      await db.update(syncLogsTable).set({ progressPct: pct }).where(eq(syncLogsTable.id, log.id));
+    }
+  }
+
   try {
     // Fetch full category hierarchy (small dataset, always refresh)
     const allCategories = await fetchAllCategories(baseUrl, ck, cs);
     // Fetch products — incremental uses modified_after to get only changed products
     const products = await fetchAllProducts(baseUrl, ck, cs, since);
 
-    for (const wooProduct of products) {
+    // Mark 5% once we know how many products to process
+    await db.update(syncLogsTable).set({ progressPct: 5 }).where(eq(syncLogsTable.id, log.id));
+
+    for (const [index, wooProduct] of products.entries()) {
       try {
         const wooId = wooProduct.id;
         const category = pickBestCategory(wooProduct.categories ?? [], allCategories);
@@ -310,6 +324,8 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
       } catch (err) {
         errors.push(`Product ${wooProduct.id} (${wooProduct.name}): ${err instanceof Error ? err.message : String(err)}`);
       }
+
+      await reportProgress(index + 1, products.length);
     }
 
     // Save sync start time so next incremental sync can use it as its cutoff

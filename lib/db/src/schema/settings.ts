@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
 
 export const settingsTable = pgTable("settings", {
   id: serial("id").primaryKey(),
@@ -15,6 +15,7 @@ export const syncLogsTable = pgTable("sync_logs", {
   itemsCreated: text("items_created"),
   itemsUpdated: text("items_updated"),
   errors: text("errors"),
+  progressPct: integer("progress_pct"),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   completedAt: timestamp("completed_at", { withTimezone: true }),
 });

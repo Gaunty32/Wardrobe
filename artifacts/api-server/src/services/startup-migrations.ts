@@ -23,6 +23,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_status text;
   `);
 
+  await db.execute(sql`
+    ALTER TABLE sync_logs ADD COLUMN IF NOT EXISTS progress_pct integer;
+  `);
+
   // Clear ALL sync logs stuck in "running" — if the server restarted, every in-flight
   // sync was killed by the OS. There is no such thing as a legitimately "running" sync
   // across a process restart.
