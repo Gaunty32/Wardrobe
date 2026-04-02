@@ -134,6 +134,24 @@ function isSizeAttr(name: string): boolean {
   return /^size$|^pa_size$/i.test(name);
 }
 
+/** Strip HTML tags and normalise whitespace */
+function stripHtml(html: string | null | undefined): string | null {
+  if (!html) return null;
+  const stripped = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return stripped || null;
+}
+
 export async function runWooSync(options?: { full?: boolean }): Promise<{ created: number; updated: number; errors: string[]; mode: string }> {
   const settings = await getSettings();
   const baseUrl = settings["woo_url"];
@@ -172,6 +190,11 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
         const price = parseFloat(priceStr) || 0;
         const stockQty = wooProduct.manage_stock ? (wooProduct.stock_quantity ?? null) : null;
         const imageUrl = wooProduct.images?.[0]?.src ?? null;
+        // Build a gallery map: alt-text (lowercased) → image src, for colour fallback
+        const galleryByAlt = new Map<string, string>();
+        for (const img of wooProduct.images ?? []) {
+          if (img.alt) galleryByAlt.set(img.alt.toLowerCase().trim(), img.src);
+        }
 
         const existing = await db.select({ id: productsTable.id }).from(productsTable)
           .where(eq(productsTable.wooCommerceId, wooId))
@@ -186,7 +209,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             sku: wooProduct.sku || null,
             category,
             imageUrl,
-            description: wooProduct.short_description || wooProduct.description || null,
+            description: stripHtml(wooProduct.short_description || wooProduct.description),
             unitPrice: String(price),
             stockQuantity: stockQty,
           }).where(eq(productsTable.id, productId));
@@ -198,7 +221,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             sku: wooProduct.sku || null,
             category,
             imageUrl,
-            description: wooProduct.short_description || wooProduct.description || null,
+            description: stripHtml(wooProduct.short_description || wooProduct.description),
             unitPrice: String(price),
             stockQuantity: stockQty,
           }).returning();
@@ -213,13 +236,24 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
 
         if (wooProduct.type === "variable" && wooProduct.variations?.length > 0) {
           const variations = await fetchVariations(baseUrl, ck, cs, wooId);
+          const mainImageSrc = wooProduct.images?.[0]?.src ?? null;
           for (const v of variations) {
             for (const attr of v.attributes) {
               if (isColourAttr(attr.name)) {
                 colours.add(attr.option);
-                // Store the first image we see for each colour
-                if (v.image?.src && !colourImages.has(attr.option)) {
-                  colourImages.set(attr.option, v.image.src);
+                if (!colourImages.has(attr.option)) {
+                  // Use the variation's own image only if it differs from the main product image
+                  const varImg = v.image?.src;
+                  if (varImg && varImg !== mainImageSrc) {
+                    colourImages.set(attr.option, varImg);
+                  } else {
+                    // Fallback: search gallery images whose alt text matches the colour name
+                    const colourKey = attr.option.toLowerCase().trim();
+                    const galleryMatch =
+                      galleryByAlt.get(colourKey) ??
+                      [...galleryByAlt.entries()].find(([alt]) => alt.includes(colourKey) || colourKey.includes(alt))?.[1];
+                    if (galleryMatch) colourImages.set(attr.option, galleryMatch);
+                  }
                 }
               } else if (isSizeAttr(attr.name)) {
                 sizes.add(attr.option);
