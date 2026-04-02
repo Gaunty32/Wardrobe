@@ -24,6 +24,27 @@ async function setSetting(key: string, value: string | null): Promise<void> {
     .onConflictDoUpdate({ target: settingsTable.key, set: { value, updatedAt: new Date() } });
 }
 
+/**
+ * Build the redirect URI reliably.
+ * Priority: REPLIT_DOMAINS env var (always set and correct in both dev + prod Replit)
+ * → then x-forwarded headers → then raw host.
+ */
+function buildRedirectUri(req: import("express").Request): string {
+  const replitDomains = process.env.REPLIT_DOMAINS;
+  if (replitDomains) {
+    const domain = replitDomains.split(",")[0].trim();
+    return `https://${domain}/api/xero/callback`;
+  }
+  const proto = req.get("x-forwarded-proto") ?? req.protocol;
+  const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
+  return `${proto}://${host}/api/xero/callback`;
+}
+
+// Expose the redirect URI so the frontend can display it for the user to copy
+router.get("/xero/redirect-uri", (req, res): void => {
+  res.json({ redirectUri: buildRedirectUri(req) });
+});
+
 // Save Xero client credentials
 router.post("/xero/credentials", async (req, res): Promise<void> => {
   const body = z.object({
@@ -50,9 +71,7 @@ router.get("/xero/status", async (_req, res): Promise<void> => {
 // Generate the Xero OAuth URL and redirect the browser to it
 router.get("/xero/connect", async (req, res): Promise<void> => {
   try {
-    const proto = req.get("x-forwarded-proto") ?? req.protocol;
-    const host = req.get("x-forwarded-host") ?? req.get("host");
-    const redirectUri = `${proto}://${host}/api/xero/callback`;
+    const redirectUri = buildRedirectUri(req);
     const url = await generateAuthUrl(redirectUri);
     res.redirect(url);
   } catch (err) {

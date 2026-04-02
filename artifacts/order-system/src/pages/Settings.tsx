@@ -105,6 +105,13 @@ export default function Settings() {
     refetchInterval: 60_000,
   });
 
+  const { data: xeroRedirectUriData } = useQuery<{ redirectUri: string }>({
+    queryKey: ["xero-redirect-uri"],
+    queryFn: () => apiFetch("/xero/redirect-uri"),
+    staleTime: Infinity,
+  });
+  const xeroRedirectUri = xeroRedirectUriData?.redirectUri ?? "";
+
   const saveXeroCredsMutation = useMutation({
     mutationFn: (data: { clientId: string; clientSecret: string }) =>
       apiFetch("/xero/credentials", { method: "POST", body: JSON.stringify(data) }),
@@ -451,10 +458,35 @@ export default function Settings() {
                   <a href="https://developer.xero.com/app/manage" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
                     developer.xero.com <ExternalLink className="w-3 h-3" />
                   </a>{" "}
-                  and copy the Client ID and Secret below. Add{" "}
-                  <code className="text-xs bg-muted px-1 py-0.5 rounded">{window.location.origin}/api/xero/callback</code>{" "}
-                  as a redirect URI in the Xero app settings.
+                  and paste the Client ID and Secret below. You <strong>must</strong> also add the redirect URI shown here to your Xero app — copy it exactly.
                 </p>
+
+                {/* Redirect URI — shown prominently so the user can copy it into Xero */}
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Step 1 — Add this Redirect URI to your Xero app</p>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 text-xs bg-white border border-amber-200 rounded px-2 py-1.5 text-amber-900 break-all select-all">
+                      {xeroRedirectUri || "Loading…"}
+                    </code>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 border-amber-300 text-amber-700 hover:bg-amber-100"
+                      onClick={() => {
+                        if (xeroRedirectUri) {
+                          navigator.clipboard.writeText(xeroRedirectUri);
+                          toast({ title: "Copied!", description: "Redirect URI copied to clipboard." });
+                        }
+                      }}
+                      disabled={!xeroRedirectUri}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  <p className="text-xs text-amber-700">In your Xero app: Configuration → Redirect URIs → add the URL above.</p>
+                </div>
+
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Step 2 — Enter your credentials</p>
                 <div className="space-y-1.5">
                   <Label>Client ID</Label>
                   <Input
