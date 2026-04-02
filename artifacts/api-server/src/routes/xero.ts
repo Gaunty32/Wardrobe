@@ -91,21 +91,6 @@ router.get("/xero/connect", async (req, res): Promise<void> => {
   }
 });
 
-// Debug — returns the auth URL without redirecting so you can inspect all params
-router.get("/xero/connect/debug", async (req, res): Promise<void> => {
-  try {
-    const redirectUri = await getEffectiveRedirectUri(req);
-    const url = await generateAuthUrl(redirectUri);
-    const parsed = new URL(url);
-    res.json({
-      full_url: url,
-      params: Object.fromEntries(parsed.searchParams.entries()),
-    });
-  } catch (err) {
-    res.status(400).json({ error: err instanceof Error ? err.message : "Unknown error" });
-  }
-});
-
 // OAuth callback — Xero redirects here after user authorises
 router.get("/xero/callback", async (req, res): Promise<void> => {
   const { code, state, error } = req.query as Record<string, string>;
