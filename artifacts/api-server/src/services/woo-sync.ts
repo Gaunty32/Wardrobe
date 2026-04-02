@@ -48,12 +48,14 @@ async function wooFetch<T>(baseUrl: string, path: string, consumerKey: string, c
   return res.json() as T;
 }
 
-async function fetchAllProducts(baseUrl: string, ck: string, cs: string): Promise<WooProduct[]> {
+async function fetchAllProducts(baseUrl: string, ck: string, cs: string, since?: Date): Promise<WooProduct[]> {
   const all: WooProduct[] = [];
   let page = 1;
   const perPage = 100;
   while (true) {
-    const batch = await wooFetch<WooProduct[]>(baseUrl, `/products?per_page=${perPage}&page=${page}&status=publish`, ck, cs);
+    let path = `/products?per_page=${perPage}&page=${page}&status=publish`;
+    if (since) path += `&modified_after=${since.toISOString()}`;
+    const batch = await wooFetch<WooProduct[]>(baseUrl, path, ck, cs);
     all.push(...batch);
     if (batch.length < perPage) break;
     page++;
@@ -132,7 +134,7 @@ function isSizeAttr(name: string): boolean {
   return /^size$|^pa_size$/i.test(name);
 }
 
-export async function runWooSync(): Promise<{ created: number; updated: number; errors: string[] }> {
+export async function runWooSync(options?: { full?: boolean }): Promise<{ created: number; updated: number; errors: string[]; mode: string }> {
   const settings = await getSettings();
   const baseUrl = settings["woo_url"];
   const ck = settings["woo_consumer_key"];
@@ -140,16 +142,27 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
 
   if (!baseUrl || !ck || !cs) throw new Error("WooCommerce credentials not configured.");
 
-  const [log] = await db.insert(syncLogsTable).values({ type: "woocommerce", status: "running", startedAt: new Date() }).returning();
+  // Record start time before fetching — used as the next sync's cutoff
+  const syncStartedAt = new Date();
+
+  // Determine sync mode
+  let since: Date | undefined;
+  if (!options?.full && settings["woo_last_sync_at"]) {
+    since = new Date(settings["woo_last_sync_at"]);
+  }
+  const mode = since ? "incremental" : "full";
+
+  const [log] = await db.insert(syncLogsTable).values({ type: "woocommerce", status: "running", startedAt: syncStartedAt }).returning();
 
   let created = 0;
   let updated = 0;
   const errors: string[] = [];
 
   try {
-    // Fetch full category hierarchy so we can pick the most specific category per product
+    // Fetch full category hierarchy (small dataset, always refresh)
     const allCategories = await fetchAllCategories(baseUrl, ck, cs);
-    const products = await fetchAllProducts(baseUrl, ck, cs);
+    // Fetch products — incremental uses modified_after to get only changed products
+    const products = await fetchAllProducts(baseUrl, ck, cs, since);
 
     for (const wooProduct of products) {
       try {
@@ -232,19 +245,29 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
       }
     }
 
+    // Save sync start time so next incremental sync can use it as its cutoff
+    await db.insert(settingsTable)
+      .values({ key: "woo_last_sync_at", value: syncStartedAt.toISOString() })
+      .onConflictDoUpdate({ target: settingsTable.key, set: { value: syncStartedAt.toISOString(), updatedAt: new Date() } });
+
+    const modeLabel = mode === "incremental" ? `Incremental — ${products.length} changed` : `Full — ${products.length} total`;
     await db.update(syncLogsTable).set({
       status: errors.length > 0 ? "completed_with_errors" : "completed",
-      message: `Synced ${products.length} products across ${allCategories.size} categories`,
+      message: `${modeLabel} across ${allCategories.size} categories`,
       itemsCreated: String(created),
       itemsUpdated: String(updated),
       errors: errors.length > 0 ? errors.slice(0, 20).join("\n") : null,
       completedAt: new Date(),
     }).where(eq(syncLogsTable.id, log.id));
 
-    return { created, updated, errors };
+    return { created, updated, errors, mode };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await db.update(syncLogsTable).set({ status: "failed", message: msg, completedAt: new Date() }).where(eq(syncLogsTable.id, log.id));
     throw err;
   }
+}
+
+export async function runWooSyncFull(): Promise<ReturnType<typeof runWooSync>> {
+  return runWooSync({ full: true });
 }

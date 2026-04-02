@@ -99,11 +99,12 @@ export default function Settings() {
   });
 
   const syncMutation = useMutation({
-    mutationFn: () => apiFetch("/woo-sync/run", { method: "POST" }),
+    mutationFn: (full = false) => apiFetch(`/woo-sync/run${full ? "?full=true" : ""}`, { method: "POST" }),
     onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ["sync-logs"] });
+      const modeLabel = result.mode === "incremental" ? "Incremental sync" : "Full sync";
       toast({
-        title: "Sync complete",
+        title: `${modeLabel} complete`,
         description: `${result.created} created, ${result.updated} updated${result.errors?.length ? `, ${result.errors.length} errors` : ""}`,
       });
     },
@@ -231,20 +232,33 @@ export default function Settings() {
                 </div>
               </div>
 
-              {/* Save + Sync Now */}
-              <div className="flex items-center gap-3">
+              {/* Save + Sync buttons */}
+              <div className="flex items-center gap-3 flex-wrap">
                 <Button onClick={handleSave} disabled={saveMutation.isPending} className="gap-2">
                   {saveMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><CheckCircle className="w-4 h-4" />Save Settings</>}
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => syncMutation.mutate()}
+                  onClick={() => syncMutation.mutate(false)}
                   disabled={syncMutation.isPending || !isConnected}
                   className="gap-2"
+                  title="Only fetches products changed since the last sync"
                 >
-                  {syncMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing...</> : <><Play className="w-4 h-4" />Sync Now</>}
+                  {syncMutation.isPending && !syncMutation.variables ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing...</> : <><Play className="w-4 h-4" />Sync Changes</>}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => syncMutation.mutate(true)}
+                  disabled={syncMutation.isPending || !isConnected}
+                  className="gap-2 text-muted-foreground"
+                  title="Re-fetches all products from WooCommerce regardless of when they were last modified"
+                >
+                  {syncMutation.isPending && syncMutation.variables ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing all...</> : <><RefreshCw className="w-4 h-4" />Full Sync</>}
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground -mt-2">
+                <strong>Sync Changes</strong> is fast — it only fetches products modified since the last run. Use <strong>Full Sync</strong> when you've made bulk changes in WooCommerce or want to be sure everything is up to date.
+              </p>
 
               {/* Last sync summary */}
               {lastLog && (

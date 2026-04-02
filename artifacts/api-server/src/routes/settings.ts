@@ -43,8 +43,9 @@ router.get("/woo-sync/logs", async (req, res): Promise<void> => {
 });
 
 router.post("/woo-sync/run", async (req, res): Promise<void> => {
+  const full = req.query.full === "true";
   try {
-    const result = await runWooSync();
+    const result = await runWooSync({ full });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Sync failed" });
