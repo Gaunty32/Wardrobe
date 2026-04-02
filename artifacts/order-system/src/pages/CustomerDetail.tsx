@@ -1307,6 +1307,18 @@ export default function CustomerDetail() {
 
   const { data: customer, isLoading } = useGetCustomer(customerId);
 
+  // Must be declared before any early returns to comply with React's Rules of Hooks.
+  const xeroContactId = customer ? ((customer as any).xeroContactId as string | null) : null;
+  const { data: xeroBalance, isLoading: xeroBalanceLoading } = useQuery<{
+    arOutstanding: number; arOverdue: number; apOutstanding: number; apOverdue: number;
+  }>({
+    queryKey: ["xero-balance-customer", customerId],
+    queryFn: () => apiFetch(`/xero/balance/customer/${customerId}`),
+    enabled: !!xeroContactId,
+    staleTime: 1000 * 60 * 5,
+    retry: false,
+  });
+
   if (isLoading) {
     return (
       <Layout>
@@ -1327,18 +1339,6 @@ export default function CustomerDetail() {
       </Layout>
     );
   }
-
-  const xeroContactId = (customer as any).xeroContactId as string | null;
-
-  const { data: xeroBalance, isLoading: xeroBalanceLoading } = useQuery<{
-    arOutstanding: number; arOverdue: number; apOutstanding: number; apOverdue: number;
-  }>({
-    queryKey: ["xero-balance-customer", customerId],
-    queryFn: () => apiFetch(`/xero/balance/customer/${customerId}`),
-    enabled: !!xeroContactId,
-    staleTime: 1000 * 60 * 5,
-    retry: false,
-  });
 
   return (
     <Layout>
