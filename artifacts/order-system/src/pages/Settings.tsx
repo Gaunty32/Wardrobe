@@ -81,31 +81,8 @@ export default function Settings() {
   const [xeroClientSecret, setXeroClientSecret] = useState("");
   const [showXeroSecret, setShowXeroSecret] = useState(false);
 
-  // Xero sync progress bar (simulated fill while the request is in-flight)
+  // Xero sync progress bar state — effect is placed after syncXeroContactsMutation declaration below
   const [xeroSyncProgress, setXeroSyncProgress] = useState(0);
-
-  useEffect(() => {
-    if (!syncXeroContactsMutation.isPending) {
-      if (xeroSyncProgress > 0) {
-        // Request finished — snap to 100% then fade out
-        setXeroSyncProgress(100);
-        const t = setTimeout(() => setXeroSyncProgress(0), 700);
-        return () => clearTimeout(t);
-      }
-      return;
-    }
-    // Request started — animate from 5% up to 88% in slow increments
-    setXeroSyncProgress(5);
-    const interval = setInterval(() => {
-      setXeroSyncProgress((prev) => {
-        if (prev >= 88) { clearInterval(interval); return prev; }
-        // Each tick adds a decreasing amount so it slows near the end
-        const step = Math.max(0.5, (88 - prev) * 0.04);
-        return Math.min(88, prev + step);
-      });
-    }, 200);
-    return () => clearInterval(interval);
-  }, [syncXeroContactsMutation.isPending]);
 
   // Detect ?xero=connected redirect from OAuth callback
   useEffect(() => {
@@ -148,6 +125,27 @@ export default function Settings() {
     },
     onError: (e: Error) => toast({ title: "Sync failed", description: parseApiError(e), variant: "destructive" }),
   });
+
+  // Progress bar animation — must be after syncXeroContactsMutation is declared
+  useEffect(() => {
+    if (!syncXeroContactsMutation.isPending) {
+      if (xeroSyncProgress > 0) {
+        setXeroSyncProgress(100);
+        const t = setTimeout(() => setXeroSyncProgress(0), 700);
+        return () => clearTimeout(t);
+      }
+      return;
+    }
+    setXeroSyncProgress(5);
+    const interval = setInterval(() => {
+      setXeroSyncProgress((prev) => {
+        if (prev >= 88) { clearInterval(interval); return prev; }
+        const step = Math.max(0.5, (88 - prev) * 0.04);
+        return Math.min(88, prev + step);
+      });
+    }, 200);
+    return () => clearInterval(interval);
+  }, [syncXeroContactsMutation.isPending]);
 
   const disconnectXeroMutation = useMutation({
     mutationFn: () => apiFetch("/xero/disconnect", { method: "POST" }),
