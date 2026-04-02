@@ -201,12 +201,51 @@ interface XeroContact {
   EmailAddress?: string;
   Phones?: { PhoneType: string; PhoneNumber: string }[];
   Addresses?: { AddressType: string; AddressLine1?: string; City?: string; PostalCode?: string }[];
+  ContactPersons?: { FirstName?: string; LastName?: string; EmailAddress?: string }[];
   IsCustomer?: boolean;
   IsSupplier?: boolean;
   Balances?: {
     AccountsReceivable?: { Outstanding: number; Overdue: number };
     AccountsPayable?: { Outstanding: number; Overdue: number };
   };
+}
+
+/**
+ * Extract the best available first/last name from a Xero contact.
+ * Priority: top-level FirstName/LastName → first ContactPerson → split Name on first space.
+ * Splitting Name is only done when the name looks like a person (one or two words, no
+ * punctuation patterns typical of company names like Ltd, &, /).
+ */
+function extractXeroName(contact: XeroContact): { firstName: string | null; lastName: string | null } {
+  // 1. Top-level fields (most reliable)
+  if (contact.FirstName || contact.LastName) {
+    return {
+      firstName: contact.FirstName?.trim() || null,
+      lastName: contact.LastName?.trim() || null,
+    };
+  }
+
+  // 2. First ContactPerson entry
+  const person = contact.ContactPersons?.[0];
+  if (person?.FirstName || person?.LastName) {
+    return {
+      firstName: person.FirstName?.trim() || null,
+      lastName: person.LastName?.trim() || null,
+    };
+  }
+
+  // 3. Split the Name field — but only if it looks like a person name, not a company
+  const name = contact.Name?.trim() ?? "";
+  const companyPatterns = /\b(Ltd|Limited|LLP|LLC|plc|Inc|Corp|Group|Co\.|&|\/)\b/i;
+  const parts = name.split(/\s+/);
+  if (parts.length >= 2 && parts.length <= 3 && !companyPatterns.test(name)) {
+    return {
+      firstName: parts[0],
+      lastName: parts.slice(1).join(" "),
+    };
+  }
+
+  return { firstName: null, lastName: null };
 }
 
 export async function syncContacts(): Promise<{ customersImported: number; suppliersImported: number; pushed: number }> {
@@ -221,7 +260,10 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
 
   for (const contact of contacts) {
     if (contact.IsCustomer) {
-      // Try to match existing customer by email, then name
+      const { firstName, lastName } = extractXeroName(contact);
+      const phone = contact.Phones?.find((p) => p.PhoneType === "DEFAULT")?.PhoneNumber;
+      const addr = contact.Addresses?.find((a) => a.AddressType === "STREET");
+
       const localCustomers = await db.select().from(customersTable)
         .where(eq(customersTable.xeroContactId, contact.ContactID));
 
@@ -235,17 +277,18 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
         );
 
         if (match) {
-          await db.update(customersTable)
-            .set({ xeroContactId: contact.ContactID, updatedAt: new Date() })
-            .where(eq(customersTable.id, match.id));
+          // Link existing customer and fill in any missing name/contact fields
+          await db.update(customersTable).set({
+            xeroContactId: contact.ContactID,
+            contactFirstName: match.contactFirstName ?? firstName,
+            contactLastName: match.contactLastName ?? lastName,
+            updatedAt: new Date(),
+          }).where(eq(customersTable.id, match.id));
         } else {
-          // Create new customer from Xero contact
-          const phone = contact.Phones?.find((p) => p.PhoneType === "DEFAULT")?.PhoneNumber;
-          const addr = contact.Addresses?.find((a) => a.AddressType === "STREET");
           await db.insert(customersTable).values({
             name: contact.Name,
-            contactFirstName: contact.FirstName ?? null,
-            contactLastName: contact.LastName ?? null,
+            contactFirstName: firstName,
+            contactLastName: lastName,
             email: contact.EmailAddress ?? null,
             phone: phone ?? null,
             address: addr?.AddressLine1 ?? null,
@@ -255,10 +298,23 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
           });
           customersImported++;
         }
+      } else {
+        // Already linked — keep names up to date from Xero
+        const existing = localCustomers[0];
+        await db.update(customersTable).set({
+          contactFirstName: firstName ?? existing.contactFirstName,
+          contactLastName: lastName ?? existing.contactLastName,
+          updatedAt: new Date(),
+        }).where(eq(customersTable.id, existing.id));
       }
     }
 
     if (contact.IsSupplier) {
+      const { firstName, lastName } = extractXeroName(contact);
+      const contactName = [firstName, lastName].filter(Boolean).join(" ") || null;
+      const phone = contact.Phones?.find((p) => p.PhoneType === "DEFAULT")?.PhoneNumber;
+      const addr = contact.Addresses?.find((a) => a.AddressType === "STREET");
+
       const localSuppliers = await db.select().from(suppliersTable)
         .where(eq(suppliersTable.xeroContactId, contact.ContactID));
 
@@ -271,15 +327,15 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
         );
 
         if (match) {
-          await db.update(suppliersTable)
-            .set({ xeroContactId: contact.ContactID, updatedAt: new Date() })
-            .where(eq(suppliersTable.id, match.id));
+          await db.update(suppliersTable).set({
+            xeroContactId: contact.ContactID,
+            contactName: match.contactName ?? contactName,
+            updatedAt: new Date(),
+          }).where(eq(suppliersTable.id, match.id));
         } else {
-          const phone = contact.Phones?.find((p) => p.PhoneType === "DEFAULT")?.PhoneNumber;
-          const addr = contact.Addresses?.find((a) => a.AddressType === "STREET");
           await db.insert(suppliersTable).values({
             name: contact.Name,
-            contactName: [contact.FirstName, contact.LastName].filter(Boolean).join(" ") || null,
+            contactName,
             email: contact.EmailAddress ?? null,
             phone: phone ?? null,
             address: addr?.AddressLine1 ?? null,
@@ -289,6 +345,13 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
           });
           suppliersImported++;
         }
+      } else {
+        // Already linked — keep contact name up to date
+        const existing = localSuppliers[0];
+        await db.update(suppliersTable).set({
+          contactName: contactName ?? existing.contactName,
+          updatedAt: new Date(),
+        }).where(eq(suppliersTable.id, existing.id));
       }
     }
   }
