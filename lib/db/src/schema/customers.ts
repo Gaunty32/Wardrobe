@@ -14,6 +14,7 @@ export const customersTable = pgTable("customers", {
   state: text("state"),
   postcode: text("postcode"),
   notes: text("notes"),
+  xeroContactId: text("xero_contact_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
