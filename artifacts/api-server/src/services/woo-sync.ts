@@ -1,6 +1,13 @@
 import { eq, inArray } from "drizzle-orm";
 import { db, productsTable, productAttributesTable, settingsTable, syncLogsTable } from "@workspace/db";
 
+interface WooCategory {
+  id: number;
+  name: string;
+  slug: string;
+  parent: number;
+}
+
 interface WooProduct {
   id: number;
   name: string;
@@ -52,6 +59,58 @@ async function fetchAllProducts(baseUrl: string, ck: string, cs: string): Promis
   return all;
 }
 
+async function fetchAllCategories(baseUrl: string, ck: string, cs: string): Promise<Map<number, WooCategory>> {
+  const all: WooCategory[] = [];
+  let page = 1;
+  while (true) {
+    const batch = await wooFetch<WooCategory[]>(baseUrl, `/products/categories?per_page=100&page=${page}`, ck, cs);
+    all.push(...batch);
+    if (batch.length < 100) break;
+    page++;
+  }
+  return new Map(all.map((c) => [c.id, c]));
+}
+
+/**
+ * Given a product's assigned categories, return the most specific (deepest) one.
+ * WooCommerce assigns both parent and child categories to products — we want the leaf.
+ */
+function pickBestCategory(
+  productCats: { id: number; name: string; slug: string }[],
+  allCats: Map<number, WooCategory>
+): string | null {
+  if (!productCats.length) return null;
+  if (productCats.length === 1) return productCats[0].name;
+
+  // Find leaf categories — ones that are not a parent of any other product category
+  const productCatIds = new Set(productCats.map((c) => c.id));
+  const leaves = productCats.filter((cat) => {
+    const isParentOfAnother = productCats.some((other) => {
+      const full = allCats.get(other.id);
+      return full && full.parent === cat.id;
+    });
+    return !isParentOfAnother;
+  });
+
+  // If we found leaves, return the first (or only) leaf name
+  if (leaves.length > 0) return leaves[0].name;
+
+  // Fallback: return deepest by traversing parent chain
+  let deepest = productCats[0];
+  let maxDepth = 0;
+  for (const cat of productCats) {
+    let depth = 0;
+    let current = allCats.get(cat.id);
+    while (current && current.parent !== 0) {
+      depth++;
+      current = allCats.get(current.parent);
+      if (depth > 20) break; // safety
+    }
+    if (depth > maxDepth) { maxDepth = depth; deepest = cat; }
+  }
+  return deepest.name;
+}
+
 async function fetchVariations(baseUrl: string, ck: string, cs: string, productId: number): Promise<WooVariation[]> {
   const all: WooVariation[] = [];
   let page = 1;
@@ -86,12 +145,14 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
   const errors: string[] = [];
 
   try {
+    // Fetch full category hierarchy so we can pick the most specific category per product
+    const allCategories = await fetchAllCategories(baseUrl, ck, cs);
     const products = await fetchAllProducts(baseUrl, ck, cs);
 
     for (const wooProduct of products) {
       try {
         const wooId = wooProduct.id;
-        const category = wooProduct.categories?.[0]?.name ?? null;
+        const category = pickBestCategory(wooProduct.categories ?? [], allCategories);
         const priceStr = wooProduct.regular_price || wooProduct.price || "0";
         const price = parseFloat(priceStr) || 0;
         const stockQty = wooProduct.manage_stock ? (wooProduct.stock_quantity ?? null) : null;
@@ -159,7 +220,7 @@ export async function runWooSync(): Promise<{ created: number; updated: number; 
 
     await db.update(syncLogsTable).set({
       status: errors.length > 0 ? "completed_with_errors" : "completed",
-      message: `Synced ${products.length} products`,
+      message: `Synced ${products.length} products across ${allCategories.size} categories`,
       itemsCreated: String(created),
       itemsUpdated: String(updated),
       errors: errors.length > 0 ? errors.slice(0, 20).join("\n") : null,
