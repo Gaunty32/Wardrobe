@@ -25,11 +25,10 @@ async function setSetting(key: string, value: string | null): Promise<void> {
 }
 
 /**
- * Build the redirect URI reliably.
- * Priority: REPLIT_DOMAINS env var (always set and correct in both dev + prod Replit)
- * → then x-forwarded headers → then raw host.
+ * Auto-detect the redirect URI from the environment.
+ * Uses REPLIT_DOMAINS when available (reliable in both dev and deployed).
  */
-function buildRedirectUri(req: import("express").Request): string {
+function autoRedirectUri(req: import("express").Request): string {
   const replitDomains = process.env.REPLIT_DOMAINS;
   if (replitDomains) {
     const domain = replitDomains.split(",")[0].trim();
@@ -40,21 +39,34 @@ function buildRedirectUri(req: import("express").Request): string {
   return `${proto}://${host}/api/xero/callback`;
 }
 
-// Expose the redirect URI so the frontend can display it for the user to copy
-router.get("/xero/redirect-uri", (req, res): void => {
-  res.json({ redirectUri: buildRedirectUri(req) });
+/**
+ * Return the effective redirect URI — user override if saved, else auto-detected.
+ */
+async function getEffectiveRedirectUri(req: import("express").Request): Promise<string> {
+  const override = await getSetting("xero_redirect_uri");
+  return override || autoRedirectUri(req);
+}
+
+// Get current redirect URI (override if saved, otherwise auto-detected)
+router.get("/xero/redirect-uri", async (req, res): Promise<void> => {
+  const uri = await getEffectiveRedirectUri(req);
+  res.json({ redirectUri: uri, isOverride: !!(await getSetting("xero_redirect_uri")) });
 });
 
-// Save Xero client credentials
+// Save Xero client credentials (and optionally a custom redirect URI)
 router.post("/xero/credentials", async (req, res): Promise<void> => {
   const body = z.object({
     clientId: z.string().min(1),
     clientSecret: z.string().min(1),
+    redirectUri: z.string().url().optional(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   await setSetting("xero_client_id", body.data.clientId);
   await setSetting("xero_client_secret", body.data.clientSecret);
+  if (body.data.redirectUri) {
+    await setSetting("xero_redirect_uri", body.data.redirectUri);
+  }
   res.json({ ok: true });
 });
 
@@ -71,7 +83,7 @@ router.get("/xero/status", async (_req, res): Promise<void> => {
 // Generate the Xero OAuth URL and redirect the browser to it
 router.get("/xero/connect", async (req, res): Promise<void> => {
   try {
-    const redirectUri = buildRedirectUri(req);
+    const redirectUri = await getEffectiveRedirectUri(req);
     const url = await generateAuthUrl(redirectUri);
     res.redirect(url);
   } catch (err) {

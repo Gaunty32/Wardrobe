@@ -105,17 +105,25 @@ export default function Settings() {
     refetchInterval: 60_000,
   });
 
-  const { data: xeroRedirectUriData } = useQuery<{ redirectUri: string }>({
+  const { data: xeroRedirectUriData } = useQuery<{ redirectUri: string; isOverride: boolean }>({
     queryKey: ["xero-redirect-uri"],
     queryFn: () => apiFetch("/xero/redirect-uri"),
     staleTime: Infinity,
   });
-  const xeroRedirectUri = xeroRedirectUriData?.redirectUri ?? "";
+
+  // Editable redirect URI — pre-fill once the auto-detected value arrives
+  const [xeroRedirectUri, setXeroRedirectUri] = useState("");
+  useEffect(() => {
+    if (xeroRedirectUriData?.redirectUri && !xeroRedirectUri) {
+      setXeroRedirectUri(xeroRedirectUriData.redirectUri);
+    }
+  }, [xeroRedirectUriData]);
 
   const saveXeroCredsMutation = useMutation({
-    mutationFn: (data: { clientId: string; clientSecret: string }) =>
+    mutationFn: (data: { clientId: string; clientSecret: string; redirectUri: string }) =>
       apiFetch("/xero/credentials", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["xero-redirect-uri"] });
       toast({ title: "Xero credentials saved", description: "Click 'Connect to Xero' to authorise." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -461,13 +469,21 @@ export default function Settings() {
                   and paste the Client ID and Secret below. You <strong>must</strong> also add the redirect URI shown here to your Xero app — copy it exactly.
                 </p>
 
-                {/* Redirect URI — shown prominently so the user can copy it into Xero */}
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1.5">
-                  <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Step 1 — Add this Redirect URI to your Xero app</p>
+                {/* Redirect URI — editable so it can be corrected if the auto-detected value is wrong */}
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Step 1 — Redirect URI</p>
+                    {xeroRedirectUriData?.isOverride && (
+                      <span className="text-xs text-amber-600 italic">Custom value saved</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 text-xs bg-white border border-amber-200 rounded px-2 py-1.5 text-amber-900 break-all select-all">
-                      {xeroRedirectUri || "Loading…"}
-                    </code>
+                    <Input
+                      value={xeroRedirectUri}
+                      onChange={(e) => setXeroRedirectUri(e.target.value)}
+                      className="flex-1 text-xs font-mono bg-white border-amber-200 text-amber-900 h-8"
+                      placeholder="Loading…"
+                    />
                     <Button
                       size="sm"
                       variant="outline"
@@ -483,7 +499,9 @@ export default function Settings() {
                       Copy
                     </Button>
                   </div>
-                  <p className="text-xs text-amber-700">In your Xero app: Configuration → Redirect URIs → add the URL above.</p>
+                  <p className="text-xs text-amber-700">
+                    Register this URL exactly in your Xero app under <strong>Configuration → Redirect URIs</strong>. Edit it here if your deployed app uses a different domain.
+                  </p>
                 </div>
 
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Step 2 — Enter your credentials</p>
@@ -515,8 +533,8 @@ export default function Settings() {
                   </div>
                 </div>
                 <Button
-                  onClick={() => saveXeroCredsMutation.mutate({ clientId: xeroClientId, clientSecret: xeroClientSecret })}
-                  disabled={saveXeroCredsMutation.isPending || !xeroClientId || !xeroClientSecret}
+                  onClick={() => saveXeroCredsMutation.mutate({ clientId: xeroClientId, clientSecret: xeroClientSecret, redirectUri: xeroRedirectUri })}
+                  disabled={saveXeroCredsMutation.isPending || !xeroClientId || !xeroClientSecret || !xeroRedirectUri}
                   className="gap-2"
                 >
                   {saveXeroCredsMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><CheckCircle className="w-4 h-4" />Save Credentials</>}
