@@ -81,6 +81,32 @@ export default function Settings() {
   const [xeroClientSecret, setXeroClientSecret] = useState("");
   const [showXeroSecret, setShowXeroSecret] = useState(false);
 
+  // Xero sync progress bar (simulated fill while the request is in-flight)
+  const [xeroSyncProgress, setXeroSyncProgress] = useState(0);
+
+  useEffect(() => {
+    if (!syncXeroContactsMutation.isPending) {
+      if (xeroSyncProgress > 0) {
+        // Request finished — snap to 100% then fade out
+        setXeroSyncProgress(100);
+        const t = setTimeout(() => setXeroSyncProgress(0), 700);
+        return () => clearTimeout(t);
+      }
+      return;
+    }
+    // Request started — animate from 5% up to 88% in slow increments
+    setXeroSyncProgress(5);
+    const interval = setInterval(() => {
+      setXeroSyncProgress((prev) => {
+        if (prev >= 88) { clearInterval(interval); return prev; }
+        // Each tick adds a decreasing amount so it slows near the end
+        const step = Math.max(0.5, (88 - prev) * 0.04);
+        return Math.min(88, prev + step);
+      });
+    }, 200);
+    return () => clearInterval(interval);
+  }, [syncXeroContactsMutation.isPending]);
+
   // Detect ?xero=connected redirect from OAuth callback
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -512,9 +538,26 @@ export default function Settings() {
                     className="gap-2"
                   >
                     {syncXeroContactsMutation.isPending
-                      ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing contacts...</>
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing contacts…</>
                       : <><Users className="w-4 h-4" />Sync Contacts</>}
                   </Button>
+
+                  {/* Progress bar — visible while sync is running (and briefly on completion) */}
+                  {xeroSyncProgress > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all duration-300 ease-out"
+                          style={{ width: `${xeroSyncProgress}%` }}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {xeroSyncProgress < 100
+                          ? `Syncing… ${Math.round(xeroSyncProgress)}%`
+                          : "Sync complete!"}
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
