@@ -13,6 +13,7 @@ import worksheetsRouter from "./worksheets";
 import settingsRouter from "./settings";
 import dispatchRouter from "./dispatch";
 import xeroRouter from "./xero";
+import tasksRouter from "./tasks";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(worksheetsRouter);
 router.use(settingsRouter);
 router.use(dispatchRouter);
 router.use(xeroRouter);
+router.use(tasksRouter);
 
 export default router;

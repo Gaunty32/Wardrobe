@@ -38,5 +38,21 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE status = 'running'
   `);
 
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS tasks (
+      id serial PRIMARY KEY,
+      title text NOT NULL,
+      description text,
+      priority text NOT NULL DEFAULT 'medium',
+      status text NOT NULL DEFAULT 'open',
+      customer_id integer REFERENCES customers(id) ON DELETE SET NULL,
+      customer_name text,
+      due_date timestamptz,
+      completed_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
   console.log("[startup] Migrations complete");
 }

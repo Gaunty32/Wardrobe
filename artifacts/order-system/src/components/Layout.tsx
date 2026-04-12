@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface LayoutProps {
@@ -20,6 +20,7 @@ export default function Layout({ children }: LayoutProps) {
     { name: "Purchasing", href: "/purchasing", icon: ShoppingBag },
     { name: "Dispatch", href: "/dispatch", icon: Send },
     { name: "Suppliers", href: "/suppliers", icon: Truck },
+    { name: "Tasks", href: "/tasks", icon: CheckSquare },
   ];
 
   const bottomNavItems = [
