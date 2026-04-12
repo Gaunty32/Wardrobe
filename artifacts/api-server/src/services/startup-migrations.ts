@@ -39,6 +39,20 @@ export async function runStartupMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS product_categories (
+      id serial PRIMARY KEY,
+      woo_id integer UNIQUE,
+      name text NOT NULL,
+      slug text,
+      image_url text,
+      parent_woo_id integer,
+      product_count integer NOT NULL DEFAULT 0,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS tasks (
       id serial PRIMARY KEY,
       title text NOT NULL,

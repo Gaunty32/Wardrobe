@@ -8,3 +8,4 @@ export * from "./product-variants";
 export * from "./process-stock";
 export * from "./settings";
 export * from "./tasks";
+export * from "./product-categories";

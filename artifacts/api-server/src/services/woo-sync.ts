@@ -1,11 +1,13 @@
 import { eq, inArray, isNotNull, and } from "drizzle-orm";
-import { db, productsTable, productAttributesTable, productVariantsTable, settingsTable, syncLogsTable } from "@workspace/db";
+import { db, productsTable, productAttributesTable, productVariantsTable, settingsTable, syncLogsTable, productCategoriesTable } from "@workspace/db";
 
 interface WooCategory {
   id: number;
   name: string;
   slug: string;
   parent: number;
+  count: number;
+  image: { id: number; src: string; alt: string } | null;
 }
 
 interface WooProduct {
@@ -192,6 +194,29 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
   try {
     // Fetch full category hierarchy (small dataset, always refresh)
     const allCategories = await fetchAllCategories(baseUrl, ck, cs);
+
+    // Persist categories (upsert by woo_id so images and counts stay current)
+    for (const cat of allCategories.values()) {
+      await db.insert(productCategoriesTable).values({
+        wooId: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        imageUrl: cat.image?.src ?? null,
+        parentWooId: cat.parent || null,
+        productCount: cat.count,
+      }).onConflictDoUpdate({
+        target: productCategoriesTable.wooId,
+        set: {
+          name: cat.name,
+          slug: cat.slug,
+          imageUrl: cat.image?.src ?? null,
+          parentWooId: cat.parent || null,
+          productCount: cat.count,
+          updatedAt: new Date(),
+        },
+      });
+    }
+
     // Fetch products — incremental uses modified_after to get only changed products
     const products = await fetchAllProducts(baseUrl, ck, cs, since);
 

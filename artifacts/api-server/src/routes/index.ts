@@ -14,6 +14,7 @@ import settingsRouter from "./settings";
 import dispatchRouter from "./dispatch";
 import xeroRouter from "./xero";
 import tasksRouter from "./tasks";
+import productCategoriesRouter from "./product-categories";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(settingsRouter);
 router.use(dispatchRouter);
 router.use(xeroRouter);
 router.use(tasksRouter);
+router.use(productCategoriesRouter);
 
 export default router;
