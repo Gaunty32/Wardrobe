@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { db, suppliersTable } from "@workspace/db";
+import { pushSupplierToXero } from "../services/xero.js";
 
 const router: IRouter = Router();
 
@@ -44,6 +45,8 @@ router.post("/suppliers", async (req, res): Promise<void> => {
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const [row] = await db.insert(suppliersTable).values(body.data).returning();
   res.status(201).json(row);
+  // Best-effort push to Xero — don't await so the response is immediate
+  pushSupplierToXero(row.id).catch(() => {});
 });
 
 router.get("/suppliers/:id", async (req, res): Promise<void> => {
@@ -65,6 +68,8 @@ router.patch("/suppliers/:id", async (req, res): Promise<void> => {
     .returning();
   if (!row) { res.status(404).json({ error: "Supplier not found" }); return; }
   res.json(row);
+  // Best-effort sync to Xero — don't await so the response is immediate
+  pushSupplierToXero(p.data.id).catch(() => {});
 });
 
 router.delete("/suppliers/:id", async (req, res): Promise<void> => {

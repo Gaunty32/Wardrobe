@@ -312,13 +312,13 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
     if (contact.IsSupplier) {
       const { firstName, lastName } = extractXeroName(contact);
       const contactName = [firstName, lastName].filter(Boolean).join(" ") || null;
-      const phone = contact.Phones?.find((p) => p.PhoneType === "DEFAULT")?.PhoneNumber;
-      const addr = contact.Addresses?.find((a) => a.AddressType === "STREET");
 
       const localSuppliers = await db.select().from(suppliersTable)
         .where(eq(suppliersTable.xeroContactId, contact.ContactID));
 
       if (localSuppliers.length === 0) {
+        // Only link existing local suppliers — do NOT create new ones from Xero.
+        // New suppliers flow order-system → Xero, not the other way.
         const allSuppliers = await db.select().from(suppliersTable);
         const match = allSuppliers.find(
           (s) =>
@@ -332,19 +332,8 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
             contactName: match.contactName ?? contactName,
             updatedAt: new Date(),
           }).where(eq(suppliersTable.id, match.id));
-        } else {
-          await db.insert(suppliersTable).values({
-            name: contact.Name,
-            contactName,
-            email: contact.EmailAddress ?? null,
-            phone: phone ?? null,
-            address: addr?.AddressLine1 ?? null,
-            city: addr?.City ?? null,
-            postcode: addr?.PostalCode ?? null,
-            xeroContactId: contact.ContactID,
-          });
-          suppliersImported++;
         }
+        // No else — ignore Xero-only suppliers
       } else {
         // Already linked — keep contact name up to date
         const existing = localSuppliers[0];
@@ -385,33 +374,71 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
     }
   }
 
-  // Push local suppliers without xeroContactId to Xero
-  const unmatchedSuppliers = await db.select().from(suppliersTable).where(isNull(suppliersTable.xeroContactId));
-  for (const supplier of unmatchedSuppliers) {
-    try {
-      const body = {
-        Contacts: [{
-          Name: supplier.name,
-          EmailAddress: supplier.email,
-          IsSupplier: true,
-        }],
-      };
-      const sr = await xeroFetch("/Contacts", { method: "POST", body: JSON.stringify(body) });
-      if (sr.ok) {
-        const sd = await sr.json() as { Contacts: XeroContact[] };
-        if (sd.Contacts?.[0]?.ContactID) {
+  return { customersImported, suppliersImported, pushed };
+}
+
+// ─── Supplier push (order-system → Xero) ─────────────────────────────────────
+
+/**
+ * Create or update a supplier in Xero and store the resulting ContactID.
+ * Safe to call even when Xero is not connected — errors are swallowed so the
+ * local save always succeeds.
+ */
+export async function pushSupplierToXero(supplierId: number): Promise<void> {
+  try {
+    const [supplier] = await db.select().from(suppliersTable).where(eq(suppliersTable.id, supplierId));
+    if (!supplier) return;
+
+    const contactPayload = {
+      Name: supplier.name,
+      EmailAddress: supplier.email ?? undefined,
+      IsSupplier: true,
+      ...(supplier.contactName
+        ? (() => {
+            const parts = supplier.contactName.trim().split(/\s+/);
+            return parts.length >= 2
+              ? { FirstName: parts[0], LastName: parts.slice(1).join(" ") }
+              : { FirstName: supplier.contactName };
+          })()
+        : {}),
+      Phones: supplier.phone
+        ? [{ PhoneType: "DEFAULT", PhoneNumber: supplier.phone }]
+        : undefined,
+      Addresses: supplier.address
+        ? [{
+            AddressType: "STREET",
+            AddressLine1: supplier.address ?? undefined,
+            City: supplier.city ?? undefined,
+            PostalCode: supplier.postcode ?? undefined,
+          }]
+        : undefined,
+    };
+
+    if (supplier.xeroContactId) {
+      // Update existing Xero contact
+      await xeroFetch(`/Contacts/${supplier.xeroContactId}`, {
+        method: "POST",
+        body: JSON.stringify({ Contacts: [{ ContactID: supplier.xeroContactId, ...contactPayload }] }),
+      });
+    } else {
+      // Create new Xero contact
+      const res = await xeroFetch("/Contacts", {
+        method: "POST",
+        body: JSON.stringify({ Contacts: [contactPayload] }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { Contacts: XeroContact[] };
+        const xeroId = data.Contacts?.[0]?.ContactID;
+        if (xeroId) {
           await db.update(suppliersTable)
-            .set({ xeroContactId: sd.Contacts[0].ContactID, updatedAt: new Date() })
-            .where(eq(suppliersTable.id, supplier.id));
-          pushed++;
+            .set({ xeroContactId: xeroId, updatedAt: new Date() })
+            .where(eq(suppliersTable.id, supplierId));
         }
       }
-    } catch {
-      // Skip individual failures, continue with rest
     }
+  } catch {
+    // Never block the local save — Xero push is best-effort
   }
-
-  return { customersImported, suppliersImported, pushed };
 }
 
 // ─── Balance lookup ───────────────────────────────────────────────────────────
