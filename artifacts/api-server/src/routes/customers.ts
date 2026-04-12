@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, ilike, or } from "drizzle-orm";
 import { db, customersTable } from "@workspace/db";
 import { z } from "zod";
+import { pushCustomerToXero } from "../services/xero.js";
 import {
   CreateCustomerBody,
   UpdateCustomerBody,
@@ -43,6 +44,8 @@ router.post("/customers", async (req, res): Promise<void> => {
   }
   const [customer] = await db.insert(customersTable).values(parsed.data).returning();
   res.status(201).json(customer);
+  // Best-effort push to Xero — don't await so the response is immediate
+  pushCustomerToXero(customer.id).catch(() => {});
 });
 
 router.get("/customers/:id", async (req, res): Promise<void> => {
@@ -80,6 +83,8 @@ router.patch("/customers/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json(customer);
+  // Best-effort sync to Xero — don't await so the response is immediate
+  pushCustomerToXero(params.data.id).catch(() => {});
 });
 
 router.delete("/customers/:id", async (req, res): Promise<void> => {
