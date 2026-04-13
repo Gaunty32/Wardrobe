@@ -996,18 +996,19 @@ export default function OrderDetail() {
                       </div>
                     </div>
 
-                    {/* Size picker */}
+                    {/* Size picker — combines attribute palette + variant sizes */}
                     {(() => {
-                      const availableSizes = [...new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""))];
+                      const variantSizeSet = new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""));
+                      const allSizes = [...new Set([...sizes, ...variantSizeSet])];
                       return (
                         <div className="grid gap-2">
                           <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                          {availableSizes.length > 0 ? (
+                          {allSizes.length > 0 ? (
                             <Select value={item.size || "__any__"} onValueChange={v => setItem(i => ({ ...i, size: v === "__any__" ? "" : v }))}>
                               <SelectTrigger><SelectValue placeholder="Any / unspecified" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="__any__">Any / unspecified</SelectItem>
-                                {availableSizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                {allSizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                               </SelectContent>
                             </Select>
                           ) : (

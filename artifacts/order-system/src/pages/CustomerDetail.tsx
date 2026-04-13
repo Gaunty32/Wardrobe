@@ -1241,11 +1241,15 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setProductSearchOpen(false);
     setVariantColours([]);
     setVariantSizes([]);
-    // Load variant colours and sizes for the existing product
-    apiFetch(`/products/${item.productId}/variants`).then((v: any) => {
-      const variants = v as any[];
+    // Load variant colours and sizes (also from attributes for products without size variants)
+    Promise.all([
+      apiFetch<any[]>(`/products/${item.productId}/variants`),
+      apiFetch<any[]>(`/products/${item.productId}/attributes`),
+    ]).then(([variants, attrs]) => {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
-      const sizes = [...new Set(variants.map((x: any) => x.size).filter(Boolean))] as string[];
+      const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
+      const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
+      const sizes = [...new Set([...attrSizes, ...variantSizes])];
       setVariantColours(colours);
       setVariantSizes(sizes);
     }).catch(() => {});
@@ -1265,10 +1269,14 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "" }));
     setVariantColours([]);
     setVariantSizes([]);
-    apiFetch(`/products/${prod.id}/variants`).then((v: any) => {
-      const variants = v as any[];
+    Promise.all([
+      apiFetch<any[]>(`/products/${prod.id}/variants`),
+      apiFetch<any[]>(`/products/${prod.id}/attributes`),
+    ]).then(([variants, attrs]) => {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
-      const sizes = [...new Set(variants.map((x: any) => x.size).filter(Boolean))] as string[];
+      const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
+      const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
+      const sizes = [...new Set([...attrSizes, ...variantSizes])];
       setVariantColours(colours);
       setVariantSizes(sizes);
     }).catch(() => {});
