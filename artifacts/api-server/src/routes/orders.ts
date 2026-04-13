@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, customersTable, productsTable,
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
+  customerDeliveryAddressesTable, customerEmployeeSizesTable,
 } from "@workspace/db";
 import {
   UpdateOrderBody,
@@ -129,6 +130,17 @@ router.post("/orders", async (req, res): Promise<void> => {
     await recalcOrderTotal(order.id);
   }
 
+  // Auto-set default delivery address if customer has one
+  if (customerId) {
+    const defaultAddr = await db.select().from(customerDeliveryAddressesTable)
+      .where(eq(customerDeliveryAddressesTable.customerId, customerId))
+      .limit(20);
+    const def = defaultAddr.find(a => a.isDefault) ?? defaultAddr[0] ?? null;
+    if (def) {
+      await db.update(ordersTable).set({ deliveryAddressId: def.id }).where(eq(ordersTable.id, order.id));
+    }
+  }
+
   const [updatedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id));
   res.status(201).json({ ...updatedOrder, totalAmount: numericToFloat(updatedOrder.totalAmount) });
 });
@@ -148,9 +160,17 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
 
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
 
+  let deliveryAddress: Record<string, unknown> | null = null;
+  if (order.deliveryAddressId) {
+    const [addr] = await db.select().from(customerDeliveryAddressesTable)
+      .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    deliveryAddress = addr ?? null;
+  }
+
   res.json({
     ...order,
     totalAmount: numericToFloat(order.totalAmount),
+    deliveryAddress,
     items: items.map((item) => ({
       ...item,
       unitPrice: numericToFloat(item.unitPrice),
@@ -294,6 +314,24 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     .returning();
 
   await recalcOrderTotal(params.data.id);
+
+  // Save the size against the employee so it can be suggested on reorder
+  if (parsed.data.recipientEmployeeId && parsed.data.size && parsed.data.productName) {
+    const empId = parsed.data.recipientEmployeeId;
+    const label = parsed.data.productName;
+    const sizeVal = parsed.data.size;
+    const allSizes = await db.select().from(customerEmployeeSizesTable)
+      .where(eq(customerEmployeeSizesTable.employeeId, empId));
+    const match = allSizes.find(s => s.label === label);
+    if (match) {
+      await db.update(customerEmployeeSizesTable)
+        .set({ size: sizeVal, updatedAt: new Date() })
+        .where(eq(customerEmployeeSizesTable.id, match.id));
+    } else {
+      await db.insert(customerEmployeeSizesTable)
+        .values({ employeeId: empId, label, size: sizeVal });
+    }
+  }
 
   res.status(201).json({
     ...item,

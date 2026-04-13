@@ -26,7 +26,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2 } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -48,6 +48,7 @@ interface CustomerFinish { id: number; customerId: number; name: string; descrip
 interface EmployeeSize { id: number; label: string; size: string; }
 interface CustomerEmployee { id: number; customerId: number; firstName: string; lastName: string | null; jobTitle: string | null; roleId: number | null; roleName: string | null; department: string | null; sizes: EmployeeSize[]; }
 interface CustomerFinishedItem { id: number; name: string; productId: number; roleId: number | null; roleName: string | null; productName: string | null; productSku: string | null; finishId: number | null; finishName: string | null; colour: string | null; size: string | null; unitPrice: number; notes: string | null; }
+interface DeliveryAddress { id: number; customerId: number; label: string | null; line1: string | null; line2: string | null; city: string | null; county: string | null; postcode: string | null; country: string | null; isDefault: boolean; }
 
 function useProductAttributes(productId: number | null) {
   return useQuery<ProductAttribute[]>({
@@ -89,6 +90,14 @@ function useCustomerFinishedItems(customerId: number | null) {
   });
 }
 
+function useCustomerDeliveryAddresses(customerId: number | null) {
+  return useQuery<DeliveryAddress[]>({
+    queryKey: ["customer-delivery-addresses", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/delivery-addresses`),
+    enabled: customerId !== null && customerId > 0,
+  });
+}
+
 const EMPTY_ITEM = {
   productId: null as number | null,
   productName: "",
@@ -122,8 +131,9 @@ export default function OrderDetail() {
   const customerId = order?.customerId ?? null;
 
   const { data: customerFinishes } = useCustomerFinishes(customerId);
-  const { data: customerEmployees } = useCustomerEmployees(customerId);
+  const { data: customerEmployees, refetch: refetchEmployees } = useCustomerEmployees(customerId);
   const { data: customerFinishedItems } = useCustomerFinishedItems(customerId);
+  const { data: customerDeliveryAddresses } = useCustomerDeliveryAddresses(customerId);
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
@@ -149,6 +159,30 @@ export default function OrderDetail() {
   const [pendingItemData, setPendingItemData] = useState<Record<string, unknown> | null>(null);
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
+
+  const [editingDeliveryAddress, setEditingDeliveryAddress] = useState(false);
+
+  const updateDeliveryAddressMutation = useMutation({
+    mutationFn: (addressId: number | null) =>
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ deliveryAddressId: addressId }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingDeliveryAddress(false);
+      toast({ title: "Delivery address updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  // Auto-set delivery address when order has none but customer has a default
+  useEffect(() => {
+    if (!order || order.deliveryAddressId || !customerDeliveryAddresses?.length) return;
+    const def = customerDeliveryAddresses.find(a => a.isDefault) ?? customerDeliveryAddresses[0];
+    if (def) {
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ deliveryAddressId: def.id }) })
+        .then(() => queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }))
+        .catch(() => {});
+    }
+  }, [order?.deliveryAddressId, customerDeliveryAddresses?.length]);
 
   const [editingRequiredDate, setEditingRequiredDate] = useState(false);
   const [requiredDateValue, setRequiredDateValue] = useState("");
@@ -257,6 +291,13 @@ export default function OrderDetail() {
     }
   }, [item.colour, item.size, item.productId, productVariants]);
 
+  // Auto-suggest saved size when employee + product are both selected
+  useEffect(() => {
+    if (!selectedEmployee || !item.productName || item.size) return;
+    const savedSize = selectedEmployee.sizes?.find(s => s.label === item.productName);
+    if (savedSize) setItem(i => ({ ...i, size: savedSize.size }));
+  }, [selectedEmployee?.id, item.productName]);
+
   const handleProductSelect = (productId: number) => {
     const prod = products?.find(p => p.id === productId);
     if (!prod) return;
@@ -343,6 +384,7 @@ export default function OrderDetail() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          refetchEmployees();
           toast({ title: "Item Added", description: `${item.productName} added to order.` });
           resetDialog();
           setStockPrompt(null);
@@ -662,6 +704,59 @@ export default function OrderDetail() {
 
             <Card className="shadow-sm border-border/50">
               <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-display text-lg flex items-center">
+                    <MapPin className="w-4 h-4 mr-2 text-muted-foreground" /> Delivery Address
+                  </CardTitle>
+                  {!editingDeliveryAddress && (customerDeliveryAddresses?.length ?? 0) > 0 && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingDeliveryAddress(true)}>
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="py-4">
+                {editingDeliveryAddress ? (
+                  <div className="space-y-2">
+                    <Select
+                      value={(order as any).deliveryAddressId?.toString() ?? "none"}
+                      onValueChange={(v) => {
+                        updateDeliveryAddressMutation.mutate(v === "none" ? null : parseInt(v, 10));
+                      }}
+                    >
+                      <SelectTrigger className="text-sm"><SelectValue placeholder="Select address…" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not set</SelectItem>
+                        {customerDeliveryAddresses?.map(a => (
+                          <SelectItem key={a.id} value={a.id.toString()}>
+                            {a.label ? `${a.label} — ` : ""}{[a.line1, a.city, a.postcode].filter(Boolean).join(", ")}
+                            {a.isDefault && " (default)"}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="ghost" className="w-full h-7 text-xs text-muted-foreground" onClick={() => setEditingDeliveryAddress(false)}>Cancel</Button>
+                  </div>
+                ) : (() => {
+                    const addr = (order as any).deliveryAddress as DeliveryAddress | null | undefined;
+                    if (!addr) return <p className="text-sm text-muted-foreground italic">Not set</p>;
+                    return (
+                      <div className="text-sm space-y-0.5">
+                        {addr.label && <p className="font-medium text-foreground">{addr.label}</p>}
+                        {addr.line1 && <p className="text-muted-foreground">{addr.line1}</p>}
+                        {addr.line2 && <p className="text-muted-foreground">{addr.line2}</p>}
+                        <p className="text-muted-foreground">{[addr.city, addr.county, addr.postcode].filter(Boolean).join(", ")}</p>
+                        {addr.country && addr.country !== "United Kingdom" && <p className="text-muted-foreground">{addr.country}</p>}
+                        {addr.isDefault && <span className="inline-flex items-center text-xs text-primary font-medium mt-1">Default address</span>}
+                      </div>
+                    );
+                  })()
+                }
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
                 <CardTitle className="font-display text-lg flex items-center">
                   <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> Notes
                 </CardTitle>
@@ -957,34 +1052,51 @@ export default function OrderDetail() {
                   </div>
 
                   {/* Colour + Size */}
-                  {item.productId && (colours.length > 0 || sizes.length > 0) && (
-                    <div className="grid grid-cols-2 gap-4">
-                      {colours.length > 0 && (
-                        <div className="grid gap-2">
-                          <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
-                          <Select value={item.colour || "none"} onValueChange={v => setItem(i => ({ ...i, colour: v === "none" ? "" : v }))}>
-                            <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Any / Not specified</SelectItem>
-                              {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                      {sizes.length > 0 && (
-                        <div className="grid gap-2">
-                          <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                          <Select value={item.size || "none"} onValueChange={v => setItem(i => ({ ...i, size: v === "none" ? "" : v }))}>
-                            <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Any / Not specified</SelectItem>
-                              {sizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  {item.productId && (colours.length > 0 || sizes.length > 0) && (() => {
+                    const suggestedSize = selectedEmployee?.sizes?.find(s => s.label === item.productName)?.size ?? null;
+                    return (
+                      <div className="grid grid-cols-2 gap-4">
+                        {colours.length > 0 && (
+                          <div className="grid gap-2">
+                            <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
+                            <Select value={item.colour || "none"} onValueChange={v => setItem(i => ({ ...i, colour: v === "none" ? "" : v }))}>
+                              <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Any / Not specified</SelectItem>
+                                {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                        {sizes.length > 0 && (
+                          <div className="grid gap-2">
+                            <Label className="flex items-center gap-1">
+                              <Ruler className="w-3 h-3" /> Size
+                              {suggestedSize && item.size === suggestedSize && (
+                                <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
+                                  <Wand2 className="w-2.5 h-2.5" /> saved
+                                </span>
+                              )}
+                            </Label>
+                            <Select value={item.size || "none"} onValueChange={v => setItem(i => ({ ...i, size: v === "none" ? "" : v }))}>
+                              <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">Any / Not specified</SelectItem>
+                                {sizes.map(s => (
+                                  <SelectItem key={s} value={s}>
+                                    <span className="flex items-center gap-2">
+                                      {s}
+                                      {s === suggestedSize && <span className="text-[10px] text-emerald-700 font-medium">last ordered</span>}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* Finish */}
                   <div className="grid gap-2">
