@@ -1190,6 +1190,7 @@ interface FinishedItem {
   colour: string | null;
   size: string | null;
   unitPrice: number;
+  specialPrice: number | null;
   notes: string | null;
 }
 
@@ -1209,7 +1210,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [variantColours, setVariantColours] = useState<string[]>([]);
   const [variantSizes, setVariantSizes] = useState<string[]>([]);
 
-  const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", notes: "" };
+  const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", specialPrice: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finished-items"] });
@@ -1237,6 +1238,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       colour: item.colour ?? "",
       size: item.size ?? "",
       unitPrice: item.unitPrice.toFixed(2),
+      specialPrice: item.specialPrice != null ? item.specialPrice.toFixed(2) : "",
       notes: item.notes ?? "",
     });
     setEditing(item);
@@ -1305,6 +1307,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       colour: form.colour || null,
       size: form.size || null,
       unitPrice: parseFloat(form.unitPrice),
+      specialPrice: form.specialPrice ? parseFloat(form.specialPrice) : null,
       notes: form.notes || null,
     });
   };
@@ -1335,7 +1338,12 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
         {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
       </TableCell>
-      <TableCell className="text-right font-semibold tabular-nums">{formatCurrency(item.unitPrice)}</TableCell>
+      <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(item.unitPrice)}</TableCell>
+      <TableCell className="text-right tabular-nums">
+        {item.specialPrice != null
+          ? <span className="font-semibold text-emerald-600">{formatCurrency(item.specialPrice)}</span>
+          : <span className="text-muted-foreground/40 text-xs">—</span>}
+      </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(item)}><Edit2 className="w-3 h-3" /></Button>
@@ -1375,6 +1383,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               <TableHead className="hidden md:table-cell">Finish</TableHead>
               <TableHead className="hidden md:table-cell">Colour / Size</TableHead>
               <TableHead className="text-right">Unit Price</TableHead>
+              <TableHead className="text-right">Special Price</TableHead>
               <TableHead className="w-20 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -1507,18 +1516,33 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               </Select>
             </div>
 
-            <div className="grid gap-2">
-              <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Unit Price *</Label>
-              <input
-                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={form.unitPrice}
-                onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
-              />
-              <p className="text-xs text-muted-foreground">Auto-calculated from product + finish — adjust if needed.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Unit Price *</Label>
+                <input
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0.00"
+                  value={form.unitPrice}
+                  onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">Auto-calculated from product + finish.</p>
+              </div>
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Special Price</Label>
+                <input
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="Optional override"
+                  value={form.specialPrice}
+                  onChange={e => setForm(f => ({ ...f, specialPrice: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">Customer-specific price override.</p>
+              </div>
             </div>
 
             <div className="grid gap-2">

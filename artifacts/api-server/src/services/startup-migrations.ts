@@ -96,5 +96,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS tax_class text;
   `);
 
+  // Add special_price to customer_finished_items (customer-specific override price)
+  await db.execute(sql`
+    ALTER TABLE customer_finished_items ADD COLUMN IF NOT EXISTS special_price numeric(10,2);
+  `);
+
   console.log("[startup] Migrations complete");
 }

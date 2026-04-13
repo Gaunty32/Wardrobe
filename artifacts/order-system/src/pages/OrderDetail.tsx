@@ -49,7 +49,7 @@ interface ProductVariant { id: number; productId: number; colour: string | null;
 interface CustomerFinish { id: number; customerId: number; name: string; description: string | null; totalCost: number; processes: { id: number; name: string; price: number | null }[]; }
 interface EmployeeSize { id: number; label: string; size: string; }
 interface CustomerEmployee { id: number; customerId: number; firstName: string; lastName: string | null; jobTitle: string | null; roleId: number | null; roleName: string | null; department: string | null; sizes: EmployeeSize[]; }
-interface CustomerFinishedItem { id: number; name: string; productId: number; roleId: number | null; roleName: string | null; productName: string | null; productSku: string | null; finishId: number | null; finishName: string | null; colour: string | null; size: string | null; unitPrice: number; notes: string | null; }
+interface CustomerFinishedItem { id: number; name: string; productId: number; roleId: number | null; roleName: string | null; productName: string | null; productSku: string | null; finishId: number | null; finishName: string | null; colour: string | null; size: string | null; unitPrice: number; specialPrice: number | null; notes: string | null; }
 interface DeliveryAddress { id: number; customerId: number; label: string | null; line1: string | null; line2: string | null; city: string | null; county: string | null; postcode: string | null; country: string | null; isDefault: boolean; }
 
 function useProductAttributes(productId: number | null) {
@@ -346,6 +346,7 @@ export default function OrderDetail() {
   };
 
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
+    const effectivePrice = fi.specialPrice ?? fi.unitPrice;
     setItem({
       ...EMPTY_ITEM,
       productId: fi.productId,
@@ -355,8 +356,8 @@ export default function OrderDetail() {
       finishId: fi.finishId ?? null,
       finishName: fi.finishName ?? null,
       finishCost: 0,
-      unitPrice: fi.unitPrice.toString(),
-      baseUnitPrice: fi.unitPrice.toString(),
+      unitPrice: effectivePrice.toString(),
+      baseUnitPrice: effectivePrice.toString(),
     });
   };
 
@@ -890,7 +891,8 @@ export default function OrderDetail() {
                     {customerFinishedItems
                       .filter(fi => !selectedEmployee?.roleId || fi.roleId === null || fi.roleId === selectedEmployee.roleId)
                       .map(fi => {
-                        const isSelected = item.productId === fi.productId && item.productName === fi.name && item.unitPrice === fi.unitPrice.toString();
+                        const effectivePrice = fi.specialPrice ?? fi.unitPrice;
+                        const isSelected = item.productId === fi.productId && item.productName === fi.name && item.unitPrice === effectivePrice.toString();
                         const isRoleMatch = selectedEmployee?.roleId && fi.roleId === selectedEmployee.roleId;
                         return (
                           <button
@@ -957,14 +959,23 @@ export default function OrderDetail() {
                                   const baseProd = products?.find(p => p.id === fi.productId);
                                   const listPrice = baseProd ? parseFloat(String(baseProd.unitPrice)) : null;
                                   const wardrobePrice = fi.unitPrice;
+                                  const specialPrice = fi.specialPrice;
+                                  const effectivePrice = specialPrice ?? wardrobePrice;
                                   const isDifferent = listPrice !== null && Math.abs(listPrice - wardrobePrice) > 0.005;
-                                  return isDifferent ? (
+                                  return (
                                     <>
-                                      <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(listPrice!)}</span>
-                                      <span className="text-sm font-semibold text-green-700 tabular-nums">{formatCurrency(wardrobePrice)}</span>
+                                      {isDifferent && <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(listPrice!)}</span>}
+                                      {specialPrice != null ? (
+                                        <>
+                                          <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(wardrobePrice)}</span>
+                                          <span className="text-sm font-semibold text-emerald-600 tabular-nums">{formatCurrency(specialPrice)}</span>
+                                        </>
+                                      ) : isDifferent ? (
+                                        <span className="text-sm font-semibold text-green-700 tabular-nums">{formatCurrency(wardrobePrice)}</span>
+                                      ) : (
+                                        <span className="text-sm font-semibold tabular-nums">{formatCurrency(effectivePrice)}</span>
+                                      )}
                                     </>
-                                  ) : (
-                                    <span className="text-sm font-semibold tabular-nums">{formatCurrency(wardrobePrice)}</span>
                                   );
                                 })()}
                               </div>

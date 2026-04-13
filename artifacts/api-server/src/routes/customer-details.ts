@@ -561,6 +561,7 @@ const finishedItemBody = z.object({
   colour: z.string().optional().nullable(),
   size: z.string().optional().nullable(),
   unitPrice: z.number().min(0),
+  specialPrice: z.number().min(0).optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
@@ -581,6 +582,7 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
     colour: customerFinishedItemsTable.colour,
     size: customerFinishedItemsTable.size,
     unitPrice: customerFinishedItemsTable.unitPrice,
+    specialPrice: customerFinishedItemsTable.specialPrice,
     notes: customerFinishedItemsTable.notes,
     createdAt: customerFinishedItemsTable.createdAt,
   })
@@ -602,6 +604,7 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
   res.json(rows.map(r => ({
     ...r,
     unitPrice: r.unitPrice != null ? parseFloat(r.unitPrice) : 0,
+    specialPrice: r.specialPrice != null ? parseFloat(r.specialPrice) : null,
     finishName: r.finishId ? (finishMap.get(r.finishId) ?? null) : null,
     roleName: r.roleId ? (roleMap.get(r.roleId) ?? null) : null,
   })));
@@ -614,9 +617,14 @@ router.post("/customers/:customerId/finished-items", async (req, res): Promise<v
   const body = finishedItemBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const [row] = await db.insert(customerFinishedItemsTable)
-    .values({ ...body.data, customerId: p.data.customerId, unitPrice: String(body.data.unitPrice) })
+    .values({
+      ...body.data,
+      customerId: p.data.customerId,
+      unitPrice: String(body.data.unitPrice),
+      specialPrice: body.data.specialPrice != null ? String(body.data.specialPrice) : null,
+    })
     .returning();
-  res.status(201).json({ ...row, unitPrice: parseFloat(row.unitPrice!) });
+  res.status(201).json({ ...row, unitPrice: parseFloat(row.unitPrice!), specialPrice: row.specialPrice != null ? parseFloat(row.specialPrice) : null });
 });
 
 router.patch("/customers/:customerId/finished-items/:id", async (req, res): Promise<void> => {
@@ -626,12 +634,13 @@ router.patch("/customers/:customerId/finished-items/:id", async (req, res): Prom
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const updateData: Record<string, unknown> = { ...body.data, updatedAt: new Date() };
   if (body.data.unitPrice != null) updateData.unitPrice = String(body.data.unitPrice);
+  if ("specialPrice" in body.data) updateData.specialPrice = body.data.specialPrice != null ? String(body.data.specialPrice) : null;
   const [row] = await db.update(customerFinishedItemsTable)
     .set(updateData)
     .where(and(eq(customerFinishedItemsTable.id, p.data.id), eq(customerFinishedItemsTable.customerId, p.data.customerId)))
     .returning();
   if (!row) { res.status(404).json({ error: "Finished item not found" }); return; }
-  res.json({ ...row, unitPrice: parseFloat(row.unitPrice!) });
+  res.json({ ...row, unitPrice: parseFloat(row.unitPrice!), specialPrice: row.specialPrice != null ? parseFloat(row.specialPrice) : null });
 });
 
 router.delete("/customers/:customerId/finished-items/:id", async (req, res): Promise<void> => {

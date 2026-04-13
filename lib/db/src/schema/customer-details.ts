@@ -120,6 +120,7 @@ export const customerFinishedItemsTable = pgTable("customer_finished_items", {
   colour: text("colour"),
   size: text("size"),
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
+  specialPrice: numeric("special_price", { precision: 10, scale: 2 }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

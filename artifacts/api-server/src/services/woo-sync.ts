@@ -137,7 +137,7 @@ function isColourAttr(name: string): boolean {
   return /colou?r|pa_colou?r/i.test(name);
 }
 function isSizeAttr(name: string): boolean {
-  return /^size$|^pa_size$/i.test(name);
+  return /^sizes?$|^pa_sizes?$|^clothing[_\s]sizes?$|^garment[_\s]sizes?$/i.test(name);
 }
 
 /** Strip HTML tags and normalise whitespace */
@@ -335,6 +335,13 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             if (isColourAttr(attr.name)) attr.options.forEach((o) => colours.add(o));
             else if (isSizeAttr(attr.name)) attr.options.forEach((o) => sizes.add(o));
           }
+        }
+
+        // Always also scan product-level attributes for sizes — variable products that
+        // vary only by colour won't have sizes in the variation attributes, but the
+        // product itself may declare a Size attribute with all available options.
+        for (const attr of (wooProduct.attributes ?? [])) {
+          if (isSizeAttr(attr.name)) (attr.options ?? []).forEach((o: string) => sizes.add(o));
         }
 
         // Replace WooCommerce-managed variants; keep any manually created ones (no wooVariationId)
