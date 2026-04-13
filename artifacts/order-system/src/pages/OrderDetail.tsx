@@ -114,6 +114,7 @@ const EMPTY_ITEM = {
   quantity: 1,
   unitPrice: "",
   baseUnitPrice: "",
+  fromWardrobe: false,
 };
 
 export default function OrderDetail() {
@@ -283,6 +284,8 @@ export default function OrderDetail() {
   const sizes = [...new Set((productAttributes ?? []).filter(a => a.type === "size").map(a => a.value))];
 
   useEffect(() => {
+    // Skip variant price lookup for wardrobe items — they use the customer's special/wardrobe price
+    if (item.fromWardrobe) return;
     if (item.productId && productVariants) {
       const match = productVariants.find(v => v.colour === item.colour && v.size === item.size);
       if (match?.price != null) {
@@ -291,7 +294,7 @@ export default function OrderDetail() {
         setItem(i => ({ ...i, baseUnitPrice: base, unitPrice: total }));
       }
     }
-  }, [item.colour, item.size, item.productId, productVariants]);
+  }, [item.colour, item.size, item.productId, item.fromWardrobe, productVariants]);
 
   // Auto-suggest saved size when employee + product are both selected
   useEffect(() => {
@@ -358,6 +361,7 @@ export default function OrderDetail() {
       finishCost: 0,
       unitPrice: effectivePrice.toString(),
       baseUnitPrice: effectivePrice.toString(),
+      fromWardrobe: true,
     });
   };
 
