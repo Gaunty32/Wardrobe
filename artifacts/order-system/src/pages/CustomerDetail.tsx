@@ -1205,6 +1205,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [productSearch, setProductSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<number | null | "all">("all");
   const [variantColours, setVariantColours] = useState<string[]>([]);
+  const [variantSizes, setVariantSizes] = useState<string[]>([]);
 
   const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
@@ -1224,7 +1225,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setOpen(true); };
+  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setOpen(true); };
   const openEdit = (item: FinishedItem) => {
     setForm({
       name: item.name,
@@ -1239,10 +1240,14 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setEditing(item);
     setProductSearchOpen(false);
     setVariantColours([]);
-    // Load variant colours for the existing product
+    setVariantSizes([]);
+    // Load variant colours and sizes for the existing product
     apiFetch(`/products/${item.productId}/variants`).then((v: any) => {
-      const colours = [...new Set((v as any[]).map((x: any) => x.colour).filter(Boolean))] as string[];
+      const variants = v as any[];
+      const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
+      const sizes = [...new Set(variants.map((x: any) => x.size).filter(Boolean))] as string[];
       setVariantColours(colours);
+      setVariantSizes(sizes);
     }).catch(() => {});
     setOpen(true);
   };
@@ -1257,11 +1262,15 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       ? ((finishes as any[])?.find((f: any) => f.id === form.finishId)?.totalCost ?? 0)
       : 0;
     const newPrice = prod.unitPrice + currentFinishCost;
-    setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "" }));
+    setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "" }));
     setVariantColours([]);
+    setVariantSizes([]);
     apiFetch(`/products/${prod.id}/variants`).then((v: any) => {
-      const colours = [...new Set((v as any[]).map((x: any) => x.colour).filter(Boolean))] as string[];
+      const variants = v as any[];
+      const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
+      const sizes = [...new Set(variants.map((x: any) => x.size).filter(Boolean))] as string[];
       setVariantColours(colours);
+      setVariantSizes(sizes);
     }).catch(() => {});
   };
 
@@ -1471,6 +1480,26 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   placeholder="e.g. Navy Blue (optional)"
                   value={form.colour}
                   onChange={e => setForm(f => ({ ...f, colour: e.target.value }))}
+                />
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
+              {variantSizes.length > 0 ? (
+                <Select value={form.size || "__all__"} onValueChange={v => setForm(f => ({ ...f, size: v === "__all__" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="All sizes" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All sizes</SelectItem>
+                    {variantSizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <input
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="e.g. S, M, L, XL (optional)"
+                  value={form.size}
+                  onChange={e => setForm(f => ({ ...f, size: e.target.value }))}
                 />
               )}
             </div>
