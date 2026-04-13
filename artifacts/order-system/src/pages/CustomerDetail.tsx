@@ -611,6 +611,9 @@ function FinishesTab({ customerId }: { customerId: number }) {
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
   const openEdit = (f: any) => { setForm({ name: f.name||"", notes: [f.description, f.notes].filter(Boolean).join("\n").trim() }); setEditing(f); setOpen(true); };
 
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggle = (id: number) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
   return (
     <>
       <div className="flex justify-end mb-4">
@@ -618,154 +621,123 @@ function FinishesTab({ customerId }: { customerId: number }) {
       </div>
       {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
         : !finishes?.length ? <EmptyState icon={Shirt} label="finishes" onAdd={openAdd} />
-        : <div className="grid gap-4">
+        : <div className="border border-border/50 rounded-lg overflow-hidden divide-y divide-border/40">
           {finishes.map((f: any) => {
+            const isOpen = expanded.has(f.id);
             const attachedProcessIds = new Set(f.processes?.map((p: any) => p.processId));
             const availableProcesses = (processes || []).filter((p: any) => !attachedProcessIds.has(p.id));
             const attachedProductIds = new Set(f.garments?.map((g: any) => g.productId));
             const availableProducts = (allProducts || []).filter((p: any) => !attachedProductIds.has(p.id));
+            const processCount = f.processes?.length ?? 0;
+            const garmentCount = f.garments?.length ?? 0;
 
             return (
-              <Card key={f.id} className="border-border/50">
-                <CardContent className="p-4 space-y-4">
-                  {/* Header */}
-                  <div className="flex items-start justify-between gap-4">
+              <div key={f.id} className="bg-background">
+                {/* Collapsed header row */}
+                <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 cursor-pointer select-none" onClick={() => toggle(f.id)}>
+                  <span className={`transition-transform duration-150 text-muted-foreground ${isOpen ? "rotate-90" : ""}`}>
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M9 18l6-6-6-6"/></svg>
+                  </span>
+                  {f.code && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded font-mono text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200 shrink-0">
+                      {f.code}
+                    </span>
+                  )}
+                  <span className="font-medium text-foreground flex-1 truncate">{f.name}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {processCount > 0 && (
+                      <span className="text-xs text-muted-foreground">{processCount} process{processCount !== 1 ? "es" : ""}</span>
+                    )}
+                    {garmentCount > 0 && (
+                      <span className="text-xs text-muted-foreground">{garmentCount} garment{garmentCount !== 1 ? "s" : ""}</span>
+                    )}
+                    {f.totalCost > 0 && (
+                      <span className="text-xs font-semibold text-emerald-700 tabular-nums">£{f.totalCost.toFixed(2)}</span>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-blue-600 hover:bg-blue-50" onClick={e => { e.stopPropagation(); openEdit(f); }}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-600 hover:bg-red-50" onClick={e => { e.stopPropagation(); confirm("Delete this finish?") && del.mutate(f.id); }}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </div>
+
+                {/* Expanded body */}
+                {isOpen && (
+                  <div className="px-4 pb-4 pt-1 bg-muted/10 space-y-4 border-t border-border/30">
+                    {/* Processes */}
                     <div>
-                      <div className="flex items-center gap-2">
-                        {f.code && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200">
-                            {f.code}
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Processes</p>
+                      {f.processes?.length > 0 ? (
+                        <div className="space-y-1">
+                          {f.processes.map((p: any) => (
+                            <div key={p.id} className="flex items-center gap-2 rounded px-2 py-1.5 bg-background border border-border/40 text-sm">
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium shrink-0 ${typeColour[p.type] || typeColour.other}`}>
+                                {p.type || "—"}
+                              </span>
+                              <span className="font-medium flex-1 truncate">{p.name}</span>
+                              {p.placement && <span className="text-muted-foreground text-xs hidden sm:block shrink-0">{p.placement}</span>}
+                              {p.price != null && <span className="tabular-nums text-xs font-semibold shrink-0">{formatCurrency(p.price)}</span>}
+                              <button onClick={() => removeProcess.mutate({ finishId: f.id, processId: p.processId })} className="text-muted-foreground hover:text-red-500 transition-colors shrink-0">
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                          {f.totalCost > 0 && (
+                            <div className="flex justify-end pr-6 pt-0.5">
+                              <span className="text-xs font-semibold text-emerald-700">Total: {formatCurrency(f.totalCost)}</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">No processes added yet</p>
+                      )}
+                      {availableProcesses.length > 0 && (
+                        <div className="mt-2">
+                          <Select onValueChange={(v) => addProcess.mutate({ finishId: f.id, processId: Number(v) })}>
+                            <SelectTrigger className="h-7 text-xs w-auto border-dashed text-muted-foreground">
+                              <Plus className="w-3 h-3 mr-1" /><span>Add process</span>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableProcesses.map((p: any) => (
+                                <SelectItem key={p.id} value={String(p.id)}>
+                                  {p.name}{p.price != null ? ` — ${formatCurrency(p.price)}` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                      {!processes?.length && <p className="text-xs text-muted-foreground italic mt-1">Set up processes in the Processes tab first</p>}
+                    </div>
+
+                    {/* Garments */}
+                    <div>
+                      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Garments</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {f.garments?.map((g: any) => (
+                          <span key={g.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                            {g.name}
+                            {g.sku && <span className="text-blue-400 text-[10px]">({g.sku})</span>}
+                            <button onClick={() => removeGarment.mutate({ finishId: f.id, productId: g.productId })} className="hover:opacity-70 ml-0.5"><X className="w-3 h-3" /></button>
                           </span>
+                        ))}
+                        {availableProducts.length > 0 && (
+                          <Select onValueChange={(v) => addGarment.mutate({ finishId: f.id, productId: Number(v) })}>
+                            <SelectTrigger className="h-6 text-xs px-2 w-auto border-dashed text-muted-foreground">
+                              <Plus className="w-3 h-3 mr-1" /><span>Add garment</span>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableProducts.map((p: any) => (
+                                <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.sku ? ` (${p.sku})` : ""}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         )}
-                        <h4 className="font-semibold text-foreground">{f.name}</h4>
+                        {!f.garments?.length && !availableProducts?.length && <p className="text-xs text-muted-foreground italic">No garments — add products first</p>}
+                        {!f.garments?.length && availableProducts?.length > 0 && <p className="text-xs text-muted-foreground italic">No garments assigned yet</p>}
                       </div>
-                      {f.description && <p className="text-sm text-muted-foreground mt-0.5">{f.description}</p>}
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      {f.totalCost > 0 && (
-                        <Badge variant="secondary" className="bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold tabular-nums">
-                          <PoundSterling className="w-3 h-3 mr-0.5" />{f.totalCost.toFixed(2)} total
-                        </Badge>
-                      )}
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(f)}><Edit2 className="w-3 h-3" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this finish?") && del.mutate(f.id)}><Trash2 className="w-3 h-3" /></Button>
                     </div>
                   </div>
-
-                  {/* Processes section */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Processes</p>
-                    {f.processes?.length > 0 ? (
-                      <div className="border border-border/50 rounded-md overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-muted/40">
-                            <tr>
-                              <th className="text-left px-3 py-1.5 text-xs font-medium text-muted-foreground">Process</th>
-                              <th className="text-left px-3 py-1.5 text-xs font-medium text-muted-foreground hidden sm:table-cell">Placement</th>
-                              <th className="text-right px-3 py-1.5 text-xs font-medium text-muted-foreground">Price</th>
-                              <th className="w-8"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-border/30">
-                            {f.processes.map((p: any) => (
-                              <tr key={p.id} className="bg-background">
-                                <td className="px-3 py-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${typeColour[p.type] || typeColour.other}`}>
-                                      {p.type || "other"}
-                                    </span>
-                                    <span className="font-medium text-foreground">{p.name}</span>
-                                  </div>
-                                </td>
-                                <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">{p.placement || "—"}</td>
-                                <td className="px-3 py-2 text-right tabular-nums font-medium">
-                                  {p.price != null ? formatCurrency(p.price) : <span className="text-muted-foreground">—</span>}
-                                </td>
-                                <td className="px-2 py-2">
-                                  <button
-                                    onClick={() => removeProcess.mutate({ finishId: f.id, processId: p.processId })}
-                                    className="text-muted-foreground hover:text-red-500 transition-colors"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
-                            {f.totalCost > 0 && (
-                              <tr className="bg-muted/20 font-semibold">
-                                <td className="px-3 py-2 text-sm" colSpan={2}>Total finish cost</td>
-                                <td className="px-3 py-2 text-right tabular-nums text-emerald-700 hidden sm:table-cell">{formatCurrency(f.totalCost)}</td>
-                                <td></td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic">No processes added yet</p>
-                    )}
-                    {availableProcesses.length > 0 && (
-                      <div className="mt-2">
-                        <Select onValueChange={(v) => addProcess.mutate({ finishId: f.id, processId: Number(v) })}>
-                          <SelectTrigger className="h-7 text-xs w-auto border-dashed text-muted-foreground">
-                            <Plus className="w-3 h-3 mr-1" /><span>Add process</span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableProcesses.map((p: any) => (
-                              <SelectItem key={p.id} value={String(p.id)}>
-                                {p.name}{p.price != null ? ` — ${formatCurrency(p.price)}` : ""}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
-                    {!processes?.length && (
-                      <p className="text-xs text-muted-foreground italic mt-1">Set up processes in the Processes tab first</p>
-                    )}
-                  </div>
-
-                  {/* Garments section */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Garments</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {f.garments?.map((g: any) => (
-                        <span key={g.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                          {g.name}
-                          {g.sku && <span className="text-blue-400 text-[10px]">({g.sku})</span>}
-                          <button
-                            onClick={() => removeGarment.mutate({ finishId: f.id, productId: g.productId })}
-                            className="hover:opacity-70 ml-0.5"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </span>
-                      ))}
-                      {availableProducts.length > 0 && (
-                        <Select onValueChange={(v) => addGarment.mutate({ finishId: f.id, productId: Number(v) })}>
-                          <SelectTrigger className="h-6 text-xs px-2 w-auto border-dashed text-muted-foreground">
-                            <Plus className="w-3 h-3 mr-1" /><span>Add garment</span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {availableProducts.map((p: any) => (
-                              <SelectItem key={p.id} value={String(p.id)}>
-                                {p.name}{p.sku ? ` (${p.sku})` : ""}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      {!f.garments?.length && !availableProducts?.length && (
-                        <p className="text-xs text-muted-foreground italic">No garments — add products first</p>
-                      )}
-                      {!f.garments?.length && availableProducts?.length > 0 && (
-                        <p className="text-xs text-muted-foreground italic">No garments assigned yet</p>
-                      )}
-                    </div>
-                  </div>
-
-                </CardContent>
-              </Card>
+                )}
+              </div>
             );
           })}
         </div>}
