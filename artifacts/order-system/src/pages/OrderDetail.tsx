@@ -398,23 +398,23 @@ export default function OrderDetail() {
     const price = parseFloat(item.unitPrice);
     if (isNaN(price)) return;
 
-    // Validate colour required when product has colour options
-    if (colours.length > 0 && !item.colour) {
-      toast({ title: "Colour required", description: "Please select a colour before adding to the order.", variant: "destructive" });
-      return;
-    }
-
-    // Validate size required when product has size options
-    if (sizes.length > 0) {
-      const missingSizes = sizeRows.some(r => !r.size);
-      if (missingSizes) {
-        toast({ title: "Size required", description: "Please select a size for every row before adding.", variant: "destructive" });
+    // Custom-tab validations only (wardrobe tab sets colour/size on selection)
+    if (dialogTab === "custom") {
+      if (colours.length > 0 && !item.colour) {
+        toast({ title: "Colour required", description: "Please select a colour before adding to the order.", variant: "destructive" });
         return;
+      }
+      if (sizes.length > 0) {
+        const missingSizes = sizeRows.some(r => !r.size);
+        if (missingSizes) {
+          toast({ title: "Size required", description: "Please select a size for every row before adding.", variant: "destructive" });
+          return;
+        }
       }
     }
 
     // ── Multi-size: add one line per row, no individual stock checks ──
-    if (sizes.length > 0 && sizeRows.length > 1) {
+    if (dialogTab === "custom" && sizes.length > 0 && sizeRows.length > 1) {
       setIsAddingMulti(true);
       try {
         for (const row of sizeRows) {
@@ -448,9 +448,11 @@ export default function OrderDetail() {
     }
 
     // ── Single item: add directly (stock is allocated at confirmation) ──
-    const singleSize = sizes.length > 0 ? (sizeRows[0]?.size ?? item.size) : item.size;
-    const singleQty = sizes.length > 0 ? (sizeRows[0]?.qty ?? item.quantity) : item.quantity;
-    doAddItem({ size: singleSize || null, quantity: singleQty });
+    // Wardrobe tab: size/qty already set on item. Custom tab: use sizeRows[0].
+    const useRowSize = dialogTab === "custom" && sizes.length > 0;
+    const singleSize = useRowSize ? (sizeRows[0]?.size || null) : (item.size || null);
+    const singleQty = useRowSize ? (sizeRows[0]?.qty ?? item.quantity) : item.quantity;
+    doAddItem({ size: singleSize, quantity: singleQty });
   };
 
   const handleDeleteItem = (itemId: number) => {
