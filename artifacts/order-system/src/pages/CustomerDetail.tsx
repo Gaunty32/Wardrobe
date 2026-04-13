@@ -447,35 +447,33 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               <div className="grid gap-2"><Label>Placement</Label>
                 <Input placeholder="e.g. Left Chest" value={form.placement} onChange={e => setForm({ ...form, placement: e.target.value })} /></div>
             </div>
-            <div className={`grid gap-4 ${form.type === "DTF" ? "grid-cols-2" : "grid-cols-1"}`}>
-              <div className="grid gap-2">
-                <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Price (£)</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  placeholder="0.00"
-                  value={form.price}
-                  onChange={e => setForm({ ...form, price: e.target.value })}
-                />
-              </div>
-              {form.type === "DTF" && (
-                <div className="grid gap-2">
-                  <Label className="flex items-center gap-1"><Boxes className="w-3 h-3" /> Process Stock Item</Label>
-                  <Select value={form.processStockId || "none"} onValueChange={v => setForm({ ...form, processStockId: v === "none" ? "" : v })}>
-                    <SelectTrigger><SelectValue placeholder="Link stock item" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">None</SelectItem>
-                      {allProcessStock?.map(s => (
-                        <SelectItem key={s.id} value={s.id.toString()}>
-                          {s.sku ? `${s.sku} — ${s.name}` : s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Price (£)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                value={form.price}
+                onChange={e => setForm({ ...form, price: e.target.value })}
+              />
             </div>
+            {form.type === "DTF" && (
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><Boxes className="w-3 h-3" /> Process Stock Item</Label>
+                <Select value={form.processStockId || "none"} onValueChange={v => setForm({ ...form, processStockId: v === "none" ? "" : v })}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Link stock item" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {allProcessStock?.map(s => (
+                      <SelectItem key={s.id} value={s.id.toString()}>
+                        {s.sku ? `${s.sku} — ${s.name}` : s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid gap-2"><Label>Notes</Label>
               <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
