@@ -613,6 +613,9 @@ function FinishesTab({ customerId }: { customerId: number }) {
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const toggle = (id: number) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const [garmentPopover, setGarmentPopover] = useState<Set<number>>(new Set());
+  const [garmentSearch, setGarmentSearch] = useState<Record<number, string>>({});
+  const toggleGarmentPopover = (id: number) => setGarmentPopover(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
 
   return (
     <>
@@ -720,16 +723,47 @@ function FinishesTab({ customerId }: { customerId: number }) {
                           </span>
                         ))}
                         {availableProducts.length > 0 && (
-                          <Select onValueChange={(v) => addGarment.mutate({ finishId: f.id, productId: Number(v) })}>
-                            <SelectTrigger className="h-6 text-xs px-2 w-auto border-dashed text-muted-foreground">
-                              <Plus className="w-3 h-3 mr-1" /><span>Add garment</span>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availableProducts.map((p: any) => (
-                                <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.sku ? ` (${p.sku})` : ""}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <Popover open={garmentPopover.has(f.id)} onOpenChange={() => toggleGarmentPopover(f.id)}>
+                            <PopoverTrigger asChild>
+                              <button className="inline-flex items-center gap-1 h-6 px-2 rounded-full text-xs border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
+                                <Plus className="w-3 h-3" />Add garment
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="p-0 w-72" align="start">
+                              <Command>
+                                <CommandInput
+                                  placeholder="Search by code or name…"
+                                  value={garmentSearch[f.id] || ""}
+                                  onValueChange={v => setGarmentSearch(prev => ({ ...prev, [f.id]: v }))}
+                                />
+                                <CommandList>
+                                  <CommandEmpty>No products found</CommandEmpty>
+                                  <CommandGroup>
+                                    {availableProducts
+                                      .filter((p: any) => {
+                                        const q = (garmentSearch[f.id] || "").toLowerCase();
+                                        if (!q) return true;
+                                        return (p.sku || "").toLowerCase().includes(q) || (p.name || "").toLowerCase().includes(q);
+                                      })
+                                      .map((p: any) => (
+                                        <CommandItem
+                                          key={p.id}
+                                          value={`${p.sku || ""} ${p.name}`}
+                                          onSelect={() => {
+                                            addGarment.mutate({ finishId: f.id, productId: p.id });
+                                            toggleGarmentPopover(f.id);
+                                            setGarmentSearch(prev => ({ ...prev, [f.id]: "" }));
+                                          }}
+                                        >
+                                          {p.sku && <span className="font-mono font-semibold text-xs text-foreground mr-1.5">{p.sku}</span>}
+                                          <span className="text-muted-foreground truncate">{p.name}</span>
+                                        </CommandItem>
+                                      ))}
+                                  </CommandGroup>
+                                </CommandList>
+                              </Command>
+                            </PopoverContent>
+                          </Popover>
                         )}
                         {!f.garments?.length && !availableProducts?.length && <p className="text-xs text-muted-foreground italic">No garments — add products first</p>}
                         {!f.garments?.length && availableProducts?.length > 0 && <p className="text-xs text-muted-foreground italic">No garments assigned yet</p>}
