@@ -412,7 +412,19 @@ function ProcessesTab({ customerId }: { customerId: number }) {
 
       <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
         <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader><DialogTitle>{editing ? "Edit Process" : "Add Process"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {editing ? "Edit Process" : "Add Process"}
+              {editing?.code && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                  {editing.code}
+                </span>
+              )}
+              {!editing && (
+                <span className="text-xs font-normal text-muted-foreground">Code will be assigned on save</span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Name *</Label>
               <Input placeholder="e.g. Left Chest Embroidery Logo" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
@@ -695,7 +707,19 @@ function FinishesTab({ customerId }: { customerId: number }) {
 
       <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
         <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader><DialogTitle>{editing ? "Edit Finish" : "Add Finish"}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {editing ? "Edit Finish" : "Add Finish"}
+              {editing?.code && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200">
+                  {editing.code}
+                </span>
+              )}
+              {!editing && (
+                <span className="text-xs font-normal text-muted-foreground">Code will be assigned on save</span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Name *</Label>
               <Input placeholder="e.g. Full Company Branding Package" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
