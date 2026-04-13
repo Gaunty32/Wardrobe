@@ -101,5 +101,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_finished_items ADD COLUMN IF NOT EXISTS special_price numeric(10,2);
   `);
 
+  // Add image_url to customer_processes for process reference photos
+  await db.execute(sql`
+    ALTER TABLE customer_processes ADD COLUMN IF NOT EXISTS image_url text;
+  `);
+
   console.log("[startup] Migrations complete");
 }

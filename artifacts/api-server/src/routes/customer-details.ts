@@ -166,6 +166,7 @@ const processBody = z.object({
   placement: z.string().optional().nullable(),
   price: z.number().min(0).optional().nullable(),
   processStockId: z.number().int().positive().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 

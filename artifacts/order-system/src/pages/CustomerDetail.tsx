@@ -16,9 +16,10 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
+import { useUpload } from "@workspace/object-storage-web";
 import { Link } from "wouter";
 
 const API_BASE = "/api";
@@ -333,8 +334,16 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", notes: "" };
+  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", notes: "" };
   const [form, setForm] = useState(blank);
+
+  const { uploadFile, isUploading } = useUpload({
+    onSuccess: (res) => {
+      setForm(f => ({ ...f, imageUrl: `/api/storage${res.objectPath}` }));
+      toast({ title: "Image uploaded" });
+    },
+    onError: () => toast({ title: "Upload failed", description: "Could not upload image", variant: "destructive" }),
+  });
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddForm, setQuickAddForm] = useState({ name: "", sku: "" });
@@ -378,6 +387,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
       placement: p.placement || "",
       price: p.price != null ? String(p.price) : "",
       processStockId: p.processStockId != null ? String(p.processStockId) : "",
+      imageUrl: p.imageUrl || "",
       notes: p.notes || "",
     });
     setEditing(p);
@@ -391,6 +401,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
       placement: form.placement || null,
       price: form.price ? parseFloat(form.price) : null,
       processStockId: form.processStockId ? parseInt(form.processStockId, 10) : null,
+      imageUrl: form.imageUrl || null,
       notes: form.notes || null,
     });
   };
@@ -417,6 +428,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
             <TableHead className="hidden md:table-cell">Placement</TableHead>
             <TableHead className="text-right">Price</TableHead>
             <TableHead className="hidden lg:table-cell">Process Stock</TableHead>
+            <TableHead className="w-12">Image</TableHead>
             <TableHead className="w-20 text-right">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
@@ -443,6 +455,15 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                       <Boxes className="w-3 h-3" />{getStockName(p.processStockId) ?? `#${p.processStockId}`}
                     </span>
                   ) : <span className="text-muted-foreground text-sm">—</span>}
+                </TableCell>
+                <TableCell>
+                  {p.imageUrl ? (
+                    <a href={p.imageUrl} target="_blank" rel="noopener noreferrer" title="View process image">
+                      <img src={p.imageUrl} alt={p.name} className="w-8 h-8 object-cover rounded border border-border hover:opacity-80 transition-opacity" />
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground/30"><ImageIcon className="w-4 h-4" /></span>
+                  )}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -523,12 +544,45 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                 </Select>
               </div>
             )}
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1"><ImageIcon className="w-3 h-3" /> Reference Image</Label>
+              {form.imageUrl ? (
+                <div className="relative group w-full">
+                  <img src={form.imageUrl} alt="Process reference" className="w-full h-36 object-cover rounded-md border border-border" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
+                    <a href={form.imageUrl} target="_blank" rel="noopener noreferrer">
+                      <Button type="button" size="sm" variant="secondary" className="h-7 gap-1 text-xs"><Eye className="w-3 h-3" /> View</Button>
+                    </a>
+                    <Button type="button" size="sm" variant="destructive" className="h-7 gap-1 text-xs" onClick={() => setForm(f => ({ ...f, imageUrl: "" }))}><X className="w-3 h-3" /> Remove</Button>
+                  </div>
+                </div>
+              ) : (
+                <label className={cn(
+                  "flex flex-col items-center justify-center h-24 rounded-md border-2 border-dashed border-border cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors",
+                  isUploading && "opacity-50 pointer-events-none"
+                )}>
+                  {isUploading ? (
+                    <><Loader2 className="w-5 h-5 animate-spin text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Uploading…</span></>
+                  ) : (
+                    <><Upload className="w-5 h-5 text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Click to upload image</span><span className="text-[10px] text-muted-foreground/60">JPG, PNG, GIF, WebP</span></>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    disabled={isUploading}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+                  />
+                </label>
+              )}
+            </div>
+
             <div className="grid gap-2"><Label>Notes</Label>
               <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+            <Button onClick={handleSave} disabled={save.isPending || !form.name || isUploading}>{save.isPending ? "Saving..." : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
