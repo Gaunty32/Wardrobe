@@ -915,10 +915,57 @@ export default function OrderDetail() {
                                   {fi.productName}
                                   {fi.colour && <span> · {fi.colour}</span>}
                                   {fi.size && <span> · {fi.size}</span>}
-                                  {fi.finishName && <span className="text-amber-600"> · <Sparkles className="w-2.5 h-2.5 inline -mt-0.5" /> {fi.finishName}</span>}
+                                  {fi.finishName && (() => {
+                                    const finishDetail = customerFinishes?.find(f => f.id === fi.finishId);
+                                    return (
+                                      <Popover>
+                                        <PopoverTrigger asChild onClick={e => e.stopPropagation()}>
+                                          <span className="text-amber-600 cursor-pointer hover:underline inline-flex items-center gap-0.5 ml-1">
+                                            · <Sparkles className="w-2.5 h-2.5 mx-0.5" />{fi.finishName}
+                                          </span>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-64 p-3" onClick={e => e.stopPropagation()}>
+                                          <p className="font-semibold text-sm mb-2 flex items-center gap-1.5">
+                                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />{fi.finishName}
+                                          </p>
+                                          {finishDetail?.processes && finishDetail.processes.length > 0 ? (
+                                            <div className="space-y-1.5">
+                                              {finishDetail.processes.map(proc => (
+                                                <div key={proc.id} className="flex justify-between text-xs">
+                                                  <span className="text-muted-foreground">{proc.name}</span>
+                                                  {proc.price != null && <span className="font-medium tabular-nums">{formatCurrency(proc.price)}</span>}
+                                                </div>
+                                              ))}
+                                              <div className="border-t border-border/40 pt-1.5 mt-1 flex justify-between text-xs font-semibold">
+                                                <span>Total</span>
+                                                <span className="tabular-nums">{formatCurrency(finishDetail.processes.reduce((s, proc) => s + (proc.price ?? 0), 0))}</span>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <p className="text-xs text-muted-foreground">No process details available.</p>
+                                          )}
+                                        </PopoverContent>
+                                      </Popover>
+                                    );
+                                  })()}
                                 </p>
                               </div>
-                              <span className="text-sm font-semibold shrink-0">{formatCurrency(fi.unitPrice)}</span>
+                              <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                {(() => {
+                                  const baseProd = products?.find(p => p.id === fi.productId);
+                                  const listPrice = baseProd ? parseFloat(String(baseProd.unitPrice)) : null;
+                                  const wardrobePrice = fi.unitPrice;
+                                  const isDifferent = listPrice !== null && Math.abs(listPrice - wardrobePrice) > 0.005;
+                                  return isDifferent ? (
+                                    <>
+                                      <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(listPrice!)}</span>
+                                      <span className="text-sm font-semibold text-green-700 tabular-nums">{formatCurrency(wardrobePrice)}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-sm font-semibold tabular-nums">{formatCurrency(wardrobePrice)}</span>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           </button>
                         );
@@ -931,8 +978,44 @@ export default function OrderDetail() {
                   <div className="border-t border-border/50 pt-4 mt-2 grid gap-4">
                     <div className="rounded-md bg-muted/40 px-3 py-2 text-sm flex items-center justify-between">
                       <span className="font-medium truncate">{item.productName}</span>
-                      <span className="font-semibold ml-3 shrink-0">{formatCurrency(parseFloat(item.unitPrice) || 0)} ea</span>
+                      <div className="flex flex-col items-end shrink-0 ml-3">
+                        {(() => {
+                          const baseProd = products?.find(p => p.id === item.productId);
+                          const listPrice = baseProd ? parseFloat(String(baseProd.unitPrice)) : null;
+                          const wardrobePrice = parseFloat(item.unitPrice) || 0;
+                          const isDifferent = listPrice !== null && Math.abs(listPrice - wardrobePrice) > 0.005;
+                          return isDifferent ? (
+                            <>
+                              <span className="text-xs text-muted-foreground line-through tabular-nums">List: {formatCurrency(listPrice!)}</span>
+                              <span className="font-semibold text-green-700 tabular-nums">{formatCurrency(wardrobePrice)} ea</span>
+                            </>
+                          ) : (
+                            <span className="font-semibold tabular-nums">{formatCurrency(wardrobePrice)} ea</span>
+                          );
+                        })()}
+                      </div>
                     </div>
+
+                    {/* Size picker */}
+                    {(() => {
+                      const availableSizes = [...new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""))];
+                      return (
+                        <div className="grid gap-2">
+                          <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
+                          {availableSizes.length > 0 ? (
+                            <Select value={item.size || "__any__"} onValueChange={v => setItem(i => ({ ...i, size: v === "__any__" ? "" : v }))}>
+                              <SelectTrigger><SelectValue placeholder="Any / unspecified" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__any__">Any / unspecified</SelectItem>
+                                {availableSizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input placeholder="e.g. M, L, XL (optional)" value={item.size} onChange={e => setItem(i => ({ ...i, size: e.target.value }))} />
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="grid gap-3">
                       <Label>Ordered for</Label>
@@ -1003,7 +1086,7 @@ export default function OrderDetail() {
                         <Input id="w-qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
                       </div>
                       <div className="grid gap-2">
-                        <Label htmlFor="w-price">Unit Price (£)</Label>
+                        <Label htmlFor="w-price">Customer Price (£)</Label>
                         <Input id="w-price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
                       </div>
                     </div>
