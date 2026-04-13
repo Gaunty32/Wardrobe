@@ -23,6 +23,8 @@ import { Link } from "wouter";
 
 const API_BASE = "/api";
 
+const DEFAULT_CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL", "6XL"];
+
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
@@ -1494,22 +1496,15 @@ function WardrobeTab({ customerId }: { customerId: number }) {
 
             <div className="grid gap-2">
               <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-              {variantSizes.length > 0 ? (
-                <Select value={form.size || "__all__"} onValueChange={v => setForm(f => ({ ...f, size: v === "__all__" ? "" : v }))}>
-                  <SelectTrigger><SelectValue placeholder="All sizes" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All sizes</SelectItem>
-                    {variantSizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <input
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="e.g. S, M, L, XL (optional)"
-                  value={form.size}
-                  onChange={e => setForm(f => ({ ...f, size: e.target.value }))}
-                />
-              )}
+              <Select value={form.size || "__all__"} onValueChange={v => setForm(f => ({ ...f, size: v === "__all__" ? "" : v }))}>
+                <SelectTrigger><SelectValue placeholder="All sizes" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All sizes</SelectItem>
+                  {(variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).map(s => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid gap-2">

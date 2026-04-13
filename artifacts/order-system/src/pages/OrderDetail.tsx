@@ -32,6 +32,8 @@ import { cn } from "@/lib/utils";
 
 const API_BASE = "/api";
 
+const DEFAULT_CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL", "6XL"];
+
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
@@ -996,24 +998,21 @@ export default function OrderDetail() {
                       </div>
                     </div>
 
-                    {/* Size picker — combines attribute palette + variant sizes */}
+                    {/* Size picker — product sizes first, falls back to standard clothing sizes */}
                     {(() => {
                       const variantSizeSet = new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""));
-                      const allSizes = [...new Set([...sizes, ...variantSizeSet])];
+                      const productSizes = [...new Set([...sizes, ...variantSizeSet])];
+                      const sizeOptions = productSizes.length > 0 ? productSizes : DEFAULT_CLOTHING_SIZES;
                       return (
                         <div className="grid gap-2">
                           <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                          {allSizes.length > 0 ? (
-                            <Select value={item.size || "__any__"} onValueChange={v => setItem(i => ({ ...i, size: v === "__any__" ? "" : v }))}>
-                              <SelectTrigger><SelectValue placeholder="Any / unspecified" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__any__">Any / unspecified</SelectItem>
-                                {allSizes.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Input placeholder="e.g. M, L, XL (optional)" value={item.size} onChange={e => setItem(i => ({ ...i, size: e.target.value }))} />
-                          )}
+                          <Select value={item.size || "__any__"} onValueChange={v => setItem(i => ({ ...i, size: v === "__any__" ? "" : v }))}>
+                            <SelectTrigger><SelectValue placeholder="Any / unspecified" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__any__">Any / unspecified</SelectItem>
+                              {sizeOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
                         </div>
                       );
                     })()}
