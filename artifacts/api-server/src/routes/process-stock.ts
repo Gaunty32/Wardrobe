@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, ilike, or, sql } from "drizzle-orm";
-import { db, processStockTable, suppliersTable } from "@workspace/db";
+import { eq, ilike, or, and } from "drizzle-orm";
+import { db, processStockTable, suppliersTable, customersTable } from "@workspace/db";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -13,6 +13,7 @@ const processStockBody = z.object({
   stockQuantity: z.number().int().default(0),
   supplierId: z.number().int().positive().optional().nullable(),
   supplierCode: z.string().optional().nullable(),
+  customerId: z.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
 });
 
@@ -25,28 +26,30 @@ function toFloat(val: string | null | undefined): number {
 
 router.get("/process-stock", async (req, res): Promise<void> => {
   const search = typeof req.query.search === "string" ? req.query.search : null;
+  const customerIdParam = typeof req.query.customerId === "string" ? parseInt(req.query.customerId, 10) : null;
 
-  let rows;
+  const conditions = [];
   if (search) {
     const term = `%${search}%`;
-    rows = await db
-      .select({ ps: processStockTable, supplierName: suppliersTable.name })
-      .from(processStockTable)
-      .leftJoin(suppliersTable, eq(processStockTable.supplierId, suppliersTable.id))
-      .where(or(ilike(processStockTable.name, term), ilike(processStockTable.sku, term)))
-      .orderBy(processStockTable.name);
-  } else {
-    rows = await db
-      .select({ ps: processStockTable, supplierName: suppliersTable.name })
-      .from(processStockTable)
-      .leftJoin(suppliersTable, eq(processStockTable.supplierId, suppliersTable.id))
-      .orderBy(processStockTable.name);
+    conditions.push(or(ilike(processStockTable.name, term), ilike(processStockTable.sku, term)));
   }
+  if (customerIdParam && !isNaN(customerIdParam)) {
+    conditions.push(eq(processStockTable.customerId, customerIdParam));
+  }
+
+  const rows = await db
+    .select({ ps: processStockTable, supplierName: suppliersTable.name, customerName: customersTable.name })
+    .from(processStockTable)
+    .leftJoin(suppliersTable, eq(processStockTable.supplierId, suppliersTable.id))
+    .leftJoin(customersTable, eq(processStockTable.customerId, customersTable.id))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
+    .orderBy(processStockTable.sku, processStockTable.name);
 
   res.json(rows.map(r => ({
     ...r.ps,
     unitCost: toFloat(r.ps.unitCost),
     supplierName: r.supplierName ?? null,
+    customerName: r.customerName ?? null,
   })));
 });
 

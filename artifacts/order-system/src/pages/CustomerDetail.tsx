@@ -302,8 +302,8 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   const { toast } = useToast();
   const { data: processes, isLoading } = useSubResource<any>(customerId, "processes");
   const { data: allProcessStock } = useQuery<ProcessStockItem[]>({
-    queryKey: ["process-stock"],
-    queryFn: () => apiFetch("/process-stock"),
+    queryKey: ["process-stock", "customer", customerId],
+    queryFn: () => apiFetch(`/process-stock?customerId=${customerId}`),
   });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -354,7 +354,9 @@ function ProcessesTab({ customerId }: { customerId: number }) {
 
   const getStockName = (id: number | null) => {
     if (!id || !allProcessStock) return null;
-    return allProcessStock.find(s => s.id === id)?.name ?? null;
+    const s = allProcessStock.find(s => s.id === id);
+    if (!s) return null;
+    return s.sku ? `${s.sku} — ${s.name}` : s.name;
   };
 
   return (
@@ -462,7 +464,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                     <SelectItem value="none">None</SelectItem>
                     {allProcessStock?.map(s => (
                       <SelectItem key={s.id} value={s.id.toString()}>
-                        {s.name}{s.sku ? ` (${s.sku})` : ""}
+                        {s.sku ? `${s.sku} — ${s.name}` : s.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

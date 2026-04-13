@@ -80,5 +80,10 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Add customer_id to process_stock for customer-specific allocation
+  await db.execute(sql`
+    ALTER TABLE process_stock ADD COLUMN IF NOT EXISTS customer_id integer REFERENCES customers(id) ON DELETE SET NULL;
+  `);
+
   console.log("[startup] Migrations complete");
 }

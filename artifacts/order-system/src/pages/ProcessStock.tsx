@@ -37,8 +37,12 @@ interface ProcessStockItem {
   supplierId: number | null;
   supplierCode: string | null;
   supplierName: string | null;
+  customerId: number | null;
+  customerName: string | null;
   notes: string | null;
 }
+
+interface Customer { id: number; name: string; }
 
 const BLANK_FORM = {
   name: "",
@@ -48,6 +52,7 @@ const BLANK_FORM = {
   stockQuantity: "0",
   supplierId: "" as string,
   supplierCode: "",
+  customerId: "" as string,
   notes: "",
 };
 
@@ -60,6 +65,10 @@ export default function ProcessStock() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: suppliers } = useListSuppliers();
+  const { data: customers } = useQuery<Customer[]>({
+    queryKey: ["customers-list"],
+    queryFn: () => apiFetch("/customers"),
+  });
 
   const { data: items, isLoading } = useQuery<ProcessStockItem[]>({
     queryKey: ["process-stock", search],
@@ -103,6 +112,7 @@ export default function ProcessStock() {
       stockQuantity: item.stockQuantity.toString(),
       supplierId: item.supplierId?.toString() ?? "",
       supplierCode: item.supplierCode ?? "",
+      customerId: item.customerId?.toString() ?? "",
       notes: item.notes ?? "",
     });
     setEditing(item);
@@ -122,6 +132,7 @@ export default function ProcessStock() {
       stockQuantity: parseInt(form.stockQuantity, 10) || 0,
       supplierId: form.supplierId ? parseInt(form.supplierId, 10) : null,
       supplierCode: form.supplierCode.trim() || null,
+      customerId: form.customerId ? parseInt(form.customerId, 10) : null,
       notes: form.notes.trim() || null,
     });
   };
@@ -169,7 +180,8 @@ export default function ProcessStock() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead className="w-[100px]">SKU</TableHead>
                       <TableHead>Name</TableHead>
-                      <TableHead className="hidden md:table-cell">Supplier</TableHead>
+                      <TableHead className="hidden md:table-cell">Customer</TableHead>
+                      <TableHead className="hidden lg:table-cell">Supplier</TableHead>
                       <TableHead className="text-right">Unit Cost</TableHead>
                       <TableHead className="text-right">In Stock</TableHead>
                       <TableHead className="w-[100px] text-right">Actions</TableHead>
@@ -186,6 +198,11 @@ export default function ProcessStock() {
                           )}
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
+                          {item.customerName
+                            ? <span className="text-sm font-medium">{item.customerName}</span>
+                            : <span className="text-muted-foreground text-sm">—</span>}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">
                           {item.supplierName ? (
                             <div>
                               <p className="text-sm">{item.supplierName}</p>
@@ -263,6 +280,20 @@ export default function ProcessStock() {
                     onChange={(e) => setForm({ ...form, unitCost: e.target.value })}
                   />
                 </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Customer (allocation)</Label>
+                <Select value={form.customerId || "none"} onValueChange={(v) => setForm({ ...form, customerId: v === "none" ? "" : v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No customer / global</SelectItem>
+                    {customers?.map(c => (
+                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
