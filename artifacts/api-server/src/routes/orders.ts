@@ -213,6 +213,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
   if (req.body.requiredDate !== undefined) {
     updateData.requiredDate = req.body.requiredDate ? new Date(req.body.requiredDate) : null;
   }
+  if (req.body.shippingMethod !== undefined) {
+    updateData.shippingMethod = req.body.shippingMethod ?? null;
+  }
   if (req.body.deliveryAddressId !== undefined) {
     updateData.deliveryAddressId = req.body.deliveryAddressId ?? null;
   }

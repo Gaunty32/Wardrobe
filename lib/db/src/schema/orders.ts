@@ -15,6 +15,7 @@ export const ordersTable = pgTable("orders", {
   notes: text("notes"),
   orderDate: timestamp("order_date", { withTimezone: true }).notNull().defaultNow(),
   requiredDate: timestamp("required_date", { withTimezone: true }),
+  shippingMethod: text("shipping_method"),
   deliveryAddressId: integer("delivery_address_id"),
   dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
   xeroInvoiceId: text("xero_invoice_id"),

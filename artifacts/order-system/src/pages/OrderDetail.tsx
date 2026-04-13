@@ -27,7 +27,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -186,6 +186,26 @@ export default function OrderDetail() {
       queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
       setEditingRequiredDate(false);
       toast({ title: "Required date updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const SHIPPING_OPTIONS = [
+    { value: "local_delivery", label: "Local Delivery" },
+    { value: "office_collection", label: "Office Collection" },
+    { value: "warehouse_collection", label: "Warehouse Collection" },
+    { value: "courier", label: "Courier" },
+  ];
+
+  const [editingShippingMethod, setEditingShippingMethod] = useState(false);
+
+  const updateShippingMethodMutation = useMutation({
+    mutationFn: (method: string | null) =>
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ shippingMethod: method }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingShippingMethod(false);
+      toast({ title: "Shipping method updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -748,6 +768,51 @@ export default function OrderDetail() {
                     ) : (
                       <span className="text-muted-foreground italic">Not set</span>
                     )}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-display text-lg flex items-center">
+                    <Truck className="w-4 h-4 mr-2 text-muted-foreground" /> Shipping Method
+                  </CardTitle>
+                  {!editingShippingMethod && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingShippingMethod(true)}>
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="py-4">
+                {editingShippingMethod ? (
+                  <div className="space-y-2">
+                    <Select
+                      value={(order as any).shippingMethod ?? ""}
+                      onValueChange={(v) => updateShippingMethodMutation.mutate(v || null)}
+                    >
+                      <SelectTrigger className="text-sm"><SelectValue placeholder="Select method…" /></SelectTrigger>
+                      <SelectContent>
+                        {SHIPPING_OPTIONS.map(opt => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="ghost" className="flex-1 h-7 text-xs" onClick={() => setEditingShippingMethod(false)}>Cancel</Button>
+                      {(order as any).shippingMethod && (
+                        <Button size="sm" variant="ghost" className="flex-1 h-7 text-xs text-muted-foreground" onClick={() => updateShippingMethodMutation.mutate(null)}>Clear</Button>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm">
+                    {(order as any).shippingMethod
+                      ? <span className="font-medium">{SHIPPING_OPTIONS.find(o => o.value === (order as any).shippingMethod)?.label ?? (order as any).shippingMethod}</span>
+                      : <span className="text-muted-foreground italic">Not set</span>
+                    }
                   </p>
                 )}
               </CardContent>

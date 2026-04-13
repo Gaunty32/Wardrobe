@@ -4,11 +4,25 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2, CheckCircle2, ShoppingCart, PackageX, Mail, Check,
-  Copy, ChevronRight, Package, ExternalLink, AlertTriangle,
+  Copy, ChevronRight, Package, AlertTriangle, Truck,
 } from "lucide-react";
+
+const SHIPPING_OPTIONS = [
+  { value: "local_delivery", label: "Local Delivery" },
+  { value: "office_collection", label: "Office Collection" },
+  { value: "warehouse_collection", label: "Warehouse Collection" },
+  { value: "courier", label: "Courier" },
+] as const;
+
+function defaultRequiredDate(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
 
 const API_BASE = "/api";
 
@@ -78,6 +92,8 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
   const [emailText, setEmailText] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [copied, setCopied] = useState(false);
+  const [requiredDate, setRequiredDate] = useState(defaultRequiredDate);
+  const [shippingMethod, setShippingMethod] = useState<string>("");
 
   const reset = () => {
     setStep("review");
@@ -88,6 +104,8 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     setEmailSent(false);
     setEmailText("");
     setCopied(false);
+    setRequiredDate(defaultRequiredDate());
+    setShippingMethod("");
   };
 
   const handleClose = (open: boolean) => {
@@ -101,7 +119,11 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     try {
       const data = await apiFetch<AllocationResult & { id: number }>(`/orders/${order.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "confirmed" }),
+        body: JSON.stringify({
+          status: "confirmed",
+          requiredDate: requiredDate || null,
+          shippingMethod: shippingMethod || null,
+        }),
       });
       setResult(data);
       // Initialise PO action for each supplier group
@@ -244,13 +266,42 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                   </div>
                 )}
               </div>
+
+              <div className="grid gap-3">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="required-date">Required Date</Label>
+                  <Input
+                    id="required-date"
+                    type="date"
+                    value={requiredDate}
+                    onChange={e => setRequiredDate(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="shipping-method" className="flex items-center gap-1.5">
+                    <Truck className="w-4 h-4" />
+                    Shipping Method
+                  </Label>
+                  <Select value={shippingMethod} onValueChange={setShippingMethod}>
+                    <SelectTrigger id="shipping-method">
+                      <SelectValue placeholder="Select shipping method…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SHIPPING_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <p className="text-sm text-muted-foreground">
                 Confirming will allocate available stock to this order and flag any shortfalls for purchasing. A production worksheet can then be created once stock is picked.
               </p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
-              <Button onClick={handleConfirm}>
+              <Button onClick={handleConfirm} disabled={!requiredDate}>
                 <Check className="w-4 h-4 mr-1.5" /> Confirm Order
               </Button>
             </DialogFooter>

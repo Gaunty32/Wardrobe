@@ -129,5 +129,10 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Add shipping_method to orders
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_method text;
+  `);
+
   console.log("[startup] Migrations complete");
 }
