@@ -1009,11 +1009,11 @@ export default function OrderDetail() {
                       </div>
                     </div>
 
-                    {/* Size picker — product sizes first, falls back to standard clothing sizes */}
+                    {/* Size picker — only shows sizes from the product's own WooCommerce variations */}
                     {(() => {
                       const variantSizeSet = new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""));
-                      const productSizes = [...new Set([...sizes, ...variantSizeSet])];
-                      const sizeOptions = productSizes.length > 0 ? productSizes : DEFAULT_CLOTHING_SIZES;
+                      const sizeOptions = [...new Set([...sizes, ...variantSizeSet])];
+                      if (sizeOptions.length === 0) return null;
                       return (
                         <div className="grid gap-2">
                           <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
