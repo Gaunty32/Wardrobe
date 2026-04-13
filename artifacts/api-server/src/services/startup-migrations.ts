@@ -38,6 +38,18 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE status = 'running'
   `);
 
+  // Add code columns to customer_processes and customer_finishes
+  await db.execute(sql`
+    ALTER TABLE customer_processes ADD COLUMN IF NOT EXISTS code text;
+    ALTER TABLE customer_finishes  ADD COLUMN IF NOT EXISTS code text;
+  `);
+
+  // Backfill codes for any existing rows that don't have one yet
+  await db.execute(sql`
+    UPDATE customer_processes SET code = 'P' || LPAD(id::text, 3, '0') WHERE code IS NULL;
+    UPDATE customer_finishes  SET code = 'F' || LPAD(id::text, 3, '0') WHERE code IS NULL;
+  `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS product_categories (
       id serial PRIMARY KEY,

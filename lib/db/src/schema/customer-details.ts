@@ -32,6 +32,7 @@ export const customerContactsTable = pgTable("customer_contacts", {
 
 export const customerProcessesTable = pgTable("customer_processes", {
   id: serial("id").primaryKey(),
+  code: text("code"),
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   type: text("type"),
@@ -45,6 +46,7 @@ export const customerProcessesTable = pgTable("customer_processes", {
 
 export const customerFinishesTable = pgTable("customer_finishes", {
   id: serial("id").primaryKey(),
+  code: text("code"),
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),

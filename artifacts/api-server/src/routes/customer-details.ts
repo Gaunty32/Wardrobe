@@ -191,7 +191,9 @@ router.post("/customers/:customerId/processes", async (req, res): Promise<void> 
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const insertData: Record<string, unknown> = { ...body.data, customerId: p.data.customerId };
   if (body.data.price != null) insertData.price = String(body.data.price);
-  const [row] = await db.insert(customerProcessesTable).values(insertData).returning();
+  const [inserted] = await db.insert(customerProcessesTable).values(insertData).returning();
+  const code = `P${String(inserted.id).padStart(3, "0")}`;
+  const [row] = await db.update(customerProcessesTable).set({ code }).where(eq(customerProcessesTable.id, inserted.id)).returning();
   res.status(201).json(processToJson(row as Record<string, unknown>));
 });
 
@@ -274,7 +276,9 @@ router.post("/customers/:customerId/finishes", async (req, res): Promise<void> =
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
   const body = finishBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const [row] = await db.insert(customerFinishesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
+  const [inserted] = await db.insert(customerFinishesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
+  const code = `F${String(inserted.id).padStart(3, "0")}`;
+  const [row] = await db.update(customerFinishesTable).set({ code }).where(eq(customerFinishesTable.id, inserted.id)).returning();
   res.status(201).json({ ...row, processes: [] });
 });
 

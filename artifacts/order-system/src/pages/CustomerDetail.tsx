@@ -366,6 +366,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
         : !processes?.length ? <EmptyState icon={Layers} label="processes" onAdd={openAdd} />
         : <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead className="w-20">Code</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Type</TableHead>
             <TableHead className="hidden md:table-cell">Placement</TableHead>
@@ -376,6 +377,13 @@ function ProcessesTab({ customerId }: { customerId: number }) {
           <TableBody>
             {processes.map((p: any) => (
               <TableRow key={p.id} className="group hover:bg-muted/30">
+                <TableCell>
+                  {p.code && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+                      {p.code}
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="font-medium">{p.name}</TableCell>
                 <TableCell>
                   {p.type && <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${typeColour[p.type] || typeColour.other}`}>{p.type}</span>}
@@ -546,7 +554,14 @@ function FinishesTab({ customerId }: { customerId: number }) {
                   {/* Header */}
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h4 className="font-semibold text-foreground">{f.name}</h4>
+                      <div className="flex items-center gap-2">
+                        {f.code && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded font-mono text-xs font-semibold bg-violet-50 text-violet-700 border border-violet-200">
+                            {f.code}
+                          </span>
+                        )}
+                        <h4 className="font-semibold text-foreground">{f.name}</h4>
+                      </div>
                       {f.description && <p className="text-sm text-muted-foreground mt-0.5">{f.description}</p>}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
