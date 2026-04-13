@@ -47,11 +47,8 @@ interface Customer { id: number; name: string; }
 const BLANK_FORM = {
   name: "",
   sku: "",
-  description: "",
   unitCost: "",
   stockQuantity: "0",
-  supplierId: "" as string,
-  supplierCode: "",
   customerId: "" as string,
   notes: "",
 };
@@ -107,13 +104,10 @@ export default function ProcessStock() {
     setForm({
       name: item.name,
       sku: item.sku ?? "",
-      description: item.description ?? "",
-      unitCost: item.unitCost.toString(),
+      unitCost: item.unitCost ? item.unitCost.toString() : "",
       stockQuantity: item.stockQuantity.toString(),
-      supplierId: item.supplierId?.toString() ?? "",
-      supplierCode: item.supplierCode ?? "",
       customerId: item.customerId?.toString() ?? "",
-      notes: item.notes ?? "",
+      notes: [item.description, item.notes].filter(Boolean).join("\n").trim(),
     });
     setEditing(item);
     setOpen(true);
@@ -124,14 +118,16 @@ export default function ProcessStock() {
       toast({ title: "Validation Error", description: "Name is required", variant: "destructive" });
       return;
     }
+    const raptorId = suppliers?.find(s => s.name.toLowerCase().includes("raptor"))?.id ?? null;
+    const sku = form.sku.trim() || null;
     saveMutation.mutate({
       name: form.name.trim(),
-      sku: form.sku.trim() || null,
-      description: form.description.trim() || null,
+      sku,
+      description: null,
       unitCost: parseFloat(form.unitCost) || 0,
       stockQuantity: parseInt(form.stockQuantity, 10) || 0,
-      supplierId: form.supplierId ? parseInt(form.supplierId, 10) : null,
-      supplierCode: form.supplierCode.trim() || null,
+      supplierId: raptorId,
+      supplierCode: sku,
       customerId: form.customerId ? parseInt(form.customerId, 10) : null,
       notes: form.notes.trim() || null,
     });
@@ -255,22 +251,22 @@ export default function ProcessStock() {
               <div className="grid gap-2">
                 <Label>Name *</Label>
                 <Input
-                  placeholder="e.g. A4 Transfer Print Sheet"
+                  placeholder="e.g. Netty Stars Large Logo"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>SKU / Ref</Label>
+                  <Label>Product Code</Label>
                   <Input
-                    placeholder="e.g. PRT-A4-WHT"
+                    placeholder="e.g. FCC4998"
                     value={form.sku}
                     onChange={(e) => setForm({ ...form, sku: e.target.value })}
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Unit Cost (£)</Label>
+                  <Label>Unit Cost (£) <span className="text-muted-foreground font-normal text-xs">optional</span></Label>
                   <Input
                     type="number"
                     min="0"
@@ -281,67 +277,36 @@ export default function ProcessStock() {
                   />
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label>Customer (allocation)</Label>
-                <Select value={form.customerId || "none"} onValueChange={(v) => setForm({ ...form, customerId: v === "none" ? "" : v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No customer / global</SelectItem>
-                    {customers?.map(c => (
-                      <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>Supplier</Label>
-                  <Select value={form.supplierId || "none"} onValueChange={(v) => setForm({ ...form, supplierId: v === "none" ? "" : v })}>
+                  <Label>Customer (allocation)</Label>
+                  <Select value={form.customerId || "none"} onValueChange={(v) => setForm({ ...form, customerId: v === "none" ? "" : v })}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select supplier" />
+                      <SelectValue placeholder="Select customer" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No supplier</SelectItem>
-                      {suppliers?.map(s => (
-                        <SelectItem key={s.id} value={s.id.toString()}>{s.name}</SelectItem>
+                      <SelectItem value="none">No customer / global</SelectItem>
+                      {customers?.map(c => (
+                        <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label>Supplier Code</Label>
+                  <Label>Stock Quantity</Label>
                   <Input
-                    placeholder="Supplier's ref / code"
-                    value={form.supplierCode}
-                    onChange={(e) => setForm({ ...form, supplierCode: e.target.value })}
+                    type="number"
+                    min="0"
+                    value={form.stockQuantity}
+                    onChange={(e) => setForm({ ...form, stockQuantity: e.target.value })}
                   />
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label>Stock Quantity</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={form.stockQuantity}
-                  onChange={(e) => setForm({ ...form, stockQuantity: e.target.value })}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Description</Label>
-                <Textarea
-                  rows={2}
-                  placeholder="Brief description of this stock item"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                />
-              </div>
-              <div className="grid gap-2">
                 <Label>Notes</Label>
                 <Textarea
-                  rows={2}
-                  placeholder="Internal notes"
+                  rows={3}
+                  placeholder="Application notes, placement details, internal info..."
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
                 />
