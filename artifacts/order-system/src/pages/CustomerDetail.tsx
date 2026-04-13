@@ -16,7 +16,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
@@ -1248,6 +1248,164 @@ interface FinishedItem {
   notes: string | null;
 }
 
+// ─── Portal Access Tab ────────────────────────────────────────────────────────
+
+function PortalAccessTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; email: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const { data: portalUsers, isLoading } = useQuery<any[]>({
+    queryKey: ["portal-users", customerId],
+    queryFn: () => apiFetch(`/portal/admin/users/${customerId}`),
+  });
+
+  const sendInvite = useMutation({
+    mutationFn: () => apiFetch("/portal/admin/invite", {
+      method: "POST",
+      body: JSON.stringify({ customerId, email: inviteEmail }),
+    }),
+    onSuccess: (data: any) => {
+      setInviteResult(data);
+      setInviteEmail("");
+      qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const revokeUser = useMutation({
+    mutationFn: (userId: number) => apiFetch(`/portal/admin/users/${userId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
+      toast({ title: "Access revoked" });
+    },
+  });
+
+  const copyLink = (url: string) => {
+    const fullUrl = window.location.origin + url;
+    navigator.clipboard.writeText(fullUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const statusBadge = (u: any) => {
+    if (u.status === "active") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">Active</span>;
+    if (u.status === "invited") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Invited</span>;
+    return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{u.status}</span>;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Portal Access</h3>
+          <p className="text-sm text-muted-foreground mt-0.5">Manage who can log into the customer ordering portal for this account.</p>
+        </div>
+        <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteOpen(true); }}>
+          <LogIn className="w-3.5 h-3.5" /> Invite User
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-primary" /></div>
+      ) : !portalUsers?.length ? (
+        <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-border rounded-lg">
+          <Globe className="w-8 h-8 text-muted-foreground/30 mb-2" />
+          <p className="text-sm font-medium text-muted-foreground">No portal users yet</p>
+          <p className="text-xs text-muted-foreground/60 mt-1">Invite a customer contact to give them portal access</p>
+        </div>
+      ) : (
+        <SubTable>
+          <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead>Email</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="hidden md:table-cell">Last Login</TableHead>
+            <TableHead className="hidden md:table-cell">Invited</TableHead>
+            <TableHead className="w-24 text-right">Actions</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {portalUsers.map((u: any) => (
+              <TableRow key={u.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium text-sm">{u.email}</TableCell>
+                <TableCell>{statusBadge(u)}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  {u.last_login_at ? formatDate(u.last_login_at) : <span className="text-muted-foreground/50">Never</span>}
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  {formatDate(u.created_at)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-primary hover:bg-primary/10"
+                      onClick={() => { setInviteEmail(u.email); setInviteResult(null); setInviteOpen(true); }}>
+                      <LogIn className="w-3 h-3" /> Re-invite
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50"
+                      onClick={() => confirm(`Revoke portal access for ${u.email}?`) && revokeUser.mutate(u.id)}>
+                      <UserX className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>
+      )}
+
+      <Dialog open={inviteOpen} onOpenChange={v => { if (!v) { setInviteOpen(false); setInviteResult(null); } }}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Globe className="w-4 h-4" /> Invite Customer to Portal</DialogTitle>
+          </DialogHeader>
+          {!inviteResult ? (
+            <div className="grid gap-4 py-2">
+              <p className="text-sm text-muted-foreground">Enter the email address for the customer contact who should have portal access. They will receive an invite link to set their password.</p>
+              <div className="grid gap-2">
+                <Label>Email Address *</Label>
+                <Input type="email" placeholder="contact@customer.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && inviteEmail && sendInvite.mutate()} />
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 py-2">
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
+                <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-green-800">Invite created for {inviteResult.email}</p>
+                  <p className="text-xs text-green-700 mt-0.5">Copy the link below and send it to your customer. It expires in 7 days.</p>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Invite Link</Label>
+                <div className="flex gap-2">
+                  <Input readOnly value={window.location.origin + inviteResult.inviteUrl} className="font-mono text-xs" />
+                  <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={() => copyLink(inviteResult.inviteUrl)}>
+                    {copied ? <><CheckCircle2 className="w-3 h-3 text-green-600" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setInviteOpen(false); setInviteResult(null); }}>
+              {inviteResult ? "Close" : "Cancel"}
+            </Button>
+            {!inviteResult && (
+              <Button onClick={() => sendInvite.mutate()} disabled={!inviteEmail || sendInvite.isPending}>
+                {sendInvite.isPending ? "Sending..." : "Generate Invite Link"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function WardrobeTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -1720,6 +1878,7 @@ export default function CustomerDetail() {
             <TabsTrigger value="orders" className="flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Order History</TabsTrigger>
             <TabsTrigger value="processes" className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Processes</TabsTrigger>
             <TabsTrigger value="finishes" className="flex items-center gap-1.5"><Shirt className="w-3.5 h-3.5" /> Finishes</TabsTrigger>
+            <TabsTrigger value="portal" className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Portal Access</TabsTrigger>
           </TabsList>
 
           <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
@@ -1731,6 +1890,7 @@ export default function CustomerDetail() {
             <TabsContent value="orders" className="mt-0"><OrderHistoryTab customerId={customerId} /></TabsContent>
             <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>
             <TabsContent value="finishes" className="mt-0"><FinishesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="portal" className="mt-0"><PortalAccessTab customerId={customerId} /></TabsContent>
           </div>
         </Tabs>
       </div>

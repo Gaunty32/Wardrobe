@@ -23,7 +23,8 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 artifacts-monorepo/
 ├── artifacts/              # Deployable applications
 │   ├── api-server/         # Express API server
-│   └── order-system/       # Sales Order System (React + Vite)
+│   ├── order-system/       # Sales Order System (React + Vite)
+│   └── customer-portal/    # Customer-facing ordering portal (React + Vite)
 ├── lib/                    # Shared libraries
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks

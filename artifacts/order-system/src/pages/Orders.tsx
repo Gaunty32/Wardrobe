@@ -7,7 +7,7 @@ import {
   useListCustomers,
   getListOrdersQueryKey
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,85 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+const API_BASE = "/api";
+async function apiFetch(path: string, opts?: RequestInit) {
+  const res = await fetch(`${API_BASE}${path}`, { ...opts, headers: { "Content-Type": "application/json", ...opts?.headers } });
+  if (!res.ok) throw new Error(await res.text());
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+function PortalPendingOrders() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [, setLocation] = useLocation();
+
+  const { data: pending = [], isLoading } = useQuery<any[]>({
+    queryKey: ["portal-pending-orders"],
+    queryFn: () => apiFetch("/portal/admin/pending-orders"),
+    refetchInterval: 30000,
+  });
+
+  const confirm = useMutation({
+    mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/confirm`, { method: "POST" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-pending-orders"] }); qc.invalidateQueries({ queryKey: getListOrdersQueryKey() }); toast({ title: "Order confirmed", description: "Moved to draft orders." }); },
+  });
+
+  const reject = useMutation({
+    mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "" }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-pending-orders"] }); toast({ title: "Order rejected" }); },
+  });
+
+  if (isLoading || !pending.length) return null;
+
+  return (
+    <Card className="border-amber-200 bg-amber-50/50 shadow-sm">
+      <CardHeader className="py-3 px-5 border-b border-amber-200/60 flex flex-row items-center gap-2">
+        <Globe className="w-4 h-4 text-amber-600" />
+        <span className="font-semibold text-amber-800 text-sm">Portal Orders Awaiting Review</span>
+        <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-amber-600 text-white text-xs font-bold">{pending.length}</span>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Order #</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead className="text-right">Items</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pending.map((o: any) => (
+              <TableRow key={o.id} className="hover:bg-amber-50/80 cursor-pointer" onClick={() => setLocation(`/orders/${o.id}`)}>
+                <TableCell><span className="font-semibold text-amber-700">{o.order_number}</span></TableCell>
+                <TableCell className="font-medium">{o.customer_name}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{formatDate(o.order_date)}</TableCell>
+                <TableCell className="text-right text-sm text-muted-foreground">{o.item_count} items</TableCell>
+                <TableCell className="text-right font-semibold">{formatCurrency(o.total_amount)}</TableCell>
+                <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                  <div className="flex justify-end gap-1.5">
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-red-600 border-red-200 hover:bg-red-50" onClick={() => reject.mutate(o.id)} disabled={reject.isPending}>
+                      <XCircle className="w-3 h-3" /> Reject
+                    </Button>
+                    <Button size="sm" className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700" onClick={() => confirm.mutate(o.id)} disabled={confirm.isPending}>
+                      <CheckCircle2 className="w-3 h-3" /> Confirm
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function Orders() {
   const [, setLocation] = useLocation();
@@ -83,6 +160,8 @@ export default function Orders() {
             <Plus className="w-4 h-4 mr-2" /> New Order
           </Button>
         </div>
+
+        <PortalPendingOrders />
 
         <Card className="shadow-sm border-border/50">
           <CardHeader className="py-4 border-b border-border/40 bg-muted/10 flex flex-row items-center gap-4">

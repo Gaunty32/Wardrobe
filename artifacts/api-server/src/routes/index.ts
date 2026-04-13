@@ -16,11 +16,13 @@ import dispatchRouter from "./dispatch";
 import xeroRouter from "./xero";
 import tasksRouter from "./tasks";
 import productCategoriesRouter from "./product-categories";
+import portalRouter from "./portal";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(storageRouter);
+router.use(portalRouter);
 router.use(customersRouter);
 router.use(customerDetailsRouter);
 router.use(productsRouter);

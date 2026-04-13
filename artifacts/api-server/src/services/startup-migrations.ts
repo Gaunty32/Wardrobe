@@ -106,5 +106,28 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_processes ADD COLUMN IF NOT EXISTS image_url text;
   `);
 
+  // Add source and portal_status to orders for customer portal orders
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'internal';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_status text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_notes text;
+  `);
+
+  // Customer portal users (invite-based access, one user per customer)
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_portal_users (
+      id serial PRIMARY KEY,
+      customer_id integer NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      email text NOT NULL UNIQUE,
+      password_hash text,
+      invite_token text UNIQUE,
+      invite_expires_at timestamptz,
+      status text NOT NULL DEFAULT 'invited',
+      last_login_at timestamptz,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
   console.log("[startup] Migrations complete");
 }
