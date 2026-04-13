@@ -1017,10 +1017,9 @@ export default function OrderDetail() {
                       return (
                         <div className="grid gap-2">
                           <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                          <Select value={item.size || "__any__"} onValueChange={v => setItem(i => ({ ...i, size: v === "__any__" ? "" : v }))}>
-                            <SelectTrigger><SelectValue placeholder="Any / unspecified" /></SelectTrigger>
+                          <Select value={item.size || undefined} onValueChange={v => setItem(i => ({ ...i, size: v }))}>
+                            <SelectTrigger><SelectValue placeholder="Select a size" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="__any__">Any / unspecified</SelectItem>
                               {sizeOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                             </SelectContent>
                           </Select>
