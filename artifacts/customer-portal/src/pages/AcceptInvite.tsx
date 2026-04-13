@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import logo from "@/assets/logo.png";
 
 export default function AcceptInvite() {
   const [, setLocation] = useLocation();
@@ -59,7 +60,7 @@ export default function AcceptInvite() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center gap-3 mb-6">
-          <img src="/customer-portal/images/logo.png" alt="Select Branding Solutions" className="h-16 w-auto" />
+          <img src={logo} alt="Select Branding Solutions" className="h-16 w-auto" />
           <p className="text-sm text-muted-foreground text-center leading-snug max-w-[220px]">
             Effortless uniform management from order to delivery.
           </p>

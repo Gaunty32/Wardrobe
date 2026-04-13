@@ -2,6 +2,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
 import { ShoppingBag, LogOut, LayoutDashboard, Menu, X } from "lucide-react";
+import logo from "@/assets/logo.png";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +21,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {/* Top nav */}
       <header className="h-14 border-b bg-card shadow-sm sticky top-0 z-40 flex items-center px-4 gap-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <img src="/customer-portal/images/logo.png" alt="Select Branding Solutions" className="h-8 w-auto shrink-0" />
+          <img src={logo} alt="Select Branding Solutions" className="h-8 w-auto shrink-0" />
           {user?.customer?.name && (
             <span className="text-sm text-muted-foreground truncate hidden sm:block border-l pl-3">
               {user.customer.name}
