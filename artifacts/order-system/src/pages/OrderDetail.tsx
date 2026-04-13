@@ -964,21 +964,17 @@ export default function OrderDetail() {
                                   const listPrice = baseProd ? parseFloat(String(baseProd.unitPrice)) : null;
                                   const wardrobePrice = fi.unitPrice;
                                   const specialPrice = fi.specialPrice;
-                                  const effectivePrice = specialPrice ?? wardrobePrice;
-                                  const isDifferent = listPrice !== null && Math.abs(listPrice - wardrobePrice) > 0.005;
+                                  // Active price: special price if set, otherwise wardrobe price
+                                  const activePrice = specialPrice ?? wardrobePrice;
+                                  // "Was" price: whatever comes just before the active price in the chain
+                                  const wasPrice = specialPrice != null ? wardrobePrice
+                                    : (listPrice !== null && Math.abs(listPrice - wardrobePrice) > 0.005) ? listPrice
+                                    : null;
+                                  const isDiscounted = wasPrice !== null && activePrice < wasPrice;
                                   return (
                                     <>
-                                      {isDifferent && <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(listPrice!)}</span>}
-                                      {specialPrice != null ? (
-                                        <>
-                                          <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(wardrobePrice)}</span>
-                                          <span className="text-sm font-semibold text-emerald-600 tabular-nums">{formatCurrency(specialPrice)}</span>
-                                        </>
-                                      ) : isDifferent ? (
-                                        <span className="text-sm font-semibold text-green-700 tabular-nums">{formatCurrency(wardrobePrice)}</span>
-                                      ) : (
-                                        <span className="text-sm font-semibold tabular-nums">{formatCurrency(effectivePrice)}</span>
-                                      )}
+                                      {wasPrice !== null && <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(wasPrice)}</span>}
+                                      <span className={`text-sm font-semibold tabular-nums ${isDiscounted ? "text-emerald-600" : ""}`}>{formatCurrency(activePrice)}</span>
                                     </>
                                   );
                                 })()}
