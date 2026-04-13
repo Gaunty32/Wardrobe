@@ -4,7 +4,7 @@ import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, customersTable, productsTable,
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
-  customerDeliveryAddressesTable, customerEmployeeSizesTable,
+  customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
 } from "@workspace/db";
 import {
   UpdateOrderBody,
@@ -224,6 +224,68 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Order not found" });
     return;
   }
+
+  // ── Stock allocation on confirmation ──────────────────────────────────────
+  if (parsed.data.status === "confirmed") {
+    const items = await db
+      .select({ id: orderItemsTable.id, productId: orderItemsTable.productId, quantity: orderItemsTable.quantity })
+      .from(orderItemsTable)
+      .where(eq(orderItemsTable.orderId, params.data.id));
+
+    const productIds = [...new Set(items.map(i => i.productId).filter(Boolean))] as number[];
+
+    if (productIds.length > 0) {
+      const productStocks = await db
+        .select({ id: productsTable.id, stockQuantity: productsTable.stockQuantity, supplierId: productsTable.supplierId, supplierName: suppliersTable.name })
+        .from(productsTable)
+        .leftJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+        .where(inArray(productsTable.id, productIds));
+
+      const stockMap = new Map(productStocks.map(p => [p.id, p]));
+      const remainingStock = new Map(productStocks.map(p => [p.id, p.stockQuantity ?? 0]));
+
+      let allocatedLines = 0;
+      let purchaseLines = 0;
+
+      for (const item of items) {
+        if (!item.productId) continue;
+        const stock = stockMap.get(item.productId);
+        if (!stock) continue;
+
+        const available = remainingStock.get(item.productId) ?? 0;
+        const qty = item.quantity ?? 0;
+        const allocatedQty = Math.min(available, qty);
+        const shortfall = qty - allocatedQty;
+
+        remainingStock.set(item.productId, available - allocatedQty);
+
+        await db.update(orderItemsTable).set({
+          purchaseRequired: shortfall > 0,
+          purchaseQuantity: shortfall > 0 ? shortfall : null,
+          supplierId: shortfall > 0 ? (stock.supplierId ?? null) : null,
+          supplierName: shortfall > 0 ? (stock.supplierName ?? null) : null,
+        }).where(eq(orderItemsTable.id, item.id));
+
+        if (shortfall > 0) purchaseLines++;
+        else allocatedLines++;
+      }
+
+      // Commit stock deductions to products
+      for (const [productId, remaining] of remainingStock.entries()) {
+        const original = stockMap.get(productId);
+        if (!original) continue;
+        const deducted = (original.stockQuantity ?? 0) - remaining;
+        if (deducted > 0) {
+          await db.update(productsTable).set({ stockQuantity: remaining }).where(eq(productsTable.id, productId));
+        }
+      }
+
+      res.json({ ...order, totalAmount: numericToFloat(order.totalAmount), allocation: { allocated: allocatedLines, purchaseRequired: purchaseLines } });
+      return;
+    }
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   res.json({ ...order, totalAmount: numericToFloat(order.totalAmount) });
 });
 
@@ -276,17 +338,6 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
-  }
-
-  if (parsed.data.productId && parsed.data.quantity > 0) {
-    const [product] = await db.select().from(productsTable).where(eq(productsTable.id, parsed.data.productId));
-    if (product && product.stockQuantity !== null) {
-      const stockToDeduct = parsed.data.quantity - (parsed.data.purchaseQuantity ?? 0);
-      if (stockToDeduct > 0) {
-        const newStock = Math.max(0, product.stockQuantity - stockToDeduct);
-        await db.update(productsTable).set({ stockQuantity: newStock }).where(eq(productsTable.id, parsed.data.productId));
-      }
-    }
   }
 
   const lineTotal = parsed.data.quantity * parsed.data.unitPrice;

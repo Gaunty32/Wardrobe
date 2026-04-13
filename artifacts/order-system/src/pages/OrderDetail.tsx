@@ -147,21 +147,6 @@ export default function OrderDetail() {
   const [selectedEmployee, setSelectedEmployee] = useState<CustomerEmployee | null>(null);
   const [isNewPerson, setIsNewPerson] = useState(false);
 
-  interface StockCheckResult {
-    productId: number;
-    productName: string;
-    stockQuantity: number;
-    requested: number;
-    available: number;
-    shortfall: number;
-    purchaseRequired: boolean;
-    supplierId: number | null;
-    supplierName: string | null;
-    supplierEmail: string | null;
-    supplierCode: string | null;
-  }
-  const [stockPrompt, setStockPrompt] = useState<StockCheckResult | null>(null);
-  const [pendingItemData, setPendingItemData] = useState<Record<string, unknown> | null>(null);
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
 
@@ -462,25 +447,9 @@ export default function OrderDetail() {
       return;
     }
 
-    // ── Single item: stock check then add ──
+    // ── Single item: add directly (stock is allocated at confirmation) ──
     const singleSize = sizes.length > 0 ? (sizeRows[0]?.size ?? item.size) : item.size;
     const singleQty = sizes.length > 0 ? (sizeRows[0]?.qty ?? item.quantity) : item.quantity;
-
-    try {
-      const stockCheck = await apiFetch<{
-        stockQuantity: number; requested: number; available: number; shortfall: number;
-        purchaseRequired: boolean; supplierId: number | null; supplierName: string | null;
-        supplierEmail: string | null; supplierCode: string | null;
-      }>(`/purchasing/stock-check?productId=${item.productId}&quantity=${singleQty}`);
-
-      if (stockCheck.purchaseRequired) {
-        setStockPrompt({ productId: item.productId, productName: item.productName, ...stockCheck });
-        setPendingItemData({ purchaseRequired: true, purchaseQuantity: stockCheck.shortfall, supplierId: stockCheck.supplierId, supplierName: stockCheck.supplierName });
-        return;
-      }
-    } catch {
-    }
-
     doAddItem({ size: singleSize || null, quantity: singleQty });
   };
 
@@ -510,9 +479,17 @@ export default function OrderDetail() {
     updateOrderMutation.mutate(
       { id: orderId, data: { status: newStatus } },
       {
-        onSuccess: () => {
+        onSuccess: (data: any) => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-          toast({ title: "Status Updated", description: `Order is now ${newStatus}` });
+          if (newStatus === "confirmed" && data?.allocation) {
+            const { allocated, purchaseRequired } = data.allocation;
+            const parts: string[] = [];
+            if (allocated > 0) parts.push(`${allocated} line${allocated !== 1 ? "s" : ""} allocated from stock`);
+            if (purchaseRequired > 0) parts.push(`${purchaseRequired} line${purchaseRequired !== 1 ? "s" : ""} flagged for purchasing`);
+            toast({ title: "Order Confirmed", description: parts.length ? parts.join(" · ") : "Order confirmed." });
+          } else {
+            toast({ title: "Status Updated", description: `Order is now ${newStatus}` });
+          }
         }
       }
     );
@@ -1403,54 +1380,6 @@ export default function OrderDetail() {
           </DialogContent>
         </Dialog>
       </div>
-
-      {stockPrompt && (
-        <Dialog open={!!stockPrompt} onOpenChange={() => { setStockPrompt(null); setPendingItemData(null); }}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-amber-700">
-                <ShoppingBag className="w-5 h-5" />
-                Insufficient Stock
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <p className="text-sm text-muted-foreground">
-                You requested <span className="font-semibold text-foreground">{stockPrompt.requested}</span> units of <span className="font-semibold text-foreground">{stockPrompt.productName}</span>, but only <span className="font-semibold text-foreground">{stockPrompt.stockQuantity}</span> are in stock.
-              </p>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Available in stock:</span>
-                  <span className="font-semibold text-green-700">{stockPrompt.available}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Needs purchasing:</span>
-                  <span className="font-semibold text-amber-700">{stockPrompt.shortfall}</span>
-                </div>
-                {stockPrompt.supplierName && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Supplier:</span>
-                    <span className="font-semibold">{stockPrompt.supplierName}</span>
-                  </div>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Would you like to add this item and flag <span className="font-semibold text-amber-700">{stockPrompt.shortfall} units</span> as purchase required?
-              </p>
-            </div>
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => { setStockPrompt(null); setPendingItemData(null); }}>Cancel</Button>
-              <Button
-                onClick={() => doAddItem(pendingItemData ?? {})}
-                disabled={addItemMutation.isPending}
-                className="bg-amber-600 hover:bg-amber-700 text-white"
-              >
-                {addItemMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <ShoppingBag className="w-4 h-4 mr-1" />}
-                Add &amp; Flag for Purchase
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
 
       <Dialog open={isSendToProductionOpen} onOpenChange={setIsSendToProductionOpen}>
         <DialogContent className="max-w-md">
