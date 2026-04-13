@@ -557,7 +557,7 @@ function FinishesTab({ customerId }: { customerId: number }) {
   const { data: allProducts } = useListProducts();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", description: "", notes: "" };
+  const blank = { name: "", notes: "" };
   const [form, setForm] = useState(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finishes"] });
@@ -609,7 +609,7 @@ function FinishesTab({ customerId }: { customerId: number }) {
   };
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (f: any) => { setForm({ name: f.name||"", description: f.description||"", notes: f.notes||"" }); setEditing(f); setOpen(true); };
+  const openEdit = (f: any) => { setForm({ name: f.name||"", notes: [f.description, f.notes].filter(Boolean).join("\n").trim() }); setEditing(f); setOpen(true); };
 
   return (
     <>
@@ -788,10 +788,8 @@ function FinishesTab({ customerId }: { customerId: number }) {
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Name *</Label>
               <Input placeholder="e.g. Full Company Branding Package" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Description</Label>
-              <Textarea rows={2} placeholder="Brief description of this finish" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
             <div className="grid gap-2"><Label>Notes</Label>
-              <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
+              <Textarea rows={3} placeholder="Description, placement details, internal notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
