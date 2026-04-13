@@ -1444,39 +1444,24 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
-                {variantColours.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-1">
-                    {variantColours.map(col => (
-                      <button
-                        key={col}
-                        type="button"
-                        onClick={() => setForm(f => ({ ...f, colour: f.colour === col ? "" : col }))}
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${form.colour === col ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted"}`}
-                      >
-                        {col}
-                      </button>
-                    ))}
-                  </div>
-                )}
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
+              {variantColours.length > 0 ? (
+                <Select value={form.colour || "__all__"} onValueChange={v => setForm(f => ({ ...f, colour: v === "__all__" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="All colours" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All colours</SelectItem>
+                    {variantColours.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              ) : (
                 <input
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder={variantColours.length > 0 ? "Or type a colour…" : "e.g. Navy Blue"}
+                  placeholder="e.g. Navy Blue (optional)"
                   value={form.colour}
                   onChange={e => setForm(f => ({ ...f, colour: e.target.value }))}
                 />
-              </div>
-              <div className="grid gap-2">
-                <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                <input
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="e.g. M"
-                  value={form.size}
-                  onChange={e => setForm(f => ({ ...f, size: e.target.value }))}
-                />
-              </div>
+              )}
             </div>
 
             <div className="grid gap-2">
