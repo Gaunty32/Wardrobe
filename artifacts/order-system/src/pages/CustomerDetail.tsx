@@ -310,7 +310,24 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   const blank = { name: "", type: "", placement: "", price: "", processStockId: "", notes: "" };
   const [form, setForm] = useState(blank);
 
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddForm, setQuickAddForm] = useState({ name: "", sku: "" });
+
+  const invStock = () => qc.invalidateQueries({ queryKey: ["process-stock", "customer", customerId] });
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "processes"] });
+
+  const quickAdd = useMutation({
+    mutationFn: (data: { name: string; sku: string | null }) =>
+      apiFetch("/process-stock", { method: "POST", body: JSON.stringify({ ...data, customerId, unitCost: 0, stockQuantity: 0 }) }),
+    onSuccess: (newItem: any) => {
+      invStock();
+      setForm(f => ({ ...f, processStockId: String(newItem.id) }));
+      setQuickAddOpen(false);
+      setQuickAddForm({ name: "", sku: "" });
+      toast({ title: "Stock item created", description: `${newItem.name} added and selected.` });
+    },
+    onError: () => toast({ title: "Error", description: "Could not create stock item", variant: "destructive" }),
+  });
 
   const save = useMutation({
     mutationFn: (data: any) => editing
@@ -460,7 +477,13 @@ function ProcessesTab({ customerId }: { customerId: number }) {
             </div>
             {form.type === "DTF" && (
               <div className="grid gap-2">
-                <Label className="flex items-center gap-1"><Boxes className="w-3 h-3" /> Process Stock Item</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="flex items-center gap-1"><Boxes className="w-3 h-3" /> Process Stock Item</Label>
+                  <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs text-primary hover:bg-primary/10 gap-1"
+                    onClick={() => { setQuickAddForm({ name: "", sku: "" }); setQuickAddOpen(true); }}>
+                    <Plus className="w-3 h-3" /> New
+                  </Button>
+                </div>
                 <Select value={form.processStockId || "none"} onValueChange={v => setForm({ ...form, processStockId: v === "none" ? "" : v })}>
                   <SelectTrigger className="w-full"><SelectValue placeholder="Link stock item" /></SelectTrigger>
                   <SelectContent>
@@ -480,6 +503,43 @@ function ProcessesTab({ customerId }: { customerId: number }) {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
             <Button onClick={handleSave} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Quick-add process stock item */}
+      <Dialog open={quickAddOpen} onOpenChange={v => { if (!v) setQuickAddOpen(false); }}>
+        <DialogContent className="sm:max-w-[360px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Boxes className="w-4 h-4" /> Add Process Stock Item</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>Name *</Label>
+              <Input
+                placeholder="e.g. Netty Stars Large Logo"
+                value={quickAddForm.name}
+                onChange={e => setQuickAddForm(f => ({ ...f, name: e.target.value }))}
+                autoFocus
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Product Code</Label>
+              <Input
+                placeholder="e.g. FCC4998"
+                value={quickAddForm.sku}
+                onChange={e => setQuickAddForm(f => ({ ...f, sku: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQuickAddOpen(false)}>Cancel</Button>
+            <Button
+              disabled={quickAdd.isPending || !quickAddForm.name.trim()}
+              onClick={() => quickAdd.mutate({ name: quickAddForm.name.trim(), sku: quickAddForm.sku.trim() || null })}
+            >
+              {quickAdd.isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Creating...</> : "Create & Select"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
