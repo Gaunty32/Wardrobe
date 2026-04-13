@@ -1202,6 +1202,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FinishedItem | null>(null);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
+  const [productSearch, setProductSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<number | null | "all">("all");
   const [variantColours, setVariantColours] = useState<string[]>([]);
 
@@ -1223,7 +1224,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setVariantColours([]); setOpen(true); };
+  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setOpen(true); };
   const openEdit = (item: FinishedItem) => {
     setForm({
       name: item.name,
@@ -1403,19 +1404,29 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                  <Command>
-                    <CommandInput placeholder="Type product name or SKU..." />
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      placeholder="Type product name or SKU..."
+                      value={productSearch}
+                      onValueChange={setProductSearch}
+                    />
                     <CommandList>
                       <CommandEmpty>No products found.</CommandEmpty>
                       <CommandGroup>
-                        {products?.map(p => (
-                          <CommandItem key={p.id} value={`${p.name} ${p.sku ?? ""}`} onSelect={() => handleProductSelect(p.id)}>
-                            <Check className={cn("mr-2 h-4 w-4", form.productId === p.id ? "opacity-100" : "opacity-0")} />
-                            <span className="flex-1">{p.name}</span>
-                            {p.sku && <span className="text-xs text-muted-foreground mr-2">{p.sku}</span>}
-                            <span className="text-xs font-semibold">{formatCurrency(p.unitPrice)}</span>
-                          </CommandItem>
-                        ))}
+                        {(products ?? [])
+                          .filter(p => {
+                            const q = productSearch.toLowerCase();
+                            if (!q) return true;
+                            return (p.name ?? "").toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q);
+                          })
+                          .map(p => (
+                            <CommandItem key={p.id} value={String(p.id)} onSelect={() => { handleProductSelect(p.id); setProductSearch(""); }}>
+                              <Check className={cn("mr-2 h-4 w-4", form.productId === p.id ? "opacity-100" : "opacity-0")} />
+                              <span className="flex-1">{p.name}</span>
+                              {p.sku && <span className="text-xs text-muted-foreground mr-2">{p.sku}</span>}
+                              <span className="text-xs font-semibold">{formatCurrency(p.unitPrice)}</span>
+                            </CommandItem>
+                          ))}
                       </CommandGroup>
                     </CommandList>
                   </Command>
