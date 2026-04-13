@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Package, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -38,13 +38,11 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4">
       <div className="w-full max-w-sm">
-        <div className="flex justify-center mb-6">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <Package className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">SBS Portal</span>
-          </div>
+        <div className="flex flex-col items-center gap-3 mb-6">
+          <img src="/customer-portal/images/logo.png" alt="Select Branding Solutions" className="h-16 w-auto" />
+          <p className="text-sm text-muted-foreground text-center leading-snug max-w-[220px]">
+            Effortless uniform management from order to delivery.
+          </p>
         </div>
 
         <Card className="shadow-lg">
