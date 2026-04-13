@@ -142,6 +142,8 @@ export default function OrderDetail() {
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom">("wardrobe");
   const [item, setItem] = useState({ ...EMPTY_ITEM });
+  const [sizeRows, setSizeRows] = useState<Array<{ size: string; qty: number }>>([{ size: "", qty: 1 }]);
+  const [isAddingMulti, setIsAddingMulti] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<CustomerEmployee | null>(null);
   const [isNewPerson, setIsNewPerson] = useState(false);
 
@@ -307,6 +309,7 @@ export default function OrderDetail() {
     const prod = products?.find(p => p.id === productId);
     if (!prod) return;
     setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: prod.unitPrice.toString(), baseUnitPrice: prod.unitPrice.toString() });
+    setSizeRows([{ size: "", qty: 1 }]);
     setProductSearchOpen(false);
   };
 
@@ -342,6 +345,7 @@ export default function OrderDetail() {
 
   const resetDialog = () => {
     setItem({ ...EMPTY_ITEM });
+    setSizeRows([{ size: "", qty: 1 }]);
     setSelectedEmployee(null);
     setIsNewPerson(false);
     setIsAddItemOpen(false);
@@ -409,12 +413,65 @@ export default function OrderDetail() {
     const price = parseFloat(item.unitPrice);
     if (isNaN(price)) return;
 
+    // Validate colour required when product has colour options
+    if (colours.length > 0 && !item.colour) {
+      toast({ title: "Colour required", description: "Please select a colour before adding to the order.", variant: "destructive" });
+      return;
+    }
+
+    // Validate size required when product has size options
+    if (sizes.length > 0) {
+      const missingSizes = sizeRows.some(r => !r.size);
+      if (missingSizes) {
+        toast({ title: "Size required", description: "Please select a size for every row before adding.", variant: "destructive" });
+        return;
+      }
+    }
+
+    // ── Multi-size: add one line per row, no individual stock checks ──
+    if (sizes.length > 0 && sizeRows.length > 1) {
+      setIsAddingMulti(true);
+      try {
+        for (const row of sizeRows) {
+          await apiFetch(`/orders/${orderId}/items`, {
+            method: "POST",
+            body: JSON.stringify({
+              productId: item.productId,
+              productName: item.productName,
+              colour: item.colour || null,
+              size: row.size || null,
+              finishId: item.finishId ?? null,
+              finishName: item.finishName ?? null,
+              recipientType: item.recipientType,
+              recipientName: item.recipientType === "person" ? (item.recipientName || null) : null,
+              recipientEmployeeId: item.recipientType === "person" ? (item.recipientEmployeeId ?? null) : null,
+              quantity: row.qty,
+              unitPrice: price,
+            }),
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+        refetchEmployees();
+        toast({ title: "Items Added", description: `${sizeRows.length} size lines added to order.` });
+        resetDialog();
+      } catch (err: any) {
+        toast({ title: "Error", description: err.message, variant: "destructive" });
+      } finally {
+        setIsAddingMulti(false);
+      }
+      return;
+    }
+
+    // ── Single item: stock check then add ──
+    const singleSize = sizes.length > 0 ? (sizeRows[0]?.size ?? item.size) : item.size;
+    const singleQty = sizes.length > 0 ? (sizeRows[0]?.qty ?? item.quantity) : item.quantity;
+
     try {
       const stockCheck = await apiFetch<{
         stockQuantity: number; requested: number; available: number; shortfall: number;
         purchaseRequired: boolean; supplierId: number | null; supplierName: string | null;
         supplierEmail: string | null; supplierCode: string | null;
-      }>(`/purchasing/stock-check?productId=${item.productId}&quantity=${item.quantity}`);
+      }>(`/purchasing/stock-check?productId=${item.productId}&quantity=${singleQty}`);
 
       if (stockCheck.purchaseRequired) {
         setStockPrompt({ productId: item.productId, productName: item.productName, ...stockCheck });
@@ -424,7 +481,7 @@ export default function OrderDetail() {
     } catch {
     }
 
-    doAddItem();
+    doAddItem({ size: singleSize || null, quantity: singleQty });
   };
 
   const handleDeleteItem = (itemId: number) => {
@@ -1148,14 +1205,17 @@ export default function OrderDetail() {
                   {item.productId && (colours.length > 0 || sizes.length > 0) && (() => {
                     const suggestedSize = selectedEmployee?.sizes?.find(s => s.label === item.productName)?.size ?? null;
                     return (
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-4">
                         {colours.length > 0 && (
                           <div className="grid gap-2">
-                            <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
-                            <Select value={item.colour || "none"} onValueChange={v => setItem(i => ({ ...i, colour: v === "none" ? "" : v }))}>
-                              <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
+                            <Label className="flex items-center gap-1">
+                              <Palette className="w-3 h-3" /> Colour <span className="text-destructive ml-0.5">*</span>
+                            </Label>
+                            <Select value={item.colour || ""} onValueChange={v => setItem(i => ({ ...i, colour: v }))}>
+                              <SelectTrigger className={!item.colour ? "border-destructive/50" : ""}>
+                                <SelectValue placeholder="Select a colour…" />
+                              </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="none">Any / Not specified</SelectItem>
                                 {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                               </SelectContent>
                             </Select>
@@ -1164,27 +1224,43 @@ export default function OrderDetail() {
                         {sizes.length > 0 && (
                           <div className="grid gap-2">
                             <Label className="flex items-center gap-1">
-                              <Ruler className="w-3 h-3" /> Size
-                              {suggestedSize && item.size === suggestedSize && (
-                                <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">
-                                  <Wand2 className="w-2.5 h-2.5" /> saved
-                                </span>
-                              )}
+                              <Ruler className="w-3 h-3" /> Sizes <span className="text-destructive ml-0.5">*</span>
                             </Label>
-                            <Select value={item.size || "none"} onValueChange={v => setItem(i => ({ ...i, size: v === "none" ? "" : v }))}>
-                              <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">Any / Not specified</SelectItem>
-                                {sizes.map(s => (
-                                  <SelectItem key={s} value={s}>
-                                    <span className="flex items-center gap-2">
-                                      {s}
-                                      {s === suggestedSize && <span className="text-[10px] text-emerald-700 font-medium">last ordered</span>}
-                                    </span>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <div className="flex flex-col gap-2">
+                              {sizeRows.map((row, idx) => (
+                                <div key={idx} className="flex items-center gap-2">
+                                  <Select value={row.size || ""} onValueChange={v => setSizeRows(r => r.map((x, i) => i === idx ? { ...x, size: v } : x))}>
+                                    <SelectTrigger className={`flex-1 ${!row.size ? "border-destructive/50" : ""}`}>
+                                      <SelectValue placeholder="Select size…" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {sizes.map(s => (
+                                        <SelectItem key={s} value={s}>
+                                          <span className="flex items-center gap-2">
+                                            {s}
+                                            {s === suggestedSize && <span className="text-[10px] text-emerald-700 font-medium">last ordered</span>}
+                                          </span>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Input
+                                    type="number" min="1"
+                                    value={row.qty}
+                                    onChange={e => setSizeRows(r => r.map((x, i) => i === idx ? { ...x, qty: Math.max(1, parseInt(e.target.value, 10) || 1) } : x))}
+                                    className="w-20 text-center"
+                                  />
+                                  {sizeRows.length > 1 && (
+                                    <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-destructive" onClick={() => setSizeRows(r => r.filter((_, i) => i !== idx))}>
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              ))}
+                              <Button variant="outline" size="sm" className="w-fit gap-1.5 text-xs" onClick={() => setSizeRows(r => [...r, { size: "", qty: 1 }])}>
+                                <Plus className="w-3 h-3" /> Add another size
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1277,21 +1353,30 @@ export default function OrderDetail() {
                     )}
                   </div>
 
-                  {/* Qty + Price */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="grid gap-2">
-                      <Label htmlFor="qty">Quantity</Label>
-                      <Input id="qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
-                    </div>
+                  {/* Qty + Price — qty hidden when using per-row size quantities */}
+                  <div className={`grid gap-4 ${sizes.length > 0 ? "grid-cols-1" : "grid-cols-2"}`}>
+                    {sizes.length === 0 && (
+                      <div className="grid gap-2">
+                        <Label htmlFor="qty">Quantity</Label>
+                        <Input id="qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
+                      </div>
+                    )}
                     <div className="grid gap-2">
                       <Label htmlFor="price">Unit Price (£)</Label>
                       <Input id="price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
                     </div>
                   </div>
 
-                  {item.unitPrice && item.quantity && (
+                  {item.unitPrice && (
                     <div className="flex justify-end text-sm text-muted-foreground">
-                      Line total: <span className="font-semibold text-foreground ml-1">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span>
+                      {sizes.length > 0 && sizeRows.length > 0 ? (
+                        <>
+                          {sizeRows.length > 1 && <span className="mr-2 text-xs">{sizeRows.length} lines ·</span>}
+                          Order total: <span className="font-semibold text-foreground ml-1">{formatCurrency(sizeRows.reduce((s, r) => s + r.qty * (parseFloat(item.unitPrice) || 0), 0))}</span>
+                        </>
+                      ) : (
+                        <>Line total: <span className="font-semibold text-foreground ml-1">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span></>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1302,9 +1387,17 @@ export default function OrderDetail() {
               <Button variant="outline" onClick={resetDialog}>Cancel</Button>
               <Button
                 onClick={handleAddItem}
-                disabled={!item.productId || !item.unitPrice || addItemMutation.isPending}
+                disabled={
+                  !item.productId || !item.unitPrice || addItemMutation.isPending || isAddingMulti ||
+                  (colours.length > 0 && dialogTab === "custom" && !item.colour) ||
+                  (sizes.length > 0 && dialogTab === "custom" && sizeRows.some(r => !r.size))
+                }
               >
-                {addItemMutation.isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Adding...</> : "Add to Order"}
+                {(addItemMutation.isPending || isAddingMulti)
+                  ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Adding...</>
+                  : sizeRows.length > 1
+                    ? `Add ${sizeRows.length} lines to Order`
+                    : "Add to Order"}
               </Button>
             </DialogFooter>
           </DialogContent>
