@@ -15,6 +15,8 @@ export const productsTable = pgTable("products", {
   supplierCode: text("supplier_code"),
   imageUrl: text("image_url"),
   wooCommerceId: integer("woo_commerce_id"),
+  taxStatus: text("tax_status"),
+  taxClass: text("tax_class"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

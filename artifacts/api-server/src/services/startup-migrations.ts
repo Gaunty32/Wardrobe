@@ -90,5 +90,11 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_finish_products ADD COLUMN IF NOT EXISTS colour text;
   `);
 
+  // Add tax fields to products
+  await db.execute(sql`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS tax_status text;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS tax_class text;
+  `);
+
   console.log("[startup] Migrations complete");
 }

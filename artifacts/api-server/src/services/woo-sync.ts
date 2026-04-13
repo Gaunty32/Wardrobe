@@ -21,6 +21,8 @@ interface WooProduct {
   stock_quantity: number | null;
   manage_stock: boolean;
   type: "simple" | "variable" | string;
+  tax_status: "taxable" | "shipping" | "none" | string;
+  tax_class: string;
   categories: { id: number; name: string; slug: string }[];
   images: { id: number; src: string; alt: string; position: number }[];
   attributes: { id: number; name: string; options: string[]; variation: boolean }[];
@@ -243,6 +245,10 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
 
         let productId: number;
 
+        const taxStatus = wooProduct.tax_status || null;
+        // WooCommerce uses empty string for "Standard Rate" — normalise to null for clarity
+        const taxClass = wooProduct.tax_class || null;
+
         if (existing.length > 0) {
           productId = existing[0].id;
           await db.update(productsTable).set({
@@ -253,6 +259,8 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             description: stripHtml(wooProduct.short_description || wooProduct.description),
             unitPrice: String(price),
             stockQuantity: stockQty,
+            taxStatus,
+            taxClass,
           }).where(eq(productsTable.id, productId));
           updated++;
         } else {
@@ -265,6 +273,8 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             description: stripHtml(wooProduct.short_description || wooProduct.description),
             unitPrice: String(price),
             stockQuantity: stockQty,
+            taxStatus,
+            taxClass,
           }).returning();
           productId = inserted.id;
           created++;
