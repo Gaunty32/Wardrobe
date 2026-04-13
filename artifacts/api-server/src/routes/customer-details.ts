@@ -257,6 +257,7 @@ router.get("/customers/:customerId/finishes", async (req, res): Promise<void> =>
     const garmentRows = await db.select({
       id: customerFinishProductsTable.id,
       productId: customerFinishProductsTable.productId,
+      colour: customerFinishProductsTable.colour,
       name: productsTable.name,
       sku: productsTable.sku,
     })
@@ -328,14 +329,16 @@ router.delete("/customers/:customerId/finishes/:finishId/processes/:processId", 
 router.post("/customers/:customerId/finishes/:finishId/products/:productId", async (req, res): Promise<void> => {
   const p = finishProductParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
-  const existing = await db.select().from(customerFinishProductsTable)
-    .where(and(
-      eq(customerFinishProductsTable.finishId, p.data.finishId),
-      eq(customerFinishProductsTable.productId, p.data.productId)
-    ));
-  if (existing.length > 0) { res.status(409).json({ error: "Product already assigned to this finish" }); return; }
+  const colour: string | null = req.body?.colour ?? null;
+  const conditions = [
+    eq(customerFinishProductsTable.finishId, p.data.finishId),
+    eq(customerFinishProductsTable.productId, p.data.productId),
+    colour ? eq(customerFinishProductsTable.colour, colour) : sql`${customerFinishProductsTable.colour} IS NULL`,
+  ];
+  const existing = await db.select().from(customerFinishProductsTable).where(and(...conditions));
+  if (existing.length > 0) { res.status(409).json({ error: "This colour is already assigned to this finish" }); return; }
   const [row] = await db.insert(customerFinishProductsTable)
-    .values({ finishId: p.data.finishId, productId: p.data.productId })
+    .values({ finishId: p.data.finishId, productId: p.data.productId, colour })
     .returning();
   res.status(201).json(row);
 });
@@ -348,6 +351,13 @@ router.delete("/customers/:customerId/finishes/:finishId/products/:productId", a
       eq(customerFinishProductsTable.finishId, p.data.finishId),
       eq(customerFinishProductsTable.productId, p.data.productId)
     ));
+  res.sendStatus(204);
+});
+
+router.delete("/customers/:customerId/finishes/:finishId/garments/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  await db.delete(customerFinishProductsTable).where(eq(customerFinishProductsTable.id, p.data.id));
   res.sendStatus(204);
 });
 

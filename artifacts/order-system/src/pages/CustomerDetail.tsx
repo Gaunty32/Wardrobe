@@ -589,15 +589,15 @@ function FinishesTab({ customerId }: { customerId: number }) {
   });
 
   const addGarment = useMutation({
-    mutationFn: ({ finishId, productId }: { finishId: number; productId: number }) =>
-      apiFetch(`/customers/${customerId}/finishes/${finishId}/products/${productId}`, { method: "POST" }),
+    mutationFn: ({ finishId, productId, colour }: { finishId: number; productId: number; colour?: string | null }) =>
+      apiFetch(`/customers/${customerId}/finishes/${finishId}/products/${productId}`, { method: "POST", body: JSON.stringify({ colour: colour ?? null }) }),
     onSuccess: () => inv(),
     onError: () => toast({ title: "Error", description: "Could not add garment", variant: "destructive" }),
   });
 
   const removeGarment = useMutation({
-    mutationFn: ({ finishId, productId }: { finishId: number; productId: number }) =>
-      apiFetch(`/customers/${customerId}/finishes/${finishId}/products/${productId}`, { method: "DELETE" }),
+    mutationFn: ({ finishId, garmentId }: { finishId: number; garmentId: number }) =>
+      apiFetch(`/customers/${customerId}/finishes/${finishId}/garments/${garmentId}`, { method: "DELETE" }),
     onSuccess: () => inv(),
   });
 
@@ -616,6 +616,32 @@ function FinishesTab({ customerId }: { customerId: number }) {
   const [garmentPopover, setGarmentPopover] = useState<Set<number>>(new Set());
   const [garmentSearch, setGarmentSearch] = useState<Record<number, string>>({});
   const toggleGarmentPopover = (id: number) => setGarmentPopover(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const [garmentPending, setGarmentPending] = useState<Record<number, { product: any; variants: any[] }>>({});
+
+  const selectGarmentProduct = async (finishId: number, product: any) => {
+    setGarmentSearch(prev => ({ ...prev, [finishId]: "" }));
+    try {
+      const variants = await apiFetch(`/products/${product.id}/variants`);
+      const colours = [...new Set((variants as any[]).map((v: any) => v.colour).filter(Boolean))];
+      if (colours.length === 0) {
+        addGarment.mutate({ finishId, productId: product.id, colour: null });
+        toggleGarmentPopover(finishId);
+      } else {
+        setGarmentPending(prev => ({ ...prev, [finishId]: { product, variants: colours as string[] } }));
+      }
+    } catch {
+      addGarment.mutate({ finishId, productId: product.id, colour: null });
+      toggleGarmentPopover(finishId);
+    }
+  };
+
+  const confirmGarmentColour = (finishId: number, colour: string | null) => {
+    const pending = garmentPending[finishId];
+    if (!pending) return;
+    addGarment.mutate({ finishId, productId: pending.product.id, colour });
+    setGarmentPending(prev => { const n = { ...prev }; delete n[finishId]; return n; });
+    toggleGarmentPopover(finishId);
+  };
 
   return (
     <>
@@ -717,19 +743,51 @@ function FinishesTab({ customerId }: { customerId: number }) {
                       <div className="flex flex-wrap gap-1.5">
                         {f.garments?.map((g: any) => (
                           <span key={g.id} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
-                            {g.name}
-                            {g.sku && <span className="text-blue-400 text-[10px]">({g.sku})</span>}
-                            <button onClick={() => removeGarment.mutate({ finishId: f.id, productId: g.productId })} className="hover:opacity-70 ml-0.5"><X className="w-3 h-3" /></button>
+                            {g.sku && <span className="font-mono text-[10px] text-blue-500">{g.sku}</span>}
+                            <span>{g.name}</span>
+                            {g.colour && <span className="bg-blue-100 text-blue-600 px-1 rounded text-[10px] font-semibold">{g.colour}</span>}
+                            <button onClick={() => removeGarment.mutate({ finishId: f.id, garmentId: g.id })} className="hover:opacity-70 ml-0.5"><X className="w-3 h-3" /></button>
                           </span>
                         ))}
-                        {availableProducts.length > 0 && (
-                          <Popover open={garmentPopover.has(f.id)} onOpenChange={() => toggleGarmentPopover(f.id)}>
-                            <PopoverTrigger asChild>
-                              <button className="inline-flex items-center gap-1 h-6 px-2 rounded-full text-xs border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
-                                <Plus className="w-3 h-3" />Add garment
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent className="p-0 w-72" align="start">
+                        <Popover open={garmentPopover.has(f.id)} onOpenChange={open => { if (!open) { toggleGarmentPopover(f.id); setGarmentPending(prev => { const n = { ...prev }; delete n[f.id]; return n; }); } else { toggleGarmentPopover(f.id); } }}>
+                          <PopoverTrigger asChild>
+                            <button className="inline-flex items-center gap-1 h-6 px-2 rounded-full text-xs border border-dashed border-border text-muted-foreground hover:text-foreground hover:border-border/80 transition-colors">
+                              <Plus className="w-3 h-3" />Add garment
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="p-0 w-80" align="start">
+                            {garmentPending[f.id] ? (
+                              /* Step 2: pick colour */
+                              <div className="p-3 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <button onClick={() => setGarmentPending(prev => { const n = { ...prev }; delete n[f.id]; return n; })} className="text-muted-foreground hover:text-foreground">
+                                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>
+                                  </button>
+                                  <div>
+                                    <p className="text-xs font-semibold text-foreground">{garmentPending[f.id].product.sku && <span className="font-mono mr-1">{garmentPending[f.id].product.sku}</span>}{garmentPending[f.id].product.name}</p>
+                                    <p className="text-[11px] text-muted-foreground">Select a colour</p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {(garmentPending[f.id].variants as string[]).map((col: string) => (
+                                    <button
+                                      key={col}
+                                      onClick={() => confirmGarmentColour(f.id, col)}
+                                      className="px-2.5 py-1 rounded-full text-xs font-medium border border-border hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                                    >
+                                      {col}
+                                    </button>
+                                  ))}
+                                  <button
+                                    onClick={() => confirmGarmentColour(f.id, null)}
+                                    className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-border text-muted-foreground hover:bg-muted transition-colors"
+                                  >
+                                    Any / no colour
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Step 1: search products */
                               <Command>
                                 <CommandInput
                                   placeholder="Search by code or name…"
@@ -749,22 +807,18 @@ function FinishesTab({ customerId }: { customerId: number }) {
                                         <CommandItem
                                           key={p.id}
                                           value={`${p.sku || ""} ${p.name}`}
-                                          onSelect={() => {
-                                            addGarment.mutate({ finishId: f.id, productId: p.id });
-                                            toggleGarmentPopover(f.id);
-                                            setGarmentSearch(prev => ({ ...prev, [f.id]: "" }));
-                                          }}
+                                          onSelect={() => selectGarmentProduct(f.id, p)}
                                         >
-                                          {p.sku && <span className="font-mono font-semibold text-xs text-foreground mr-1.5">{p.sku}</span>}
+                                          {p.sku && <span className="font-mono font-semibold text-xs text-foreground mr-1.5 shrink-0">{p.sku}</span>}
                                           <span className="text-muted-foreground truncate">{p.name}</span>
                                         </CommandItem>
                                       ))}
                                   </CommandGroup>
                                 </CommandList>
                               </Command>
-                            </PopoverContent>
-                          </Popover>
-                        )}
+                            )}
+                          </PopoverContent>
+                        </Popover>
                         {!f.garments?.length && !availableProducts?.length && <p className="text-xs text-muted-foreground italic">No garments — add products first</p>}
                         {!f.garments?.length && availableProducts?.length > 0 && <p className="text-xs text-muted-foreground italic">No garments assigned yet</p>}
                       </div>

@@ -85,5 +85,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE process_stock ADD COLUMN IF NOT EXISTS customer_id integer REFERENCES customers(id) ON DELETE SET NULL;
   `);
 
+  // Add colour to customer_finish_products
+  await db.execute(sql`
+    ALTER TABLE customer_finish_products ADD COLUMN IF NOT EXISTS colour text;
+  `);
+
   console.log("[startup] Migrations complete");
 }

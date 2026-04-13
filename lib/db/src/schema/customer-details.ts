@@ -66,6 +66,7 @@ export const customerFinishProductsTable = pgTable("customer_finish_products", {
   id: serial("id").primaryKey(),
   finishId: integer("finish_id").notNull().references(() => customerFinishesTable.id, { onDelete: "cascade" }),
   productId: integer("product_id").notNull(),
+  colour: text("colour"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
