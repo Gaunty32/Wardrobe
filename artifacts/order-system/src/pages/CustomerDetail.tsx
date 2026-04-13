@@ -63,7 +63,7 @@ function EmptyState({ icon: Icon, label, onAdd }: { icon: React.ElementType; lab
 
 // ─── Delivery Addresses Tab ───────────────────────────────────────────────────
 
-function AddressesTab({ customerId }: { customerId: number }) {
+function AddressesTab({ customerId, customer }: { customerId: number; customer: any }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: addresses, isLoading } = useSubResource<any>(customerId, "addresses");
@@ -87,7 +87,20 @@ function AddressesTab({ customerId }: { customerId: number }) {
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openAdd = () => {
+    setForm({
+      label: "",
+      line1: customer?.address || "",
+      line2: "",
+      city: customer?.city || "",
+      county: customer?.state || "",
+      postcode: customer?.postcode || "",
+      country: "United Kingdom",
+      notes: "",
+    });
+    setEditing(null);
+    setOpen(true);
+  };
   const openEdit = (a: any) => { setForm({ label: a.label||"", line1: a.line1||"", line2: a.line2||"", city: a.city||"", county: a.county||"", postcode: a.postcode||"", country: a.country||"United Kingdom", notes: a.notes||"" }); setEditing(a); setOpen(true); };
 
   return (
@@ -155,7 +168,7 @@ function AddressesTab({ customerId }: { customerId: number }) {
 
 // ─── Contacts Tab ─────────────────────────────────────────────────────────────
 
-function ContactsTab({ customerId }: { customerId: number }) {
+function ContactsTab({ customerId, customer }: { customerId: number; customer: any }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: contacts, isLoading } = useSubResource<any>(customerId, "contacts");
@@ -179,7 +192,18 @@ function ContactsTab({ customerId }: { customerId: number }) {
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openAdd = () => {
+    setForm({
+      firstName: customer?.contactFirstName || "",
+      lastName: customer?.contactLastName || "",
+      jobTitle: "",
+      email: customer?.email || "",
+      phone: customer?.phone || "",
+      notes: "",
+    });
+    setEditing(null);
+    setOpen(true);
+  };
   const openEdit = (c: any) => { setForm({ firstName: c.firstName||"", lastName: c.lastName||"", jobTitle: c.jobTitle||"", email: c.email||"", phone: c.phone||"", notes: c.notes||"" }); setEditing(c); setOpen(true); };
 
   return (
@@ -1179,6 +1203,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [editing, setEditing] = useState<FinishedItem | null>(null);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [roleFilter, setRoleFilter] = useState<number | null | "all">("all");
+  const [variantColours, setVariantColours] = useState<string[]>([]);
 
   const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
@@ -1198,7 +1223,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setOpen(true); };
+  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setVariantColours([]); setOpen(true); };
   const openEdit = (item: FinishedItem) => {
     setForm({
       name: item.name,
@@ -1212,6 +1237,12 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     });
     setEditing(item);
     setProductSearchOpen(false);
+    setVariantColours([]);
+    // Load variant colours for the existing product
+    apiFetch(`/products/${item.productId}/variants`).then((v: any) => {
+      const colours = [...new Set((v as any[]).map((x: any) => x.colour).filter(Boolean))] as string[];
+      setVariantColours(colours);
+    }).catch(() => {});
     setOpen(true);
   };
 
@@ -1225,7 +1256,12 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       ? ((finishes as any[])?.find((f: any) => f.id === form.finishId)?.totalCost ?? 0)
       : 0;
     const newPrice = prod.unitPrice + currentFinishCost;
-    setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2) }));
+    setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "" }));
+    setVariantColours([]);
+    apiFetch(`/products/${prod.id}/variants`).then((v: any) => {
+      const colours = [...new Set((v as any[]).map((x: any) => x.colour).filter(Boolean))] as string[];
+      setVariantColours(colours);
+    }).catch(() => {});
   };
 
   const handleFinishChange = (value: string) => {
@@ -1411,9 +1447,23 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
+                {variantColours.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-1">
+                    {variantColours.map(col => (
+                      <button
+                        key={col}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, colour: f.colour === col ? "" : col }))}
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${form.colour === col ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted"}`}
+                      >
+                        {col}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <input
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="e.g. Navy Blue"
+                  placeholder={variantColours.length > 0 ? "Or type a colour…" : "e.g. Navy Blue"}
                   value={form.colour}
                   onChange={e => setForm(f => ({ ...f, colour: e.target.value }))}
                 />
@@ -1570,8 +1620,8 @@ export default function CustomerDetail() {
             <TabsContent value="employees" className="mt-0"><EmployeesTab customerId={customerId} /></TabsContent>
             <TabsContent value="roles" className="mt-0"><RolesTab customerId={customerId} /></TabsContent>
             <TabsContent value="wardrobe" className="mt-0"><WardrobeTab customerId={customerId} /></TabsContent>
-            <TabsContent value="addresses" className="mt-0"><AddressesTab customerId={customerId} /></TabsContent>
-            <TabsContent value="contacts" className="mt-0"><ContactsTab customerId={customerId} /></TabsContent>
+            <TabsContent value="addresses" className="mt-0"><AddressesTab customerId={customerId} customer={customer} /></TabsContent>
+            <TabsContent value="contacts" className="mt-0"><ContactsTab customerId={customerId} customer={customer} /></TabsContent>
             <TabsContent value="orders" className="mt-0"><OrderHistoryTab customerId={customerId} /></TabsContent>
             <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>
             <TabsContent value="finishes" className="mt-0"><FinishesTab customerId={customerId} /></TabsContent>
