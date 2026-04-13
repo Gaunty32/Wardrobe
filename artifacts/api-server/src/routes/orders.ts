@@ -5,7 +5,9 @@ import {
   db, ordersTable, orderItemsTable, customersTable, productsTable,
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
+  purchaseOrdersTable,
 } from "@workspace/db";
+import { buildAcknowledgementEmail, sendEmail, isEmailConfigured } from "../services/email";
 import {
   UpdateOrderBody,
   GetOrderParams,
@@ -228,24 +230,41 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
   // ── Stock allocation on confirmation ──────────────────────────────────────
   if (parsed.data.status === "confirmed") {
     const items = await db
-      .select({ id: orderItemsTable.id, productId: orderItemsTable.productId, quantity: orderItemsTable.quantity })
+      .select({
+        id: orderItemsTable.id,
+        productId: orderItemsTable.productId,
+        productName: orderItemsTable.productName,
+        colour: orderItemsTable.colour,
+        size: orderItemsTable.size,
+        quantity: orderItemsTable.quantity,
+        unitPrice: orderItemsTable.unitPrice,
+        lineTotal: orderItemsTable.lineTotal,
+        recipientName: orderItemsTable.recipientName,
+      })
       .from(orderItemsTable)
       .where(eq(orderItemsTable.orderId, params.data.id));
 
     const productIds = [...new Set(items.map(i => i.productId).filter(Boolean))] as number[];
 
+    let allocatedLines = 0;
+    let purchaseLines = 0;
+    const shortfallDetails: Array<{
+      id: number; productName: string; colour: string | null; size: string | null;
+      purchaseQuantity: number; supplierId: number | null; supplierName: string | null; supplierEmail: string | null;
+    }> = [];
+
     if (productIds.length > 0) {
       const productStocks = await db
-        .select({ id: productsTable.id, stockQuantity: productsTable.stockQuantity, supplierId: productsTable.supplierId, supplierName: suppliersTable.name })
+        .select({
+          id: productsTable.id, stockQuantity: productsTable.stockQuantity,
+          supplierId: productsTable.supplierId, supplierName: suppliersTable.name, supplierEmail: suppliersTable.email,
+        })
         .from(productsTable)
         .leftJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
         .where(inArray(productsTable.id, productIds));
 
       const stockMap = new Map(productStocks.map(p => [p.id, p]));
       const remainingStock = new Map(productStocks.map(p => [p.id, p.stockQuantity ?? 0]));
-
-      let allocatedLines = 0;
-      let purchaseLines = 0;
 
       for (const item of items) {
         if (!item.productId) continue;
@@ -266,23 +285,66 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           supplierName: shortfall > 0 ? (stock.supplierName ?? null) : null,
         }).where(eq(orderItemsTable.id, item.id));
 
-        if (shortfall > 0) purchaseLines++;
-        else allocatedLines++;
-      }
-
-      // Commit stock deductions to products
-      for (const [productId, remaining] of remainingStock.entries()) {
-        const original = stockMap.get(productId);
-        if (!original) continue;
-        const deducted = (original.stockQuantity ?? 0) - remaining;
-        if (deducted > 0) {
-          await db.update(productsTable).set({ stockQuantity: remaining }).where(eq(productsTable.id, productId));
+        if (shortfall > 0) {
+          purchaseLines++;
+          shortfallDetails.push({
+            id: item.id, productName: item.productName, colour: item.colour ?? null,
+            size: item.size ?? null, purchaseQuantity: shortfall,
+            supplierId: stock.supplierId ?? null, supplierName: stock.supplierName ?? null, supplierEmail: stock.supplierEmail ?? null,
+          });
+        } else {
+          allocatedLines++;
         }
       }
 
-      res.json({ ...order, totalAmount: numericToFloat(order.totalAmount), allocation: { allocated: allocatedLines, purchaseRequired: purchaseLines } });
-      return;
+      for (const [productId, remaining] of remainingStock.entries()) {
+        const original = stockMap.get(productId);
+        if (!original) continue;
+        if ((original.stockQuantity ?? 0) - remaining > 0) {
+          await db.update(productsTable).set({ stockQuantity: remaining }).where(eq(productsTable.id, productId));
+        }
+      }
     }
+
+    // Build shortfall groups with existing draft POs per supplier
+    const supplierIds = [...new Set(shortfallDetails.map(i => i.supplierId).filter(Boolean))] as number[];
+    const draftPos = supplierIds.length > 0
+      ? await db.select({ id: purchaseOrdersTable.id, poNumber: purchaseOrdersTable.poNumber, supplierId: purchaseOrdersTable.supplierId })
+          .from(purchaseOrdersTable)
+          .where(inArray(purchaseOrdersTable.supplierId, supplierIds))
+          .then(rows => rows.filter(r => r.supplierId !== null))
+      : [];
+    // Also include draft POs with no supplierId match (items with unknown supplier)
+    const draftPosNoSupplier = shortfallDetails.some(i => !i.supplierId)
+      ? await db.select({ id: purchaseOrdersTable.id, poNumber: purchaseOrdersTable.poNumber, supplierId: purchaseOrdersTable.supplierId })
+          .from(purchaseOrdersTable)
+          .where(eq(purchaseOrdersTable.status, "draft"))
+          .then(rows => rows.filter(r => !r.supplierId))
+      : [];
+    const allDraftPos = [...draftPos, ...draftPosNoSupplier];
+
+    const groupMap = new Map<string, typeof shortfallDetails[0] & { itemIds: number[]; items: typeof shortfallDetails; existingDraftPos: Array<{id:number;poNumber:string}> }>();
+    for (const s of shortfallDetails) {
+      const key = s.supplierName ?? "Unknown Supplier";
+      if (!groupMap.has(key)) {
+        groupMap.set(key, {
+          ...s, itemIds: [], items: [],
+          existingDraftPos: allDraftPos.filter(p => p.supplierId === s.supplierId).map(p => ({ id: p.id, poNumber: p.poNumber })),
+        });
+      }
+      const g = groupMap.get(key)!;
+      g.itemIds.push(s.id);
+      g.items.push(s);
+    }
+    const shortfallGroups = [...groupMap.values()];
+
+    res.json({
+      ...order, totalAmount: numericToFloat(order.totalAmount),
+      allocation: { allocated: allocatedLines, purchaseRequired: purchaseLines },
+      shortfallGroups,
+      emailConfigured: isEmailConfigured,
+    });
+    return;
   }
   // ──────────────────────────────────────────────────────────────────────────
 
@@ -301,6 +363,60 @@ router.delete("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
   res.sendStatus(204);
+});
+
+// ─── Order Acknowledgement Email ──────────────────────────────────────────────
+router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const [order] = await db
+    .select({
+      id: ordersTable.id, orderNumber: ordersTable.orderNumber,
+      customerId: ordersTable.customerId, customerName: ordersTable.customerName,
+      orderDate: ordersTable.orderDate, requiredDate: ordersTable.requiredDate,
+      notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
+    })
+    .from(ordersTable)
+    .where(eq(ordersTable.id, params.data.id));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const items = await db
+    .select({
+      productName: orderItemsTable.productName, colour: orderItemsTable.colour,
+      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
+      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
+      recipientName: orderItemsTable.recipientName,
+    })
+    .from(orderItemsTable)
+    .where(eq(orderItemsTable.orderId, params.data.id));
+
+  // Resolve customer email
+  const body = z.object({ toEmail: z.string().email().optional() }).safeParse(req.body);
+  let toEmail = body.success ? body.data.toEmail : undefined;
+  if (!toEmail && order.customerId) {
+    const [customer] = await db.select({ email: customersTable.email }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    toEmail = customer?.email ?? undefined;
+  }
+  if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
+
+  const { subject, html, text } = buildAcknowledgementEmail({
+    orderNumber: order.orderNumber,
+    customerName: order.customerName ?? null,
+    orderDate: order.orderDate ?? null,
+    requiredDate: order.requiredDate ?? null,
+    notes: order.notes ?? null,
+    totalAmount: numericToFloat(order.totalAmount),
+    items: items.map(i => ({
+      productName: i.productName, colour: i.colour ?? null, size: i.size ?? null,
+      quantity: i.quantity ?? 1, unitPrice: parseFloat(String(i.unitPrice ?? 0)),
+      lineTotal: parseFloat(String(i.lineTotal ?? 0)), recipientName: i.recipientName ?? null,
+    })),
+  });
+
+  const result = await sendEmail({ to: toEmail, subject, html, text });
+
+  res.json({ sent: result.sent, error: result.error, subject, html, text, to: toEmail, emailConfigured: isEmailConfigured });
 });
 
 router.post("/orders/:id/items", async (req, res): Promise<void> => {

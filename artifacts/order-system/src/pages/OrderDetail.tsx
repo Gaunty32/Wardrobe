@@ -24,6 +24,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2 } from "lucide-react";
@@ -149,6 +150,7 @@ export default function OrderDetail() {
 
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
 
   const [editingDeliveryAddress, setEditingDeliveryAddress] = useState(false);
 
@@ -554,7 +556,13 @@ export default function OrderDetail() {
                   : <><BookOpen className="w-4 h-4" />Post to Xero</>}
               </Button>
             )}
-            <Select value={order.status} onValueChange={(val) => handleStatusChange(val as UpdateOrderBodyStatus)}>
+            <Select value={order.status} onValueChange={(val) => {
+              if (val === "confirmed" && order.status !== "confirmed") {
+                setConfirmDialogOpen(true);
+              } else {
+                handleStatusChange(val as UpdateOrderBodyStatus);
+              }
+            }}>
               <SelectTrigger className="w-[160px] bg-background">
                 <SelectValue placeholder="Update Status" />
               </SelectTrigger>
@@ -1433,6 +1441,22 @@ export default function OrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmOrderDialog
+        open={confirmDialogOpen}
+        onOpenChange={setConfirmDialogOpen}
+        order={{
+          id: order.id,
+          orderNumber: order.orderNumber,
+          customerName: order.customerName ?? null,
+          status: order.status,
+          totalAmount: order.totalAmount,
+          items: order.items,
+        }}
+        onConfirmed={() => {
+          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+        }}
+      />
     </Layout>
   );
 }
