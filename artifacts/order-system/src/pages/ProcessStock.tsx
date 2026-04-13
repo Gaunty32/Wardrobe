@@ -9,11 +9,12 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Loader2, Boxes, AlertTriangle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Loader2, Boxes, AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
 
 const API_BASE = "/api";
 
@@ -56,6 +57,7 @@ const BLANK_FORM = {
 export default function ProcessStock() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
+  const [customerComboOpen, setCustomerComboOpen] = useState(false);
   const [editing, setEditing] = useState<ProcessStockItem | null>(null);
   const [form, setForm] = useState({ ...BLANK_FORM });
 
@@ -280,17 +282,38 @@ export default function ProcessStock() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Customer (allocation)</Label>
-                  <Select value={form.customerId || "none"} onValueChange={(v) => setForm({ ...form, customerId: v === "none" ? "" : v })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No customer / global</SelectItem>
-                      {customers?.map(c => (
-                        <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={customerComboOpen} onOpenChange={setCustomerComboOpen}>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" role="combobox" aria-expanded={customerComboOpen} className="justify-between font-normal w-full">
+                        <span className="truncate">
+                          {form.customerId
+                            ? customers?.find(c => c.id.toString() === form.customerId)?.name ?? "Unknown"
+                            : "No customer / global"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[240px] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search customers..." />
+                        <CommandList>
+                          <CommandEmpty>No customer found.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem value="none" onSelect={() => { setForm({ ...form, customerId: "" }); setCustomerComboOpen(false); }}>
+                              <Check className={`mr-2 h-4 w-4 ${!form.customerId ? "opacity-100" : "opacity-0"}`} />
+                              No customer / global
+                            </CommandItem>
+                            {customers?.map(c => (
+                              <CommandItem key={c.id} value={c.name} onSelect={() => { setForm({ ...form, customerId: c.id.toString() }); setCustomerComboOpen(false); }}>
+                                <Check className={`mr-2 h-4 w-4 ${form.customerId === c.id.toString() ? "opacity-100" : "opacity-0"}`} />
+                                {c.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="grid gap-2">
                   <Label>Stock Quantity</Label>
