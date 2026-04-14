@@ -122,7 +122,12 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
   const [stock, setStock] = useState(String(variant.stockQuantity));
   const [editStock, setEditStock] = useState(String(variant.stockQuantity));
   const [primaryId, setPrimaryId] = useState(variant.primarySupplierId ? String(variant.primarySupplierId) : "none");
+  const [variantSupplierCode, setVariantSupplierCode] = useState(variant.supplierCode || "");
+  const [variantSupplierPrice, setVariantSupplierPrice] = useState(variant.supplierPrice != null ? String(variant.supplierPrice) : "");
   const [secondaryId, setSecondaryId] = useState(variant.secondarySupplierId ? String(variant.secondarySupplierId) : "none");
+  const [secondarySupplierCode, setSecondarySupplierCode] = useState(variant.secondarySupplierCode || "");
+  const [secondarySupplierPrice, setSecondarySupplierPrice] = useState(variant.secondarySupplierPrice != null ? String(variant.secondarySupplierPrice) : "");
+  const [showVariantSecondary, setShowVariantSecondary] = useState(false);
 
   const updateMut = useMutation({
     mutationFn: (data: any) => apiFetch(`/products/${productId}/variants/${variant.id}`, {
@@ -149,14 +154,22 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
     updateMut.mutate({
       stockQuantity: parseInt(editStock, 10) || 0,
       primarySupplierId: primaryId !== "none" ? Number(primaryId) : null,
+      supplierCode: variantSupplierCode || null,
+      supplierPrice: variantSupplierPrice !== "" ? parseFloat(variantSupplierPrice) : null,
       secondarySupplierId: secondaryId !== "none" ? Number(secondaryId) : null,
+      secondarySupplierCode: secondarySupplierCode || null,
+      secondarySupplierPrice: secondarySupplierPrice !== "" ? parseFloat(secondarySupplierPrice) : null,
     });
   };
 
   const openEdit = () => {
     setEditStock(String(variant.stockQuantity));
     setPrimaryId(variant.primarySupplierId ? String(variant.primarySupplierId) : "none");
+    setVariantSupplierCode(variant.supplierCode || "");
+    setVariantSupplierPrice(variant.supplierPrice != null ? String(variant.supplierPrice) : "");
     setSecondaryId(variant.secondarySupplierId ? String(variant.secondarySupplierId) : "none");
+    setSecondarySupplierCode(variant.secondarySupplierCode || "");
+    setSecondarySupplierPrice(variant.secondarySupplierPrice != null ? String(variant.secondarySupplierPrice) : "");
     setEditOpen(true);
   };
 
@@ -236,13 +249,47 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
               <Input type="number" min={0} value={editStock} onChange={e => setEditStock(e.target.value)} />
             </div>
             <div className="grid gap-2">
-              <Label>Primary Supplier</Label>
+              <Label>Preferred Supplier</Label>
               <SupplierSelect value={primaryId} onChange={setPrimaryId} suppliers={suppliers} />
             </div>
-            <div className="grid gap-2">
-              <Label>Secondary Supplier <span className="text-muted-foreground font-normal">(fallback if out of stock)</span></Label>
-              <SupplierSelect value={secondaryId} onChange={setSecondaryId} suppliers={suppliers} />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label>Supplier Code</Label>
+                <Input value={variantSupplierCode} onChange={e => setVariantSupplierCode(e.target.value)} placeholder="Override code" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Supplier Price (£)</Label>
+                <Input type="number" min="0" step="0.01" value={variantSupplierPrice} onChange={e => setVariantSupplierPrice(e.target.value)} placeholder="Override price" />
+              </div>
             </div>
+
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors select-none"
+              onClick={() => setShowVariantSecondary(v => !v)}
+            >
+              <span className={`transition-transform duration-150 ${showVariantSecondary ? "rotate-90" : ""}`}>▶</span>
+              {showVariantSecondary ? "Hide" : "Show"} backup supplier
+            </button>
+
+            {showVariantSecondary && (
+              <div className="pl-4 border-l-2 border-border/40 space-y-3">
+                <div className="grid gap-2">
+                  <Label>Backup Supplier</Label>
+                  <SupplierSelect value={secondaryId} onChange={setSecondaryId} suppliers={suppliers} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Backup Code</Label>
+                    <Input value={secondarySupplierCode} onChange={e => setSecondarySupplierCode(e.target.value)} placeholder="Backup code" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Backup Price (£)</Label>
+                    <Input type="number" min="0" step="0.01" value={secondarySupplierPrice} onChange={e => setSecondarySupplierPrice(e.target.value)} placeholder="0.00" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
@@ -386,8 +433,10 @@ export default function ProductDetail() {
     name: string; sku: string; description: string;
     unitPrice: number; supplierId: string; secondarySupplierId: string;
     supplierCode: string; supplierPrice: string;
+    secondarySupplierCode: string; secondarySupplierPrice: string;
   } | null>(null);
   const [detailsDirty, setDetailsDirty] = useState(false);
+  const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
 
   useEffect(() => {
@@ -401,6 +450,8 @@ export default function ProductDetail() {
         secondarySupplierId: product.secondarySupplierId ? String(product.secondarySupplierId) : "none",
         supplierCode: product.supplierCode || "",
         supplierPrice: product.supplierPrice != null ? String(product.supplierPrice) : "",
+        secondarySupplierCode: (product as any).secondarySupplierCode || "",
+        secondarySupplierPrice: (product as any).secondarySupplierPrice != null ? String((product as any).secondarySupplierPrice) : "",
       });
     }
   }, [product, details]);
@@ -424,6 +475,8 @@ export default function ProductDetail() {
           secondarySupplierId: details.secondarySupplierId !== "none" ? Number(details.secondarySupplierId) : null,
           supplierCode: details.supplierCode || null,
           supplierPrice: details.supplierPrice !== "" ? parseFloat(details.supplierPrice) : null,
+          secondarySupplierCode: details.secondarySupplierCode || null,
+          secondarySupplierPrice: details.secondarySupplierPrice !== "" ? parseFloat(details.secondarySupplierPrice) : null,
         },
       },
       {
@@ -526,18 +579,12 @@ export default function ProductDetail() {
                   </div>
 
                   <div className="border-t border-border/40 pt-5 mt-1">
-                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Supplier</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label>Preferred Supplier</Label>
-                        <SupplierSelect value={details.supplierId} onChange={v => handleDetailChange("supplierId", v)} suppliers={suppliers} />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Secondary Supplier <span className="font-normal text-muted-foreground">(backup)</span></Label>
-                        <SupplierSelect value={details.secondarySupplierId} onChange={v => handleDetailChange("secondarySupplierId", v)} suppliers={suppliers} />
-                      </div>
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Preferred Supplier</h4>
+                    <div className="grid gap-2 mb-4">
+                      <Label>Supplier</Label>
+                      <SupplierSelect value={details.supplierId} onChange={v => handleDetailChange("supplierId", v)} suppliers={suppliers} />
                     </div>
-                    <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div className="grid grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label>FCC / Supplier Code</Label>
                         <Input value={details.supplierCode} onChange={e => handleDetailChange("supplierCode", e.target.value)} placeholder="e.g. FCC2105" />
@@ -547,6 +594,35 @@ export default function ProductDetail() {
                         <Input type="number" min="0" step="0.01" value={details.supplierPrice} onChange={e => handleDetailChange("supplierPrice", e.target.value)} placeholder="0.00" />
                       </div>
                     </div>
+
+                    {/* Secondary supplier — collapsed by default */}
+                    <button
+                      type="button"
+                      className="mt-5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors select-none"
+                      onClick={() => setShowSecondarySupplier(v => !v)}
+                    >
+                      <span className={`transition-transform duration-150 ${showSecondarySupplier ? "rotate-90" : ""}`}>▶</span>
+                      {showSecondarySupplier ? "Hide" : "Show"} backup supplier
+                    </button>
+
+                    {showSecondarySupplier && (
+                      <div className="mt-3 pl-4 border-l-2 border-border/40 space-y-4">
+                        <div className="grid gap-2">
+                          <Label>Backup Supplier</Label>
+                          <SupplierSelect value={details.secondarySupplierId} onChange={v => handleDetailChange("secondarySupplierId", v)} suppliers={suppliers} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="grid gap-2">
+                            <Label>Backup Supplier Code</Label>
+                            <Input value={details.secondarySupplierCode} onChange={e => handleDetailChange("secondarySupplierCode", e.target.value)} placeholder="e.g. RL204" />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Backup Price (£)</Label>
+                            <Input type="number" min="0" step="0.01" value={details.secondarySupplierPrice} onChange={e => handleDetailChange("secondarySupplierPrice", e.target.value)} placeholder="0.00" />
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex justify-end">

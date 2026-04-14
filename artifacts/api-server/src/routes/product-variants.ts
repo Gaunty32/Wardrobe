@@ -15,7 +15,11 @@ const variantBody = z.object({
   price: z.number().positive().optional().nullable(),
   stockQuantity: z.number().int().min(0).default(0),
   primarySupplierId: z.number().int().positive().optional().nullable(),
+  supplierCode: z.string().optional().nullable(),
+  supplierPrice: z.number().optional().nullable(),
   secondarySupplierId: z.number().int().positive().optional().nullable(),
+  secondarySupplierCode: z.string().optional().nullable(),
+  secondarySupplierPrice: z.number().optional().nullable(),
 });
 
 async function getProduct(id: number) {
@@ -31,7 +35,12 @@ router.get("/products/:productId/variants", async (req, res): Promise<void> => {
   const rows = await db.select().from(productVariantsTable)
     .where(eq(productVariantsTable.productId, p.data.productId))
     .orderBy(productVariantsTable.colour, productVariantsTable.size);
-  res.json(rows);
+  res.json(rows.map(r => ({
+    ...r,
+    price: r.price != null ? parseFloat(r.price) : null,
+    supplierPrice: r.supplierPrice != null ? parseFloat(r.supplierPrice) : null,
+    secondarySupplierPrice: r.secondarySupplierPrice != null ? parseFloat(r.secondarySupplierPrice) : null,
+  })));
 });
 
 // Create a variant

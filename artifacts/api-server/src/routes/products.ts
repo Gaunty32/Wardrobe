@@ -31,6 +31,7 @@ router.get("/products", async (req, res): Promise<void> => {
       ...p,
       unitPrice: parseFloat(p.unitPrice),
       supplierPrice: p.supplierPrice != null ? parseFloat(p.supplierPrice) : null,
+      secondarySupplierPrice: p.secondarySupplierPrice != null ? parseFloat(p.secondarySupplierPrice) : null,
     }))
   );
 });
@@ -60,7 +61,7 @@ router.get("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null });
+  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null, secondarySupplierPrice: product.secondarySupplierPrice != null ? parseFloat(product.secondarySupplierPrice) : null });
 });
 
 router.patch("/products/:id", async (req, res): Promise<void> => {
@@ -90,7 +91,7 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null });
+  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null, secondarySupplierPrice: product.secondarySupplierPrice != null ? parseFloat(product.secondarySupplierPrice) : null });
 });
 
 router.delete("/products/:id", async (req, res): Promise<void> => {

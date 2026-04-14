@@ -139,5 +139,15 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_price numeric(10,2);
   `);
 
+  // Add secondary supplier code/price to products and variant-level supplier overrides
+  await db.execute(sql`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS secondary_supplier_code text;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS secondary_supplier_price numeric(10,2);
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS supplier_code text;
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS supplier_price numeric(10,2);
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS secondary_supplier_code text;
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS secondary_supplier_price numeric(10,2);
+  `);
+
   console.log("[startup] Migrations complete");
 }
