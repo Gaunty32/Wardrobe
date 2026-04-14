@@ -4,16 +4,19 @@ import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import {
   useListProducts,
+  useListSuppliers,
   useCreateProduct,
   useUpdateProduct,
   useDeleteProduct,
   getListProductsQueryKey,
-  Product
+  Product,
+  Supplier
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,13 +53,15 @@ export default function Products() {
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
 
   const [formData, setFormData] = useState({
-    name: "", sku: "", category: "", description: "", unitPrice: 0, stockQuantity: 0
+    name: "", sku: "", category: "", description: "", unitPrice: 0, stockQuantity: 0,
+    supplierId: "none", supplierCode: "", supplierPrice: "",
   });
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const { data: products, isLoading: productsLoading } = useListProducts({ search });
+  const { data: suppliers = [] } = useListSuppliers();
   const { data: storedCategories = [], isLoading: categoriesLoading } = useQuery<ProductCategory[]>({
     queryKey: ["product-categories"],
     queryFn: () => apiFetch("/product-categories"),
@@ -103,6 +108,7 @@ export default function Products() {
       name: "", sku: "",
       category: selectedCategory && selectedCategory !== UNCATEGORISED ? selectedCategory : "",
       description: "", unitPrice: 0, stockQuantity: 0,
+      supplierId: "none", supplierCode: "", supplierPrice: "",
     });
     setIsCreateOpen(true);
   };
@@ -115,6 +121,9 @@ export default function Products() {
       description: product.description || "",
       unitPrice: product.unitPrice,
       stockQuantity: product.stockQuantity || 0,
+      supplierId: product.supplierId ? String(product.supplierId) : "none",
+      supplierCode: (product as any).supplierCode || "",
+      supplierPrice: (product as any).supplierPrice != null ? String((product as any).supplierPrice) : "",
     });
     setEditingProduct(product);
   };
@@ -124,7 +133,13 @@ export default function Products() {
       toast({ title: "Validation Error", description: "Name and valid price are required", variant: "destructive" });
       return;
     }
-    const payload = { ...formData, category: formData.category.trim() || null };
+    const payload = {
+      ...formData,
+      category: formData.category.trim() || null,
+      supplierId: formData.supplierId !== "none" ? Number(formData.supplierId) : null,
+      supplierCode: formData.supplierCode || null,
+      supplierPrice: formData.supplierPrice !== "" ? parseFloat(formData.supplierPrice) : null,
+    };
     if (editingProduct) {
       updateMutation.mutate({ id: editingProduct.id, data: payload as any }, {
         onSuccess: () => {
@@ -275,7 +290,7 @@ export default function Products() {
       <Dialog open={isCreateOpen || !!editingProduct} onOpenChange={(open) => {
         if (!open) { setIsCreateOpen(false); setEditingProduct(null); }
       }}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display text-xl">
               {editingProduct ? "Edit Product" : "Add New Product"}
@@ -320,6 +335,31 @@ export default function Products() {
             <div className="grid gap-2">
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" className="resize-none" rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+            </div>
+            <div className="border-t border-border/40 pt-3 mt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Supplier</p>
+              <div className="grid gap-2 mb-3">
+                <Label>Preferred Supplier</Label>
+                <Select value={formData.supplierId} onValueChange={(v) => setFormData({ ...formData, supplierId: v })}>
+                  <SelectTrigger><SelectValue placeholder="— None —" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None —</SelectItem>
+                    {(suppliers as Supplier[]).map((s) => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>FCC / Supplier Code</Label>
+                  <Input value={formData.supplierCode} onChange={(e) => setFormData({ ...formData, supplierCode: e.target.value })} placeholder="e.g. FCC2105" />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Supplier Price (£)</Label>
+                  <Input type="number" min="0" step="0.01" value={formData.supplierPrice} onChange={(e) => setFormData({ ...formData, supplierPrice: e.target.value })} placeholder="0.00" />
+                </div>
+              </div>
             </div>
           </div>
           <DialogFooter>
