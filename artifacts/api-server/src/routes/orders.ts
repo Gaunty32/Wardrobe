@@ -160,7 +160,14 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+  const itemRows = await db
+    .select({
+      item: orderItemsTable,
+      catalogueProductName: productsTable.name,
+    })
+    .from(orderItemsTable)
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(eq(orderItemsTable.orderId, order.id));
 
   let deliveryAddress: Record<string, unknown> | null = null;
   if (order.deliveryAddressId) {
@@ -173,8 +180,9 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     ...order,
     totalAmount: numericToFloat(order.totalAmount),
     deliveryAddress,
-    items: items.map((item) => ({
+    items: itemRows.map(({ item, catalogueProductName }) => ({
       ...item,
+      productName: catalogueProductName ?? item.productName,
       unitPrice: numericToFloat(item.unitPrice),
       lineTotal: numericToFloat(item.lineTotal),
       purchaseRequired: item.purchaseRequired,
@@ -384,15 +392,20 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     .where(eq(ordersTable.id, params.data.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const items = await db
+  const itemRows2 = await db
     .select({
-      productName: orderItemsTable.productName, colour: orderItemsTable.colour,
+      productName: orderItemsTable.productName,
+      catalogueProductName: productsTable.name,
+      colour: orderItemsTable.colour,
       size: orderItemsTable.size, quantity: orderItemsTable.quantity,
       unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
       recipientName: orderItemsTable.recipientName,
     })
     .from(orderItemsTable)
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(eq(orderItemsTable.orderId, params.data.id));
+
+  const items = itemRows2.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
 
   // Resolve customer email
   const body = z.object({ toEmail: z.string().email().optional() }).safeParse(req.body);
