@@ -38,6 +38,7 @@ interface PurchaseRequirement {
   itemId: number; orderId: number; orderNumber: string | null; customerName: string | null;
   productId: number | null; productName: string; colour: string | null; size: string | null;
   purchaseQuantity: number | null; supplierId: number | null; supplierName: string; supplierEmail: string | null;
+  supplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
 }
 interface SupplierGroup {
   supplierId: number | null; supplierName: string; supplierEmail: string | null; items: PurchaseRequirement[];
@@ -90,27 +91,46 @@ function buildEmailBody(group: SupplierGroup, notes: string): string {
   return lines.join("\n");
 }
 
+function productDisplayName(item: PurchaseRequirement): string {
+  return item.canonicalProductName ?? item.productName;
+}
+
+function productLabel(item: PurchaseRequirement): string {
+  const name = productDisplayName(item);
+  const code = item.supplierCode ?? item.productSku;
+  return code ? `${code} — ${name}` : name;
+}
+
 function MatrixTable({ items }: { items: PurchaseRequirement[] }) {
-  const products = [...new Set(items.map((i) => i.productName))];
+  const productKeys = [...new Map(items.map((i) => [productDisplayName(i), i])).values()];
   const sizeKeys = [...new Set(items.map((i) => [i.colour, i.size].filter(Boolean).join(" / ") || "N/A"))];
-  if (products.length === 0) return null;
+  if (productKeys.length === 0) return null;
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/40">
-            <TableHead className="font-semibold min-w-[160px]">Product</TableHead>
+            <TableHead className="font-semibold min-w-[200px]">Product</TableHead>
             {sizeKeys.map((s) => <TableHead key={s} className="text-center font-semibold min-w-[80px]">{s}</TableHead>)}
             <TableHead className="text-center font-semibold">Total</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {products.map((product) => {
-            const productItems = items.filter((i) => i.productName === product);
+          {productKeys.map((rep) => {
+            const pName = productDisplayName(rep);
+            const productItems = items.filter((i) => productDisplayName(i) === pName);
             const totalQty = productItems.reduce((sum, i) => sum + (i.purchaseQuantity ?? 0), 0);
             return (
-              <TableRow key={product}>
-                <TableCell className="font-medium">{product}</TableCell>
+              <TableRow key={pName}>
+                <TableCell>
+                  <div className="font-medium text-sm">{pName}</div>
+                  {(rep.supplierCode || rep.productSku) && (
+                    <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                      {rep.supplierCode && <span className="mr-2">FCC: {rep.supplierCode}</span>}
+                      {rep.productSku && <span>SKU: {rep.productSku}</span>}
+                    </div>
+                  )}
+                </TableCell>
                 {sizeKeys.map((sizeKey) => {
                   const qty = productItems.filter((i) => ([i.colour, i.size].filter(Boolean).join(" / ") || "N/A") === sizeKey).reduce((sum, i) => sum + (i.purchaseQuantity ?? 0), 0);
                   return <TableCell key={sizeKey} className="text-center">{qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground">—</span>}</TableCell>;
@@ -471,7 +491,14 @@ export default function Purchasing() {
                               <Checkbox checked={allGroupSelected} className={someGroupSelected && !allGroupSelected ? "data-[state=unchecked]:bg-primary/20" : ""} />
                             </div>
                             <div>
-                              <div className="font-semibold text-base">{group.supplierName}</div>
+                              <div className="font-semibold text-base flex items-center gap-2">
+                                {group.supplierName}
+                                {group.supplierId === null && (
+                                  <span className="text-xs font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                    Set supplier on the product to assign
+                                  </span>
+                                )}
+                              </div>
                               {group.supplierEmail && <div className="text-xs text-muted-foreground">{group.supplierEmail}</div>}
                             </div>
                             <Badge variant="secondary">{group.items.length} line{group.items.length !== 1 ? "s" : ""}</Badge>
@@ -509,8 +536,10 @@ export default function Purchasing() {
                                     <Checkbox checked={!!selectedItems[item.itemId]} onCheckedChange={() => toggleItem(item.itemId)} />
                                     <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                                     <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-sm">{item.productName}</div>
-                                      <div className="flex items-center gap-2 mt-0.5">
+                                      <div className="font-medium text-sm">{productDisplayName(item)}</div>
+                                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                        {item.supplierCode && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">FCC: {item.supplierCode}</span>}
+                                        {item.productSku && !item.supplierCode && <span className="text-xs font-mono text-muted-foreground">SKU: {item.productSku}</span>}
                                         {item.colour && <Badge variant="outline" className="text-xs py-0">{item.colour}</Badge>}
                                         {item.size && <Badge variant="outline" className="text-xs py-0">{item.size}</Badge>}
                                         <span className="text-xs text-muted-foreground">Order: <a href={`/orders/${item.orderId}`} className="text-primary hover:underline">{item.orderNumber}</a>{item.customerName && ` · ${item.customerName}`}</span>

@@ -25,10 +25,14 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       supplierId: orderItemsTable.supplierId,
       supplierName: orderItemsTable.supplierName,
       supplierEmail: suppliersTable.email,
+      supplierCode: productsTable.supplierCode,
+      productSku: productsTable.sku,
+      canonicalProductName: productsTable.name,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .leftJoin(suppliersTable, eq(orderItemsTable.supplierId, suppliersTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(eq(orderItemsTable.purchaseRequired, true))
     .orderBy(orderItemsTable.supplierName, orderItemsTable.productName);
 
