@@ -24,6 +24,7 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       purchaseQuantity: orderItemsTable.purchaseQuantity,
       supplierId: orderItemsTable.supplierId,
       supplierName: orderItemsTable.supplierName,
+      resolvedSupplierName: suppliersTable.name,
       supplierEmail: suppliersTable.email,
       supplierCode: productsTable.supplierCode,
       productSku: productsTable.sku,
@@ -44,7 +45,7 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
   }> = {};
 
   for (const row of rows) {
-    const key = row.supplierName ?? "Unknown Supplier";
+    const key = row.resolvedSupplierName ?? row.supplierName ?? "Unknown Supplier";
     if (!grouped[key]) {
       grouped[key] = { supplierId: row.supplierId, supplierName: key, supplierEmail: row.supplierEmail ?? null, items: [] };
     }

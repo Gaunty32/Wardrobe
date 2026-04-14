@@ -126,7 +126,7 @@ function MatrixTable({ items }: { items: PurchaseRequirement[] }) {
                   <div className="font-medium text-sm">{pName}</div>
                   {(rep.supplierCode || rep.productSku) && (
                     <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                      {rep.supplierCode && <span className="mr-2">FCC: {rep.supplierCode}</span>}
+                      {rep.supplierCode && <span className="mr-2">Supplier Code: {rep.supplierCode}</span>}
                       {rep.productSku && <span>SKU: {rep.productSku}</span>}
                     </div>
                   )}
@@ -538,7 +538,7 @@ export default function Purchasing() {
                                     <div className="flex-1 min-w-0">
                                       <div className="font-medium text-sm">{productDisplayName(item)}</div>
                                       <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                        {item.supplierCode && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">FCC: {item.supplierCode}</span>}
+                                        {item.supplierCode && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">Supplier Code: {item.supplierCode}</span>}
                                         {item.productSku && !item.supplierCode && <span className="text-xs font-mono text-muted-foreground">SKU: {item.productSku}</span>}
                                         {item.colour && <Badge variant="outline" className="text-xs py-0">{item.colour}</Badge>}
                                         {item.size && <Badge variant="outline" className="text-xs py-0">{item.size}</Badge>}

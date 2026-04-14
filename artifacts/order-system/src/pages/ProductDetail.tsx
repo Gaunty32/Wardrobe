@@ -586,7 +586,7 @@ export default function ProductDetail() {
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="grid gap-2">
-                        <Label>FCC / Supplier Code</Label>
+                        <Label>Supplier Code</Label>
                         <Input value={details.supplierCode} onChange={e => handleDetailChange("supplierCode", e.target.value)} placeholder="e.g. FCC2105" />
                       </div>
                       <div className="grid gap-2">
