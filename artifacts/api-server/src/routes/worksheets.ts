@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, inArray } from "drizzle-orm";
+import { eq, desc, inArray, and } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -7,6 +7,7 @@ import {
   worksheetItemsTable,
   orderItemsTable,
   ordersTable,
+  productsTable,
   customerProcessesTable,
   customerFinishesTable,
   customerFinishProcessesTable,
@@ -20,6 +21,61 @@ function generateWorksheetNumber(): string {
   const seq = Math.floor(Math.random() * 9000) + 1000;
   return `WS-${year}-${seq}`;
 }
+
+// ── Pending production: confirmed orders awaiting stock ───────────────────────
+router.get("/production/pending", async (req, res): Promise<void> => {
+  const pendingItems = await db
+    .select({
+      orderId: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      requiredDate: ordersTable.requiredDate,
+      itemId: orderItemsTable.id,
+      productName: orderItemsTable.productName,
+      catalogueName: productsTable.name,
+      colour: orderItemsTable.colour,
+      size: orderItemsTable.size,
+      purchaseQuantity: orderItemsTable.purchaseQuantity,
+      supplierName: orderItemsTable.supplierName,
+    })
+    .from(orderItemsTable)
+    .innerJoin(ordersTable, and(
+      eq(orderItemsTable.orderId, ordersTable.id),
+      eq(ordersTable.status, "confirmed"),
+    ))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(eq(orderItemsTable.purchaseRequired, true))
+    .orderBy(ordersTable.requiredDate, ordersTable.id);
+
+  // Group by order
+  const orderMap = new Map<number, {
+    orderId: number; orderNumber: string; customerName: string | null;
+    requiredDate: Date | null;
+    items: Array<{ id: number; productName: string; colour: string | null; size: string | null; purchaseQuantity: number; supplierName: string | null }>;
+  }>();
+
+  for (const row of pendingItems) {
+    if (!orderMap.has(row.orderId)) {
+      orderMap.set(row.orderId, {
+        orderId: row.orderId,
+        orderNumber: row.orderNumber,
+        customerName: row.customerName,
+        requiredDate: row.requiredDate,
+        items: [],
+      });
+    }
+    orderMap.get(row.orderId)!.items.push({
+      id: row.itemId,
+      productName: row.catalogueName ?? row.productName,
+      colour: row.colour,
+      size: row.size,
+      purchaseQuantity: row.purchaseQuantity ?? 1,
+      supplierName: row.supplierName,
+    });
+  }
+
+  res.json(Array.from(orderMap.values()));
+});
 
 router.get("/worksheets", async (req, res): Promise<void> => {
   const parsed = z.object({ status: z.string().optional() }).safeParse(req.query);

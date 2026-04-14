@@ -2,12 +2,11 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
-  RefreshCw, Plus, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette
+  RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
+  ShoppingCart, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -16,7 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate } from "@/lib/utils";
 
-const API_BASE = "/api";
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const API_BASE = `${BASE}/api`;
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -68,6 +68,23 @@ interface Worksheet {
   items: WorksheetItem[];
 }
 
+interface PendingItem {
+  id: number;
+  productName: string;
+  colour: string | null;
+  size: string | null;
+  purchaseQuantity: number;
+  supplierName: string | null;
+}
+
+interface PendingOrder {
+  orderId: number;
+  orderNumber: string;
+  customerName: string | null;
+  requiredDate: string | null;
+  items: PendingItem[];
+}
+
 const STATUS_CONFIG = {
   pre_wip: { label: "Pre-WIP", color: "bg-blue-100 text-blue-800 border-blue-200", icon: Clock },
   wip: { label: "Work in Progress", color: "bg-amber-100 text-amber-800 border-amber-200", icon: ClipboardList },
@@ -98,83 +115,63 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
       <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "6mm", fontSize: "11px" }}>
         <thead>
           <tr style={{ backgroundColor: "#1e3a5f", color: "white" }}>
-            <th style={{ padding: "3mm 2mm", textAlign: "left" }}>Product</th>
-            <th style={{ padding: "3mm 2mm", textAlign: "left" }}>Colour</th>
-            <th style={{ padding: "3mm 2mm", textAlign: "left" }}>Size</th>
-            <th style={{ padding: "3mm 2mm", textAlign: "center" }}>Qty</th>
-            <th style={{ padding: "3mm 2mm", textAlign: "left" }}>For / Recipient</th>
-            <th style={{ padding: "3mm 2mm", textAlign: "left" }}>Finish</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Product</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Colour</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Size</th>
+            <th style={{ padding: "4px 8px", textAlign: "center" }}>Qty</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Recipient</th>
+            <th style={{ padding: "4px 8px", textAlign: "left" }}>Finish</th>
           </tr>
         </thead>
         <tbody>
-          {ws.items.map((item, idx) => (
-            <tr key={item.id} style={{ backgroundColor: idx % 2 === 0 ? "#f8f9fb" : "white", borderBottom: "1px solid #ddd" }}>
-              <td style={{ padding: "2.5mm 2mm", fontWeight: "600" }}>{item.productName}</td>
-              <td style={{ padding: "2.5mm 2mm" }}>{item.colour ?? "—"}</td>
-              <td style={{ padding: "2.5mm 2mm" }}>{item.size ?? "—"}</td>
-              <td style={{ padding: "2.5mm 2mm", textAlign: "center", fontWeight: "bold" }}>{item.quantity}</td>
-              <td style={{ padding: "2.5mm 2mm" }}>
-                {item.recipientType === "person" && item.recipientName ? item.recipientName : "Stock"}
+          {ws.items.map((item, i) => (
+            <tr key={item.id} style={{ backgroundColor: i % 2 === 0 ? "#f9fafb" : "white" }}>
+              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.productName}</td>
+              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.colour ?? "—"}</td>
+              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.size ?? "—"}</td>
+              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb", textAlign: "center", fontWeight: "bold" }}>{item.quantity}</td>
+              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>
+                {item.recipientType === "person" ? item.recipientName : "Stock"}
               </td>
-              <td style={{ padding: "2.5mm 2mm" }}>{item.finishName ?? "Plain"}</td>
+              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.finishName ?? "—"}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
       {uniqueProcesses.length > 0 && (
-        <>
-          <div style={{ fontWeight: "bold", fontSize: "13px", color: "#1e3a5f", marginBottom: "2mm", borderBottom: "1px solid #ccc", paddingBottom: "1mm" }}>
-            PROCESSES &amp; FINISHES
+        <div style={{ marginBottom: "6mm" }}>
+          <div style={{ fontSize: "13px", fontWeight: "bold", color: "#1e3a5f", borderBottom: "1px solid #1e3a5f", paddingBottom: "2px", marginBottom: "4px" }}>
+            Decoration Processes
           </div>
-          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "6mm", fontSize: "11px" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#4a7bb5", color: "white" }}>
-                <th style={{ padding: "2.5mm 2mm", textAlign: "left" }}>Process</th>
-                <th style={{ padding: "2.5mm 2mm", textAlign: "left" }}>Type</th>
-                <th style={{ padding: "2.5mm 2mm", textAlign: "left" }}>Placement</th>
-                <th style={{ padding: "2.5mm 2mm", textAlign: "left" }}>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {uniqueProcesses.map((p, idx) => (
-                <tr key={p.id} style={{ backgroundColor: idx % 2 === 0 ? "#f0f4fa" : "white", borderBottom: "1px solid #ddd" }}>
-                  <td style={{ padding: "2.5mm 2mm", fontWeight: "600" }}>{p.name}</td>
-                  <td style={{ padding: "2.5mm 2mm" }}>{p.type ?? "—"}</td>
-                  <td style={{ padding: "2.5mm 2mm" }}>{p.placement ?? "—"}</td>
-                  <td style={{ padding: "2.5mm 2mm" }}>{p.notes ?? ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
+          {uniqueProcesses.map((p) => (
+            <div key={p.id} style={{ fontSize: "11px", marginBottom: "2px" }}>
+              <strong>{p.name}</strong>
+              {p.type && ` · ${p.type}`}
+              {p.placement && ` · ${p.placement}`}
+              {p.notes && <span style={{ color: "#666" }}> — {p.notes}</span>}
+            </div>
+          ))}
+        </div>
       )}
 
       {ws.notes && (
-        <div style={{ marginBottom: "6mm", padding: "3mm", backgroundColor: "#fffbe6", border: "1px solid #f0c040", borderRadius: "3px" }}>
+        <div style={{ marginTop: "4mm", padding: "3mm", backgroundColor: "#fff9c4", border: "1px solid #f59e0b", borderRadius: "4px", fontSize: "11px" }}>
           <strong>Notes:</strong> {ws.notes}
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "5mm", marginTop: "auto", paddingTop: "8mm" }}>
-        {["Checked by", "Started", "Completed"].map((label) => (
-          <div key={label} style={{ border: "1px solid #aaa", borderRadius: "3px", padding: "3mm" }}>
-            <div style={{ fontSize: "9px", color: "#888", marginBottom: "8mm" }}>{label}</div>
-            <div style={{ borderTop: "1px solid #aaa", paddingTop: "1mm", fontSize: "9px", color: "#888" }}>Signature / Date</div>
-          </div>
-        ))}
+      <div style={{ marginTop: "auto", paddingTop: "6mm", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#888" }}>
+        <span>Printed: {new Date().toLocaleDateString("en-GB")}</span>
+        <span>Select Branding Solutions — Internal Use Only</span>
       </div>
     </div>
   );
 }
 
-function WorksheetCard({
-  ws,
-  onStatusChange,
-  onDelete,
-}: {
+function WorksheetCard({ ws, onStatusChange, onDelete }: {
   ws: Worksheet;
-  onStatusChange: (id: number, status: "pre_wip" | "wip" | "complete") => void;
+  onStatusChange: (id: number, status: string) => void;
   onDelete: (id: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -182,20 +179,13 @@ function WorksheetCard({
   const StatusIcon = cfg.icon;
 
   const handlePrint = () => {
-    const win = window.open("", "_blank", "width=900,height=1200");
+    const el = document.getElementById(`ws-print-${ws.id}`);
+    if (!el) return;
+    const win = window.open("", "_blank", "width=900,height=700");
     if (!win) return;
-    const html = document.getElementById(`ws-print-${ws.id}`)?.outerHTML ?? "";
-    win.document.write(`
-      <!DOCTYPE html><html><head>
-      <meta charset="UTF-8">
-      <title>${ws.worksheetNumber}</title>
-      <style>
-        @page { size: A4; margin: 0; }
-        body { margin: 0; font-family: Arial, sans-serif; }
-        table { page-break-inside: avoid; }
-      </style>
-      </head><body>${html}</body></html>
-    `);
+    win.document.write(`<html><head><title>Worksheet ${ws.worksheetNumber}</title>
+      <style>body{margin:0;padding:0;font-family:sans-serif}@media print{.no-print{display:none}}</style>
+    </head><body>${el.innerHTML}</body></html>`);
     win.document.close();
     win.focus();
     win.print();
@@ -300,15 +290,99 @@ function WorksheetCard({
   );
 }
 
+function PendingOrderCard({ order }: { order: PendingOrder }) {
+  const [expanded, setExpanded] = useState(true);
+
+  const totalUnits = order.items.reduce((s, i) => s + i.purchaseQuantity, 0);
+  const suppliers = [...new Set(order.items.map((i) => i.supplierName).filter(Boolean))];
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50/50 shadow-sm overflow-hidden">
+      <div
+        className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-amber-50 transition-colors"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          {expanded ? <ChevronDown className="w-4 h-4 text-amber-600 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-amber-600 flex-shrink-0" />}
+          <ShoppingCart className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <a
+                href={`/orders/${order.orderId}`}
+                className="font-mono font-bold text-base hover:underline text-foreground"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {order.orderNumber}
+              </a>
+              <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1">
+                <ShoppingCart className="w-3 h-3" /> Awaiting Stock
+              </Badge>
+            </div>
+            <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+              {order.customerName && <span>{order.customerName}</span>}
+              {order.requiredDate && <span>· Due {formatDate(order.requiredDate)}</span>}
+              <span>· {order.items.length} line{order.items.length !== 1 ? "s" : ""} · {totalUnits} unit{totalUnits !== 1 ? "s" : ""} to purchase</span>
+              {suppliers.length > 0 && <span>· from {suppliers.join(", ")}</span>}
+            </div>
+          </div>
+        </div>
+        <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <a href={`/orders/${order.orderId}`}>
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+              <ExternalLink className="w-3.5 h-3.5" /> View Order
+            </Button>
+          </a>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-amber-200 px-5 py-4">
+          <div className="space-y-2">
+            {order.items.map((item) => (
+              <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-white/70 border border-amber-100">
+                <Package className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm">{item.productName}</div>
+                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                    {item.colour && <Badge variant="outline" className="text-xs py-0">{item.colour}</Badge>}
+                    {item.size && <Badge variant="outline" className="text-xs py-0">{item.size}</Badge>}
+                    {item.supplierName && (
+                      <span className="text-xs text-muted-foreground">Supplier: {item.supplierName}</span>
+                    )}
+                  </div>
+                </div>
+                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-sm font-semibold flex-shrink-0">
+                  × {item.purchaseQuantity}
+                </Badge>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-amber-700 mt-3 flex items-center gap-1.5">
+            <ShoppingCart className="w-3.5 h-3.5" />
+            Stock must be received in Purchasing before this order can move to production.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Production() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("pre_wip");
 
-  const { data: allWorksheets = [], isLoading } = useQuery<Worksheet[]>({
+  const { data: allWorksheets = [], isLoading: wsLoading } = useQuery<Worksheet[]>({
     queryKey: ["worksheets"],
     queryFn: () => apiFetch("/worksheets"),
   });
+
+  const { data: pendingOrders = [], isLoading: pendingLoading } = useQuery<PendingOrder[]>({
+    queryKey: ["production-pending"],
+    queryFn: () => apiFetch("/production/pending"),
+  });
+
+  const isLoading = wsLoading || pendingLoading;
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
@@ -334,17 +408,22 @@ export default function Production() {
     deleteMutation.mutate(id);
   };
 
-  const preWip = allWorksheets.filter((w) => w.status === "pre_wip");
+  const preWipWorksheets = allWorksheets.filter((w) => w.status === "pre_wip");
   const wip = allWorksheets.filter((w) => w.status === "wip");
   const complete = allWorksheets.filter((w) => w.status === "complete");
 
+  const preWipTotal = preWipWorksheets.length + pendingOrders.length;
+
   const TAB_COUNTS = [
-    { key: "pre_wip", label: "Pre-WIP", count: preWip.length, icon: Clock, color: "text-blue-600" },
+    { key: "pre_wip", label: "Pre-WIP", count: preWipTotal, icon: Clock, color: "text-blue-600" },
     { key: "wip", label: "Work in Progress", count: wip.length, icon: ClipboardList, color: "text-amber-600" },
     { key: "complete", label: "Complete", count: complete.length, icon: CheckCircle2, color: "text-green-600" },
   ];
 
-  const worksheetsForTab = { pre_wip: preWip, wip, complete };
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["worksheets"] });
+    queryClient.invalidateQueries({ queryKey: ["production-pending"] });
+  };
 
   return (
     <Layout>
@@ -357,7 +436,7 @@ export default function Production() {
             </h1>
             <p className="text-muted-foreground mt-1">Manage worksheets and track work in progress.</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => queryClient.invalidateQueries({ queryKey: ["worksheets"] })}>
+          <Button variant="ghost" size="icon" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4" />
           </Button>
         </div>
@@ -391,44 +470,106 @@ export default function Production() {
             ))}
           </TabsList>
 
-          {Object.entries(worksheetsForTab).map(([status, items]) => (
-            <TabsContent key={status} value={status}>
-              {isLoading ? (
-                <div className="flex items-center justify-center py-16 text-muted-foreground">
-                  <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading...
-                </div>
-              ) : items.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-                  {status === "pre_wip" ? <Clock className="w-12 h-12 text-blue-300" /> :
-                    status === "wip" ? <ClipboardList className="w-12 h-12 text-amber-300" /> :
-                      <CheckCircle2 className="w-12 h-12 text-green-300" />}
-                  <p className="text-lg font-medium">
-                    {status === "pre_wip" ? "Nothing in pre-production" :
-                      status === "wip" ? "No active worksheets" :
-                        "No completed worksheets yet"}
-                  </p>
-                  <p className="text-sm text-center max-w-xs">
-                    {status === "pre_wip"
-                      ? "Use 'Send to Production' on order line items to create worksheets here."
-                      : status === "wip"
-                        ? "Move pre-WIP items here when goods arrive and decoration begins."
-                        : "Completed worksheets will appear here."}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {items.map((ws) => (
-                    <WorksheetCard
-                      key={ws.id}
-                      ws={ws}
-                      onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
-                      onDelete={handleDelete}
-                    />
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-          ))}
+          {/* ── Pre-WIP Tab ── */}
+          <TabsContent value="pre_wip">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading...
+              </div>
+            ) : preWipTotal === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <Clock className="w-12 h-12 text-blue-300" />
+                <p className="text-lg font-medium">Nothing in pre-production</p>
+                <p className="text-sm text-center max-w-xs">
+                  Confirmed orders awaiting stock will appear here. Use 'Send to Production' on order line items to create worksheets.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {pendingOrders.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
+                      <ShoppingCart className="w-4 h-4" />
+                      Awaiting Stock ({pendingOrders.length} order{pendingOrders.length !== 1 ? "s" : ""})
+                    </div>
+                    {pendingOrders.map((order) => (
+                      <PendingOrderCard key={order.orderId} order={order} />
+                    ))}
+                  </>
+                )}
+                {preWipWorksheets.length > 0 && (
+                  <>
+                    {pendingOrders.length > 0 && (
+                      <div className="flex items-center gap-2 text-sm font-medium text-blue-700 pt-2">
+                        <Clock className="w-4 h-4" />
+                        Worksheets Ready ({preWipWorksheets.length})
+                      </div>
+                    )}
+                    {preWipWorksheets.map((ws) => (
+                      <WorksheetCard
+                        key={ws.id}
+                        ws={ws}
+                        onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── WIP Tab ── */}
+          <TabsContent value="wip">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading...
+              </div>
+            ) : wip.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <ClipboardList className="w-12 h-12 text-amber-300" />
+                <p className="text-lg font-medium">No active worksheets</p>
+                <p className="text-sm text-center max-w-xs">Move pre-WIP items here when goods arrive and decoration begins.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {wip.map((ws) => (
+                  <WorksheetCard
+                    key={ws.id}
+                    ws={ws}
+                    onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Complete Tab ── */}
+          <TabsContent value="complete">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading...
+              </div>
+            ) : complete.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <CheckCircle2 className="w-12 h-12 text-green-300" />
+                <p className="text-lg font-medium">No completed worksheets yet</p>
+                <p className="text-sm text-center max-w-xs">Completed worksheets will appear here.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {complete.map((ws) => (
+                  <WorksheetCard
+                    key={ws.id}
+                    ws={ws}
+                    onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
     </Layout>
