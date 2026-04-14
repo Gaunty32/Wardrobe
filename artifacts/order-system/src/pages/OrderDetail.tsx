@@ -378,7 +378,7 @@ export default function OrderDetail() {
     setItem({
       ...EMPTY_ITEM,
       productId: fi.productId,
-      productName: fi.name,
+      productName: fi.productName ?? fi.name,
       colour: fi.colour ?? "",
       size: fi.size ?? "",
       finishId: fi.finishId ?? null,
@@ -1078,7 +1078,7 @@ export default function OrderDetail() {
                       .filter(fi => !selectedEmployee?.roleId || fi.roleId === null || fi.roleId === selectedEmployee.roleId)
                       .map(fi => {
                         const effectivePrice = fi.specialPrice ?? fi.unitPrice;
-                        const isSelected = item.productId === fi.productId && item.productName === fi.name && item.unitPrice === effectivePrice.toString();
+                        const isSelected = item.productId === fi.productId && item.productName === (fi.productName ?? fi.name) && item.unitPrice === effectivePrice.toString();
                         const isRoleMatch = selectedEmployee?.roleId && fi.roleId === selectedEmployee.roleId;
                         return (
                           <button
