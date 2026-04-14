@@ -176,6 +176,20 @@ export default function OrderDetail() {
     }
   }, [order?.deliveryAddressId, customerDeliveryAddresses?.length]);
 
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState("");
+
+  const updateNotesMutation = useMutation({
+    mutationFn: (notes: string | null) =>
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ notes: notes || null }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingNotes(false);
+      toast({ title: "Notes saved" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const [editingRequiredDate, setEditingRequiredDate] = useState(false);
   const [requiredDateValue, setRequiredDateValue] = useState("");
 
@@ -557,24 +571,12 @@ export default function OrderDetail() {
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
-            {/* Xero invoice status or post button */}
-            {(order as any).xeroInvoiceId ? (
+            {/* Xero badge — shown in header only when already posted */}
+            {(order as any).xeroInvoiceId && (
               <Badge variant="outline" className="gap-1.5 text-indigo-700 border-indigo-300 bg-indigo-50">
                 <BookOpen className="w-3.5 h-3.5" />
                 Xero: {(order as any).xeroInvoiceStatus ?? "DRAFT"}
               </Badge>
-            ) : (
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
-                onClick={() => postToXeroMutation.mutate()}
-                disabled={postToXeroMutation.isPending}
-              >
-                {postToXeroMutation.isPending
-                  ? <><Loader2 className="w-4 h-4 animate-spin" />Posting…</>
-                  : <><BookOpen className="w-4 h-4" />Post to Xero</>}
-              </Button>
             )}
             <Select value={order.status} onValueChange={(val) => {
               if (val === "confirmed" && order.status !== "confirmed") {
@@ -871,16 +873,87 @@ export default function OrderDetail() {
               </CardContent>
             </Card>
 
+            {/* Xero card — only show if posted or order is dispatched */}
+            {((order as any).xeroInvoiceId || order.status === "dispatched") && (
+              <Card className="shadow-sm border-border/50">
+                <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                  <CardTitle className="font-display text-lg flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-indigo-500" /> Xero
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="py-4">
+                  {(order as any).xeroInvoiceId ? (
+                    <div className="space-y-1 text-sm">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="gap-1.5 text-indigo-700 border-indigo-300 bg-indigo-50">
+                          {(order as any).xeroInvoiceStatus ?? "DRAFT"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Invoice ID: {(order as any).xeroInvoiceId}</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Order is dispatched — ready to post an invoice to Xero.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 border-indigo-300 text-indigo-700 hover:bg-indigo-50 w-full"
+                        onClick={() => postToXeroMutation.mutate()}
+                        disabled={postToXeroMutation.isPending}
+                      >
+                        {postToXeroMutation.isPending
+                          ? <><Loader2 className="w-4 h-4 animate-spin" />Posting…</>
+                          : <><BookOpen className="w-4 h-4" />Post to Xero</>}
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             <Card className="shadow-sm border-border/50">
               <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
-                <CardTitle className="font-display text-lg flex items-center">
-                  <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> Notes
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-display text-lg flex items-center">
+                    <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> Notes
+                  </CardTitle>
+                  {!editingNotes && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                      setNotesValue(order.notes ?? "");
+                      setEditingNotes(true);
+                    }}>
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="py-4">
-                <div className="text-sm text-muted-foreground bg-muted/30 p-3 rounded-lg border border-border/50 min-h-[100px]">
-                  {order.notes || "No notes for this order."}
-                </div>
+                {editingNotes ? (
+                  <div className="space-y-2">
+                    <textarea
+                      className="w-full text-sm rounded-md border border-input bg-background px-3 py-2 min-h-[120px] resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                      value={notesValue}
+                      onChange={e => setNotesValue(e.target.value)}
+                      placeholder="Add notes for this order…"
+                    />
+                    <div className="flex gap-2">
+                      <Button size="sm" className="flex-1 h-7 text-xs" onClick={() => updateNotesMutation.mutate(notesValue || null)} disabled={updateNotesMutation.isPending}>
+                        {updateNotesMutation.isPending ? <><Loader2 className="w-3 h-3 animate-spin" /> Saving…</> : "Save"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="flex-1 h-7 text-xs" onClick={() => setEditingNotes(false)}>Cancel</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="text-sm cursor-pointer hover:bg-muted/40 transition-colors bg-muted/30 p-3 rounded-lg border border-border/50 min-h-[80px]"
+                    onClick={() => { setNotesValue(order.notes ?? ""); setEditingNotes(true); }}
+                  >
+                    {order.notes
+                      ? <span className="whitespace-pre-wrap">{order.notes}</span>
+                      : <span className="text-muted-foreground italic">No notes for this order. Click to add.</span>
+                    }
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
