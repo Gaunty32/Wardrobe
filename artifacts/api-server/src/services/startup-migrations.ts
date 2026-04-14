@@ -134,5 +134,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_method text;
   `);
 
+  // Add supplier_price to products
+  await db.execute(sql`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier_price numeric(10,2);
+  `);
+
   console.log("[startup] Migrations complete");
 }

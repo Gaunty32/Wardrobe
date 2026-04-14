@@ -21,4 +21,6 @@ export interface UpdateProductBody {
   secondarySupplierId?: number | null;
   /** @nullable */
   supplierCode?: string | null;
+  /** @nullable */
+  supplierPrice?: number | null;
 }

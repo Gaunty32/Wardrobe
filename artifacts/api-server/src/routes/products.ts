@@ -30,6 +30,7 @@ router.get("/products", async (req, res): Promise<void> => {
     products.map((p) => ({
       ...p,
       unitPrice: parseFloat(p.unitPrice),
+      supplierPrice: p.supplierPrice != null ? parseFloat(p.supplierPrice) : null,
     }))
   );
 });
@@ -59,7 +60,7 @@ router.get("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  res.json({ ...product, unitPrice: parseFloat(product.unitPrice) });
+  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null });
 });
 
 router.patch("/products/:id", async (req, res): Promise<void> => {
@@ -89,7 +90,7 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  res.json({ ...product, unitPrice: parseFloat(product.unitPrice) });
+  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null });
 });
 
 router.delete("/products/:id", async (req, res): Promise<void> => {

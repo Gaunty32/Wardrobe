@@ -384,7 +384,8 @@ export default function ProductDetail() {
 
   const [details, setDetails] = useState<{
     name: string; sku: string; description: string;
-    unitPrice: number; supplierId: string; secondarySupplierId: string; supplierCode: string;
+    unitPrice: number; supplierId: string; secondarySupplierId: string;
+    supplierCode: string; supplierPrice: string;
   } | null>(null);
   const [detailsDirty, setDetailsDirty] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
@@ -399,6 +400,7 @@ export default function ProductDetail() {
         supplierId: product.supplierId ? String(product.supplierId) : "none",
         secondarySupplierId: product.secondarySupplierId ? String(product.secondarySupplierId) : "none",
         supplierCode: product.supplierCode || "",
+        supplierPrice: product.supplierPrice != null ? String(product.supplierPrice) : "",
       });
     }
   }, [product, details]);
@@ -421,6 +423,7 @@ export default function ProductDetail() {
           supplierId: details.supplierId !== "none" ? Number(details.supplierId) : null,
           secondarySupplierId: details.secondarySupplierId !== "none" ? Number(details.secondarySupplierId) : null,
           supplierCode: details.supplierCode || null,
+          supplierPrice: details.supplierPrice !== "" ? parseFloat(details.supplierPrice) : null,
         },
       },
       {
@@ -523,11 +526,10 @@ export default function ProductDetail() {
                   </div>
 
                   <div className="border-t border-border/40 pt-5 mt-1">
-                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Default Suppliers</h4>
-                    <p className="text-sm text-muted-foreground mb-4">These are used as defaults when adding new variants. You can override suppliers per variant.</p>
+                    <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Supplier</h4>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="grid gap-2">
-                        <Label>Primary Supplier</Label>
+                        <Label>Preferred Supplier</Label>
                         <SupplierSelect value={details.supplierId} onChange={v => handleDetailChange("supplierId", v)} suppliers={suppliers} />
                       </div>
                       <div className="grid gap-2">
@@ -535,9 +537,15 @@ export default function ProductDetail() {
                         <SupplierSelect value={details.secondarySupplierId} onChange={v => handleDetailChange("secondarySupplierId", v)} suppliers={suppliers} />
                       </div>
                     </div>
-                    <div className="grid gap-2 mt-4">
-                      <Label>Supplier Reference Code</Label>
-                      <Input className="max-w-xs" value={details.supplierCode} onChange={e => handleDetailChange("supplierCode", e.target.value)} placeholder="e.g. SUP-4521" />
+                    <div className="grid grid-cols-2 gap-4 mt-4">
+                      <div className="grid gap-2">
+                        <Label>FCC / Supplier Code</Label>
+                        <Input value={details.supplierCode} onChange={e => handleDetailChange("supplierCode", e.target.value)} placeholder="e.g. FCC2105" />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Supplier Price (£)</Label>
+                        <Input type="number" min="0" step="0.01" value={details.supplierPrice} onChange={e => handleDetailChange("supplierPrice", e.target.value)} placeholder="0.00" />
+                      </div>
                     </div>
                   </div>
 

@@ -13,6 +13,7 @@ export const productsTable = pgTable("products", {
   supplierId: integer("supplier_id"),
   secondarySupplierId: integer("secondary_supplier_id"),
   supplierCode: text("supplier_code"),
+  supplierPrice: numeric("supplier_price", { precision: 10, scale: 2 }),
   imageUrl: text("image_url"),
   wooCommerceId: integer("woo_commerce_id"),
   taxStatus: text("tax_status"),

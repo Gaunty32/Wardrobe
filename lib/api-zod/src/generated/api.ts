@@ -194,6 +194,7 @@ export const UpdateProductBody = zod.object({
   supplierId: zod.number().nullish(),
   secondarySupplierId: zod.number().nullish(),
   supplierCode: zod.string().nullish(),
+  supplierPrice: zod.number().nullish(),
 });
 
 export const UpdateProductResponse = zod.object({
@@ -206,6 +207,7 @@ export const UpdateProductResponse = zod.object({
   supplierId: zod.number().nullable(),
   secondarySupplierId: zod.number().nullable(),
   supplierCode: zod.string().nullable(),
+  supplierPrice: zod.number().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
