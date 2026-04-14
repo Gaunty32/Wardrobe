@@ -450,8 +450,8 @@ export default function ProductDetail() {
         secondarySupplierId: product.secondarySupplierId ? String(product.secondarySupplierId) : "none",
         supplierCode: product.supplierCode || "",
         supplierPrice: product.supplierPrice != null ? String(product.supplierPrice) : "",
-        secondarySupplierCode: (product as any).secondarySupplierCode || "",
-        secondarySupplierPrice: (product as any).secondarySupplierPrice != null ? String((product as any).secondarySupplierPrice) : "",
+        secondarySupplierCode: product.secondarySupplierCode || "",
+        secondarySupplierPrice: product.secondarySupplierPrice != null ? String(product.secondarySupplierPrice) : "",
       });
     }
   }, [product, details]);
