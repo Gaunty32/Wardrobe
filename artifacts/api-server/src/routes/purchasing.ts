@@ -6,6 +6,7 @@ import {
   db, orderItemsTable, ordersTable, productsTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
 } from "@workspace/db";
+import { sendEmail, generatePOPdf, buildPOEmail, isEmailConfigured } from "../services/email.js";
 
 const router: IRouter = Router();
 
@@ -280,6 +281,61 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
   // (not just because a quantity was entered) — delivery tracking happens at PO level
 
   res.json(poItem);
+});
+
+router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const body = z.object({ notes: z.string().optional().default(""), recipientEmail: z.string().email().optional() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const po = await getPoWithItems(params.data.id);
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+
+  const toEmail = body.data.recipientEmail ?? po.supplierEmail;
+  if (!toEmail) { res.status(400).json({ error: "No supplier email address on record. Please enter one." }); return; }
+
+  const poData = {
+    poNumber: po.poNumber,
+    supplierName: po.supplierName,
+    supplierEmail: po.supplierEmail,
+    createdAt: po.createdAt,
+    notes: po.notes,
+    items: po.items.map((i) => ({
+      supplierCode: i.supplierCode,
+      productName: i.productName,
+      colour: i.colour,
+      size: i.size,
+      supplierPrice: i.supplierPrice,
+      quantityOrdered: i.quantityOrdered,
+    })),
+  };
+
+  const { subject, html, text } = buildPOEmail(poData, body.data.notes);
+  let pdfBuffer: Buffer | undefined;
+  try { pdfBuffer = await generatePOPdf(poData); } catch (e: any) {
+    res.status(500).json({ error: `PDF generation failed: ${e.message}` }); return;
+  }
+
+  const result = await sendEmail({
+    to: toEmail,
+    subject,
+    html,
+    text,
+    attachments: pdfBuffer ? [{ filename: `${po.poNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" }] : [],
+  });
+
+  if (!result.sent) {
+    res.status(500).json({ error: result.error ?? "Failed to send email" }); return;
+  }
+
+  // Mark the PO as ordered if it was still draft
+  if (po.status === "draft") {
+    await db.update(purchaseOrdersTable).set({ status: "ordered", sentAt: new Date(), updatedAt: new Date() }).where(eq(purchaseOrdersTable.id, po.id));
+  }
+
+  res.json({ ok: true, to: toEmail });
 });
 
 router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void> => {

@@ -63,83 +63,143 @@ const STATUS_CFG = {
   delivered: { label: "Delivered", color: "bg-green-100 text-green-800 border-green-300", icon: PackageCheck },
 };
 
-function POMatrixView({ items }: { items: POItem[] }) {
-  type ProductGroup = { supplierCode: string | null; supplierPrice: number | null; productName: string; items: POItem[] };
-  const groupMap = new Map<string, ProductGroup>();
+function buildPOMatrix(items: POItem[]) {
+  const groupKeys: string[] = [];
+  const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>> }>();
   for (const item of items) {
-    const key = item.supplierCode ?? item.productName;
-    if (!groupMap.has(key)) {
-      groupMap.set(key, { supplierCode: item.supplierCode, supplierPrice: item.supplierPrice, productName: item.productName, items: [] });
-    }
-    groupMap.get(key)!.items.push(item);
+    const gk = item.supplierCode ?? item.productName;
+    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map() }); }
+    const g = groups.get(gk)!;
+    const c = item.colour ?? "—"; const s = item.size ?? "—";
+    if (!g.colours.includes(c)) g.colours.push(c);
+    if (!g.sizes.includes(s)) g.sizes.push(s);
+    if (!g.qty.has(c)) g.qty.set(c, new Map());
+    g.qty.get(c)!.set(s, item.quantityOrdered);
+    if (item.supplierPrice != null && g.price == null) g.price = item.supplierPrice;
   }
-  const groups = [...groupMap.values()];
+  const allSizes: string[] = [];
+  for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) if (!allSizes.includes(s)) allSizes.push(s);
+  return { groupKeys, groups, allSizes };
+}
+
+function POMatrixView({ items }: { items: POItem[] }) {
+  const { groupKeys, groups, allSizes } = buildPOMatrix(items);
 
   return (
-    <div className="space-y-5">
-      {groups.map((group) => {
-        const colours = [...new Set(group.items.map((i) => i.colour ?? "—"))];
-        const sizes = [...new Set(group.items.map((i) => i.size ?? "—"))];
-        const qtyMap = new Map<string, Map<string, number>>();
-        for (const item of group.items) {
-          const c = item.colour ?? "—"; const s = item.size ?? "—";
-          if (!qtyMap.has(c)) qtyMap.set(c, new Map());
-          qtyMap.get(c)!.set(s, item.quantityOrdered);
-        }
-        return (
-          <div key={group.supplierCode ?? group.productName}>
-            <div className="flex items-center gap-3 mb-2 flex-wrap">
-              {group.supplierCode && (
-                <span className="font-mono font-bold text-sm bg-indigo-50 border border-indigo-200 text-indigo-700 rounded px-2 py-0.5">
-                  {group.supplierCode}
-                </span>
-              )}
-              <span className="font-semibold text-sm">{group.productName}</span>
-              {group.supplierPrice != null && (
-                <span className="text-sm text-muted-foreground">£{group.supplierPrice.toFixed(2)}/unit</span>
-              )}
-            </div>
-            <div className="overflow-x-auto rounded-lg border border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/40">
-                    <TableHead className="font-semibold">Colour</TableHead>
-                    {sizes.map((s) => <TableHead key={s} className="text-center font-semibold">{s}</TableHead>)}
-                    <TableHead className="text-center font-semibold">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {colours.map((colour) => {
-                    const sizeMap = qtyMap.get(colour) ?? new Map();
-                    const rowTotal = sizes.reduce((sum, s) => sum + (sizeMap.get(s) ?? 0), 0);
-                    return (
-                      <TableRow key={colour}>
-                        <TableCell className="font-medium">{colour}</TableCell>
-                        {sizes.map((s) => {
-                          const qty = sizeMap.get(s) ?? 0;
-                          return <TableCell key={s} className="text-center">{qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground">—</span>}</TableCell>;
-                        })}
-                        <TableCell className="text-center font-bold">{rowTotal}</TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {colours.length > 1 && (
-                    <TableRow className="border-t-2 bg-muted/20">
-                      <TableCell className="font-bold text-sm">Total</TableCell>
-                      {sizes.map((s) => {
-                        const colTotal = colours.reduce((sum, c) => sum + ((qtyMap.get(c) ?? new Map()).get(s) ?? 0), 0);
-                        return <TableCell key={s} className="text-center font-bold">{colTotal > 0 ? colTotal : "—"}</TableCell>;
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-800 text-white">
+            <TableHead className="font-semibold text-white">Code</TableHead>
+            <TableHead className="font-semibold text-white">Colour</TableHead>
+            {allSizes.map((s) => <TableHead key={s} className="text-center font-semibold text-white">{s}</TableHead>)}
+            <TableHead className="text-center font-semibold text-white">Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groupKeys.map((gk) => {
+            const g = groups.get(gk)!;
+            const groupTotal = g.colours.reduce((sum, c) => sum + allSizes.reduce((s2, sz) => s2 + (g.qty.get(c)?.get(sz) ?? 0), 0), 0);
+            return (
+              <>
+                {g.colours.map((colour, ci) => {
+                  const rowTotal = allSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+                  return (
+                    <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
+                      {ci === 0 ? (
+                        <TableCell className="font-mono font-bold text-sm text-indigo-700 align-top pt-3">
+                          <div>{g.code ?? "—"}</div>
+                          <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
+                          {g.price != null && <div className="text-xs text-muted-foreground">£{g.price.toFixed(2)}/u</div>}
+                        </TableCell>
+                      ) : (
+                        <TableCell />
+                      )}
+                      <TableCell className="font-medium">{colour}</TableCell>
+                      {allSizes.map((sz) => {
+                        const qty = g.qty.get(colour)?.get(sz) ?? 0;
+                        return <TableCell key={sz} className="text-center">{qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>;
                       })}
-                      <TableCell className="text-center font-bold">{group.items.reduce((s, i) => s + i.quantityOrdered, 0)}</TableCell>
+                      <TableCell className="text-center font-bold">{rowTotal}</TableCell>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        );
-      })}
+                  );
+                })}
+                {g.colours.length > 1 && (
+                  <TableRow className="bg-slate-100 border-t border-slate-300">
+                    <TableCell className="text-xs text-muted-foreground" />
+                    <TableCell className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subtotal</TableCell>
+                    {allSizes.map((sz) => {
+                      const colTotal = g.colours.reduce((sum, c) => sum + (g.qty.get(c)?.get(sz) ?? 0), 0);
+                      return <TableCell key={sz} className="text-center font-semibold text-sm">{colTotal > 0 ? colTotal : <span className="text-muted-foreground text-xs">—</span>}</TableCell>;
+                    })}
+                    <TableCell className="text-center font-bold">{groupTotal}</TableCell>
+                  </TableRow>
+                )}
+              </>
+            );
+          })}
+          {groupKeys.length > 1 && (
+            <TableRow className="bg-slate-800">
+              <TableCell className="text-white font-bold text-sm" colSpan={2}>TOTAL</TableCell>
+              {allSizes.map((sz) => {
+                const t = groupKeys.reduce((sum, gk) => { const g = groups.get(gk)!; return sum + g.colours.reduce((s, c) => s + (g.qty.get(c)?.get(sz) ?? 0), 0); }, 0);
+                return <TableCell key={sz} className="text-center font-bold text-white">{t > 0 ? t : "—"}</TableCell>;
+              })}
+              <TableCell className="text-center font-bold text-white">{items.reduce((s, i) => s + i.quantityOrdered, 0)}</TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </div>
+  );
+}
+
+function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open: boolean; onClose: () => void; onSent: () => void }) {
+  const { toast } = useToast();
+  const [notes, setNotes] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState(po.supplierEmail ?? "");
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      await apiFetch(`/purchasing/purchase-orders/${po.id}/send-email`, {
+        method: "POST",
+        body: JSON.stringify({ notes, recipientEmail: recipientEmail || undefined }),
+      });
+      toast({ title: "PO emailed", description: `Sent to ${recipientEmail || po.supplierEmail}` });
+      onSent();
+      onClose();
+    } catch (e: any) {
+      toast({ title: "Failed to send", description: e.message, variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-primary" />Email PO — {po.poNumber}</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Recipient email</Label>
+            <Input value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} placeholder="supplier@example.com" type="email" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Additional notes (optional)</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={3} />
+          </div>
+          <p className="text-xs text-muted-foreground">A PDF of the order matrix will be attached automatically.</p>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose} disabled={sending}>Cancel</Button>
+          <Button onClick={handleSend} disabled={sending || !recipientEmail} className="gap-2">
+            {sending ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send PO</>}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -282,14 +342,16 @@ function DeliveryRow({ line, onSave }: {
 }
 
 function POCard({
-  po, onStatusChange, onDelete, onLineUpdate,
+  po, onStatusChange, onDelete, onLineUpdate, onRefresh,
 }: {
   po: PurchaseOrder;
   onStatusChange: (id: number, status: string) => void;
   onDelete: (id: number) => void;
   onLineUpdate: (poId: number, itemId: number, data: Record<string, unknown>) => void;
+  onRefresh: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
   const cfg = STATUS_CFG[po.status];
   const StatusIcon = cfg.icon;
 
@@ -332,6 +394,11 @@ function POCard({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          {(po.status === "draft" || po.status === "ordered") && (
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEmailOpen(true)}>
+              <Mail className="w-3.5 h-3.5" /> Email PO
+            </Button>
+          )}
           {po.status === "draft" && (
             <Button size="sm" className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onStatusChange(po.id, "ordered")}>
               <Send className="w-3.5 h-3.5" /> Mark Ordered
@@ -374,6 +441,10 @@ function POCard({
             </>
           )}
         </div>
+      )}
+
+      {emailOpen && (
+        <POEmailDialog po={po} open={emailOpen} onClose={() => setEmailOpen(false)} onSent={onRefresh} />
       )}
     </div>
   );
@@ -638,6 +709,7 @@ export default function Purchasing() {
                       onStatusChange={(id, status) => statusMutation.mutate({ id, status })}
                       onDelete={(id) => { if (confirm("Delete this draft PO?")) deleteMutation.mutate(id); }}
                       onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
+                      onRefresh={() => { refetchPos(); refetchReqs(); }}
                     />
                   ))}
                 </div>
