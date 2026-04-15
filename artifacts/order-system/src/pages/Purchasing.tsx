@@ -653,10 +653,11 @@ export default function Purchasing() {
                                 disabled={addToPoMutation.isPending}>
                                 <Plus className="w-3.5 h-3.5" /> Add to Draft PO ({existingDraft.poNumber})
                               </Button>
-                            ) : null}
-                            <Button size="sm" className="gap-1.5 text-xs bg-primary hover:bg-primary/90" onClick={() => setCreatePoGroup(group)}>
-                              <FileText className="w-3.5 h-3.5" /> Create Draft PO
-                            </Button>
+                            ) : (
+                              <Button size="sm" className="gap-1.5 text-xs bg-primary hover:bg-primary/90" onClick={() => setCreatePoGroup(group)}>
+                                <FileText className="w-3.5 h-3.5" /> Create Draft PO
+                              </Button>
+                            )}
                             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEmailGroup(group)}>
                               <Mail className="w-3.5 h-3.5" /> Email
                             </Button>
