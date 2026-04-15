@@ -729,7 +729,7 @@ export default function Purchasing() {
                 <div className="rounded-lg border border-border divide-y text-sm">
                   {createPoGroup.items.map((item) => (
                     <div key={item.itemId} className="flex justify-between px-3 py-2">
-                      <span className="font-medium">{item.productName}</span>
+                      <span className="font-medium">{productDisplayName(item)}</span>
                       <span className="text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ")} <strong>× {item.purchaseQuantity}</strong></span>
                     </div>
                   ))}
