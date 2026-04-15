@@ -296,6 +296,8 @@ function POCard({
   const totalOrdered = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
   const totalDelivered = po.items.reduce((s, i) => s + i.quantityDelivered, 0);
   const allDelivered = po.items.length > 0 && po.items.every((i) => i.quantityDelivered >= i.quantityOrdered);
+  const totalValue = po.items.reduce((s, i) => s + (i.supplierPrice != null ? i.supplierPrice * i.quantityOrdered : 0), 0);
+  const hasValue = po.items.some((i) => i.supplierPrice != null);
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -312,7 +314,17 @@ function POCard({
               <span className="mx-1">·</span>
               <span>{po.items.length} line{po.items.length !== 1 ? "s" : ""}</span>
               <span className="mx-1">·</span>
-              <span>{totalDelivered}/{totalOrdered} units</span>
+              {po.status === "draft" || po.status === "ordered" ? (
+                <span>{totalOrdered} unit{totalOrdered !== 1 ? "s" : ""}</span>
+              ) : (
+                <span>{totalDelivered}/{totalOrdered} units</span>
+              )}
+              {hasValue && (
+                <>
+                  <span className="mx-1">·</span>
+                  <span className="font-semibold text-foreground">£{totalValue.toFixed(2)}</span>
+                </>
+              )}
               <span className="mx-1">·</span>
               <span>{formatDate(po.createdAt)}</span>
             </div>
