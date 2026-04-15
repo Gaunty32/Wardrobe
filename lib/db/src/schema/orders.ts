@@ -67,6 +67,8 @@ export const purchaseOrderItemsTable = pgTable("purchase_order_items", {
   productName: text("product_name").notNull(),
   colour: text("colour"),
   size: text("size"),
+  supplierCode: text("supplier_code"),
+  supplierPrice: numeric("supplier_price", { precision: 10, scale: 2 }),
   quantityOrdered: integer("quantity_ordered").notNull().default(1),
   quantityDelivered: integer("quantity_delivered").notNull().default(0),
   estimatedDueDate: timestamp("estimated_due_date", { withTimezone: true }),

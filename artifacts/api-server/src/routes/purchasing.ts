@@ -39,7 +39,16 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .leftJoin(itemSupplier, eq(orderItemsTable.supplierId, itemSupplier.id))
     .leftJoin(productSupplier, eq(productsTable.supplierId, productSupplier.id))
-    .where(eq(orderItemsTable.purchaseRequired, true))
+    .where(and(
+      eq(orderItemsTable.purchaseRequired, true),
+      sql`${orderItemsTable.id} NOT IN (
+        SELECT poi.order_item_id
+        FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON poi.po_id = po.id
+        WHERE po.status IN ('draft', 'ordered')
+        AND poi.order_item_id IS NOT NULL
+      )`,
+    ))
     .orderBy(
       sql`COALESCE(${itemSupplier.name}, ${productSupplier.name}, ${orderItemsTable.supplierName})`,
       orderItemsTable.productName,
@@ -97,11 +106,46 @@ router.get("/purchasing/stock-check", async (req, res): Promise<void> => {
 
 // ─── Purchase Orders ──────────────────────────────────────────────────────────
 
+function parsePOItem(item: Record<string, unknown>) {
+  return {
+    ...item,
+    supplierPrice: item.supplierPrice != null ? parseFloat(item.supplierPrice as string) : null,
+  };
+}
+
 async function getPoWithItems(poId: number) {
   const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
   if (!po) return null;
   const items = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, poId));
-  return { ...po, items };
+  return { ...po, items: items.map(parsePOItem) };
+}
+
+async function buildPoItems(orderItemIds: number[], poId: number) {
+  const orderItems = await db
+    .select({
+      item: orderItemsTable,
+      orderNumber: ordersTable.orderNumber,
+      supplierCode: productsTable.supplierCode,
+      supplierPrice: productsTable.supplierPrice,
+    })
+    .from(orderItemsTable)
+    .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(inArray(orderItemsTable.id, orderItemIds));
+
+  return orderItems.map((row) => ({
+    poId,
+    orderItemId: row.item.id,
+    orderId: row.item.orderId,
+    orderNumber: row.orderNumber ?? null,
+    productName: row.item.productName,
+    colour: row.item.colour ?? null,
+    size: row.item.size ?? null,
+    supplierCode: row.supplierCode ?? null,
+    supplierPrice: row.supplierPrice ?? null,
+    quantityOrdered: row.item.purchaseQuantity ?? 1,
+    quantityDelivered: 0,
+  }));
 }
 
 router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
@@ -112,7 +156,7 @@ router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
     : [];
   const result = pos.map((po) => ({
     ...po,
-    items: allItems.filter((i) => i.poId === po.id),
+    items: allItems.filter((i) => i.poId === po.id).map(parsePOItem),
   }));
   res.json(result);
 });
@@ -148,23 +192,8 @@ router.post("/purchasing/purchase-orders", async (req, res): Promise<void> => {
   }).returning();
 
   if (parsed.data.itemIds.length > 0) {
-    const orderItems = await db.select().from(orderItemsTable)
-      .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-      .where(inArray(orderItemsTable.id, parsed.data.itemIds));
-
-    await db.insert(purchaseOrderItemsTable).values(
-      orderItems.map((row) => ({
-        poId: po.id,
-        orderItemId: row.order_items.id,
-        orderId: row.order_items.orderId,
-        orderNumber: row.orders?.orderNumber ?? null,
-        productName: row.order_items.productName,
-        colour: row.order_items.colour ?? null,
-        size: row.order_items.size ?? null,
-        quantityOrdered: row.order_items.purchaseQuantity ?? 1,
-        quantityDelivered: 0,
-      }))
-    );
+    const poItems = await buildPoItems(parsed.data.itemIds, po.id);
+    await db.insert(purchaseOrderItemsTable).values(poItems);
   }
 
   const result = await getPoWithItems(po.id);
@@ -204,23 +233,8 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
   if (po.status !== "draft") { res.status(400).json({ error: "Can only add items to a draft PO" }); return; }
 
-  const orderItems = await db.select().from(orderItemsTable)
-    .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .where(inArray(orderItemsTable.id, parsed.data.itemIds));
-
-  await db.insert(purchaseOrderItemsTable).values(
-    orderItems.map((row) => ({
-      poId: po.id,
-      orderItemId: row.order_items.id,
-      orderId: row.order_items.orderId,
-      orderNumber: row.orders?.orderNumber ?? null,
-      productName: row.order_items.productName,
-      colour: row.order_items.colour ?? null,
-      size: row.order_items.size ?? null,
-      quantityOrdered: row.order_items.purchaseQuantity ?? 1,
-      quantityDelivered: 0,
-    }))
-  );
+  const poItems = await buildPoItems(parsed.data.itemIds, po.id);
+  await db.insert(purchaseOrderItemsTable).values(poItems);
 
   const result = await getPoWithItems(po.id);
   res.json(result);

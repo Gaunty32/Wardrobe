@@ -46,8 +46,9 @@ interface SupplierGroup {
 
 interface POItem {
   id: number; poId: number; orderItemId: number | null; orderId: number | null; orderNumber: string | null;
-  productName: string; colour: string | null; size: string | null; quantityOrdered: number;
-  quantityDelivered: number; estimatedDueDate: string | null; notes: string | null;
+  productName: string; colour: string | null; size: string | null;
+  supplierCode: string | null; supplierPrice: number | null;
+  quantityOrdered: number; quantityDelivered: number; estimatedDueDate: string | null; notes: string | null;
 }
 
 interface PurchaseOrder {
@@ -62,10 +63,84 @@ const STATUS_CFG = {
   delivered: { label: "Delivered", color: "bg-green-100 text-green-800 border-green-300", icon: PackageCheck },
 };
 
-function lineStatus(item: POItem) {
-  if (item.quantityDelivered >= item.quantityOrdered) return "delivered";
-  if (item.quantityDelivered > 0) return "partial";
-  return "pending";
+function POMatrixView({ items }: { items: POItem[] }) {
+  type ProductGroup = { supplierCode: string | null; supplierPrice: number | null; productName: string; items: POItem[] };
+  const groupMap = new Map<string, ProductGroup>();
+  for (const item of items) {
+    const key = item.supplierCode ?? item.productName;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, { supplierCode: item.supplierCode, supplierPrice: item.supplierPrice, productName: item.productName, items: [] });
+    }
+    groupMap.get(key)!.items.push(item);
+  }
+  const groups = [...groupMap.values()];
+
+  return (
+    <div className="space-y-5">
+      {groups.map((group) => {
+        const colours = [...new Set(group.items.map((i) => i.colour ?? "—"))];
+        const sizes = [...new Set(group.items.map((i) => i.size ?? "—"))];
+        const qtyMap = new Map<string, Map<string, number>>();
+        for (const item of group.items) {
+          const c = item.colour ?? "—"; const s = item.size ?? "—";
+          if (!qtyMap.has(c)) qtyMap.set(c, new Map());
+          qtyMap.get(c)!.set(s, item.quantityOrdered);
+        }
+        return (
+          <div key={group.supplierCode ?? group.productName}>
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              {group.supplierCode && (
+                <span className="font-mono font-bold text-sm bg-indigo-50 border border-indigo-200 text-indigo-700 rounded px-2 py-0.5">
+                  {group.supplierCode}
+                </span>
+              )}
+              <span className="font-semibold text-sm">{group.productName}</span>
+              {group.supplierPrice != null && (
+                <span className="text-sm text-muted-foreground">£{group.supplierPrice.toFixed(2)}/unit</span>
+              )}
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40">
+                    <TableHead className="font-semibold">Colour</TableHead>
+                    {sizes.map((s) => <TableHead key={s} className="text-center font-semibold">{s}</TableHead>)}
+                    <TableHead className="text-center font-semibold">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {colours.map((colour) => {
+                    const sizeMap = qtyMap.get(colour) ?? new Map();
+                    const rowTotal = sizes.reduce((sum, s) => sum + (sizeMap.get(s) ?? 0), 0);
+                    return (
+                      <TableRow key={colour}>
+                        <TableCell className="font-medium">{colour}</TableCell>
+                        {sizes.map((s) => {
+                          const qty = sizeMap.get(s) ?? 0;
+                          return <TableCell key={s} className="text-center">{qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground">—</span>}</TableCell>;
+                        })}
+                        <TableCell className="text-center font-bold">{rowTotal}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {colours.length > 1 && (
+                    <TableRow className="border-t-2 bg-muted/20">
+                      <TableCell className="font-bold text-sm">Total</TableCell>
+                      {sizes.map((s) => {
+                        const colTotal = colours.reduce((sum, c) => sum + ((qtyMap.get(c) ?? new Map()).get(s) ?? 0), 0);
+                        return <TableCell key={s} className="text-center font-bold">{colTotal > 0 ? colTotal : "—"}</TableCell>;
+                      })}
+                      <TableCell className="text-center font-bold">{group.items.reduce((s, i) => s + i.quantityOrdered, 0)}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function buildEmailBody(group: SupplierGroup, notes: string): string {
@@ -167,90 +242,41 @@ function EmailDialog({ group, open, onClose, onSent }: { group: SupplierGroup; o
   );
 }
 
-function POLineRow({ po, line, onSave }: {
-  po: PurchaseOrder;
+function DeliveryRow({ line, onSave }: {
   line: POItem;
-  onSave: (itemId: number, data: { quantityDelivered?: number; estimatedDueDate?: string | null; notes?: string | null }) => void;
+  onSave: (itemId: number, data: { quantityDelivered?: number; estimatedDueDate?: string | null }) => void;
 }) {
   const [qtyDel, setQtyDel] = useState(String(line.quantityDelivered));
-  const [dueDate, setDueDate] = useState(line.estimatedDueDate ? line.estimatedDueDate.split("T")[0] : "");
-  const [notes, setNotes] = useState(line.notes ?? "");
   const [dirty, setDirty] = useState(false);
-  const status = lineStatus(line);
-
-  const statusConfig = {
-    pending: { label: "Pending", color: "bg-slate-100 text-slate-600 border-slate-200" },
-    partial: { label: "Partial", color: "bg-amber-100 text-amber-700 border-amber-300" },
-    delivered: { label: "Delivered", color: "bg-green-100 text-green-700 border-green-300" },
-  };
-
-  const isDraft = po.status === "draft";
-  const isEditable = po.status === "ordered" || isDraft;
+  const fullyDelivered = line.quantityDelivered >= line.quantityOrdered;
 
   return (
-    <div className="rounded-lg border border-border bg-background p-3 space-y-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-sm">{line.productName}</div>
-          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-            {line.colour && <Badge variant="outline" className="text-xs py-0">{line.colour}</Badge>}
-            {line.size && <Badge variant="outline" className="text-xs py-0">{line.size}</Badge>}
-            {line.orderNumber && <span className="text-xs text-muted-foreground">Order {line.orderNumber}</span>}
-          </div>
-        </div>
-        <Badge className={`text-xs flex-shrink-0 ${statusConfig[status].color}`}>{statusConfig[status].label}</Badge>
+    <div className="flex items-center gap-3 py-1.5 px-2 rounded-md hover:bg-muted/20 transition-colors">
+      <div className="flex-1 min-w-0 text-sm">
+        <span className="font-medium">{line.productName}</span>
+        {(line.colour || line.size) && (
+          <span className="text-muted-foreground ml-2">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
+        )}
       </div>
-
-      <div className="grid grid-cols-3 gap-2 items-end">
-        <div>
-          <div className="text-xs text-muted-foreground mb-1">Ordered</div>
-          <div className="h-9 flex items-center px-3 rounded-md border border-transparent bg-muted/30 text-sm font-semibold">{line.quantityOrdered}</div>
-        </div>
-        <div>
-          <div className="text-xs text-muted-foreground mb-1">Delivered</div>
-          {isEditable ? (
-            <Input
-              type="number" min={0} max={line.quantityOrdered} value={qtyDel}
-              onChange={(e) => { setQtyDel(e.target.value); setDirty(true); }}
-              className="h-9 text-sm"
-            />
-          ) : (
-            <div className="h-9 flex items-center px-3 rounded-md border border-transparent bg-muted/30 text-sm font-semibold">{line.quantityDelivered}</div>
-          )}
-        </div>
-        <div>
-          <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1"><CalendarDays className="w-3 h-3" />Est. Due</div>
-          {isEditable ? (
-            <Input type="date" value={dueDate} onChange={(e) => { setDueDate(e.target.value); setDirty(true); }} className="h-9 text-sm" />
-          ) : (
-            <div className="h-9 flex items-center px-3 rounded-md border border-transparent bg-muted/30 text-xs text-muted-foreground">
-              {line.estimatedDueDate ? formatDate(line.estimatedDueDate) : "—"}
-            </div>
-          )}
-        </div>
+      <span className="text-xs text-muted-foreground w-20 text-right">Ordered: <strong>{line.quantityOrdered}</strong></span>
+      <div className="flex items-center gap-1.5">
+        <Input
+          type="number" min={0} max={line.quantityOrdered} value={qtyDel}
+          onChange={(e) => { setQtyDel(e.target.value); setDirty(true); }}
+          className="h-7 w-16 text-sm text-center px-1"
+        />
+        <span className="text-xs text-muted-foreground">rcvd</span>
       </div>
-
-      {isEditable && (
-        <div className="space-y-1">
-          <Input placeholder="Line notes..." value={notes} onChange={(e) => { setNotes(e.target.value); setDirty(true); }} className="h-8 text-xs" />
-        </div>
+      {dirty && (
+        <Button size="sm" className="h-7 text-xs gap-1 px-2" onClick={() => {
+          const parsed = parseInt(qtyDel);
+          onSave(line.id, { quantityDelivered: isNaN(parsed) ? 0 : Math.max(0, Math.min(parsed, line.quantityOrdered)) });
+          setDirty(false);
+        }}>
+          <CheckCircle className="w-3 h-3" /> Save
+        </Button>
       )}
-
-      {isEditable && dirty && (
-        <div className="flex justify-end">
-          <Button size="sm" className="h-7 text-xs gap-1" onClick={() => {
-            const parsed = parseInt(qtyDel);
-            onSave(line.id, {
-              quantityDelivered: isNaN(parsed) ? line.quantityDelivered : Math.max(0, Math.min(parsed, line.quantityOrdered)),
-              estimatedDueDate: dueDate || null,
-              notes: notes || null,
-            });
-            setDirty(false);
-          }}>
-            <CheckCircle className="w-3 h-3" /> Save
-          </Button>
-        </div>
-      )}
+      {fullyDelivered && !dirty && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
     </div>
   );
 }
@@ -313,26 +339,27 @@ function POCard({
       </div>
 
       {expanded && (
-        <div className="border-t border-border px-5 py-4 space-y-3">
+        <div className="border-t border-border px-5 py-4 space-y-4">
           {po.notes && <div className="text-sm text-muted-foreground italic border-l-2 border-muted pl-3">{po.notes}</div>}
           {po.items.length === 0 ? (
             <div className="text-sm text-muted-foreground py-4 text-center">No lines on this PO yet.</div>
           ) : (
-            <div className="space-y-2">
-              {po.items.map((line) => (
-                <POLineRow
-                  key={line.id}
-                  po={po}
-                  line={line}
-                  onSave={(lineId, data) => onLineUpdate(po.id, lineId, data)}
-                />
-              ))}
-            </div>
-          )}
-          {po.status === "ordered" && !allDelivered && (
-            <div className="text-xs text-muted-foreground text-center pt-1">
-              Update delivered quantities above, then "Mark Delivered" will appear when all lines are complete.
-            </div>
+            <>
+              <POMatrixView items={po.items} />
+              {po.status === "ordered" && (
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Record Deliveries</h4>
+                  <div className="space-y-1.5">
+                    {po.items.map((line) => (
+                      <DeliveryRow key={line.id} line={line} onSave={(lineId, data) => onLineUpdate(po.id, lineId, data)} />
+                    ))}
+                  </div>
+                  {!allDelivered && (
+                    <p className="text-xs text-muted-foreground pt-1">Update quantities received above — "Mark Delivered" appears once all lines are complete.</p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
