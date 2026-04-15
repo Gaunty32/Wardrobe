@@ -218,6 +218,17 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
   const [po] = await db.update(purchaseOrdersTable).set(updateData).where(eq(purchaseOrdersTable.id, params.data.id)).returning();
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
+  // When a PO is marked delivered, mark all linked order items as fulfilled
+  if (parsed.data.status === "delivered") {
+    const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, po.id));
+    const linkedOrderItemIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
+    if (linkedOrderItemIds.length > 0) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: false, purchaseQuantity: null })
+        .where(inArray(orderItemsTable.id, linkedOrderItemIds));
+    }
+  }
+
   const result = await getPoWithItems(po.id);
   res.json(result);
 });
@@ -265,11 +276,8 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
 
   if (!poItem) { res.status(404).json({ error: "PO line not found" }); return; }
 
-  if (poItem.orderItemId && poItem.quantityDelivered >= poItem.quantityOrdered) {
-    await db.update(orderItemsTable)
-      .set({ purchaseRequired: false, purchaseQuantity: null })
-      .where(eq(orderItemsTable.id, poItem.orderItemId));
-  }
+  // Only mark the order item as fulfilled once the parent PO itself is marked delivered
+  // (not just because a quantity was entered) — delivery tracking happens at PO level
 
   res.json(poItem);
 });
@@ -277,6 +285,16 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
 router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  // Restore purchaseRequired on any linked order items before deleting
+  const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, parsed.data.id));
+  const linkedOrderItemIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
+  if (linkedOrderItemIds.length > 0) {
+    await db.update(orderItemsTable)
+      .set({ purchaseRequired: true })
+      .where(inArray(orderItemsTable.id, linkedOrderItemIds));
+  }
+
   const [po] = await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, parsed.data.id)).returning();
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
   res.sendStatus(204);
