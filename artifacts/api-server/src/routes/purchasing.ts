@@ -283,6 +283,39 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
   res.json(poItem);
 });
 
+router.get("/purchasing/purchase-orders/:id/pdf", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const po = await getPoWithItems(parsed.data.id);
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+
+  const poData = {
+    poNumber: po.poNumber,
+    supplierName: po.supplierName,
+    supplierEmail: po.supplierEmail,
+    createdAt: po.createdAt,
+    notes: po.notes,
+    items: po.items.map((i) => ({
+      supplierCode: i.supplierCode,
+      productName: i.productName,
+      colour: i.colour,
+      size: i.size,
+      supplierPrice: i.supplierPrice,
+      quantityOrdered: i.quantityOrdered,
+    })),
+  };
+
+  try {
+    const pdf = await generatePOPdf(poData);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${po.poNumber}.pdf"`);
+    res.send(pdf);
+  } catch (e: any) {
+    res.status(500).json({ error: `PDF generation failed: ${e.message}` });
+  }
+});
+
 router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Promise<void> => {
   const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }

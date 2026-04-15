@@ -192,7 +192,10 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
           </div>
           <p className="text-xs text-muted-foreground">A PDF of the order matrix will be attached automatically.</p>
         </div>
-        <DialogFooter className="gap-2">
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          <Button variant="outline" className="gap-2 sm:mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
+            <FileText className="w-4 h-4" /> Preview PDF
+          </Button>
           <Button variant="outline" onClick={onClose} disabled={sending}>Cancel</Button>
           <Button onClick={handleSend} disabled={sending || !recipientEmail} className="gap-2">
             {sending ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send PO</>}
