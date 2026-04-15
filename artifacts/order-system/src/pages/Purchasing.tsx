@@ -503,10 +503,15 @@ export default function Purchasing() {
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+  };
+
   const createPoMutation = useMutation({
     mutationFn: (body: Record<string, unknown>) => apiFetch("/purchasing/purchase-orders", { method: "POST", body: JSON.stringify(body) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      invalidateAll();
       setCreatePoGroup(null); setCreatePoNotes("");
       toast({ title: "Draft PO created", description: "Switch to Purchase Orders tab to manage it." });
     },
@@ -516,20 +521,20 @@ export default function Purchasing() {
   const addToPoMutation = useMutation({
     mutationFn: ({ poId, itemIds }: { poId: number; itemIds: number[] }) =>
       apiFetch(`/purchasing/purchase-orders/${poId}/items`, { method: "POST", body: JSON.stringify({ itemIds }) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["purchase-orders"] }); toast({ title: "Items added to draft PO" }); },
+    onSuccess: () => { invalidateAll(); toast({ title: "Items added to draft PO" }); },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
       apiFetch(`/purchasing/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["purchase-orders"] }); toast({ title: "Status updated" }); },
+    onSuccess: () => { invalidateAll(); toast({ title: "Status updated" }); },
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/purchasing/purchase-orders/${id}`, { method: "DELETE" }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["purchase-orders"] }); toast({ title: "PO deleted" }); },
+    onSuccess: () => { invalidateAll(); toast({ title: "PO deleted" }); },
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
