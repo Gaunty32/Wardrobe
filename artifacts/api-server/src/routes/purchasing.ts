@@ -195,6 +195,10 @@ router.post("/purchasing/purchase-orders", async (req, res): Promise<void> => {
   if (parsed.data.itemIds.length > 0) {
     const poItems = await buildPoItems(parsed.data.itemIds, po.id);
     await db.insert(purchaseOrderItemsTable).values(poItems);
+    // Remove items from requirements now that they are on a PO
+    await db.update(orderItemsTable)
+      .set({ purchaseRequired: false, purchaseQuantity: null })
+      .where(inArray(orderItemsTable.id, parsed.data.itemIds));
   }
 
   const result = await getPoWithItems(po.id);
