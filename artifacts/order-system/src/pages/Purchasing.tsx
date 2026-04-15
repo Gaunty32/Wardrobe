@@ -154,27 +154,49 @@ function POMatrixView({ items }: { items: POItem[] }) {
   );
 }
 
+function buildPOMailtoBody(po: PurchaseOrder, notes: string): string {
+  const { groupKeys, groups, allSizes } = buildPOMatrix(po.items);
+  const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const lines: string[] = [
+    `Dear ${po.supplierName},`,
+    ``,
+    `Please supply the following items for purchase order ${po.poNumber} dated ${dateStr}:`,
+    ``,
+  ];
+  for (const gk of groupKeys) {
+    const g = groups.get(gk)!;
+    lines.push(`${g.productName}${g.code ? ` [${g.code}]` : ""}:`);
+    for (const colour of g.colours) {
+      const parts = allSizes
+        .map((sz) => { const q = g.qty.get(colour)?.get(sz) ?? 0; return q > 0 ? `${sz}: ${q}` : null; })
+        .filter(Boolean);
+      lines.push(`  ${colour} — ${parts.join(", ")}`);
+    }
+    lines.push(``);
+  }
+  const totalUnits = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
+  lines.push(`Total units: ${totalUnits}`);
+  if (notes.trim()) lines.push(``, `Notes: ${notes.trim()}`);
+  lines.push(``, `Please see the attached PDF for full details.`, ``, `Kind regards,`, `Select Branding Solutions`);
+  return lines.join("\n");
+}
+
 function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open: boolean; onClose: () => void; onSent: () => void }) {
-  const { toast } = useToast();
   const [notes, setNotes] = useState("");
   const [recipientEmail, setRecipientEmail] = useState(po.supplierEmail ?? "");
-  const [sending, setSending] = useState(false);
 
-  const handleSend = async () => {
-    setSending(true);
-    try {
-      await apiFetch(`/purchasing/purchase-orders/${po.id}/send-email`, {
-        method: "POST",
-        body: JSON.stringify({ notes, recipientEmail: recipientEmail || undefined }),
-      });
-      toast({ title: "PO emailed", description: `Sent to ${recipientEmail || po.supplierEmail}` });
-      onSent();
-      onClose();
-    } catch (e: any) {
-      toast({ title: "Failed to send", description: e.message, variant: "destructive" });
-    } finally {
-      setSending(false);
-    }
+  const handleOpen = () => {
+    const subject = encodeURIComponent(`Purchase Order ${po.poNumber} — Select Branding Solutions`);
+    const body = encodeURIComponent(buildPOMailtoBody(po, notes));
+    const mailto = `mailto:${recipientEmail}?subject=${subject}&body=${body}`;
+    // Download the PDF so they can attach it
+    const a = document.createElement("a");
+    a.href = `/api/purchasing/purchase-orders/${po.id}/pdf`;
+    a.download = `${po.poNumber}.pdf`;
+    a.click();
+    // Small delay so the download starts before the email client opens
+    setTimeout(() => window.open(mailto, "_self"), 300);
+    onClose();
   };
 
   return (
@@ -190,15 +212,17 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
             <Label>Additional notes (optional)</Label>
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={3} />
           </div>
-          <p className="text-xs text-muted-foreground">A PDF of the order matrix will be attached automatically.</p>
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+            The PDF will download automatically — attach it to the email that opens in your email client.
+          </div>
         </div>
         <DialogFooter className="flex-col sm:flex-row gap-2">
           <Button variant="outline" className="gap-2 sm:mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
             <FileText className="w-4 h-4" /> Preview PDF
           </Button>
-          <Button variant="outline" onClick={onClose} disabled={sending}>Cancel</Button>
-          <Button onClick={handleSend} disabled={sending || !recipientEmail} className="gap-2">
-            {sending ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</> : <><Mail className="w-4 h-4" />Send PO</>}
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleOpen} disabled={!recipientEmail} className="gap-2">
+            <Mail className="w-4 h-4" /> Open in Email Client
           </Button>
         </DialogFooter>
       </DialogContent>
