@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   db, orderItemsTable, ordersTable, productsTable, suppliersTable,
@@ -11,6 +12,9 @@ const router: IRouter = Router();
 // ─── Requirements ────────────────────────────────────────────────────────────
 
 router.get("/purchasing/requirements", async (req, res): Promise<void> => {
+  const itemSupplier = alias(suppliersTable, "item_supplier");
+  const productSupplier = alias(suppliersTable, "product_supplier");
+
   const rows = await db
     .select({
       itemId: orderItemsTable.id,
@@ -22,20 +26,24 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
       purchaseQuantity: orderItemsTable.purchaseQuantity,
-      supplierId: orderItemsTable.supplierId,
+      supplierId: sql<number | null>`COALESCE(${orderItemsTable.supplierId}, ${productsTable.supplierId})`,
       supplierName: orderItemsTable.supplierName,
-      resolvedSupplierName: suppliersTable.name,
-      supplierEmail: suppliersTable.email,
+      resolvedSupplierName: sql<string | null>`COALESCE(${itemSupplier.name}, ${productSupplier.name})`,
+      supplierEmail: sql<string | null>`COALESCE(${itemSupplier.email}, ${productSupplier.email})`,
       supplierCode: productsTable.supplierCode,
       productSku: productsTable.sku,
       canonicalProductName: productsTable.name,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .leftJoin(suppliersTable, eq(orderItemsTable.supplierId, suppliersTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .leftJoin(itemSupplier, eq(orderItemsTable.supplierId, itemSupplier.id))
+    .leftJoin(productSupplier, eq(productsTable.supplierId, productSupplier.id))
     .where(eq(orderItemsTable.purchaseRequired, true))
-    .orderBy(orderItemsTable.supplierName, orderItemsTable.productName);
+    .orderBy(
+      sql`COALESCE(${itemSupplier.name}, ${productSupplier.name}, ${orderItemsTable.supplierName})`,
+      orderItemsTable.productName,
+    );
 
   const grouped: Record<string, {
     supplierId: number | null;
