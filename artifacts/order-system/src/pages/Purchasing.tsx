@@ -490,11 +490,13 @@ export default function Purchasing() {
   const { data: groups = [], isLoading: reqLoading, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
     queryFn: () => apiFetch("/purchasing/requirements"),
+    refetchInterval: 30000,
   });
 
   const { data: purchaseOrders = [], isLoading: posLoading, refetch: refetchPos } = useQuery<PurchaseOrder[]>({
     queryKey: ["purchase-orders"],
     queryFn: () => apiFetch("/purchasing/purchase-orders"),
+    refetchInterval: 30000,
   });
 
   const fulfillMutation = useMutation({
@@ -600,7 +602,6 @@ export default function Purchasing() {
                     </Button>
                   )}
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => refetchReqs()}><RefreshCw className="w-4 h-4" /></Button>
               </div>
 
               {reqLoading ? (
@@ -722,7 +723,6 @@ export default function Purchasing() {
                     })}
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => refetchPos()}><RefreshCw className="w-4 h-4" /></Button>
               </div>
 
               {posLoading ? (
