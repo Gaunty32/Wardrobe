@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray, sql, ne, isNotNull, lt } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, lt } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
@@ -496,8 +496,6 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .where(and(
-      ne(purchaseOrdersTable.status, "delivered"),
-      isNotNull(purchaseOrderItemsTable.estimatedDueDate),
       lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
     ))
     .orderBy(purchaseOrderItemsTable.estimatedDueDate);

@@ -542,9 +542,12 @@ function POCard({
               <span className="mx-1">·</span>
               <span>{po.items.length} line{po.items.length !== 1 ? "s" : ""}</span>
               <span className="mx-1">·</span>
-              {po.status === "delivered" ? (
-                <span>{totalDelivered}/{totalOrdered} units</span>
-              ) : (
+              {po.status === "delivered" ? (() => {
+                const backorderLines = po.items.filter((i) => i.quantityDelivered < i.quantityOrdered).length;
+                return backorderLines > 0
+                  ? <span className="text-amber-700 font-medium">{backorderLines} on backorder</span>
+                  : <span className="text-green-700">fully received</span>;
+              })() : (
                 <span>{totalOrdered} unit{totalOrdered !== 1 ? "s" : ""}</span>
               )}
               {hasValue && (
