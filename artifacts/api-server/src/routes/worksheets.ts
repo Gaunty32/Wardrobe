@@ -22,7 +22,7 @@ function generateWorksheetNumber(): string {
   return `WS-${year}-${seq}`;
 }
 
-// ── Picking list: plain items ready to be picked from stock ──────────────────
+// ── Picking list: items allocated from stock, ready to be picked ──────────────
 router.get("/picking-list", async (req, res): Promise<void> => {
   const rows = await db
     .select({
@@ -30,6 +30,7 @@ router.get("/picking-list", async (req, res): Promise<void> => {
       orderId: ordersTable.id,
       orderNumber: ordersTable.orderNumber,
       customerName: ordersTable.customerName,
+      customerId: ordersTable.customerId,
       requiredDate: ordersTable.requiredDate,
       productName: orderItemsTable.productName,
       colour: orderItemsTable.colour,
@@ -37,6 +38,8 @@ router.get("/picking-list", async (req, res): Promise<void> => {
       quantity: orderItemsTable.quantity,
       recipientType: orderItemsTable.recipientType,
       recipientName: orderItemsTable.recipientName,
+      finishId: orderItemsTable.finishId,
+      finishName: orderItemsTable.finishName,
       stockStatus: orderItemsTable.stockStatus,
       stockAllocatedAt: orderItemsTable.stockAllocatedAt,
     })
@@ -47,27 +50,150 @@ router.get("/picking-list", async (req, res): Promise<void> => {
 
   const orderMap = new Map<number, {
     orderId: number; orderNumber: string; customerName: string | null;
-    requiredDate: Date | null;
+    customerId: number | null; requiredDate: Date | null;
     items: typeof rows;
   }>();
   for (const row of rows) {
     if (!orderMap.has(row.orderId)) {
-      orderMap.set(row.orderId, { orderId: row.orderId, orderNumber: row.orderNumber, customerName: row.customerName, requiredDate: row.requiredDate, items: [] });
+      orderMap.set(row.orderId, {
+        orderId: row.orderId, orderNumber: row.orderNumber,
+        customerName: row.customerName, customerId: row.customerId,
+        requiredDate: row.requiredDate, items: [],
+      });
     }
     orderMap.get(row.orderId)!.items.push(row);
   }
   res.json(Array.from(orderMap.values()));
 });
 
-// Mark picking list items as picked (complete)
+// Mark picking list items as picked.
+// Plain items (no finish) → stockStatus = 'complete'
+// Items with a finish → create/update production worksheet → stockStatus = 'in_production'
 router.post("/picking-list/pick", async (req, res): Promise<void> => {
   const parsed = z.object({ itemIds: z.array(z.number().int().positive()) }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  await db
-    .update(orderItemsTable)
-    .set({ stockStatus: "complete" })
+
+  const items = await db
+    .select({
+      id: orderItemsTable.id,
+      orderId: orderItemsTable.orderId,
+      productName: orderItemsTable.productName,
+      colour: orderItemsTable.colour,
+      size: orderItemsTable.size,
+      quantity: orderItemsTable.quantity,
+      recipientType: orderItemsTable.recipientType,
+      recipientName: orderItemsTable.recipientName,
+      finishId: orderItemsTable.finishId,
+      finishName: orderItemsTable.finishName,
+      orderNumber: ordersTable.orderNumber,
+      customerId: ordersTable.customerId,
+      customerName: ordersTable.customerName,
+    })
+    .from(orderItemsTable)
+    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .where(inArray(orderItemsTable.id, parsed.data.itemIds));
-  res.json({ ok: true });
+
+  const plainItems = items.filter((i) => i.finishId == null);
+  const finishItems = items.filter((i) => i.finishId != null);
+
+  // Plain items → complete (ready for dispatch, no decoration needed)
+  if (plainItems.length > 0) {
+    await db
+      .update(orderItemsTable)
+      .set({ stockStatus: "complete" })
+      .where(inArray(orderItemsTable.id, plainItems.map((i) => i.id)));
+  }
+
+  // Finish items → create/append production worksheet per order
+  if (finishItems.length > 0) {
+    const byOrder = new Map<number, typeof finishItems>();
+    for (const item of finishItems) {
+      if (!byOrder.has(item.orderId)) byOrder.set(item.orderId, []);
+      byOrder.get(item.orderId)!.push(item);
+    }
+
+    for (const [orderId, orderItems] of byOrder) {
+      const firstItem = orderItems[0];
+
+      // Find existing open worksheet for this order
+      const [existingWs] = await db
+        .select()
+        .from(worksheetsTable)
+        .where(and(eq(worksheetsTable.orderId, orderId), eq(worksheetsTable.status, "pre_wip")));
+
+      let worksheetId: number;
+      if (existingWs) {
+        worksheetId = existingWs.id;
+      } else {
+        const wsNum = generateWorksheetNumber();
+        const [ws] = await db
+          .insert(worksheetsTable)
+          .values({
+            worksheetNumber: wsNum,
+            status: "pre_wip",
+            orderId,
+            orderNumber: firstItem.orderNumber,
+            customerId: firstItem.customerId ?? null,
+            customerName: firstItem.customerName ?? null,
+          })
+          .returning();
+        worksheetId = ws.id;
+      }
+
+      for (const item of orderItems) {
+        // Avoid duplicates
+        const [existing] = await db
+          .select()
+          .from(worksheetItemsTable)
+          .where(and(eq(worksheetItemsTable.worksheetId, worksheetId), eq(worksheetItemsTable.orderItemId, item.id)));
+        if (existing) continue;
+
+        // Build processes snapshot from customer finish config
+        let processesSnapshot: string | null = null;
+        if (item.finishId && item.customerId) {
+          const links = await db
+            .select()
+            .from(customerFinishProcessesTable)
+            .where(eq(customerFinishProcessesTable.finishId, item.finishId));
+          if (links.length > 0) {
+            const processes = await db
+              .select()
+              .from(customerProcessesTable)
+              .where(inArray(customerProcessesTable.id, links.map((l) => l.processId)));
+            processesSnapshot = JSON.stringify(
+              processes.map((p) => ({
+                id: p.id, name: p.name, type: p.type,
+                placement: p.placement,
+                price: p.price ? parseFloat(p.price) : null,
+                notes: p.notes,
+              }))
+            );
+          }
+        }
+
+        await db.insert(worksheetItemsTable).values({
+          worksheetId,
+          orderItemId: item.id,
+          productName: item.productName,
+          colour: item.colour ?? null,
+          size: item.size ?? null,
+          quantity: item.quantity,
+          recipientType: item.recipientType,
+          recipientName: item.recipientName ?? null,
+          finishId: item.finishId ?? null,
+          finishName: item.finishName ?? null,
+          processesSnapshot,
+        });
+
+        await db
+          .update(orderItemsTable)
+          .set({ stockStatus: "in_production" })
+          .where(eq(orderItemsTable.id, item.id));
+      }
+    }
+  }
+
+  res.json({ ok: true, plainPicked: plainItems.length, worksheetItems: finishItems.length });
 });
 
 // ── Pending production: confirmed orders awaiting stock ───────────────────────

@@ -97,6 +97,8 @@ interface PickingItem {
   quantity: number;
   recipientType: string;
   recipientName: string | null;
+  finishId: number | null;
+  finishName: string | null;
   stockStatus: string;
   stockAllocatedAt: string | null;
 }
@@ -407,12 +409,16 @@ function PickingListTab() {
   const pickMutation = useMutation({
     mutationFn: (itemIds: number[]) =>
       apiFetch("/picking-list/pick", { method: "POST", body: JSON.stringify({ itemIds }) }),
-    onSuccess: () => {
+    onSuccess: (data: { ok: boolean; plainPicked: number; worksheetItems: number }) => {
       queryClient.invalidateQueries({ queryKey: ["picking-list"] });
+      queryClient.invalidateQueries({ queryKey: ["worksheets"] });
       setChecked(new Set());
-      toast({ title: "Items marked as picked" });
+      const parts: string[] = [];
+      if (data.plainPicked > 0) parts.push(`${data.plainPicked} ready for dispatch`);
+      if (data.worksheetItems > 0) parts.push(`${data.worksheetItems} sent to production`);
+      toast({ title: "Picked", description: parts.join(" · ") || "Items confirmed" });
     },
-    onError: () => toast({ title: "Error marking items", variant: "destructive" }),
+    onError: () => toast({ title: "Error marking items picked", variant: "destructive" }),
   });
 
   const allItemIds = pickingOrders.flatMap((o) => o.items.map((i) => i.itemId));
@@ -470,17 +476,28 @@ function PickingListTab() {
             {checked.size} of {totalItems} selected
           </span>
         </div>
-        {checked.size > 0 && (
-          <Button
-            size="sm"
-            onClick={() => pickMutation.mutate([...checked])}
-            disabled={pickMutation.isPending}
-            className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            Mark {checked.size} Picked
-          </Button>
-        )}
+        {checked.size > 0 && (() => {
+          const checkedItems = pickingOrders.flatMap((o) => o.items).filter((i) => checked.has(i.itemId));
+          const needsWorksheet = checkedItems.some((i) => i.finishId != null);
+          const plainCount = checkedItems.filter((i) => i.finishId == null).length;
+          const finishCount = checkedItems.filter((i) => i.finishId != null).length;
+          const label = needsWorksheet && plainCount > 0
+            ? `Pick — ${plainCount} to dispatch, ${finishCount} to production`
+            : needsWorksheet
+            ? `Pick → Send to Production (${finishCount})`
+            : `Confirm ${checked.size} Picked`;
+          return (
+            <Button
+              size="sm"
+              onClick={() => pickMutation.mutate([...checked])}
+              disabled={pickMutation.isPending}
+              className={`gap-1.5 text-white ${needsWorksheet ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              {label}
+            </Button>
+          );
+        })()}
       </div>
 
       <div className="space-y-4">
@@ -527,7 +544,14 @@ function PickingListTab() {
                         : <Square className="w-4 h-4" />}
                     </button>
                     <div className="flex-1 min-w-0">
-                      <span className="font-medium text-sm">{item.productName}</span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{item.productName}</span>
+                        {item.finishName && (
+                          <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-800 border border-blue-200 rounded px-1.5 py-0.5 font-medium">
+                            <Sparkles className="w-3 h-3" />{item.finishName}
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap gap-1.5 mt-1">
                         {item.colour && (
                           <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">

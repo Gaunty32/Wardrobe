@@ -5,23 +5,16 @@
  *  1. Finds the order items that were waiting for this stock.
  *  2. Groups them by order and sorts by required date (soonest first) so that
  *     complete, on-time orders are prioritised when stock is short.
- *  3. For items that received their full quantity:
- *       - finishId set  → creates / appends to a production worksheet
- *       - no finishId   → marks as "allocated" (picking list)
- *  4. Checks each affected order for completion so the dispatch page stays
- *     accurate.
+ *  3. All fully-delivered items are placed on the picking list (stockStatus = 'allocated').
+ *  4. Production worksheets are created later, at pick time, for items with a finish.
  */
 
-import { eq, inArray, and, ne } from "drizzle-orm";
+import { eq, inArray, and } from "drizzle-orm";
 import {
   db,
   orderItemsTable,
   ordersTable,
   purchaseOrderItemsTable,
-  worksheetsTable,
-  worksheetItemsTable,
-  customerFinishProcessesTable,
-  customerProcessesTable,
 } from "@workspace/db";
 
 export interface AllocationResult {
@@ -39,32 +32,6 @@ export interface AllocationResult {
   }>;
 }
 
-async function getProcessesSnapshot(finishId: number, customerId: number | null): Promise<string | null> {
-  if (!customerId) return null;
-  const links = await db
-    .select()
-    .from(customerFinishProcessesTable)
-    .where(eq(customerFinishProcessesTable.finishId, finishId));
-  if (links.length === 0) return null;
-  const processes = await db
-    .select()
-    .from(customerProcessesTable)
-    .where(inArray(customerProcessesTable.id, links.map((l) => l.processId)));
-  return JSON.stringify(
-    processes.map((p) => ({
-      id: p.id,
-      name: p.name,
-      type: p.type,
-      placement: p.placement,
-      price: p.price ? parseFloat(p.price as string) : null,
-      notes: p.notes,
-    }))
-  );
-}
-
-function generateWorksheetNumber(): string {
-  return `WS-${new Date().getFullYear()}-${Math.floor(Math.random() * 9000) + 1000}`;
-}
 
 export async function allocatePODelivery(poId: number): Promise<AllocationResult> {
   const poItems = await db
@@ -122,16 +89,10 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
   const summary: AllocationResult["summary"] = [];
 
   for (const { order, items } of sortedOrders) {
-    const finishItems = items.filter((i) => i.finishId != null);
-    const plainItems = items.filter((i) => i.finishId == null);
-
-    let worksheetNumber: string | null = null;
     let wsPickCount = 0;
-    let wsFinishCount = 0;
 
-    // ── Plain items → picking list ──────────────────────────────────────────
-    for (const item of plainItems) {
-      // Skip if already allocated
+    // ── All items → picking list (worksheets created at pick time, not here) ─
+    for (const item of items) {
       if (item.stockStatus === "allocated" || item.stockStatus === "in_production" || item.stockStatus === "complete") continue;
       await db
         .update(orderItemsTable)
@@ -141,84 +102,13 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
       wsPickCount++;
     }
 
-    // ── Finish items → worksheet ────────────────────────────────────────────
-    if (finishItems.length > 0) {
-      // Find existing open worksheet for this order
-      const existingWss = await db
-        .select()
-        .from(worksheetsTable)
-        .where(and(eq(worksheetsTable.orderId, order.id), ne(worksheetsTable.status, "complete")));
-
-      let worksheetId: number;
-      if (existingWss.length > 0) {
-        worksheetId = existingWss[0].id;
-        worksheetNumber = existingWss[0].worksheetNumber;
-        worksheetsUpdated++;
-      } else {
-        const wsNum = generateWorksheetNumber();
-        const [ws] = await db
-          .insert(worksheetsTable)
-          .values({
-            worksheetNumber: wsNum,
-            status: "pre_wip",
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            customerId: order.customerId ?? null,
-            customerName: order.customerName ?? null,
-          })
-          .returning();
-        worksheetId = ws.id;
-        worksheetNumber = ws.worksheetNumber;
-        worksheetsCreated++;
-      }
-
-      for (const item of finishItems) {
-        if (item.stockStatus === "in_production" || item.stockStatus === "complete") continue;
-
-        // Avoid duplicate worksheet items
-        const [existing] = await db
-          .select()
-          .from(worksheetItemsTable)
-          .where(
-            and(
-              eq(worksheetItemsTable.worksheetId, worksheetId),
-              eq(worksheetItemsTable.orderItemId, item.id)
-            )
-          );
-        if (existing) continue;
-
-        const processesSnapshot = await getProcessesSnapshot(item.finishId!, order.customerId ?? null);
-
-        await db.insert(worksheetItemsTable).values({
-          worksheetId,
-          orderItemId: item.id,
-          productName: item.productName,
-          colour: item.colour ?? null,
-          size: item.size ?? null,
-          quantity: item.quantity,
-          recipientType: item.recipientType,
-          recipientName: item.recipientName ?? null,
-          finishId: item.finishId ?? null,
-          finishName: item.finishName ?? null,
-          processesSnapshot,
-        });
-
-        await db
-          .update(orderItemsTable)
-          .set({ stockStatus: "in_production", stockAllocatedAt: new Date() })
-          .where(eq(orderItemsTable.id, item.id));
-
-        wsFinishCount++;
-      }
-    }
-
     summary.push({
       orderId: order.id,
       orderNumber: order.orderNumber,
       customerName: order.customerName ?? null,
-      worksheetNumber,
+      worksheetNumber: null,
       pickingCount: wsPickCount,
-      worksheetCount: wsFinishCount,
+      worksheetCount: 0,
     });
   }
 
