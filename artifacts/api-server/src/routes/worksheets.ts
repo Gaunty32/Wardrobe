@@ -34,6 +34,9 @@ router.get("/picking-list", async (req, res): Promise<void> => {
       requiredDate: ordersTable.requiredDate,
       productName: orderItemsTable.productName,
       productId: orderItemsTable.productId,
+      productSku: productsTable.sku,
+      supplierCode: orderItemsTable.supplierCode,
+      supplierName: orderItemsTable.supplierName,
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
       quantity: orderItemsTable.quantity,
@@ -46,6 +49,7 @@ router.get("/picking-list", async (req, res): Promise<void> => {
     })
     .from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(eq(orderItemsTable.stockStatus, "allocated"))
     .orderBy(ordersTable.requiredDate, ordersTable.id);
 

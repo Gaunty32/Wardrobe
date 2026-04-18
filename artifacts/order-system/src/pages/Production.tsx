@@ -93,6 +93,9 @@ interface PickingItem {
   requiredDate: string | null;
   productName: string;
   productId: number | null;
+  productSku: string | null;
+  supplierCode: string | null;
+  supplierName: string | null;
   colour: string | null;
   size: string | null;
   quantity: number;
@@ -402,9 +405,21 @@ function printPickingSlip(order: PickingOrder) {
     ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : "—";
 
-  const itemRows = order.items.map((item, i) => `
+  const itemRows = order.items.map((item, i) => {
+    const supplierCodeCell = item.supplierCode
+      ? `<span style="font-family:monospace;font-weight:bold;font-size:12px">${item.supplierCode}</span>`
+      : "";
+    const fccSkuCell = item.productSku
+      ? `<span style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;font-size:10px;font-family:monospace">${item.productSku}</span>`
+      : "";
+    const supplierNameCell = item.supplierName
+      ? `<span style="color:#555;font-size:10px">${item.supplierName}</span>`
+      : `<span style="color:#999;font-size:10px">${item.productName}</span>`;
+    const productCell = [supplierCodeCell, fccSkuCell, supplierNameCell].filter(Boolean).join("&nbsp;&nbsp;");
+
+    return `
     <tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.productName}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${productCell}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.colour ?? "—"}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.size ?? "—"}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.finishName ?? "—"}</td>
@@ -413,7 +428,8 @@ function printPickingSlip(order: PickingOrder) {
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
         <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   const html = `<html><head><title>Picking Slip — ${order.orderNumber}</title>
     <style>
@@ -421,7 +437,7 @@ function printPickingSlip(order: PickingOrder) {
       table{width:100%;border-collapse:collapse}
       th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:11px}
       th.center{text-align:center}
-      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:5mm;margin-bottom:5mm}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm}
       .meta{display:flex;gap:20px;margin-bottom:5mm;font-size:11px}
       .meta-item{display:flex;flex-direction:column}
       .meta-label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
@@ -434,8 +450,9 @@ function printPickingSlip(order: PickingOrder) {
   </head><body>
     <div class="header">
       <div>
-        <div style="font-size:20px;font-weight:900;color:#1e3a5f">PICKING SLIP</div>
-        <div style="font-size:13px;font-weight:bold;margin-top:2px">${order.orderNumber}</div>
+        ${order.customerName ? `<div style="font-size:26px;font-weight:900;color:#1e3a5f;margin-bottom:1mm">${order.customerName}</div>` : ""}
+        <div style="font-size:16px;font-weight:700;color:#1e3a5f;letter-spacing:1px">PICKING SLIP</div>
+        <div style="font-size:12px;color:#555;margin-top:1mm">${order.orderNumber}</div>
       </div>
       <div style="text-align:right">
         <div style="font-weight:bold;font-size:13px">Select Branding Solutions</div>
@@ -443,14 +460,13 @@ function printPickingSlip(order: PickingOrder) {
       </div>
     </div>
     <div class="meta">
-      <div class="meta-item"><span class="meta-label">Customer</span><span class="meta-value">${order.customerName ?? "—"}</span></div>
       <div class="meta-item"><span class="meta-label">Required Date</span><span class="meta-value">${dueStr}</span></div>
       <div class="meta-item"><span class="meta-label">Items</span><span class="meta-value">${order.items.length}</span></div>
     </div>
     <table>
       <thead>
         <tr>
-          <th>Product</th>
+          <th>Supplier Code / FCC SKU / Supplier</th>
           <th>Colour</th>
           <th>Size</th>
           <th>Finish / Decoration</th>
