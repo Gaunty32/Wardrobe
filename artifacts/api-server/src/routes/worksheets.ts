@@ -22,6 +22,54 @@ function generateWorksheetNumber(): string {
   return `WS-${year}-${seq}`;
 }
 
+// ── Picking list: plain items ready to be picked from stock ──────────────────
+router.get("/picking-list", async (req, res): Promise<void> => {
+  const rows = await db
+    .select({
+      itemId: orderItemsTable.id,
+      orderId: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      requiredDate: ordersTable.requiredDate,
+      productName: orderItemsTable.productName,
+      colour: orderItemsTable.colour,
+      size: orderItemsTable.size,
+      quantity: orderItemsTable.quantity,
+      recipientType: orderItemsTable.recipientType,
+      recipientName: orderItemsTable.recipientName,
+      stockStatus: orderItemsTable.stockStatus,
+      stockAllocatedAt: orderItemsTable.stockAllocatedAt,
+    })
+    .from(orderItemsTable)
+    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .where(eq(orderItemsTable.stockStatus, "allocated"))
+    .orderBy(ordersTable.requiredDate, ordersTable.id);
+
+  const orderMap = new Map<number, {
+    orderId: number; orderNumber: string; customerName: string | null;
+    requiredDate: Date | null;
+    items: typeof rows;
+  }>();
+  for (const row of rows) {
+    if (!orderMap.has(row.orderId)) {
+      orderMap.set(row.orderId, { orderId: row.orderId, orderNumber: row.orderNumber, customerName: row.customerName, requiredDate: row.requiredDate, items: [] });
+    }
+    orderMap.get(row.orderId)!.items.push(row);
+  }
+  res.json(Array.from(orderMap.values()));
+});
+
+// Mark picking list items as picked (complete)
+router.post("/picking-list/pick", async (req, res): Promise<void> => {
+  const parsed = z.object({ itemIds: z.array(z.number().int().positive()) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  await db
+    .update(orderItemsTable)
+    .set({ stockStatus: "complete" })
+    .where(inArray(orderItemsTable.id, parsed.data.itemIds));
+  res.json({ ok: true });
+});
+
 // ── Pending production: confirmed orders awaiting stock ───────────────────────
 router.get("/production/pending", async (req, res): Promise<void> => {
   const pendingItems = await db

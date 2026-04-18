@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
   RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
-  ShoppingCart, ExternalLink,
+  ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -83,6 +83,30 @@ interface PendingOrder {
   customerName: string | null;
   requiredDate: string | null;
   items: PendingItem[];
+}
+
+interface PickingItem {
+  itemId: number;
+  orderId: number;
+  orderNumber: string;
+  customerName: string | null;
+  requiredDate: string | null;
+  productName: string;
+  colour: string | null;
+  size: string | null;
+  quantity: number;
+  recipientType: string;
+  recipientName: string | null;
+  stockStatus: string;
+  stockAllocatedAt: string | null;
+}
+
+interface PickingOrder {
+  orderId: number;
+  orderNumber: string;
+  customerName: string | null;
+  requiredDate: string | null;
+  items: PickingItem[];
 }
 
 const STATUS_CONFIG = {
@@ -367,6 +391,175 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
   );
 }
 
+// ─── Picking List Tab Component ───────────────────────────────────────────────
+
+function PickingListTab() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [checked, setChecked] = useState<Set<number>>(new Set());
+
+  const { data: pickingOrders = [], isLoading } = useQuery<PickingOrder[]>({
+    queryKey: ["picking-list"],
+    queryFn: () => apiFetch("/picking-list"),
+    refetchInterval: 30000,
+  });
+
+  const pickMutation = useMutation({
+    mutationFn: (itemIds: number[]) =>
+      apiFetch("/picking-list/pick", { method: "POST", body: JSON.stringify({ itemIds }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["picking-list"] });
+      setChecked(new Set());
+      toast({ title: "Items marked as picked" });
+    },
+    onError: () => toast({ title: "Error marking items", variant: "destructive" }),
+  });
+
+  const allItemIds = pickingOrders.flatMap((o) => o.items.map((i) => i.itemId));
+
+  function toggleItem(id: number) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleOrder(order: PickingOrder) {
+    const ids = order.items.map((i) => i.itemId);
+    const allChecked = ids.every((id) => checked.has(id));
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (allChecked) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (checked.size === allItemIds.length) setChecked(new Set());
+    else setChecked(new Set(allItemIds));
+  }
+
+  const totalItems = pickingOrders.reduce((s, o) => s + o.items.length, 0);
+
+  if (isLoading) return (
+    <div className="flex items-center justify-center py-16 text-muted-foreground">
+      <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading...
+    </div>
+  );
+
+  if (totalItems === 0) return (
+    <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+      <ListChecks className="w-12 h-12 text-purple-300" />
+      <p className="text-lg font-medium">No items to pick</p>
+      <p className="text-sm text-center max-w-xs">Items allocated from delivered stock will appear here for warehouse picking.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button onClick={toggleAll} className="text-muted-foreground hover:text-foreground transition-colors">
+            {checked.size === allItemIds.length && allItemIds.length > 0
+              ? <CheckSquare className="w-5 h-5 text-primary" />
+              : <Square className="w-5 h-5" />}
+          </button>
+          <span className="text-sm text-muted-foreground">
+            {checked.size} of {totalItems} selected
+          </span>
+        </div>
+        {checked.size > 0 && (
+          <Button
+            size="sm"
+            onClick={() => pickMutation.mutate([...checked])}
+            disabled={pickMutation.isPending}
+            className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+          >
+            <CheckCircle2 className="w-4 h-4" />
+            Mark {checked.size} Picked
+          </Button>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        {pickingOrders.map((order) => {
+          const orderChecked = order.items.every((i) => checked.has(i.itemId));
+          const orderPartial = order.items.some((i) => checked.has(i.itemId)) && !orderChecked;
+          return (
+            <div key={order.orderId} className="rounded-xl border border-border bg-card overflow-hidden">
+              {/* Order header */}
+              <div className="flex items-center gap-3 px-4 py-3 bg-muted/30 border-b border-border">
+                <button onClick={() => toggleOrder(order)} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+                  {orderChecked
+                    ? <CheckSquare className="w-5 h-5 text-primary" />
+                    : orderPartial
+                    ? <CheckSquare className="w-5 h-5 text-primary/50" />
+                    : <Square className="w-5 h-5" />}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-sm">{order.orderNumber}</span>
+                    {order.customerName && (
+                      <span className="text-muted-foreground text-sm">{order.customerName}</span>
+                    )}
+                    {order.requiredDate && (
+                      <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 bg-orange-50">
+                        Due {new Date(order.requiredDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <Badge variant="secondary" className="text-xs">{order.items.length} item{order.items.length !== 1 ? "s" : ""}</Badge>
+              </div>
+
+              {/* Items */}
+              <div className="divide-y divide-border">
+                {order.items.map((item) => (
+                  <div
+                    key={item.itemId}
+                    className={`flex items-center gap-3 px-4 py-3 transition-colors ${checked.has(item.itemId) ? "bg-green-50/50" : ""}`}
+                  >
+                    <button onClick={() => toggleItem(item.itemId)} className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+                      {checked.has(item.itemId)
+                        ? <CheckSquare className="w-4 h-4 text-green-600" />
+                        : <Square className="w-4 h-4" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium text-sm">{item.productName}</span>
+                      <div className="flex flex-wrap gap-1.5 mt-1">
+                        {item.colour && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Palette className="w-3 h-3" />{item.colour}
+                          </span>
+                        )}
+                        {item.size && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <Ruler className="w-3 h-3" />{item.size}
+                          </span>
+                        )}
+                        {item.recipientName && (
+                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                            <User className="w-3 h-3" />{item.recipientName}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="text-sm font-bold min-w-[2rem] justify-center">
+                      {item.quantity}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function Production() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -381,6 +574,14 @@ export default function Production() {
     queryKey: ["production-pending"],
     queryFn: () => apiFetch("/production/pending"),
   });
+
+  const { data: pickingOrders = [] } = useQuery<PickingOrder[]>({
+    queryKey: ["picking-list"],
+    queryFn: () => apiFetch("/picking-list"),
+    refetchInterval: 30000,
+  });
+
+  const pickingCount = pickingOrders.reduce((s, o) => s + o.items.length, 0);
 
   const isLoading = wsLoading || pendingLoading;
 
@@ -416,6 +617,7 @@ export default function Production() {
 
   const TAB_COUNTS = [
     { key: "pre_wip", label: "Pre-WIP", count: preWipTotal, icon: Clock, color: "text-blue-600" },
+    { key: "picking_list", label: "Picking List", count: pickingCount, icon: ListChecks, color: "text-purple-600" },
     { key: "wip", label: "Work in Progress", count: wip.length, icon: ClipboardList, color: "text-amber-600" },
     { key: "complete", label: "Complete", count: complete.length, icon: CheckCircle2, color: "text-green-600" },
   ];
@@ -423,6 +625,7 @@ export default function Production() {
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["worksheets"] });
     queryClient.invalidateQueries({ queryKey: ["production-pending"] });
+    queryClient.invalidateQueries({ queryKey: ["picking-list"] });
   };
 
   return (
@@ -441,7 +644,7 @@ export default function Production() {
           </Button>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-4">
           {TAB_COUNTS.map((t) => {
             const Icon = t.icon;
             return (
@@ -543,6 +746,11 @@ export default function Production() {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* ── Picking List Tab ── */}
+          <TabsContent value="picking_list">
+            <PickingListTab />
           </TabsContent>
 
           {/* ── Complete Tab ── */}

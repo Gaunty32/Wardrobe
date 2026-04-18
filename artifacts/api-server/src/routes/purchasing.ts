@@ -7,6 +7,7 @@ import {
   purchaseOrdersTable, purchaseOrderItemsTable,
 } from "@workspace/db";
 import { sendEmail, generatePOPdf, buildPOEmail, isEmailConfigured } from "../services/email.js";
+import { allocatePODelivery } from "../services/allocation.js";
 
 const router: IRouter = Router();
 
@@ -230,7 +231,7 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
   const [po] = await db.update(purchaseOrdersTable).set(updateData).where(eq(purchaseOrdersTable.id, params.data.id)).returning();
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
-  // When a PO is marked delivered, mark all linked order items as fulfilled
+  // When a PO is marked delivered, mark all linked order items as fulfilled and run allocation
   if (parsed.data.status === "delivered") {
     const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, po.id));
     const linkedOrderItemIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
@@ -239,6 +240,10 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
         .set({ purchaseRequired: false, purchaseQuantity: null })
         .where(inArray(orderItemsTable.id, linkedOrderItemIds));
     }
+    const allocation = await allocatePODelivery(po.id);
+    const result = await getPoWithItems(po.id);
+    res.json({ ...result, allocation });
+    return;
   }
 
   const result = await getPoWithItems(po.id);
@@ -413,8 +418,11 @@ router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Pro
       .where(inArray(orderItemsTable.id, linkedOrderItemIds));
   }
 
+  // Run smart stock allocation
+  const allocation = await allocatePODelivery(poId);
+
   const result = await getPoWithItems(poId);
-  res.json(result);
+  res.json({ ...result, allocation });
 });
 
 router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void> => {

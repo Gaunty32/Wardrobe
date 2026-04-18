@@ -160,5 +160,11 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS estimated_delivery_date timestamptz;
   `);
 
+  // Add stock allocation tracking to order_items
+  await db.execute(sql`
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS stock_status text;
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS stock_allocated_at timestamptz;
+  `);
+
   console.log("[startup] Migrations complete");
 }
