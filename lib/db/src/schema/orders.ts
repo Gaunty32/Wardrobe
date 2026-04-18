@@ -43,6 +43,9 @@ export const orderItemsTable = pgTable("order_items", {
   purchaseQuantity: integer("purchase_quantity"),
   supplierId: integer("supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),
   supplierName: text("supplier_name"),
+  // Stock allocation tracking: null=pending, allocated=plain stock picked, in_production=worksheet created, complete=done
+  stockStatus: text("stock_status"),
+  stockAllocatedAt: timestamp("stock_allocated_at", { withTimezone: true }),
 });
 
 export const purchaseOrdersTable = pgTable("purchase_orders", {
