@@ -48,6 +48,7 @@ interface POItem {
   id: number; poId: number; orderItemId: number | null; orderId: number | null; orderNumber: string | null;
   productName: string; colour: string | null; size: string | null;
   supplierCode: string | null; supplierPrice: number | null;
+  productSku: string | null; canonicalProductName: string | null;
   quantityOrdered: number; quantityDelivered: number; estimatedDueDate: string | null; notes: string | null;
 }
 
@@ -358,11 +359,18 @@ function DeliveryRow({ line, onSave }: {
     <div className={`rounded-lg border px-3 py-2.5 transition-colors ${fullyDelivered ? "border-green-200 bg-green-50/50" : "border-border bg-card"}`}>
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex-1 min-w-0">
-          <span className="font-medium text-sm">{line.productName}</span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            {line.supplierCode && (
+              <span className="font-bold text-sm font-mono text-primary">{line.supplierCode}</span>
+            )}
+            {line.productSku && (
+              <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{line.productSku}</span>
+            )}
+            <span className="font-medium text-sm">{line.canonicalProductName ?? line.productName}</span>
+          </div>
           {(line.colour || line.size) && (
-            <span className="text-muted-foreground text-sm ml-2">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
+            <div className="text-muted-foreground text-xs mt-0.5">{[line.colour, line.size].filter(Boolean).join(" / ")}</div>
           )}
-          {line.supplierCode && <span className="text-xs text-muted-foreground font-mono ml-2">[{line.supplierCode}]</span>}
         </div>
         <div className="flex items-center gap-4 flex-shrink-0">
           {/* Received qty */}

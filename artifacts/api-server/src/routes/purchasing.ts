@@ -118,8 +118,24 @@ function parsePOItem(item: Record<string, unknown>) {
 async function getPoWithItems(poId: number) {
   const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
   if (!po) return null;
-  const items = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, poId));
-  return { ...po, items: items.map(parsePOItem) };
+  const rows = await db
+    .select({
+      item: purchaseOrderItemsTable,
+      productSku: productsTable.sku,
+      canonicalProductName: productsTable.name,
+    })
+    .from(purchaseOrderItemsTable)
+    .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(eq(purchaseOrderItemsTable.poId, poId));
+  return {
+    ...po,
+    items: rows.map((r) => ({
+      ...parsePOItem(r.item as Record<string, unknown>),
+      productSku: r.productSku ?? null,
+      canonicalProductName: r.canonicalProductName ?? null,
+    })),
+  };
 }
 
 async function buildPoItems(orderItemIds: number[], poId: number) {
@@ -153,12 +169,27 @@ async function buildPoItems(orderItemIds: number[], poId: number) {
 router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
   const pos = await db.select().from(purchaseOrdersTable).orderBy(desc(purchaseOrdersTable.createdAt));
   const poIds = pos.map((p) => p.id);
-  const allItems = poIds.length > 0
-    ? await db.select().from(purchaseOrderItemsTable).where(inArray(purchaseOrderItemsTable.poId, poIds))
+  const allRows = poIds.length > 0
+    ? await db
+        .select({
+          item: purchaseOrderItemsTable,
+          productSku: productsTable.sku,
+          canonicalProductName: productsTable.name,
+        })
+        .from(purchaseOrderItemsTable)
+        .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
+        .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+        .where(inArray(purchaseOrderItemsTable.poId, poIds))
     : [];
   const result = pos.map((po) => ({
     ...po,
-    items: allItems.filter((i) => i.poId === po.id).map(parsePOItem),
+    items: allRows
+      .filter((r) => r.item.poId === po.id)
+      .map((r) => ({
+        ...parsePOItem(r.item as Record<string, unknown>),
+        productSku: r.productSku ?? null,
+        canonicalProductName: r.canonicalProductName ?? null,
+      })),
   }));
   res.json(result);
 });
