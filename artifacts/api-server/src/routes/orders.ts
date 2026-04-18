@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, sql, inArray } from "drizzle-orm";
+import { eq, desc, sql, inArray, and, ne, isNotNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, customersTable, productsTable,
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
-  purchaseOrdersTable,
+  purchaseOrdersTable, purchaseOrderItemsTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, sendEmail, isEmailConfigured } from "../services/email";
 import {
@@ -709,6 +709,40 @@ router.get("/orders/:id/pack-status", async (req, res): Promise<void> => {
       ...[...personMap.values()],
     ],
   });
+});
+
+// ── Order backorders: PO lines linked to this order that are still pending ─────
+router.get("/orders/:id/backorders", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const orderId = parsed.data.id;
+
+  const rows = await db
+    .select({
+      id: purchaseOrderItemsTable.id,
+      poId: purchaseOrderItemsTable.poId,
+      poNumber: purchaseOrdersTable.poNumber,
+      supplierName: purchaseOrdersTable.supplierName,
+      productName: purchaseOrderItemsTable.productName,
+      colour: purchaseOrderItemsTable.colour,
+      size: purchaseOrderItemsTable.size,
+      supplierCode: purchaseOrderItemsTable.supplierCode,
+      quantityOrdered: purchaseOrderItemsTable.quantityOrdered,
+      quantityDelivered: purchaseOrderItemsTable.quantityDelivered,
+      estimatedDueDate: purchaseOrderItemsTable.estimatedDueDate,
+      orderItemId: purchaseOrderItemsTable.orderItemId,
+    })
+    .from(purchaseOrderItemsTable)
+    .innerJoin(purchaseOrdersTable, eq(purchaseOrderItemsTable.poId, purchaseOrdersTable.id))
+    .innerJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
+    .where(and(
+      eq(orderItemsTable.orderId, orderId),
+      ne(purchaseOrdersTable.status, "delivered"),
+      lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
+    ))
+    .orderBy(purchaseOrderItemsTable.estimatedDueDate);
+
+  res.json(rows.map((r) => ({ ...r, remaining: r.quantityOrdered - r.quantityDelivered })));
 });
 
 export default router;

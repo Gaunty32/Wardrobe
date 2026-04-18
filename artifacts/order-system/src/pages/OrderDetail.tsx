@@ -228,10 +228,19 @@ export default function OrderDetail() {
   interface PackRecipient { recipientType: "stock" | "person"; recipientName: string | null; employeeId: number | null; jobTitle: string | null; department: string | null; allComplete: boolean; items: PackItem[]; }
   interface PackStatus { orderId: number; orderNumber: string; customerName: string | null; recipients: PackRecipient[]; }
 
+  interface OrderBackorderLine { id: number; poId: number; poNumber: string; supplierName: string; productName: string; colour: string | null; size: string | null; supplierCode: string | null; quantityOrdered: number; quantityDelivered: number; remaining: number; estimatedDueDate: string | null; orderItemId: number | null; }
+
   const { data: packStatus, refetch: refetchPackStatus } = useQuery<PackStatus>({
     queryKey: ["pack-status", orderId],
     queryFn: () => apiFetch(`/orders/${orderId}/pack-status`),
     enabled: orderId > 0,
+  });
+
+  const { data: orderBackorders = [] } = useQuery<OrderBackorderLine[]>({
+    queryKey: ["order-backorders", orderId],
+    queryFn: () => apiFetch(`/orders/${orderId}/backorders`),
+    enabled: orderId > 0,
+    refetchInterval: 60000,
   });
 
   const printLabel = (recipient: PackRecipient) => {
@@ -618,6 +627,36 @@ export default function OrderDetail() {
                 </Button>
               </div>
             </CardHeader>
+            {orderBackorders.length > 0 && (
+              <div className="mx-6 mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
+                <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
+                  <TriangleAlert className="w-4 h-4 flex-shrink-0" />
+                  Part-shipped — {orderBackorders.length} item{orderBackorders.length !== 1 ? "s" : ""} on backorder
+                </div>
+                <p className="text-xs text-amber-700">This order will be part-shipped. The following items are awaiting stock and will be dispatched separately — the customer should be notified.</p>
+                <div className="space-y-1.5">
+                  {orderBackorders.map((b) => (
+                    <div key={b.id} className="flex items-center justify-between gap-3 text-xs bg-white/70 rounded px-3 py-1.5 border border-amber-200">
+                      <span className="font-medium text-foreground">
+                        {b.supplierCode && <span className="font-mono text-primary mr-1.5">{b.supplierCode}</span>}
+                        {b.productName}
+                        {(b.colour || b.size) && <span className="text-muted-foreground ml-1.5">{[b.colour, b.size].filter(Boolean).join(" / ")}</span>}
+                      </span>
+                      <div className="flex items-center gap-2 flex-shrink-0 text-amber-700">
+                        <span className="font-semibold">{b.remaining} pending</span>
+                        {b.estimatedDueDate && (
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3" />
+                            {new Date(b.estimatedDueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                        <span className="text-muted-foreground">via {b.poNumber}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <CardContent className="p-0 flex-1">
               {order.items && order.items.length > 0 ? (
                 <div className="overflow-x-auto">

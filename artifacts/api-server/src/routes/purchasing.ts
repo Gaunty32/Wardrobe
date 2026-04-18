@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, sql, ne, isNotNull, lt } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
@@ -311,6 +311,13 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
+  // Fetch existing PO item to detect over-delivery
+  const [existing] = await db
+    .select()
+    .from(purchaseOrderItemsTable)
+    .where(and(eq(purchaseOrderItemsTable.id, params.data.itemId), eq(purchaseOrderItemsTable.poId, params.data.id)));
+  if (!existing) { res.status(404).json({ error: "PO line not found" }); return; }
+
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.quantityDelivered !== undefined) updateData.quantityDelivered = parsed.data.quantityDelivered;
   if (parsed.data.estimatedDueDate !== undefined) updateData.estimatedDueDate = parsed.data.estimatedDueDate ? new Date(parsed.data.estimatedDueDate) : null;
@@ -324,8 +331,16 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
 
   if (!poItem) { res.status(404).json({ error: "PO line not found" }); return; }
 
-  // Only mark the order item as fulfilled once the parent PO itself is marked delivered
-  // (not just because a quantity was entered) — delivery tracking happens at PO level
+  // Over-delivery: if more received than ordered, add the surplus to product stock
+  if (parsed.data.quantityDelivered !== undefined && parsed.data.quantityDelivered > existing.quantityOrdered) {
+    const surplus = parsed.data.quantityDelivered - existing.quantityOrdered;
+    if (existing.orderItemId) {
+      const [oi] = await db.select({ productId: orderItemsTable.productId }).from(orderItemsTable).where(eq(orderItemsTable.id, existing.orderItemId));
+      if (oi?.productId) {
+        await db.execute(sql`UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${surplus} WHERE id = ${oi.productId}`);
+      }
+    }
+  }
 
   res.json(poItem);
 });
@@ -454,6 +469,43 @@ router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Pro
 
   const result = await getPoWithItems(poId);
   res.json({ ...result, allocation });
+});
+
+// ── Backorders: PO lines with pending qty and an expected delivery date ────────
+router.get("/purchasing/backorders", async (req, res): Promise<void> => {
+  const rows = await db
+    .select({
+      id: purchaseOrderItemsTable.id,
+      poId: purchaseOrderItemsTable.poId,
+      poNumber: purchaseOrdersTable.poNumber,
+      supplierName: purchaseOrdersTable.supplierName,
+      productName: purchaseOrderItemsTable.productName,
+      colour: purchaseOrderItemsTable.colour,
+      size: purchaseOrderItemsTable.size,
+      supplierCode: purchaseOrderItemsTable.supplierCode,
+      quantityOrdered: purchaseOrderItemsTable.quantityOrdered,
+      quantityDelivered: purchaseOrderItemsTable.quantityDelivered,
+      estimatedDueDate: purchaseOrderItemsTable.estimatedDueDate,
+      orderId: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      requiredDate: ordersTable.requiredDate,
+    })
+    .from(purchaseOrderItemsTable)
+    .innerJoin(purchaseOrdersTable, eq(purchaseOrderItemsTable.poId, purchaseOrdersTable.id))
+    .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
+    .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .where(and(
+      ne(purchaseOrdersTable.status, "delivered"),
+      isNotNull(purchaseOrderItemsTable.estimatedDueDate),
+      lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
+    ))
+    .orderBy(purchaseOrderItemsTable.estimatedDueDate);
+
+  res.json(rows.map((r) => ({
+    ...r,
+    remaining: r.quantityOrdered - r.quantityDelivered,
+  })));
 });
 
 router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void> => {
