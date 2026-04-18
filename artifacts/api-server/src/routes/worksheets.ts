@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, inArray, and } from "drizzle-orm";
+import { eq, desc, inArray, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -33,6 +33,7 @@ router.get("/picking-list", async (req, res): Promise<void> => {
       customerId: ordersTable.customerId,
       requiredDate: ordersTable.requiredDate,
       productName: orderItemsTable.productName,
+      productId: orderItemsTable.productId,
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
       quantity: orderItemsTable.quantity,
@@ -194,6 +195,38 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
   }
 
   res.json({ ok: true, plainPicked: plainItems.length, worksheetItems: finishItems.length });
+});
+
+// Return picking list items back to purchasing requirements.
+// Resets stockStatus → null and purchaseRequired → true.
+// Decrements product stock_quantity to reflect that the stock isn't actually there.
+router.post("/picking-list/return", async (req, res): Promise<void> => {
+  const parsed = z.object({ itemIds: z.array(z.number().int().positive()) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const items = await db
+    .select({
+      id: orderItemsTable.id,
+      productId: orderItemsTable.productId,
+      quantity: orderItemsTable.quantity,
+    })
+    .from(orderItemsTable)
+    .where(inArray(orderItemsTable.id, parsed.data.itemIds));
+
+  for (const item of items) {
+    await db
+      .update(orderItemsTable)
+      .set({ stockStatus: null, purchaseRequired: true, stockAllocatedAt: null })
+      .where(eq(orderItemsTable.id, item.id));
+
+    if (item.productId != null) {
+      await db.execute(
+        sql`UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) - ${item.quantity} WHERE id = ${item.productId}`
+      );
+    }
+  }
+
+  res.json({ ok: true, returned: items.length });
 });
 
 // ── Pending production: confirmed orders awaiting stock ───────────────────────

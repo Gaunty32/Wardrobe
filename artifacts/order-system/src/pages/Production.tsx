@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
   RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
-  ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square,
+  ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square, RotateCcw, AlertCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -92,6 +92,7 @@ interface PickingItem {
   customerName: string | null;
   requiredDate: string | null;
   productName: string;
+  productId: number | null;
   colour: string | null;
   size: string | null;
   quantity: number;
@@ -393,12 +394,99 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
   );
 }
 
+// ─── Print Picking Slip (renders into a new window) ───────────────────────────
+
+function printPickingSlip(order: PickingOrder) {
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const dueStr = order.requiredDate
+    ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : "—";
+
+  const itemRows = order.items.map((item, i) => `
+    <tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.productName}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.colour ?? "—"}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.size ?? "—"}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.finishName ?? "—"}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${item.recipientType === "person" ? (item.recipientName ?? "—") : "Stock"}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${item.quantity}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
+        <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
+      </td>
+    </tr>`).join("");
+
+  const html = `<html><head><title>Picking Slip — ${order.orderNumber}</title>
+    <style>
+      body{margin:0;padding:12mm 15mm;font-family:Arial,sans-serif;font-size:11px;color:#111}
+      table{width:100%;border-collapse:collapse}
+      th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:11px}
+      th.center{text-align:center}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:5mm;margin-bottom:5mm}
+      .meta{display:flex;gap:20px;margin-bottom:5mm;font-size:11px}
+      .meta-item{display:flex;flex-direction:column}
+      .meta-label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
+      .meta-value{font-weight:bold}
+      .footer{margin-top:8mm;border-top:1px solid #e5e7eb;padding-top:4mm;display:flex;justify-content:space-between;font-size:9px;color:#888}
+      .sig-box{margin-top:8mm;display:flex;gap:30px}
+      .sig-field{flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666}
+      @media print{@page{size:A4;margin:15mm}}
+    </style>
+  </head><body>
+    <div class="header">
+      <div>
+        <div style="font-size:20px;font-weight:900;color:#1e3a5f">PICKING SLIP</div>
+        <div style="font-size:13px;font-weight:bold;margin-top:2px">${order.orderNumber}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:bold;font-size:13px">Select Branding Solutions</div>
+        <div style="color:#555">Printed: ${dateStr}</div>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-item"><span class="meta-label">Customer</span><span class="meta-value">${order.customerName ?? "—"}</span></div>
+      <div class="meta-item"><span class="meta-label">Required Date</span><span class="meta-value">${dueStr}</span></div>
+      <div class="meta-item"><span class="meta-label">Items</span><span class="meta-value">${order.items.length}</span></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Colour</th>
+          <th>Size</th>
+          <th>Finish / Decoration</th>
+          <th class="center">Recipient</th>
+          <th class="center">Qty</th>
+          <th class="center">Picked ✓</th>
+        </tr>
+      </thead>
+      <tbody>${itemRows}</tbody>
+    </table>
+    <div class="sig-box">
+      <div class="sig-field">Picked by: ___________________________</div>
+      <div class="sig-field">Date picked: ___________________________</div>
+      <div class="sig-field">Checked by: ___________________________</div>
+    </div>
+    <div class="footer">
+      <span>Select Branding Solutions — Internal Use Only</span>
+      <span>${order.orderNumber} · ${dateStr}</span>
+    </div>
+  </body></html>`;
+
+  const win = window.open("", "_blank", "width=900,height=700");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
 // ─── Picking List Tab Component ───────────────────────────────────────────────
 
 function PickingListTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [checked, setChecked] = useState<Set<number>>(new Set());
+  const [returning, setReturning] = useState<Set<number>>(new Set());
 
   const { data: pickingOrders = [], isLoading } = useQuery<PickingOrder[]>({
     queryKey: ["picking-list"],
@@ -420,6 +508,30 @@ function PickingListTab() {
     },
     onError: () => toast({ title: "Error marking items picked", variant: "destructive" }),
   });
+
+  const returnMutation = useMutation({
+    mutationFn: (itemIds: number[]) =>
+      apiFetch("/picking-list/return", { method: "POST", body: JSON.stringify({ itemIds }) }),
+    onSuccess: (data: { ok: boolean; returned: number }) => {
+      queryClient.invalidateQueries({ queryKey: ["picking-list"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      setReturning(new Set());
+      setChecked(new Set());
+      toast({
+        title: "Returned to Purchasing",
+        description: `${data.returned} item${data.returned !== 1 ? "s" : ""} de-allocated and added to purchasing requirements`,
+      });
+    },
+    onError: () => toast({ title: "Error returning items", variant: "destructive" }),
+  });
+
+  function toggleReturning(id: number) {
+    setReturning((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
 
   const allItemIds = pickingOrders.flatMap((o) => o.items.map((i) => i.itemId));
 
@@ -465,6 +577,7 @@ function PickingListTab() {
 
   return (
     <div className="space-y-4">
+      {/* Toolbar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <button onClick={toggleAll} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -473,33 +586,48 @@ function PickingListTab() {
               : <Square className="w-5 h-5" />}
           </button>
           <span className="text-sm text-muted-foreground">
-            {checked.size} of {totalItems} selected
+            {checked.size > 0 ? `${checked.size} of ${totalItems} selected` : `${totalItems} item${totalItems !== 1 ? "s" : ""} to pick`}
           </span>
         </div>
-        {checked.size > 0 && (() => {
-          const checkedItems = pickingOrders.flatMap((o) => o.items).filter((i) => checked.has(i.itemId));
-          const needsWorksheet = checkedItems.some((i) => i.finishId != null);
-          const plainCount = checkedItems.filter((i) => i.finishId == null).length;
-          const finishCount = checkedItems.filter((i) => i.finishId != null).length;
-          const label = needsWorksheet && plainCount > 0
-            ? `Pick — ${plainCount} to dispatch, ${finishCount} to production`
-            : needsWorksheet
-            ? `Pick → Send to Production (${finishCount})`
-            : `Confirm ${checked.size} Picked`;
-          return (
+        <div className="flex items-center gap-2">
+          {returning.size > 0 && (
             <Button
               size="sm"
-              onClick={() => pickMutation.mutate([...checked])}
-              disabled={pickMutation.isPending}
-              className={`gap-1.5 text-white ${needsWorksheet ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
+              variant="outline"
+              className="gap-1.5 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+              onClick={() => returnMutation.mutate([...returning])}
+              disabled={returnMutation.isPending}
             >
-              <CheckCircle2 className="w-4 h-4" />
-              {label}
+              <RotateCcw className="w-3.5 h-3.5" />
+              Return {returning.size} to Purchasing
             </Button>
-          );
-        })()}
+          )}
+          {checked.size > 0 && (() => {
+            const checkedItems = pickingOrders.flatMap((o) => o.items).filter((i) => checked.has(i.itemId));
+            const needsWorksheet = checkedItems.some((i) => i.finishId != null);
+            const plainCount = checkedItems.filter((i) => i.finishId == null).length;
+            const finishCount = checkedItems.filter((i) => i.finishId != null).length;
+            const label = needsWorksheet && plainCount > 0
+              ? `Pick — ${plainCount} to dispatch, ${finishCount} to production`
+              : needsWorksheet
+              ? `Pick → Send to Production (${finishCount})`
+              : `Confirm ${checked.size} Picked`;
+            return (
+              <Button
+                size="sm"
+                onClick={() => pickMutation.mutate([...checked])}
+                disabled={pickMutation.isPending}
+                className={`gap-1.5 text-white ${needsWorksheet ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {label}
+              </Button>
+            );
+          })()}
+        </div>
       </div>
 
+      {/* Order cards */}
       <div className="space-y-4">
         {pickingOrders.map((order) => {
           const orderChecked = order.items.every((i) => checked.has(i.itemId));
@@ -528,53 +656,82 @@ function PickingListTab() {
                     )}
                   </div>
                 </div>
-                <Badge variant="secondary" className="text-xs">{order.items.length} item{order.items.length !== 1 ? "s" : ""}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary" className="text-xs">{order.items.length} item{order.items.length !== 1 ? "s" : ""}</Badge>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs h-7 px-2.5"
+                    onClick={() => printPickingSlip(order)}
+                    title="Print picking slip for this order"
+                  >
+                    <Printer className="w-3 h-3" /> Print Slip
+                  </Button>
+                </div>
               </div>
 
               {/* Items */}
               <div className="divide-y divide-border">
-                {order.items.map((item) => (
-                  <div
-                    key={item.itemId}
-                    className={`flex items-center gap-3 px-4 py-3 transition-colors ${checked.has(item.itemId) ? "bg-green-50/50" : ""}`}
-                  >
-                    <button onClick={() => toggleItem(item.itemId)} className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors">
-                      {checked.has(item.itemId)
-                        ? <CheckSquare className="w-4 h-4 text-green-600" />
-                        : <Square className="w-4 h-4" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{item.productName}</span>
-                        {item.finishName && (
-                          <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-800 border border-blue-200 rounded px-1.5 py-0.5 font-medium">
-                            <Sparkles className="w-3 h-3" />{item.finishName}
-                          </span>
-                        )}
+                {order.items.map((item) => {
+                  const isReturning = returning.has(item.itemId);
+                  return (
+                    <div key={item.itemId}>
+                      <div className={`flex items-center gap-3 px-4 py-3 transition-colors ${checked.has(item.itemId) ? "bg-green-50/50" : isReturning ? "bg-amber-50/60" : ""}`}>
+                        <button onClick={() => toggleItem(item.itemId)} className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors" title="Select for picking">
+                          {checked.has(item.itemId)
+                            ? <CheckSquare className="w-4 h-4 text-green-600" />
+                            : <Square className="w-4 h-4" />}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{item.productName}</span>
+                            {item.finishName && (
+                              <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-800 border border-blue-200 rounded px-1.5 py-0.5 font-medium">
+                                <Sparkles className="w-3 h-3" />{item.finishName}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {item.colour && (
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <Palette className="w-3 h-3" />{item.colour}
+                              </span>
+                            )}
+                            {item.size && (
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <Ruler className="w-3 h-3" />{item.size}
+                              </span>
+                            )}
+                            {item.recipientName && (
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <User className="w-3 h-3" />{item.recipientName}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <Badge variant="secondary" className="text-sm font-bold min-w-[2rem] justify-center">
+                            {item.quantity}
+                          </Badge>
+                          <button
+                            onClick={() => toggleReturning(item.itemId)}
+                            title="Stock not found — return to purchasing"
+                            className={`p-1 rounded transition-colors ${isReturning ? "text-amber-600 bg-amber-100" : "text-muted-foreground hover:text-amber-600 hover:bg-amber-50"}`}
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {item.colour && (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Palette className="w-3 h-3" />{item.colour}
-                          </span>
-                        )}
-                        {item.size && (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <Ruler className="w-3 h-3" />{item.size}
-                          </span>
-                        )}
-                        {item.recipientName && (
-                          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                            <User className="w-3 h-3" />{item.recipientName}
-                          </span>
-                        )}
-                      </div>
+                      {isReturning && (
+                        <div className="flex items-center gap-2 px-12 py-2 bg-amber-50 border-t border-amber-100 text-xs text-amber-800">
+                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>This item will be de-allocated and added to your purchasing requirements. Product stock will be corrected.</span>
+                          <button onClick={() => toggleReturning(item.itemId)} className="ml-auto text-amber-600 hover:text-amber-800 underline whitespace-nowrap">Cancel</button>
+                        </div>
+                      )}
                     </div>
-                    <Badge variant="secondary" className="text-sm font-bold min-w-[2rem] justify-center">
-                      {item.quantity}
-                    </Badge>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           );
