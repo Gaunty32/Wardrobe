@@ -155,5 +155,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS supplier_price numeric(10,2);
   `);
 
+  // Add estimated_delivery_date to purchase_orders
+  await db.execute(sql`
+    ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS estimated_delivery_date timestamptz;
+  `);
+
   console.log("[startup] Migrations complete");
 }

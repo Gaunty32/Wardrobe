@@ -213,11 +213,18 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
     status: z.enum(["draft", "ordered", "delivered"]).optional(),
     notes: z.string().optional().nullable(),
     supplierEmail: z.string().optional().nullable(),
+    estimatedDeliveryDate: z.string().optional().nullable(),
   });
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.data.status !== undefined) updateData.status = parsed.data.status;
+  if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
+  if (parsed.data.supplierEmail !== undefined) updateData.supplierEmail = parsed.data.supplierEmail;
+  if (parsed.data.estimatedDeliveryDate !== undefined) {
+    updateData.estimatedDeliveryDate = parsed.data.estimatedDeliveryDate ? new Date(parsed.data.estimatedDeliveryDate) : null;
+  }
   if (parsed.data.status === "ordered") updateData.sentAt = new Date();
 
   const [po] = await db.update(purchaseOrdersTable).set(updateData).where(eq(purchaseOrdersTable.id, params.data.id)).returning();
@@ -373,6 +380,41 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
   }
 
   res.json({ ok: true, to: toEmail });
+});
+
+router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const poId = parsed.data.id;
+  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (po.status !== "ordered") { res.status(400).json({ error: "Only ordered POs can be received" }); return; }
+
+  const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, poId));
+
+  // Mark every line as fully delivered
+  for (const item of poItems) {
+    await db.update(purchaseOrderItemsTable)
+      .set({ quantityDelivered: item.quantityOrdered, updatedAt: new Date() })
+      .where(eq(purchaseOrderItemsTable.id, item.id));
+  }
+
+  // Mark the PO as delivered
+  await db.update(purchaseOrdersTable)
+    .set({ status: "delivered", updatedAt: new Date() })
+    .where(eq(purchaseOrdersTable.id, poId));
+
+  // Clear purchaseRequired on linked order items
+  const linkedOrderItemIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
+  if (linkedOrderItemIds.length > 0) {
+    await db.update(orderItemsTable)
+      .set({ purchaseRequired: false, purchaseQuantity: null })
+      .where(inArray(orderItemsTable.id, linkedOrderItemIds));
+  }
+
+  const result = await getPoWithItems(poId);
+  res.json(result);
 });
 
 router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void> => {

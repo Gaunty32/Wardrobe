@@ -54,6 +54,7 @@ interface POItem {
 interface PurchaseOrder {
   id: number; poNumber: string; supplierId: number | null; supplierName: string; supplierEmail: string | null;
   status: "draft" | "ordered" | "delivered"; notes: string | null; sentAt: string | null;
+  estimatedDeliveryDate: string | null;
   createdAt: string; updatedAt: string; items: POItem[];
 }
 
@@ -329,64 +330,148 @@ function EmailDialog({ group, open, onClose, onSent }: { group: SupplierGroup; o
   );
 }
 
+function toDateInputValue(iso: string | null): string {
+  if (!iso) return "";
+  return iso.split("T")[0];
+}
+
 function DeliveryRow({ line, onSave }: {
   line: POItem;
   onSave: (itemId: number, data: { quantityDelivered?: number; estimatedDueDate?: string | null }) => void;
 }) {
   const [qtyDel, setQtyDel] = useState(String(line.quantityDelivered));
+  const [dueDate, setDueDate] = useState(toDateInputValue(line.estimatedDueDate));
   const [dirty, setDirty] = useState(false);
   const fullyDelivered = line.quantityDelivered >= line.quantityOrdered;
+  const remaining = line.quantityOrdered - line.quantityDelivered;
+
+  const save = () => {
+    const parsed = parseInt(qtyDel);
+    onSave(line.id, {
+      quantityDelivered: isNaN(parsed) ? 0 : Math.max(0, Math.min(parsed, line.quantityOrdered)),
+      estimatedDueDate: dueDate || null,
+    });
+    setDirty(false);
+  };
 
   return (
-    <div className="flex items-center gap-3 py-1.5 px-2 rounded-md hover:bg-muted/20 transition-colors">
-      <div className="flex-1 min-w-0 text-sm">
-        <span className="font-medium">{line.productName}</span>
-        {(line.colour || line.size) && (
-          <span className="text-muted-foreground ml-2">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
-        )}
+    <div className={`rounded-lg border px-3 py-2.5 transition-colors ${fullyDelivered ? "border-green-200 bg-green-50/50" : "border-border bg-card"}`}>
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <span className="font-medium text-sm">{line.productName}</span>
+          {(line.colour || line.size) && (
+            <span className="text-muted-foreground text-sm ml-2">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
+          )}
+          {line.supplierCode && <span className="text-xs text-muted-foreground font-mono ml-2">[{line.supplierCode}]</span>}
+        </div>
+        <div className="flex items-center gap-4 flex-shrink-0">
+          {/* Received qty */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Rcvd:</span>
+            <Input
+              type="number" min={0} max={line.quantityOrdered} value={qtyDel}
+              onChange={(e) => { setQtyDel(e.target.value); setDirty(true); }}
+              className="h-7 w-14 text-sm text-center px-1"
+            />
+            <span className="text-xs text-muted-foreground">/ {line.quantityOrdered}</span>
+          </div>
+          {/* Backorder due date — only show if not fully delivered */}
+          {!fullyDelivered && (
+            <div className="flex items-center gap-1.5">
+              <CalendarDays className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+              <Input
+                type="date" value={dueDate}
+                onChange={(e) => { setDueDate(e.target.value); setDirty(true); }}
+                className="h-7 w-36 text-xs px-1.5"
+                title="Expected delivery date for remaining stock"
+              />
+            </div>
+          )}
+          {dirty ? (
+            <Button size="sm" className="h-7 text-xs gap-1 px-2.5" onClick={save}>
+              <CheckCircle className="w-3 h-3" /> Save
+            </Button>
+          ) : fullyDelivered ? (
+            <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+          ) : remaining > 0 && line.quantityDelivered > 0 ? (
+            <span className="text-xs text-amber-600 font-medium">{remaining} pending</span>
+          ) : null}
+        </div>
       </div>
-      <span className="text-xs text-muted-foreground w-20 text-right">Ordered: <strong>{line.quantityOrdered}</strong></span>
-      <div className="flex items-center gap-1.5">
-        <Input
-          type="number" min={0} max={line.quantityOrdered} value={qtyDel}
-          onChange={(e) => { setQtyDel(e.target.value); setDirty(true); }}
-          className="h-7 w-16 text-sm text-center px-1"
-        />
-        <span className="text-xs text-muted-foreground">rcvd</span>
-      </div>
-      {dirty && (
-        <Button size="sm" className="h-7 text-xs gap-1 px-2" onClick={() => {
-          const parsed = parseInt(qtyDel);
-          onSave(line.id, { quantityDelivered: isNaN(parsed) ? 0 : Math.max(0, Math.min(parsed, line.quantityOrdered)) });
-          setDirty(false);
-        }}>
-          <CheckCircle className="w-3 h-3" /> Save
-        </Button>
-      )}
-      {fullyDelivered && !dirty && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
     </div>
   );
 }
 
+function MarkOrderedDialog({ po, open, onClose, onConfirm }: {
+  po: PurchaseOrder;
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (estimatedDeliveryDate: string) => void;
+}) {
+  const defaultDate = new Date();
+  defaultDate.setDate(defaultDate.getDate() + 3);
+  const [deliveryDate, setDeliveryDate] = useState(defaultDate.toISOString().split("T")[0]);
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Send className="w-5 h-5 text-blue-600" /> Mark as Ordered — {po.poNumber}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Estimated delivery date</Label>
+            <Input
+              type="date"
+              value={deliveryDate}
+              onChange={(e) => setDeliveryDate(e.target.value)}
+              className="w-full"
+            />
+            <p className="text-xs text-muted-foreground">You can update this later if dates change.</p>
+          </div>
+          <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2 text-sm text-blue-800">
+            This will move the PO to <strong>Ordered</strong> status. The supplier should have already received the PO.
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onConfirm(deliveryDate)} disabled={!deliveryDate}>
+            <Send className="w-4 h-4" /> Confirm Ordered
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function POCard({
-  po, onStatusChange, onDelete, onLineUpdate, onRefresh,
+  po, onStatusChange, onDelete, onLineUpdate, onRefresh, onReceiveAll,
 }: {
   po: PurchaseOrder;
-  onStatusChange: (id: number, status: string) => void;
+  onStatusChange: (id: number, status: string, extra?: Record<string, unknown>) => void;
   onDelete: (id: number) => void;
   onLineUpdate: (poId: number, itemId: number, data: Record<string, unknown>) => void;
   onRefresh: () => void;
+  onReceiveAll: (id: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [markOrderedOpen, setMarkOrderedOpen] = useState(false);
   const cfg = STATUS_CFG[po.status];
   const StatusIcon = cfg.icon;
 
   const totalOrdered = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
   const totalDelivered = po.items.reduce((s, i) => s + i.quantityDelivered, 0);
   const allDelivered = po.items.length > 0 && po.items.every((i) => i.quantityDelivered >= i.quantityOrdered);
+  const someDelivered = po.items.some((i) => i.quantityDelivered > 0);
   const totalValue = po.items.reduce((s, i) => s + (i.supplierPrice != null ? i.supplierPrice * i.quantityOrdered : 0), 0);
   const hasValue = po.items.some((i) => i.supplierPrice != null);
+
+  const deliveryLabel = po.estimatedDeliveryDate
+    ? new Date(po.estimatedDeliveryDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+    : null;
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -397,16 +482,21 @@ function POCard({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono font-bold">{po.poNumber}</span>
               <Badge className={`text-xs gap-1 ${cfg.color}`}><StatusIcon className="w-3 h-3" />{cfg.label}</Badge>
+              {deliveryLabel && po.status === "ordered" && (
+                <span className="flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                  <CalendarDays className="w-3 h-3" /> Due {deliveryLabel}
+                </span>
+              )}
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">
               <span className="font-medium">{po.supplierName}</span>
               <span className="mx-1">·</span>
               <span>{po.items.length} line{po.items.length !== 1 ? "s" : ""}</span>
               <span className="mx-1">·</span>
-              {po.status === "draft" || po.status === "ordered" ? (
-                <span>{totalOrdered} unit{totalOrdered !== 1 ? "s" : ""}</span>
-              ) : (
+              {po.status === "delivered" ? (
                 <span>{totalDelivered}/{totalOrdered} units</span>
+              ) : (
+                <span>{totalOrdered} unit{totalOrdered !== 1 ? "s" : ""}</span>
               )}
               {hasValue && (
                 <>
@@ -427,11 +517,17 @@ function POCard({
             </Button>
           )}
           {po.status === "draft" && (
-            <Button size="sm" className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={() => onStatusChange(po.id, "ordered")}>
+            <Button size="sm" className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setMarkOrderedOpen(true)}>
               <Send className="w-3.5 h-3.5" /> Mark Ordered
             </Button>
           )}
-          {po.status === "ordered" && allDelivered && (
+          {po.status === "ordered" && (
+            <Button size="sm" variant="outline" className="gap-1.5 text-xs border-green-400 text-green-700 hover:bg-green-50"
+              onClick={() => { if (confirm("Receive full delivery? All lines will be marked as fully delivered.")) onReceiveAll(po.id); }}>
+              <PackageCheck className="w-3.5 h-3.5" /> Receive All
+            </Button>
+          )}
+          {po.status === "ordered" && (allDelivered || someDelivered) && (
             <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => onStatusChange(po.id, "delivered")}>
               <PackageCheck className="w-3.5 h-3.5" /> Mark Delivered
             </Button>
@@ -453,16 +549,19 @@ function POCard({
             <>
               <POMatrixView items={po.items} />
               {po.status === "ordered" && (
-                <div className="space-y-2 pt-2 border-t border-border">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Record Deliveries</h4>
-                  <div className="space-y-1.5">
+                <div className="space-y-3 pt-3 border-t border-border">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Truck className="w-3.5 h-3.5" /> Book In Delivery
+                    </h4>
+                    <span className="text-xs text-muted-foreground">{totalDelivered}/{totalOrdered} received</span>
+                  </div>
+                  <div className="space-y-2">
                     {po.items.map((line) => (
                       <DeliveryRow key={line.id} line={line} onSave={(lineId, data) => onLineUpdate(po.id, lineId, data)} />
                     ))}
                   </div>
-                  {!allDelivered && (
-                    <p className="text-xs text-muted-foreground pt-1">Update quantities received above — "Mark Delivered" appears once all lines are complete.</p>
-                  )}
+                  <p className="text-xs text-muted-foreground">Set a date on any line to track backorder expected dates. Use <strong>Receive All</strong> in the header to complete the whole delivery at once.</p>
                 </div>
               )}
             </>
@@ -472,6 +571,14 @@ function POCard({
 
       {emailOpen && (
         <POEmailDialog po={po} open={emailOpen} onClose={() => setEmailOpen(false)} onSent={onRefresh} />
+      )}
+      {markOrderedOpen && (
+        <MarkOrderedDialog
+          po={po}
+          open={markOrderedOpen}
+          onClose={() => setMarkOrderedOpen(false)}
+          onConfirm={(date) => { onStatusChange(po.id, "ordered", { estimatedDeliveryDate: date }); setMarkOrderedOpen(false); }}
+        />
       )}
     </div>
   );
@@ -528,10 +635,16 @@ export default function Purchasing() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: string }) =>
-      apiFetch(`/purchasing/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    mutationFn: ({ id, status, extra }: { id: number; status: string; extra?: Record<string, unknown> }) =>
+      apiFetch(`/purchasing/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status, ...extra }) }),
     onSuccess: () => { invalidateAll(); toast({ title: "Status updated" }); },
     onError: () => toast({ title: "Error", variant: "destructive" }),
+  });
+
+  const receiveAllMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/purchasing/purchase-orders/${id}/receive-all`, { method: "POST" }),
+    onSuccess: () => { invalidateAll(); toast({ title: "Delivery booked in", description: "All lines marked as received." }); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const deleteMutation = useMutation({
@@ -739,10 +852,11 @@ export default function Purchasing() {
                     <POCard
                       key={po.id}
                       po={po}
-                      onStatusChange={(id, status) => statusMutation.mutate({ id, status })}
+                      onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
                       onDelete={(id) => { if (confirm("Delete this draft PO?")) deleteMutation.mutate(id); }}
                       onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
                       onRefresh={() => { refetchPos(); refetchReqs(); }}
+                      onReceiveAll={(id) => receiveAllMutation.mutate(id)}
                     />
                   ))}
                 </div>
