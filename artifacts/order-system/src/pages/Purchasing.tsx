@@ -577,8 +577,16 @@ function POCard({
             </Button>
           )}
           {po.status === "ordered" && (allDelivered || someDelivered) && (
-            <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => onStatusChange(po.id, "delivered")}>
-              <PackageCheck className="w-3.5 h-3.5" /> Mark Delivered
+            <Button
+              size="sm"
+              className={`gap-1.5 text-xs text-white ${allDelivered ? "bg-green-600 hover:bg-green-700" : "bg-amber-600 hover:bg-amber-700"}`}
+              title={allDelivered
+                ? "Close this PO and allocate received stock to orders"
+                : "Record this partial delivery — backordered lines will remain tracked until they arrive"}
+              onClick={() => onStatusChange(po.id, "delivered")}
+            >
+              <PackageCheck className="w-3.5 h-3.5" />
+              {allDelivered ? "Complete Delivery" : "Book Partial Delivery"}
             </Button>
           )}
           {po.status === "draft" && (
@@ -610,7 +618,7 @@ function POCard({
                       <DeliveryRow key={line.id} line={line} onSave={(lineId, data) => onLineUpdate(po.id, lineId, data)} />
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground">Set a date on any line to track backorder expected dates. Use <strong>Receive All</strong> in the header to complete the whole delivery at once.</p>
+                  <p className="text-xs text-muted-foreground">Quantities and dates save automatically when you click away. Use <strong>Receive All</strong> to mark everything delivered at once. When done, click <strong>Complete Delivery</strong> (or <strong>Book Partial Delivery</strong> if some lines are on backorder) to allocate stock to orders.</p>
                 </div>
               )}
             </>
