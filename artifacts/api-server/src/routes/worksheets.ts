@@ -35,7 +35,7 @@ router.get("/picking-list", async (req, res): Promise<void> => {
       productName: orderItemsTable.productName,
       productId: orderItemsTable.productId,
       productSku: productsTable.sku,
-      supplierCode: orderItemsTable.supplierCode,
+      supplierCode: productsTable.supplierCode,
       supplierName: orderItemsTable.supplierName,
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
