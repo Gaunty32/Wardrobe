@@ -122,78 +122,104 @@ const STATUS_CONFIG = {
 };
 
 function PrintWorksheet({ ws }: { ws: Worksheet }) {
-  const allProcesses = ws.items.flatMap((item) => item.processes);
-  const uniqueProcesses = Array.from(
-    new Map(allProcesses.map((p) => [p.id, p])).values()
-  );
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
   return (
     <div className="print-only bg-white text-black font-sans text-sm" style={{ width: "210mm", minHeight: "297mm", padding: "12mm 15mm", boxSizing: "border-box" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "6mm", borderBottom: "2px solid #1e3a5f", paddingBottom: "4mm" }}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "5mm", borderBottom: "2px solid #1e3a5f", paddingBottom: "4mm" }}>
         <div>
-          <div style={{ fontSize: "20px", fontWeight: "bold", color: "#1e3a5f" }}>PRODUCTION WORKSHEET</div>
-          <div style={{ fontSize: "24px", fontWeight: "900", letterSpacing: "2px", color: "#1e3a5f", marginTop: "2px" }}>{ws.worksheetNumber}</div>
+          {ws.customerName && <div style={{ fontSize: "26px", fontWeight: "900", color: "#1e3a5f", marginBottom: "1mm" }}>{ws.customerName}</div>}
+          <div style={{ fontSize: "16px", fontWeight: "700", color: "#1e3a5f", letterSpacing: "1px" }}>PRODUCTION WORKSHEET</div>
+          <div style={{ fontSize: "12px", color: "#555", marginTop: "1mm" }}>{ws.worksheetNumber} · Order {ws.orderNumber ?? "—"}</div>
         </div>
         <div style={{ textAlign: "right", fontSize: "11px", color: "#555" }}>
-          <div style={{ fontWeight: "bold", fontSize: "14px" }}>Select Branding Solutions</div>
-          <div>Date: {formatDate(ws.createdAt)}</div>
-          <div>Order: <strong>{ws.orderNumber ?? "—"}</strong></div>
-          <div>Customer: <strong>{ws.customerName ?? "—"}</strong></div>
+          <div style={{ fontWeight: "bold", fontSize: "13px" }}>Select Branding Solutions</div>
+          <div>Printed: {dateStr}</div>
         </div>
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "6mm", fontSize: "11px" }}>
-        <thead>
-          <tr style={{ backgroundColor: "#1e3a5f", color: "white" }}>
-            <th style={{ padding: "4px 8px", textAlign: "left" }}>Product</th>
-            <th style={{ padding: "4px 8px", textAlign: "left" }}>Colour</th>
-            <th style={{ padding: "4px 8px", textAlign: "left" }}>Size</th>
-            <th style={{ padding: "4px 8px", textAlign: "center" }}>Qty</th>
-            <th style={{ padding: "4px 8px", textAlign: "left" }}>Recipient</th>
-            <th style={{ padding: "4px 8px", textAlign: "left" }}>Finish</th>
-          </tr>
-        </thead>
-        <tbody>
-          {ws.items.map((item, i) => (
-            <tr key={item.id} style={{ backgroundColor: i % 2 === 0 ? "#f9fafb" : "white" }}>
-              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.productName}</td>
-              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.colour ?? "—"}</td>
-              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.size ?? "—"}</td>
-              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb", textAlign: "center", fontWeight: "bold" }}>{item.quantity}</td>
-              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>
-                {item.recipientType === "person" ? item.recipientName : "Stock"}
-              </td>
-              <td style={{ padding: "4px 8px", borderBottom: "1px solid #e5e7eb" }}>{item.finishName ?? "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      {uniqueProcesses.length > 0 && (
-        <div style={{ marginBottom: "6mm" }}>
-          <div style={{ fontSize: "13px", fontWeight: "bold", color: "#1e3a5f", borderBottom: "1px solid #1e3a5f", paddingBottom: "2px", marginBottom: "4px" }}>
-            Decoration Processes
+      {/* One section per item */}
+      {ws.items.map((item, i) => (
+        <div key={item.id} style={{ marginBottom: "5mm", pageBreakInside: "avoid", border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden" }}>
+          {/* Item header */}
+          <div style={{ backgroundColor: "#1e3a5f", color: "white", padding: "4px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontWeight: "bold", fontSize: "12px" }}>Item {i + 1} of {ws.items.length}</span>
+            <span style={{ fontSize: "11px" }}>{item.finishName ?? "No Finish"}</span>
           </div>
-          {uniqueProcesses.map((p) => (
-            <div key={p.id} style={{ fontSize: "11px", marginBottom: "2px" }}>
-              <strong>{p.name}</strong>
-              {p.type && ` · ${p.type}`}
-              {p.placement && ` · ${p.placement}`}
-              {p.notes && <span style={{ color: "#666" }}> — {p.notes}</span>}
+
+          {/* Item details grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0", borderBottom: "1px solid #e5e7eb" }}>
+            {[
+              { label: "Product", value: item.productName },
+              { label: "Colour", value: item.colour ?? "—" },
+              { label: "Size", value: item.size ?? "—" },
+              { label: "Qty", value: String(item.quantity) },
+              { label: "Recipient", value: item.recipientType === "person" ? (item.recipientName ?? "—") : "Stock" },
+              { label: "Finish / Decoration", value: item.finishName ?? "—" },
+            ].map(({ label, value }) => (
+              <div key={label} style={{ padding: "4px 8px", borderRight: "1px solid #f0f0f0" }}>
+                <div style={{ fontSize: "9px", color: "#888", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "1px" }}>{label}</div>
+                <div style={{ fontSize: "11px", fontWeight: "600" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Processes for this item */}
+          {item.processes.length > 0 ? (
+            <div style={{ padding: "5px 10px", backgroundColor: "#f9fafb" }}>
+              <div style={{ fontSize: "9px", fontWeight: "700", color: "#1e3a5f", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "3px" }}>
+                Decoration Processes ({item.processes.length})
+              </div>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px" }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#e8edf5" }}>
+                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Process</th>
+                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Type</th>
+                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Placement</th>
+                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Notes</th>
+                    <th style={{ padding: "2px 6px", textAlign: "center", fontWeight: "600" }}>Done ✓</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {item.processes.map((p) => (
+                    <tr key={p.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                      <td style={{ padding: "3px 6px", fontWeight: "600" }}>{p.name}</td>
+                      <td style={{ padding: "3px 6px", color: "#555" }}>{p.type ?? "—"}</td>
+                      <td style={{ padding: "3px 6px", color: "#555" }}>{p.placement ?? "—"}</td>
+                      <td style={{ padding: "3px 6px", color: "#777", fontStyle: "italic" }}>{p.notes ?? "—"}</td>
+                      <td style={{ padding: "3px 6px", textAlign: "center" }}>
+                        <span style={{ display: "inline-block", width: "18px", height: "18px", border: "1.5px solid #999", borderRadius: "3px" }}></span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
+          ) : (
+            <div style={{ padding: "4px 10px", fontSize: "10px", color: "#999", fontStyle: "italic" }}>
+              No decoration processes configured for this finish.
+            </div>
+          )}
         </div>
-      )}
+      ))}
 
       {ws.notes && (
-        <div style={{ marginTop: "4mm", padding: "3mm", backgroundColor: "#fff9c4", border: "1px solid #f59e0b", borderRadius: "4px", fontSize: "11px" }}>
+        <div style={{ marginTop: "3mm", padding: "3mm", backgroundColor: "#fff9c4", border: "1px solid #f59e0b", borderRadius: "4px", fontSize: "11px" }}>
           <strong>Notes:</strong> {ws.notes}
         </div>
       )}
 
-      <div style={{ marginTop: "auto", paddingTop: "6mm", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: "10px", color: "#888" }}>
-        <span>Printed: {new Date().toLocaleDateString("en-GB")}</span>
+      {/* Sign-off */}
+      <div style={{ marginTop: "6mm", display: "flex", gap: "20px" }}>
+        <div style={{ flex: 1, borderBottom: "1px solid #999", paddingBottom: "2mm", fontSize: "10px", color: "#666" }}>Produced by: ___________________________</div>
+        <div style={{ flex: 1, borderBottom: "1px solid #999", paddingBottom: "2mm", fontSize: "10px", color: "#666" }}>Date completed: ___________________________</div>
+        <div style={{ flex: 1, borderBottom: "1px solid #999", paddingBottom: "2mm", fontSize: "10px", color: "#666" }}>Checked by: ___________________________</div>
+      </div>
+
+      <div style={{ marginTop: "6mm", paddingTop: "3mm", borderTop: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", fontSize: "9px", color: "#aaa" }}>
         <span>Select Branding Solutions — Internal Use Only</span>
+        <span>{ws.worksheetNumber} · {dateStr}</span>
       </div>
     </div>
   );
@@ -248,9 +274,14 @@ function WorksheetCard({ ws, onStatusChange, onDelete }: {
 
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
           {ws.status === "pre_wip" && (
-            <Button size="sm" className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={() => onStatusChange(ws.id, "wip")}>
-              <ArrowRight className="w-3.5 h-3.5" /> Move to WIP
-            </Button>
+            <>
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
+                <Printer className="w-3.5 h-3.5" /> Print Worksheet
+              </Button>
+              <Button size="sm" className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={() => onStatusChange(ws.id, "wip")}>
+                <ArrowRight className="w-3.5 h-3.5" /> Move to WIP
+              </Button>
+            </>
           )}
           {ws.status === "wip" && (
             <>
