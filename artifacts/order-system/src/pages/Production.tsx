@@ -964,6 +964,7 @@ export default function Production() {
                         ws={ws}
                         onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
                         onDelete={handleDelete}
+                        onReturnToPicking={handleReturnToPicking}
                       />
                     ))}
                   </>
@@ -992,6 +993,7 @@ export default function Production() {
                     ws={ws}
                     onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
                     onDelete={handleDelete}
+                    onReturnToPicking={handleReturnToPicking}
                   />
                 ))}
               </div>
@@ -1023,6 +1025,7 @@ export default function Production() {
                     ws={ws}
                     onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
                     onDelete={handleDelete}
+                    onReturnToPicking={handleReturnToPicking}
                   />
                 ))}
               </div>
