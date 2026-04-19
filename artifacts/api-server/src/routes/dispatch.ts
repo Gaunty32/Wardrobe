@@ -49,12 +49,23 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
   const result = orders
     .map((order) => {
       const orderWs = worksheets.filter((w) => w.orderId === order.id);
-      const hasAnyComplete = orderWs.some((w) => w.status === "complete");
-
-      if (!hasAnyComplete) return null;
-
-      const allComplete = orderWs.length > 0 && orderWs.every((w) => w.status === "complete");
       const items = orderItems.filter((i) => i.orderId === order.id);
+
+      // Plain items (no finish) go straight to stockStatus='complete' with no worksheet.
+      // Decorated items create a worksheet; dispatch only when that worksheet is complete.
+      const hasPlainComplete = items.some((i) => i.finishId == null && i.stockStatus === "complete");
+      const hasWorksheetComplete = orderWs.some((w) => w.status === "complete");
+
+      if (!hasPlainComplete && !hasWorksheetComplete) return null;
+
+      // productionComplete = every item in the order is either plainly complete or in a completed worksheet
+      const wsCompleteItemIds = new Set(
+        orderWs.filter((w) => w.status === "complete")
+          .flatMap((w) => wsItems.filter((wi) => wi.worksheetId === w.id).map((wi) => wi.orderItemId))
+      );
+      const allComplete = items.every(
+        (i) => i.stockStatus === "complete" || wsCompleteItemIds.has(i.id)
+      );
       const address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
 
       const enrichedItems = items.map((item) => {
