@@ -225,10 +225,11 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
   );
 }
 
-function WorksheetCard({ ws, onStatusChange, onDelete }: {
+function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   ws: Worksheet;
   onStatusChange: (id: number, status: string) => void;
   onDelete: (id: number) => void;
+  onReturnToPicking: (id: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = STATUS_CONFIG[ws.status];
@@ -275,6 +276,9 @@ function WorksheetCard({ ws, onStatusChange, onDelete }: {
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
           {ws.status === "pre_wip" && (
             <>
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
+                <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
+              </Button>
               <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
                 <Printer className="w-3.5 h-3.5" /> Print Worksheet
               </Button>
@@ -285,6 +289,9 @@ function WorksheetCard({ ws, onStatusChange, onDelete }: {
           )}
           {ws.status === "wip" && (
             <>
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
+                <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
+              </Button>
               <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
                 <Printer className="w-3.5 h-3.5" /> Print
               </Button>
@@ -832,9 +839,24 @@ export default function Production() {
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
+  const returnToPickingMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/worksheets/${id}/return-to-picking`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["worksheets"] });
+      queryClient.invalidateQueries({ queryKey: ["picking-list"] });
+      toast({ title: "Returned to Picking List", description: "Items moved back to the picking list." });
+    },
+    onError: () => toast({ title: "Error", variant: "destructive" }),
+  });
+
   const handleDelete = (id: number) => {
     if (!confirm("Delete this worksheet?")) return;
     deleteMutation.mutate(id);
+  };
+
+  const handleReturnToPicking = (id: number) => {
+    if (!confirm("Return all items in this worksheet back to the Picking List?")) return;
+    returnToPickingMutation.mutate(id);
   };
 
   const preWipWorksheets = allWorksheets.filter((w) => w.status === "pre_wip");

@@ -448,6 +448,37 @@ router.patch("/worksheets/:id", async (req, res): Promise<void> => {
   res.json(ws);
 });
 
+// Return all items in a worksheet back to the picking list (stockStatus → 'allocated')
+// then delete the worksheet.
+router.post("/worksheets/:id/return-to-picking", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const wsId = parsed.data.id;
+
+  // Get all worksheet items so we know which order items to reset
+  const items = await db
+    .select({ orderItemId: worksheetItemsTable.orderItemId })
+    .from(worksheetItemsTable)
+    .where(eq(worksheetItemsTable.worksheetId, wsId));
+
+  const orderItemIds = items.map((i) => i.orderItemId).filter((id): id is number => id != null);
+
+  // Reset order items back to allocated (returns them to the picking list)
+  if (orderItemIds.length > 0) {
+    await db
+      .update(orderItemsTable)
+      .set({ stockStatus: "allocated", stockAllocatedAt: new Date() })
+      .where(inArray(orderItemsTable.id, orderItemIds));
+  }
+
+  // Delete the worksheet (cascade deletes worksheet_items)
+  const [ws] = await db.delete(worksheetsTable).where(eq(worksheetsTable.id, wsId)).returning();
+  if (!ws) { res.status(404).json({ error: "Worksheet not found" }); return; }
+
+  res.json({ ok: true, resetItems: orderItemIds.length });
+});
+
 router.delete("/worksheets/:id", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
