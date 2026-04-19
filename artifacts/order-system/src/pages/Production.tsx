@@ -238,14 +238,47 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   const handlePrint = () => {
     const el = document.getElementById(`ws-print-${ws.id}`);
     if (!el) return;
-    const win = window.open("", "_blank", "width=900,height=700");
+    const win = window.open("", "_blank", "width=960,height=800");
     if (!win) return;
-    win.document.write(`<html><head><title>Worksheet ${ws.worksheetNumber}</title>
-      <style>body{margin:0;padding:0;font-family:sans-serif}@media print{.no-print{display:none}}</style>
-    </head><body>${el.innerHTML}</body></html>`);
+    win.document.write(`<!DOCTYPE html><html><head><title>Worksheet ${ws.worksheetNumber}</title>
+      <style>
+        *{box-sizing:border-box}
+        body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif}
+        #toolbar{
+          position:sticky;top:0;z-index:10;
+          display:flex;align-items:center;gap:10px;
+          padding:10px 20px;background:#1e3a5f;color:white;
+          box-shadow:0 2px 6px rgba(0,0,0,.3);
+        }
+        #toolbar span{flex:1;font-size:14px;font-weight:600;letter-spacing:.5px}
+        #toolbar button{
+          padding:6px 18px;border:none;border-radius:5px;
+          font-size:13px;font-weight:600;cursor:pointer;
+        }
+        #btn-print{background:#22c55e;color:white}
+        #btn-print:hover{background:#16a34a}
+        #btn-close{background:rgba(255,255,255,.15);color:white}
+        #btn-close:hover{background:rgba(255,255,255,.25)}
+        #page{display:flex;justify-content:center;padding:24px 0 40px}
+        #sheet{background:white;box-shadow:0 4px 24px rgba(0,0,0,.15)}
+        @media print{
+          #toolbar{display:none}
+          body{background:white}
+          #page{padding:0}
+          #sheet{box-shadow:none}
+          @page{size:A4;margin:15mm}
+        }
+      </style>
+    </head><body>
+      <div id="toolbar">
+        <span>📋 ${ws.worksheetNumber} — ${ws.customerName ?? ws.orderNumber ?? "Worksheet"}</span>
+        <button id="btn-print" onclick="window.print()">🖨 Print</button>
+        <button id="btn-close" onclick="window.close()">✕ Close</button>
+      </div>
+      <div id="page"><div id="sheet">${el.innerHTML}</div></div>
+    </body></html>`);
     win.document.close();
     win.focus();
-    win.print();
   };
 
   return (
