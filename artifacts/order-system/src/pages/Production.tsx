@@ -502,23 +502,7 @@ function printPickingSlip(order: PickingOrder) {
     </tr>`;
   }).join("");
 
-  const html = `<html><head><title>Picking Slip — ${order.orderNumber}</title>
-    <style>
-      body{margin:0;padding:12mm 15mm;font-family:Arial,sans-serif;font-size:11px;color:#111}
-      table{width:100%;border-collapse:collapse}
-      th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:11px}
-      th.center{text-align:center}
-      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm}
-      .meta{display:flex;gap:20px;margin-bottom:5mm;font-size:11px}
-      .meta-item{display:flex;flex-direction:column}
-      .meta-label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
-      .meta-value{font-weight:bold}
-      .footer{margin-top:8mm;border-top:1px solid #e5e7eb;padding-top:4mm;display:flex;justify-content:space-between;font-size:9px;color:#888}
-      .sig-box{margin-top:8mm;display:flex;gap:30px}
-      .sig-field{flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666}
-      @media print{@page{size:A4;margin:15mm}}
-    </style>
-  </head><body>
+  const sheetContent = `
     <div class="header">
       <div>
         ${order.customerName ? `<div style="font-size:26px;font-weight:900;color:#1e3a5f;margin-bottom:1mm">${order.customerName}</div>` : ""}
@@ -556,15 +540,59 @@ function printPickingSlip(order: PickingOrder) {
     <div class="footer">
       <span>Select Branding Solutions — Internal Use Only</span>
       <span>${order.orderNumber} · ${dateStr}</span>
+    </div>`;
+
+  const html = `<!DOCTYPE html><html><head><title>Picking Slip — ${order.orderNumber}</title>
+    <style>
+      *{box-sizing:border-box}
+      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
+      #toolbar{
+        position:sticky;top:0;z-index:10;
+        display:flex;align-items:center;gap:10px;
+        padding:10px 20px;background:#1e3a5f;color:white;
+        box-shadow:0 2px 6px rgba(0,0,0,.3);
+      }
+      #toolbar span{flex:1;font-size:14px;font-weight:600;letter-spacing:.5px}
+      #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+      #btn-print{background:#22c55e;color:white}
+      #btn-print:hover{background:#16a34a}
+      #btn-close{background:rgba(255,255,255,.15);color:white}
+      #btn-close:hover{background:rgba(255,255,255,.25)}
+      #page{display:flex;justify-content:center;padding:24px 0 40px}
+      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
+      table{width:100%;border-collapse:collapse}
+      th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:11px}
+      th.center{text-align:center}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm}
+      .meta{display:flex;gap:20px;margin-bottom:5mm}
+      .meta-item{display:flex;flex-direction:column}
+      .meta-label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
+      .meta-value{font-weight:bold}
+      .footer{margin-top:8mm;border-top:1px solid #e5e7eb;padding-top:4mm;display:flex;justify-content:space-between;font-size:9px;color:#888}
+      .sig-box{margin-top:8mm;display:flex;gap:30px}
+      .sig-field{flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666}
+      @media print{
+        #toolbar{display:none}
+        body{background:white}
+        #page{padding:0}
+        #sheet{box-shadow:none;padding:0}
+        @page{size:A4;margin:15mm}
+      }
+    </style>
+  </head><body>
+    <div id="toolbar">
+      <span>📋 Picking Slip — ${order.customerName ?? order.orderNumber}</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print</button>
+      <button id="btn-close" onclick="window.close()">✕ Close</button>
     </div>
+    <div id="page"><div id="sheet">${sheetContent}</div></div>
   </body></html>`;
 
-  const win = window.open("", "_blank", "width=900,height=700");
+  const win = window.open("", "_blank", "width=960,height=800");
   if (!win) return;
   win.document.write(html);
   win.document.close();
   win.focus();
-  win.print();
 }
 
 // ─── Picking List Tab Component ───────────────────────────────────────────────
