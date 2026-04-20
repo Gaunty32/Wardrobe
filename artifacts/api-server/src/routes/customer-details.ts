@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -550,6 +550,35 @@ router.delete("/customers/:customerId/employees/:employeeId/sizes/:sizeId", asyn
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   await db.delete(customerEmployeeSizesTable).where(eq(customerEmployeeSizesTable.id, p.data.sizeId));
   res.sendStatus(204);
+});
+
+// ─── Employee last-ordered sizes (from order history) ─────────────────────────
+
+router.get("/customers/:customerId/employees/:employeeId/last-sizes", async (req, res): Promise<void> => {
+  const p = employeeSubParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+
+  const rows = await db.execute(sql`
+    SELECT DISTINCT ON (COALESCE(oi.product_id::text, oi.product_name))
+      oi.product_id,
+      oi.product_name,
+      oi.colour,
+      oi.size
+    FROM order_items oi
+    JOIN orders o ON oi.order_id = o.id
+    WHERE oi.recipient_employee_id = ${p.data.employeeId}
+      AND o.status NOT IN ('cancelled', 'void')
+      AND oi.size IS NOT NULL AND oi.size != ''
+    ORDER BY COALESCE(oi.product_id::text, oi.product_name), o.created_at DESC
+  `);
+
+  const byProductId: Record<string, { size: string; colour: string | null; productName: string }> = {};
+  const byProductName: Record<string, { size: string; colour: string | null; productId: number | null }> = {};
+  for (const row of rows.rows as any[]) {
+    if (row.product_id) byProductId[row.product_id] = { size: row.size, colour: row.colour ?? null, productName: row.product_name };
+    if (row.product_name) byProductName[row.product_name] = { size: row.size, colour: row.colour ?? null, productId: row.product_id ?? null };
+  }
+  res.json({ byProductId, byProductName });
 });
 
 // ─── Finished Items (Wardrobe) ────────────────────────────────────────────────

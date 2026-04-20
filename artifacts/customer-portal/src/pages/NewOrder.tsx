@@ -125,9 +125,10 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
 
 // ─── Step 2a: Wardrobe ───────────────────────────────────────────────────────
 
-function WardrobeStep({ items, employees, basket, setBasket, onNext }: {
+function WardrobeStep({ items, employees, lastSizes, basket, setBasket, onNext }: {
   items: any[];
   employees: any[];
+  lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onNext: () => void;
@@ -143,13 +144,25 @@ function WardrobeStep({ items, employees, basket, setBasket, onNext }: {
     }, {})
   ) as Array<{ finish_id: number; finish_name: string; items: any[] }>;
 
+  // Look up the last ordered size for a given employee + wardrobe item
+  const getLastSize = (wi: any, employeeId: number): string | null => {
+    const empSizes = lastSizes[String(employeeId)];
+    if (!empSizes) return null;
+    if (wi.product_id && empSizes[String(wi.product_id)]) return empSizes[String(wi.product_id)].size;
+    const name = wi.product_name ?? wi.name;
+    if (name && empSizes[name]) return empSizes[name].size;
+    return null;
+  };
+
   const addItem = (wi: any, recipientType: "stock" | "person", employee?: any) => {
     const price = parseFloat(wi.special_price ?? wi.unit_price ?? "0");
+    // Use last ordered size for this employee+product if available, otherwise fall back to wardrobe default
+    const size = (employee ? getLastSize(wi, employee.id) : null) ?? wi.size ?? "";
     setBasket(b => [...b, {
       productId: wi.product_id ?? null,
       productName: wi.product_name ?? wi.name,
       colour: wi.colour ?? "",
-      size: wi.size ?? "",
+      size,
       finishId: wi.finish_id ?? null,
       finishName: wi.finish_name ?? "",
       recipientType,
@@ -203,11 +216,15 @@ function WardrobeStep({ items, employees, basket, setBasket, onNext }: {
                             <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem(wi, "stock")}>
                               <Plus className="w-3 h-3" /> Add to stock
                             </Button>
-                            {employees.map((emp: any) => (
-                              <Button key={emp.id} size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem(wi, "person", emp)}>
-                                <Plus className="w-3 h-3" /> {emp.first_name} {emp.last_name}
-                              </Button>
-                            ))}
+                            {employees.map((emp: any) => {
+                              const lastSize = getLastSize(wi, emp.id);
+                              return (
+                                <Button key={emp.id} size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem(wi, "person", emp)}>
+                                  <Plus className="w-3 h-3" /> {emp.first_name} {emp.last_name}
+                                  {lastSize && <span className="ml-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1">{lastSize}</span>}
+                                </Button>
+                              );
+                            })}
                           </div>
                         </div>
                       </div>
@@ -497,7 +514,11 @@ export default function NewOrder() {
   const [basket, setBasket] = useState<OrderItem[]>([]);
   const [confirmedOrder, setConfirmedOrder] = useState<{ id: number; orderNumber: string } | null>(null);
 
-  const { data: wardrobe } = useQuery<{ items: any[]; employees: any[] }>({
+  const { data: wardrobe } = useQuery<{
+    items: any[];
+    employees: any[];
+    lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
+  }>({
     queryKey: ["portal-wardrobe"],
     queryFn: () => apiFetch("/portal/wardrobe"),
     enabled: mode === "wardrobe",
@@ -561,6 +582,7 @@ export default function NewOrder() {
         <WardrobeStep
           items={wardrobe?.items ?? []}
           employees={wardrobe?.employees ?? []}
+          lastSizes={wardrobe?.lastSizes ?? {}}
           basket={basket}
           setBasket={setBasket}
           onNext={() => setStep(2)}

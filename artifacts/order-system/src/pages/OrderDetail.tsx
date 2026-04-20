@@ -147,6 +147,10 @@ export default function OrderDetail() {
   const [isAddingMulti, setIsAddingMulti] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<CustomerEmployee | null>(null);
   const [isNewPerson, setIsNewPerson] = useState(false);
+  const [lastOrderedSizes, setLastOrderedSizes] = useState<{
+    byProductId: Record<string, { size: string; colour: string | null; productName: string }>;
+    byProductName: Record<string, { size: string; colour: string | null; productId: number | null }>;
+  }>({ byProductId: {}, byProductName: {} });
 
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
@@ -328,12 +332,30 @@ export default function OrderDetail() {
     }
   }, [item.colour, item.size, item.productId, item.fromWardrobe, productVariants]);
 
-  // Auto-suggest saved size when employee + product are both selected
+  // Fetch last-ordered sizes from order history when an employee is selected
+  useEffect(() => {
+    if (!selectedEmployee || !customerId) {
+      setLastOrderedSizes({ byProductId: {}, byProductName: {} });
+      return;
+    }
+    apiFetch<{ byProductId: Record<string, any>; byProductName: Record<string, any> }>(
+      `/customers/${customerId}/employees/${selectedEmployee.id}/last-sizes`
+    ).then(setLastOrderedSizes).catch(() => {});
+  }, [selectedEmployee?.id, customerId]);
+
+  // Auto-suggest size when employee + product are both selected (order history takes priority over profile)
   useEffect(() => {
     if (!selectedEmployee || !item.productName || item.size) return;
+    // 1. Check order history by product ID
+    const byId = item.productId ? lastOrderedSizes.byProductId[item.productId] : null;
+    if (byId?.size) { setItem(i => ({ ...i, size: byId.size })); return; }
+    // 2. Check order history by product name
+    const byName = lastOrderedSizes.byProductName[item.productName];
+    if (byName?.size) { setItem(i => ({ ...i, size: byName.size })); return; }
+    // 3. Fall back to manually saved profile sizes
     const savedSize = selectedEmployee.sizes?.find(s => s.label === item.productName);
     if (savedSize) setItem(i => ({ ...i, size: savedSize.size }));
-  }, [selectedEmployee?.id, item.productName]);
+  }, [selectedEmployee?.id, item.productName, item.productId, lastOrderedSizes]);
 
   const handleProductSelect = (productId: number) => {
     const prod = products?.find(p => p.id === productId);
@@ -1119,6 +1141,11 @@ export default function OrderDetail() {
                         const effectivePrice = fi.specialPrice ?? fi.unitPrice;
                         const isSelected = item.productId === fi.productId && item.productName === (fi.productName ?? fi.name) && item.unitPrice === effectivePrice.toString();
                         const isRoleMatch = selectedEmployee?.roleId && fi.roleId === selectedEmployee.roleId;
+                        const lastSizeForItem = selectedEmployee
+                          ? (fi.productId ? lastOrderedSizes.byProductId[fi.productId]?.size : null)
+                            ?? lastOrderedSizes.byProductName[fi.productName ?? fi.name]?.size
+                            ?? null
+                          : null;
                         return (
                           <button
                             key={fi.id}
@@ -1139,6 +1166,7 @@ export default function OrderDetail() {
                                   {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
                                   <p className="font-medium text-sm truncate">{fi.name}</p>
                                   {fi.roleName && <span className="text-[10px] font-medium text-primary/70 bg-primary/10 rounded px-1 shrink-0">{fi.roleName}</span>}
+                                  {lastSizeForItem && <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 shrink-0">Last: {lastSizeForItem}</span>}
                                 </div>
                                 <p className="text-xs text-muted-foreground mt-0.5 truncate">
                                   {fi.productName}
@@ -1367,7 +1395,12 @@ export default function OrderDetail() {
 
                   {/* Colour + Size */}
                   {item.productId && (colours.length > 0 || sizes.length > 0) && (() => {
-                    const suggestedSize = selectedEmployee?.sizes?.find(s => s.label === item.productName)?.size ?? null;
+                    const historyById = item.productId ? lastOrderedSizes.byProductId[item.productId] : null;
+                    const historyByName = lastOrderedSizes.byProductName[item.productName];
+                    const historySize = historyById?.size ?? historyByName?.size ?? null;
+                    const profileSize = selectedEmployee?.sizes?.find(s => s.label === item.productName)?.size ?? null;
+                    const suggestedSize = historySize ?? profileSize;
+                    const isFromHistory = !!historySize;
                     return (
                       <div className="grid gap-4">
                         {colours.length > 0 && (
@@ -1402,7 +1435,11 @@ export default function OrderDetail() {
                                         <SelectItem key={s} value={s}>
                                           <span className="flex items-center gap-2">
                                             {s}
-                                            {s === suggestedSize && <span className="text-[10px] text-emerald-700 font-medium">last ordered</span>}
+                                            {s === suggestedSize && (
+                                              <span className="text-[10px] text-emerald-700 font-medium">
+                                                {isFromHistory ? "last ordered" : "saved size"}
+                                              </span>
+                                            )}
                                           </span>
                                         </SelectItem>
                                       ))}

@@ -361,9 +361,36 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     ORDER BY e.last_name, e.first_name
   `);
 
+  // Get last ordered size per employee+product from order history
+  const lastSizesRows = await db.execute(sql`
+    SELECT DISTINCT ON (oi.recipient_employee_id, COALESCE(oi.product_id::text, oi.product_name))
+      oi.recipient_employee_id as employee_id,
+      oi.product_id,
+      oi.product_name,
+      oi.colour,
+      oi.size
+    FROM order_items oi
+    JOIN orders o ON oi.order_id = o.id
+    WHERE o.customer_id = ${customerId}
+      AND oi.recipient_employee_id IS NOT NULL
+      AND o.status NOT IN ('cancelled', 'void')
+      AND oi.size IS NOT NULL AND oi.size != ''
+    ORDER BY oi.recipient_employee_id, COALESCE(oi.product_id::text, oi.product_name), o.created_at DESC
+  `);
+
+  // Build nested map: { [employeeId]: { [productId]: {size,colour}, [productName]: {size,colour} } }
+  const lastSizes: Record<string, Record<string, { size: string; colour: string | null }>> = {};
+  for (const row of lastSizesRows.rows as any[]) {
+    const eid = String(row.employee_id);
+    if (!lastSizes[eid]) lastSizes[eid] = {};
+    if (row.product_id) lastSizes[eid][String(row.product_id)] = { size: row.size, colour: row.colour ?? null };
+    if (row.product_name) lastSizes[eid][row.product_name] = { size: row.size, colour: row.colour ?? null };
+  }
+
   res.json({
     items: finishes.rows,
     employees: employees.rows,
+    lastSizes,
   });
 });
 

@@ -166,5 +166,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS stock_allocated_at timestamptz;
   `);
 
+  // Add portal_role to customer_portal_users (may not exist if table was created before this column was added)
+  await db.execute(sql`
+    ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS portal_role text NOT NULL DEFAULT 'member';
+  `);
+
   console.log("[startup] Migrations complete");
 }
