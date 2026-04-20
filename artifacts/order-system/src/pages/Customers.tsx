@@ -16,8 +16,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, Users, Loader2 } from "lucide-react";
+
+const SHIPPING_SERVICES = [
+  "DPD",
+  "Royal Mail",
+  "Evri (Hermes)",
+  "DHL",
+  "FedEx",
+  "UPS",
+  "TNT",
+  "Yodel",
+  "ParcelForce",
+  "Amazon Logistics",
+  "Click & Collect",
+  "Courier",
+  "Other",
+];
 
 export default function Customers() {
   const [, navigate] = useLocation();
@@ -25,7 +42,7 @@ export default function Customers() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   
-  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "" };
+  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "" };
   const [formData, setFormData] = useState(initialForm);
 
   const queryClient = useQueryClient();
@@ -52,7 +69,8 @@ export default function Customers() {
       city: customer.city || "",
       state: customer.state || "",
       postcode: customer.postcode || "",
-      notes: customer.notes || ""
+      notes: customer.notes || "",
+      defaultShippingService: (customer as any).defaultShippingService || "",
     });
     setEditingCustomer(customer);
   };
@@ -240,13 +258,36 @@ export default function Customers() {
                   <Input id="city" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="state">State</Label>
+                  <Label htmlFor="state">County</Label>
                   <Input id="state" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="postcode">ZIP/Postcode</Label>
+                  <Label htmlFor="postcode">Postcode</Label>
                   <Input id="postcode" value={formData.postcode} onChange={(e) => setFormData({...formData, postcode: e.target.value})} />
                 </div>
+              </div>
+
+              <div className="grid gap-2 mt-2">
+                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Shipping</h4>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="defaultShippingService">Default Shipping Service</Label>
+                <Select
+                  value={formData.defaultShippingService || "none"}
+                  onValueChange={(v) => setFormData({...formData, defaultShippingService: v === "none" ? "" : v})}
+                >
+                  <SelectTrigger id="defaultShippingService">
+                    <SelectValue placeholder="Select a carrier..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None —</SelectItem>
+                    {SHIPPING_SERVICES.map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Pre-fills the shipping service when creating orders for this customer.</p>
               </div>
             </div>
             <DialogFooter>

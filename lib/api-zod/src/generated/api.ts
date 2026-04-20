@@ -34,6 +34,7 @@ export const ListCustomersResponseItem = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
+  defaultShippingService: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -53,6 +54,7 @@ export const CreateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
+  defaultShippingService: zod.string().nullish(),
 });
 
 /**
@@ -74,6 +76,7 @@ export const GetCustomerResponse = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
+  defaultShippingService: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -96,6 +99,7 @@ export const UpdateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
+  defaultShippingService: zod.string().nullish(),
 });
 
 export const UpdateCustomerResponse = zod.object({
@@ -110,6 +114,7 @@ export const UpdateCustomerResponse = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
+  defaultShippingService: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });

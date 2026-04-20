@@ -72,7 +72,7 @@ function AddressesTab({ customerId, customer }: { customerId: number; customer: 
   const { data: addresses, isLoading } = useSubResource<any>(customerId, "addresses");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { label: "", line1: "", line2: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "" };
+  const blank = { label: "", line1: "", line2: "", city: "", postcode: "", country: "United Kingdom", notes: "" };
   const [form, setForm] = useState(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "addresses"] });
@@ -96,7 +96,6 @@ function AddressesTab({ customerId, customer }: { customerId: number; customer: 
       line1: customer?.address || "",
       line2: "",
       city: customer?.city || "",
-      county: customer?.state || "",
       postcode: customer?.postcode || "",
       country: "United Kingdom",
       notes: "",
@@ -104,7 +103,7 @@ function AddressesTab({ customerId, customer }: { customerId: number; customer: 
     setEditing(null);
     setOpen(true);
   };
-  const openEdit = (a: any) => { setForm({ label: a.label||"", line1: a.line1||"", line2: a.line2||"", city: a.city||"", county: a.county||"", postcode: a.postcode||"", country: a.country||"United Kingdom", notes: a.notes||"" }); setEditing(a); setOpen(true); };
+  const openEdit = (a: any) => { setForm({ label: a.label||"", line1: a.line1||"", line2: a.line2||"", city: a.city||"", postcode: a.postcode||"", country: a.country||"United Kingdom", notes: a.notes||"" }); setEditing(a); setOpen(true); };
 
   return (
     <>
@@ -149,11 +148,8 @@ function AddressesTab({ customerId, customer }: { customerId: number; customer: 
               <Input value={form.line1} onChange={e => setForm({ ...form, line1: e.target.value })} /></div>
             <div className="grid gap-2"><Label>Address Line 2</Label>
               <Input value={form.line2} onChange={e => setForm({ ...form, line2: e.target.value })} /></div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="grid gap-2"><Label>City</Label><Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
-              <div className="grid gap-2"><Label>County</Label><Input value={form.county} onChange={e => setForm({ ...form, county: e.target.value })} /></div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Postcode</Label><Input value={form.postcode} onChange={e => setForm({ ...form, postcode: e.target.value })} /></div>
               <div className="grid gap-2"><Label>Country</Label><Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} /></div>
             </div>
@@ -1855,6 +1851,7 @@ export default function CustomerDetail() {
               {customer.email && <span>{customer.email}</span>}
               {customer.phone && <span>{customer.phone}</span>}
               {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
+              {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
             </div>
           </div>
         </div>

@@ -8,7 +8,6 @@ export const customerDeliveryAddressesTable = pgTable("customer_delivery_address
   line1: text("line1"),
   line2: text("line2"),
   city: text("city"),
-  county: text("county"),
   postcode: text("postcode"),
   country: text("country").default("United Kingdom"),
   isDefault: boolean("is_default").default(false),
