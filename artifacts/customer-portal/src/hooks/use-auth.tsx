@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 type AuthUser = {
   user: { id: number; email: string; status: string; portal_role: string; last_login_at: string | null };
   customer: { id: number; name: string };
+  isPreview?: boolean;
 };
 
 type AuthContextType = {
@@ -13,6 +14,7 @@ type AuthContextType = {
   portalRole: string;
   isManager: boolean;
   isDeptManager: boolean;
+  isPreview: boolean;
   logout: () => void;
   refetchUser: () => Promise<void>;
 };
@@ -59,9 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const portalRole = user?.user?.portal_role ?? localStorage.getItem("portal_role") ?? "member";
   const isManager = portalRole === "manager";
   const isDeptManager = portalRole === "dept_manager";
+  const isPreview = user?.isPreview === true;
 
   return (
-    <AuthContext.Provider value={{ user, loading, portalRole, isManager, isDeptManager, logout, refetchUser: fetchUser }}>
+    <AuthContext.Provider value={{ user, loading, portalRole, isManager, isDeptManager, isPreview, logout, refetchUser: fetchUser }}>
       {children}
     </AuthContext.Provider>
   );

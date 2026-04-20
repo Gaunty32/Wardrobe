@@ -1324,6 +1324,15 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     });
   };
 
+  const openPreview = async () => {
+    try {
+      const data: any = await apiFetch(`/portal/admin/preview/${customerId}`, { method: "POST" });
+      window.open(window.location.origin + data.previewUrl, "_blank");
+    } catch {
+      toast({ title: "Could not open preview", variant: "destructive" });
+    }
+  };
+
   const statusBadge = (u: any) => {
     if (u.status === "active") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">Active</span>;
     if (u.status === "invited") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Invited</span>;
@@ -1337,9 +1346,14 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <h3 className="font-semibold flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Portal Access</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Manage who can log into the customer ordering portal for this account.</p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteEmail(""); setInviteRole("member"); setInviteOpen(true); }}>
-          <LogIn className="w-3.5 h-3.5" /> Invite User
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={openPreview}>
+            <Eye className="w-3.5 h-3.5" /> View as Customer
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteEmail(""); setInviteRole("member"); setInviteOpen(true); }}>
+            <LogIn className="w-3.5 h-3.5" /> Invite User
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (

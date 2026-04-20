@@ -21,6 +21,10 @@ function signToken(userId: number, customerId: number, portalRole: string) {
   return jwt.sign({ sub: userId, customerId, portalRole }, JWT_SECRET, { expiresIn: "30d" });
 }
 
+function signPreviewToken(customerId: number) {
+  return jwt.sign({ sub: 0, customerId, portalRole: "manager", isPreview: true }, JWT_SECRET, { expiresIn: "2h" });
+}
+
 export async function portalAuth(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith("Bearer ")) {
@@ -28,10 +32,11 @@ export async function portalAuth(req: Request, res: Response, next: NextFunction
     return;
   }
   try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as { sub: number; customerId: number; portalRole: string };
+    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as { sub: number; customerId: number; portalRole: string; isPreview?: boolean };
     (req as any).portalUserId = payload.sub;
     (req as any).portalCustomerId = payload.customerId;
     (req as any).portalRole = payload.portalRole ?? "member";
+    (req as any).portalIsPreview = payload.isPreview ?? false;
     next();
   } catch {
     res.status(401).json({ error: "Invalid or expired token" });
@@ -187,16 +192,41 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
 router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const userId = (req as any).portalUserId;
+  const isPreview = (req as any).portalIsPreview;
+
+  const custRows = await db.execute(sql`SELECT id, name FROM customers WHERE id = ${customerId}`);
+  const customer = custRows.rows[0];
+
+  if (isPreview) {
+    res.json({
+      user: { id: 0, email: "staff-preview@sbs.internal", status: "active", portal_role: "manager" },
+      customer,
+      isPreview: true,
+    });
+    return;
+  }
 
   const userRows = await db.execute(sql`
     SELECT id, email, status, portal_role, last_login_at FROM customer_portal_users WHERE id = ${userId}
   `);
-  const custRows = await db.execute(sql`SELECT id, name FROM customers WHERE id = ${customerId}`);
-
   res.json({
     user: userRows.rows[0],
-    customer: custRows.rows[0],
+    customer,
   });
+});
+
+// ─── admin: generate staff preview token ─────────────────────────────────────
+
+router.post("/portal/admin/preview/:customerId", async (req: Request, res: Response) => {
+  const customerId = parseInt(req.params.customerId, 10);
+  if (!customerId) { res.status(400).json({ error: "Invalid customer ID" }); return; }
+
+  const custRows = await db.execute(sql`SELECT id, name FROM customers WHERE id = ${customerId}`);
+  if (!custRows.rows[0]) { res.status(404).json({ error: "Customer not found" }); return; }
+
+  const token = signPreviewToken(customerId);
+  const previewUrl = `/customer-portal/preview-login?token=${token}`;
+  res.json({ previewUrl, token, expiresIn: "2h" });
 });
 
 // ─── portal: list orders ─────────────────────────────────────────────────────

@@ -1,13 +1,13 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { ShoppingBag, LogOut, LayoutDashboard, Menu, X } from "lucide-react";
+import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user, logout, isPreview } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -18,6 +18,19 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
+      {/* Staff preview banner */}
+      {isPreview && (
+        <div className="bg-amber-400 text-amber-950 text-xs font-semibold flex items-center justify-center gap-2 px-4 py-1.5 sticky top-0 z-50">
+          <Eye className="w-3.5 h-3.5 shrink-0" />
+          Staff preview — you are viewing the portal as this customer. Orders placed here will be real.
+          <button
+            onClick={logout}
+            className="ml-3 underline underline-offset-2 hover:no-underline font-medium"
+          >
+            Exit preview
+          </button>
+        </div>
+      )}
       {/* Top nav */}
       <header className="h-14 border-b bg-card shadow-sm sticky top-0 z-40 flex items-center px-4 gap-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">

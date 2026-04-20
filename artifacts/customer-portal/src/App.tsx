@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 
 import Login from "@/pages/Login";
 import AcceptInvite from "@/pages/AcceptInvite";
+import PreviewLogin from "@/pages/PreviewLogin";
 import Dashboard from "@/pages/Dashboard";
 import OrderDetailPage from "@/pages/OrderDetail";
 import NewOrder from "@/pages/NewOrder";
@@ -34,6 +35,7 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/accept-invite" component={AcceptInvite} />
+      <Route path="/preview-login" component={PreviewLogin} />
       <Route path="/orders/new" component={() => <ProtectedRoute component={NewOrder} />} />
       <Route path="/orders/:id" component={() => <ProtectedRoute component={OrderDetailPage} />} />
       <Route path="/orders" component={() => <ProtectedRoute component={Dashboard} />} />
