@@ -16,7 +16,9 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
@@ -1923,6 +1925,161 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   );
 }
 
+// ─── Payment Methods Tab ──────────────────────────────────────────────────────
+
+let stripePromise: ReturnType<typeof loadStripe> | null = null;
+async function getStripePromise() {
+  if (!stripePromise) {
+    const res = await fetch("/api/stripe/publishable-key");
+    if (!res.ok) throw new Error("Failed to load Stripe key");
+    const { publishableKey } = await res.json();
+    stripePromise = loadStripe(publishableKey);
+  }
+  return stripePromise;
+}
+
+function AddCardForm({ customerId, onSuccess }: { customerId: number; onSuccess: () => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setLoading(true);
+    try {
+      const { clientSecret } = await apiFetch(`/stripe/customers/${customerId}/setup-intent`, { method: "POST" });
+      const card = elements.getElement(CardElement);
+      if (!card) throw new Error("Card element not found");
+      const result = await stripe.confirmCardSetup(clientSecret, { payment_method: { card } });
+      if (result.error) throw new Error(result.error.message);
+      toast({ title: "Card saved", description: "Payment method added successfully." });
+      onSuccess();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="rounded-md border border-input bg-background p-3">
+        <CardElement options={{ style: { base: { fontSize: "15px", color: "#1a1a1a", "::placeholder": { color: "#9ca3af" } } } }} />
+      </div>
+      <Button type="submit" disabled={!stripe || loading} className="w-full">
+        {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</> : <><CreditCard className="w-4 h-4 mr-2" /> Save Card</>}
+      </Button>
+    </form>
+  );
+}
+
+function PaymentMethodsTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [showAdd, setShowAdd] = useState(false);
+  const [stripeReady, setStripeReady] = useState<ReturnType<typeof loadStripe> | null>(null);
+
+  const { data, isLoading, error } = useQuery<{ paymentMethods: any[] }>({
+    queryKey: ["stripe-payment-methods", customerId],
+    queryFn: () => apiFetch(`/stripe/customers/${customerId}/payment-methods`),
+    retry: false,
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (pmId: string) => apiFetch(`/stripe/customers/${customerId}/payment-methods/${pmId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["stripe-payment-methods", customerId] });
+      toast({ title: "Card removed" });
+    },
+    onError: () => toast({ title: "Failed to remove card", variant: "destructive" }),
+  });
+
+  const openAdd = async () => {
+    try {
+      const sp = await getStripePromise();
+      setStripeReady(sp);
+      setShowAdd(true);
+    } catch {
+      toast({ title: "Stripe not available", description: "Could not connect to Stripe.", variant: "destructive" });
+    }
+  };
+
+  const cardBrand = (brand: string) => brand.charAt(0).toUpperCase() + brand.slice(1);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold text-base">Saved Payment Methods</h3>
+          <p className="text-sm text-muted-foreground mt-0.5">Card details are stored securely by Stripe. SBS never sees raw card numbers.</p>
+        </div>
+        <Button size="sm" onClick={openAdd}>
+          <Plus className="w-4 h-4 mr-1" /> Add Card
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="py-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+      ) : error ? (
+        <div className="py-8 text-center text-muted-foreground">
+          <AlertCircle className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
+          <p className="text-sm">Could not load payment methods. Make sure Stripe is connected.</p>
+        </div>
+      ) : !data?.paymentMethods?.length ? (
+        <div className="py-8 text-center text-muted-foreground">
+          <CreditCard className="w-10 h-10 mx-auto mb-2 text-muted-foreground/30" />
+          <p className="text-sm">No cards saved yet</p>
+          <Button variant="outline" size="sm" className="mt-3" onClick={openAdd}><Plus className="w-3 h-3 mr-1" /> Add Card</Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {data.paymentMethods.map((pm: any) => (
+            <div key={pm.id} className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+              <div className="flex items-center gap-3">
+                <CreditCard className="w-5 h-5 text-muted-foreground" />
+                <div>
+                  <div className="font-medium text-sm">{cardBrand(pm.card.brand)} •••• {pm.card.last4}</div>
+                  <div className="text-xs text-muted-foreground">Expires {pm.card.exp_month}/{pm.card.exp_year}</div>
+                </div>
+              </div>
+              <Button
+                variant="ghost" size="icon"
+                className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                onClick={() => { if (confirm("Remove this card?")) deleteMut.mutate(pm.id); }}
+                disabled={deleteMut.isPending}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><CreditCard className="w-4 h-4" /> Add Payment Card</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Card details are sent directly to Stripe and never touch our servers.</p>
+          {stripeReady && (
+            <Elements stripe={stripeReady}>
+              <AddCardForm
+                customerId={customerId}
+                onSuccess={() => {
+                  setShowAdd(false);
+                  qc.invalidateQueries({ queryKey: ["stripe-payment-methods", customerId] });
+                }}
+              />
+            </Elements>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── Main CustomerDetail Page ─────────────────────────────────────────────────
 
 export default function CustomerDetail() {
@@ -2029,6 +2186,7 @@ export default function CustomerDetail() {
             <TabsTrigger value="processes" className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Processes</TabsTrigger>
             <TabsTrigger value="finishes" className="flex items-center gap-1.5"><Shirt className="w-3.5 h-3.5" /> Finishes</TabsTrigger>
             <TabsTrigger value="portal" className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Portal Access</TabsTrigger>
+            <TabsTrigger value="payments" className="flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Payment Methods</TabsTrigger>
           </TabsList>
 
           <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
@@ -2041,6 +2199,7 @@ export default function CustomerDetail() {
             <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>
             <TabsContent value="finishes" className="mt-0"><FinishesTab customerId={customerId} /></TabsContent>
             <TabsContent value="portal" className="mt-0"><PortalAccessTab customerId={customerId} /></TabsContent>
+            <TabsContent value="payments" className="mt-0"><PaymentMethodsTab customerId={customerId} /></TabsContent>
           </div>
         </Tabs>
       </div>

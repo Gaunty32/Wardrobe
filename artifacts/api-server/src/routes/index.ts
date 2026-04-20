@@ -19,6 +19,7 @@ import productCategoriesRouter from "./product-categories";
 import portalRouter from "./portal";
 import invoicesRouter from "./invoices";
 import stockRouter from "./stock";
+import stripePaymentsRouter from "./stripe-payments";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(tasksRouter);
 router.use(productCategoriesRouter);
 router.use(invoicesRouter);
 router.use(stockRouter);
+router.use(stripePaymentsRouter);
 
 export default router;
