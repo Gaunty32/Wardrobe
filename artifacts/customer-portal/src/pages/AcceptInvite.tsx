@@ -33,6 +33,7 @@ export default function AcceptInvite() {
       });
       localStorage.setItem("portal_token", data.token);
       localStorage.setItem("portal_customer_id", String(data.customerId));
+      localStorage.setItem("portal_role", data.portalRole ?? "member");
       setSuccess(true);
       setTimeout(() => setLocation("/orders"), 1800);
     } catch {

@@ -28,6 +28,7 @@ export default function Login() {
       localStorage.setItem("portal_customer_id", String(data.customerId));
       localStorage.setItem("portal_customer_name", data.customerName ?? "");
       localStorage.setItem("portal_email", data.email ?? email);
+      localStorage.setItem("portal_role", data.portalRole ?? "member");
       setLocation("/orders");
     } catch (err: any) {
       setError("Invalid email or password. Please try again.");

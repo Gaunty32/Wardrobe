@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
@@ -373,11 +374,12 @@ function CatalogueStep({ basket, setBasket, onNext }: {
 
 // ─── Step 3: Review & Submit ─────────────────────────────────────────────────
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string }) => void;
   submitting: boolean;
+  portalRole: string;
 }) {
   const [requiredDate, setRequiredDate] = useState("");
   const [notes, setNotes] = useState("");
@@ -454,10 +456,15 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting }: {
         </div>
       </div>
 
-      <Button onClick={() => onSubmit({ requiredDate, notes })} disabled={submitting || basket.length === 0} className="w-full sm:w-auto">
-        {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-        Submit order
-      </Button>
+      <div className="flex flex-col gap-1">
+        <Button onClick={() => onSubmit({ requiredDate, notes })} disabled={submitting || basket.length === 0} className="w-full sm:w-auto">
+          {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+          {portalRole === "manager" ? "Submit order to SBS" : "Save for manager review"}
+        </Button>
+        {portalRole !== "manager" && (
+          <p className="text-xs text-muted-foreground">Your manager will review and submit this order to SBS.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -483,6 +490,7 @@ function ConfirmStep({ orderNumber, onViewOrder }: { orderNumber: string; onView
 export default function NewOrder() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { portalRole } = useAuth();
 
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(null);
@@ -573,6 +581,7 @@ export default function NewOrder() {
             setBasket={setBasket}
             onSubmit={(d) => submitMutation.mutate(d)}
             submitting={submitMutation.isPending}
+            portalRole={portalRole}
           />
         </div>
       )}

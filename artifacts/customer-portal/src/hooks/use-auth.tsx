@@ -3,13 +3,16 @@ import { apiFetch } from "@/lib/api";
 import { useLocation } from "wouter";
 
 type AuthUser = {
-  user: { email: string; status: string; last_login_at: string | null };
+  user: { id: number; email: string; status: string; portal_role: string; last_login_at: string | null };
   customer: { id: number; name: string };
 };
 
 type AuthContextType = {
   user: AuthUser | null;
   loading: boolean;
+  portalRole: string;
+  isManager: boolean;
+  isDeptManager: boolean;
   logout: () => void;
   refetchUser: () => Promise<void>;
 };
@@ -48,12 +51,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("portal_customer_id");
     localStorage.removeItem("portal_customer_name");
     localStorage.removeItem("portal_email");
+    localStorage.removeItem("portal_role");
     setUser(null);
     setLocation("/login");
   };
 
+  const portalRole = user?.user?.portal_role ?? localStorage.getItem("portal_role") ?? "member";
+  const isManager = portalRole === "manager";
+  const isDeptManager = portalRole === "dept_manager";
+
   return (
-    <AuthContext.Provider value={{ user, loading, logout, refetchUser: fetchUser }}>
+    <AuthContext.Provider value={{ user, loading, portalRole, isManager, isDeptManager, logout, refetchUser: fetchUser }}>
       {children}
     </AuthContext.Provider>
   );

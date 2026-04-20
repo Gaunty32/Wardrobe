@@ -17,8 +17,8 @@ const INVITE_TTL_DAYS = 7;
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function signToken(userId: number, customerId: number) {
-  return jwt.sign({ sub: userId, customerId }, JWT_SECRET, { expiresIn: "30d" });
+function signToken(userId: number, customerId: number, portalRole: string) {
+  return jwt.sign({ sub: userId, customerId, portalRole }, JWT_SECRET, { expiresIn: "30d" });
 }
 
 export async function portalAuth(req: Request, res: Response, next: NextFunction) {
@@ -28,9 +28,10 @@ export async function portalAuth(req: Request, res: Response, next: NextFunction
     return;
   }
   try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as { sub: number; customerId: number };
+    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as { sub: number; customerId: number; portalRole: string };
     (req as any).portalUserId = payload.sub;
     (req as any).portalCustomerId = payload.customerId;
+    (req as any).portalRole = payload.portalRole ?? "member";
     next();
   } catch {
     res.status(401).json({ error: "Invalid or expired token" });
@@ -40,9 +41,10 @@ export async function portalAuth(req: Request, res: Response, next: NextFunction
 // ─── admin: send invite ──────────────────────────────────────────────────────
 
 router.post("/portal/admin/invite", async (req: Request, res: Response) => {
-  const { customerId, email } = z.object({
+  const { customerId, email, portalRole } = z.object({
     customerId: z.number().int().positive(),
     email: z.string().email(),
+    portalRole: z.enum(["manager", "dept_manager", "member"]).default("member"),
   }).parse(req.body);
 
   const token = randomBytes(32).toString("hex");
@@ -50,18 +52,30 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
 
   // upsert: update if email already exists for this customer
   await db.execute(sql`
-    INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status)
-    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited')
+    INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
+    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${portalRole})
     ON CONFLICT (email) DO UPDATE
       SET invite_token = ${token},
           invite_expires_at = ${expires.toISOString()},
           status = 'invited',
+          portal_role = ${portalRole},
           updated_at = now()
   `);
 
-  // Return the token so the admin can copy/send the link
   const inviteUrl = `/customer-portal/accept-invite?token=${token}`;
-  res.json({ inviteUrl, token, email, expiresAt: expires });
+  res.json({ inviteUrl, token, email, portalRole, expiresAt: expires });
+});
+
+// ─── admin: customer detail (employees for invite suggestions) ─────────────
+
+router.get("/portal/admin/customer-detail/:customerId", async (req: Request, res: Response) => {
+  const customerId = parseInt(req.params.customerId, 10);
+  const employees = await db.execute(sql`
+    SELECT id, (first_name || COALESCE(' ' || last_name, '')) AS name, email FROM customer_employees
+    WHERE customer_id = ${customerId} AND is_active = true
+    ORDER BY first_name ASC
+  `);
+  res.json({ employees: employees.rows });
 });
 
 // ─── admin: list portal users for a customer ──────────────────────────────
@@ -69,7 +83,7 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
 router.get("/portal/admin/users/:customerId", async (req: Request, res: Response) => {
   const customerId = parseInt(req.params.customerId, 10);
   const rows = await db.execute(sql`
-    SELECT id, email, status, last_login_at, created_at,
+    SELECT id, email, status, portal_role, last_login_at, created_at,
            invite_expires_at,
            CASE WHEN invite_token IS NOT NULL THEN true ELSE false END as has_pending_invite
     FROM customer_portal_users
@@ -77,6 +91,17 @@ router.get("/portal/admin/users/:customerId", async (req: Request, res: Response
     ORDER BY created_at DESC
   `);
   res.json(rows.rows);
+});
+
+// ─── admin: update portal user role ──────────────────────────────────────────
+
+router.patch("/portal/admin/users/:userId/role", async (req: Request, res: Response) => {
+  const userId = parseInt(req.params.userId, 10);
+  const { portalRole } = z.object({
+    portalRole: z.enum(["manager", "dept_manager", "member"]),
+  }).parse(req.body);
+  await db.execute(sql`UPDATE customer_portal_users SET portal_role = ${portalRole}, updated_at = now() WHERE id = ${userId}`);
+  res.json({ ok: true });
 });
 
 // ─── admin: revoke portal user ────────────────────────────────────────────
@@ -117,8 +142,8 @@ router.post("/portal/auth/accept-invite", async (req: Request, res: Response) =>
     WHERE id = ${user.id}
   `);
 
-  const jwtToken = signToken(user.id, user.customer_id);
-  res.json({ token: jwtToken, customerId: user.customer_id });
+  const jwtToken = signToken(user.id, user.customer_id, user.portal_role ?? "member");
+  res.json({ token: jwtToken, customerId: user.customer_id, portalRole: user.portal_role ?? "member" });
 });
 
 // ─── login ───────────────────────────────────────────────────────────────────
@@ -148,13 +173,13 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
     UPDATE customer_portal_users SET last_login_at = now(), updated_at = now() WHERE id = ${user.id}
   `);
 
-  const token = signToken(user.id, user.customer_id);
+  const token = signToken(user.id, user.customer_id, user.portal_role ?? "member");
 
   // Get customer name
   const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${user.customer_id}`);
   const customerName = (custRows.rows[0] as any)?.name ?? "";
 
-  res.json({ token, customerId: user.customer_id, customerName, email: user.email });
+  res.json({ token, customerId: user.customer_id, customerName, email: user.email, portalRole: user.portal_role ?? "member" });
 });
 
 // ─── me ──────────────────────────────────────────────────────────────────────
@@ -164,7 +189,7 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
   const userId = (req as any).portalUserId;
 
   const userRows = await db.execute(sql`
-    SELECT id, email, status, last_login_at FROM customer_portal_users WHERE id = ${userId}
+    SELECT id, email, status, portal_role, last_login_at FROM customer_portal_users WHERE id = ${userId}
   `);
   const custRows = await db.execute(sql`SELECT id, name FROM customers WHERE id = ${customerId}`);
 
@@ -243,15 +268,20 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
   const customerName = (custRows.rows[0] as any)?.name ?? "";
 
+  // Managers submit directly; dept_managers/members save for manager review
+  const portalRole = (req as any).portalRole ?? "member";
+  const portalStatus = portalRole === "manager" ? "submitted" : "pending_review";
+  const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
+
   const orderResult = await db.execute(sql`
     INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date)
     VALUES (
       ${orderNumber},
       ${customerId},
       ${customerName},
-      'portal_pending',
+      ${orderStatus},
       'portal',
-      'pending',
+      ${portalStatus},
       ${body.portalNotes ?? null},
       ${totalAmount.toFixed(2)},
       ${body.notes ?? null},
@@ -335,6 +365,62 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     items: finishes.rows,
     employees: employees.rows,
   });
+});
+
+// ─── portal: manager — list orders awaiting review ───────────────────────────
+
+router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") {
+    res.status(403).json({ error: "Manager access required" });
+    return;
+  }
+  const rows = await db.execute(sql`
+    SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
+           (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+    FROM orders
+    WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+    ORDER BY created_at DESC
+  `);
+  res.json(rows.rows);
+});
+
+// ─── portal: manager — submit a pending order to SBS ─────────────────────────
+
+router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") {
+    res.status(403).json({ error: "Manager access required" });
+    return;
+  }
+  const orderId = parseInt(req.params.id, 10);
+  await db.execute(sql`
+    UPDATE orders SET portal_status = 'submitted', status = 'portal_pending', updated_at = now()
+    WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+  `);
+  res.json({ ok: true });
+});
+
+// ─── portal: manager — reject a pending order ─────────────────────────────────
+
+router.post("/portal/manager/orders/:id/reject", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") {
+    res.status(403).json({ error: "Manager access required" });
+    return;
+  }
+  const orderId = parseInt(req.params.id, 10);
+  const { reason } = z.object({ reason: z.string().optional() }).parse(req.body);
+  await db.execute(sql`
+    UPDATE orders SET portal_status = 'rejected', status = 'portal_draft',
+      portal_notes = COALESCE(portal_notes || E'\n', '') || ${'Rejected by manager: ' + (reason ?? 'No reason given')},
+      updated_at = now()
+    WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal'
+  `);
+  res.json({ ok: true });
 });
 
 // ─── admin: list portal-pending orders ───────────────────────────────────────

@@ -1246,10 +1246,23 @@ interface FinishedItem {
 
 // ─── Portal Access Tab ────────────────────────────────────────────────────────
 
+const PORTAL_ROLES = [
+  { value: "manager", label: "Manager", description: "Can submit orders directly to SBS and approve dept manager orders" },
+  { value: "dept_manager", label: "Dept Manager", description: "Can create orders for their team (pending manager approval)" },
+  { value: "member", label: "Member", description: "View-only access" },
+] as const;
+
+function roleBadge(role: string) {
+  if (role === "manager") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">Manager</span>;
+  if (role === "dept_manager") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">Dept Manager</span>;
+  return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">Member</span>;
+}
+
 function PortalAccessTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"manager" | "dept_manager" | "member">("member");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; email: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -1259,10 +1272,18 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     queryFn: () => apiFetch(`/portal/admin/users/${customerId}`),
   });
 
+  const { data: customerDetail } = useQuery<any>({
+    queryKey: ["portal-customer-detail", customerId],
+    queryFn: () => apiFetch(`/portal/admin/customer-detail/${customerId}`),
+  });
+  const employees: any[] = customerDetail?.employees ?? [];
+  const existingEmails = new Set((portalUsers ?? []).map((u: any) => u.email));
+  const suggestedEmployees = employees.filter(e => e.email && !existingEmails.has(e.email));
+
   const sendInvite = useMutation({
     mutationFn: () => apiFetch("/portal/admin/invite", {
       method: "POST",
-      body: JSON.stringify({ customerId, email: inviteEmail }),
+      body: JSON.stringify({ customerId, email: inviteEmail, portalRole: inviteRole }),
     }),
     onSuccess: (data: any) => {
       setInviteResult(data);
@@ -1277,6 +1298,18 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
       toast({ title: "Access revoked" });
+    },
+  });
+
+  const changeRole = useMutation({
+    mutationFn: ({ userId, portalRole }: { userId: number; portalRole: string }) =>
+      apiFetch(`/portal/admin/users/${userId}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ portalRole }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
+      toast({ title: "Role updated" });
     },
   });
 
@@ -1301,7 +1334,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <h3 className="font-semibold flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Portal Access</h3>
           <p className="text-sm text-muted-foreground mt-0.5">Manage who can log into the customer ordering portal for this account.</p>
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteOpen(true); }}>
+        <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteEmail(""); setInviteRole("member"); setInviteOpen(true); }}>
           <LogIn className="w-3.5 h-3.5" /> Invite User
         </Button>
       </div>
@@ -1319,8 +1352,8 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <TableHeader><TableRow className="hover:bg-transparent">
             <TableHead>Email</TableHead>
             <TableHead>Status</TableHead>
+            <TableHead>Role</TableHead>
             <TableHead className="hidden md:table-cell">Last Login</TableHead>
-            <TableHead className="hidden md:table-cell">Invited</TableHead>
             <TableHead className="w-24 text-right">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
@@ -1328,16 +1361,28 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
               <TableRow key={u.id} className="group hover:bg-muted/30">
                 <TableCell className="font-medium text-sm">{u.email}</TableCell>
                 <TableCell>{statusBadge(u)}</TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                  {u.last_login_at ? formatDate(u.last_login_at) : <span className="text-muted-foreground/50">Never</span>}
+                <TableCell>
+                  <Select
+                    value={u.portal_role ?? "member"}
+                    onValueChange={(v) => changeRole.mutate({ userId: u.id, portalRole: v })}
+                  >
+                    <SelectTrigger className="h-7 w-36 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manager" className="text-xs">Manager</SelectItem>
+                      <SelectItem value="dept_manager" className="text-xs">Dept Manager</SelectItem>
+                      <SelectItem value="member" className="text-xs">Member</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                  {formatDate(u.created_at)}
+                  {u.last_login_at ? formatDate(u.last_login_at) : <span className="text-muted-foreground/50">Never</span>}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-primary hover:bg-primary/10"
-                      onClick={() => { setInviteEmail(u.email); setInviteResult(null); setInviteOpen(true); }}>
+                      onClick={() => { setInviteEmail(u.email); setInviteRole(u.portal_role ?? "member"); setInviteResult(null); setInviteOpen(true); }}>
                       <LogIn className="w-3 h-3" /> Re-invite
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50"
@@ -1353,17 +1398,52 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
       )}
 
       <Dialog open={inviteOpen} onOpenChange={v => { if (!v) { setInviteOpen(false); setInviteResult(null); } }}>
-        <DialogContent className="sm:max-w-[460px]">
+        <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Globe className="w-4 h-4" /> Invite Customer to Portal</DialogTitle>
           </DialogHeader>
           {!inviteResult ? (
             <div className="grid gap-4 py-2">
-              <p className="text-sm text-muted-foreground">Enter the email address for the customer contact who should have portal access. They will receive an invite link to set their password.</p>
+              {suggestedEmployees.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Suggest from employees</p>
+                  <div className="flex flex-wrap gap-2">
+                    {suggestedEmployees.map((emp: any) => (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border bg-muted/50 hover:bg-primary/10 hover:border-primary/30 transition-colors"
+                        onClick={() => setInviteEmail(emp.email ?? "")}
+                      >
+                        <span className="font-medium">{emp.name}</span>
+                        {emp.email && <span className="text-muted-foreground">{emp.email}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="grid gap-2">
                 <Label>Email Address *</Label>
                 <Input type="email" placeholder="contact@customer.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && inviteEmail && sendInvite.mutate()} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Portal Role</Label>
+                <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PORTAL_ROLES.map(r => (
+                      <SelectItem key={r.value} value={r.value}>
+                        <div>
+                          <div className="font-medium">{r.label}</div>
+                          <div className="text-xs text-muted-foreground">{r.description}</div>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           ) : (
