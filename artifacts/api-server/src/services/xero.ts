@@ -26,6 +26,7 @@ async function setSetting(key: string, value: string | null): Promise<void> {
 
 export interface XeroStatus {
   connected: boolean;
+  hasCredentials: boolean;
   tenantId: string | null;
   tenantName: string | null;
   expiresAt: string | null;
@@ -36,8 +37,11 @@ export async function getXeroStatus(): Promise<XeroStatus> {
   const tenantName = await getSetting("xero_tenant_name");
   const expiresAt = await getSetting("xero_token_expires_at");
   const refreshToken = await getSetting("xero_refresh_token");
+  const clientId = await getSetting("xero_client_id");
+  const clientSecret = await getSetting("xero_client_secret");
   return {
     connected: !!(tenantId && refreshToken),
+    hasCredentials: !!(clientId && clientSecret),
     tenantId,
     tenantName,
     expiresAt,

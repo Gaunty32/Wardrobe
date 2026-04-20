@@ -60,6 +60,7 @@ const SCHEDULE_OPTIONS = [
 
 interface XeroStatus {
   connected: boolean;
+  hasCredentials: boolean;
   tenantId: string | null;
   tenantName: string | null;
   expiresAt: string | null;
@@ -479,15 +480,35 @@ export default function Settings() {
             <div className="grid gap-6 max-w-2xl">
 
               {/* Connection status banner */}
-              <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-medium ${xeroStatus?.connected ? "bg-green-50 border-green-200 text-green-800" : "bg-muted/50 border-border text-muted-foreground"}`}>
+              <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm font-medium ${
+                xeroStatus?.connected
+                  ? "bg-green-50 border-green-200 text-green-800"
+                  : xeroStatus?.hasCredentials
+                    ? "bg-amber-50 border-amber-200 text-amber-800"
+                    : "bg-muted/50 border-border text-muted-foreground"
+              }`}>
                 {xeroStatus?.connected
                   ? <><Wifi className="w-4 h-4 flex-shrink-0" /> Connected to Xero{xeroStatus.tenantName ? ` — ${xeroStatus.tenantName}` : ""}</>
-                  : <><WifiOff className="w-4 h-4 flex-shrink-0" /> Not connected — save your credentials below and click Connect</>}
+                  : xeroStatus?.hasCredentials
+                    ? <><Link2 className="w-4 h-4 flex-shrink-0" /> Credentials saved — click <strong className="mx-1">Connect to Xero</strong> below to complete authorisation</>
+                    : <><WifiOff className="w-4 h-4 flex-shrink-0" /> Not connected — enter your credentials below and click Connect</>}
               </div>
 
               {/* Credentials */}
               <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <h2 className="font-semibold text-base">App Credentials</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="font-semibold text-base">App Credentials</h2>
+                  {xeroStatus?.hasCredentials && !xeroStatus?.connected && (
+                    <Badge className="bg-amber-100 text-amber-800 border-amber-300 gap-1.5 text-xs">
+                      <CheckCircle className="w-3 h-3" /> Credentials saved — connect to activate
+                    </Badge>
+                  )}
+                  {xeroStatus?.hasCredentials && xeroStatus?.connected && (
+                    <Badge className="bg-green-100 text-green-800 border-green-300 gap-1.5 text-xs">
+                      <CheckCircle className="w-3 h-3" /> Connected
+                    </Badge>
+                  )}
+                </div>
                 <p className="text-sm text-muted-foreground">
                   Create a free <strong>Web App</strong> at{" "}
                   <a href="https://developer.xero.com/app/manage" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
@@ -569,11 +590,19 @@ export default function Settings() {
               </div>
 
               {/* Connect / Disconnect */}
-              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+              <div className={`rounded-xl border bg-card p-5 space-y-4 ${xeroStatus?.hasCredentials && !xeroStatus?.connected ? "border-amber-300 ring-1 ring-amber-200" : "border-border"}`}>
                 <h2 className="font-semibold text-base">Authorisation</h2>
                 {xeroStatus?.connected ? (
-                  <div className="flex items-center gap-3">
-                    <Badge className="bg-green-100 text-green-800 border-green-300 gap-1.5"><CheckCircle className="w-3.5 h-3.5" /> Connected</Badge>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Badge className="bg-green-100 text-green-800 border-green-300 gap-1.5"><CheckCircle className="w-3.5 h-3.5" /> Connected</Badge>
+                      {xeroStatus.tenantName && <span className="text-sm text-muted-foreground">{xeroStatus.tenantName}</span>}
+                    </div>
+                    {xeroStatus.expiresAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Token expires: {new Date(xeroStatus.expiresAt).toLocaleString()}
+                      </p>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -585,16 +614,29 @@ export default function Settings() {
                       Disconnect
                     </Button>
                   </div>
-                ) : (
+                ) : xeroStatus?.hasCredentials ? (
                   <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
-                      After saving your credentials, click below to authorise this app to access your Xero organisation.
-                    </p>
-                    <Button asChild className="gap-2">
+                    <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <CheckCircle className="w-4 h-4 shrink-0" />
+                      <span>Credentials saved. Click below to authorise access to your Xero organisation — you'll be redirected to Xero and back.</span>
+                    </div>
+                    <Button asChild size="lg" className="gap-2 w-full sm:w-auto">
                       <a href="/api/xero/connect">
                         <Link2 className="w-4 h-4" /> Connect to Xero
                       </a>
                     </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">
+                      Save your credentials above, then click here to authorise this app to access your Xero organisation.
+                    </p>
+                    <Button asChild className="gap-2" disabled>
+                      <span className="opacity-50 cursor-not-allowed">
+                        <Link2 className="w-4 h-4" /> Connect to Xero
+                      </span>
+                    </Button>
+                    <p className="text-xs text-muted-foreground">Save your Client ID and Secret first to enable this button.</p>
                   </div>
                 )}
               </div>
