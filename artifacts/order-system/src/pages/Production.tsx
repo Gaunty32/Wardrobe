@@ -4,6 +4,7 @@ import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
   RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
   ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square, RotateCcw, AlertCircle,
+  Search, Calendar, X, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +62,7 @@ interface Worksheet {
   orderNumber: string | null;
   customerId: number | null;
   customerName: string | null;
+  requiredDate: string | null;
   notes: string | null;
   completedAt: string | null;
   createdAt: string;
@@ -120,6 +122,232 @@ const STATUS_CONFIG = {
   wip: { label: "Work in Progress", color: "bg-amber-100 text-amber-800 border-amber-200", icon: ClipboardList },
   complete: { label: "Complete", color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle2 },
 };
+
+// ─── Filter types & utilities ──────────────────────────────────────────────────
+
+interface Filters {
+  search: string;
+  finish: string;
+  process: string;
+  dateFrom: string;
+  dateTo: string;
+}
+
+const EMPTY_FILTERS: Filters = { search: "", finish: "", process: "", dateFrom: "", dateTo: "" };
+
+function matchesDateFilters(requiredDate: string | null | undefined, dateFrom: string, dateTo: string): boolean {
+  if (dateFrom && requiredDate) {
+    if (new Date(requiredDate) < new Date(dateFrom)) return false;
+  }
+  if (dateTo && requiredDate) {
+    if (new Date(requiredDate) > new Date(dateTo + "T23:59:59")) return false;
+  }
+  return true;
+}
+
+function filterWorksheets(worksheets: Worksheet[], f: Filters): Worksheet[] {
+  return worksheets.filter((ws) => {
+    if (f.search) {
+      const q = f.search.toLowerCase();
+      if (!ws.customerName?.toLowerCase().includes(q) && !ws.orderNumber?.toLowerCase().includes(q)) return false;
+    }
+    if (f.finish) {
+      const fin = f.finish.toLowerCase();
+      if (!ws.items.some((i) => i.finishName?.toLowerCase().includes(fin))) return false;
+    }
+    if (f.process) {
+      const proc = f.process.toLowerCase();
+      if (!ws.items.some((i) => i.processes.some((p) => p.name.toLowerCase().includes(proc)))) return false;
+    }
+    if (!matchesDateFilters(ws.requiredDate, f.dateFrom, f.dateTo)) return false;
+    return true;
+  });
+}
+
+function filterPickingOrders(orders: PickingOrder[], f: Filters): PickingOrder[] {
+  return orders
+    .map((order) => {
+      if (f.search) {
+        const q = f.search.toLowerCase();
+        if (!order.customerName?.toLowerCase().includes(q) && !order.orderNumber.toLowerCase().includes(q)) return null;
+      }
+      if (!matchesDateFilters(order.requiredDate, f.dateFrom, f.dateTo)) return null;
+      let items = order.items;
+      if (f.finish) {
+        const fin = f.finish.toLowerCase();
+        items = items.filter((i) => i.finishName?.toLowerCase().includes(fin));
+        if (items.length === 0) return null;
+      }
+      return { ...order, items };
+    })
+    .filter(Boolean) as PickingOrder[];
+}
+
+function FiltersBar({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
+  const set = (key: keyof Filters, val: string) => onChange({ ...filters, [key]: val });
+  const hasFilters = Object.values(filters).some(Boolean);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 bg-muted/30 rounded-lg border border-border text-sm">
+      <div className="flex items-center gap-1.5 flex-1 min-w-[160px]">
+        <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <input
+          type="text"
+          placeholder="Customer or order number…"
+          value={filters.search}
+          onChange={(e) => set("search", e.target.value)}
+          className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground text-sm"
+        />
+      </div>
+      <div className="h-4 border-l border-border" />
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <input
+          type="text"
+          placeholder="Finish…"
+          value={filters.finish}
+          onChange={(e) => set("finish", e.target.value)}
+          className="bg-transparent outline-none placeholder:text-muted-foreground w-24 text-sm"
+        />
+      </div>
+      <div className="h-4 border-l border-border" />
+      <div className="flex items-center gap-1.5">
+        <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <input
+          type="text"
+          placeholder="Process…"
+          value={filters.process}
+          onChange={(e) => set("process", e.target.value)}
+          className="bg-transparent outline-none placeholder:text-muted-foreground w-24 text-sm"
+        />
+      </div>
+      <div className="h-4 border-l border-border" />
+      <div className="flex items-center gap-1.5">
+        <Calendar className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+        <input
+          type="date"
+          value={filters.dateFrom}
+          onChange={(e) => set("dateFrom", e.target.value)}
+          className="bg-transparent outline-none text-muted-foreground w-32 text-sm"
+        />
+        <span className="text-muted-foreground">–</span>
+        <input
+          type="date"
+          value={filters.dateTo}
+          onChange={(e) => set("dateTo", e.target.value)}
+          className="bg-transparent outline-none text-muted-foreground w-32 text-sm"
+        />
+      </div>
+      {hasFilters && (
+        <button
+          onClick={() => onChange(EMPTY_FILTERS)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground ml-auto"
+        >
+          <X className="w-3 h-3" /> Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Combined picking slip (multi-order) ──────────────────────────────────────
+
+function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: PickingOrder[]) {
+  const orderMap = new Map<number, { order: PickingOrder; items: PickingItem[] }>();
+  for (const item of selectedItems) {
+    const order = allOrders.find((o) => o.orderId === item.orderId);
+    if (!order) continue;
+    if (!orderMap.has(item.orderId)) orderMap.set(item.orderId, { order, items: [] });
+    orderMap.get(item.orderId)!.items.push(item);
+  }
+  const dateStr = new Date().toLocaleDateString("en-AU");
+  const groups = Array.from(orderMap.values());
+
+  const orderSections = groups.map(({ order, items }) => {
+    const dueStr = order.requiredDate
+      ? new Date(order.requiredDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })
+      : "—";
+    const rows = items.map((item) => `
+      <tr>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">
+          ${item.supplierCode ? `<div style="font-family:monospace;font-weight:bold;font-size:11px">${item.supplierCode}</div>` : ""}
+          ${item.productSku ? `<div style="font-size:10px;color:#2563eb">${item.productSku}</div>` : ""}
+          ${item.supplierName ? `<div style="font-size:10px;color:#666">${item.supplierName}</div>` : ""}
+          <div style="font-size:11px;margin-top:2px">${item.productName}</div>
+        </td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px">${item.colour ?? "—"}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px">${item.size ?? "—"}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px">${item.finishName ?? "Plain"}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:11px">${item.recipientName ?? item.recipientType}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${item.quantity}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
+          <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
+        </td>
+      </tr>`).join("");
+    return `
+      <div style="margin-bottom:7mm">
+        <div style="background:#1e3a5f;color:white;padding:5px 8px;font-size:11px;font-weight:bold;display:flex;justify-content:space-between">
+          <span>${order.orderNumber}${order.customerName ? ` — ${order.customerName}` : ""}</span>
+          <span>Due: ${dueStr} · ${items.length} line${items.length !== 1 ? "s" : ""}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Product</th>
+            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Colour</th>
+            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Size</th>
+            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Finish</th>
+            <th style="background:#374151;color:white;padding:4px 8px;text-align:center;font-size:10px">Recipient</th>
+            <th style="background:#374151;color:white;padding:4px 8px;text-align:center;font-size:10px">Qty</th>
+            <th style="background:#374151;color:white;padding:4px 8px;text-align:center;font-size:10px">Picked ✓</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }).join("");
+
+  const totalLines = selectedItems.length;
+  const totalQty = selectedItems.reduce((s, i) => s + i.quantity, 0);
+
+  const html = `<!DOCTYPE html><html><head><title>Combined Picking Slip</title>
+    <style>
+      *{box-sizing:border-box}
+      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
+      #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+      #toolbar span{flex:1;font-size:14px;font-weight:600}
+      #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+      #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
+      #page{display:flex;justify-content:center;padding:24px 0 40px}
+      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
+      @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none;padding:0}@page{size:A4;margin:15mm}}
+    </style>
+  </head><body>
+    <div id="toolbar">
+      <span>📋 Combined Picking Slip — ${groups.length} order${groups.length !== 1 ? "s" : ""} · ${totalLines} line${totalLines !== 1 ? "s" : ""} · Qty ${totalQty}</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print</button>
+      <button id="btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+    <div id="page"><div id="sheet">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:5mm">
+        <div>
+          <div style="font-size:20px;font-weight:900;color:#1e3a5f">COMBINED PICKING SLIP</div>
+          <div style="font-size:11px;color:#555;margin-top:1mm">${groups.length} order${groups.length !== 1 ? "s" : ""} · ${totalLines} line${totalLines !== 1 ? "s" : ""} · Total qty ${totalQty}</div>
+        </div>
+        <div style="text-align:right"><div style="font-weight:bold">Select Branding Solutions</div><div style="color:#555">Printed: ${dateStr}</div></div>
+      </div>
+      ${orderSections}
+      <div style="margin-top:8mm;display:flex;gap:30px;border-top:1px solid #e5e7eb;padding-top:4mm">
+        <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Picked by: ___________________________</div>
+        <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Date picked: ___________________________</div>
+        <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Checked by: ___________________________</div>
+      </div>
+    </div></div>
+  </body></html>`;
+
+  const win = window.open("", "_blank", "width=960,height=800");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+}
 
 function PrintWorksheet({ ws }: { ws: Worksheet }) {
   const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
@@ -597,17 +825,19 @@ function printPickingSlip(order: PickingOrder) {
 
 // ─── Picking List Tab Component ───────────────────────────────────────────────
 
-function PickingListTab() {
+function PickingListTab({ filters }: { filters: Filters }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [returning, setReturning] = useState<Set<number>>(new Set());
 
-  const { data: pickingOrders = [], isLoading } = useQuery<PickingOrder[]>({
+  const { data: rawPickingOrders = [], isLoading } = useQuery<PickingOrder[]>({
     queryKey: ["picking-list"],
     queryFn: () => apiFetch("/picking-list"),
     refetchInterval: 30000,
   });
+
+  const pickingOrders = filterPickingOrders(rawPickingOrders, filters);
 
   const pickMutation = useMutation({
     mutationFn: (itemIds: number[]) =>
@@ -675,6 +905,7 @@ function PickingListTab() {
   }
 
   const totalItems = pickingOrders.reduce((s, o) => s + o.items.length, 0);
+  const rawTotalItems = rawPickingOrders.reduce((s, o) => s + o.items.length, 0);
 
   if (isLoading) return (
     <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -682,11 +913,19 @@ function PickingListTab() {
     </div>
   );
 
-  if (totalItems === 0) return (
+  if (rawTotalItems === 0) return (
     <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
       <ListChecks className="w-12 h-12 text-purple-300" />
       <p className="text-lg font-medium">No items to pick</p>
       <p className="text-sm text-center max-w-xs">Items allocated from delivered stock will appear here for warehouse picking.</p>
+    </div>
+  );
+
+  if (totalItems === 0) return (
+    <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+      <Search className="w-12 h-12 text-purple-200" />
+      <p className="text-lg font-medium">No results match your filters</p>
+      <p className="text-sm text-center max-w-xs">{rawTotalItems} item{rawTotalItems !== 1 ? "s" : ""} exist but none match the current filter.</p>
     </div>
   );
 
@@ -728,15 +967,27 @@ function PickingListTab() {
               ? `Pick → Send to Production (${finishCount})`
               : `Confirm ${checked.size} Picked`;
             return (
-              <Button
-                size="sm"
-                onClick={() => pickMutation.mutate([...checked])}
-                disabled={pickMutation.isPending}
-                className={`gap-1.5 text-white ${needsWorksheet ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                {label}
-              </Button>
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs border-purple-400 text-purple-700 hover:bg-purple-50"
+                  onClick={() => printCombinedPickingSlip(checkedItems, rawPickingOrders)}
+                  title="Print a combined picking slip for selected items"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Print Slip ({checked.size})
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => pickMutation.mutate([...checked])}
+                  disabled={pickMutation.isPending}
+                  className={`gap-1.5 text-white ${needsWorksheet ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  {label}
+                </Button>
+              </>
             );
           })()}
         </div>
@@ -859,7 +1110,8 @@ function PickingListTab() {
 export default function Production() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("pre_wip");
+  const [activeTab, setActiveTab] = useState("picking_list");
+  const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
 
   const { data: allWorksheets = [], isLoading: wsLoading } = useQuery<Worksheet[]>({
     queryKey: ["worksheets"],
@@ -920,17 +1172,32 @@ export default function Production() {
     returnToPickingMutation.mutate(id);
   };
 
-  const preWipWorksheets = allWorksheets.filter((w) => w.status === "pre_wip");
-  const wip = allWorksheets.filter((w) => w.status === "wip");
-  const complete = allWorksheets.filter((w) => w.status === "complete");
+  const preWipWorksheets = filterWorksheets(allWorksheets.filter((w) => w.status === "pre_wip"), filters);
+  const wip = filterWorksheets(allWorksheets.filter((w) => w.status === "wip"), filters);
+  const complete = filterWorksheets(allWorksheets.filter((w) => w.status === "complete"), filters);
 
-  const preWipTotal = preWipWorksheets.length + pendingOrders.length;
+  const filteredPendingOrders = pendingOrders.filter((o) => {
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      if (!o.customerName?.toLowerCase().includes(q) && !o.orderNumber.toLowerCase().includes(q)) return false;
+    }
+    if (!matchesDateFilters(o.requiredDate as unknown as string | null, filters.dateFrom, filters.dateTo)) return false;
+    return true;
+  });
+
+  const preWipTotal = preWipWorksheets.length + filteredPendingOrders.length;
+
+  // Unfiltered counts for stat cards (show actual total, filtered shown inside tab)
+  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + pendingOrders.length;
+  const rawWip = allWorksheets.filter((w) => w.status === "wip").length;
+  const rawComplete = allWorksheets.filter((w) => w.status === "complete").length;
+  const hasFilters = Object.values(filters).some(Boolean);
 
   const TAB_COUNTS = [
     { key: "picking_list", label: "Picking List", count: pickingCount, icon: ListChecks, color: "text-purple-600" },
-    { key: "pre_wip", label: "Pre-WIP", count: preWipTotal, icon: Clock, color: "text-blue-600" },
-    { key: "wip", label: "Work in Progress", count: wip.length, icon: ClipboardList, color: "text-amber-600" },
-    { key: "complete", label: "Complete", count: complete.length, icon: CheckCircle2, color: "text-green-600" },
+    { key: "pre_wip", label: "Pre-WIP", count: hasFilters ? preWipTotal : rawPreWip, icon: Clock, color: "text-blue-600" },
+    { key: "wip", label: "Work in Progress", count: hasFilters ? wip.length : rawWip, icon: ClipboardList, color: "text-amber-600" },
+    { key: "complete", label: "Complete", count: hasFilters ? complete.length : rawComplete, icon: CheckCircle2, color: "text-green-600" },
   ];
 
   const handleRefresh = () => {
@@ -984,6 +1251,10 @@ export default function Production() {
             ))}
           </TabsList>
 
+          <div className="mt-3">
+            <FiltersBar filters={filters} onChange={setFilters} />
+          </div>
+
           {/* ── Pre-WIP Tab ── */}
           <TabsContent value="pre_wip">
             {isLoading ? (
@@ -1000,20 +1271,20 @@ export default function Production() {
               </div>
             ) : (
               <div className="space-y-3">
-                {pendingOrders.length > 0 && (
+                {filteredPendingOrders.length > 0 && (
                   <>
                     <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
                       <ShoppingCart className="w-4 h-4" />
-                      Awaiting Stock ({pendingOrders.length} order{pendingOrders.length !== 1 ? "s" : ""})
+                      Awaiting Stock ({filteredPendingOrders.length} order{filteredPendingOrders.length !== 1 ? "s" : ""})
                     </div>
-                    {pendingOrders.map((order) => (
+                    {filteredPendingOrders.map((order) => (
                       <PendingOrderCard key={order.orderId} order={order} />
                     ))}
                   </>
                 )}
                 {preWipWorksheets.length > 0 && (
                   <>
-                    {pendingOrders.length > 0 && (
+                    {filteredPendingOrders.length > 0 && (
                       <div className="flex items-center gap-2 text-sm font-medium text-blue-700 pt-2">
                         <Clock className="w-4 h-4" />
                         Worksheets Ready ({preWipWorksheets.length})
@@ -1063,7 +1334,7 @@ export default function Production() {
 
           {/* ── Picking List Tab ── */}
           <TabsContent value="picking_list">
-            <PickingListTab />
+            <PickingListTab filters={filters} />
           </TabsContent>
 
           {/* ── Complete Tab ── */}

@@ -301,13 +301,31 @@ router.get("/worksheets", async (req, res): Promise<void> => {
     ? await db.select().from(worksheetItemsTable).where(inArray(worksheetItemsTable.worksheetId, wsIds))
     : [];
 
+  // Fetch requiredDate from orders for sorting
+  const orderIds = [...new Set(rows.filter((w) => w.orderId != null).map((w) => w.orderId!))];
+  const orderDates = orderIds.length > 0
+    ? await db.select({ id: ordersTable.id, requiredDate: ordersTable.requiredDate })
+        .from(ordersTable).where(inArray(ordersTable.id, orderIds))
+    : [];
+  const orderDateMap = new Map(orderDates.map((o) => [o.id, o.requiredDate]));
+
   const result = rows.map((ws) => ({
     ...ws,
+    requiredDate: ws.orderId ? (orderDateMap.get(ws.orderId) ?? null) : null,
     items: items.filter((i) => i.worksheetId === ws.id).map((i) => ({
       ...i,
       processes: i.processesSnapshot ? JSON.parse(i.processesSnapshot) : [],
     })),
   }));
+
+  // Sort by requiredDate asc (nulls last), then createdAt desc
+  result.sort((a, b) => {
+    if (a.requiredDate && b.requiredDate)
+      return new Date(a.requiredDate as unknown as string).getTime() - new Date(b.requiredDate as unknown as string).getTime();
+    if (a.requiredDate) return -1;
+    if (b.requiredDate) return 1;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
 
   res.json(result);
 });
