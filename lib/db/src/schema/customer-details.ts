@@ -121,6 +121,7 @@ export const customerFinishedItemsTable = pgTable("customer_finished_items", {
   size: text("size"),
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
   specialPrice: numeric("special_price", { precision: 10, scale: 2 }),
+  stockQuantity: integer("stock_quantity").notNull().default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

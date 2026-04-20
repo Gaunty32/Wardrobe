@@ -18,6 +18,7 @@ import tasksRouter from "./tasks";
 import productCategoriesRouter from "./product-categories";
 import portalRouter from "./portal";
 import invoicesRouter from "./invoices";
+import stockRouter from "./stock";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(xeroRouter);
 router.use(tasksRouter);
 router.use(productCategoriesRouter);
 router.use(invoicesRouter);
+router.use(stockRouter);
 
 export default router;

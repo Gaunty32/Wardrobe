@@ -563,6 +563,7 @@ const finishedItemBody = z.object({
   size: z.string().optional().nullable(),
   unitPrice: z.number().min(0),
   specialPrice: z.number().min(0).optional().nullable(),
+  stockQuantity: z.number().int().min(0).optional().default(0),
   notes: z.string().optional().nullable(),
 });
 
@@ -584,6 +585,7 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
     size: customerFinishedItemsTable.size,
     unitPrice: customerFinishedItemsTable.unitPrice,
     specialPrice: customerFinishedItemsTable.specialPrice,
+    stockQuantity: customerFinishedItemsTable.stockQuantity,
     notes: customerFinishedItemsTable.notes,
     createdAt: customerFinishedItemsTable.createdAt,
   })
@@ -606,6 +608,7 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
     ...r,
     unitPrice: r.unitPrice != null ? parseFloat(r.unitPrice) : 0,
     specialPrice: r.specialPrice != null ? parseFloat(r.specialPrice) : null,
+    stockQuantity: r.stockQuantity ?? 0,
     finishName: r.finishId ? (finishMap.get(r.finishId) ?? null) : null,
     roleName: r.roleId ? (roleMap.get(r.roleId) ?? null) : null,
   })));
@@ -623,9 +626,10 @@ router.post("/customers/:customerId/finished-items", async (req, res): Promise<v
       customerId: p.data.customerId,
       unitPrice: String(body.data.unitPrice),
       specialPrice: body.data.specialPrice != null ? String(body.data.specialPrice) : null,
+      stockQuantity: body.data.stockQuantity ?? 0,
     })
     .returning();
-  res.status(201).json({ ...row, unitPrice: parseFloat(row.unitPrice!), specialPrice: row.specialPrice != null ? parseFloat(row.specialPrice) : null });
+  res.status(201).json({ ...row, unitPrice: parseFloat(row.unitPrice!), specialPrice: row.specialPrice != null ? parseFloat(row.specialPrice) : null, stockQuantity: row.stockQuantity ?? 0 });
 });
 
 router.patch("/customers/:customerId/finished-items/:id", async (req, res): Promise<void> => {
@@ -641,7 +645,7 @@ router.patch("/customers/:customerId/finished-items/:id", async (req, res): Prom
     .where(and(eq(customerFinishedItemsTable.id, p.data.id), eq(customerFinishedItemsTable.customerId, p.data.customerId)))
     .returning();
   if (!row) { res.status(404).json({ error: "Finished item not found" }); return; }
-  res.json({ ...row, unitPrice: parseFloat(row.unitPrice!), specialPrice: row.specialPrice != null ? parseFloat(row.specialPrice) : null });
+  res.json({ ...row, unitPrice: parseFloat(row.unitPrice!), specialPrice: row.specialPrice != null ? parseFloat(row.specialPrice) : null, stockQuantity: row.stockQuantity ?? 0 });
 });
 
 router.delete("/customers/:customerId/finished-items/:id", async (req, res): Promise<void> => {

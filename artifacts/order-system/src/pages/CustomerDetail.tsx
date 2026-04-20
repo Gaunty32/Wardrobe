@@ -1241,6 +1241,7 @@ interface FinishedItem {
   size: string | null;
   unitPrice: number;
   specialPrice: number | null;
+  stockQuantity: number;
   notes: string | null;
 }
 
@@ -1482,6 +1483,39 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   );
 }
 
+function WardrobeStockCell({ item, onSave }: { item: FinishedItem; onSave: (qty: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(item.stockQuantity));
+  const low = item.stockQuantity <= 5;
+  const commit = () => {
+    const num = parseInt(draft, 10);
+    if (!isNaN(num) && num >= 0 && num !== item.stockQuantity) onSave(num);
+    else setDraft(String(item.stockQuantity));
+    setEditing(false);
+  };
+  if (editing) {
+    return (
+      <input
+        type="number" min={0} value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(String(item.stockQuantity)); setEditing(false); } }}
+        className="w-16 text-right border rounded px-2 py-0.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+        autoFocus
+      />
+    );
+  }
+  return (
+    <button
+      onClick={() => { setDraft(String(item.stockQuantity)); setEditing(true); }}
+      className={cn("tabular-nums font-mono text-sm px-2 py-0.5 rounded hover:bg-muted transition-colors", low ? "text-amber-700 font-semibold" : "text-muted-foreground")}
+      title="Click to update stock"
+    >
+      {low && item.stockQuantity <= 0 ? "0" : item.stockQuantity}
+    </button>
+  );
+}
+
 function WardrobeTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -1498,7 +1532,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [variantColours, setVariantColours] = useState<string[]>([]);
   const [variantSizes, setVariantSizes] = useState<string[]>([]);
 
-  const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", specialPrice: "", notes: "" };
+  const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", specialPrice: "", stockQuantity: "0", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finished-items"] });
@@ -1546,6 +1580,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       size: item.size ?? "",
       unitPrice: item.unitPrice.toFixed(2),
       specialPrice: item.specialPrice != null ? item.specialPrice.toFixed(2) : "",
+      stockQuantity: String(item.stockQuantity ?? 0),
       notes: item.notes ?? "",
     });
     setEditing(item);
@@ -1615,6 +1650,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       size: form.size || null,
       unitPrice: parseFloat(form.unitPrice),
       specialPrice: form.specialPrice ? parseFloat(form.specialPrice) : null,
+      stockQuantity: parseInt(form.stockQuantity, 10) || 0,
       notes: form.notes || null,
     });
   };
@@ -1650,6 +1686,9 @@ function WardrobeTab({ customerId }: { customerId: number }) {
         {item.specialPrice != null
           ? <span className="font-semibold text-emerald-600">{formatCurrency(item.specialPrice)}</span>
           : <span className="text-muted-foreground/40 text-xs">—</span>}
+      </TableCell>
+      <TableCell className="text-right">
+        <WardrobeStockCell item={item} onSave={(qty) => save.mutate({ name: item.name, roleId: item.roleId, productId: item.productId, finishId: item.finishId, colour: item.colour, size: item.size, unitPrice: item.unitPrice, specialPrice: item.specialPrice, stockQuantity: qty, notes: item.notes })} />
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1692,6 +1731,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               <TableHead className="hidden md:table-cell">Colour / Size</TableHead>
               <TableHead className="text-right">Unit Price</TableHead>
               <TableHead className="text-right">Special Price</TableHead>
+              <TableHead className="text-right">In Stock</TableHead>
               <TableHead className="w-20 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -1850,6 +1890,19 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   onChange={e => setForm(f => ({ ...f, specialPrice: e.target.value }))}
                 />
                 <p className="text-xs text-muted-foreground">Customer-specific price override.</p>
+              </div>
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1">Stock Qty</Label>
+                <input
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  type="number"
+                  min="0"
+                  step="1"
+                  placeholder="0"
+                  value={form.stockQuantity}
+                  onChange={e => setForm(f => ({ ...f, stockQuantity: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">Finished (branded) units in stock.</p>
               </div>
             </div>
 
