@@ -2101,6 +2101,28 @@ export default function CustomerDetail() {
     retry: false,
   });
 
+  const { data: invoiceSummary } = useQuery<{
+    balanceDue: string;
+    overdueTotal: string;
+    unpaidCount: number;
+    overdueCount: number;
+    overdueInvoices: Array<{
+      id: number;
+      orderNumber: string;
+      amount: string;
+      invoicedAt: string;
+      daysOverdue: number;
+      xeroInvoiceId: string | null;
+      xeroInvoiceStatus: string | null;
+    }>;
+  }>({
+    queryKey: ["customer-invoice-summary", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/invoice-summary`),
+    enabled: !!customerId,
+    staleTime: 1000 * 60 * 2,
+    retry: false,
+  });
+
   if (isLoading) {
     return (
       <Layout>
@@ -2146,32 +2168,83 @@ export default function CustomerDetail() {
           </div>
         </div>
 
-        {/* Xero balance card — only shown when customer is linked to Xero */}
-        {xeroContactId && (
-          <div className="flex flex-wrap gap-4 px-0">
-            {xeroBalanceLoading ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="w-4 h-4 animate-spin" /> Loading Xero balance…
-              </div>
-            ) : xeroBalance ? (
-              <>
-                <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border text-sm ${xeroBalance.arOutstanding > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"}`}>
-                  <TrendingUp className={`w-4 h-4 ${xeroBalance.arOutstanding > 0 ? "text-amber-600" : "text-green-600"}`} />
+        {/* Invoice balance summary */}
+        {(invoiceSummary || xeroContactId) && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              {/* Balance Due chip */}
+              {invoiceSummary && (
+                <div className={cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-lg border text-sm",
+                  parseFloat(invoiceSummary.balanceDue) > 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200"
+                )}>
+                  <TrendingUp className={cn("w-4 h-4", parseFloat(invoiceSummary.balanceDue) > 0 ? "text-amber-600" : "text-green-600")} />
                   <div>
-                    <div className="font-semibold text-foreground">
-                      {formatCurrency(xeroBalance.arOutstanding)} outstanding
-                    </div>
-                    <div className="text-xs text-muted-foreground">Accounts Receivable (Xero)</div>
+                    <div className="font-semibold text-foreground">{formatCurrency(parseFloat(invoiceSummary.balanceDue))} balance due</div>
+                    <div className="text-xs text-muted-foreground">{invoiceSummary.unpaidCount} unpaid invoice{invoiceSummary.unpaidCount !== 1 ? "s" : ""}</div>
                   </div>
-                  {xeroBalance.arOverdue > 0 && (
-                    <div className="flex items-center gap-1 ml-2 text-red-600 text-xs font-medium">
-                      <AlertCircle className="w-3.5 h-3.5" />
-                      {formatCurrency(xeroBalance.arOverdue)} overdue
-                    </div>
-                  )}
                 </div>
-              </>
-            ) : null}
+              )}
+              {/* Overdue chip */}
+              {invoiceSummary && invoiceSummary.overdueCount > 0 && (
+                <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-red-50 border-red-200 text-sm">
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                  <div>
+                    <div className="font-semibold text-red-700">{formatCurrency(parseFloat(invoiceSummary.overdueTotal))} overdue</div>
+                    <div className="text-xs text-red-500">{invoiceSummary.overdueCount} invoice{invoiceSummary.overdueCount !== 1 ? "s" : ""} past 14 days</div>
+                  </div>
+                </div>
+              )}
+              {/* Xero live balance chip */}
+              {xeroContactId && (
+                xeroBalanceLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground px-3 py-3">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Xero balance…
+                  </div>
+                ) : xeroBalance ? (
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-lg border bg-muted/30 border-border/50 text-sm">
+                    <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                    <div>
+                      <div className="font-semibold text-foreground">{formatCurrency(xeroBalance.arOutstanding)} AR (Xero)</div>
+                      <div className="text-xs text-muted-foreground">Live from Xero</div>
+                    </div>
+                  </div>
+                ) : null
+              )}
+            </div>
+
+            {/* Overdue invoices list */}
+            {invoiceSummary && invoiceSummary.overdueInvoices.length > 0 && (
+              <div className="rounded-lg border border-red-200 bg-red-50/50 overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-red-200 bg-red-50">
+                  <AlertCircle className="w-4 h-4 text-red-600" />
+                  <span className="text-sm font-semibold text-red-700">Overdue Invoices</span>
+                </div>
+                <div className="divide-y divide-red-100">
+                  {invoiceSummary.overdueInvoices.map((inv) => (
+                    <div
+                      key={inv.id}
+                      className="flex items-center justify-between px-4 py-2.5 hover:bg-red-50 cursor-pointer transition-colors"
+                      onClick={() => navigate(`/orders/${inv.id}`)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-sm font-medium text-foreground">{inv.orderNumber}</span>
+                        <span className="text-xs text-red-600 font-medium">
+                          {inv.daysOverdue} day{inv.daysOverdue !== 1 ? "s" : ""} overdue
+                        </span>
+                        {inv.xeroInvoiceStatus && (
+                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{inv.xeroInvoiceStatus}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm font-semibold text-red-700">{formatCurrency(parseFloat(inv.amount))}</span>
+                        <span className="text-xs text-muted-foreground">{formatDate(inv.invoicedAt)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
