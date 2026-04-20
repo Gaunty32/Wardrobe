@@ -15,11 +15,16 @@ import {
 
 const router: IRouter = Router();
 
-function generateWorksheetNumber(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const seq = Math.floor(Math.random() * 9000) + 1000;
-  return `WS-${year}-${seq}`;
+async function generateWorksheetNumber(): Promise<string> {
+  const rows = await db.execute(sql`
+    SELECT worksheet_number FROM worksheets
+    WHERE worksheet_number ~ '^F[0-9]+$'
+    ORDER BY LENGTH(worksheet_number) DESC, worksheet_number DESC
+    LIMIT 1
+  `);
+  const last = (rows.rows[0] as any)?.worksheet_number as string | undefined;
+  const maxNum = last ? parseInt(last.slice(1), 10) : 99;
+  return `F${maxNum + 1}`;
 }
 
 // ── Picking list: items allocated from stock, ready to be picked ──────────────
@@ -371,7 +376,7 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     return;
   }
 
-  const worksheetNumber = generateWorksheetNumber();
+  const worksheetNumber = await generateWorksheetNumber();
   const [ws] = await db
     .insert(worksheetsTable)
     .values({

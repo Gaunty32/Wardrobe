@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, sql, inArray, and, ne, isNotNull, lt } from "drizzle-orm";
+import { eq, desc, asc, sql, inArray, and, ne, isNotNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, customersTable, productsTable,
@@ -36,11 +36,16 @@ const CreateOrderBodyFixed = z.object({
 
 const router: IRouter = Router();
 
-function generateOrderNumber(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const random = Math.floor(Math.random() * 90000) + 10000;
-  return `ORD-${year}-${random}`;
+async function generateOrderNumber(): Promise<string> {
+  const rows = await db.execute(sql`
+    SELECT order_number FROM orders
+    WHERE order_number ~ '^O[0-9]+$'
+    ORDER BY LENGTH(order_number) DESC, order_number DESC
+    LIMIT 1
+  `);
+  const last = (rows.rows[0] as any)?.order_number as string | undefined;
+  const maxNum = last ? parseInt(last.slice(1), 10) : 99;
+  return `O${maxNum + 1}`;
 }
 
 function numericToFloat(val: string | null | undefined): number {
@@ -56,38 +61,37 @@ async function recalcOrderTotal(orderId: number): Promise<void> {
     .where(eq(ordersTable.id, orderId));
 }
 
+const DUE_DATE_SORT = [sql`${ordersTable.requiredDate} ASC NULLS LAST`, desc(ordersTable.createdAt)] as const;
+
 router.get("/orders", async (req, res): Promise<void> => {
   const query = ListOrdersQueryParams.safeParse(req.query);
-  let ordersQuery = db.select().from(ordersTable);
-
   let orders;
   if (query.success) {
-    if (query.data.status && query.data.customerId) {
-      orders = await db
-        .select()
-        .from(ordersTable)
-        .where(eq(ordersTable.status, query.data.status))
-        .orderBy(desc(ordersTable.createdAt));
-    } else if (query.data.status) {
-      orders = await db
-        .select()
-        .from(ordersTable)
-        .where(eq(ordersTable.status, query.data.status))
-        .orderBy(desc(ordersTable.createdAt));
-    } else if (query.data.customerId) {
-      orders = await db
-        .select()
-        .from(ordersTable)
-        .where(eq(ordersTable.customerId, query.data.customerId))
-        .orderBy(desc(ordersTable.createdAt));
-    } else {
-      orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt));
-    }
+    const conditions = [];
+    if (query.data.status) conditions.push(eq(ordersTable.status, query.data.status));
+    if (query.data.customerId) conditions.push(eq(ordersTable.customerId, query.data.customerId));
+    orders = conditions.length > 0
+      ? await db.select().from(ordersTable).where(and(...conditions)).orderBy(...DUE_DATE_SORT)
+      : await db.select().from(ordersTable).orderBy(...DUE_DATE_SORT);
   } else {
-    orders = await db.select().from(ordersTable).orderBy(desc(ordersTable.createdAt));
+    orders = await db.select().from(ordersTable).orderBy(...DUE_DATE_SORT);
   }
-
   res.json(orders.map((o) => ({ ...o, totalAmount: numericToFloat(o.totalAmount) })));
+});
+
+router.get("/orders/weekly-stats", async (req, res): Promise<void> => {
+  const rows = await db.execute(sql`
+    SELECT
+      date_trunc('week', order_date AT TIME ZONE 'UTC')::date AS week_start,
+      COUNT(*)::int AS order_count,
+      COALESCE(SUM(total_amount), 0)::float AS total_value
+    FROM orders
+    WHERE order_date >= NOW() - INTERVAL '12 weeks'
+      AND status != 'cancelled'
+    GROUP BY date_trunc('week', order_date AT TIME ZONE 'UTC')
+    ORDER BY week_start ASC
+  `);
+  res.json(rows.rows);
 });
 
 router.post("/orders", async (req, res): Promise<void> => {
@@ -105,7 +109,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     customerName = customer?.name ?? null;
   }
 
-  const orderNumber = generateOrderNumber();
+  const orderNumber = await generateOrderNumber();
   const [order] = await db
     .insert(ordersTable)
     .values({
