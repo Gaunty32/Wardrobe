@@ -1440,6 +1440,25 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
+  const dup = useMutation({
+    mutationFn: (item: FinishedItem) => apiFetch(`/customers/${customerId}/finished-items`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: `${item.name} (copy)`,
+        roleId: item.roleId ?? null,
+        productId: item.productId,
+        finishId: item.finishId ?? null,
+        colour: item.colour ?? null,
+        size: item.size ?? null,
+        unitPrice: item.unitPrice,
+        specialPrice: item.specialPrice ?? null,
+        notes: item.notes ?? null,
+      }),
+    }),
+    onSuccess: () => { inv(); toast({ title: "Item duplicated" }); },
+    onError: (e: any) => toast({ title: "Error", description: e.message || "Could not duplicate", variant: "destructive" }),
+  });
+
   const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setOpen(true); };
   const openEdit = (item: FinishedItem) => {
     setForm({
@@ -1558,6 +1577,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted" title="Duplicate item" onClick={() => dup.mutate(item)} disabled={dup.isPending}><Copy className="w-3 h-3" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(item)}><Edit2 className="w-3 h-3" /></Button>
           <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this finished item?") && del.mutate(item.id)}><Trash2 className="w-3 h-3" /></Button>
         </div>
