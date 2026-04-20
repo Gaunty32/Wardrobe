@@ -17,6 +17,7 @@ import xeroRouter from "./xero";
 import tasksRouter from "./tasks";
 import productCategoriesRouter from "./product-categories";
 import portalRouter from "./portal";
+import invoicesRouter from "./invoices";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(dispatchRouter);
 router.use(xeroRouter);
 router.use(tasksRouter);
 router.use(productCategoriesRouter);
+router.use(invoicesRouter);
 
 export default router;

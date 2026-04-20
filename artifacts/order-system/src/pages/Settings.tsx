@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
-  Link2, Unlink2, Users, ExternalLink, BookOpen
+  Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,6 +85,16 @@ export default function Settings() {
 
   // Xero sync progress bar state — effect is placed after syncXeroContactsMutation declaration below
   const [xeroSyncProgress, setXeroSyncProgress] = useState(0);
+
+  // Email / SMTP fields
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("587");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpPass, setSmtpPass] = useState("");
+  const [smtpFromEmail, setSmtpFromEmail] = useState("");
+  const [smtpFromName, setSmtpFromName] = useState("Select Branding Solutions");
+  const [showSmtpPass, setShowSmtpPass] = useState(false);
+  const [smtpFormLoaded, setSmtpFormLoaded] = useState(false);
 
   // Detect ?xero=connected redirect from OAuth callback
   useEffect(() => {
@@ -188,6 +198,39 @@ export default function Settings() {
     }
   }, [rawSettings, formLoaded]);
 
+  useEffect(() => {
+    if (rawSettings && !smtpFormLoaded) {
+      setSmtpHost(rawSettings["smtp_host"] ?? "smtp.office365.com");
+      setSmtpPort(rawSettings["smtp_port"] ?? "587");
+      setSmtpUser(rawSettings["smtp_user"] ?? "");
+      setSmtpFromEmail(rawSettings["smtp_from_email"] ?? "");
+      setSmtpFromName(rawSettings["smtp_from_name"] ?? "Select Branding Solutions");
+      setSmtpFormLoaded(true);
+    }
+  }, [rawSettings, smtpFormLoaded]);
+
+  const saveSmtpMutation = useMutation({
+    mutationFn: (data: Record<string, string | null>) => apiFetch("/settings", { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings-raw"] });
+      queryClient.invalidateQueries({ queryKey: ["email-status"] });
+      toast({ title: "Email settings saved" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const testSmtpMutation = useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean; error?: string }>("/settings/email/test", { method: "POST" }),
+    onSuccess: (res) => {
+      if (res.ok) {
+        toast({ title: "Connection successful", description: "SMTP server accepted the connection." });
+      } else {
+        toast({ title: "Connection failed", description: res.error ?? "Unknown error", variant: "destructive" });
+      }
+    },
+    onError: (e: Error) => toast({ title: "Test failed", description: parseApiError(e), variant: "destructive" }),
+  });
+
   const { data: logs = [], isLoading: logsLoading, refetch: refetchLogs } = useQuery<SyncLog[]>({
     queryKey: ["sync-logs"],
     queryFn: () => apiFetch("/woo-sync/logs"),
@@ -261,6 +304,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="xero" className="gap-2">
               <BookOpen className="w-4 h-4" /> Xero Accounting
+            </TabsTrigger>
+            <TabsTrigger value="email" className="gap-2">
+              <Mail className="w-4 h-4" /> Email (SMTP)
             </TabsTrigger>
           </TabsList>
 
@@ -678,6 +724,90 @@ export default function Settings() {
                 </div>
               )}
 
+            </div>
+          </TabsContent>
+
+          {/* ─── Email Tab ─────────────────────────────────────────── */}
+          <TabsContent value="email" className="mt-6">
+            <div className="grid gap-6 max-w-2xl">
+              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                <h2 className="font-semibold text-base">SMTP Configuration</h2>
+                <p className="text-sm text-muted-foreground">
+                  Used to email invoices to customers. For <strong>Microsoft 365</strong>, use host <code className="text-xs bg-muted px-1 rounded">smtp.office365.com</code>, port <code className="text-xs bg-muted px-1 rounded">587</code>, and your full email address as the username.
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5 col-span-2 sm:col-span-1">
+                    <Label>SMTP Host</Label>
+                    <Input placeholder="smtp.office365.com" value={smtpHost} onChange={(e) => setSmtpHost(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Port</Label>
+                    <Input placeholder="587" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Username (your email address)</Label>
+                  <Input placeholder="you@yourdomain.com" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>Password / App Password</Label>
+                  <div className="relative">
+                    <Input
+                      type={showSmtpPass ? "text" : "password"}
+                      placeholder="Enter your email password or app password"
+                      value={smtpPass}
+                      onChange={(e) => setSmtpPass(e.target.value)}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSmtpPass((v) => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showSmtpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">For Microsoft 365, you may need to use an <strong>App Password</strong> if MFA is enabled, or enable SMTP AUTH on the account in the M365 admin portal.</p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>From Email Address</Label>
+                  <Input placeholder="invoices@yourdomain.com" value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>From Name</Label>
+                  <Input placeholder="Select Branding Solutions" value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)} />
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap pt-1">
+                  <Button
+                    onClick={() => saveSmtpMutation.mutate({
+                      smtp_host: smtpHost || null,
+                      smtp_port: smtpPort || null,
+                      smtp_user: smtpUser || null,
+                      smtp_pass: smtpPass || null,
+                      smtp_from_email: smtpFromEmail || null,
+                      smtp_from_name: smtpFromName || null,
+                    })}
+                    disabled={saveSmtpMutation.isPending || !smtpHost || !smtpUser || !smtpFromEmail}
+                    className="gap-2"
+                  >
+                    {saveSmtpMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><CheckCircle className="w-4 h-4" />Save Settings</>}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => testSmtpMutation.mutate()}
+                    disabled={testSmtpMutation.isPending}
+                    className="gap-2"
+                  >
+                    {testSmtpMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Testing...</> : <><Send className="w-4 h-4" />Test Connection</>}
+                  </Button>
+                </div>
+              </div>
             </div>
           </TabsContent>
 

@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -1041,6 +1043,26 @@ function printDocWearerLabels(order: DocOrder) {
 function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: () => void }) {
   const namedCount = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)).length;
   const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const [tracking, setTracking] = useState<string>((order as any).trackingNumber ?? "");
+  const [trackingSaved, setTrackingSaved] = useState(!!(order as any).trackingNumber);
+
+  const saveTracking = useMutation({
+    mutationFn: (tn: string | null) =>
+      fetch(`${API_BASE}/invoices/${order.id}/tracking`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trackingNumber: tn || null }),
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      setTrackingSaved(true);
+      qc.invalidateQueries({ queryKey: ["production-order", order.id] });
+      toast({ title: "Tracking number saved" });
+    },
+    onError: () => toast({ title: "Failed to save tracking", variant: "destructive" }),
+  });
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -1062,7 +1084,35 @@ function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: ()
             </div>
           </div>
 
-          <p className="text-sm text-muted-foreground">All production is complete. Print the documents you need before dispatching.</p>
+          {/* DPD Tracking Number */}
+          <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+              📦 DPD Tracking Number
+              {trackingSaved && tracking && <span className="text-green-600 normal-case font-normal">(saved)</span>}
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input
+                value={tracking}
+                onChange={(e) => { setTracking(e.target.value); setTrackingSaved(false); }}
+                placeholder="e.g. 15006678987456"
+                className="h-8 text-xs font-mono flex-1"
+              />
+              <Button
+                size="sm"
+                variant={trackingSaved ? "outline" : "default"}
+                className="h-8 px-3 text-xs shrink-0"
+                onClick={() => saveTracking.mutate(tracking)}
+                disabled={saveTracking.isPending || trackingSaved}
+              >
+                {saveTracking.isPending ? "Saving…" : trackingSaved ? "✓ Saved" : "Save"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Saved here, it will be included in the invoice email and shown on the customer's DPD tracking link.
+            </p>
+          </div>
+
+          <p className="text-sm text-muted-foreground">Print the documents you need before dispatching.</p>
 
           <div className="grid grid-cols-1 gap-2">
             <Button

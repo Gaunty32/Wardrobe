@@ -20,6 +20,12 @@ export const ordersTable = pgTable("orders", {
   dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
   xeroInvoiceId: text("xero_invoice_id"),
   xeroInvoiceStatus: text("xero_invoice_status"),
+  trackingNumber: text("tracking_number"),
+  invoiceEmailSentAt: timestamp("invoice_email_sent_at", { withTimezone: true }),
+  invoiceEmailSentTo: text("invoice_email_sent_to"),
+  source: text("source").notNull().default("internal"),
+  portalStatus: text("portal_status"),
+  portalNotes: text("portal_notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
