@@ -927,8 +927,8 @@ export default function Production() {
   const preWipTotal = preWipWorksheets.length + pendingOrders.length;
 
   const TAB_COUNTS = [
-    { key: "pre_wip", label: "Pre-WIP", count: preWipTotal, icon: Clock, color: "text-blue-600" },
     { key: "picking_list", label: "Picking List", count: pickingCount, icon: ListChecks, color: "text-purple-600" },
+    { key: "pre_wip", label: "Pre-WIP", count: preWipTotal, icon: Clock, color: "text-blue-600" },
     { key: "wip", label: "Work in Progress", count: wip.length, icon: ClipboardList, color: "text-amber-600" },
     { key: "complete", label: "Complete", count: complete.length, icon: CheckCircle2, color: "text-green-600" },
   ];
