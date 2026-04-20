@@ -823,6 +823,302 @@ function printPickingSlip(order: PickingOrder) {
   win.focus();
 }
 
+// ─── Dispatch-ready types & document print functions ──────────────────────────
+
+interface DocEmployee { id: number; firstName: string; lastName: string | null; jobTitle: string | null; department: string | null; }
+interface DocItem {
+  id: number; orderId: number; productName: string; colour: string | null; size: string | null;
+  finishName: string | null; quantity: number; recipientType: string; recipientName: string | null;
+  recipientEmployeeId: number | null; unitPrice: number; lineTotal: number; employee: DocEmployee | null;
+}
+interface DocAddress { line1: string | null; line2: string | null; city: string | null; county: string | null; postcode: string | null; country: string | null; }
+interface DocCustomer { name: string; address: string | null; city: string | null; state: string | null; postcode: string | null; email: string | null; phone: string | null; }
+interface DocOrder {
+  id: number; orderNumber: string; customerName: string | null; orderDate: string;
+  requiredDate: string | null; totalAmount: number; notes: string | null;
+  customer: DocCustomer | null; deliveryAddress: DocAddress | null; items: DocItem[];
+}
+
+function docRecipientName(item: DocItem): string {
+  if (item.employee) return [item.employee.firstName, item.employee.lastName].filter(Boolean).join(" ");
+  return item.recipientName ?? "Unknown";
+}
+
+function openPreview(title: string, bodyHtml: string, styleCss: string, toolbarLabel: string) {
+  const win = window.open("", "_blank", "width=960,height=800");
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif}
+    #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+    #toolbar span{flex:1;font-size:14px;font-weight:600}
+    #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+    #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
+    #page{display:flex;justify-content:center;padding:24px 0 40px}
+    #sheet{background:white;width:210mm;box-shadow:0 4px 24px rgba(0,0,0,.15)}
+    @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none}@page{size:A4;margin:20mm}}
+    ${styleCss}
+  </style></head><body>
+    <div id="toolbar">
+      <span>${toolbarLabel}</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print</button>
+      <button id="btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+    <div id="page"><div id="sheet">${bodyHtml}</div></div>
+  </body></html>`);
+  win.document.close();
+  win.focus();
+}
+
+function printDocDeliveryNote(order: DocOrder) {
+  const dateStr = new Date().toLocaleDateString("en-AU");
+  const addr = order.deliveryAddress;
+  const addrLines = addr ? [addr.line1, addr.line2, addr.city, addr.county, addr.postcode, addr.country].filter(Boolean) : [];
+  const namedItems = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
+  const stockItems = order.items.filter((i) => !(i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)));
+  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+
+  const recipientGroups = new Map<string, { name: string; jobTitle: string | null; items: DocItem[] }>();
+  for (const item of namedItems) {
+    const name = docRecipientName(item);
+    if (!recipientGroups.has(name)) recipientGroups.set(name, { name, jobTitle: item.employee?.jobTitle ?? null, items: [] });
+    recipientGroups.get(name)!.items.push(item);
+  }
+
+  const groupRows = [...recipientGroups.values()].map((g) => `
+    <tr class="group-hdr"><td colspan="4"><strong>${g.name}</strong>${g.jobTitle ? ` <span class="job">${g.jobTitle}</span>` : ""}</td></tr>
+    ${g.items.map((i) => `<tr><td style="padding-left:18px">${i.productName}${i.finishName ? ` <span class="finish">${i.finishName}</span>` : ""}</td><td>${i.colour ?? "—"}</td><td>${i.size ?? "—"}</td><td class="ctr">${i.quantity}</td></tr>`).join("")}
+  `).join("");
+  const stockRows = stockItems.length > 0 ? `
+    <tr class="group-hdr"><td colspan="4"><strong>General Stock</strong></td></tr>
+    ${stockItems.map((i) => `<tr><td style="padding-left:18px">${i.productName}${i.finishName ? ` <span class="finish">${i.finishName}</span>` : ""}</td><td>${i.colour ?? "—"}</td><td>${i.size ?? "—"}</td><td class="ctr">${i.quantity}</td></tr>`).join("")}
+  ` : "";
+
+  openPreview(
+    `Delivery Note — ${order.orderNumber}`,
+    `<div style="padding:15mm">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1e3a5f;padding-bottom:5mm;margin-bottom:5mm">
+        <div><div style="font-size:22pt;font-weight:900;color:#1e3a5f">Select Branding Solutions</div></div>
+        <div style="text-align:right"><div style="font-size:16pt;font-weight:bold;color:#333">DELIVERY NOTE</div><div style="font-size:11pt;color:#555">${order.orderNumber}</div></div>
+      </div>
+      <div style="display:flex;gap:24px;margin-bottom:5mm">
+        <div style="flex:1"><div class="lbl">Deliver To</div><p><strong>${order.customerName ?? ""}</strong><br>${addrLines.length > 0 ? addrLines.join("<br>") : "<em>No delivery address</em>"}</p></div>
+        <div style="flex:1"><div class="lbl">Order Details</div><p>Order Date: ${new Date(order.orderDate).toLocaleDateString("en-AU")}<br>${order.requiredDate ? `Required By: <strong>${new Date(order.requiredDate).toLocaleDateString("en-AU")}</strong><br>` : ""}Dispatched: ${dateStr}</p></div>
+      </div>
+      <table><thead><tr><th>Item</th><th>Colour</th><th>Size</th><th class="ctr">Qty</th></tr></thead>
+      <tbody>${groupRows}${stockRows}<tr style="border-top:2px solid #000"><td colspan="3" style="text-align:right;font-weight:bold">Total Items</td><td class="ctr" style="font-size:13pt">${totalQty}</td></tr></tbody></table>
+      <div style="margin-top:8mm;display:flex;gap:32px"><div class="sig">Packed by: ______________________</div><div class="sig">Checked by: ______________________</div><div class="sig">Date: ______________________</div></div>
+      <div style="margin-top:6mm;font-size:8pt;color:#888;border-top:1px solid #ddd;padding-top:4mm">Please check contents carefully. Any discrepancies should be reported within 48 hours of receipt.</div>
+    </div>`,
+    `.lbl{font-size:8pt;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px}
+     table{width:100%;border-collapse:collapse;margin-top:8px}
+     th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:9pt}th.ctr{text-align:center}
+     td{padding:4px 8px;border-bottom:1px solid #e0e0e0;font-size:10pt}td.ctr{text-align:center;font-weight:bold}
+     tr.group-hdr td{background:#f5f5f5;padding:5px 8px;border-bottom:1px solid #ccc;font-size:10pt}
+     .job{font-size:9pt;color:#555;font-weight:normal;margin-left:6px}.finish{font-size:9pt;color:#2563eb}
+     .sig{flex:1;border-top:1px solid #999;padding-top:4px;font-size:9pt;color:#555}`,
+    `📄 Delivery Note — ${order.customerName ?? order.orderNumber}`
+  );
+}
+
+function printDocInvoice(order: DocOrder) {
+  const dateStr = new Date().toLocaleDateString("en-AU");
+  const dueDate = new Date(); dueDate.setDate(dueDate.getDate() + 30);
+  const dueDateStr = dueDate.toLocaleDateString("en-AU");
+  const customer = order.customer;
+  const addr = order.deliveryAddress;
+  const addrLines = addr ? [addr.line1, addr.line2, addr.city, addr.county, addr.postcode, addr.country].filter(Boolean) : [];
+  const custAddrLines = customer ? [customer.address, customer.city, customer.state, customer.postcode].filter(Boolean) : [];
+  const subtotal = order.items.reduce((s, i) => s + i.lineTotal, 0);
+  const gst = subtotal * 0.1;
+  const total = subtotal + gst;
+  const fmt = (n: number) => `$${n.toFixed(2)}`;
+
+  const itemRows = order.items.map((i) => `
+    <tr>
+      <td>${i.productName}${i.finishName ? ` <span class="finish">${i.finishName}</span>` : ""}${i.colour || i.size ? `<br><span class="variant">${[i.colour, i.size].filter(Boolean).join(" / ")}</span>` : ""}</td>
+      <td class="ctr">${i.quantity}</td>
+      <td class="right">${fmt(i.unitPrice)}</td>
+      <td class="right">${fmt(i.lineTotal)}</td>
+    </tr>`).join("");
+
+  openPreview(
+    `Invoice — ${order.orderNumber}`,
+    `<div style="padding:15mm">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1e3a5f;padding-bottom:5mm;margin-bottom:5mm">
+        <div><div style="font-size:22pt;font-weight:900;color:#1e3a5f">Select Branding Solutions</div><div style="font-size:9pt;color:#555;margin-top:2mm">ABN: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>
+        <div style="text-align:right"><div style="font-size:18pt;font-weight:bold;color:#333">INVOICE</div><div style="font-size:11pt;color:#555">${order.orderNumber}</div><div style="font-size:9pt;color:#888">Date: ${dateStr} · Due: ${dueDateStr}</div></div>
+      </div>
+      <div style="display:flex;gap:24px;margin-bottom:6mm">
+        <div style="flex:1"><div class="lbl">Bill To</div><p><strong>${order.customerName ?? ""}</strong><br>${custAddrLines.length > 0 ? custAddrLines.join("<br>") : ""}<br>${customer?.email ? customer.email : ""}</p></div>
+        <div style="flex:1"><div class="lbl">Deliver To</div><p>${addrLines.length > 0 ? addrLines.join("<br>") : "<em>Same as billing</em>"}</p></div>
+        <div style="flex:1"><div class="lbl">Reference</div><p>Order: ${order.orderNumber}<br>${order.requiredDate ? `Required: ${new Date(order.requiredDate).toLocaleDateString("en-AU")}` : ""}</p></div>
+      </div>
+      <table><thead><tr><th>Description</th><th class="ctr">Qty</th><th class="right">Unit Price</th><th class="right">Total</th></tr></thead>
+      <tbody>${itemRows}</tbody></table>
+      <div style="display:flex;justify-content:flex-end;margin-top:4mm">
+        <div style="width:220px">
+          <div class="tot-row"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>
+          <div class="tot-row"><span>GST (10%)</span><span>${fmt(gst)}</span></div>
+          <div class="tot-row total"><span>Total (inc. GST)</span><span>${fmt(total)}</span></div>
+        </div>
+      </div>
+      <div style="margin-top:8mm;padding:4mm 5mm;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:4px;font-size:9pt;color:#555">
+        <strong>Payment Terms:</strong> Net 30 days from invoice date · EFT preferred · Please reference invoice number on payment.
+      </div>
+      <div style="margin-top:4mm;font-size:8pt;color:#888;border-top:1px solid #ddd;padding-top:3mm">Select Branding Solutions · Thank you for your business.</div>
+    </div>`,
+    `.lbl{font-size:8pt;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px}
+     table{width:100%;border-collapse:collapse;margin-top:8px}
+     th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:9pt}th.ctr{text-align:center}th.right{text-align:right}
+     td{padding:4px 8px;border-bottom:1px solid #e0e0e0;font-size:10pt}td.ctr{text-align:center}td.right{text-align:right}
+     .variant{font-size:8pt;color:#888}.finish{font-size:9pt;color:#2563eb}
+     .tot-row{display:flex;justify-content:space-between;padding:3px 0;font-size:10pt;border-bottom:1px solid #eee}
+     .tot-row.total{font-size:12pt;font-weight:bold;border-bottom:none;margin-top:4px;color:#1e3a5f}`,
+    `🧾 Invoice — ${order.customerName ?? order.orderNumber}`
+  );
+}
+
+function printDocWearerLabels(order: DocOrder) {
+  const namedItems = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
+  if (namedItems.length === 0) return;
+
+  const labels: string[] = [];
+  for (const item of namedItems) {
+    const name = docRecipientName(item);
+    const jobTitle = item.employee?.jobTitle ?? null;
+    const variant = [item.colour, item.size].filter(Boolean).join(" / ");
+    for (let q = 0; q < item.quantity; q++) {
+      labels.push(`
+        <div class="label">
+          <div class="order-ref">${order.orderNumber} · ${order.customerName ?? ""}</div>
+          <div class="name">${name}</div>
+          ${jobTitle ? `<div class="job-title">${jobTitle}</div>` : ""}
+          <div class="divider"></div>
+          <div class="product">${item.productName}</div>
+          ${item.finishName ? `<div class="finish">${item.finishName}</div>` : ""}
+          ${variant ? `<div class="variant">${variant}</div>` : ""}
+        </div>`);
+    }
+  }
+
+  const win = window.open("", "_blank", "width=700,height=800");
+  if (!win) return;
+  win.document.write(`<!DOCTYPE html><html><head><title>Wearer Labels — ${order.orderNumber}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:Arial,sans-serif;background:#e5e7eb}
+    #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+    #toolbar span{flex:1;font-size:14px;font-weight:600}
+    #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+    #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
+    #page{padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center}
+    .label{width:4in;min-height:3in;background:white;border:1px solid #ccc;display:flex;flex-direction:column;justify-content:center;padding:0.3in;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+    .order-ref{font-size:9pt;color:#555;margin-bottom:10px}
+    .name{font-size:28pt;font-weight:bold;color:#000;line-height:1.1}
+    .job-title{font-size:12pt;color:#333;margin-top:4px}
+    .divider{border-top:2px solid #000;margin:14px 0}
+    .product{font-size:14pt;font-weight:600;color:#000}
+    .finish{font-size:10pt;color:#2563eb;margin-top:2px}
+    .variant{font-size:11pt;color:#444;margin-top:3px}
+    @media print{#toolbar{display:none}body{background:white}#page{padding:0;gap:0}
+      .label{border:none;box-shadow:none;width:4in;height:6in;page-break-after:always}
+      @page{size:4in 6in;margin:0}}
+  </style></head><body>
+  <div id="toolbar">
+    <span>🏷️ Wearer Labels — ${labels.length} label${labels.length !== 1 ? "s" : ""} · ${order.customerName ?? order.orderNumber}</span>
+    <button id="btn-print" onclick="window.print()">🖨 Print</button>
+    <button id="btn-close" onclick="window.close()">✕ Close</button>
+  </div>
+  <div id="page">${labels.join("")}</div>
+  </body></html>`);
+  win.document.close();
+  win.focus();
+}
+
+// ─── Ready to Dispatch modal ───────────────────────────────────────────────────
+
+function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: () => void }) {
+  const namedCount = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)).length;
+  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-green-700">
+            <CheckCircle2 className="w-5 h-5" />
+            Order Ready for Dispatch
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="rounded-lg bg-green-50 border border-green-200 px-4 py-3">
+            <div className="font-semibold text-green-900">{order.orderNumber}</div>
+            <div className="text-sm text-green-700">{order.customerName}</div>
+            <div className="text-xs text-green-600 mt-1">
+              {order.items.length} line{order.items.length !== 1 ? "s" : ""} · {totalQty} item{totalQty !== 1 ? "s" : ""}
+              {namedCount > 0 && ` · ${namedCount} named recipient${namedCount !== 1 ? "s" : ""}`}
+            </div>
+          </div>
+
+          <p className="text-sm text-muted-foreground">All production is complete. Print the documents you need before dispatching.</p>
+
+          <div className="grid grid-cols-1 gap-2">
+            <Button
+              variant="outline"
+              className="justify-start gap-2 h-auto py-3"
+              onClick={() => printDocDeliveryNote(order)}
+            >
+              <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <div className="text-left">
+                <div className="font-medium">Delivery Note</div>
+                <div className="text-xs text-muted-foreground">Items by recipient, sign-off fields</div>
+              </div>
+            </Button>
+
+            <Button
+              variant="outline"
+              className="justify-start gap-2 h-auto py-3"
+              onClick={() => printDocInvoice(order)}
+            >
+              <Archive className="w-4 h-4 text-purple-600 flex-shrink-0" />
+              <div className="text-left">
+                <div className="font-medium">Invoice</div>
+                <div className="text-xs text-muted-foreground">Itemised with prices, GST, payment terms</div>
+              </div>
+            </Button>
+
+            {namedCount > 0 && (
+              <Button
+                variant="outline"
+                className="justify-start gap-2 h-auto py-3"
+                onClick={() => printDocWearerLabels(order)}
+              >
+                <User className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <div className="text-left">
+                  <div className="font-medium">Wearer Labels</div>
+                  <div className="text-xs text-muted-foreground">{namedCount} named recipient{namedCount !== 1 ? "s" : ""} — one label per item</div>
+                </div>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
+          <Button
+            className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+            onClick={() => { window.location.href = "/dispatch"; }}
+          >
+            <ArrowRight className="w-4 h-4" /> Go to Dispatch
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Picking List Tab Component ───────────────────────────────────────────────
 
 function PickingListTab({ filters }: { filters: Filters }) {
@@ -1112,6 +1408,7 @@ export default function Production() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("picking_list");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [readyOrder, setReadyOrder] = useState<DocOrder | null>(null);
 
   const { data: allWorksheets = [], isLoading: wsLoading } = useQuery<Worksheet[]>({
     queryKey: ["worksheets"],
@@ -1134,11 +1431,25 @@ export default function Production() {
   const isLoading = wsLoading || pendingLoading;
 
   const statusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: number; status: string }) =>
+    mutationFn: ({ id, status, orderId: _orderId }: { id: number; status: string; orderId?: number | null }) =>
       apiFetch(`/worksheets/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
-    onSuccess: () => {
+    onSuccess: async (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
-      toast({ title: "Status updated" });
+      if (variables.status === "complete" && variables.orderId) {
+        toast({ title: "Worksheet complete — checking order status…" });
+        try {
+          const result = await apiFetch<{ isComplete: boolean; order: DocOrder }>(`/dispatch/orders/${variables.orderId}/ready`);
+          if (result.isComplete) {
+            setReadyOrder(result.order);
+          } else {
+            toast({ title: "Worksheet marked complete" });
+          }
+        } catch {
+          toast({ title: "Worksheet marked complete" });
+        }
+      } else {
+        toast({ title: "Status updated" });
+      }
     },
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
@@ -1294,7 +1605,7 @@ export default function Production() {
                       <WorksheetCard
                         key={ws.id}
                         ws={ws}
-                        onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
+                        onStatusChange={(id, s) => statusMutation.mutate({ id, status: s, orderId: ws.orderId })}
                         onDelete={handleDelete}
                         onReturnToPicking={handleReturnToPicking}
                       />
@@ -1323,7 +1634,7 @@ export default function Production() {
                   <WorksheetCard
                     key={ws.id}
                     ws={ws}
-                    onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
+                    onStatusChange={(id, s) => statusMutation.mutate({ id, status: s, orderId: ws.orderId })}
                     onDelete={handleDelete}
                     onReturnToPicking={handleReturnToPicking}
                   />
@@ -1355,7 +1666,7 @@ export default function Production() {
                   <WorksheetCard
                     key={ws.id}
                     ws={ws}
-                    onStatusChange={(id, s) => statusMutation.mutate({ id, status: s })}
+                    onStatusChange={(id, s) => statusMutation.mutate({ id, status: s, orderId: ws.orderId })}
                     onDelete={handleDelete}
                     onReturnToPicking={handleReturnToPicking}
                   />
@@ -1365,6 +1676,10 @@ export default function Production() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {readyOrder && (
+        <ReadyToDispatchModal order={readyOrder} onClose={() => setReadyOrder(null)} />
+      )}
     </Layout>
   );
 }
