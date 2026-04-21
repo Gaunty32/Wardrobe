@@ -1328,10 +1328,20 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
 
   const openPreview = async () => {
     setPreviewLoading(true);
+    // Open a blank tab synchronously (within the click handler) so the browser
+    // doesn't treat it as a popup. We navigate it to the real URL once we have the token.
+    const newWindow = window.open("", "_blank");
     try {
       const data: any = await apiFetch(`/portal/admin/preview/${customerId}`, { method: "POST" });
-      setPreviewHref(window.location.origin + data.previewUrl);
+      const href = window.location.origin + data.previewUrl;
+      if (newWindow && !newWindow.closed) {
+        newWindow.location.href = href;
+      } else {
+        // Fallback: popup was blocked — show the dialog with the link
+        setPreviewHref(href);
+      }
     } catch {
+      if (newWindow && !newWindow.closed) newWindow.close();
       toast({ title: "Could not open preview", variant: "destructive" });
     } finally {
       setPreviewLoading(false);
