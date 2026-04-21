@@ -2,20 +2,23 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 
+// Extract token synchronously — before AuthProvider's fetchUser() can fire
+// and potentially redirect to /login using a stale/expired session token.
+const _params = new URLSearchParams(window.location.search);
+const _previewToken = _params.get("token");
+if (_previewToken) {
+  localStorage.setItem("portal_token", _previewToken);
+  localStorage.setItem("portal_role", "manager");
+}
+
 export default function PreviewLogin() {
   const [, setLocation] = useLocation();
 
   useEffect(() => {
-    // Use window.location.search directly — reliable across all proxy/iframe setups
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (!token) {
+    if (!_previewToken) {
       setLocation("/login");
       return;
     }
-    localStorage.setItem("portal_token", token);
-    localStorage.setItem("portal_role", "manager");
-    // Full page navigation to orders — ensures auth context re-initialises cleanly
     const base = (import.meta.env.BASE_URL as string) || "/customer-portal/";
     window.location.href = base.replace(/\/$/, "") + "/orders";
   }, []);
