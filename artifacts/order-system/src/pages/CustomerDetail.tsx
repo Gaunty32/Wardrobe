@@ -2248,7 +2248,7 @@ export default function CustomerDetail() {
                   <span>Contact: {toTitleCase([customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' '))}</span>
                 )}
                 {customer.email && <span>{customer.email.toLowerCase()}</span>}
-                {customer.phone && <span>{customer.phone}</span>}
+                {customer.phone && <span>📞 {customer.phone}</span>}
                 {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
                 {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
               </div>

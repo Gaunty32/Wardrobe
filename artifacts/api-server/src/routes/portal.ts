@@ -200,7 +200,9 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
 
   if (isPreview) {
     const contactRows = await db.execute(sql`SELECT contact_first_name FROM customers WHERE id = ${customerId}`);
-    const firstName = (contactRows.rows[0] as any)?.contact_first_name ?? "there";
+    const raw = (contactRows.rows[0] as any)?.contact_first_name ?? "there";
+    // Take only the first word in case the full name was stored in this field
+    const firstName = raw.trim().split(/\s+/)[0];
     res.json({
       user: { id: 0, email: "staff-preview@sbs.internal", status: "active", portal_role: "manager" },
       customer,
@@ -224,7 +226,9 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
       LIMIT 1
     `);
     if (empRows.rows.length > 0 && (empRows.rows[0] as any).first_name) {
-      firstName = (empRows.rows[0] as any).first_name;
+      // Take only the first word in case the full name is stored in this field
+      const raw = (empRows.rows[0] as any).first_name as string;
+      firstName = raw.trim().split(/\s+/)[0];
     } else {
       const emailPrefix = portalUser.email.split("@")[0].split(".")[0].split("_")[0];
       firstName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1).toLowerCase();
