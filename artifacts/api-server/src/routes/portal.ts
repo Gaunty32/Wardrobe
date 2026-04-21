@@ -398,8 +398,7 @@ router.get("/portal/products", portalAuth, async (req: Request, res: Response) =
     SELECT p.id, p.name, p.sku, p.unit_price, p.image_url, p.category,
            (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) as variant_count
     FROM products p
-    WHERE p.status = 'active'
-      AND (${search} = '' OR p.name ILIKE ${'%' + search + '%'})
+    WHERE (${search} = '' OR p.name ILIKE ${'%' + search + '%'} OR p.sku ILIKE ${'%' + search + '%'})
     ORDER BY p.name
     LIMIT 200
   `);
