@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
@@ -20,7 +20,7 @@ import {
 import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search, ChevronDown, ChevronUp,
-  User, Package, History, Tag,
+  User, Package, History, Tag, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -147,6 +147,18 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Inspiration nudge */}
+      <div className="mt-5 flex items-center gap-2.5 text-sm text-muted-foreground">
+        <Sparkles className="w-4 h-4 text-primary/60 shrink-0" />
+        <span>
+          Looking for inspiration or a refresh?{" "}
+          <Link href="/products" className="text-primary font-medium hover:underline underline-offset-2">
+            Browse our products
+          </Link>{" "}
+          and see if something catches your eye.
+        </span>
       </div>
     </div>
   );
