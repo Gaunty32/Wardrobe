@@ -28,13 +28,19 @@ export default function Wardrobe() {
     queryFn: () => apiFetch("/portal/wardrobe"),
   });
 
-  // Group items by finish, then attach processes from the separate processes array
-  const finishes: Record<string, { finishId: number; finishName: string; finishCode: string; items: any[]; processes: any[] }> = {};
+  // Group items by finish (null finish_id → "__none__" bucket shown as plain garments)
+  const finishes: Record<string, { finishId: number | null; finishName: string | null; finishCode: string | null; items: any[]; processes: any[] }> = {};
   if (data?.items) {
     for (const item of data.items) {
-      const key = String(item.finish_id);
+      const key = item.finish_id != null ? String(item.finish_id) : "__none__";
       if (!finishes[key]) {
-        finishes[key] = { finishId: item.finish_id, finishName: item.finish_name, finishCode: item.finish_code, items: [], processes: [] };
+        finishes[key] = {
+          finishId: item.finish_id ?? null,
+          finishName: item.finish_name ?? null,
+          finishCode: item.finish_code ?? null,
+          items: [],
+          processes: [],
+        };
       }
       finishes[key].items.push(item);
     }
@@ -46,7 +52,10 @@ export default function Wardrobe() {
     }
   }
 
-  const finishList = Object.values(finishes);
+  // Put "no finish" bucket last
+  const finishList = Object.entries(finishes)
+    .sort(([a], [b]) => (a === "__none__" ? 1 : b === "__none__" ? -1 : 0))
+    .map(([, v]) => v);
 
   return (
     <PortalLayout>
@@ -83,18 +92,20 @@ export default function Wardrobe() {
             }
 
             return (
-              <Card key={finish.finishId} className="overflow-hidden">
-                <CardHeader className="bg-muted/40 border-b pb-4">
-                  <div className="flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-primary" />
-                    <CardTitle className="text-base">{finish.finishName}</CardTitle>
-                    {finish.finishCode && (
-                      <span className="text-xs text-muted-foreground font-mono">
-                        {finish.finishCode}
-                      </span>
-                    )}
-                  </div>
-                </CardHeader>
+              <Card key={finish.finishId ?? "__none__"} className="overflow-hidden">
+                {finish.finishName && (
+                  <CardHeader className="bg-muted/40 border-b pb-4">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-primary" />
+                      <CardTitle className="text-base">{finish.finishName}</CardTitle>
+                      {finish.finishCode && (
+                        <span className="text-xs text-muted-foreground font-mono">
+                          {finish.finishCode}
+                        </span>
+                      )}
+                    </div>
+                  </CardHeader>
+                )}
                 <CardContent className="pt-4">
                   {/* Garments/Products */}
                   <div className={finish.processes.length > 0 ? "mb-4" : ""}>

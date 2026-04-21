@@ -411,7 +411,8 @@ router.get("/portal/products", portalAuth, async (req: Request, res: Response) =
 router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
 
-  // Get all wardrobe items — JOIN to products and customer_roles for denormalised fields
+  // Get all wardrobe items — primary key is customer_id on the item itself;
+  // LEFT JOIN to finishes so items with no finish still appear
   const finishes = await db.execute(sql`
     SELECT
       cf.id   AS finish_id,
@@ -428,12 +429,12 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
       cfi.special_price,
       cfi.role_id,
       cr.name AS role_name
-    FROM customer_finishes cf
-    JOIN customer_finished_items cfi ON cfi.finish_id = cf.id
+    FROM customer_finished_items cfi
+    LEFT JOIN customer_finishes  cf  ON cf.id = cfi.finish_id
     LEFT JOIN products           p   ON p.id = cfi.product_id
     LEFT JOIN customer_roles     cr  ON cr.id = cfi.role_id
-    WHERE cf.customer_id = ${customerId}
-    ORDER BY cf.name, cfi.name
+    WHERE cfi.customer_id = ${customerId}
+    ORDER BY cf.name NULLS LAST, cfi.name
   `);
 
   // Get decoration processes linked to each finish
@@ -456,7 +457,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
   // Get employees for this customer
   const employees = await db.execute(sql`
     SELECT e.id, e.first_name, e.last_name, e.job_title, cr.id as role_id, cr.name as role_name
-    FROM employees e
+    FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
     WHERE e.customer_id = ${customerId} AND e.status = 'active'
     ORDER BY e.last_name, e.first_name
