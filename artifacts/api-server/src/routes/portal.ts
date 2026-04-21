@@ -391,18 +391,46 @@ router.get("/portal/products", portalAuth, async (req: Request, res: Response) =
 router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
 
-  // Get all wardrobe items grouped by finish (garment package)
+  // Get all wardrobe items — JOIN to products and customer_roles for denormalised fields
   const finishes = await db.execute(sql`
     SELECT
-      cf.id as finish_id, cf.name as finish_name, cf.code as finish_code,
-      cfi.id, cfi.name, cfi.product_id, cfi.product_name, cfi.product_sku,
-      cfi.colour, cfi.size, cfi.unit_price, cfi.special_price,
-      cfi.finish_id as item_finish_id, cfi.finish_name as item_finish_name,
-      cfi.role_id, cfi.role_name
+      cf.id   AS finish_id,
+      cf.name AS finish_name,
+      cf.code AS finish_code,
+      cfi.id,
+      cfi.name,
+      cfi.product_id,
+      p.name  AS product_name,
+      p.sku   AS product_sku,
+      cfi.colour,
+      cfi.size,
+      cfi.unit_price,
+      cfi.special_price,
+      cfi.role_id,
+      cr.name AS role_name
     FROM customer_finishes cf
     JOIN customer_finished_items cfi ON cfi.finish_id = cf.id
+    LEFT JOIN products           p   ON p.id = cfi.product_id
+    LEFT JOIN customer_roles     cr  ON cr.id = cfi.role_id
     WHERE cf.customer_id = ${customerId}
     ORDER BY cf.name, cfi.name
+  `);
+
+  // Get decoration processes linked to each finish
+  const processes = await db.execute(sql`
+    SELECT
+      cfp.finish_id,
+      cp.id           AS process_id,
+      cp.name         AS item_finish_name,
+      cp.type         AS process_type,
+      cp.placement,
+      cp.price,
+      cp.code
+    FROM customer_finish_processes cfp
+    JOIN customer_processes     cp  ON cp.id = cfp.process_id
+    JOIN customer_finishes      cf  ON cf.id = cfp.finish_id
+    WHERE cf.customer_id = ${customerId}
+    ORDER BY cp.name
   `);
 
   // Get employees for this customer
@@ -442,6 +470,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
 
   res.json({
     items: finishes.rows,
+    processes: processes.rows,
     employees: employees.rows,
     lastSizes,
   });

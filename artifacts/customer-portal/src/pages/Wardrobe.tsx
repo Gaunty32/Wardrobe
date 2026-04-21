@@ -28,15 +28,21 @@ export default function Wardrobe() {
     queryFn: () => apiFetch("/portal/wardrobe"),
   });
 
-  // Group raw items by finish_id → finish_name
-  const finishes: Record<string, { finishId: number; finishName: string; items: any[] }> = {};
+  // Group items by finish, then attach processes from the separate processes array
+  const finishes: Record<string, { finishId: number; finishName: string; finishCode: string; items: any[]; processes: any[] }> = {};
   if (data?.items) {
     for (const item of data.items) {
       const key = String(item.finish_id);
       if (!finishes[key]) {
-        finishes[key] = { finishId: item.finish_id, finishName: item.finish_name, items: [] };
+        finishes[key] = { finishId: item.finish_id, finishName: item.finish_name, finishCode: item.finish_code, items: [], processes: [] };
       }
       finishes[key].items.push(item);
+    }
+  }
+  if (data?.processes) {
+    for (const proc of data.processes) {
+      const key = String(proc.finish_id);
+      if (finishes[key]) finishes[key].processes.push(proc);
     }
   }
 
@@ -68,15 +74,7 @@ export default function Wardrobe() {
       ) : (
         <div className="flex flex-col gap-6">
           {finishList.map((finish) => {
-            // Deduplicate processes across items in this finish
-            const processMap: Record<string, any> = {};
-            for (const item of finish.items) {
-              if (item.item_finish_name && !processMap[item.item_finish_name]) {
-                processMap[item.item_finish_name] = item;
-              }
-            }
-
-            // Group items by product
+            // Group items by product name for display
             const productMap: Record<string, any[]> = {};
             for (const item of finish.items) {
               const key = item.product_name ?? item.name ?? "Unknown";
@@ -90,16 +88,16 @@ export default function Wardrobe() {
                   <div className="flex items-center gap-2">
                     <Layers className="w-4 h-4 text-primary" />
                     <CardTitle className="text-base">{finish.finishName}</CardTitle>
-                    {finish.items[0]?.finish_code && (
+                    {finish.finishCode && (
                       <span className="text-xs text-muted-foreground font-mono">
-                        {finish.items[0].finish_code}
+                        {finish.finishCode}
                       </span>
                     )}
                   </div>
                 </CardHeader>
                 <CardContent className="pt-4">
                   {/* Garments/Products */}
-                  <div className="mb-4">
+                  <div className={finish.processes.length > 0 ? "mb-4" : ""}>
                     <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
                       <Shirt className="w-3.5 h-3.5" /> Garments
                     </p>
@@ -146,16 +144,16 @@ export default function Wardrobe() {
                     </div>
                   </div>
 
-                  {/* Processes / finishes applied */}
-                  {Object.keys(processMap).length > 0 && (
+                  {/* Decoration processes */}
+                  {finish.processes.length > 0 && (
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
                         <Tag className="w-3.5 h-3.5" /> Decoration
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {Object.values(processMap).map((p: any) => (
+                        {finish.processes.map((p: any) => (
                           <div
-                            key={p.item_finish_name}
+                            key={p.process_id}
                             className="flex items-center gap-1.5 rounded-md border px-2 py-1 bg-background"
                           >
                             {p.process_type && <ProcessBadge type={p.process_type} />}
