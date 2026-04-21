@@ -461,7 +461,7 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                               <>
                                 {/* Size */}
                                 {(() => {
-                                  const FALLBACK_SIZES = ["XS","S","M","L","XL","2XL","3XL","4XL","One Size"];
+                                  const FALLBACK_SIZES = ["XS","S","M","L","XL","2XL","3XL","4XL"];
                                   const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
                                   return (
                                     <div className="flex items-center gap-2">
