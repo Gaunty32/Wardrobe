@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -1269,6 +1269,8 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; email: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [previewHref, setPreviewHref] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const { data: portalUsers, isLoading } = useQuery<any[]>({
     queryKey: ["portal-users", customerId],
@@ -1325,11 +1327,14 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   };
 
   const openPreview = async () => {
+    setPreviewLoading(true);
     try {
       const data: any = await apiFetch(`/portal/admin/preview/${customerId}`, { method: "POST" });
-      window.open(window.location.origin + data.previewUrl, "_blank");
+      setPreviewHref(window.location.origin + data.previewUrl);
     } catch {
       toast({ title: "Could not open preview", variant: "destructive" });
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -1347,9 +1352,36 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <p className="text-sm text-muted-foreground mt-0.5">Manage who can log into the customer ordering portal for this account.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={openPreview}>
-            <Eye className="w-3.5 h-3.5" /> View as Customer
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={openPreview} disabled={previewLoading}>
+            {previewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} View as Customer
           </Button>
+
+          {/* Preview link dialog — opens after token is generated */}
+          <Dialog open={!!previewHref} onOpenChange={(o) => { if (!o) setPreviewHref(null); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2"><Eye className="w-4 h-4" /> Portal Preview Ready</DialogTitle>
+                <DialogDescription>Click the button below to open the portal as a manager. The link expires in 2 hours.</DialogDescription>
+              </DialogHeader>
+              <div className="flex flex-col gap-3 pt-1">
+                <a
+                  href={previewHref ?? "#"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 w-full rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2.5 text-sm font-medium transition-colors"
+                  onClick={() => setPreviewHref(null)}
+                >
+                  <Eye className="w-4 h-4" /> Open Customer Portal
+                </a>
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => { navigator.clipboard.writeText(previewHref ?? ""); toast({ title: "Link copied" }); }}
+                >
+                  Copy link instead
+                </button>
+              </div>
+            </DialogContent>
+          </Dialog>
           <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteEmail(""); setInviteRole("member"); setInviteOpen(true); }}>
             <LogIn className="w-3.5 h-3.5" /> Invite User
           </Button>
