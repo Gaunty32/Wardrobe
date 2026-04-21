@@ -311,6 +311,15 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
     );
   }
 
+  // ── Order summary grouped by recipient ─────────────────────────────────────
+  const summaryGroups = basket.reduce((acc: Record<string, OrderItem[]>, item) => {
+    const key = item.recipientType === "stock" ? "__stock__" : (item.recipientName || "__stock__");
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+  const summaryTotal = basket.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+
   // ── Wardrobe items ─────────────────────────────────────────────────────────
   return (
     <div>
@@ -319,7 +328,9 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
         Order for named individuals (packed &amp; labelled per person) or add as bulk stock — your choice per item.
       </p>
 
-      <div className="flex flex-col gap-8">
+      <div className="flex gap-6 items-start">
+        {/* ── Left: finish groups ─────────────────────────────── */}
+        <div className="flex-1 min-w-0 flex flex-col gap-8">
         {finishGroups.map((group) => {
           const procs = groupProcesses(group.finish_id);
           return (
@@ -532,10 +543,91 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
             </div>
           );
         })}
-      </div>
+        </div>{/* end left column */}
 
+        {/* ── Right: sticky order summary ─────────────────────── */}
+        <div className="hidden lg:block w-72 xl:w-80 shrink-0 sticky top-4 self-start">
+          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
+              <span className="font-semibold text-sm">Order Summary</span>
+              {basket.length > 0 && (
+                <span className="text-xs text-muted-foreground">{basket.length} item{basket.length !== 1 ? "s" : ""}</span>
+              )}
+            </div>
+
+            {basket.length === 0 ? (
+              <div className="px-4 py-8 text-center text-muted-foreground text-xs">
+                <Package className="w-6 h-6 mx-auto mb-2 opacity-30" />
+                No items added yet
+              </div>
+            ) : (
+              <div className="divide-y max-h-[60vh] overflow-y-auto">
+                {Object.entries(summaryGroups).map(([key, items]) => {
+                  const label = key === "__stock__" ? "Bulk Stock" : key;
+                  const isStock = key === "__stock__";
+                  return (
+                    <div key={key} className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2">
+                        {isStock
+                          ? <Package className="w-3 h-3 text-muted-foreground shrink-0" />
+                          : <User className="w-3 h-3 text-muted-foreground shrink-0" />}
+                        <span className="text-xs font-semibold truncate">{label}</span>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        {(items as OrderItem[]).map((item, idx) => {
+                          const basketIdx = basket.findIndex((b, bi) => {
+                            const groupItems = Object.values(summaryGroups).flat();
+                            return b === item;
+                          });
+                          return (
+                            <div key={idx} className="flex items-start gap-2 group">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-medium leading-tight truncate">{item.productName}</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  {[item.colour, item.size, item.quantity > 1 ? `×${item.quantity}` : null].filter(Boolean).join(" · ")}
+                                </p>
+                                {item.unitPrice > 0 && (
+                                  <p className="text-[11px] text-primary font-semibold">{formatCurrency(item.unitPrice * item.quantity)}</p>
+                                )}
+                              </div>
+                              <button
+                                className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 text-muted-foreground hover:text-destructive"
+                                onClick={() => setBasket(b => b.filter(x => x !== item))}
+                                title="Remove"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {basket.length > 0 && (
+              <div className="px-4 py-3 border-t bg-muted/20">
+                {summaryTotal > 0 && (
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs text-muted-foreground">Estimated total</span>
+                    <span className="text-sm font-bold">{formatCurrency(summaryTotal)}</span>
+                  </div>
+                )}
+                <Button className="w-full" size="sm" onClick={onNext}>
+                  Review order <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+
+      </div>{/* end two-column flex */}
+
+      {/* Mobile sticky bottom bar */}
       {basket.length > 0 && (
-        <div className="sticky bottom-0 mt-6 bg-background border-t pt-4">
+        <div className="lg:hidden sticky bottom-0 mt-6 bg-background border-t pt-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">{basket.length} item{basket.length !== 1 ? "s" : ""} added</span>
             <Button onClick={onNext}>Review order <ArrowRight className="w-4 h-4 ml-1.5" /></Button>
