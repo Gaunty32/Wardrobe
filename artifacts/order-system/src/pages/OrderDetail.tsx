@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
-import { useRoute } from "wouter";
+import { useRoute, useLocation } from "wouter";
 import {
   useGetOrder,
   useUpdateOrder,
@@ -8,6 +8,7 @@ import {
   useDeleteOrderItem,
   useListProducts,
   getGetOrderQueryKey,
+  getListOrdersQueryKey,
   UpdateOrderBodyStatus
 } from "@workspace/api-client-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -121,6 +122,7 @@ const EMPTY_ITEM = {
 export default function OrderDetail() {
   const [, params] = useRoute("/orders/:id");
   const orderId = params?.id ? parseInt(params.id, 10) : 0;
+  const [, navigate] = useLocation();
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -131,6 +133,16 @@ export default function OrderDetail() {
   const updateOrderMutation = useUpdateOrder();
   const addItemMutation = useAddOrderItem();
   const deleteItemMutation = useDeleteOrderItem();
+
+  const deleteOrderMutation = useMutation({
+    mutationFn: () => apiFetch(`/orders/${orderId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: "Order deleted" });
+      navigate("/orders");
+    },
+    onError: (e: Error) => toast({ title: "Could not delete order", description: e.message, variant: "destructive" }),
+  });
 
   const customerId = order?.customerId ?? null;
 
@@ -155,6 +167,7 @@ export default function OrderDetail() {
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [deleteOrderConfirmOpen, setDeleteOrderConfirmOpen] = useState(false);
 
   const [editingDeliveryAddress, setEditingDeliveryAddress] = useState(false);
 
@@ -549,7 +562,8 @@ export default function OrderDetail() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-          toast({ title: "Item Removed" });
+          queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+          toast({ title: "Item removed" });
         }
       }
     );
@@ -622,6 +636,15 @@ export default function OrderDetail() {
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={() => setDeleteOrderConfirmOpen(true)}
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete
+            </Button>
             {/* Xero badge — shown in header only when already posted */}
             {(order as any).xeroInvoiceId && (
               <Badge variant="outline" className="gap-1.5 text-indigo-700 border-indigo-300 bg-indigo-50">
@@ -1730,6 +1753,39 @@ export default function OrderDetail() {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
         }}
       />
+
+      {/* Delete order confirmation */}
+      <Dialog open={deleteOrderConfirmOpen} onOpenChange={setDeleteOrderConfirmOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <Trash2 className="w-5 h-5" />
+              Delete Order {order.orderNumber}?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-2">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete the order and all its line items. This cannot be undone.
+            </p>
+            <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-sm">
+              <p className="font-medium text-red-800">{order.customerName}</p>
+              <p className="text-red-600 text-xs mt-0.5">{order.items?.length ?? 0} item{(order.items?.length ?? 0) !== 1 ? "s" : ""} · {formatCurrency(order.totalAmount)}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOrderConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteOrderMutation.mutate()}
+              disabled={deleteOrderMutation.isPending}
+            >
+              {deleteOrderMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin mr-1.5" />Deleting…</> : "Yes, delete order"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }
