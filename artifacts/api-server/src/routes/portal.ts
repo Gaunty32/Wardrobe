@@ -551,6 +551,30 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     sizesMap[pid][col].push(row.size);
   }
 
+  // Fallback: for products with no variant-level sizes, check product_attributes (type='size')
+  // These are synced from WooCommerce product-level size attributes (colour-only variable products)
+  const attrSizeRows = await db.execute(sql`
+    SELECT DISTINCT pa.product_id, pa.value AS size
+    FROM product_attributes pa
+    WHERE pa.type = 'size'
+      AND pa.value IS NOT NULL AND pa.value != ''
+      AND pa.product_id IN (
+        SELECT DISTINCT cfi.product_id
+        FROM customer_finished_items cfi
+        WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+      )
+    ORDER BY pa.product_id, pa.sort_order
+  `);
+  for (const row of attrSizeRows.rows as any[]) {
+    const pid = String(row.product_id);
+    // Only use attribute sizes for products that have no variant-level sizes
+    if (!sizesMap[pid] || Object.values(sizesMap[pid]).every(arr => arr.length === 0)) {
+      if (!sizesMap[pid]) sizesMap[pid] = {};
+      if (!sizesMap[pid]["__any__"]) sizesMap[pid]["__any__"] = [];
+      sizesMap[pid]["__any__"].push(row.size);
+    }
+  }
+
   // Get employees for this customer
   const employees = await db.execute(sql`
     SELECT e.id, e.first_name, e.last_name, e.job_title, cr.id as role_id, cr.name as role_name

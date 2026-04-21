@@ -137,7 +137,9 @@ function isColourAttr(name: string): boolean {
   return /colou?r|pa_colou?r/i.test(name);
 }
 function isSizeAttr(name: string): boolean {
-  return /^sizes?$|^pa_sizes?$|^clothing[_\s]sizes?$|^garment[_\s]sizes?$/i.test(name);
+  // Match any attribute that contains "size" (pa_size, clothing-size, dress-size, etc.)
+  // but exclude colour-related names just in case
+  return /size/i.test(name) && !/colou?r/i.test(name);
 }
 
 /** Strip HTML tags and normalise whitespace */
