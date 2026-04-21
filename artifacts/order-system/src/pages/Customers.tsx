@@ -10,6 +10,7 @@ import {
   Customer
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toTitleCase } from "@/lib/utils";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -163,7 +164,7 @@ export default function Customers() {
                   <TableBody>
                     {customers.map((customer) => (
                       <TableRow key={customer.id} className="group hover:bg-muted/30 cursor-pointer" onClick={() => navigate(`/customers/${customer.id}`)}>
-                        <TableCell className="font-medium text-foreground text-primary hover:underline">{customer.name}</TableCell>
+                        <TableCell className="font-medium text-foreground text-primary hover:underline">{toTitleCase(customer.name)}</TableCell>
                         <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                           {customer.contactFirstName || customer.contactLastName
                             ? `${customer.contactFirstName || ''} ${customer.contactLastName || ''}`.trim()

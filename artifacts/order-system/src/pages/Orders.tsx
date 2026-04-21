@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -139,7 +139,7 @@ function PortalPendingOrders() {
             {pending.map((o: any) => (
               <TableRow key={o.id} className="hover:bg-amber-50/80 cursor-pointer" onClick={() => setLocation(`/orders/${o.id}`)}>
                 <TableCell><span className="font-semibold text-amber-700">{o.order_number}</span></TableCell>
-                <TableCell className="font-medium">{o.customer_name}</TableCell>
+                <TableCell className="font-medium">{toTitleCase(o.customer_name)}</TableCell>
                 <TableCell className="text-muted-foreground text-sm">{formatDate(o.order_date)}</TableCell>
                 <TableCell className="text-right text-sm">{o.item_count}</TableCell>
                 <TableCell className="text-right font-semibold">{formatCurrency(parseFloat(o.total_amount ?? "0"))}</TableCell>
@@ -295,7 +295,7 @@ export default function Orders() {
                             <DueDateCell requiredDate={(order as any).requiredDate} />
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">{formatDate(order.orderDate)}</TableCell>
-                          <TableCell className="font-medium text-foreground">{order.customerName || 'Unknown'}</TableCell>
+                          <TableCell className="font-medium text-foreground">{toTitleCase(order.customerName) || 'Unknown'}</TableCell>
                           <TableCell><StatusBadge status={order.status} /></TableCell>
                           <TableCell className="text-right font-semibold text-foreground">
                             {formatCurrency(order.totalAmount)}
@@ -368,7 +368,7 @@ export default function Orders() {
                     aria-expanded={customerComboOpen}
                     className="w-full justify-between font-normal h-10"
                   >
-                    {selectedCustomer ? selectedCustomer.name : "Search customers…"}
+                    {selectedCustomer ? toTitleCase(selectedCustomer.name) : "Search customers…"}
                     <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
@@ -389,7 +389,7 @@ export default function Orders() {
                           >
                             <Check className={cn("mr-2 h-4 w-4", selectedCustomerId === c.id.toString() ? "opacity-100" : "opacity-0")} />
                             <div>
-                              <p className="font-medium">{c.name}</p>
+                              <p className="font-medium">{toTitleCase(c.name)}</p>
                               {c.email && <p className="text-xs text-muted-foreground">{c.email}</p>}
                             </div>
                           </CommandItem>

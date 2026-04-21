@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { cn } from "@/lib/utils";
+import { cn, toTitleCase } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard } from "lucide-react";
@@ -2231,7 +2231,7 @@ export default function CustomerDetail() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3">
                 {!(customer as any).logoUrl && <Building2 className="w-6 h-6 text-muted-foreground shrink-0" />}
-                <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{customer.name}</h1>
+                <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{toTitleCase(customer.name)}</h1>
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
                 {(customer.contactFirstName || customer.contactLastName) && (

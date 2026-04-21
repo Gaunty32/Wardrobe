@@ -13,6 +13,13 @@ export function formatCurrency(amount: number | null | undefined): string {
   }).format(amount);
 }
 
+export function toTitleCase(str: string | null | undefined): string {
+  if (!str) return str ?? "";
+  return str.replace(/\S+/g, (word) =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  );
+}
+
 export function formatDate(dateString: string | null | undefined): string {
   if (!dateString) return "N/A";
   const date = new Date(dateString);
