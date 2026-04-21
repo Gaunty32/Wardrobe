@@ -2212,23 +2212,35 @@ export default function CustomerDetail() {
               {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
               {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
             </div>
-            <div className="flex items-center gap-2 mt-3">
-              <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
-              <Input
-                value={logoUrl}
-                onChange={e => setLogoUrl(e.target.value)}
-                placeholder="Customer logo URL (https://...)"
-                className="h-7 text-xs w-72"
-              />
-              {logoUrl !== ((customer as any).logoUrl || "") && (
-                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={saveLogo} disabled={logoSaving}>
-                  {logoSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                  Save
-                </Button>
+            <div className="flex items-start gap-3 mt-3">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="Logo preview"
+                  className="h-10 w-auto max-w-[120px] object-contain rounded border border-border/40 bg-muted/10 p-0.5 shrink-0"
+                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  onLoad={e => { (e.target as HTMLImageElement).style.display = ""; }}
+                />
+              ) : (
+                <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 mt-1.5" />
               )}
-              {logoUrl && logoUrl === ((customer as any).logoUrl || "") && (
-                <span className="text-xs text-muted-foreground/60">Saved · shows on portal</span>
-              )}
+              <div className="flex items-center gap-2">
+                <Input
+                  value={logoUrl}
+                  onChange={e => setLogoUrl(e.target.value)}
+                  placeholder="Customer logo URL (https://...)"
+                  className="h-7 text-xs w-72"
+                />
+                {logoUrl !== ((customer as any).logoUrl || "") && (
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={saveLogo} disabled={logoSaving}>
+                    {logoSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                    Save
+                  </Button>
+                )}
+                {logoUrl && logoUrl === ((customer as any).logoUrl || "") && (
+                  <span className="text-xs text-muted-foreground/60">Saved · shows on portal</span>
+                )}
+              </div>
             </div>
           </div>
         </div>
