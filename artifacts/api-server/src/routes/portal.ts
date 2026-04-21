@@ -421,8 +421,9 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
       cfi.id,
       cfi.name,
       cfi.product_id,
-      p.name  AS product_name,
-      p.sku   AS product_sku,
+      p.name      AS product_name,
+      p.sku       AS product_sku,
+      p.image_url AS product_image_url,
       cfi.colour,
       cfi.size,
       cfi.unit_price,
@@ -446,13 +447,36 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
       cp.type         AS process_type,
       cp.placement,
       cp.price,
-      cp.code
+      cp.code,
+      cp.image_url    AS process_image_url
     FROM customer_finish_processes cfp
     JOIN customer_processes     cp  ON cp.id = cfp.process_id
     JOIN customer_finishes      cf  ON cf.id = cfp.finish_id
     WHERE cf.customer_id = ${customerId}
     ORDER BY cp.name
   `);
+
+  // Get available sizes per product+colour from product_variants
+  const variantRows = await db.execute(sql`
+    SELECT DISTINCT pv.product_id, pv.colour, pv.size
+    FROM product_variants pv
+    WHERE pv.product_id IN (
+      SELECT DISTINCT cfi.product_id
+      FROM customer_finished_items cfi
+      WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+    )
+    AND pv.size IS NOT NULL AND pv.size != ''
+    ORDER BY pv.product_id, pv.colour, pv.size
+  `);
+  // Build sizesMap: { [productId]: { [colour]: string[] } }
+  const sizesMap: Record<string, Record<string, string[]>> = {};
+  for (const row of variantRows.rows as any[]) {
+    const pid = String(row.product_id);
+    if (!sizesMap[pid]) sizesMap[pid] = {};
+    const col = row.colour ?? "__any__";
+    if (!sizesMap[pid][col]) sizesMap[pid][col] = [];
+    sizesMap[pid][col].push(row.size);
+  }
 
   // Get employees for this customer
   const employees = await db.execute(sql`
@@ -494,6 +518,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     processes: processes.rows,
     employees: employees.rows,
     lastSizes,
+    sizesMap,
   });
 });
 
