@@ -459,7 +459,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     SELECT e.id, e.first_name, e.last_name, e.job_title, cr.id as role_id, cr.name as role_name
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
-    WHERE e.customer_id = ${customerId} AND e.status = 'active'
+    WHERE e.customer_id = ${customerId} AND e.is_active = true
     ORDER BY e.last_name, e.first_name
   `);
 
