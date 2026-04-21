@@ -172,5 +172,50 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS portal_role text NOT NULL DEFAULT 'member';
   `);
 
+  // Fix phone numbers missing leading 0 (stripped during CSV import)
+  // Safe: only updates numbers that are 9-11 digits and don't already start with 0 or +
+  await db.execute(sql`
+    UPDATE customers
+    SET phone = '0' || phone
+    WHERE phone IS NOT NULL
+      AND phone != ''
+      AND phone !~ '^0'
+      AND phone !~ '^\+'
+      AND length(regexp_replace(phone, '[^0-9]', '', 'g')) BETWEEN 9 AND 11;
+  `);
+  await db.execute(sql`
+    UPDATE customer_contacts
+    SET phone = '0' || phone
+    WHERE phone IS NOT NULL
+      AND phone != ''
+      AND phone !~ '^0'
+      AND phone !~ '^\+'
+      AND length(regexp_replace(phone, '[^0-9]', '', 'g')) BETWEEN 9 AND 11;
+  `);
+
+  // Wishlist / inspiration enquiry tables for the customer portal
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_enquiries (
+      id          serial PRIMARY KEY,
+      customer_id integer NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      portal_user_id integer REFERENCES customer_portal_users(id),
+      enquiry_ref text NOT NULL,
+      status      text NOT NULL DEFAULT 'pending',
+      notes       text,
+      created_at  timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS customer_enquiry_items (
+      id              serial PRIMARY KEY,
+      enquiry_id      integer NOT NULL REFERENCES customer_enquiries(id) ON DELETE CASCADE,
+      product_id      integer REFERENCES products(id),
+      product_name    text NOT NULL,
+      image_url       text,
+      colour          text,
+      desired_processes text,
+      item_notes      text,
+      created_at      timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
   console.log("[startup] Migrations complete");
 }

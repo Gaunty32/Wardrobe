@@ -114,8 +114,9 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {/* Main */}
       <main className="flex-1 container max-w-5xl mx-auto px-4 py-6">{children}</main>
 
-      <footer className="border-t py-3 text-center text-xs text-muted-foreground">
-        &copy; Select Branding Solutions &mdash; Customer Portal
+      <footer className="border-t py-6 flex flex-col items-center gap-2">
+        <span className="text-xs text-muted-foreground/60 uppercase tracking-widest font-medium">Powered by</span>
+        <img src={logo} alt="Select Branding Solutions" className="h-10 w-auto opacity-70" />
       </footer>
     </div>
   );

@@ -394,6 +394,56 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   res.status(201).json({ id: order.id, orderNumber: order.order_number });
 });
 
+// ─── portal: submit inspiration enquiry ──────────────────────────────────────
+
+router.post("/portal/enquiries", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalUserId = (req as any).portalUserId ?? null;
+
+  const body = z.object({
+    notes: z.string().optional(),
+    items: z.array(z.object({
+      productId: z.number().nullable().optional(),
+      productName: z.string().min(1),
+      imageUrl: z.string().optional(),
+      colour: z.string().optional(),
+      desiredProcesses: z.array(z.string()).optional(),
+      notes: z.string().optional(),
+    })).min(1),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  // Generate an enquiry ref after insert using the row id
+  const enqRow = await db.execute(sql`
+    INSERT INTO customer_enquiries (customer_id, portal_user_id, enquiry_ref, notes)
+    VALUES (${customerId}, ${portalUserId}, 'ENQ-PENDING', ${body.data.notes ?? null})
+    RETURNING id
+  `);
+  const enquiryId = (enqRow.rows[0] as any).id as number;
+  const enquiryRef = `ENQ-${String(enquiryId).padStart(5, "0")}`;
+  await db.execute(sql`
+    UPDATE customer_enquiries SET enquiry_ref = ${enquiryRef} WHERE id = ${enquiryId}
+  `);
+
+  for (const item of body.data.items) {
+    await db.execute(sql`
+      INSERT INTO customer_enquiry_items
+        (enquiry_id, product_id, product_name, image_url, colour, desired_processes, item_notes)
+      VALUES (
+        ${enquiryId},
+        ${item.productId ?? null},
+        ${item.productName},
+        ${item.imageUrl ?? null},
+        ${item.colour ?? null},
+        ${item.desiredProcesses?.join(", ") ?? null},
+        ${item.notes ?? null}
+      )
+    `);
+  }
+
+  res.json({ id: enquiryId, enquiryRef });
+});
+
 // ─── portal: browse products ─────────────────────────────────────────────────
 
 router.get("/portal/products", portalAuth, async (req: Request, res: Response) => {

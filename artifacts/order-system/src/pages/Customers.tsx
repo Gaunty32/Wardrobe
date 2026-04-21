@@ -19,7 +19,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users, Loader2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone } from "lucide-react";
+
+function formatUKPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("07")) {
+    return `${digits.slice(0,5)} ${digits.slice(5,8)} ${digits.slice(8)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("01")) {
+    return `${digits.slice(0,5)} ${digits.slice(5)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("02")) {
+    return `${digits.slice(0,3)} ${digits.slice(3,7)} ${digits.slice(7)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("03")) {
+    return `${digits.slice(0,4)} ${digits.slice(4,7)} ${digits.slice(7)}`;
+  }
+  return raw;
+}
 
 const SHIPPING_SERVICES = [
   "DPD",
@@ -173,7 +190,13 @@ export default function Customers() {
                         <TableCell>
                           <div className="flex flex-col text-sm text-muted-foreground">
                             <span>{customer.email ? customer.email.toLowerCase() : 'No email'}</span>
-                            <span>{customer.phone || 'No phone'}</span>
+                            {customer.phone ? (
+                              <a href={`tel:${customer.phone.replace(/\s/g, "")}`} className="flex items-center gap-1 hover:text-primary transition-colors" onClick={e => e.stopPropagation()}>
+                                <Phone className="w-3 h-3 shrink-0" /> {formatUKPhone(customer.phone)}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground/50">No phone</span>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">

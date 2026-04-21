@@ -19,8 +19,8 @@ import {
 } from "@/components/ui/table";
 import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
-  Shirt, ShoppingBag, CheckCircle2, Search, ChevronDown, ChevronUp,
-  User, Package, History, Tag, Sparkles,
+  Shirt, ShoppingBag, CheckCircle2, Search,
+  User, Package, History, Tag, Sparkles, Heart, X, Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -89,7 +89,9 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
   return (
     <div>
       <h2 className="text-xl font-semibold mb-2">How would you like to order?</h2>
-      <p className="text-muted-foreground text-sm mb-6">Order from your preset wardrobe for named individuals, or place a bulk stock order.</p>
+      <p className="text-muted-foreground text-sm mb-6">
+        Place an order from your pre-configured wardrobe, or send us a wishlist and we'll turn it into a quote.
+      </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card
           className="cursor-pointer hover:border-primary hover:shadow-md transition-all group"
@@ -125,18 +127,19 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
         >
           <CardContent className="py-6 px-6 flex flex-col gap-4">
             <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
-              <Package className="w-6 h-6 text-primary" />
+              <Sparkles className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h3 className="font-semibold text-base">Bulk / General Order</h3>
+              <h3 className="font-semibold text-base">Looking for Inspiration</h3>
               <p className="text-muted-foreground text-sm mt-1 mb-3">
-                Browse the full product range and order by size and quantity — ideal for topping up stock.
+                Browse our range, pick what catches your eye, and tell us the colours and decoration styles you'd love.
+                We'll review your wishlist and build a wardrobe quote.
               </p>
               <ul className="space-y-1.5">
                 {[
-                  { icon: Package, text: "e.g. 10 × Medium polo shirts to stock" },
-                  { icon: ShoppingBag, text: "No individual name allocation" },
-                  { icon: Tag, text: "Full product catalogue available" },
+                  { icon: Heart, text: "Add products to a wishlist — no sizes needed" },
+                  { icon: Tag, text: "Tell us your preferred colours & decoration" },
+                  { icon: Mail, text: "We'll come back with a tailored quote" },
                 ].map(({ icon: Icon, text }) => (
                   <li key={text} className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Icon className="w-3.5 h-3.5 text-primary/70 shrink-0" />
@@ -147,18 +150,6 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
             </div>
           </CardContent>
         </Card>
-      </div>
-
-      {/* Inspiration nudge */}
-      <div className="mt-5 flex items-center gap-2.5 text-sm text-muted-foreground">
-        <Sparkles className="w-4 h-4 text-primary/60 shrink-0" />
-        <span>
-          Looking for inspiration or a refresh?{" "}
-          <Link href="/products" className="text-primary font-medium hover:underline underline-offset-2">
-            Browse our products
-          </Link>{" "}
-          and see if something catches your eye.
-        </span>
       </div>
     </div>
   );
@@ -546,44 +537,93 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
   );
 }
 
-// ─── Step 2b: Catalogue ──────────────────────────────────────────────────────
+// ─── Step 2b: Inspiration wishlist ───────────────────────────────────────────
 
-function CatalogueStep({ basket, setBasket, onNext }: {
-  basket: OrderItem[];
-  setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
-  onNext: () => void;
+type EnquiryItem = {
+  productId: number | null;
+  productName: string;
+  imageUrl: string;
+  colour: string;
+  desiredProcesses: string[];
+  notes: string;
+};
+
+const PROCESS_OPTIONS = [
+  { id: "embroidery",    label: "Embroidery",          cls: "bg-purple-50 border-purple-200 text-purple-700 data-[active=true]:bg-purple-100 data-[active=true]:border-purple-400" },
+  { id: "print",         label: "Print / DTF",          cls: "bg-blue-50 border-blue-200 text-blue-700 data-[active=true]:bg-blue-100 data-[active=true]:border-blue-400" },
+  { id: "heat_transfer", label: "Heat Transfer",        cls: "bg-orange-50 border-orange-200 text-orange-700 data-[active=true]:bg-orange-100 data-[active=true]:border-orange-400" },
+  { id: "badge",         label: "Badge / Woven Label",  cls: "bg-amber-50 border-amber-200 text-amber-700 data-[active=true]:bg-amber-100 data-[active=true]:border-amber-400" },
+  { id: "unsure",        label: "Not sure yet",         cls: "bg-muted border-border text-muted-foreground data-[active=true]:bg-muted/80 data-[active=true]:border-foreground/30" },
+];
+
+function InspirationStep({ wishlist, setWishlist, onSubmit, submitting }: {
+  wishlist: EnquiryItem[];
+  setWishlist: React.Dispatch<React.SetStateAction<EnquiryItem[]>>;
+  onSubmit: (data: { items: EnquiryItem[]; notes: string }) => void;
+  submitting: boolean;
 }) {
   const [search, setSearch] = useState("");
-  const [draftItem, setDraftItem] = useState<Partial<OrderItem>>({ ...EMPTY_ITEM });
-  const [showAdd, setShowAdd] = useState(false);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [draft, setDraft] = useState({ colour: "", processes: [] as string[], notes: "" });
+  const [overallNotes, setOverallNotes] = useState("");
 
   const { data: products = [], isLoading } = useQuery<any[]>({
-    queryKey: ["portal-products", search],
-    queryFn: () => apiFetch(`/portal/products?search=${encodeURIComponent(search)}`),
+    queryKey: ["portal-products"],
+    queryFn: () => apiFetch("/portal/products"),
   });
 
-  const handleAddProduct = (p: any) => {
-    setDraftItem({ ...EMPTY_ITEM, productId: p.id, productName: p.name, unitPrice: parseFloat(p.unit_price ?? "0") });
-    setShowAdd(true);
+  const filtered = search.trim()
+    ? products.filter((p: any) =>
+        p.name?.toLowerCase().includes(search.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(search.toLowerCase()) ||
+        p.category?.toLowerCase().includes(search.toLowerCase())
+      )
+    : products;
+
+  const toggleProcess = (id: string) =>
+    setDraft(d => ({
+      ...d,
+      processes: d.processes.includes(id) ? d.processes.filter(p => p !== id) : [...d.processes, id],
+    }));
+
+  const openConfig = (productId: number) => {
+    setExpandedId(productId);
+    setDraft({ colour: "", processes: [], notes: "" });
   };
 
-  const addToBasket = () => {
-    if (!draftItem.productName) return;
-    setBasket(b => [...b, { ...EMPTY_ITEM, ...draftItem, quantity: draftItem.quantity ?? 1 } as OrderItem]);
-    setShowAdd(false);
-    setDraftItem({ ...EMPTY_ITEM });
+  const addToWishlist = (p: any) => {
+    setWishlist(w => [...w, {
+      productId: p.id,
+      productName: p.name,
+      imageUrl: p.image_url ?? "",
+      colour: draft.colour,
+      desiredProcesses: draft.processes,
+      notes: draft.notes,
+    }]);
+    setExpandedId(null);
+    setDraft({ colour: "", processes: [], notes: "" });
   };
+
+  const removeFromWishlist = (idx: number) =>
+    setWishlist(w => w.filter((_, i) => i !== idx));
+
+  const alreadyAdded = (productId: number) =>
+    wishlist.some(w => w.productId === productId);
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Browse catalogue</h2>
-      <p className="text-muted-foreground text-sm mb-4">Search and add products to your order.</p>
+      <h2 className="text-xl font-semibold mb-1">Looking for Inspiration</h2>
+      <p className="text-muted-foreground text-sm mb-5">
+        Browse our range and add anything that catches your eye to your wishlist.
+        Tell us your preferred colours and decoration style — we'll come back with a tailored wardrobe quote.
+      </p>
 
+      {/* Search */}
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search products…"
+          placeholder="Search products by name, SKU or category…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -592,96 +632,172 @@ function CatalogueStep({ basket, setBasket, onNext }: {
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-          {products.map((p: any) => (
-            <Card key={p.id} className="hover:border-primary/40 transition-colors">
-              <CardContent className="py-3 px-4 flex items-center gap-3">
-                {p.image_url ? (
-                  <img src={p.image_url} alt={p.name} className="w-10 h-10 rounded object-cover shrink-0 bg-muted" />
-                ) : (
-                  <div className="w-10 h-10 rounded bg-muted shrink-0 flex items-center justify-center">
-                    <ShoppingBag className="w-4 h-4 text-muted-foreground" />
-                  </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+          {filtered.map((p: any) => {
+            const added = alreadyAdded(p.id);
+            const open = expandedId === p.id;
+            return (
+              <div key={p.id} className="flex flex-col">
+                <Card className={cn("transition-colors", open ? "border-primary/50" : "hover:border-primary/30", added && "opacity-60")}>
+                  <CardContent className="py-3 px-4 flex items-center gap-3">
+                    {p.image_url ? (
+                      <img src={p.image_url} alt={p.name} className="w-12 h-12 rounded object-cover shrink-0 bg-muted" />
+                    ) : (
+                      <div className="w-12 h-12 rounded bg-muted shrink-0 flex items-center justify-center">
+                        <ShoppingBag className="w-5 h-5 text-muted-foreground/50" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{p.name}</p>
+                      <p className="text-xs text-muted-foreground">{p.category || p.sku}</p>
+                    </div>
+                    {added ? (
+                      <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 shrink-0">
+                        <Heart className="w-3 h-3 fill-current" /> Added
+                      </span>
+                    ) : (
+                      <Button
+                        size="sm" variant="outline"
+                        className="shrink-0 gap-1 h-7 text-xs"
+                        onClick={() => open ? setExpandedId(null) : openConfig(p.id)}
+                      >
+                        <Heart className="w-3 h-3" /> Wishlist
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Inline config panel */}
+                {open && (
+                  <Card className="border-primary/40 border-t-0 rounded-t-none -mt-px">
+                    <CardContent className="px-4 py-3 flex flex-col gap-3">
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">Preferred colour(s)</Label>
+                        <Input
+                          className="h-8 text-sm"
+                          placeholder="e.g. Navy, Black, White"
+                          value={draft.colour}
+                          onChange={e => setDraft(d => ({ ...d, colour: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-medium">Decoration style</Label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {PROCESS_OPTIONS.map(opt => (
+                            <button
+                              key={opt.id}
+                              data-active={draft.processes.includes(opt.id)}
+                              onClick={() => toggleProcess(opt.id)}
+                              className={cn(
+                                "rounded-full border px-2.5 py-1 text-xs font-medium transition-all",
+                                opt.cls
+                              )}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs font-medium">Notes (optional)</Label>
+                        <Input
+                          className="h-8 text-sm"
+                          placeholder="Any specific requirements…"
+                          value={draft.notes}
+                          onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpandedId(null)}>Cancel</Button>
+                        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => addToWishlist(p)}>
+                          <Heart className="w-3 h-3" /> Add to wishlist
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
                 )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">{p.sku}</p>
-                  <p className="text-xs font-medium text-primary">{formatCurrency(p.unit_price)}</p>
-                </div>
-                <Button size="sm" variant="outline" className="shrink-0 gap-1 h-7 text-xs" onClick={() => handleAddProduct(p)}>
-                  <Plus className="w-3 h-3" /> Add
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Add item panel */}
-      {showAdd && (
-        <Card className="mb-4 border-primary/30">
-          <CardHeader className="py-3 px-5 border-b">
-            <CardTitle className="text-sm">Configure: {draftItem.productName}</CardTitle>
-          </CardHeader>
-          <CardContent className="py-4 px-5 grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs">Colour</Label>
-              <Input value={draftItem.colour ?? ""} onChange={e => setDraftItem(d => ({ ...d, colour: e.target.value }))} placeholder="e.g. Navy" className="h-8 text-sm" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Size</Label>
-              <Input value={draftItem.size ?? ""} onChange={e => setDraftItem(d => ({ ...d, size: e.target.value }))} placeholder="e.g. M" className="h-8 text-sm" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Unit price (£)</Label>
-              <Input
-                type="number" min="0" step="0.01"
-                value={draftItem.unitPrice ?? 0}
-                onChange={e => setDraftItem(d => ({ ...d, unitPrice: parseFloat(e.target.value) || 0 }))}
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Quantity</Label>
-              <Input
-                type="number" min="1"
-                value={draftItem.quantity ?? 1}
-                onChange={e => setDraftItem(d => ({ ...d, quantity: parseInt(e.target.value) || 1 }))}
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">For</Label>
-              <Select value={draftItem.recipientType ?? "stock"} onValueChange={v => setDraftItem(d => ({ ...d, recipientType: v as "stock" | "person", recipientName: v === "stock" ? "" : d.recipientName }))}>
-                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="stock">Stock</SelectItem>
-                  <SelectItem value="person">Named person</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {draftItem.recipientType === "person" && (
-              <div className="space-y-1">
-                <Label className="text-xs">Person name</Label>
-                <Input value={draftItem.recipientName ?? ""} onChange={e => setDraftItem(d => ({ ...d, recipientName: e.target.value }))} placeholder="Full name" className="h-8 text-sm" />
               </div>
-            )}
-            <div className="col-span-2 flex gap-2 justify-end pt-1">
-              <Button variant="outline" size="sm" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button size="sm" onClick={addToBasket} disabled={!draftItem.productName}>Add to order</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {basket.length > 0 && (
-        <div className="sticky bottom-0 bg-background border-t pt-4 mt-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">{basket.length} item{basket.length !== 1 ? "s" : ""} in order</span>
-            <Button onClick={onNext}>Review order <ArrowRight className="w-4 h-4 ml-1.5" /></Button>
-          </div>
+            );
+          })}
         </div>
       )}
+
+      {/* Wishlist summary */}
+      {wishlist.length > 0 && (
+        <div className="border rounded-xl p-4 bg-muted/20 flex flex-col gap-4">
+          <div>
+            <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5">
+              <Heart className="w-4 h-4 text-primary fill-primary/20" />
+              Your wishlist ({wishlist.length})
+            </h3>
+            <div className="flex flex-col gap-2">
+              {wishlist.map((item, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-background border px-3 py-2">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.productName} className="w-8 h-8 rounded object-cover shrink-0 bg-muted" />
+                  ) : (
+                    <div className="w-8 h-8 rounded bg-muted shrink-0 flex items-center justify-center">
+                      <ShoppingBag className="w-3.5 h-3.5 text-muted-foreground/50" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{item.productName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {[item.colour, item.desiredProcesses.join(", ")].filter(Boolean).join(" · ") || "No preferences set"}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => removeFromWishlist(i)}
+                    className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium">Anything else we should know?</Label>
+            <Textarea
+              placeholder="Overall budget, timeline, any other requirements…"
+              value={overallNotes}
+              onChange={e => setOverallNotes(e.target.value)}
+              rows={2}
+              className="text-sm resize-none"
+            />
+          </div>
+          <Button
+            className="w-full sm:w-auto self-end gap-1.5"
+            disabled={submitting}
+            onClick={() => onSubmit({ items: wishlist, notes: overallNotes })}
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+            Send enquiry to SBS
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Enquiry confirmation ─────────────────────────────────────────────────────
+
+function EnquiryConfirmStep({ enquiryRef }: { enquiryRef: string }) {
+  return (
+    <div className="text-center py-10">
+      <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+        <Sparkles className="w-8 h-8 text-primary" />
+      </div>
+      <h2 className="text-2xl font-bold mb-2">Wishlist sent!</h2>
+      <p className="text-muted-foreground mb-1">
+        Your enquiry <span className="font-semibold text-foreground">{enquiryRef}</span> has been submitted.
+      </p>
+      <p className="text-sm text-muted-foreground mb-8 max-w-sm mx-auto">
+        Our team at Select Branding Solutions will review your wishlist and come back to you with a tailored wardrobe quote.
+      </p>
+      <Button variant="outline" onClick={() => window.location.href = "/customer-portal/orders"}>
+        Back to my orders
+      </Button>
     </div>
   );
 }
@@ -809,7 +925,9 @@ export default function NewOrder() {
   const [step, setStep] = useState(0);
   const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(null);
   const [basket, setBasket] = useState<OrderItem[]>([]);
+  const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
   const [confirmedOrder, setConfirmedOrder] = useState<{ id: number; orderNumber: string } | null>(null);
+  const [confirmedEnquiry, setConfirmedEnquiry] = useState<{ enquiryRef: string } | null>(null);
 
   const { data: wardrobe } = useQuery<{
     items: any[];
@@ -854,7 +972,34 @@ export default function NewOrder() {
     },
   });
 
-  const STEPS = ["Choose type", mode === "wardrobe" ? "Wardrobe" : "Catalogue", "Review", "Done"];
+  const submitEnquiryMutation = useMutation({
+    mutationFn: (data: { items: EnquiryItem[]; notes: string }) =>
+      apiFetch("/portal/enquiries", {
+        method: "POST",
+        body: JSON.stringify({
+          notes: data.notes || undefined,
+          items: data.items.map(i => ({
+            productId: i.productId,
+            productName: i.productName,
+            imageUrl: i.imageUrl || undefined,
+            colour: i.colour || undefined,
+            desiredProcesses: i.desiredProcesses,
+            notes: i.notes || undefined,
+          })),
+        }),
+      }),
+    onSuccess: (data) => {
+      setConfirmedEnquiry({ enquiryRef: data.enquiryRef });
+      setStep(2);
+    },
+    onError: () => {
+      toast({ title: "Failed to submit enquiry", description: "Please try again.", variant: "destructive" });
+    },
+  });
+
+  const STEPS = mode === "catalogue"
+    ? ["Choose type", "Inspiration", "Done"]
+    : ["Choose type", "Wardrobe", "Review", "Done"];
 
   const handleModeSelect = (m: "wardrobe" | "catalogue") => {
     setMode(m);
@@ -891,10 +1036,15 @@ export default function NewOrder() {
       )}
 
       {step === 1 && mode === "catalogue" && (
-        <CatalogueStep basket={basket} setBasket={setBasket} onNext={() => setStep(2)} />
+        <InspirationStep
+          wishlist={wishlist}
+          setWishlist={setWishlist}
+          onSubmit={(d) => submitEnquiryMutation.mutate(d)}
+          submitting={submitEnquiryMutation.isPending}
+        />
       )}
 
-      {step === 2 && (
+      {step === 2 && mode === "wardrobe" && (
         <div>
           <Button variant="ghost" size="sm" className="-ml-2 mb-4 text-muted-foreground" onClick={() => setStep(1)}>
             <ArrowLeft className="w-4 h-4 mr-1" /> Back
@@ -907,6 +1057,10 @@ export default function NewOrder() {
             portalRole={portalRole}
           />
         </div>
+      )}
+
+      {step === 2 && mode === "catalogue" && confirmedEnquiry && (
+        <EnquiryConfirmStep enquiryRef={confirmedEnquiry.enquiryRef} />
       )}
 
       {step === 3 && confirmedOrder && (

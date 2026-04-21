@@ -16,7 +16,16 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn, toTitleCase } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone } from "lucide-react";
+
+function formatUKPhone(raw: string): string {
+  const d = raw.replace(/\D/g, "");
+  if (d.length === 11 && d.startsWith("07")) return `${d.slice(0,5)} ${d.slice(5,8)} ${d.slice(8)}`;
+  if (d.length === 11 && d.startsWith("01")) return `${d.slice(0,5)} ${d.slice(5)}`;
+  if (d.length === 11 && d.startsWith("02")) return `${d.slice(0,3)} ${d.slice(3,7)} ${d.slice(7)}`;
+  if (d.length === 11 && d.startsWith("03")) return `${d.slice(0,4)} ${d.slice(4,7)} ${d.slice(7)}`;
+  return raw;
+}
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -228,7 +237,13 @@ function ContactsTab({ customerId, customer }: { customerId: number; customer: a
                 <TableCell className="font-medium">{toTitleCase([c.firstName, c.lastName].filter(Boolean).join(' '))}</TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{c.jobTitle || '—'}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{c.email?.toLowerCase() || '—'}</TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{c.phone || '—'}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  {c.phone ? (
+                    <a href={`tel:${c.phone.replace(/\s/g, "")}`} className="flex items-center gap-1 hover:text-primary transition-colors">
+                      <Phone className="w-3 h-3 shrink-0" /> {formatUKPhone(c.phone)}
+                    </a>
+                  ) : "—"}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(c)}><Edit2 className="w-3 h-3" /></Button>
@@ -2248,7 +2263,11 @@ export default function CustomerDetail() {
                   <span>Contact: {toTitleCase([customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' '))}</span>
                 )}
                 {customer.email && <span>{customer.email.toLowerCase()}</span>}
-                {customer.phone && <span>📞 {customer.phone}</span>}
+                {customer.phone && (
+                  <a href={`tel:${customer.phone.replace(/\s/g, "")}`} className="flex items-center gap-1 hover:text-primary transition-colors">
+                    <Phone className="w-3.5 h-3.5 shrink-0" /> {formatUKPhone(customer.phone)}
+                  </a>
+                )}
                 {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
                 {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
               </div>
