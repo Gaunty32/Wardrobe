@@ -397,14 +397,11 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
 // ─── portal: browse products ─────────────────────────────────────────────────
 
 router.get("/portal/products", portalAuth, async (req: Request, res: Response) => {
-  const search = (req.query.search as string) || "";
   const rows = await db.execute(sql`
     SELECT p.id, p.name, p.sku, p.unit_price, p.image_url, p.category,
            (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) as variant_count
     FROM products p
-    WHERE (${search} = '' OR p.name ILIKE ${'%' + search + '%'} OR p.sku ILIKE ${'%' + search + '%'})
-    ORDER BY p.name
-    LIMIT 200
+    ORDER BY p.category NULLS LAST, p.name
   `);
   res.json(rows.rows);
 });
