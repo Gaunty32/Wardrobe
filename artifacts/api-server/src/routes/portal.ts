@@ -519,4 +519,67 @@ router.post("/portal/admin/orders/:id/reject", async (req: Request, res: Respons
   res.json({ ok: true });
 });
 
+// ─── portal: list invoices ────────────────────────────────────────────────────
+
+router.get("/portal/invoices", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const rows = await db.execute(sql`
+    SELECT id, order_number, invoice_email_sent_at, total_amount,
+           xero_invoice_id, xero_invoice_status, tracking_number, order_date,
+           customer_name, status
+    FROM orders
+    WHERE customer_id = ${customerId}
+      AND invoice_email_sent_at IS NOT NULL
+    ORDER BY invoice_email_sent_at DESC
+    LIMIT 200
+  `);
+  res.json(rows.rows);
+});
+
+// ─── portal: download invoice PDF ────────────────────────────────────────────
+
+router.get("/portal/invoices/:orderId/pdf", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const orderId = parseInt(req.params.orderId, 10);
+  if (isNaN(orderId)) { res.status(400).json({ error: "Invalid order ID" }); return; }
+
+  const orderRows = await db.execute(sql`
+    SELECT o.*, c.email as customer_email_addr, c.name as customer_name_resolved
+    FROM orders o
+    LEFT JOIN customers c ON c.id = o.customer_id
+    WHERE o.id = ${orderId} AND o.customer_id = ${customerId}
+  `);
+  const order = orderRows.rows[0] as any;
+  if (!order) { res.status(404).json({ error: "Invoice not found" }); return; }
+
+  const itemRows = await db.execute(sql`
+    SELECT product_name, colour, size, finish_name, quantity, unit_price, line_total
+    FROM order_items WHERE order_id = ${orderId} ORDER BY id
+  `);
+
+  const pdfBuffer = await generateInvoicePDF({
+    orderNumber: order.order_number ?? `ORD-${orderId}`,
+    customerName: order.customer_name ?? order.customer_name_resolved ?? "Customer",
+    customerEmail: order.customer_email_addr,
+    trackingNumber: order.tracking_number,
+    items: (itemRows.rows as any[]).map((i) => ({
+      productName: i.product_name,
+      colour: i.colour,
+      size: i.size,
+      finishName: i.finish_name,
+      quantity: i.quantity,
+      unitPrice: i.unit_price,
+      lineTotal: i.line_total,
+    })),
+    totalAmount: order.total_amount,
+    notes: order.notes,
+  });
+
+  const filename = `Invoice-${order.order_number ?? orderId}.pdf`;
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Length", pdfBuffer.length);
+  res.send(pdfBuffer);
+});
+
 export default router;
