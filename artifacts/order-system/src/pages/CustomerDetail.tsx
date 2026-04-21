@@ -225,9 +225,9 @@ function ContactsTab({ customerId, customer }: { customerId: number; customer: a
           <TableBody>
             {contacts.map((c: any) => (
               <TableRow key={c.id} className="group hover:bg-muted/30">
-                <TableCell className="font-medium">{[c.firstName, c.lastName].filter(Boolean).join(' ')}</TableCell>
+                <TableCell className="font-medium">{toTitleCase([c.firstName, c.lastName].filter(Boolean).join(' '))}</TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{c.jobTitle || '—'}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{c.email || '—'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{c.email?.toLowerCase() || '—'}</TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{c.phone || '—'}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1422,7 +1422,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <TableBody>
             {portalUsers.map((u: any) => (
               <TableRow key={u.id} className="group hover:bg-muted/30">
-                <TableCell className="font-medium text-sm">{u.email}</TableCell>
+                <TableCell className="font-medium text-sm">{u.email?.toLowerCase()}</TableCell>
                 <TableCell>{statusBadge(u)}</TableCell>
                 <TableCell>
                   <Select
@@ -1479,7 +1479,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                         onClick={() => setInviteEmail(emp.email ?? "")}
                       >
                         <span className="font-medium">{emp.name}</span>
-                        {emp.email && <span className="text-muted-foreground">{emp.email}</span>}
+                        {emp.email && <span className="text-muted-foreground">{emp.email.toLowerCase()}</span>}
                       </button>
                     ))}
                   </div>
@@ -2247,7 +2247,7 @@ export default function CustomerDetail() {
                 {(customer.contactFirstName || customer.contactLastName) && (
                   <span>Contact: {toTitleCase([customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' '))}</span>
                 )}
-                {customer.email && <span>{customer.email}</span>}
+                {customer.email && <span>{customer.email.toLowerCase()}</span>}
                 {customer.phone && <span>{customer.phone}</span>}
                 {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
                 {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}

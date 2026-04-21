@@ -414,15 +414,21 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   // Resolve customer email
   const body = z.object({ toEmail: z.string().email().optional() }).safeParse(req.body);
   let toEmail = body.success ? body.data.toEmail : undefined;
+  let contactFirstName: string | null = null;
   if (!toEmail && order.customerId) {
-    const [customer] = await db.select({ email: customersTable.email }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    const [customer] = await db.select({ email: customersTable.email, contactFirstName: customersTable.contactFirstName }).from(customersTable).where(eq(customersTable.id, order.customerId));
     toEmail = customer?.email ?? undefined;
+    contactFirstName = customer?.contactFirstName ?? null;
+  } else if (order.customerId) {
+    const [customer] = await db.select({ contactFirstName: customersTable.contactFirstName }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    contactFirstName = customer?.contactFirstName ?? null;
   }
   if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
 
   const { subject, html, text } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
+    contactFirstName,
     orderDate: order.orderDate ?? null,
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,

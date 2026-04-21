@@ -3,6 +3,12 @@ import PDFDocument from "pdfkit";
 import { db, settingsTable, ordersTable, orderItemsTable, customersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
+function toFirstName(name: string | null | undefined): string {
+  if (!name?.trim()) return "there";
+  const first = name.trim().split(/\s+/)[0];
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+}
+
 export const isEmailConfigured = !!(
   process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
 );
@@ -38,6 +44,7 @@ export async function sendEmail(opts: {
 export function buildAcknowledgementEmail(order: {
   orderNumber: string;
   customerName: string | null;
+  contactFirstName?: string | null;
   orderDate: Date | null;
   requiredDate?: Date | null;
   notes?: string | null;
@@ -89,7 +96,7 @@ export function buildAcknowledgementEmail(order: {
         </td></tr>
         <tr><td style="padding:32px;">
           <p style="margin:0 0 24px;font-size:15px;color:#374151;">
-            Dear ${order.customerName ?? "Valued Customer"},<br><br>
+            Hi ${toFirstName(order.contactFirstName)},<br><br>
             Thank you for your order. We are pleased to confirm the following:
           </p>
           <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
@@ -148,7 +155,7 @@ export function buildAcknowledgementEmail(order: {
   const text = [
     `ORDER CONFIRMATION – ${order.orderNumber}`,
     ``,
-    `Dear ${order.customerName ?? "Valued Customer"},`,
+    `Hi ${toFirstName(order.contactFirstName)},`,
     ``,
     `Thank you for your order. We are pleased to confirm the following details:`,
     ``,
@@ -633,9 +640,11 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
 
   let customerEmail: string | null = null;
+  let customerFirstName: string | null = null;
   if (order.customerId) {
     const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
     customerEmail = (customer as any)?.email ?? null;
+    customerFirstName = (customer as any)?.contactFirstName ?? null;
   }
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
@@ -681,7 +690,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     to: customerEmail,
     subject: `Invoice ${order.orderNumber} – Select Branding Solutions`,
     text: [
-      `Dear ${order.customerName ?? "Customer"},`,
+      `Hi ${toFirstName(customerFirstName)},`,
       ``,
       `Please find your invoice attached for order ${order.orderNumber}.`,
       ``,
@@ -700,7 +709,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
           <h1 style="color:white;margin:0;font-size:20px;">Select Branding Solutions</h1>
         </div>
         <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
-          <p>Dear ${order.customerName ?? "Customer"},</p>
+          <p>Hi ${toFirstName(customerFirstName)},</p>
           <p>Please find your invoice attached for order <strong>${order.orderNumber}</strong>.</p>
           <table style="width:100%;border-collapse:collapse;margin:16px 0;">
             <tr style="background:#f9fafb;">

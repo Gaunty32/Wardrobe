@@ -172,7 +172,7 @@ export default function Customers() {
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-col text-sm text-muted-foreground">
-                            <span>{customer.email || 'No email'}</span>
+                            <span>{customer.email ? customer.email.toLowerCase() : 'No email'}</span>
                             <span>{customer.phone || 'No phone'}</span>
                           </div>
                         </TableCell>
