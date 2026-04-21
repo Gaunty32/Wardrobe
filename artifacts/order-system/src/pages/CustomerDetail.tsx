@@ -1364,21 +1364,25 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                 <DialogDescription>Click the button below to open the portal as a manager. The link expires in 2 hours.</DialogDescription>
               </DialogHeader>
               <div className="flex flex-col gap-3 pt-1">
-                <a
-                  href={previewHref ?? "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center gap-2 w-full rounded-md bg-primary text-primary-foreground hover:bg-primary/90 px-4 py-2.5 text-sm font-medium transition-colors"
-                  onClick={() => setPreviewHref(null)}
+                <Button
+                  className="w-full gap-2"
+                  onClick={() => {
+                    const href = previewHref;
+                    setPreviewHref(null);
+                    if (href) window.open(href, "_blank", "noopener,noreferrer");
+                  }}
                 >
                   <Eye className="w-4 h-4" /> Open Customer Portal
-                </a>
-                <button
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => { navigator.clipboard.writeText(previewHref ?? ""); toast({ title: "Link copied" }); }}
-                >
-                  Copy link instead
-                </button>
+                </Button>
+                <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2">
+                  <span className="text-xs text-muted-foreground truncate flex-1 font-mono">{previewHref}</span>
+                  <button
+                    className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                    onClick={() => { navigator.clipboard.writeText(previewHref ?? ""); toast({ title: "Link copied" }); }}
+                  >
+                    Copy
+                  </button>
+                </div>
               </div>
             </DialogContent>
           </Dialog>
