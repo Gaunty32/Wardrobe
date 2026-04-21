@@ -979,7 +979,13 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="space-y-1.5">
           <Label htmlFor="reqdate">Required by (optional)</Label>
-          <Input id="reqdate" type="date" value={requiredDate} onChange={e => setRequiredDate(e.target.value)} />
+          <Input
+            id="reqdate"
+            type="date"
+            value={requiredDate}
+            min={(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })()}
+            onChange={e => setRequiredDate(e.target.value)}
+          />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="notes">Notes for our team (optional)</Label>
