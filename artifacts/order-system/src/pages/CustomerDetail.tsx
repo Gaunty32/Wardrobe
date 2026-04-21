@@ -2245,7 +2245,7 @@ export default function CustomerDetail() {
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
                 {(customer.contactFirstName || customer.contactLastName) && (
-                  <span>Contact: {[customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' ')}</span>
+                  <span>Contact: {toTitleCase([customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' '))}</span>
                 )}
                 {customer.email && <span>{customer.email}</span>}
                 {customer.phone && <span>{customer.phone}</span>}

@@ -167,7 +167,7 @@ export default function Customers() {
                         <TableCell className="font-medium text-foreground text-primary hover:underline">{toTitleCase(customer.name)}</TableCell>
                         <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                           {customer.contactFirstName || customer.contactLastName
-                            ? `${customer.contactFirstName || ''} ${customer.contactLastName || ''}`.trim()
+                            ? toTitleCase(`${customer.contactFirstName || ''} ${customer.contactLastName || ''}`.trim())
                             : '—'}
                         </TableCell>
                         <TableCell>
