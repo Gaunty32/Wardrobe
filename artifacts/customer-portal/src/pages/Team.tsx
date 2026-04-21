@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, Mail, Pencil, RotateCcw, ShieldCheck, MapPin,
+  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -255,7 +255,7 @@ function EmployeesTab() {
                   onClick={() => statusMutation.mutate({ id: emp.id, isActive: !emp.is_active })}
                   title={emp.is_active ? "Deactivate" : "Reactivate"}
                 >
-                  {emp.is_active ? <UserX className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  {emp.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
                 </Button>
               </div>
             </div>
