@@ -304,8 +304,8 @@ function OrderHistoryTab({ customerId }: { customerId: number }) {
             </TableCell>
             <TableCell className="text-sm text-muted-foreground">{formatDate(o.createdAt)}</TableCell>
             <TableCell>
-              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium uppercase tracking-wide ${statusColour[o.status] || statusColour.draft}`}>
-                {o.status?.replace(/_/g, ' ')}
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium tracking-wide ${statusColour[o.status] || statusColour.draft}`}>
+                {o.status ? (o.status.replace(/_/g, ' ').charAt(0).toUpperCase() + o.status.replace(/_/g, ' ').slice(1).toLowerCase()) : ''}
               </span>
             </TableCell>
             <TableCell className="text-right font-medium">{formatCurrency(o.totalAmount)}</TableCell>

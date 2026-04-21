@@ -19,12 +19,12 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span 
       className={cn(
-        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border uppercase tracking-wider transition-colors",
+        "inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border tracking-wide transition-colors",
         currentStyle,
         className
       )}
     >
-      {status}
+      {status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()}
     </span>
   );
 }

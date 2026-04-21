@@ -218,7 +218,7 @@ export default function Customers() {
               </div>
 
               <div className="grid gap-2 mt-1">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Primary Contact</h4>
+                <h4 className="text-sm font-semibold text-muted-foreground tracking-wide">Primary Contact</h4>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -244,7 +244,7 @@ export default function Customers() {
               </div>
 
               <div className="grid gap-2 mt-2">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Address</h4>
+                <h4 className="text-sm font-semibold text-muted-foreground tracking-wide">Address</h4>
               </div>
               
               <div className="grid gap-2">
@@ -268,7 +268,7 @@ export default function Customers() {
               </div>
 
               <div className="grid gap-2 mt-2">
-                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Shipping</h4>
+                <h4 className="text-sm font-semibold text-muted-foreground tracking-wide">Shipping</h4>
               </div>
 
               <div className="grid gap-2">
