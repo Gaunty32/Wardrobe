@@ -35,19 +35,19 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         </div>
       )}
       {/* Top nav */}
-      <header className="h-20 border-b bg-card shadow-sm sticky top-0 z-40 flex items-center px-6 gap-4">
+      <header className="h-28 border-b bg-card shadow-sm sticky top-0 z-40 flex items-center px-6 gap-4">
         <div className="flex items-center gap-4 flex-1 min-w-0">
           {user?.customer?.logo_url ? (
             <img
               src={user.customer.logo_url}
               alt={user.customer.name}
-              className="h-14 w-auto max-w-[200px] object-contain shrink-0"
+              className="h-24 w-auto max-w-[400px] object-contain shrink-0"
             />
           ) : (
-            <img src={logo} alt="Select Branding Solutions" className="h-12 w-auto shrink-0" />
+            <img src={logo} alt="Select Branding Solutions" className="h-20 w-auto shrink-0" />
           )}
           {user?.customer?.name && (
-            <span className="text-base font-medium text-muted-foreground truncate hidden sm:block border-l pl-4">
+            <span className="text-base font-medium text-muted-foreground truncate hidden sm:block">
               {user.customer.name}
             </span>
           )}
