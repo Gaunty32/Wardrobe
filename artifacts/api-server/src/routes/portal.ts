@@ -495,7 +495,14 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
       cfi.unit_price,
       cfi.special_price,
       cfi.role_id,
-      cr.name AS role_name
+      cr.name AS role_name,
+      (SELECT pv.image_url
+         FROM product_variants pv
+        WHERE pv.product_id = cfi.product_id
+          AND lower(pv.colour) = lower(cfi.colour)
+          AND pv.image_url IS NOT NULL
+        LIMIT 1
+      ) AS variant_image_url
     FROM customer_finished_items cfi
     LEFT JOIN customer_finishes  cf  ON cf.id = cfi.finish_id
     LEFT JOIN products           p   ON p.id = cfi.product_id

@@ -326,33 +326,38 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
             <div key={group.finish_id}>
               {/* ── Finish group header ─────────────────────────────────── */}
               <div className="mb-3">
-                <div className="flex flex-wrap items-center gap-3 mb-1.5">
-                  {procs.filter(p => p.process_image_url).map((p: any) => (
-                    <img
-                      key={p.process_id}
-                      src={p.process_image_url}
-                      alt={p.item_finish_name}
-                      className="h-10 w-10 rounded-md object-contain border bg-white"
-                    />
-                  ))}
-                  <div>
-                    <h3 className="font-bold text-base leading-tight">
-                      {group.finish_name ?? "Standard Garments"}
-                    </h3>
-                    {procs.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                        {procs.map((p: any) => (
-                          <span key={p.process_id} className="flex items-center gap-1 text-xs text-muted-foreground">
+                <h3 className="font-bold text-base mb-2">
+                  {group.finish_name ?? "Standard Garments"}
+                </h3>
+                {procs.length > 0 && (
+                  <div className="flex flex-wrap gap-3 mb-2">
+                    {procs.map((p: any) => (
+                      <div key={p.process_id} className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 shadow-sm">
+                        {p.process_image_url ? (
+                          <img
+                            src={p.process_image_url}
+                            alt={p.item_finish_name}
+                            className="h-10 w-10 rounded object-contain bg-white border shrink-0"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
+                            <Shirt className="w-5 h-5 text-muted-foreground/40" />
+                          </div>
+                        )}
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-0.5">
                             {p.process_type && <ProcessBadgeInline type={p.process_type} />}
-                            <span>{p.item_finish_name}</span>
-                            {p.placement && <span className="opacity-60">· {p.placement}</span>}
-                          </span>
-                        ))}
+                          </div>
+                          <p className="text-xs font-medium leading-tight">{p.item_finish_name}</p>
+                          {p.placement && (
+                            <p className="text-[10px] text-muted-foreground">{p.placement}</p>
+                          )}
+                        </div>
                       </div>
-                    )}
+                    ))}
                   </div>
-                </div>
-                <div className="h-px bg-border mt-2" />
+                )}
+                <div className="h-px bg-border" />
               </div>
 
               {/* ── Item cards ─────────────────────────────────────────── */}
@@ -385,11 +390,11 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                   return (
                     <Card key={i} className="overflow-hidden">
                       <div className="flex gap-0">
-                        {/* Product image */}
+                        {/* Product image — prefer variant colour image */}
                         <div className="shrink-0 w-20 sm:w-24 bg-muted/30 border-r flex items-center justify-center">
-                          {wi.product_image_url ? (
+                          {(wi.variant_image_url ?? wi.product_image_url) ? (
                             <img
-                              src={wi.product_image_url}
+                              src={wi.variant_image_url ?? wi.product_image_url}
                               alt={wi.product_name ?? wi.name}
                               className="w-full h-full object-cover aspect-square"
                             />
@@ -403,10 +408,15 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                           {/* Name + price */}
                           <div className="flex items-start justify-between gap-2 mb-3">
                             <div className="min-w-0">
-                              <p className="font-semibold text-sm leading-snug truncate">
+                              <p className="font-semibold text-sm leading-snug">
                                 {wi.product_name ?? wi.name}
                               </p>
-                              <p className="text-xs text-muted-foreground">
+                              {wi.product_sku && (
+                                <p className="text-[11px] font-mono text-muted-foreground/70 leading-tight">
+                                  {wi.product_sku}
+                                </p>
+                              )}
+                              <p className="text-xs text-muted-foreground mt-0.5">
                                 {[wi.colour, wi.role_name].filter(Boolean).join(" · ")}
                               </p>
                             </div>
@@ -450,33 +460,32 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                             {state.sel && (
                               <>
                                 {/* Size */}
-                                <div className="flex items-center gap-2">
-                                  <Label className="text-xs font-medium text-muted-foreground shrink-0">Size:</Label>
-                                  {availSizes.length > 0 ? (
-                                    <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
-                                      <SelectTrigger className="h-8 text-sm w-28">
-                                        <SelectValue placeholder="Pick size" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {availSizes.map(s => (
-                                          <SelectItem key={s} value={s}>
-                                            {s}
-                                            {lastSize && s === lastSize && (
-                                              <span className="ml-1.5 text-[10px] text-emerald-600 font-semibold">last</span>
-                                            )}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <Input
-                                      className="h-8 text-sm w-24"
-                                      placeholder="e.g. M"
-                                      value={state.size}
-                                      onChange={e => setItemState(key, { size: e.target.value })}
-                                    />
-                                  )}
-                                </div>
+                                {(() => {
+                                  const FALLBACK_SIZES = ["XS","S","M","L","XL","2XL","3XL","4XL","One Size"];
+                                  const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
+                                  return (
+                                    <div className="flex items-center gap-2">
+                                      <Label className="text-xs font-medium text-muted-foreground shrink-0">Size:</Label>
+                                      <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
+                                        <SelectTrigger className="h-8 text-sm w-28">
+                                          <SelectValue placeholder="Pick size" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {sizeOptions.map(s => (
+                                            <SelectItem key={s} value={s}>
+                                              <span className="flex items-center gap-1.5">
+                                                {s}
+                                                {lastSize && s === lastSize && (
+                                                  <span className="text-[10px] text-emerald-600 font-semibold">last</span>
+                                                )}
+                                              </span>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  );
+                                })()}
 
                                 {/* Qty */}
                                 <div className="flex items-center border rounded-md h-8">
