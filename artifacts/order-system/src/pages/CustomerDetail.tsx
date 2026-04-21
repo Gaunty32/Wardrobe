@@ -1608,6 +1608,9 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [roleFilter, setRoleFilter] = useState<number | null | "all">("all");
   const [variantColours, setVariantColours] = useState<string[]>([]);
   const [variantSizes, setVariantSizes] = useState<string[]>([]);
+  const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", specialPrice: "", stockQuantity: "0", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
@@ -1646,7 +1649,21 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     onError: (e: any) => toast({ title: "Error", description: e.message || "Could not duplicate", variant: "destructive" }),
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setOpen(true); };
+  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setSelectedColours([]); setSelectedSizes([]); setOpen(true); };
+
+  const toggleColour = (col: string) => {
+    setSelectedColours(prev => {
+      const next = prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col];
+      if (next.length > 0 && selectedSizes.length === 0 && variantSizes.length > 0) {
+        setSelectedSizes(variantSizes);
+      }
+      return next;
+    });
+  };
+
+  const toggleSize = (sz: string) => {
+    setSelectedSizes(prev => prev.includes(sz) ? prev.filter(s => s !== sz) : [...prev, sz]);
+  };
   const openEdit = (item: FinishedItem) => {
     setForm({
       name: item.name,
@@ -1664,6 +1681,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setProductSearchOpen(false);
     setVariantColours([]);
     setVariantSizes([]);
+    setSelectedColours([]);
+    setSelectedSizes([]);
     // Load variant colours and sizes (also from attributes for products without size variants)
     Promise.all([
       apiFetch<any[]>(`/products/${item.productId}/variants`),
@@ -1692,6 +1711,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "" }));
     setVariantColours([]);
     setVariantSizes([]);
+    setSelectedColours([]);
+    setSelectedSizes([]);
     Promise.all([
       apiFetch<any[]>(`/products/${prod.id}/variants`),
       apiFetch<any[]>(`/products/${prod.id}/attributes`),
@@ -1716,20 +1737,50 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.name || !form.productId || !form.unitPrice) return;
-    save.mutate({
+    const base = {
       name: form.name,
       roleId: form.roleId || null,
       productId: form.productId,
       finishId: form.finishId || null,
-      colour: form.colour || null,
-      size: form.size || null,
       unitPrice: parseFloat(form.unitPrice),
       specialPrice: form.specialPrice ? parseFloat(form.specialPrice) : null,
       stockQuantity: parseInt(form.stockQuantity, 10) || 0,
       notes: form.notes || null,
-    });
+    };
+
+    if (editing) {
+      save.mutate({ ...base, colour: form.colour || null, size: form.size || null });
+      return;
+    }
+
+    const colours = selectedColours.length > 0 ? selectedColours : [null as string | null];
+    const sizes = selectedSizes.length > 0 ? selectedSizes : [null as string | null];
+    const combos = colours.flatMap(col => sizes.map(sz => ({ colour: col, size: sz })));
+
+    if (combos.length === 1) {
+      save.mutate({ ...base, colour: combos[0].colour, size: combos[0].size });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await Promise.all(combos.map(({ colour, size }) =>
+        apiFetch(`/customers/${customerId}/finished-items`, {
+          method: "POST",
+          body: JSON.stringify({ ...base, colour, size }),
+        })
+      ));
+      inv();
+      toast({ title: `${combos.length} items added` });
+      setOpen(false);
+      setEditing(null);
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message || "Could not save items", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filteredItems = items?.filter(item => {
