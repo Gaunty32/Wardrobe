@@ -905,17 +905,49 @@ function EnquiryConfirmStep({ enquiryRef }: { enquiryRef: string }) {
 
 // ─── Step 3: Review & Submit ─────────────────────────────────────────────────
 
+const SHIPPING_OPTIONS = [
+  {
+    id: "free_local",
+    label: "Free Local Delivery",
+    sublabel: "LS & BD postcodes · delivered Tuesdays & Fridays",
+    cost: 0,
+  },
+  {
+    id: "dpd_next_day",
+    label: "Next Day DPD",
+    sublabel: "Tracked courier — delivered next working day",
+    cost: 8.50,
+  },
+  {
+    id: "warehouse_collection",
+    label: "Warehouse Collection",
+    sublabel: "Collect from our warehouse, LS13",
+    cost: 0,
+  },
+  {
+    id: "office_collection",
+    label: "Office Collection",
+    sublabel: "Collect from our office, BD10",
+    cost: 0,
+  },
+] as const;
+
 function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
-  onSubmit: (data: { requiredDate: string; notes: string }) => void;
+  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number }) => void;
   submitting: boolean;
   portalRole: string;
 }) {
   const [requiredDate, setRequiredDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [shippingId, setShippingId] = useState<string>("");
 
-  const total = basket.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const selectedShipping = SHIPPING_OPTIONS.find(o => o.id === shippingId) ?? null;
+  const shippingCost = selectedShipping?.cost ?? 0;
+
+  const itemsTotal = basket.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const orderTotal = itemsTotal + shippingCost;
 
   const updateQty = (idx: number, delta: number) => {
     setBasket(b => b.map((item, i) => i === idx ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item));
@@ -969,12 +1001,59 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
               </TableBody>
             </Table>
           </div>
-          <div className="border-t px-5 py-3 flex justify-end gap-6">
-            <span className="text-muted-foreground text-sm">Order total</span>
-            <span className="font-bold">{formatCurrency(total)}</span>
+          <div className="border-t px-5 py-3 space-y-1.5">
+            <div className="flex justify-end gap-6">
+              <span className="text-muted-foreground text-sm">Items subtotal</span>
+              <span className="text-sm font-medium w-20 text-right">{formatCurrency(itemsTotal)}</span>
+            </div>
+            {shippingCost > 0 && (
+              <div className="flex justify-end gap-6">
+                <span className="text-muted-foreground text-sm">{selectedShipping?.label}</span>
+                <span className="text-sm font-medium w-20 text-right">{formatCurrency(shippingCost)}</span>
+              </div>
+            )}
+            <div className="flex justify-end gap-6 pt-1 border-t">
+              <span className="text-muted-foreground text-sm font-semibold">Order total</span>
+              <span className="font-bold w-20 text-right">{formatCurrency(orderTotal)}</span>
+            </div>
+            <p className="text-right text-[11px] text-muted-foreground">All prices exclude VAT</p>
           </div>
         </CardContent>
       </Card>
+
+      {/* Shipping / Collection options */}
+      <div className="mb-5">
+        <Label className="text-sm font-semibold mb-3 block">Delivery / Collection</Label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {SHIPPING_OPTIONS.map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setShippingId(opt.id)}
+              className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
+                shippingId === opt.id
+                  ? "border-primary bg-primary/5 ring-1 ring-primary"
+                  : "border-border hover:border-muted-foreground/40 hover:bg-muted/30"
+              }`}
+            >
+              <div className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center ${
+                shippingId === opt.id ? "border-primary" : "border-muted-foreground/40"
+              }`}>
+                {shippingId === opt.id && <div className="h-2 w-2 rounded-full bg-primary" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium leading-tight">{opt.label}</span>
+                  <span className="text-sm font-semibold shrink-0 text-primary">
+                    {opt.cost === 0 ? "Free" : `${formatCurrency(opt.cost)} + VAT`}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{opt.sublabel}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="space-y-1.5">
@@ -994,11 +1073,18 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
       </div>
 
       <div className="flex flex-col gap-1">
-        <Button onClick={() => onSubmit({ requiredDate, notes })} disabled={submitting || basket.length === 0} className="w-full sm:w-auto">
+        <Button
+          onClick={() => onSubmit({ requiredDate, notes, shippingOption: shippingId, shippingCost })}
+          disabled={submitting || basket.length === 0 || !shippingId}
+          className="w-full sm:w-auto"
+        >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
           {portalRole === "manager" ? "Submit order to SBS" : "Save for manager review"}
         </Button>
-        {portalRole !== "manager" && (
+        {!shippingId && (
+          <p className="text-xs text-amber-600">Please select a delivery or collection option above.</p>
+        )}
+        {portalRole !== "manager" && shippingId && (
           <p className="text-xs text-muted-foreground">Your manager will review and submit this order to SBS.</p>
         )}
       </div>
@@ -1049,12 +1135,14 @@ export default function NewOrder() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (data: { requiredDate: string; notes: string }) =>
+    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number }) =>
       apiFetch("/portal/orders", {
         method: "POST",
         body: JSON.stringify({
           requiredDate: data.requiredDate || undefined,
           portalNotes: data.notes || undefined,
+          shippingOption: data.shippingOption || undefined,
+          shippingCost: data.shippingCost,
           items: basket.map(i => ({
             productId: i.productId,
             productName: i.productName,

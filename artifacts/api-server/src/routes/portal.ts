@@ -319,6 +319,8 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     notes: z.string().optional(),
     requiredDate: z.string().optional(),
     portalNotes: z.string().optional(),
+    shippingOption: z.string().optional(),
+    shippingCost: z.number().nonnegative().optional(),
     items: z.array(z.object({
       productId: z.number().nullable().optional(),
       productName: z.string().min(1),
@@ -339,7 +341,8 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const num = parseInt((countRow.rows[0] as any).cnt, 10) + 1;
   const orderNumber = `P${String(num).padStart(5, "0")}`;
 
-  const totalAmount = body.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+  const itemsTotal = body.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+  const totalAmount = itemsTotal + (body.shippingCost ?? 0);
 
   // Get customer name
   const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
@@ -351,7 +354,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
 
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method)
     VALUES (
       ${orderNumber},
       ${customerId},
@@ -363,7 +366,8 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${totalAmount.toFixed(2)},
       ${body.notes ?? null},
       now(),
-      ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null}
+      ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null},
+      ${body.shippingOption ?? null}
     )
     RETURNING id, order_number
   `);
