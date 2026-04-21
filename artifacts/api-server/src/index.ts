@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { initScheduler } from "./services/scheduler";
+import { initScheduler, normalizeCustomerCasing } from "./services/scheduler";
 import { runStartupMigrations } from "./services/startup-migrations";
 
 const rawPort = process.env["PORT"];
@@ -35,5 +35,11 @@ app.listen(port, async (err) => {
     await initScheduler();
   } catch (e) {
     logger.warn({ err: e }, "Scheduler init failed — will retry when settings are saved");
+  }
+
+  try {
+    await normalizeCustomerCasing();
+  } catch (e) {
+    logger.warn({ err: e }, "Customer casing normalisation failed on startup");
   }
 });

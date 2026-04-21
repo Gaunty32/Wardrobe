@@ -106,6 +106,60 @@ export async function createCheckInReminders(): Promise<{ created: number }> {
   return { created };
 }
 
+// ─── Customer data normalisation ──────────────────────────────────────────────
+
+/**
+ * Converts all-caps customer text fields to proper title case / lowercase
+ * using PostgreSQL's built-in initcap() and lower() functions.
+ * Only touches fields that are detectably all-uppercase (have letters and
+ * equal their own upper() value).
+ */
+export async function normalizeCustomerCasing(): Promise<{ updated: number }> {
+  const result = await db.execute<{ count: string }>(sql`
+    WITH updated AS (
+      UPDATE customers SET
+        name             = CASE WHEN name ~ '[A-Za-z]' AND name = upper(name)
+                                THEN initcap(name) ELSE name END,
+        contact_first_name = CASE WHEN contact_first_name IS NOT NULL
+                                       AND contact_first_name ~ '[A-Za-z]'
+                                       AND contact_first_name = upper(contact_first_name)
+                                  THEN initcap(contact_first_name) ELSE contact_first_name END,
+        contact_last_name  = CASE WHEN contact_last_name IS NOT NULL
+                                       AND contact_last_name ~ '[A-Za-z]'
+                                       AND contact_last_name = upper(contact_last_name)
+                                  THEN initcap(contact_last_name) ELSE contact_last_name END,
+        email            = CASE WHEN email IS NOT NULL THEN lower(email) ELSE email END,
+        address          = CASE WHEN address IS NOT NULL
+                                     AND address ~ '[A-Za-z]'
+                                     AND address = upper(address)
+                                THEN initcap(address) ELSE address END,
+        city             = CASE WHEN city IS NOT NULL
+                                     AND city ~ '[A-Za-z]'
+                                     AND city = upper(city)
+                                THEN initcap(city) ELSE city END,
+        state            = CASE WHEN state IS NOT NULL
+                                     AND state ~ '[A-Za-z]'
+                                     AND state = upper(state)
+                                THEN initcap(state) ELSE state END
+      RETURNING 1
+    )
+    SELECT count(*)::text AS count FROM updated
+  `);
+  const updated = parseInt(result.rows[0]?.count ?? "0", 10);
+  console.log(`[normalise] Updated ${updated} customer record(s)`);
+  return { updated };
+}
+
+// Run customer casing normalisation every Sunday at 3am
+schedule("0 3 * * 0", async () => {
+  console.log("[normalise] Running weekly customer casing normalisation");
+  try {
+    await normalizeCustomerCasing();
+  } catch (err) {
+    console.error("[normalise] Normalisation job failed:", err);
+  }
+});
+
 // Run check-in reminders every day at 9am
 schedule("0 9 * * *", async () => {
   console.log("[reminders] Running daily customer check-in check");

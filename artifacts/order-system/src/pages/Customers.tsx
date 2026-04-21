@@ -61,14 +61,14 @@ export default function Customers() {
 
   const openEditDialog = (customer: Customer) => {
     setFormData({
-      name: customer.name,
-      contactFirstName: customer.contactFirstName || "",
-      contactLastName: customer.contactLastName || "",
-      email: customer.email || "",
+      name: toTitleCase(customer.name),
+      contactFirstName: toTitleCase(customer.contactFirstName || ""),
+      contactLastName: toTitleCase(customer.contactLastName || ""),
+      email: (customer.email || "").toLowerCase(),
       phone: customer.phone || "",
-      address: customer.address || "",
-      city: customer.city || "",
-      state: customer.state || "",
+      address: toTitleCase(customer.address || ""),
+      city: toTitleCase(customer.city || ""),
+      state: toTitleCase(customer.state || ""),
       postcode: customer.postcode || "",
       notes: customer.notes || "",
       defaultShippingService: (customer as any).defaultShippingService || "",
