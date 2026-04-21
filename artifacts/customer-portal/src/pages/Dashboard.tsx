@@ -397,6 +397,12 @@ export default function Dashboard() {
                         <span>Required {formatDate(order.required_date)}</span>
                       </>
                     )}
+                    {order.po_number && (
+                      <>
+                        <span className="text-border">·</span>
+                        <span className="font-medium text-foreground/70">PO: {order.po_number}</span>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">

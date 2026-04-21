@@ -1,13 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
+import { useState } from "react";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, AlertCircle, Hash, Pencil, Check, X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 function PortalStatusBadge({ status, portalStatus }: { status: string; portalStatus?: string }) {
   if (portalStatus === "pending" || status === "portal_pending") {
@@ -27,11 +30,28 @@ function PortalStatusBadge({ status, portalStatus }: { status: string; portalSta
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const [editingPo, setEditingPo] = useState(false);
+  const [poInput, setPoInput] = useState("");
 
   const { data: order, isLoading, error } = useQuery<any>({
     queryKey: ["portal-order", id],
     queryFn: () => apiFetch(`/portal/orders/${id}`),
     enabled: !!id,
+  });
+
+  const poMutation = useMutation({
+    mutationFn: (poNumber: string) =>
+      apiFetch(`/portal/orders/${id}/po`, { method: "PATCH", body: JSON.stringify({ poNumber }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-order", id] });
+      qc.invalidateQueries({ queryKey: ["portal-orders"] });
+      setEditingPo(false);
+      toast({ title: "PO number saved" });
+    },
+    onError: () => toast({ title: "Failed to save PO number", variant: "destructive" }),
   });
 
   if (isLoading) {
@@ -69,6 +89,43 @@ export default function OrderDetailPage() {
         <div>
           <h1 className="text-2xl font-bold text-primary">{order.order_number}</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Placed {formatDate(order.order_date)}</p>
+          {/* PO Number */}
+          <div className="flex items-center gap-2 mt-2">
+            <Hash className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            {editingPo ? (
+              <form
+                className="flex items-center gap-1.5"
+                onSubmit={e => { e.preventDefault(); poMutation.mutate(poInput); }}
+              >
+                <Input
+                  autoFocus
+                  value={poInput}
+                  onChange={e => setPoInput(e.target.value)}
+                  placeholder="Enter PO number"
+                  className="h-7 text-sm w-48"
+                  maxLength={100}
+                />
+                <Button type="submit" size="icon" className="h-7 w-7" disabled={poMutation.isPending}>
+                  <Check className="w-3.5 h-3.5" />
+                </Button>
+                <Button type="button" size="icon" variant="ghost" className="h-7 w-7"
+                  onClick={() => setEditingPo(false)}>
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </form>
+            ) : (
+              <button
+                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground group"
+                onClick={() => { setPoInput(order.po_number ?? ""); setEditingPo(true); }}
+              >
+                {order.po_number
+                  ? <span className="font-medium text-foreground">PO: {order.po_number}</span>
+                  : <span className="italic">Add PO number</span>
+                }
+                <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+              </button>
+            )}
+          </div>
         </div>
         <PortalStatusBadge status={order.status} portalStatus={order.portal_status} />
       </div>

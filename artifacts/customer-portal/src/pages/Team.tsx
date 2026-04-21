@@ -22,9 +22,17 @@ import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
 
 const ROLE_LABELS: Record<string, string> = {
-  manager: "Manager",
-  dept_manager: "Dept Manager",
-  member: "Member",
+  manager: "Admin",
+  dept_manager: "Manager",
+  member: "User",
+  invited: "Invited",
+  inactive: "Inactive",
+};
+
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  manager: "Full access — add team members, make amendments, place and approve orders",
+  dept_manager: "Place orders for their team — orders are held for Admin approval",
+  member: "Place orders for themselves only — orders are held for Admin approval",
 };
 
 function RoleBadge({ role }: { role: string }) {
@@ -32,6 +40,8 @@ function RoleBadge({ role }: { role: string }) {
     manager: "bg-purple-100 text-purple-700 border-purple-200",
     dept_manager: "bg-blue-100 text-blue-700 border-blue-200",
     member: "bg-slate-100 text-slate-600 border-slate-200",
+    invited: "bg-amber-100 text-amber-700 border-amber-200",
+    inactive: "bg-muted text-muted-foreground border-border",
   };
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${colours[role] ?? colours.member}`}>
@@ -385,13 +395,13 @@ function UsersTab() {
                 onValueChange={(v) => roleMutation.mutate({ id: u.id, role: v })}
                 disabled={u.status === "inactive"}
               >
-                <SelectTrigger className="h-7 text-xs w-36 shrink-0">
+                <SelectTrigger className="h-7 text-xs w-28 shrink-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="member">Member</SelectItem>
-                  <SelectItem value="dept_manager">Dept Manager</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="member">User</SelectItem>
+                  <SelectItem value="dept_manager">Manager</SelectItem>
+                  <SelectItem value="manager">Admin</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -446,18 +456,25 @@ function UsersTab() {
                   placeholder="colleague@company.com"
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label>Portal role</Label>
-                <Select value={inviteRole} onValueChange={setInviteRole}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">Member — can place and view own orders</SelectItem>
-                    <SelectItem value="dept_manager">Dept Manager — can approve team orders</SelectItem>
-                    <SelectItem value="manager">Manager — full access inc. team management</SelectItem>
-                  </SelectContent>
-                </Select>
+                {(["manager", "dept_manager", "member"] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setInviteRole(r)}
+                    className={`w-full text-left rounded-lg border px-4 py-3 transition-colors ${
+                      inviteRole === r
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/40 hover:bg-muted/30"
+                    }`}
+                  >
+                    <p className={`font-semibold text-sm ${inviteRole === r ? "text-primary" : ""}`}>
+                      {ROLE_LABELS[r]}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{ROLE_DESCRIPTIONS[r]}</p>
+                  </button>
+                ))}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>

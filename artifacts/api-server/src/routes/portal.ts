@@ -258,6 +258,7 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
   const customerId = (req as any).portalCustomerId;
   const rows = await db.execute(sql`
     SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
+           po_number,
            (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
     FROM orders
     WHERE customer_id = ${customerId}
@@ -284,6 +285,25 @@ router.get("/portal/orders/:id", portalAuth, async (req: Request, res: Response)
     SELECT * FROM order_items WHERE order_id = ${orderId} ORDER BY id
   `);
   res.json({ ...order, items: itemRows.rows });
+});
+
+// ─── portal: update PO number on an order ────────────────────────────────────
+
+router.patch("/portal/orders/:id/po", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const orderId = parseInt(req.params.id, 10);
+  if (isNaN(orderId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({ poNumber: z.string().max(100) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const rows = await db.execute(sql`
+    UPDATE orders SET po_number = ${body.data.poNumber || null}, updated_at = now()
+    WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal'
+    RETURNING id, po_number
+  `);
+  if (rows.rows.length === 0) { res.status(404).json({ error: "Not found" }); return; }
+  res.json(rows.rows[0]);
 });
 
 // ─── portal: create order ────────────────────────────────────────────────────
