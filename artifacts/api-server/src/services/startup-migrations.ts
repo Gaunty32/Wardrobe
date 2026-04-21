@@ -18,6 +18,7 @@ export async function runStartupMigrations(): Promise<void> {
 
   await db.execute(sql`
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS xero_contact_id text;
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS logo_url text;
     ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS xero_contact_id text;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_id text;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_status text;

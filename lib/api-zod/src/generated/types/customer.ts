@@ -27,6 +27,8 @@ export interface Customer {
   postcode: string | null;
   /** @nullable */
   notes: string | null;
+  /** @nullable */
+  logoUrl: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

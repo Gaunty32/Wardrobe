@@ -14,6 +14,7 @@ export const customersTable = pgTable("customers", {
   state: text("state"),
   postcode: text("postcode"),
   notes: text("notes"),
+  logoUrl: text("logo_url"),
   xeroContactId: text("xero_contact_id"),
   stripeCustomerId: text("stripe_customer_id"),
   defaultShippingService: text("default_shipping_service"),

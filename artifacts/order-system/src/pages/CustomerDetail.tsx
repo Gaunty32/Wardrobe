@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
@@ -2137,6 +2137,31 @@ export default function CustomerDetail() {
     retry: false,
   });
 
+  const queryClient = useQueryClient();
+  const [logoUrl, setLogoUrl] = useState<string>("");
+  const [logoSaving, setLogoSaving] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    setLogoUrl((customer as any)?.logoUrl || "");
+  }, [customer]);
+
+  const saveLogo = async () => {
+    setLogoSaving(true);
+    try {
+      await apiFetch(`/customers/${customerId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ logoUrl: logoUrl.trim() || null }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+      toast({ title: "Logo saved" });
+    } catch {
+      toast({ title: "Failed to save logo", variant: "destructive" });
+    } finally {
+      setLogoSaving(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -2167,7 +2192,15 @@ export default function CustomerDetail() {
           </Button>
           <div className="flex-1">
             <div className="flex items-center gap-3">
-              <Building2 className="w-6 h-6 text-muted-foreground" />
+              {(customer as any).logoUrl ? (
+                <img
+                  src={(customer as any).logoUrl}
+                  alt={`${customer.name} logo`}
+                  className="h-10 w-auto max-w-[80px] object-contain rounded border border-border/40 bg-muted/10 p-0.5 shrink-0"
+                />
+              ) : (
+                <Building2 className="w-6 h-6 text-muted-foreground shrink-0" />
+              )}
               <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{customer.name}</h1>
             </div>
             <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
@@ -2178,6 +2211,24 @@ export default function CustomerDetail() {
               {customer.phone && <span>{customer.phone}</span>}
               {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
               {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+              <Input
+                value={logoUrl}
+                onChange={e => setLogoUrl(e.target.value)}
+                placeholder="Customer logo URL (https://...)"
+                className="h-7 text-xs w-72"
+              />
+              {logoUrl !== ((customer as any).logoUrl || "") && (
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={saveLogo} disabled={logoSaving}>
+                  {logoSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                  Save
+                </Button>
+              )}
+              {logoUrl && logoUrl === ((customer as any).logoUrl || "") && (
+                <span className="text-xs text-muted-foreground/60">Saved · shows on portal</span>
+              )}
             </div>
           </div>
         </div>

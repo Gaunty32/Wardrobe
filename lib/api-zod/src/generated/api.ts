@@ -100,6 +100,7 @@ export const UpdateCustomerBody = zod.object({
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
   defaultShippingService: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
 });
 
 export const UpdateCustomerResponse = zod.object({
@@ -115,6 +116,7 @@ export const UpdateCustomerResponse = zod.object({
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
   defaultShippingService: zod.string().nullable(),
+  logoUrl: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });

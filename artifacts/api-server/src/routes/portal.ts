@@ -194,7 +194,7 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
   const userId = (req as any).portalUserId;
   const isPreview = (req as any).portalIsPreview;
 
-  const custRows = await db.execute(sql`SELECT id, name FROM customers WHERE id = ${customerId}`);
+  const custRows = await db.execute(sql`SELECT id, name, logo_url FROM customers WHERE id = ${customerId}`);
   const customer = custRows.rows[0];
 
   if (isPreview) {
@@ -221,7 +221,7 @@ router.post("/portal/admin/preview/:customerId", async (req: Request, res: Respo
   const customerId = parseInt(req.params.customerId, 10);
   if (!customerId) { res.status(400).json({ error: "Invalid customer ID" }); return; }
 
-  const custRows = await db.execute(sql`SELECT id, name FROM customers WHERE id = ${customerId}`);
+  const custRows = await db.execute(sql`SELECT id, name, logo_url FROM customers WHERE id = ${customerId}`);
   if (!custRows.rows[0]) { res.status(404).json({ error: "Customer not found" }); return; }
 
   const token = signPreviewToken(customerId);

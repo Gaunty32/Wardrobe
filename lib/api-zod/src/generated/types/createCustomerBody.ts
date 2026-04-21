@@ -26,4 +26,6 @@ export interface CreateCustomerBody {
   postcode?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
 }
