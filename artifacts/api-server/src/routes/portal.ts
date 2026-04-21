@@ -339,7 +339,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   // Generate order number
   const countRow = await db.execute(sql`SELECT COUNT(*) as cnt FROM orders WHERE source = 'portal'`);
   const num = parseInt((countRow.rows[0] as any).cnt, 10) + 1;
-  const orderNumber = `P${String(num).padStart(5, "0")}`;
+  const orderNumber = `P${num}`;
 
   const itemsTotal = body.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const totalAmount = itemsTotal + (body.shippingCost ?? 0);
@@ -691,7 +691,7 @@ router.get("/portal/admin/pending-orders", async (req: Request, res: Response) =
            o.portal_notes, o.total_amount, o.order_date, o.required_date, o.notes,
            (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count
     FROM orders o
-    WHERE o.source = 'portal' AND o.portal_status = 'pending'
+    WHERE o.status = 'portal_pending'
     ORDER BY o.created_at DESC
   `);
   res.json(rows.rows);

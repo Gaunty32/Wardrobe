@@ -21,6 +21,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp } from "lucide-react";
+
 import { cn } from "@/lib/utils";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -286,10 +287,24 @@ export default function Orders() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {orders.map((order) => (
-                        <TableRow key={order.id} className="group hover:bg-muted/30 cursor-pointer" onClick={() => setLocation(`/orders/${order.id}`)}>
+                      {orders.map((order) => {
+                        const isPortalPending = order.status === "portal_pending";
+                        return (
+                        <TableRow
+                          key={order.id}
+                          className={cn(
+                            "group cursor-pointer",
+                            isPortalPending
+                              ? "bg-amber-50/60 hover:bg-amber-50 border-l-2 border-l-amber-400"
+                              : "hover:bg-muted/30"
+                          )}
+                          onClick={() => setLocation(`/orders/${order.id}`)}
+                        >
                           <TableCell>
-                            <span className="font-bold text-primary text-base tracking-wide">{order.orderNumber}</span>
+                            <div className="flex items-center gap-1.5">
+                              {isPortalPending && <Globe className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                              <span className={cn("font-bold text-base tracking-wide", isPortalPending ? "text-amber-700" : "text-primary")}>{order.orderNumber}</span>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <DueDateCell requiredDate={(order as any).requiredDate} />
@@ -308,7 +323,8 @@ export default function Orders() {
                             </Link>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>

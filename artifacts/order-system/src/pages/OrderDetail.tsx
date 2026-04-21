@@ -27,7 +27,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -309,6 +309,26 @@ export default function OrderDetail() {
       toast({ title: "Sent to Production", description: "Worksheet created in Pre-WIP." });
       setIsSendToProductionOpen(false);
       setProductionNotes("");
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const confirmPortalOrderMutation = useMutation({
+    mutationFn: () => apiFetch(`/portal/admin/orders/${order.id}/confirm`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey({ id: order.id }) });
+      queryClient.invalidateQueries({ queryKey: ["portal-pending-orders"] });
+      toast({ title: "Order confirmed", description: "Order moved to draft — ready to process." });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const rejectPortalOrderMutation = useMutation({
+    mutationFn: () => apiFetch(`/portal/admin/orders/${order.id}/reject`, { method: "POST", body: JSON.stringify({ reason: "" }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey({ id: order.id }) });
+      queryClient.invalidateQueries({ queryKey: ["portal-pending-orders"] });
+      toast({ title: "Order rejected", description: "Order has been cancelled." });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -630,6 +650,45 @@ export default function OrderDetail() {
           </div>
         </div>
 
+        {/* Portal order awaiting confirmation banner */}
+        {order.status === "portal_pending" && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
+              <Globe className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold text-amber-900 text-sm">Portal order awaiting confirmation</p>
+                <p className="text-amber-700 text-xs mt-0.5">
+                  This order was submitted via the customer portal. Review the items, then confirm or reject it below.
+                </p>
+                {(order as any).portalNotes && (
+                  <p className="text-amber-800 text-xs mt-1.5 italic">Customer note: "{(order as any).portalNotes}"</p>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5 border-red-300 text-red-700 hover:bg-red-50"
+                disabled={rejectPortalOrderMutation.isPending || confirmPortalOrderMutation.isPending}
+                onClick={() => rejectPortalOrderMutation.mutate()}
+              >
+                {rejectPortalOrderMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                Reject
+              </Button>
+              <Button
+                size="sm"
+                className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                disabled={confirmPortalOrderMutation.isPending || rejectPortalOrderMutation.isPending}
+                onClick={() => confirmPortalOrderMutation.mutate()}
+              >
+                {confirmPortalOrderMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Confirm Order
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-2 shadow-sm border-border/50 flex flex-col">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
@@ -638,7 +697,7 @@ export default function OrderDetail() {
                 <CardDescription>Products included in this order</CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {order.items && order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length > 0 && (
+                {order.status !== "portal_pending" && order.items && order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length > 0 && (
                   <Button size="sm" variant="outline" className="gap-1.5 border-green-400 text-green-700 hover:bg-green-50" onClick={() => setIsSendToProductionOpen(true)}>
                     <ClipboardList className="w-4 h-4" />
                     Send to Production ({order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length})
