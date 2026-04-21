@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import PortalLayout from "@/components/Layout";
@@ -291,6 +291,15 @@ export default function Dashboard() {
   // Computed once per render (consistent for the whole session)
   const welcome = useMemo(() => getWelcomeMessage(firstName), [firstName]);
 
+  // Fade banner out after 10 s, then remove from DOM after the 1 s transition
+  const [bannerFading, setBannerFading] = useState(false);
+  const [bannerGone, setBannerGone] = useState(false);
+  useEffect(() => {
+    const fade = setTimeout(() => setBannerFading(true), 10_000);
+    const gone = setTimeout(() => setBannerGone(true), 11_000);
+    return () => { clearTimeout(fade); clearTimeout(gone); };
+  }, []);
+
   const { data: orders = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-orders"],
     queryFn: () => apiFetch("/portal/orders"),
@@ -298,18 +307,22 @@ export default function Dashboard() {
 
   return (
     <PortalLayout>
-      {/* Welcome banner */}
-      <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 px-6 py-5 mb-6">
-        <div className="flex items-start gap-3">
-          <span className="text-3xl leading-none mt-0.5" role="img" aria-hidden>{welcome.emoji}</span>
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">{welcome.greeting}</h2>
-            <p className="text-muted-foreground text-sm mt-1 max-w-2xl leading-relaxed">
-              {welcome.body}
-            </p>
+      {/* Welcome banner — fades out after 10 s */}
+      {!bannerGone && (
+        <div
+          className={`rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 px-6 py-5 mb-6 transition-opacity duration-1000 ${bannerFading ? "opacity-0" : "opacity-100"}`}
+        >
+          <div className="flex items-start gap-3">
+            <span className="text-3xl leading-none mt-0.5" role="img" aria-hidden>{welcome.emoji}</span>
+            <div>
+              <h2 className="text-xl font-semibold text-foreground">{welcome.greeting}</h2>
+              <p className="text-muted-foreground text-sm mt-1 max-w-2xl leading-relaxed">
+                {welcome.body}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
