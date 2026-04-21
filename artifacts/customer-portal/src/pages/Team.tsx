@@ -98,10 +98,10 @@ function EmployeeForm({ initial, addresses, onSave, onCancel, saving }: {
           </Label>
           <Select value={form.deliveryAddressId} onValueChange={v => set("deliveryAddressId", v)}>
             <SelectTrigger>
-              <SelectValue placeholder="Use default / not assigned" />
+              <SelectValue placeholder="Account address (default)" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">Use default / not assigned</SelectItem>
+              <SelectItem value="none">Account address (default)</SelectItem>
               {addresses.map((a: any) => (
                 <SelectItem key={a.id} value={String(a.id)}>
                   {a.label} — {a.line1}{a.city ? `, ${a.city}` : ""}
@@ -110,7 +110,7 @@ function EmployeeForm({ initial, addresses, onSave, onCancel, saving }: {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Orders for this person will be sent to their assigned address.
+            If not set, orders default to the account address.
           </p>
         </div>
       )}
