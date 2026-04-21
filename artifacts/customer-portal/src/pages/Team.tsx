@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, Mail, Pencil, RotateCcw, ShieldCheck,
+  Plus, Loader2, Users, UserCheck, UserX, Mail, Pencil, RotateCcw, ShieldCheck, MapPin,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -42,8 +42,9 @@ function RoleBadge({ role }: { role: string }) {
 
 // ─── Employee section ─────────────────────────────────────────────────────────
 
-function EmployeeForm({ initial, onSave, onCancel, saving }: {
+function EmployeeForm({ initial, addresses, onSave, onCancel, saving }: {
   initial?: any;
+  addresses: any[];
   onSave: (data: any) => void;
   onCancel: () => void;
   saving: boolean;
@@ -55,6 +56,7 @@ function EmployeeForm({ initial, onSave, onCancel, saving }: {
     phone: initial?.phone ?? "",
     jobTitle: initial?.job_title ?? "",
     department: initial?.department ?? "",
+    deliveryAddressId: initial?.delivery_address_id ? String(initial.delivery_address_id) : "none",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -88,11 +90,38 @@ function EmployeeForm({ initial, onSave, onCancel, saving }: {
         <Label>Department</Label>
         <Input value={form.department} onChange={e => set("department", e.target.value)} />
       </div>
+      {addresses.length > 0 && (
+        <div className="space-y-1">
+          <Label className="flex items-center gap-1.5">
+            <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+            Delivery address
+          </Label>
+          <Select value={form.deliveryAddressId} onValueChange={v => set("deliveryAddressId", v)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Use default / not assigned" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Use default / not assigned</SelectItem>
+              {addresses.map((a: any) => (
+                <SelectItem key={a.id} value={String(a.id)}>
+                  {a.label} — {a.line1}{a.city ? `, ${a.city}` : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Orders for this person will be sent to their assigned address.
+          </p>
+        </div>
+      )}
       <DialogFooter className="pt-2">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
         <Button
           disabled={saving || !form.firstName.trim() || !form.lastName.trim()}
-          onClick={() => onSave(form)}
+          onClick={() => onSave({
+            ...form,
+            deliveryAddressId: form.deliveryAddressId === "none" ? null : parseInt(form.deliveryAddressId, 10),
+          })}
         >
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
           {initial ? "Save changes" : "Add employee"}
@@ -112,6 +141,11 @@ function EmployeesTab() {
   const { data: employees = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-team-employees", showInactive],
     queryFn: () => apiFetch(`/portal/team/employees?showInactive=${showInactive}`),
+  });
+
+  const { data: addresses = [] } = useQuery<any[]>({
+    queryKey: ["portal-addresses"],
+    queryFn: () => apiFetch("/portal/addresses"),
   });
 
   const addMutation = useMutation({
@@ -192,6 +226,14 @@ function EmployeesTab() {
                 <p className="text-xs text-muted-foreground truncate">
                   {[emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
                 </p>
+                {emp.delivery_address_label && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                    <MapPin className="w-3 h-3 shrink-0" />
+                    {emp.delivery_address_label}
+                    {emp.delivery_address_line1 && ` — ${emp.delivery_address_line1}`}
+                    {emp.delivery_address_city && `, ${emp.delivery_address_city}`}
+                  </p>
+                )}
               </div>
               {emp.role_name && (
                 <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>
@@ -226,6 +268,7 @@ function EmployeesTab() {
         <DialogContent>
           <DialogHeader><DialogTitle>Add employee</DialogTitle></DialogHeader>
           <EmployeeForm
+            addresses={addresses}
             onSave={(data) => addMutation.mutate(data)}
             onCancel={() => setAddOpen(false)}
             saving={addMutation.isPending}
@@ -240,6 +283,7 @@ function EmployeesTab() {
           {editTarget && (
             <EmployeeForm
               initial={editTarget}
+              addresses={addresses}
               onSave={(data) => editMutation.mutate({ id: editTarget.id, data })}
               onCancel={() => setEditTarget(null)}
               saving={editMutation.isPending}

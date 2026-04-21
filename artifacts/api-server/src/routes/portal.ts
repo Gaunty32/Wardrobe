@@ -634,6 +634,19 @@ router.get("/portal/invoices/:orderId/pdf", portalAuth, async (req: Request, res
   res.send(pdfBuffer);
 });
 
+// ─── portal: delivery addresses (read-only list) ─────────────────────────────
+
+router.get("/portal/addresses", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const rows = await db.execute(sql`
+    SELECT id, label, line1, line2, city, postcode, country, is_default
+    FROM customer_delivery_addresses
+    WHERE customer_id = ${customerId}
+    ORDER BY is_default DESC, label
+  `);
+  res.json(rows.rows);
+});
+
 // ─── portal: team — employees (manager only) ─────────────────────────────────
 
 router.get("/portal/team/employees", portalAuth, async (req: Request, res: Response) => {
@@ -646,9 +659,15 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
   const rows = await db.execute(sql`
     SELECT e.id, e.first_name, e.last_name, e.email, e.phone, e.job_title,
            e.department, e.notes, e.is_active,
-           cr.id as role_id, cr.name as role_name
+           cr.id as role_id, cr.name as role_name,
+           e.delivery_address_id,
+           da.label as delivery_address_label,
+           da.line1 as delivery_address_line1,
+           da.city  as delivery_address_city,
+           da.postcode as delivery_address_postcode
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
+    LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
     WHERE e.customer_id = ${customerId}
       ${showInactive ? sql`` : sql`AND e.is_active = true`}
     ORDER BY e.last_name, e.first_name
@@ -703,6 +722,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
     roleId: z.number().int().optional().nullable(),
     notes: z.string().optional().nullable(),
     isActive: z.boolean().optional(),
+    deliveryAddressId: z.number().int().optional().nullable(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
@@ -717,6 +737,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   if (d.roleId !== undefined) sets.push(`role_id = ${d.roleId === null ? "NULL" : d.roleId}`);
   if (d.notes !== undefined) sets.push(`notes = ${d.notes === null ? "NULL" : `'${d.notes.replace(/'/g, "''")}'`}`);
   if (d.isActive !== undefined) sets.push(`is_active = ${d.isActive}`);
+  if (d.deliveryAddressId !== undefined) sets.push(`delivery_address_id = ${d.deliveryAddressId === null ? "NULL" : d.deliveryAddressId}`);
 
   if (sets.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
 
