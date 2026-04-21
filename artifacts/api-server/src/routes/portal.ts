@@ -9,6 +9,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
+import { generateInvoicePDF } from "../services/email.js";
 
 const router: IRouter = Router();
 

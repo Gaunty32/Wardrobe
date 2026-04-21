@@ -1372,7 +1372,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                     if (href) window.open(href, "_blank", "noopener,noreferrer");
                   }}
                 >
-                  <Eye className="w-4 h-4" /> Open Customer Portal
+                  <Eye className="w-4 h-4" /> Open Portal Preview
                 </Button>
                 <div className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/40 px-3 py-2">
                   <span className="text-xs text-muted-foreground truncate flex-1 font-mono">{previewHref}</span>
