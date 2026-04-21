@@ -2190,41 +2190,24 @@ export default function CustomerDetail() {
           <Button variant="ghost" size="icon" className="mt-1 shrink-0" onClick={() => navigate("/customers")}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              {(customer as any).logoUrl ? (
-                <img
-                  src={(customer as any).logoUrl}
-                  alt={`${customer.name} logo`}
-                  className="h-10 w-auto max-w-[80px] object-contain rounded border border-border/40 bg-muted/10 p-0.5 shrink-0"
-                />
-              ) : (
-                <Building2 className="w-6 h-6 text-muted-foreground shrink-0" />
-              )}
-              <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{customer.name}</h1>
-            </div>
-            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
-              {(customer.contactFirstName || customer.contactLastName) && (
-                <span>Contact: {[customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' ')}</span>
-              )}
-              {customer.email && <span>{customer.email}</span>}
-              {customer.phone && <span>{customer.phone}</span>}
-              {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
-              {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
-            </div>
-            <div className="flex items-start gap-3 mt-3">
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt="Logo preview"
-                  className="h-10 w-auto max-w-[120px] object-contain rounded border border-border/40 bg-muted/10 p-0.5 shrink-0"
-                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                  onLoad={e => { (e.target as HTMLImageElement).style.display = ""; }}
-                />
-              ) : (
-                <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 mt-1.5" />
-              )}
-              <div className="flex items-center gap-2">
+          <div className="flex-1 flex items-start justify-between gap-6">
+            {/* Left: name + contact info + logo URL input */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3">
+                {!(customer as any).logoUrl && <Building2 className="w-6 h-6 text-muted-foreground shrink-0" />}
+                <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{customer.name}</h1>
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
+                {(customer.contactFirstName || customer.contactLastName) && (
+                  <span>Contact: {[customer.contactFirstName, customer.contactLastName].filter(Boolean).join(' ')}</span>
+                )}
+                {customer.email && <span>{customer.email}</span>}
+                {customer.phone && <span>{customer.phone}</span>}
+                {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
+                {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
                 <Input
                   value={logoUrl}
                   onChange={e => setLogoUrl(e.target.value)}
@@ -2241,6 +2224,25 @@ export default function CustomerDetail() {
                   <span className="text-xs text-muted-foreground/60">Saved · shows on portal</span>
                 )}
               </div>
+            </div>
+
+            {/* Right: large logo preview */}
+            <div className="shrink-0 flex flex-col items-center gap-1.5">
+              {logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt="Logo preview"
+                  className="h-28 w-auto max-w-[220px] object-contain rounded-xl border border-border/40 bg-muted/10 p-2 shadow-sm"
+                  onError={e => { (e.target as HTMLImageElement).style.opacity = "0.2"; }}
+                  onLoad={e => { (e.target as HTMLImageElement).style.opacity = "1"; }}
+                />
+              ) : (
+                <div className="h-28 w-40 rounded-xl border-2 border-dashed border-border/40 flex flex-col items-center justify-center gap-2 bg-muted/20">
+                  <ImageIcon className="w-8 h-8 text-muted-foreground/25" />
+                  <span className="text-xs text-muted-foreground/40">No logo</span>
+                </div>
+              )}
+              <span className="text-[10px] text-muted-foreground/40">Portal preview</span>
             </div>
           </div>
         </div>
