@@ -166,7 +166,8 @@ function ManagerReviewPanel() {
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { isManager } = useAuth();
+  const { isManager, user } = useAuth();
+  const firstName = (user as any)?.firstName ?? "there";
 
   const { data: orders = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-orders"],
@@ -175,6 +176,14 @@ export default function Dashboard() {
 
   return (
     <PortalLayout>
+      {/* Welcome banner */}
+      <div className="rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent border border-primary/20 px-6 py-5 mb-6">
+        <h2 className="text-xl font-semibold text-foreground">Hi {firstName} 👋</h2>
+        <p className="text-muted-foreground text-sm mt-1 max-w-xl">
+          Welcome to your own bespoke wardrobe — manage your team's branded clothing requirements all in one place.
+        </p>
+      </div>
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">My Orders</h1>

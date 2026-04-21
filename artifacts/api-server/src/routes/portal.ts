@@ -199,9 +199,12 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
   const customer = custRows.rows[0];
 
   if (isPreview) {
+    const contactRows = await db.execute(sql`SELECT contact_first_name FROM customers WHERE id = ${customerId}`);
+    const firstName = (contactRows.rows[0] as any)?.contact_first_name ?? "there";
     res.json({
       user: { id: 0, email: "staff-preview@sbs.internal", status: "active", portal_role: "manager" },
       customer,
+      firstName,
       isPreview: true,
     });
     return;
@@ -210,9 +213,28 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
   const userRows = await db.execute(sql`
     SELECT id, email, status, portal_role, last_login_at FROM customer_portal_users WHERE id = ${userId}
   `);
+  const portalUser = userRows.rows[0] as any;
+
+  // Try to find first name from matching employee record, otherwise parse from email
+  let firstName = "there";
+  if (portalUser?.email) {
+    const empRows = await db.execute(sql`
+      SELECT first_name FROM customer_employees
+      WHERE customer_id = ${customerId} AND lower(email) = lower(${portalUser.email})
+      LIMIT 1
+    `);
+    if (empRows.rows.length > 0 && (empRows.rows[0] as any).first_name) {
+      firstName = (empRows.rows[0] as any).first_name;
+    } else {
+      const emailPrefix = portalUser.email.split("@")[0].split(".")[0].split("_")[0];
+      firstName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1).toLowerCase();
+    }
+  }
+
   res.json({
-    user: userRows.rows[0],
+    user: portalUser,
     customer,
+    firstName,
   });
 });
 
@@ -581,6 +603,188 @@ router.get("/portal/invoices/:orderId/pdf", portalAuth, async (req: Request, res
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.setHeader("Content-Length", pdfBuffer.length);
   res.send(pdfBuffer);
+});
+
+// ─── portal: team — employees (manager only) ─────────────────────────────────
+
+router.get("/portal/team/employees", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const showInactive = req.query.showInactive === "true";
+
+  const rows = await db.execute(sql`
+    SELECT e.id, e.first_name, e.last_name, e.email, e.phone, e.job_title,
+           e.department, e.notes, e.is_active,
+           cr.id as role_id, cr.name as role_name
+    FROM customer_employees e
+    LEFT JOIN customer_roles cr ON cr.id = e.role_id
+    WHERE e.customer_id = ${customerId}
+      ${showInactive ? sql`` : sql`AND e.is_active = true`}
+    ORDER BY e.last_name, e.first_name
+  `);
+  res.json(rows.rows);
+});
+
+router.post("/portal/team/employees", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const body = z.object({
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    email: z.string().email().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    jobTitle: z.string().optional().nullable(),
+    department: z.string().optional().nullable(),
+    roleId: z.number().int().optional().nullable(),
+    notes: z.string().optional().nullable(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const d = body.data;
+  const rows = await db.execute(sql`
+    INSERT INTO customer_employees
+      (customer_id, first_name, last_name, email, phone, job_title, department, role_id, notes, is_active)
+    VALUES
+      (${customerId}, ${d.firstName}, ${d.lastName}, ${d.email ?? null}, ${d.phone ?? null},
+       ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.roleId ?? null}, ${d.notes ?? null}, true)
+    RETURNING *
+  `);
+  res.status(201).json(rows.rows[0]);
+});
+
+router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({
+    firstName: z.string().min(1).optional(),
+    lastName: z.string().min(1).optional(),
+    email: z.string().email().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    jobTitle: z.string().optional().nullable(),
+    department: z.string().optional().nullable(),
+    roleId: z.number().int().optional().nullable(),
+    notes: z.string().optional().nullable(),
+    isActive: z.boolean().optional(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const d = body.data;
+  const sets: string[] = [];
+  if (d.firstName !== undefined) sets.push(`first_name = '${d.firstName.replace(/'/g, "''")}'`);
+  if (d.lastName !== undefined) sets.push(`last_name = '${d.lastName.replace(/'/g, "''")}'`);
+  if (d.email !== undefined) sets.push(`email = ${d.email === null ? "NULL" : `'${d.email.replace(/'/g, "''")}'`}`);
+  if (d.phone !== undefined) sets.push(`phone = ${d.phone === null ? "NULL" : `'${d.phone.replace(/'/g, "''")}'`}`);
+  if (d.jobTitle !== undefined) sets.push(`job_title = ${d.jobTitle === null ? "NULL" : `'${d.jobTitle.replace(/'/g, "''")}'`}`);
+  if (d.department !== undefined) sets.push(`department = ${d.department === null ? "NULL" : `'${d.department.replace(/'/g, "''")}'`}`);
+  if (d.roleId !== undefined) sets.push(`role_id = ${d.roleId === null ? "NULL" : d.roleId}`);
+  if (d.notes !== undefined) sets.push(`notes = ${d.notes === null ? "NULL" : `'${d.notes.replace(/'/g, "''")}'`}`);
+  if (d.isActive !== undefined) sets.push(`is_active = ${d.isActive}`);
+
+  if (sets.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
+
+  const rows = await db.execute(sql`
+    UPDATE customer_employees SET ${sql.raw(sets.join(", "))}, updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+    RETURNING *
+  `);
+  if (rows.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
+  res.json(rows.rows[0]);
+});
+
+// ─── portal: team — portal users (manager only) ──────────────────────────────
+
+router.get("/portal/team/users", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const rows = await db.execute(sql`
+    SELECT id, email, status, portal_role, last_login_at, created_at
+    FROM customer_portal_users
+    WHERE customer_id = ${customerId}
+    ORDER BY created_at
+  `);
+  res.json(rows.rows);
+});
+
+router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const body = z.object({
+    email: z.string().email(),
+    portalRole: z.enum(["manager", "dept_manager", "member"]).default("member"),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { email, portalRole: role } = body.data;
+  const token = randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400_000);
+
+  try {
+    await db.execute(sql`
+      INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
+      VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${role})
+      ON CONFLICT (email) DO UPDATE SET
+        invite_token = ${token},
+        invite_expires_at = ${expires.toISOString()},
+        status = 'invited',
+        portal_role = ${role},
+        updated_at = now()
+    `);
+  } catch {
+    res.status(409).json({ error: "Email already registered" });
+    return;
+  }
+
+  const inviteUrl = `/customer-portal/accept-invite?token=${token}`;
+  res.json({ inviteUrl, token, email, portalRole: role, expiresAt: expires });
+});
+
+router.patch("/portal/team/users/:id/role", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({ role: z.enum(["manager", "dept_manager", "member"]) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  await db.execute(sql`
+    UPDATE customer_portal_users SET portal_role = ${body.data.role}, updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+  `);
+  res.json({ ok: true });
+});
+
+router.patch("/portal/team/users/:id/status", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({ status: z.enum(["active", "inactive"]) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  await db.execute(sql`
+    UPDATE customer_portal_users SET status = ${body.data.status}, updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+  `);
+  res.json({ ok: true });
 });
 
 export default router;

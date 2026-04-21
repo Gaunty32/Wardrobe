@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 type AuthUser = {
   user: { id: number; email: string; status: string; portal_role: string; last_login_at: string | null };
   customer: { id: number; name: string; logo_url?: string | null };
+  firstName?: string;
   isPreview?: boolean;
 };
 
