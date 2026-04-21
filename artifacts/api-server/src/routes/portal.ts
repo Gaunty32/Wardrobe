@@ -448,10 +448,26 @@ router.post("/portal/enquiries", portalAuth, async (req: Request, res: Response)
 
 router.get("/portal/products", portalAuth, async (req: Request, res: Response) => {
   const rows = await db.execute(sql`
-    SELECT p.id, p.name, p.sku, p.unit_price, p.image_url, p.category,
-           (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) as variant_count
+    SELECT p.id, p.name, p.sku, p.unit_price, p.image_url, p.category, p.description,
+           (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) as variant_count,
+           (SELECT json_agg(DISTINCT pv.colour ORDER BY pv.colour) FILTER (WHERE pv.colour IS NOT NULL)
+              FROM product_variants pv WHERE pv.product_id = p.id) as colours
     FROM products p
     ORDER BY p.category NULLS LAST, p.name
+  `);
+  res.json(rows.rows);
+});
+
+// ─── portal: product variants (no supplier data) ─────────────────────────────
+
+router.get("/portal/products/:id/variants", portalAuth, async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid product id" }); return; }
+  const rows = await db.execute(sql`
+    SELECT id, colour, size, price, image_url
+    FROM product_variants
+    WHERE product_id = ${id}
+    ORDER BY colour NULLS LAST, size
   `);
   res.json(rows.rows);
 });

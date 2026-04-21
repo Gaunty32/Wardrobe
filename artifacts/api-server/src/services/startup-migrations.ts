@@ -180,7 +180,7 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE phone IS NOT NULL
       AND phone != ''
       AND phone !~ '^0'
-      AND phone !~ '^\+'
+      AND phone !~ '^[+]'
       AND length(regexp_replace(phone, '[^0-9]', '', 'g')) BETWEEN 9 AND 11;
   `);
   await db.execute(sql`
@@ -189,7 +189,7 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE phone IS NOT NULL
       AND phone != ''
       AND phone !~ '^0'
-      AND phone !~ '^\+'
+      AND phone !~ '^[+]'
       AND length(regexp_replace(phone, '[^0-9]', '', 'g')) BETWEEN 9 AND 11;
   `);
 
