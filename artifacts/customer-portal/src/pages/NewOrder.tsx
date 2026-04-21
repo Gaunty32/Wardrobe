@@ -20,6 +20,7 @@ import {
 import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search, ChevronDown, ChevronUp,
+  User, Package, History, Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -88,19 +89,33 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
   return (
     <div>
       <h2 className="text-xl font-semibold mb-2">How would you like to order?</h2>
-      <p className="text-muted-foreground text-sm mb-6">Choose from your wardrobe or browse our full catalogue.</p>
+      <p className="text-muted-foreground text-sm mb-6">Order from your preset wardrobe for named individuals, or place a bulk stock order.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Card
           className="cursor-pointer hover:border-primary hover:shadow-md transition-all group"
           onClick={() => onSelect("wardrobe")}
         >
-          <CardContent className="py-8 px-6 text-center flex flex-col items-center gap-3">
-            <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
-              <Shirt className="w-7 h-7 text-primary" />
+          <CardContent className="py-6 px-6 flex flex-col gap-4">
+            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+              <Shirt className="w-6 h-6 text-primary" />
             </div>
             <div>
               <h3 className="font-semibold text-base">My Wardrobe</h3>
-              <p className="text-muted-foreground text-sm mt-1">Order from your pre-configured garments and branded items</p>
+              <p className="text-muted-foreground text-sm mt-1 mb-3">
+                Order from your pre-configured branded garments — assign to named individuals or order as bulk stock.
+              </p>
+              <ul className="space-y-1.5">
+                {[
+                  { icon: User, text: "Each order packed & labelled per person" },
+                  { icon: History, text: "Smart size suggestions from past orders" },
+                  { icon: Tag, text: "Full order history per employee" },
+                ].map(({ icon: Icon, text }) => (
+                  <li key={text} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Icon className="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                    {text}
+                  </li>
+                ))}
+              </ul>
             </div>
           </CardContent>
         </Card>
@@ -108,13 +123,27 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
           className="cursor-pointer hover:border-primary hover:shadow-md transition-all group"
           onClick={() => onSelect("catalogue")}
         >
-          <CardContent className="py-8 px-6 text-center flex flex-col items-center gap-3">
-            <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
-              <ShoppingBag className="w-7 h-7 text-primary" />
+          <CardContent className="py-6 px-6 flex flex-col gap-4">
+            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/15 transition-colors">
+              <Package className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h3 className="font-semibold text-base">Catalogue</h3>
-              <p className="text-muted-foreground text-sm mt-1">Browse our full range of products and create a custom order</p>
+              <h3 className="font-semibold text-base">Bulk / General Order</h3>
+              <p className="text-muted-foreground text-sm mt-1 mb-3">
+                Browse the full product range and order by size and quantity — ideal for topping up stock.
+              </p>
+              <ul className="space-y-1.5">
+                {[
+                  { icon: Package, text: "e.g. 10 × Medium polo shirts to stock" },
+                  { icon: ShoppingBag, text: "No individual name allocation" },
+                  { icon: Tag, text: "Full product catalogue available" },
+                ].map(({ icon: Icon, text }) => (
+                  <li key={text} className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Icon className="w-3.5 h-3.5 text-primary/70 shrink-0" />
+                    {text}
+                  </li>
+                ))}
+              </ul>
             </div>
           </CardContent>
         </Card>
@@ -125,6 +154,44 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
 
 // ─── Step 2a: Wardrobe ───────────────────────────────────────────────────────
 
+function BulkRow({ onAdd }: { onAdd: (qty: number, size: string) => void }) {
+  const [size, setSize] = useState("");
+  const [qty, setQty] = useState(1);
+  return (
+    <div className="flex items-center gap-2 mt-2">
+      <Input
+        className="h-8 text-sm w-24"
+        placeholder="Size (e.g. M)"
+        value={size}
+        onChange={e => setSize(e.target.value)}
+      />
+      <div className="flex items-center border rounded-md h-8">
+        <button
+          className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setQty(q => Math.max(1, q - 1))}
+        >
+          <Minus className="w-3 h-3" />
+        </button>
+        <span className="w-8 text-center text-sm font-medium">{qty}</span>
+        <button
+          className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setQty(q => q + 1)}
+        >
+          <Plus className="w-3 h-3" />
+        </button>
+      </div>
+      <Button
+        size="sm"
+        className="h-8 text-xs"
+        disabled={!size.trim()}
+        onClick={() => { onAdd(qty, size.trim()); setSize(""); setQty(1); }}
+      >
+        Add to order
+      </Button>
+    </div>
+  );
+}
+
 function WardrobeStep({ items, employees, lastSizes, basket, setBasket, onNext }: {
   items: any[];
   employees: any[];
@@ -133,7 +200,7 @@ function WardrobeStep({ items, employees, lastSizes, basket, setBasket, onNext }
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onNext: () => void;
 }) {
-  const [expandedFinish, setExpandedFinish] = useState<number | null>(null);
+  const [, setLocation] = useLocation();
 
   const finishGroups = Object.values(
     items.reduce((acc: any, item: any) => {
@@ -144,7 +211,6 @@ function WardrobeStep({ items, employees, lastSizes, basket, setBasket, onNext }
     }, {})
   ) as Array<{ finish_id: number; finish_name: string; items: any[] }>;
 
-  // Look up the last ordered size for a given employee + wardrobe item
   const getLastSize = (wi: any, employeeId: number): string | null => {
     const empSizes = lastSizes[String(employeeId)];
     if (!empSizes) return null;
@@ -154,93 +220,164 @@ function WardrobeStep({ items, employees, lastSizes, basket, setBasket, onNext }
     return null;
   };
 
-  const addItem = (wi: any, recipientType: "stock" | "person", employee?: any) => {
-    const price = parseFloat(wi.special_price ?? wi.unit_price ?? "0");
-    // Use last ordered size for this employee+product if available, otherwise fall back to wardrobe default
-    const size = (employee ? getLastSize(wi, employee.id) : null) ?? wi.size ?? "";
-    setBasket(b => [...b, {
-      productId: wi.product_id ?? null,
-      productName: wi.product_name ?? wi.name,
-      colour: wi.colour ?? "",
-      size,
-      finishId: wi.finish_id ?? null,
-      finishName: wi.finish_name ?? "",
-      recipientType,
-      recipientName: employee ? `${employee.first_name} ${employee.last_name}` : "",
-      recipientEmployeeId: employee?.id ?? null,
-      quantity: 1,
-      unitPrice: price,
-    }]);
-  };
+  const makeItem = (wi: any, recipientType: "stock" | "person", employee?: any, qty = 1, sizeOverride?: string): OrderItem => ({
+    productId: wi.product_id ?? null,
+    productName: wi.product_name ?? wi.name,
+    colour: wi.colour ?? "",
+    size: sizeOverride ?? (employee ? (getLastSize(wi, employee.id) ?? wi.size ?? "") : (wi.size ?? "")),
+    finishId: wi.finish_id ?? null,
+    finishName: wi.finish_name ?? "",
+    recipientType,
+    recipientName: employee ? `${employee.first_name} ${employee.last_name}` : "",
+    recipientEmployeeId: employee?.id ?? null,
+    quantity: qty,
+    unitPrice: parseFloat(wi.special_price ?? wi.unit_price ?? "0"),
+  });
 
+  // ── Empty state ────────────────────────────────────────────────────────────
+  if (finishGroups.length === 0) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold mb-2">My Wardrobe</h2>
+        <Card className="border-dashed">
+          <CardContent className="py-12 px-8 text-center">
+            <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+              <Shirt className="w-7 h-7 text-muted-foreground/60" />
+            </div>
+            <h3 className="font-semibold text-lg mb-2">Your wardrobe isn't set up yet</h3>
+            <p className="text-muted-foreground text-sm mb-6 max-w-sm mx-auto">
+              Contact Select Branding Solutions to get your branded garments configured.
+              Once set up, your wardrobe unlocks some powerful features:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8 text-left max-w-xl mx-auto">
+              {[
+                { icon: User, title: "Named packing", desc: "Every order comes back in individual packs labelled for each team member — ready to hand out." },
+                { icon: History, title: "Size memory", desc: "The system remembers each person's last ordered size and suggests it automatically next time." },
+                { icon: Tag, title: "Usage reports", desc: "Full order history per employee so you can track spend, sizes and reorder dates at a glance." },
+              ].map(({ icon: Icon, title, desc }) => (
+                <div key={title} className="rounded-lg border bg-muted/30 p-3">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Icon className="w-4 h-4 text-primary" />
+                    <span className="font-medium text-sm">{title}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{desc}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button variant="outline" onClick={() => setLocation("/wardrobe")}>View My Wardrobe</Button>
+              <Button asChild>
+                <a href="mailto:hello@selectbranding.co.uk">Contact SBS to set up</a>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // ── Wardrobe items ─────────────────────────────────────────────────────────
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Select from your wardrobe</h2>
-      <p className="text-muted-foreground text-sm mb-6">
-        Click an item to add it to your order. You can assign to an employee or add as stock.
+      <h2 className="text-xl font-semibold mb-1">My Wardrobe</h2>
+      <p className="text-muted-foreground text-sm mb-5">
+        Order for named individuals (packed &amp; labelled per person) or add as bulk stock — your choice per item.
       </p>
 
-      {finishGroups.length === 0 ? (
-        <Card><CardContent className="py-12 text-center text-muted-foreground">No wardrobe items found for your account.</CardContent></Card>
-      ) : (
-        <div className="flex flex-col gap-3">
-          {finishGroups.map((group) => (
-            <Card key={group.finish_id}>
-              <CardHeader
-                className="py-3 px-5 flex flex-row items-center justify-between cursor-pointer hover:bg-muted/30 transition-colors"
-                onClick={() => setExpandedFinish(expandedFinish === group.finish_id ? null : group.finish_id)}
-              >
-                <CardTitle className="text-sm font-semibold">{group.finish_name}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs">{group.items.length} items</Badge>
-                  {expandedFinish === group.finish_id ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
-                </div>
-              </CardHeader>
-              {expandedFinish === group.finish_id && (
-                <CardContent className="pt-0 pb-3 px-5">
-                  <div className="flex flex-col gap-2">
-                    {group.items.map((wi: any, i: number) => (
-                      <div key={i} className="border rounded-lg p-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <p className="font-medium text-sm">{wi.product_name ?? wi.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {[wi.colour, wi.size].filter(Boolean).join(" / ")}
-                              {wi.role_name ? ` · ${wi.role_name}` : ""}
-                            </p>
-                            <p className="text-xs font-medium text-primary mt-0.5">
-                              {formatCurrency(wi.special_price ?? wi.unit_price ?? 0)}
-                            </p>
-                          </div>
-                          <div className="flex flex-col gap-1 shrink-0">
-                            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem(wi, "stock")}>
-                              <Plus className="w-3 h-3" /> Add to stock
-                            </Button>
+      <div className="flex flex-col gap-5">
+        {finishGroups.map((group) => (
+          <div key={group.finish_id}>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
+              <Shirt className="w-3.5 h-3.5" /> {group.finish_name}
+            </p>
+            <div className="flex flex-col gap-3">
+              {group.items.map((wi: any, i: number) => {
+                const price = parseFloat(wi.special_price ?? wi.unit_price ?? "0");
+                return (
+                  <Card key={i} className="overflow-hidden">
+                    {/* Item header */}
+                    <div className="flex items-center justify-between gap-3 px-4 py-3 bg-muted/30 border-b">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm truncate">{wi.product_name ?? wi.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {[wi.colour, wi.role_name].filter(Boolean).join(" · ")}
+                        </p>
+                      </div>
+                      {price > 0 && (
+                        <span className="text-sm font-bold text-primary shrink-0">{formatCurrency(price)}</span>
+                      )}
+                    </div>
+
+                    <div className="divide-y">
+                      {/* ── Named individual section ── */}
+                      <div className="px-4 py-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <User className="w-3.5 h-3.5 text-primary" />
+                          <span className="text-xs font-semibold text-foreground">Order for a named individual</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          Packed and labelled for each person — builds their size history automatically.
+                        </p>
+                        {employees.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">
+                            No employees set up yet.{" "}
+                            <button className="underline underline-offset-2 hover:text-foreground" onClick={() => setLocation("/team")}>
+                              Add team members
+                            </button>{" "}
+                            to order for individuals.
+                          </p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
                             {employees.map((emp: any) => {
                               const lastSize = getLastSize(wi, emp.id);
                               return (
-                                <Button key={emp.id} size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => addItem(wi, "person", emp)}>
-                                  <Plus className="w-3 h-3" /> {emp.first_name} {emp.last_name}
-                                  {lastSize && <span className="ml-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1">{lastSize}</span>}
-                                </Button>
+                                <button
+                                  key={emp.id}
+                                  onClick={() => setBasket(b => [...b, makeItem(wi, "person", emp)])}
+                                  className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm hover:border-primary hover:bg-primary/5 transition-all group"
+                                >
+                                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[9px] font-bold text-primary shrink-0 group-hover:bg-primary/20">
+                                    {emp.first_name?.[0]}{emp.last_name?.[0]}
+                                  </div>
+                                  <span className="font-medium">{emp.first_name} {emp.last_name}</span>
+                                  {lastSize ? (
+                                    <span className="ml-0.5 text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.5">
+                                      Last: {lastSize}
+                                    </span>
+                                  ) : (
+                                    <span className="ml-0.5 text-[10px] text-muted-foreground/60 italic">no history</span>
+                                  )}
+                                </button>
                               );
                             })}
                           </div>
-                        </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          ))}
-        </div>
-      )}
+
+                      {/* ── Bulk / stock section ── */}
+                      <div className="px-4 py-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Package className="w-3.5 h-3.5 text-muted-foreground" />
+                          <span className="text-xs font-semibold text-foreground">Bulk / Stock order</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-1">
+                          No name allocation — items go straight to stock. Enter size and quantity.
+                        </p>
+                        <BulkRow onAdd={(qty, size) => setBasket(b => [...b, makeItem(wi, "stock", undefined, qty, size)])} />
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
 
       {basket.length > 0 && (
         <div className="sticky bottom-0 mt-6 bg-background border-t pt-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">{basket.length} item{basket.length !== 1 ? "s" : ""} in order</span>
+            <span className="text-sm font-medium">{basket.length} item{basket.length !== 1 ? "s" : ""} added</span>
             <Button onClick={onNext}>Review order <ArrowRight className="w-4 h-4 ml-1.5" /></Button>
           </div>
         </div>
