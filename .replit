@@ -28,3 +28,12 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+DPD_SENDER_NAME = "Select Branding Solutions"
+DPD_SENDER_LINE1 = "Spence Mills, Mill Lane"
+DPD_SENDER_TOWN = "Leeds"
+DPD_SENDER_POSTCODE = "LS13 3HE"
+DPD_NETWORK_CODE = "1"
