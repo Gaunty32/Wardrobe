@@ -257,6 +257,9 @@ export default function OrderDetail() {
     mutationFn: () => apiFetch(`/orders/${orderId}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      if (order?.customerId) {
+        queryClient.invalidateQueries({ queryKey: ["customer", order.customerId, "orders"] });
+      }
       toast({ title: "Order deleted" });
       navigate("/orders");
     },
