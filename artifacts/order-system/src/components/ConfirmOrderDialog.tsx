@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -76,6 +76,8 @@ interface ConfirmOrderDialogProps {
     customerName: string | null;
     status: string;
     totalAmount?: number | null;
+    requiredDate?: string | null;
+    shippingMethod?: string | null;
     items?: Array<{ id: number; productName: string; quantity: number; purchaseRequired?: boolean }>;
   };
   onConfirmed: () => void;
@@ -95,6 +97,10 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
   const [requiredDate, setRequiredDate] = useState(defaultRequiredDate);
   const [shippingMethod, setShippingMethod] = useState<string>("");
 
+  const initialRequiredDate = () =>
+    order.requiredDate ? new Date(order.requiredDate).toISOString().slice(0, 10) : defaultRequiredDate();
+  const initialShippingMethod = () => order.shippingMethod ?? "";
+
   const reset = () => {
     setStep("review");
     setResult(null);
@@ -104,9 +110,17 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     setEmailSent(false);
     setEmailText("");
     setCopied(false);
-    setRequiredDate(defaultRequiredDate());
-    setShippingMethod("");
+    setRequiredDate(initialRequiredDate());
+    setShippingMethod(initialShippingMethod());
   };
+
+  useEffect(() => {
+    if (open) {
+      setRequiredDate(initialRequiredDate());
+      setShippingMethod(initialShippingMethod());
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const handleClose = (open: boolean) => {
     if (!open) reset();

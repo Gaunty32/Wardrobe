@@ -1858,6 +1858,8 @@ export default function OrderDetail() {
           customerName: order.customerName ?? null,
           status: order.status,
           totalAmount: order.totalAmount,
+          requiredDate: (order as any).requiredDate ?? null,
+          shippingMethod: (order as any).shippingMethod ?? null,
           items: order.items,
         }}
         onConfirmed={() => {
