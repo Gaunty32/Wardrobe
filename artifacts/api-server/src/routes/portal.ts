@@ -72,6 +72,54 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   res.json({ inviteUrl, token, email, portalRole, expiresAt: expires });
 });
 
+// ─── admin: create user directly (no invite) ──────────────────────────────
+
+router.post("/portal/admin/create-user", async (req: Request, res: Response) => {
+  const { customerId, email, password, portalRole } = z.object({
+    customerId: z.number().int().positive(),
+    email: z.string().email(),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    portalRole: z.enum(["manager", "dept_manager", "member"]).default("member"),
+  }).parse(req.body);
+
+  const hash = await bcrypt.hash(password, 12);
+
+  await db.execute(sql`
+    INSERT INTO customer_portal_users (customer_id, email, password_hash, status, portal_role)
+    VALUES (${customerId}, ${email}, ${hash}, 'active', ${portalRole})
+    ON CONFLICT (email) DO UPDATE
+      SET password_hash = ${hash},
+          status = 'active',
+          invite_token = NULL,
+          invite_expires_at = NULL,
+          portal_role = ${portalRole},
+          updated_at = now()
+  `);
+
+  res.status(201).json({ ok: true, email, portalRole });
+});
+
+// ─── admin: reset portal user password ────────────────────────────────────
+
+router.patch("/portal/admin/users/:userId/password", async (req: Request, res: Response) => {
+  const userId = parseInt(req.params.userId, 10);
+  const { password } = z.object({
+    password: z.string().min(8, "Password must be at least 8 characters"),
+  }).parse(req.body);
+
+  const hash = await bcrypt.hash(password, 12);
+  await db.execute(sql`
+    UPDATE customer_portal_users
+    SET password_hash = ${hash},
+        status = 'active',
+        invite_token = NULL,
+        invite_expires_at = NULL,
+        updated_at = now()
+    WHERE id = ${userId}
+  `);
+  res.json({ ok: true });
+});
+
 // ─── admin: customer detail (employees for invite suggestions) ─────────────
 
 router.get("/portal/admin/customer-detail/:customerId", async (req: Request, res: Response) => {

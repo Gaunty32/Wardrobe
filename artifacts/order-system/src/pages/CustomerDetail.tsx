@@ -16,7 +16,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn, toTitleCase } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, KeyRound } from "lucide-react";
 
 function formatUKPhone(raw: string): string {
   const d = raw.replace(/\D/g, "");
@@ -1282,10 +1282,17 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"manager" | "dept_manager" | "member">("member");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteMode, setInviteMode] = useState<"invite" | "create">("invite");
+  const [createPassword, setCreatePassword] = useState("");
+  const [createConfirm, setCreateConfirm] = useState("");
   const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; email: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [previewHref, setPreviewHref] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // password reset state
+  const [resetUserId, setResetUserId] = useState<number | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
 
   const { data: portalUsers, isLoading } = useQuery<any[]>({
     queryKey: ["portal-users", customerId],
@@ -1311,6 +1318,33 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
       qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const createUser = useMutation({
+    mutationFn: () => apiFetch("/portal/admin/create-user", {
+      method: "POST",
+      body: JSON.stringify({ customerId, email: inviteEmail, password: createPassword, portalRole: inviteRole }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
+      toast({ title: "Portal user created", description: `${inviteEmail} can now log in.` });
+      setInviteOpen(false);
+      setInviteEmail(""); setCreatePassword(""); setCreateConfirm("");
+    },
+    onError: (e: any) => toast({ title: "Error creating user", description: e.message, variant: "destructive" }),
+  });
+
+  const resetPasswordMut = useMutation({
+    mutationFn: ({ userId, password }: { userId: number; password: string }) =>
+      apiFetch(`/portal/admin/users/${userId}/password`, {
+        method: "PATCH",
+        body: JSON.stringify({ password }),
+      }),
+    onSuccess: () => {
+      toast({ title: "Password reset", description: "The user can now log in with their new password." });
+      setResetUserId(null); setResetPassword(""); setResetConfirm("");
+    },
+    onError: (e: any) => toast({ title: "Error resetting password", description: e.message, variant: "destructive" }),
   });
 
   const revokeUser = useMutation({
@@ -1459,8 +1493,12 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-blue-600 hover:bg-blue-50"
+                      onClick={() => { setResetUserId(u.id); setResetPassword(""); setResetConfirm(""); }}>
+                      <KeyRound className="w-3 h-3" /> Reset pw
+                    </Button>
                     <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-primary hover:bg-primary/10"
-                      onClick={() => { setInviteEmail(u.email); setInviteRole(u.portal_role ?? "member"); setInviteResult(null); setInviteOpen(true); }}>
+                      onClick={() => { setInviteEmail(u.email); setInviteRole(u.portal_role ?? "member"); setInviteResult(null); setInviteMode("invite"); setInviteOpen(true); }}>
                       <LogIn className="w-3 h-3" /> Re-invite
                     </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50"
@@ -1475,11 +1513,32 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
         </SubTable>
       )}
 
-      <Dialog open={inviteOpen} onOpenChange={v => { if (!v) { setInviteOpen(false); setInviteResult(null); } }}>
+      {/* Add / Invite portal user dialog */}
+      <Dialog open={inviteOpen} onOpenChange={v => { if (!v) { setInviteOpen(false); setInviteResult(null); setCreatePassword(""); setCreateConfirm(""); } }}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Globe className="w-4 h-4" /> Invite Customer to Portal</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Globe className="w-4 h-4" />
+              {inviteMode === "invite" ? "Invite Customer to Portal" : "Create Portal User"}
+            </DialogTitle>
           </DialogHeader>
+
+          {/* Mode toggle */}
+          {!inviteResult && (
+            <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5 w-fit">
+              <button
+                type="button"
+                onClick={() => setInviteMode("invite")}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${inviteMode === "invite" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >Send invite link</button>
+              <button
+                type="button"
+                onClick={() => setInviteMode("create")}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${inviteMode === "create" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >Set password directly</button>
+            </div>
+          )}
+
           {!inviteResult ? (
             <div className="grid gap-4 py-2">
               {suggestedEmployees.length > 0 && (
@@ -1502,15 +1561,12 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
               )}
               <div className="grid gap-2">
                 <Label>Email Address *</Label>
-                <Input type="email" placeholder="contact@customer.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && inviteEmail && sendInvite.mutate()} />
+                <Input type="email" placeholder="contact@customer.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label>Portal Role</Label>
                 <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PORTAL_ROLES.map(r => (
                       <SelectItem key={r.value} value={r.value}>
@@ -1523,6 +1579,21 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   </SelectContent>
                 </Select>
               </div>
+              {inviteMode === "create" && (
+                <>
+                  <div className="grid gap-2">
+                    <Label>Password * <span className="text-muted-foreground font-normal text-xs">(min 8 characters)</span></Label>
+                    <Input type="password" placeholder="••••••••" value={createPassword} onChange={e => setCreatePassword(e.target.value)} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Confirm Password *</Label>
+                    <Input type="password" placeholder="••••••••" value={createConfirm} onChange={e => setCreateConfirm(e.target.value)} />
+                    {createConfirm && createConfirm !== createPassword && (
+                      <p className="text-xs text-destructive">Passwords don't match</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="grid gap-4 py-2">
@@ -1545,14 +1616,54 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setInviteOpen(false); setInviteResult(null); }}>
+            <Button variant="outline" onClick={() => { setInviteOpen(false); setInviteResult(null); setCreatePassword(""); setCreateConfirm(""); }}>
               {inviteResult ? "Close" : "Cancel"}
             </Button>
-            {!inviteResult && (
+            {!inviteResult && inviteMode === "invite" && (
               <Button onClick={() => sendInvite.mutate()} disabled={!inviteEmail || sendInvite.isPending}>
                 {sendInvite.isPending ? "Sending..." : "Generate Invite Link"}
               </Button>
             )}
+            {!inviteResult && inviteMode === "create" && (
+              <Button
+                onClick={() => createUser.mutate()}
+                disabled={!inviteEmail || !createPassword || createPassword !== createConfirm || createPassword.length < 8 || createUser.isPending}
+              >
+                {createUser.isPending ? "Creating…" : "Create User"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset password dialog */}
+      <Dialog open={resetUserId !== null} onOpenChange={v => { if (!v) { setResetUserId(null); setResetPassword(""); setResetConfirm(""); } }}>
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription>Set a new password for this portal user. They can use it to log in immediately.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>New Password * <span className="text-muted-foreground font-normal text-xs">(min 8 characters)</span></Label>
+              <Input type="password" placeholder="••••••••" value={resetPassword} onChange={e => setResetPassword(e.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Confirm Password *</Label>
+              <Input type="password" placeholder="••••••••" value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} />
+              {resetConfirm && resetConfirm !== resetPassword && (
+                <p className="text-xs text-destructive">Passwords don't match</p>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setResetUserId(null); setResetPassword(""); setResetConfirm(""); }}>Cancel</Button>
+            <Button
+              onClick={() => resetPasswordMut.mutate({ userId: resetUserId!, password: resetPassword })}
+              disabled={!resetPassword || resetPassword !== resetConfirm || resetPassword.length < 8 || resetPasswordMut.isPending}
+            >
+              {resetPasswordMut.isPending ? "Saving…" : "Reset Password"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
