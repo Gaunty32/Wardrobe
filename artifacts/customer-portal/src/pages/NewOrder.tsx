@@ -1133,17 +1133,43 @@ function ConfirmStep({ orderNumber, onViewOrder }: { orderNumber: string; onView
 
 // ─── Main component ──────────────────────────────────────────────────────────
 
+const SESSION_KEY = "portal-new-order";
+
+function readSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function writeSession(data: object) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {}
+}
+
+function clearSession() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+}
+
 export default function NewOrder() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { portalRole } = useAuth();
 
-  const [step, setStep] = useState(0);
-  const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(null);
-  const [basket, setBasket] = useState<OrderItem[]>([]);
+  const saved = readSession();
+  const [step, setStep] = useState<number>(saved?.step ?? 0);
+  const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(saved?.mode ?? null);
+  const [basket, setBasket] = useState<OrderItem[]>(saved?.basket ?? []);
   const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
   const [confirmedOrder, setConfirmedOrder] = useState<{ id: number; orderNumber: string } | null>(null);
   const [confirmedEnquiry, setConfirmedEnquiry] = useState<{ enquiryRef: string } | null>(null);
+
+  // Persist draft to sessionStorage whenever basket/step/mode change
+  const persistedStep = step;
+  const persistedMode = mode;
+  const persistedBasket = basket;
+  if (persistedStep > 0 && persistedMode && !confirmedOrder) {
+    writeSession({ step: persistedStep, mode: persistedMode, basket: persistedBasket });
+  }
 
   const { data: wardrobe } = useQuery<{
     items: any[];
@@ -1183,6 +1209,7 @@ export default function NewOrder() {
         }),
       }),
     onSuccess: (data) => {
+      clearSession();
       setConfirmedOrder(data);
       setStep(3);
     },
@@ -1208,6 +1235,7 @@ export default function NewOrder() {
         }),
       }),
     onSuccess: (data) => {
+      clearSession();
       setConfirmedEnquiry({ enquiryRef: data.enquiryRef });
       setStep(2);
     },
@@ -1221,8 +1249,16 @@ export default function NewOrder() {
     : ["Choose type", "Wardrobe", "Review", "Done"];
 
   const handleModeSelect = (m: "wardrobe" | "catalogue") => {
+    if (m !== mode) {
+      setBasket([]);
+      setWishlist([]);
+    }
     setMode(m);
     setStep(1);
+  };
+
+  const handleBackToModeStep = () => {
+    setStep(0);
   };
 
   return (
@@ -1242,16 +1278,21 @@ export default function NewOrder() {
       {step === 0 && <ModeStep onSelect={handleModeSelect} />}
 
       {step === 1 && mode === "wardrobe" && (
-        <WardrobeStep
-          items={wardrobe?.items ?? []}
-          employees={wardrobe?.employees ?? []}
-          processes={wardrobe?.processes ?? []}
-          lastSizes={wardrobe?.lastSizes ?? {}}
-          sizesMap={wardrobe?.sizesMap ?? {}}
-          basket={basket}
-          setBasket={setBasket}
-          onNext={() => setStep(2)}
-        />
+        <div>
+          <Button variant="ghost" size="sm" className="-ml-2 mb-4 text-muted-foreground" onClick={handleBackToModeStep}>
+            <ArrowLeft className="w-4 h-4 mr-1" /> Back
+          </Button>
+          <WardrobeStep
+            items={wardrobe?.items ?? []}
+            employees={wardrobe?.employees ?? []}
+            processes={wardrobe?.processes ?? []}
+            lastSizes={wardrobe?.lastSizes ?? {}}
+            sizesMap={wardrobe?.sizesMap ?? {}}
+            basket={basket}
+            setBasket={setBasket}
+            onNext={() => setStep(2)}
+          />
+        </div>
       )}
 
       {step === 1 && mode === "catalogue" && (
