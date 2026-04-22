@@ -379,8 +379,10 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                     const isStock = state.sel === "stock";
                     const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === state.sel);
                     setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", state.size, state.qty, emp)]);
-                    setItemState(key, { sel: null, size: "", qty: 1 });
+                    // Keep the same recipient so they can immediately pick another size
+                    setItemState(key, { size: "", qty: 1 });
                   };
+                  const handleDone = () => setItemState(key, { sel: null, size: "", qty: 1 });
 
                   return (
                     <Card key={i} className="overflow-hidden">
@@ -483,14 +485,23 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                                 })()}
 
                                 {/* Qty */}
-                                <div className="flex items-center border rounded-md h-8">
+                                <div className="flex items-center border rounded-md h-8 overflow-hidden">
                                   <button
                                     className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
                                     onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
                                   >
                                     <Minus className="w-3 h-3" />
                                   </button>
-                                  <span className="w-8 text-center text-sm font-medium">{state.qty}</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    value={state.qty}
+                                    onChange={e => {
+                                      const v = parseInt(e.target.value, 10);
+                                      if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
+                                    }}
+                                    className="w-10 text-center text-sm font-medium bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  />
                                   <button
                                     className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
                                     onClick={() => setItemState(key, { qty: state.qty + 1 })}
@@ -508,6 +519,14 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                                 >
                                   <Plus className="w-3 h-3 mr-1" /> Add to order
                                 </Button>
+
+                                {/* Done — dismiss the card back to recipient picker */}
+                                <button
+                                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline shrink-0"
+                                  onClick={handleDone}
+                                >
+                                  Done
+                                </button>
                               </>
                             )}
                           </div>
@@ -936,6 +955,9 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
   const updateQty = (idx: number, delta: number) => {
     setBasket(b => b.map((item, i) => i === idx ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item));
   };
+  const setQty = (idx: number, val: number) => {
+    if (!isNaN(val) && val >= 1) setBasket(b => b.map((item, i) => i === idx ? { ...item, quantity: val } : item));
+  };
   const removeItem = (idx: number) => setBasket(b => b.filter((_, i) => i !== idx));
 
   return (
@@ -969,9 +991,15 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
                       {item.recipientName || (item.recipientType === "stock" ? "Stock" : "—")}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-0.5">
                         <button className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => updateQty(idx, -1)}><Minus className="w-3 h-3" /></button>
-                        <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={e => setQty(idx, parseInt(e.target.value, 10))}
+                          className="w-10 text-center text-sm font-medium border rounded outline-none focus:ring-1 focus:ring-primary/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none py-0.5"
+                        />
                         <button className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => updateQty(idx, 1)}><Plus className="w-3 h-3" /></button>
                       </div>
                     </TableCell>
