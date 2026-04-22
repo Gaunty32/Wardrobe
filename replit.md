@@ -121,7 +121,7 @@ Tables in PostgreSQL:
 - `products` — name, sku, description, unit_price, stock_quantity, category, supplier_id
 - `product_attributes` — productId, type (colour/size), value
 - `product_variants` — productId, colour, size, stockQty, price
-- `orders` — order_number, customer_id, customer_name, status, total_amount, notes, order_date, required_date, delivery_address_id, dispatched_at
+- `orders` — order_number, customer_id, customer_name, status, total_amount, notes, order_date, required_date, delivery_address_id, dispatched_at, po_number, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_approved_by_email, portal_approved_by_name
 - `order_items` — order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, quantity, unit_price, line_total, purchase_required (bool), purchase_quantity, supplier_id, supplier_name
 - `purchase_orders` — po_number, supplier_id, supplier_name, supplier_email, status, notes, sent_at
 - `suppliers` — name, contactName, email, phone, address

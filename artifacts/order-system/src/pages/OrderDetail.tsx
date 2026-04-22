@@ -113,6 +113,66 @@ function PoNumberInline({ orderId, current }: { orderId: number; current: string
   );
 }
 
+function AttentionOfCard({ orderId, current }: { orderId: number; current: string | null }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(current ?? "");
+  const { toast } = useToast();
+
+  useEffect(() => { setValue(current ?? ""); }, [current]);
+
+  const save = async () => {
+    setEditing(false);
+    if (value === (current ?? "")) return;
+    try {
+      await apiFetch(`/orders/${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ attentionOf: value || null }),
+      });
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+    } catch {
+      toast({ title: "Could not save attention of field", variant: "destructive" });
+    }
+  };
+
+  return (
+    <Card className="shadow-sm border-border/50">
+      <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+        <div className="flex items-center justify-between">
+          <CardTitle className="font-display text-lg flex items-center gap-2">
+            <User className="w-4 h-4 text-muted-foreground" /> For the Attention Of
+          </CardTitle>
+          {!editing && (
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditing(true); }}>
+              <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="py-4">
+        {editing ? (
+          <div className="space-y-2">
+            <input
+              autoFocus
+              className="text-sm border rounded px-2 py-1.5 w-full outline-none focus:ring-1 focus:ring-primary/40"
+              placeholder="e.g. John Smith"
+              value={value}
+              onChange={e => setValue(e.target.value)}
+              onBlur={save}
+              onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") { setEditing(false); setValue(current ?? ""); } }}
+            />
+            <p className="text-xs text-muted-foreground">This name appears on the delivery note</p>
+          </div>
+        ) : (
+          <p className={`text-sm ${current ? "text-foreground" : "text-muted-foreground italic"}`}>
+            {current ?? "Not set"}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function useProductAttributes(productId: number | null) {
   return useQuery<ProductAttribute[]>({
     queryKey: ["product-attributes", productId],
@@ -1075,6 +1135,8 @@ export default function OrderDetail() {
                 }
               </CardContent>
             </Card>
+
+            <AttentionOfCard orderId={orderId} current={(order as any).attentionOf ?? null} />
 
             {/* Xero card — only show if posted or order is dispatched */}
             {((order as any).xeroInvoiceId || order.status === "dispatched") && (

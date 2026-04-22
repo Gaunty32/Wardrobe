@@ -51,6 +51,7 @@ interface DispatchOrder {
   status: string; totalAmount: number; notes: string | null;
   orderDate: string; requiredDate: string | null; dispatchedAt: string | null;
   shippingMethod: string | null;
+  attentionOf: string | null;
   productionComplete: boolean;
   worksheets: Worksheet[];
   items: DispatchItem[];
@@ -236,7 +237,7 @@ function printDeliveryNote(order: DispatchOrder) {
     <div class="info-block">
       <h3>Deliver To</h3>
       <p><strong>${order.customerName ?? ""}</strong><br>
-      ${addrLines.length > 0 ? addrLines.join("<br>") : "<em>No delivery address on record</em>"}</p>
+      ${order.attentionOf ? `FAO: ${order.attentionOf}<br>` : ""}${addrLines.length > 0 ? addrLines.join("<br>") : "<em>No delivery address on record</em>"}</p>
     </div>
     <div class="info-block">
       <h3>Order Details</h3>

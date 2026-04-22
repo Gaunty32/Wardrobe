@@ -30,6 +30,11 @@ export const ordersTable = pgTable("orders", {
   portalStatus: text("portal_status"),
   portalNotes: text("portal_notes"),
   poNumber: text("po_number"),
+  attentionOf: text("attention_of"),
+  portalSubmittedByEmail: text("portal_submitted_by_email"),
+  portalSubmittedByName: text("portal_submitted_by_name"),
+  portalApprovedByEmail: text("portal_approved_by_email"),
+  portalApprovedByName: text("portal_approved_by_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

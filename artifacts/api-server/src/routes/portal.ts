@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
-import { generateInvoicePDF } from "../services/email.js";
+import { generateInvoicePDF, buildAcknowledgementEmail, sendEmail, isEmailConfigured } from "../services/email.js";
 
 const router: IRouter = Router();
 
@@ -393,9 +393,34 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const itemsTotal = body.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const totalAmount = itemsTotal + (body.shippingCost ?? 0);
 
-  // Get customer name
+  // Get customer name and default delivery address
   const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
   const customerName = (custRows.rows[0] as any)?.name ?? "";
+  const defaultAddrRows = await db.execute(sql`
+    SELECT id FROM customer_delivery_addresses
+    WHERE customer_id = ${customerId} AND is_default = true
+    LIMIT 1
+  `);
+  const defaultAddressId: number | null = (defaultAddrRows.rows[0] as any)?.id ?? null;
+
+  // Resolve portal user's email and display name
+  const portalUserId = (req as any).portalUserId;
+  const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+  const submitterEmail: string | null = (userRows.rows[0] as any)?.email ?? null;
+  let submitterName: string | null = null;
+  if (submitterEmail) {
+    const empRows = await db.execute(sql`
+      SELECT first_name, last_name FROM customer_employees
+      WHERE customer_id = ${customerId} AND lower(email) = lower(${submitterEmail}) LIMIT 1
+    `);
+    if (empRows.rows.length > 0) {
+      const e = empRows.rows[0] as any;
+      submitterName = [e.first_name, e.last_name].filter(Boolean).join(" ") || submitterEmail;
+    } else {
+      const prefix = submitterEmail.split("@")[0].replace(/[._]/g, " ");
+      submitterName = prefix.replace(/\b\w/g, (c: string) => c.toUpperCase());
+    }
+  }
 
   // Managers submit directly; dept_managers/members save for manager review
   const portalRole = (req as any).portalRole ?? "member";
@@ -403,7 +428,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
 
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name)
     VALUES (
       ${orderNumber},
       ${customerId},
@@ -417,7 +442,11 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       now(),
       ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null},
       ${body.shippingOption ?? null},
-      ${body.poNumber ?? null}
+      ${body.poNumber ?? null},
+      ${defaultAddressId},
+      ${submitterName},
+      ${submitterEmail},
+      ${submitterName}
     )
     RETURNING id, order_number
   `);
@@ -706,8 +735,30 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
     return;
   }
   const orderId = parseInt(req.params.id, 10);
+  const managerUserId = (req as any).portalUserId;
+
+  // Resolve manager email and name
+  const mgrUserRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${managerUserId} LIMIT 1`);
+  const mgrEmail: string | null = (mgrUserRows.rows[0] as any)?.email ?? null;
+  let mgrName: string | null = null;
+  if (mgrEmail) {
+    const empRows = await db.execute(sql`
+      SELECT first_name, last_name FROM customer_employees
+      WHERE customer_id = ${customerId} AND lower(email) = lower(${mgrEmail}) LIMIT 1
+    `);
+    if (empRows.rows.length > 0) {
+      const e = empRows.rows[0] as any;
+      mgrName = [e.first_name, e.last_name].filter(Boolean).join(" ") || mgrEmail;
+    } else {
+      const prefix = mgrEmail.split("@")[0].replace(/[._]/g, " ");
+      mgrName = prefix.replace(/\b\w/g, (c: string) => c.toUpperCase());
+    }
+  }
+
   await db.execute(sql`
-    UPDATE orders SET portal_status = 'submitted', status = 'portal_pending', updated_at = now()
+    UPDATE orders SET portal_status = 'submitted', status = 'portal_pending', updated_at = now(),
+      portal_approved_by_email = ${mgrEmail},
+      portal_approved_by_name = ${mgrName}
     WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
   `);
   res.json({ ok: true });
@@ -751,10 +802,88 @@ router.get("/portal/admin/pending-orders", async (req: Request, res: Response) =
 
 router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Response) => {
   const orderId = parseInt(req.params.id, 10);
-  await db.execute(sql`
-    UPDATE orders SET portal_status = 'confirmed', status = 'draft', updated_at = now()
-    WHERE id = ${orderId} AND source = 'portal'
+
+  // Load order to get submitter/approver emails and check delivery address
+  const orderRows = await db.execute(sql`
+    SELECT id, order_number, customer_id, customer_name, order_date, required_date, notes, total_amount,
+           delivery_address_id, portal_submitted_by_email, portal_submitted_by_name,
+           portal_approved_by_email, portal_approved_by_name
+    FROM orders WHERE id = ${orderId} AND source = 'portal'
   `);
+  const ord = orderRows.rows[0] as any;
+  if (!ord) { res.status(404).json({ error: "Order not found" }); return; }
+
+  // If no delivery address set, auto-assign the customer's default
+  let deliveryAddressId = ord.delivery_address_id;
+  if (!deliveryAddressId && ord.customer_id) {
+    const addrRows = await db.execute(sql`
+      SELECT id FROM customer_delivery_addresses
+      WHERE customer_id = ${ord.customer_id} AND is_default = true LIMIT 1
+    `);
+    if (addrRows.rows.length > 0) {
+      deliveryAddressId = (addrRows.rows[0] as any).id;
+    }
+  }
+
+  if (deliveryAddressId && !ord.delivery_address_id) {
+    await db.execute(sql`
+      UPDATE orders SET portal_status = 'confirmed', status = 'draft', updated_at = now(),
+        delivery_address_id = ${deliveryAddressId}
+      WHERE id = ${orderId} AND source = 'portal'
+    `);
+  } else {
+    await db.execute(sql`
+      UPDATE orders SET portal_status = 'confirmed', status = 'draft', updated_at = now()
+      WHERE id = ${orderId} AND source = 'portal'
+    `);
+  }
+
+  // Send order acknowledgement emails
+  if (isEmailConfigured) {
+    // Fetch items for the email
+    const itemRows = await db.execute(sql`
+      SELECT oi.product_name, p.name as catalogue_name, oi.colour, oi.size, oi.quantity, oi.unit_price, oi.line_total, oi.recipient_name
+      FROM order_items oi
+      LEFT JOIN products p ON oi.product_id = p.id
+      WHERE oi.order_id = ${orderId}
+    `);
+    const items = (itemRows.rows as any[]).map(r => ({
+      productName: r.catalogue_name ?? r.product_name,
+      colour: r.colour ?? null,
+      size: r.size ?? null,
+      quantity: Number(r.quantity ?? 1),
+      unitPrice: parseFloat(r.unit_price ?? "0"),
+      lineTotal: parseFloat(r.line_total ?? "0"),
+      recipientName: r.recipient_name ?? null,
+    }));
+
+    const emailData = {
+      orderNumber: ord.order_number,
+      customerName: ord.customer_name ?? null,
+      orderDate: ord.order_date ? new Date(ord.order_date) : null,
+      requiredDate: ord.required_date ? new Date(ord.required_date) : null,
+      notes: ord.notes ?? null,
+      totalAmount: parseFloat(ord.total_amount ?? "0"),
+      items,
+    };
+
+    const recipients: Array<{ email: string; name: string | null }> = [];
+    if (ord.portal_submitted_by_email) {
+      recipients.push({ email: ord.portal_submitted_by_email, name: ord.portal_submitted_by_name ?? null });
+    }
+    if (ord.portal_approved_by_email && ord.portal_approved_by_email !== ord.portal_submitted_by_email) {
+      recipients.push({ email: ord.portal_approved_by_email, name: ord.portal_approved_by_name ?? null });
+    }
+
+    for (const recipient of recipients) {
+      const { subject, html, text } = buildAcknowledgementEmail({
+        ...emailData,
+        contactFirstName: recipient.name,
+      });
+      await sendEmail({ to: recipient.email, subject, html, text }).catch(() => {});
+    }
+  }
+
   res.json({ ok: true });
 });
 

@@ -424,6 +424,7 @@ export const UpdateOrderBody = zod.object({
   customerId: zod.number().nullish(),
   orderDate: zod.date().nullish(),
   poNumber: zod.string().nullish(),
+  attentionOf: zod.string().nullish(),
 });
 
 export const UpdateOrderResponse = zod.object({
