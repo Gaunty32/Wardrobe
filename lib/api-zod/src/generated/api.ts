@@ -34,7 +34,6 @@ export const ListCustomersResponseItem = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
-  defaultShippingService: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -54,7 +53,6 @@ export const CreateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
-  defaultShippingService: zod.string().nullish(),
 });
 
 /**
@@ -76,7 +74,6 @@ export const GetCustomerResponse = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
-  defaultShippingService: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -99,8 +96,6 @@ export const UpdateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
-  defaultShippingService: zod.string().nullish(),
-  logoUrl: zod.string().nullish(),
 });
 
 export const UpdateCustomerResponse = zod.object({
@@ -115,8 +110,6 @@ export const UpdateCustomerResponse = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
-  defaultShippingService: zod.string().nullable(),
-  logoUrl: zod.string().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -162,6 +155,7 @@ export const CreateProductBody = zod.object({
   supplierId: zod.number().nullish(),
   secondarySupplierId: zod.number().nullish(),
   supplierCode: zod.string().nullish(),
+  imageUrl: zod.string().nullish(),
 });
 
 /**
@@ -201,9 +195,7 @@ export const UpdateProductBody = zod.object({
   supplierId: zod.number().nullish(),
   secondarySupplierId: zod.number().nullish(),
   supplierCode: zod.string().nullish(),
-  supplierPrice: zod.number().nullish(),
-  secondarySupplierCode: zod.string().nullish(),
-  secondarySupplierPrice: zod.number().nullish(),
+  imageUrl: zod.string().nullish(),
 });
 
 export const UpdateProductResponse = zod.object({
@@ -216,9 +208,6 @@ export const UpdateProductResponse = zod.object({
   supplierId: zod.number().nullable(),
   secondarySupplierId: zod.number().nullable(),
   supplierCode: zod.string().nullable(),
-  supplierPrice: zod.number().nullable(),
-  secondarySupplierCode: zod.string().nullable(),
-  secondarySupplierPrice: zod.number().nullable(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });

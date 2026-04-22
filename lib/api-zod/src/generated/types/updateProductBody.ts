@@ -22,5 +22,5 @@ export interface UpdateProductBody {
   /** @nullable */
   supplierCode?: string | null;
   /** @nullable */
-  supplierPrice?: number | null;
+  imageUrl?: string | null;
 }

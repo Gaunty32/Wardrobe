@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { useUpload } from "@workspace/object-storage-web";
 import Layout from "@/components/Layout";
 import {
   useListProducts,
@@ -22,7 +23,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -56,7 +57,12 @@ export default function Products() {
 
   const [formData, setFormData] = useState({
     name: "", sku: "", category: "", description: "", unitPrice: 0, stockQuantity: 0,
-    supplierId: "none", supplierCode: "", supplierPrice: "",
+    supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
+  });
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile, isUploading: isImageUploading } = useUpload({
+    onSuccess: (res) => setFormData((f) => ({ ...f, imageUrl: `/api/storage${res.objectPath}` })),
+    onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
   });
 
   const queryClient = useQueryClient();
@@ -156,7 +162,7 @@ export default function Products() {
       name: "", sku: "",
       category: defaultCat,
       description: "", unitPrice: 0, stockQuantity: 0,
-      supplierId: "none", supplierCode: "", supplierPrice: "",
+      supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
     });
     setIsCreateOpen(true);
   };
@@ -172,6 +178,7 @@ export default function Products() {
       supplierId: product.supplierId ? String(product.supplierId) : "none",
       supplierCode: (product as any).supplierCode || "",
       supplierPrice: (product as any).supplierPrice != null ? String((product as any).supplierPrice) : "",
+      imageUrl: (product as any).imageUrl || "",
     });
     setEditingProduct(product);
   };
@@ -187,6 +194,7 @@ export default function Products() {
       supplierId: formData.supplierId !== "none" ? Number(formData.supplierId) : null,
       supplierCode: formData.supplierCode || null,
       supplierPrice: formData.supplierPrice !== "" ? parseFloat(formData.supplierPrice) : null,
+      imageUrl: formData.imageUrl || null,
     };
     if (editingProduct) {
       updateMutation.mutate({ id: editingProduct.id, data: payload as any }, {
@@ -455,6 +463,59 @@ export default function Products() {
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" className="resize-none" rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
             </div>
+
+            {/* ── Product image ── */}
+            <div className="grid gap-2">
+              <Label>Product Image</Label>
+              {formData.imageUrl ? (
+                <div className="flex items-start gap-3">
+                  <img
+                    src={formData.imageUrl}
+                    alt="Product"
+                    className="w-20 h-20 object-cover rounded-lg border border-border/50 flex-shrink-0"
+                  />
+                  <div className="flex flex-col gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={isImageUploading}
+                      className="text-xs text-primary hover:underline disabled:opacity-50"
+                    >
+                      {isImageUploading ? "Uploading…" : "Replace image"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData((f) => ({ ...f, imageUrl: "" }))}
+                      className="text-xs text-destructive hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={isImageUploading}
+                  className="flex flex-col items-center justify-center gap-2 h-24 rounded-lg border-2 border-dashed border-border/60 hover:border-primary/40 hover:bg-muted/30 transition-colors disabled:opacity-50"
+                >
+                  {isImageUploading ? (
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Upload className="w-5 h-5 text-muted-foreground" />
+                  )}
+                  <span className="text-xs text-muted-foreground">{isImageUploading ? "Uploading…" : "Click to upload product image"}</span>
+                </button>
+              )}
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+              />
+            </div>
+
             <div className="border-t border-border/40 pt-3 mt-1">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Supplier</p>
               <div className="grid gap-2 mb-3">

@@ -789,6 +789,8 @@ components:
           type: ["integer", "null"]
         supplierCode:
           type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
       required:
         - name
         - unitPrice
@@ -811,6 +813,8 @@ components:
         secondarySupplierId:
           type: ["integer", "null"]
         supplierCode:
+          type: ["string", "null"]
+        imageUrl:
           type: ["string", "null"]
 
     # ─── Supplier ──────────────────────────────────────────────────────────────

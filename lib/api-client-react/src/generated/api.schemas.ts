@@ -98,12 +98,6 @@ export interface Product {
   secondarySupplierId: number | null;
   /** @nullable */
   supplierCode: string | null;
-  /** @nullable */
-  supplierPrice: number | null;
-  /** @nullable */
-  secondarySupplierCode: string | null;
-  /** @nullable */
-  secondarySupplierPrice: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -124,11 +118,7 @@ export interface CreateProductBody {
   /** @nullable */
   supplierCode?: string | null;
   /** @nullable */
-  supplierPrice?: number | null;
-  /** @nullable */
-  secondarySupplierCode?: string | null;
-  /** @nullable */
-  secondarySupplierPrice?: number | null;
+  imageUrl?: string | null;
 }
 
 export interface UpdateProductBody {
@@ -147,11 +137,7 @@ export interface UpdateProductBody {
   /** @nullable */
   supplierCode?: string | null;
   /** @nullable */
-  supplierPrice?: number | null;
-  /** @nullable */
-  secondarySupplierCode?: string | null;
-  /** @nullable */
-  secondarySupplierPrice?: number | null;
+  imageUrl?: string | null;
 }
 
 export interface Supplier {

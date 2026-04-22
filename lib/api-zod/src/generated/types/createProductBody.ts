@@ -21,4 +21,6 @@ export interface CreateProductBody {
   secondarySupplierId?: number | null;
   /** @nullable */
   supplierCode?: string | null;
+  /** @nullable */
+  imageUrl?: string | null;
 }

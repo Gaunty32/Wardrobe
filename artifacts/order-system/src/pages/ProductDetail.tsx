@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useUpload } from "@workspace/object-storage-web";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler
+  Layers, Palette, Ruler, Upload, Camera
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { useGetProduct, useUpdateProduct, getListProductsQueryKey, useListSuppliers } from "@workspace/api-client-react";
@@ -128,6 +129,12 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
   const [secondarySupplierCode, setSecondarySupplierCode] = useState(variant.secondarySupplierCode || "");
   const [secondarySupplierPrice, setSecondarySupplierPrice] = useState(variant.secondarySupplierPrice != null ? String(variant.secondarySupplierPrice) : "");
   const [showVariantSecondary, setShowVariantSecondary] = useState(false);
+  const [editImageUrl, setEditImageUrl] = useState(variant.imageUrl || "");
+  const variantImageRef = useRef<HTMLInputElement>(null);
+  const { uploadFile: uploadVariantImage, isUploading: isVariantImageUploading } = useUpload({
+    onSuccess: (res) => setEditImageUrl(`/api/storage${res.objectPath}`),
+    onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
+  });
 
   const updateMut = useMutation({
     mutationFn: (data: any) => apiFetch(`/products/${productId}/variants/${variant.id}`, {
@@ -153,6 +160,7 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
   const handleSaveEdit = () => {
     updateMut.mutate({
       stockQuantity: parseInt(editStock, 10) || 0,
+      imageUrl: editImageUrl || null,
       primarySupplierId: primaryId !== "none" ? Number(primaryId) : null,
       supplierCode: variantSupplierCode || null,
       supplierPrice: variantSupplierPrice !== "" ? parseFloat(variantSupplierPrice) : null,
@@ -164,6 +172,7 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
 
   const openEdit = () => {
     setEditStock(String(variant.stockQuantity));
+    setEditImageUrl(variant.imageUrl || "");
     setPrimaryId(variant.primarySupplierId ? String(variant.primarySupplierId) : "none");
     setVariantSupplierCode(variant.supplierCode || "");
     setVariantSupplierPrice(variant.supplierPrice != null ? String(variant.supplierPrice) : "");
@@ -244,6 +253,31 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
             {variant.size && <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">{variant.size}</span>}
           </div>
           <div className="grid gap-4">
+            {/* Variation image upload */}
+            <div className="grid gap-2">
+              <Label>Variation Image</Label>
+              {editImageUrl ? (
+                <div className="flex items-start gap-3">
+                  <img src={editImageUrl} alt="Variant" className="w-16 h-16 object-cover rounded-lg border border-border/50 flex-shrink-0" />
+                  <div className="flex flex-col gap-2 mt-1">
+                    <button type="button" onClick={() => variantImageRef.current?.click()} disabled={isVariantImageUploading} className="text-xs text-primary hover:underline disabled:opacity-50">
+                      {isVariantImageUploading ? "Uploading…" : "Replace image"}
+                    </button>
+                    <button type="button" onClick={() => setEditImageUrl("")} className="text-xs text-destructive hover:underline">Remove</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={() => variantImageRef.current?.click()} disabled={isVariantImageUploading}
+                  className="flex items-center justify-center gap-2 h-16 rounded-lg border-2 border-dashed border-border/60 hover:border-primary/40 hover:bg-muted/30 transition-colors disabled:opacity-50"
+                >
+                  {isVariantImageUploading ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /> : <Upload className="w-4 h-4 text-muted-foreground" />}
+                  <span className="text-xs text-muted-foreground">{isVariantImageUploading ? "Uploading…" : "Upload variation image"}</span>
+                </button>
+              )}
+              <input ref={variantImageRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadVariantImage(f); e.target.value = ""; }}
+              />
+            </div>
             <div className="grid gap-2">
               <Label>Stock Quantity</Label>
               <Input type="number" min={0} value={editStock} onChange={e => setEditStock(e.target.value)} />
@@ -417,6 +451,17 @@ export default function ProductDetail() {
   const { data: suppliers = [] } = useListSuppliers({});
   const updateMutation = useUpdateProduct();
 
+  const productImageRef = useRef<HTMLInputElement>(null);
+  const { uploadFile: uploadProductImage, isUploading: isProductImageUploading } = useUpload({
+    onSuccess: async (res) => {
+      const newUrl = `/api/storage${res.objectPath}`;
+      await updateMutation.mutateAsync({ id: productId, data: { imageUrl: newUrl } as any });
+      qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
+      toast({ title: "Product image updated" });
+    },
+    onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
+  });
+
   const { data: attributes = [], refetch: refetchAttrs } = useQuery({
     queryKey: ["product", productId, "attributes"],
     queryFn: () => apiFetch(`/products/${productId}/attributes`),
@@ -511,17 +556,27 @@ export default function ProductDetail() {
             <Button variant="ghost" size="icon" className="mt-1 shrink-0" onClick={() => navigate("/products")}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            {(product as any).imageUrl ? (
-              <img
-                src={(product as any).imageUrl}
-                alt={product.name}
-                className="w-16 h-16 object-cover rounded-lg border border-border/50 flex-shrink-0"
-              />
-            ) : (
-              <div className="w-16 h-16 rounded-lg border border-border/50 bg-muted flex items-center justify-center flex-shrink-0">
-                <Package className="w-7 h-7 text-muted-foreground/40" />
+            <button
+              type="button"
+              title="Click to upload product image"
+              onClick={() => productImageRef.current?.click()}
+              disabled={isProductImageUploading}
+              className="group relative w-16 h-16 rounded-lg border border-border/50 overflow-hidden flex-shrink-0 hover:border-primary/50 transition-colors disabled:opacity-60"
+            >
+              {(product as any).imageUrl ? (
+                <img src={(product as any).imageUrl} alt={product.name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <Package className="w-7 h-7 text-muted-foreground/40" />
+                </div>
+              )}
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                {isProductImageUploading ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Camera className="w-4 h-4 text-white" />}
               </div>
-            )}
+            </button>
+            <input ref={productImageRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadProductImage(f); e.target.value = ""; }}
+            />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{product.name}</h1>

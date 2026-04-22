@@ -14,6 +14,7 @@ const variantBody = z.object({
   sku: z.string().optional().nullable(),
   price: z.number().positive().optional().nullable(),
   stockQuantity: z.number().int().min(0).default(0),
+  imageUrl: z.string().optional().nullable(),
   primarySupplierId: z.number().int().positive().optional().nullable(),
   supplierCode: z.string().optional().nullable(),
   supplierPrice: z.number().optional().nullable(),
