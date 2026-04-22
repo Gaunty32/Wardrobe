@@ -2,10 +2,15 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Truck, Package, CheckCircle, AlertTriangle, Clock, Printer,
-  RefreshCw, ChevronDown, ChevronRight, FileText, Tag, Send
+  RefreshCw, ChevronDown, ChevronRight, FileText, Tag, Send, ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate } from "@/lib/utils";
@@ -45,6 +50,7 @@ interface DispatchOrder {
   id: number; orderNumber: string; customerName: string | null; customerId: number | null;
   status: string; totalAmount: number; notes: string | null;
   orderDate: string; requiredDate: string | null; dispatchedAt: string | null;
+  shippingMethod: string | null;
   productionComplete: boolean;
   worksheets: Worksheet[];
   items: DispatchItem[];
@@ -293,20 +299,71 @@ function RequiredDateBadge({ requiredDate }: { requiredDate: string | null }) {
   );
 }
 
+interface DispatchResponse {
+  order: DispatchOrder;
+  dpd: { consignmentNumber: string; trackingUrl: string; labelPdfBase64: string | null } | null;
+  dpdError: string | null;
+  dpdConfigured: boolean;
+}
+
+function printBase64Pdf(base64: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank");
+  if (win) win.onload = () => { win.print(); setTimeout(() => URL.revokeObjectURL(url), 10000); };
+}
+
 function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatched: () => void }) {
   const [expanded, setExpanded] = useState(false);
-  const [confirmDispatch, setConfirmDispatch] = useState(false);
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [numberOfParcels, setNumberOfParcels] = useState(1);
+  const [totalWeightKg, setTotalWeightKg] = useState<number | "">("");
+  const [bookDpd, setBookDpd] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
+  // Auto-suggest DPD booking based on shipping method
+  const isDpdShipping = !!order.shippingMethod?.toLowerCase().includes("dpd");
+
+  function openDispatchModal() {
+    setNumberOfParcels(1);
+    setTotalWeightKg("");
+    setBookDpd(isDpdShipping);
+    setDispatchOpen(true);
+  }
+
   const dispatchMutation = useMutation({
-    mutationFn: () => apiFetch(`/dispatch/orders/${order.id}/dispatch`, { method: "PATCH" }),
-    onSuccess: () => {
+    mutationFn: () => apiFetch<DispatchResponse>(`/dispatch/orders/${order.id}/dispatch`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        numberOfParcels,
+        totalWeightKg: totalWeightKg === "" ? undefined : totalWeightKg,
+        bookDpd,
+      }),
+    }),
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["dispatch-orders"] });
-      toast({ title: "Order dispatched", description: `${order.orderNumber} marked as shipped.` });
+      setDispatchOpen(false);
+
+      if (data.dpd) {
+        toast({
+          title: `${order.orderNumber} dispatched via DPD`,
+          description: `Consignment: ${data.dpd.consignmentNumber}`,
+        });
+        if (data.dpd.labelPdfBase64) {
+          printBase64Pdf(data.dpd.labelPdfBase64);
+        }
+      } else if (data.dpdError) {
+        toast({ title: `${order.orderNumber} dispatched`, description: `Note: ${data.dpdError}`, variant: "destructive" });
+      } else {
+        toast({ title: "Order dispatched", description: `${order.orderNumber} marked as shipped.` });
+      }
       onDispatched();
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Dispatch failed", description: e.message, variant: "destructive" }),
   });
 
   const totalWs = order.worksheets.length;
@@ -348,17 +405,9 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => printDeliveryNote(order)}>
             <FileText className="w-3.5 h-3.5" /> Delivery Note
           </Button>
-          {!confirmDispatch ? (
-            <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => setConfirmDispatch(true)}>
-              <Send className="w-3.5 h-3.5" /> Dispatch
-            </Button>
-          ) : (
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">Confirm?</span>
-              <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => dispatchMutation.mutate()} disabled={dispatchMutation.isPending}>Yes</Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setConfirmDispatch(false)}>No</Button>
-            </div>
-          )}
+          <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={openDispatchModal}>
+            <Send className="w-3.5 h-3.5" /> Dispatch
+          </Button>
         </div>
       </div>
 
@@ -376,7 +425,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             <span><span className="font-medium">{overdue ? "Overdue" : "Due today"}</span> — production not yet complete. Dispatch what's ready now or wait?</span>
           </div>
           <div className="flex gap-2 flex-shrink-0 ml-3">
-            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1" onClick={() => setConfirmDispatch(true)}>
+            <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1" onClick={openDispatchModal}>
               <Send className="w-3 h-3" /> Send Now
             </Button>
           </div>
@@ -439,6 +488,102 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           )}
         </div>
       )}
+
+      {/* Dispatch modal */}
+      <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="w-5 h-5" />
+              Dispatch {order.orderNumber}
+            </DialogTitle>
+            <DialogDescription>
+              Enter parcel details for the despatch note. {isDpdShipping ? "DPD booking will be made automatically." : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Delivery address preview */}
+            {order.deliveryAddress && (
+              <div className="rounded-lg bg-muted/40 border border-border px-4 py-3 text-sm">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Delivering to</p>
+                <p className="font-medium">{order.customerName}</p>
+                <p className="text-muted-foreground text-xs">
+                  {[order.deliveryAddress.line1, order.deliveryAddress.line2, order.deliveryAddress.city, order.deliveryAddress.postcode]
+                    .filter(Boolean).join(", ")}
+                </p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="parcels">Number of boxes</Label>
+                <Input
+                  id="parcels"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={numberOfParcels}
+                  onChange={(e) => setNumberOfParcels(Math.max(1, parseInt(e.target.value) || 1))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="weight">Total weight (kg)</Label>
+                <Input
+                  id="weight"
+                  type="number"
+                  min={0.1}
+                  step={0.1}
+                  placeholder="e.g. 2.5"
+                  value={totalWeightKg}
+                  onChange={(e) => setTotalWeightKg(e.target.value === "" ? "" : parseFloat(e.target.value))}
+                />
+              </div>
+            </div>
+
+            {/* DPD booking toggle */}
+            <div
+              className={`flex items-start gap-3 rounded-lg border px-4 py-3 cursor-pointer transition-colors ${
+                bookDpd ? "border-blue-300 bg-blue-50" : "border-border bg-muted/20"
+              }`}
+              onClick={() => setBookDpd((v) => !v)}
+            >
+              <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                bookDpd ? "border-blue-600 bg-blue-600" : "border-muted-foreground"
+              }`}>
+                {bookDpd && <CheckCircle className="w-3 h-3 text-white" />}
+              </div>
+              <div>
+                <p className="text-sm font-medium">Book DPD consignment</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Automatically book with DPD and print the shipping label.
+                  {!order.deliveryAddress && " (Requires a delivery address on the order.)"}
+                </p>
+              </div>
+            </div>
+
+            {bookDpd && !order.deliveryAddress && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                No delivery address is set on this order — DPD booking will be skipped.
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDispatchOpen(false)}>Cancel</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white gap-2"
+              onClick={() => dispatchMutation.mutate()}
+              disabled={dispatchMutation.isPending || (bookDpd && totalWeightKg === "")}
+            >
+              <Send className="w-4 h-4" />
+              {dispatchMutation.isPending
+                ? (bookDpd ? "Booking DPD…" : "Dispatching…")
+                : "Confirm Dispatch"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

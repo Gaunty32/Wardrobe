@@ -5,6 +5,7 @@ import {
   db, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
   customerEmployeesTable, customerDeliveryAddressesTable, customersTable,
 } from "@workspace/db";
+import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
 
 const router: IRouter = Router();
 
@@ -165,18 +166,107 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
   });
 });
 
+const DispatchBody = z.object({
+  numberOfParcels: z.number().int().positive().optional(),
+  totalWeightKg: z.number().positive().optional(),
+  bookDpd: z.boolean().optional(),
+});
+
 router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const [order] = await db
+  const body = DispatchBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { numberOfParcels, totalWeightKg, bookDpd } = body.data;
+
+  // Fetch the order + delivery address before dispatching
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, parsed.data.id));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  let dpdResult: { consignmentNumber: string; jobId: number; trackingUrl: string; labelPdfBase64: string | null } | null = null;
+  let dpdError: string | null = null;
+
+  if (bookDpd && numberOfParcels && totalWeightKg) {
+    // Fetch delivery address for DPD
+    let address = null;
+    if (order.deliveryAddressId) {
+      const [a] = await db
+        .select()
+        .from(customerDeliveryAddressesTable)
+        .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+      address = a ?? null;
+    }
+
+    if (!address) {
+      dpdError = "No delivery address set on this order — DPD booking skipped.";
+    } else {
+      try {
+        dpdResult = await bookDpdConsignment({
+          orderNumber: order.orderNumber,
+          delivery: {
+            contactName: order.customerName ?? "Recipient",
+            organisation: order.customerName ?? undefined,
+            line1: address.line1 ?? "",
+            line2: address.line2 ?? undefined,
+            town: address.city ?? "",
+            postcode: address.postcode ?? "",
+            countryCode: address.country === "United Kingdom" || !address.country ? "GB" : address.country,
+          },
+          numberOfParcels,
+          totalWeightKg,
+        });
+      } catch (err: unknown) {
+        dpdError = err instanceof Error ? err.message : "DPD booking failed";
+      }
+    }
+  }
+
+  // Mark order as shipped regardless of DPD outcome
+  const updateFields: Partial<typeof ordersTable.$inferInsert> = {
+    status: "shipped",
+    dispatchedAt: new Date(),
+    updatedAt: new Date(),
+    ...(numberOfParcels != null ? { dpdParcelCount: numberOfParcels } : {}),
+    ...(dpdResult ? {
+      trackingNumber: dpdResult.consignmentNumber,
+      dpdConsignmentId: dpdResult.consignmentNumber,
+      dpdJobId: dpdResult.jobId,
+    } : {}),
+  };
+
+  const [updated] = await db
     .update(ordersTable)
-    .set({ status: "shipped", dispatchedAt: new Date(), updatedAt: new Date() })
+    .set(updateFields)
     .where(eq(ordersTable.id, parsed.data.id))
     .returning();
 
+  res.json({
+    order: updated,
+    dpd: dpdResult ? {
+      consignmentNumber: dpdResult.consignmentNumber,
+      trackingUrl: dpdResult.trackingUrl,
+      labelPdfBase64: dpdResult.labelPdfBase64,
+    } : null,
+    dpdError,
+    dpdConfigured: isDpdConfigured(),
+  });
+});
+
+// ── Reprint DPD label for a dispatched order ──────────────────────────────────
+router.get("/dispatch/orders/:id/dpd-label", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, parsed.data.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
-  res.json(order);
+  if (!order.dpdJobId) { res.status(404).json({ error: "No DPD label on record for this order" }); return; }
+
+  const labelBase64 = await reprrintDpdLabel(order.dpdJobId);
+  if (!labelBase64) { res.status(502).json({ error: "Could not fetch DPD label" }); return; }
+
+  res.json({ labelPdfBase64: labelBase64 });
 });
 
 export default router;
