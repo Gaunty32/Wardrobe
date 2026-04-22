@@ -48,7 +48,8 @@ async function apiFetch<T>(path: string): Promise<T> {
 export default function Products() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedTopCat, setSelectedTopCat] = useState<ProductCategory | null>(null);
+  const [selectedSubCat, setSelectedSubCat] = useState<ProductCategory | null>(null);
   const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal">("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
@@ -74,34 +75,72 @@ export default function Products() {
 
   const allProducts: ProductWithCategory[] = (products || []) as ProductWithCategory[];
 
-  // Derive category names from products (for categories not yet in the DB)
-  const productCategoryNames = [
-    ...new Set(allProducts.map((p) => (p as any).category?.trim() || UNCATEGORISED)),
-  ].sort((a, b) => (a === UNCATEGORISED ? 1 : b === UNCATEGORISED ? -1 : a.localeCompare(b)));
+  // ── Category hierarchy helpers ──────────────────────────────────────────────
+  const subcategoriesOf = (parent: ProductCategory): ProductCategory[] =>
+    storedCategories.filter((c) => c.parentWooId != null && c.parentWooId === parent.wooId);
 
-  // Merge stored categories with product-derived categories, computing live counts
-  const categoriesWithCounts: (ProductCategory & { liveCount: number })[] = productCategoryNames.map((name) => {
-    const stored = storedCategories.find((c) => c.name === name);
-    const liveCount = allProducts.filter((p) =>
-      name === UNCATEGORISED ? !(p as any).category : (p as any).category === name
-    ).length;
-    return {
-      id: stored?.id ?? -1,
-      wooId: stored?.wooId ?? null,
+  // All category names that "belong" to a top-level cat (itself + all descendants)
+  function allNamesUnder(cat: ProductCategory): Set<string> {
+    const names = new Set<string>([cat.name]);
+    for (const sub of subcategoriesOf(cat)) {
+      names.add(sub.name);
+      for (const subsub of subcategoriesOf(sub)) names.add(subsub.name);
+    }
+    return names;
+  }
+
+  // Top-level stored categories (no parent)
+  const topLevelStored = storedCategories.filter((c) => !c.parentWooId);
+
+  // Subcategories currently in scope (when a top cat is selected)
+  const currentSubs = selectedTopCat ? subcategoriesOf(selectedTopCat) : [];
+
+  // Names of all stored categories (to detect product-derived ones not in DB)
+  const storedCatNames = new Set(storedCategories.map((c) => c.name));
+
+  // Product-derived categories not in the WooCommerce DB (internal-only)
+  const allProductCatNames = [...new Set(allProducts.map((p) => (p as any).category?.trim()).filter(Boolean))];
+  const internalOnlyCatNames = allProductCatNames.filter((n) => !storedCatNames.has(n)).sort();
+
+  // Build top-level grid entries: WooCommerce top-level + internal-only
+  type CatEntry = ProductCategory & { liveCount: number; isInternal: boolean };
+
+  const topLevelEntries: CatEntry[] = [
+    ...topLevelStored.map((cat) => ({
+      ...cat,
+      liveCount: allProducts.filter((p) => allNamesUnder(cat).has((p as any).category ?? "")).length,
+      isInternal: false,
+    })),
+    ...internalOnlyCatNames.map((name, i) => ({
+      id: -(i + 1),
+      wooId: null,
       name,
-      slug: stored?.slug ?? null,
-      imageUrl: stored?.imageUrl ?? null,
-      productCount: stored?.productCount ?? liveCount,
-      liveCount,
-    };
-  });
+      slug: null,
+      imageUrl: null,
+      parentWooId: null,
+      productCount: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      liveCount: allProducts.filter((p) => (p as any).category === name).length,
+      isInternal: true,
+    })),
+  ].sort((a, b) => a.name.localeCompare(b.name));
 
+  // Subcategory grid entries with live counts
+  const subEntries: CatEntry[] = currentSubs.map((cat) => ({
+    ...cat,
+    liveCount: allProducts.filter((p) => (p as any).category === cat.name).length,
+    isInternal: false,
+  })).sort((a, b) => a.name.localeCompare(b.name));
+
+  // ── Filtered product list ───────────────────────────────────────────────────
   const filteredProducts = allProducts
     .filter((p) => {
-      if (selectedCategory) {
-        return selectedCategory === UNCATEGORISED
-          ? !(p as any).category
-          : (p as any).category === selectedCategory;
+      const pCat: string = (p as any).category ?? "";
+      if (selectedSubCat) return pCat === selectedSubCat.name;
+      if (selectedTopCat) {
+        // If drilling into a top cat that has subs, show all matching (websiteFilter shows this)
+        return allNamesUnder(selectedTopCat).has(pCat);
       }
       return true;
     })
@@ -112,9 +151,10 @@ export default function Products() {
     });
 
   const openCreateDialog = () => {
+    const defaultCat = selectedSubCat?.name ?? (selectedTopCat && currentSubs.length === 0 ? selectedTopCat.name : "");
     setFormData({
       name: "", sku: "",
-      category: selectedCategory && selectedCategory !== UNCATEGORISED ? selectedCategory : "",
+      category: defaultCat,
       description: "", unitPrice: 0, stockQuantity: 0,
       supplierId: "none", supplierCode: "", supplierPrice: "",
     });
@@ -179,7 +219,46 @@ export default function Products() {
   };
 
   const isSearching = search.trim().length > 0;
-  const showGrid = !isSearching && !selectedCategory && websiteFilter === "all";
+  const showTopGrid = !isSearching && !selectedTopCat && websiteFilter === "all";
+  const showSubGrid = !isSearching && !!selectedTopCat && currentSubs.length > 0 && !selectedSubCat && websiteFilter === "all";
+  const showProductTable = !showTopGrid && !showSubGrid;
+
+  // Breadcrumb helpers
+  const activeCatTitle = selectedSubCat?.name ?? selectedTopCat?.name ?? "Products";
+  const showBackToTop = !!selectedTopCat && !selectedSubCat;
+  const showBackToSub = !!selectedSubCat;
+
+  function CategoryGrid({ entries, onSelect }: { entries: (ProductCategory & { liveCount: number; isInternal: boolean })[]; onSelect: (c: ProductCategory & { liveCount: number; isInternal: boolean }) => void }) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+        {entries.map((cat) => (
+          <button
+            key={cat.id}
+            onClick={() => onSelect(cat)}
+            className="group relative rounded-xl overflow-hidden border border-border/60 bg-card shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-200 aspect-[4/3] text-left"
+          >
+            {cat.imageUrl ? (
+              <img
+                src={cat.imageUrl}
+                alt={cat.name}
+                className="absolute inset-0 w-full h-full object-contain p-3 transition-transform duration-300 group-hover:scale-105"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-muted/60 to-muted flex items-center justify-center">
+                <ImageOff className="w-10 h-10 text-muted-foreground/30" />
+              </div>
+            )}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            <div className="absolute bottom-0 left-0 right-0 p-3">
+              <p className="text-white font-semibold text-sm leading-tight line-clamp-2 drop-shadow">{cat.name}</p>
+              <p className="text-white/70 text-xs mt-0.5">{cat.liveCount} products</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <Layout>
@@ -187,26 +266,51 @@ export default function Products() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-center gap-3">
-            {selectedCategory && (
-              <button
-                onClick={() => setSelectedCategory(null)}
-                className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                All categories
-              </button>
+            {/* Breadcrumb back navigation */}
+            {(showBackToTop || showBackToSub) && (
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <button
+                  onClick={() => { setSelectedTopCat(null); setSelectedSubCat(null); }}
+                  className="hover:text-foreground transition-colors"
+                >All categories</button>
+                {selectedTopCat && (
+                  <>
+                    <span className="mx-1">/</span>
+                    {selectedSubCat ? (
+                      <button
+                        onClick={() => setSelectedSubCat(null)}
+                        className="hover:text-foreground transition-colors"
+                      >{selectedTopCat.name}</button>
+                    ) : (
+                      <span className="text-foreground font-medium">{selectedTopCat.name}</span>
+                    )}
+                  </>
+                )}
+                {selectedSubCat && (
+                  <>
+                    <span className="mx-1">/</span>
+                    <span className="text-foreground font-medium">{selectedSubCat.name}</span>
+                  </>
+                )}
+              </div>
             )}
-            {!selectedCategory && (
+            {!selectedTopCat && (
               <div>
                 <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Products</h1>
                 <p className="text-muted-foreground mt-1">
-                  {allProducts.length} product{allProducts.length !== 1 ? "s" : ""} across {categoriesWithCounts.length} categor{categoriesWithCounts.length !== 1 ? "ies" : "y"}
+                  {allProducts.length} product{allProducts.length !== 1 ? "s" : ""} across {topLevelEntries.length} categor{topLevelEntries.length !== 1 ? "ies" : "y"}
                 </p>
               </div>
             )}
-            {selectedCategory && (
+            {selectedTopCat && !selectedSubCat && currentSubs.length === 0 && (
               <div>
-                <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{selectedCategory}</h1>
+                <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{selectedTopCat.name}</h1>
+                <p className="text-muted-foreground mt-1">{filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}</p>
+              </div>
+            )}
+            {selectedSubCat && (
+              <div>
+                <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{selectedSubCat.name}</h1>
                 <p className="text-muted-foreground mt-1">{filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}</p>
               </div>
             )}
@@ -224,7 +328,7 @@ export default function Products() {
               placeholder="Search products..."
               className="pl-9 bg-background"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); if (e.target.value) setSelectedCategory(null); }}
+              onChange={(e) => { setSearch(e.target.value); }}
             />
           </div>
 
@@ -233,7 +337,7 @@ export default function Products() {
             {(["all", "website", "internal"] as const).map((f) => (
               <button
                 key={f}
-                onClick={() => { setWebsiteFilter(f); setSelectedCategory(null); }}
+                onClick={() => { setWebsiteFilter(f); setSelectedTopCat(null); setSelectedSubCat(null); }}
                 className={cn(
                   "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                   websiteFilter === f
@@ -249,13 +353,13 @@ export default function Products() {
           </div>
         </div>
 
-        {productsLoading || (showGrid && categoriesLoading) ? (
+        {productsLoading || (showTopGrid && categoriesLoading) ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
-        ) : showGrid ? (
-          /* ── Category grid ── */
-          categoriesWithCounts.length === 0 ? (
+        ) : showTopGrid ? (
+          /* ── Top-level category grid ── */
+          topLevelEntries.length === 0 ? (
             <div className="py-20 text-center text-muted-foreground">
               <PackageSearch className="w-16 h-16 mx-auto mb-4 text-muted-foreground/40" />
               <h3 className="text-lg font-medium text-foreground">No products yet</h3>
@@ -263,38 +367,20 @@ export default function Products() {
               <Button onClick={openCreateDialog} variant="outline" className="mt-6">Add Product</Button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {categoriesWithCounts.map((cat) => (
-                <button
-                  key={cat.name}
-                  onClick={() => setSelectedCategory(cat.name)}
-                  className="group relative rounded-xl overflow-hidden border border-border/60 bg-card shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-200 aspect-[4/3] text-left"
-                >
-                  {cat.imageUrl ? (
-                    <img
-                      src={cat.imageUrl}
-                      alt={cat.name}
-                      className="absolute inset-0 w-full h-full object-contain p-3 transition-transform duration-300 group-hover:scale-105"
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                    />
-                  ) : (
-                    <div className="absolute inset-0 bg-gradient-to-br from-muted/60 to-muted flex items-center justify-center">
-                      <ImageOff className="w-10 h-10 text-muted-foreground/30" />
-                    </div>
-                  )}
-                  {/* Overlay */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                  {/* Text */}
-                  <div className="absolute bottom-0 left-0 right-0 p-3">
-                    <p className="text-white font-semibold text-sm leading-tight line-clamp-2 drop-shadow">
-                      {cat.name}
-                    </p>
-                    <p className="text-white/70 text-xs mt-0.5">{cat.liveCount} products</p>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <CategoryGrid
+              entries={topLevelEntries}
+              onSelect={(cat) => {
+                setSelectedTopCat(cat);
+                setSelectedSubCat(null);
+              }}
+            />
           )
+        ) : showSubGrid ? (
+          /* ── Subcategory grid ── */
+          <CategoryGrid
+            entries={subEntries}
+            onSelect={(cat) => setSelectedSubCat(cat)}
+          />
         ) : (
           /* ── Product table ── */
           filteredProducts.length === 0 ? (
@@ -346,8 +432,11 @@ export default function Products() {
                   list="category-suggestions"
                 />
                 <datalist id="category-suggestions">
-                  {categoriesWithCounts.filter((c) => c.name !== UNCATEGORISED).map((c) => (
-                    <option key={c.name} value={c.name} />
+                  {storedCategories.map((c) => (
+                    <option key={c.id} value={c.name} />
+                  ))}
+                  {internalOnlyCatNames.map((n) => (
+                    <option key={n} value={n} />
                   ))}
                 </datalist>
               </div>
