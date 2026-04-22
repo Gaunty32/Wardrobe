@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, inArray, and, sql } from "drizzle-orm";
+import { eq, desc, inArray, and, sql, notExists } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -240,6 +240,7 @@ router.post("/picking-list/return", async (req, res): Promise<void> => {
 
 // ── Pending production: confirmed orders awaiting stock ───────────────────────
 router.get("/production/pending", async (req, res): Promise<void> => {
+  // 1. Items awaiting stock (purchase required)
   const pendingItems = await db
     .select({
       orderId: ordersTable.id,
@@ -263,7 +264,6 @@ router.get("/production/pending", async (req, res): Promise<void> => {
     .where(eq(orderItemsTable.purchaseRequired, true))
     .orderBy(ordersTable.requiredDate, ordersTable.id);
 
-  // Group by order
   const orderMap = new Map<number, {
     orderId: number; orderNumber: string; customerName: string | null;
     requiredDate: Date | null;
@@ -290,7 +290,35 @@ router.get("/production/pending", async (req, res): Promise<void> => {
     });
   }
 
-  res.json(Array.from(orderMap.values()));
+  // 2. Confirmed orders that have NO worksheets yet (need "Send to Production")
+  const readyRows = await db
+    .select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      requiredDate: ordersTable.requiredDate,
+      totalAmount: ordersTable.totalAmount,
+      itemCount: sql<number>`(SELECT COUNT(*) FROM order_items WHERE order_id = ${ordersTable.id})`.as("itemCount"),
+    })
+    .from(ordersTable)
+    .where(
+      and(
+        eq(ordersTable.status, "confirmed"),
+        notExists(
+          db.select({ one: sql`1` }).from(worksheetsTable).where(eq(worksheetsTable.orderId, ordersTable.id))
+        ),
+      )
+    )
+    .orderBy(ordersTable.requiredDate, ordersTable.id);
+
+  res.json({
+    awaitingStock: Array.from(orderMap.values()),
+    readyForProduction: readyRows.map(r => ({
+      ...r,
+      totalAmount: r.totalAmount ? parseFloat(r.totalAmount) : 0,
+      itemCount: Number(r.itemCount),
+    })),
+  });
 });
 
 router.get("/worksheets", async (req, res): Promise<void> => {

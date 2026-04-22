@@ -16,7 +16,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatCurrency } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const API_BASE = `${BASE}/api`;
@@ -87,6 +87,15 @@ interface PendingOrder {
   customerName: string | null;
   requiredDate: string | null;
   items: PendingItem[];
+}
+
+interface ReadyOrder {
+  id: number;
+  orderNumber: string;
+  customerName: string | null;
+  requiredDate: string | null;
+  totalAmount: number;
+  itemCount: number;
 }
 
 interface PickingItem {
@@ -1465,10 +1474,15 @@ export default function Production() {
     queryFn: () => apiFetch("/worksheets"),
   });
 
-  const { data: pendingOrders = [], isLoading: pendingLoading } = useQuery<PendingOrder[]>({
+  const { data: pendingData, isLoading: pendingLoading } = useQuery<{
+    awaitingStock: PendingOrder[];
+    readyForProduction: ReadyOrder[];
+  }>({
     queryKey: ["production-pending"],
     queryFn: () => apiFetch("/production/pending"),
   });
+  const pendingOrders = pendingData?.awaitingStock ?? [];
+  const readyForProduction = pendingData?.readyForProduction ?? [];
 
   const { data: pickingOrders = [] } = useQuery<PickingOrder[]>({
     queryKey: ["picking-list"],
@@ -1546,10 +1560,19 @@ export default function Production() {
     return true;
   });
 
-  const preWipTotal = preWipWorksheets.length + filteredPendingOrders.length;
+  const filteredReadyForProduction = readyForProduction.filter((o) => {
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      if (!o.customerName?.toLowerCase().includes(q) && !o.orderNumber.toLowerCase().includes(q)) return false;
+    }
+    if (!matchesDateFilters(o.requiredDate as unknown as string | null, filters.dateFrom, filters.dateTo)) return false;
+    return true;
+  });
+
+  const preWipTotal = preWipWorksheets.length + filteredPendingOrders.length + filteredReadyForProduction.length;
 
   // Unfiltered counts for stat cards (show actual total, filtered shown inside tab)
-  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + pendingOrders.length;
+  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + pendingOrders.length + readyForProduction.length;
   const rawWip = allWorksheets.filter((w) => w.status === "wip").length;
   const rawComplete = allWorksheets.filter((w) => w.status === "complete").length;
   const hasFilters = Object.values(filters).some(Boolean);
@@ -1632,8 +1655,50 @@ export default function Production() {
               </div>
             ) : (
               <div className="space-y-3">
+                {filteredReadyForProduction.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-2 text-sm font-medium text-green-700">
+                      <ClipboardList className="w-4 h-4" />
+                      Needs Production ({filteredReadyForProduction.length} order{filteredReadyForProduction.length !== 1 ? "s" : ""})
+                    </div>
+                    {filteredReadyForProduction.map((order) => (
+                      <div key={order.id} className="rounded-xl border border-green-200 bg-green-50/50 shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <ClipboardList className="w-4 h-4 text-green-700 flex-shrink-0" />
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <a
+                                  href={`/orders/${order.id}`}
+                                  className="font-mono font-bold text-base hover:underline text-foreground"
+                                >
+                                  {order.orderNumber}
+                                </a>
+                                <Badge className="text-xs bg-green-100 text-green-800 border-green-300">
+                                  Confirmed
+                                </Badge>
+                              </div>
+                              <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+                                {order.customerName && <span>{order.customerName}</span>}
+                                {order.requiredDate && <span>· Due {formatDate(order.requiredDate)}</span>}
+                                <span>· {order.itemCount} item{order.itemCount !== 1 ? "s" : ""}</span>
+                                <span>· {formatCurrency(order.totalAmount)}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <a href={`/orders/${order.id}`}>
+                            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
+                              <ExternalLink className="w-3.5 h-3.5" /> View &amp; Send to Production
+                            </Button>
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
                 {filteredPendingOrders.length > 0 && (
                   <>
+                    {filteredReadyForProduction.length > 0 && <div className="pt-1" />}
                     <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
                       <ShoppingCart className="w-4 h-4" />
                       Awaiting Stock ({filteredPendingOrders.length} order{filteredPendingOrders.length !== 1 ? "s" : ""})
@@ -1645,7 +1710,7 @@ export default function Production() {
                 )}
                 {preWipWorksheets.length > 0 && (
                   <>
-                    {filteredPendingOrders.length > 0 && (
+                    {(filteredPendingOrders.length > 0 || filteredReadyForProduction.length > 0) && (
                       <div className="flex items-center gap-2 text-sm font-medium text-blue-700 pt-2">
                         <Clock className="w-4 h-4" />
                         Worksheets Ready ({preWipWorksheets.length})
