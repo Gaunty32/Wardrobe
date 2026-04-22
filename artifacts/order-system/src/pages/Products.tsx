@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -49,6 +49,7 @@ export default function Products() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal">("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
 
@@ -95,13 +96,20 @@ export default function Products() {
     };
   });
 
-  const filteredProducts = selectedCategory
-    ? allProducts.filter((p) =>
-        selectedCategory === UNCATEGORISED
+  const filteredProducts = allProducts
+    .filter((p) => {
+      if (selectedCategory) {
+        return selectedCategory === UNCATEGORISED
           ? !(p as any).category
-          : (p as any).category === selectedCategory
-      )
-    : allProducts;
+          : (p as any).category === selectedCategory;
+      }
+      return true;
+    })
+    .filter((p) => {
+      if (websiteFilter === "website") return !!(p as any).wooCommerceId;
+      if (websiteFilter === "internal") return !(p as any).wooCommerceId;
+      return true;
+    });
 
   const openCreateDialog = () => {
     setFormData({
@@ -171,7 +179,7 @@ export default function Products() {
   };
 
   const isSearching = search.trim().length > 0;
-  const showGrid = !isSearching && !selectedCategory;
+  const showGrid = !isSearching && !selectedCategory && websiteFilter === "all";
 
   return (
     <Layout>
@@ -208,15 +216,37 @@ export default function Products() {
           </Button>
         </div>
 
-        {/* Search bar — always visible */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search products..."
-            className="pl-9 bg-background"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); if (e.target.value) setSelectedCategory(null); }}
-          />
+        {/* Search + filter bar */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative max-w-sm flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search products..."
+              className="pl-9 bg-background"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); if (e.target.value) setSelectedCategory(null); }}
+            />
+          </div>
+
+          {/* Website / Internal filter */}
+          <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5">
+            {(["all", "website", "internal"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => { setWebsiteFilter(f); setSelectedCategory(null); }}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  websiteFilter === f
+                    ? "bg-background shadow-sm text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {f === "website" && <Globe className="w-3 h-3" />}
+                {f === "internal" && <Lock className="w-3 h-3" />}
+                {f === "all" ? "All" : f === "website" ? "Website" : "Internal only"}
+              </button>
+            ))}
+          </div>
         </div>
 
         {productsLoading || (showGrid && categoriesLoading) ? (
@@ -416,7 +446,20 @@ function ProductTable({
                 )}
               </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">{product.sku || "—"}</TableCell>
-              <TableCell className="font-medium text-foreground hover:text-primary transition-colors">{product.name}</TableCell>
+              <TableCell className="font-medium text-foreground hover:text-primary transition-colors">
+                <div className="flex items-center gap-2">
+                  {product.name}
+                  {(product as any).wooCommerceId ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 flex-shrink-0">
+                      <Globe className="w-2.5 h-2.5" /> Website
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border flex-shrink-0">
+                      <Lock className="w-2.5 h-2.5" /> Internal
+                    </span>
+                  )}
+                </div>
+              </TableCell>
               <TableCell className="text-muted-foreground text-sm hidden md:table-cell max-w-[200px] truncate">{product.description || "—"}</TableCell>
               <TableCell className="text-right font-medium tabular-nums">{formatCurrency(product.unitPrice)}</TableCell>
               <TableCell className="text-right">
