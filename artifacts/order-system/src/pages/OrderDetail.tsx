@@ -55,6 +55,64 @@ interface CustomerEmployee { id: number; customerId: number; firstName: string; 
 interface CustomerFinishedItem { id: number; name: string; productId: number; roleId: number | null; roleName: string | null; productName: string | null; productSku: string | null; finishId: number | null; finishName: string | null; colour: string | null; size: string | null; unitPrice: number; specialPrice: number | null; notes: string | null; }
 interface DeliveryAddress { id: number; customerId: number; label: string | null; line1: string | null; line2: string | null; city: string | null; county: string | null; postcode: string | null; country: string | null; isDefault: boolean; }
 
+function PoNumberInline({ orderId, current }: { orderId: number; current: string | null }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(current ?? "");
+  const { toast } = useToast();
+
+  useEffect(() => { setValue(current ?? ""); }, [current]);
+
+  const save = async () => {
+    setEditing(false);
+    if (value === (current ?? "")) return;
+    try {
+      await apiFetch(`/orders/${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ poNumber: value || null }),
+      });
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+    } catch {
+      toast({ title: "Could not save PO number", variant: "destructive" });
+    }
+  };
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1.5 mt-1.5">
+        <input
+          autoFocus
+          className="text-sm border rounded px-2 py-0.5 font-mono w-44 outline-none focus:ring-1 focus:ring-primary/40"
+          placeholder="e.g. PO-2026-0042"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="flex items-center gap-1.5 mt-1.5 group"
+      onClick={() => setEditing(true)}
+      title="Click to edit PO number"
+    >
+      {current ? (
+        <span className="text-sm font-mono text-muted-foreground group-hover:text-foreground transition-colors">
+          PO: {current}
+        </span>
+      ) : (
+        <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors italic">
+          + Add PO number
+        </span>
+      )}
+      <Pencil className="w-3 h-3 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+    </button>
+  );
+}
+
 function useProductAttributes(productId: number | null) {
   return useQuery<ProductAttribute[]>({
     queryKey: ["product-attributes", productId],
@@ -274,7 +332,7 @@ export default function OrderDetail() {
       </style>
     </head><body>
       <div style="background:#1e3a5f;color:white;padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
-        <div><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;opacity:.8">Select Branding Solutions</div><div style="font-size:11px;font-weight:bold;margin-top:2px">Order: ${order?.orderNumber ?? ""}</div></div>
+        <div><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;opacity:.8">Select Branding Solutions</div><div style="font-size:11px;font-weight:bold;margin-top:2px">Order: ${order?.orderNumber ?? ""}${(order as any)?.poNumber ? ` &bull; PO: ${(order as any).poNumber}` : ""}</div></div>
         <div style="font-size:10px;opacity:.7;text-align:right">${order?.customerName ?? ""}</div>
       </div>
       <div style="padding:14px;background:#f0f4fa;border-bottom:2px solid #1e3a5f">
@@ -633,6 +691,7 @@ export default function OrderDetail() {
                 <StatusBadge status={order.status} className="mt-1" />
               </div>
               <p className="text-muted-foreground mt-1">{formatDate(order.orderDate)} &bull; {order.customerName}</p>
+              <PoNumberInline orderId={orderId} current={(order as any).poNumber ?? null} />
             </div>
           </div>
 

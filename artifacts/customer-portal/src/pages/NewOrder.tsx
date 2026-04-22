@@ -938,12 +938,13 @@ const SHIPPING_OPTIONS = [
 function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
-  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number }) => void;
+  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string }) => void;
   submitting: boolean;
   portalRole: string;
 }) {
   const [requiredDate, setRequiredDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [poNumber, setPoNumber] = useState("");
   const [shippingId, setShippingId] = useState<string>("");
 
   const selectedShipping = SHIPPING_OPTIONS.find(o => o.id === shippingId) ?? null;
@@ -1078,6 +1079,16 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
             onChange={e => setRequiredDate(e.target.value)}
           />
         </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="po-number">Purchase order number <span className="text-muted-foreground font-normal">(optional — can be added later)</span></Label>
+          <Input
+            id="po-number"
+            value={poNumber}
+            onChange={e => setPoNumber(e.target.value)}
+            placeholder="e.g. PO-2026-0042"
+            className="font-mono"
+          />
+        </div>
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="notes">Notes for our team (optional)</Label>
           <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any special instructions, delivery notes, etc." rows={3} />
@@ -1086,7 +1097,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
 
       <div className="flex flex-col gap-1">
         <Button
-          onClick={() => onSubmit({ requiredDate, notes, shippingOption: shippingId, shippingCost })}
+          onClick={() => onSubmit({ requiredDate, notes, shippingOption: shippingId, shippingCost, poNumber })}
           disabled={submitting || basket.length === 0 || !shippingId}
           className="w-full sm:w-auto"
         >
@@ -1147,12 +1158,13 @@ export default function NewOrder() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number }) =>
+    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string }) =>
       apiFetch("/portal/orders", {
         method: "POST",
         body: JSON.stringify({
           requiredDate: data.requiredDate || undefined,
           portalNotes: data.notes || undefined,
+          poNumber: data.poNumber || undefined,
           shippingOption: data.shippingOption || undefined,
           shippingCost: data.shippingCost,
           items: basket.map(i => ({

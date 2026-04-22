@@ -1071,6 +1071,8 @@ components:
         orderDate:
           type: ["string", "null"]
           format: date-time
+        poNumber:
+          type: ["string", "null"]
 
     CreateOrderItemBody:
       type: object

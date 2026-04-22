@@ -367,6 +367,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     notes: z.string().optional(),
     requiredDate: z.string().optional(),
     portalNotes: z.string().optional(),
+    poNumber: z.string().max(100).optional(),
     shippingOption: z.string().optional(),
     shippingCost: z.number().nonnegative().optional(),
     items: z.array(z.object({
@@ -402,7 +403,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
 
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number)
     VALUES (
       ${orderNumber},
       ${customerId},
@@ -415,7 +416,8 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${body.notes ?? null},
       now(),
       ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null},
-      ${body.shippingOption ?? null}
+      ${body.shippingOption ?? null},
+      ${body.poNumber ?? null}
     )
     RETURNING id, order_number
   `);
