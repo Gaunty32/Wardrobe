@@ -27,6 +27,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { sortSizes } from "@/lib/sizeUtils";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle } from "lucide-react";
 import { Link } from "wouter";
@@ -350,7 +351,7 @@ export default function OrderDetail() {
   const { data: productVariants } = useProductVariants(item.productId);
 
   const colours = [...new Set((productAttributes ?? []).filter(a => a.type === "colour").map(a => a.value))];
-  const sizes = [...new Set((productAttributes ?? []).filter(a => a.type === "size").map(a => a.value))];
+  const sizes = sortSizes([...new Set((productAttributes ?? []).filter(a => a.type === "size").map(a => a.value))]);
 
   useEffect(() => {
     // Skip variant price lookup for wardrobe items — they use the customer's special/wardrobe price

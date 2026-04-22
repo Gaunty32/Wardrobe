@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { sortSizes } from "@/lib/sizeUtils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -157,23 +158,6 @@ function ModeStep({ onSelect }: { onSelect: (mode: "wardrobe" | "catalogue") => 
 
 // ─── Step 2a: Wardrobe ───────────────────────────────────────────────────────
 
-// Standard garment size order for dropdown sorting
-const SIZE_ORDER = [
-  "XXXS","XXS","XS","S","M","L","XL","2XL","3XL","4XL","5XL",
-  "6XL","XXL","XXXL","X-Small","X Small","Small","Medium","Large",
-  "X-Large","X Large","XX-Large","XX Large",
-  "4","6","8","10","12","14","16","18","20","22","24","26","28","30",
-];
-function sortSizes(sizes: string[]): string[] {
-  return [...sizes].sort((a, b) => {
-    const ai = SIZE_ORDER.findIndex(s => s.toLowerCase() === a.toLowerCase());
-    const bi = SIZE_ORDER.findIndex(s => s.toLowerCase() === b.toLowerCase());
-    if (ai === -1 && bi === -1) return a.localeCompare(b);
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
-}
 
 function ProcessBadgeInline({ type }: { type: string }) {
   const colours: Record<string, string> = {

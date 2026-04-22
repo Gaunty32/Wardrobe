@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
+import { sizeRank } from "@/lib/sizeUtils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -13,13 +14,6 @@ import { cn } from "@/lib/utils";
 
 const UNCATEGORISED = "Uncategorised";
 
-// ─── Garment size order ───────────────────────────────────────────────────────
-const SIZE_ORDER = ["3XS","2XS","XS","S","M","L","XL","2XL","XXL","3XL","XXXL","4XL","5XL","6XL","One Size"];
-function sizeRank(s: string | null): number {
-  if (!s) return 999;
-  const idx = SIZE_ORDER.findIndex(r => r.toLowerCase() === s.toLowerCase());
-  return idx === -1 ? 500 + s.charCodeAt(0) : idx;
-}
 
 // ─── Colour → CSS colour ──────────────────────────────────────────────────────
 const COLOUR_KEYWORDS: [string, string][] = [

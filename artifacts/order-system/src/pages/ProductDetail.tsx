@@ -19,6 +19,7 @@ import {
   Layers, Palette, Ruler, Upload, Camera
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { sortBySize } from "@/lib/sizeUtils";
 import { useGetProduct, useUpdateProduct, getListProductsQueryKey, useListSuppliers } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
@@ -543,9 +544,10 @@ export default function ProductDetail() {
   const defaultPrimaryId = details.supplierId;
   const defaultSecondaryId = details.secondarySupplierId;
 
-  // Group variants for display summary
+  // Group variants for display summary — sorted colour-first, then size smallest→largest
+  const sortedVariants = sortBySize(variants, (v: any) => v.size);
   const colours = [...new Set(variants.map((v: any) => v.colour).filter(Boolean))];
-  const sizes = [...new Set(variants.map((v: any) => v.size).filter(Boolean))];
+  const sizes = [...new Set(sortedVariants.map((v: any) => v.size).filter(Boolean))];
 
   return (
     <TooltipProvider>
