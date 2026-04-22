@@ -1771,6 +1771,16 @@ export default function OrderDetail() {
               <p className="font-medium text-red-800">{order.customerName}</p>
               <p className="text-red-600 text-xs mt-0.5">{order.items?.length ?? 0} item{(order.items?.length ?? 0) !== 1 ? "s" : ""} · {formatCurrency(order.totalAmount)}</p>
             </div>
+            {order.status === "confirmed" && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                This order is confirmed — any stock that was allocated to it will be returned to your stock levels.
+              </p>
+            )}
+            {(order.status === "shipped" || order.status === "delivered") && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                This order has already been {order.status} — stock will not be restored.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteOrderConfirmOpen(false)}>

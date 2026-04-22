@@ -372,11 +372,29 @@ router.delete("/orders/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [order] = await db.delete(ordersTable).where(eq(ordersTable.id, params.data.id)).returning();
+
+  // Fetch the order first so we know its status
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.id));
   if (!order) {
     res.status(404).json({ error: "Order not found" });
     return;
   }
+
+  // Restore stock only for confirmed orders (stock is deducted at confirmation).
+  // Shipped/delivered orders have already left — don't restore.
+  if (order.status === "confirmed") {
+    const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+    for (const item of items) {
+      // Only items where stock was actually allocated (not purchase-required)
+      if (!item.purchaseRequired && item.productId && item.quantity) {
+        await db.execute(
+          sql`UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${item.quantity} WHERE id = ${item.productId}`
+        );
+      }
+    }
+  }
+
+  await db.delete(ordersTable).where(eq(ordersTable.id, order.id));
   res.sendStatus(204);
 });
 
