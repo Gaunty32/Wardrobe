@@ -516,7 +516,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid gap-3 ${isDpdShipping ? "grid-cols-2" : "grid-cols-1"}`}>
               <div className="space-y-1.5">
                 <Label htmlFor="parcels">Number of boxes</Label>
                 <Input
@@ -528,45 +528,51 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                   onChange={(e) => setNumberOfParcels(Math.max(1, parseInt(e.target.value) || 1))}
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="weight">Total weight (kg)</Label>
-                <Input
-                  id="weight"
-                  type="number"
-                  min={0.1}
-                  step={0.1}
-                  placeholder="e.g. 2.5"
-                  value={totalWeightKg}
-                  onChange={(e) => setTotalWeightKg(e.target.value === "" ? "" : parseFloat(e.target.value))}
-                />
-              </div>
+              {isDpdShipping && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="weight">Total weight (kg)</Label>
+                  <Input
+                    id="weight"
+                    type="number"
+                    min={0.1}
+                    step={0.1}
+                    placeholder="e.g. 2.5"
+                    value={totalWeightKg}
+                    onChange={(e) => setTotalWeightKg(e.target.value === "" ? "" : parseFloat(e.target.value))}
+                  />
+                </div>
+              )}
             </div>
 
-            {/* DPD booking toggle */}
-            <div
-              className={`flex items-start gap-3 rounded-lg border px-4 py-3 cursor-pointer transition-colors ${
-                bookDpd ? "border-blue-300 bg-blue-50" : "border-border bg-muted/20"
-              }`}
-              onClick={() => setBookDpd((v) => !v)}
-            >
-              <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                bookDpd ? "border-blue-600 bg-blue-600" : "border-muted-foreground"
-              }`}>
-                {bookDpd && <CheckCircle className="w-3 h-3 text-white" />}
-              </div>
-              <div>
-                <p className="text-sm font-medium">Book DPD consignment</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Automatically book with DPD and print the shipping label.
-                  {!order.deliveryAddress && " (Requires a delivery address on the order.)"}
-                </p>
-              </div>
-            </div>
+            {/* DPD booking toggle — only shown when shipping method is DPD */}
+            {isDpdShipping && (
+              <>
+                <div
+                  className={`flex items-start gap-3 rounded-lg border px-4 py-3 cursor-pointer transition-colors ${
+                    bookDpd ? "border-blue-300 bg-blue-50" : "border-border bg-muted/20"
+                  }`}
+                  onClick={() => setBookDpd((v) => !v)}
+                >
+                  <div className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                    bookDpd ? "border-blue-600 bg-blue-600" : "border-muted-foreground"
+                  }`}>
+                    {bookDpd && <CheckCircle className="w-3 h-3 text-white" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">Book DPD consignment</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Automatically book with DPD and print the shipping label.
+                      {!order.deliveryAddress && " (Requires a delivery address on the order.)"}
+                    </p>
+                  </div>
+                </div>
 
-            {bookDpd && !order.deliveryAddress && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
-                No delivery address is set on this order — DPD booking will be skipped.
-              </p>
+                {bookDpd && !order.deliveryAddress && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    No delivery address is set on this order — DPD booking will be skipped.
+                  </p>
+                )}
+              </>
             )}
           </div>
 
