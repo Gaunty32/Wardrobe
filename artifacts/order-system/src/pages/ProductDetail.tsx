@@ -533,7 +533,13 @@ export default function ProductDetail() {
         },
       },
       {
-        onSuccess: () => { qc.invalidateQueries({ queryKey: getListProductsQueryKey() }); toast({ title: "Product saved" }); setDetailsDirty(false); },
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
+          qc.invalidateQueries({ queryKey: ["product", productId, "attributes"] });
+          qc.invalidateQueries({ queryKey: ["product", productId] });
+          toast({ title: "Product saved" });
+          setDetailsDirty(false);
+        },
         onError: () => toast({ title: "Could not save product", variant: "destructive" }),
       }
     );
@@ -654,7 +660,7 @@ export default function ProductDetail() {
                       {categoryNames.map(name => <option key={name} value={name} />)}
                     </datalist>
                     {details.category === "Bespoke Ties" && (
-                      <p className="text-xs text-blue-600">Standard sizes (Full Length, Clip-On, Clip-on Cravat) will be auto-assigned on save.</p>
+                      <p className="text-xs text-blue-600">Standard sizes (Full Length, Clip-On, Clip-on Cravat) will be added to the <strong>Available Sizes</strong> list on the Variants tab on save.</p>
                     )}
                   </div>
 
