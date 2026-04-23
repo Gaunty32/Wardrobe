@@ -2652,11 +2652,16 @@ export default function CustomerDetail() {
                 )}
                 {customer.email && <span>{customer.email.toLowerCase()}</span>}
                 {customer.phone && (
-                  <a href={`tel:${customer.phone.replace(/\s/g, "")}`} className="flex items-center gap-1 hover:text-primary transition-colors">
+                  <a href={`tel:${customer.phone.replace(/\s/g, "")}`} className="flex items-center gap-1 font-medium text-foreground hover:text-primary transition-colors">
                     <Phone className="w-3.5 h-3.5 shrink-0" /> {formatUKPhone(customer.phone)}
                   </a>
                 )}
-                {customer.city && <span>{customer.city}{customer.state ? `, ${customer.state}` : ''}</span>}
+                {(customer as any).address && <span>{(customer as any).address}</span>}
+                {customer.city && (
+                  <span>
+                    {customer.city}{customer.state ? `, ${customer.state}` : ''}{(customer as any).postcode ? ` ${(customer as any).postcode}` : ''}
+                  </span>
+                )}
                 {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
               </div>
               <div className="flex items-center gap-2 mt-3">

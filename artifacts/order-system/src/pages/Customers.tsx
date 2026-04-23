@@ -173,8 +173,8 @@ export default function Customers() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead>Company Name</TableHead>
                       <TableHead className="hidden lg:table-cell">Primary Contact</TableHead>
-                      <TableHead>Contact Info</TableHead>
-                      <TableHead className="hidden md:table-cell">Location</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead className="hidden md:table-cell">Telephone</TableHead>
                       <TableHead className="w-[100px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -187,20 +187,21 @@ export default function Customers() {
                             ? toTitleCase(`${customer.contactFirstName || ''} ${customer.contactLastName || ''}`.trim())
                             : '—'}
                         </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col text-sm text-muted-foreground">
-                            <span>{customer.email ? customer.email.toLowerCase() : 'No email'}</span>
-                            {customer.phone ? (
-                              <a href={`tel:${customer.phone.replace(/\s/g, "")}`} className="flex items-center gap-1 hover:text-primary transition-colors" onClick={e => e.stopPropagation()}>
-                                <Phone className="w-3 h-3 shrink-0" /> {formatUKPhone(customer.phone)}
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground/50">No phone</span>
-                            )}
-                          </div>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {customer.email ? customer.email.toLowerCase() : <span className="text-muted-foreground/50">No email</span>}
                         </TableCell>
-                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                          {customer.city ? `${customer.city}, ${customer.state || ''}` : '-'}
+                        <TableCell className="hidden md:table-cell" onClick={e => e.stopPropagation()}>
+                          {customer.phone ? (
+                            <a
+                              href={`tel:${customer.phone.replace(/\s/g, "")}`}
+                              className="flex items-center gap-1.5 text-sm font-medium text-foreground hover:text-primary transition-colors group/tel"
+                            >
+                              <Phone className="w-3.5 h-3.5 text-muted-foreground group-hover/tel:text-primary shrink-0" />
+                              {formatUKPhone(customer.phone)}
+                            </a>
+                          ) : (
+                            <span className="text-sm text-muted-foreground/50">—</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                           <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

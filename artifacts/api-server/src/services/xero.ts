@@ -204,7 +204,7 @@ interface XeroContact {
   LastName?: string;
   EmailAddress?: string;
   Phones?: { PhoneType: string; PhoneNumber: string }[];
-  Addresses?: { AddressType: string; AddressLine1?: string; City?: string; PostalCode?: string }[];
+  Addresses?: { AddressType: string; AddressLine1?: string; AddressLine2?: string; City?: string; Region?: string; PostalCode?: string; Country?: string }[];
   ContactPersons?: { FirstName?: string; LastName?: string; EmailAddress?: string }[];
   IsCustomer?: boolean;
   IsSupplier?: boolean;
@@ -281,21 +281,33 @@ export async function syncContacts(): Promise<{ customersImported: number; suppl
         );
 
         if (match) {
-          // Link existing customer and fill in any missing name/contact fields
+          // Link existing customer and sync all available Xero fields
           await db.update(customersTable).set({
             xeroContactId: contact.ContactID,
+            email: contact.EmailAddress?.toLowerCase() ?? match.email,
             contactFirstName: match.contactFirstName ?? firstName,
             contactLastName: match.contactLastName ?? lastName,
+            phone: phone || match.phone || null,
+            address: addr?.AddressLine1 || match.address || null,
+            city: addr?.City || match.city || null,
+            state: addr?.Region || match.state || null,
+            postcode: addr?.PostalCode || match.postcode || null,
             updatedAt: new Date(),
           }).where(eq(customersTable.id, match.id));
         }
         // No else — ignore Xero-only customers; new customers flow order-system → Xero
       } else {
-        // Already linked — keep names up to date from Xero
+        // Already linked — keep all fields up to date from Xero
         const existing = localCustomers[0];
         await db.update(customersTable).set({
+          email: contact.EmailAddress?.toLowerCase() ?? existing.email,
           contactFirstName: firstName ?? existing.contactFirstName,
           contactLastName: lastName ?? existing.contactLastName,
+          phone: phone || existing.phone || null,
+          address: addr?.AddressLine1 || existing.address || null,
+          city: addr?.City || existing.city || null,
+          state: addr?.Region || existing.state || null,
+          postcode: addr?.PostalCode || existing.postcode || null,
           updatedAt: new Date(),
         }).where(eq(customersTable.id, existing.id));
       }
