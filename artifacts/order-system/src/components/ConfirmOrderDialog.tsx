@@ -61,6 +61,7 @@ interface ShortfallGroup {
 interface AllocationResult {
   allocation: { allocated: number; purchaseRequired: number };
   shortfallGroups: ShortfallGroup[];
+  unlinkedItems: number;
   emailConfigured: boolean;
 }
 
@@ -356,6 +357,16 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                 )}
               </div>
 
+              {/* Unlinked items warning */}
+              {result.unlinkedItems > 0 && (
+                <div className="flex items-start gap-2 rounded-md bg-orange-50 border border-orange-300 px-3 py-2.5 text-sm text-orange-800">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    <strong>{result.unlinkedItems} line{result.unlinkedItems !== 1 ? "s" : ""}</strong> {result.unlinkedItems !== 1 ? "are" : "is"} not linked to a catalogue product — stock cannot be checked and no purchase order will be raised automatically. Check these lines manually in the Purchasing page.
+                  </span>
+                </div>
+              )}
+
               {/* Supplier groups */}
               <div className="space-y-3">
                 {result.shortfallGroups.map((group) => (
@@ -431,6 +442,16 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
+              {/* Unlinked items warning (shown when jumped straight to email with no shortfall groups) */}
+              {result && result.unlinkedItems > 0 && result.shortfallGroups.length === 0 && (
+                <div className="flex items-start gap-2 rounded-md bg-orange-50 border border-orange-300 px-3 py-2.5 text-sm text-orange-800">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>
+                    <strong>{result.unlinkedItems} line{result.unlinkedItems !== 1 ? "s" : ""}</strong> {result.unlinkedItems !== 1 ? "are" : "is"} not linked to a catalogue product — no stock check was performed. Check the Purchasing page to raise any required orders manually.
+                  </span>
+                </div>
+              )}
+
               {/* PO results summary */}
               {poResults.length > 0 && (
                 <div className="rounded-md bg-green-50 border border-green-200 p-3 space-y-1 text-sm text-green-700">

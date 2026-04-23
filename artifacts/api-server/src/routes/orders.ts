@@ -476,10 +476,13 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     }
     // ──────────────────────────────────────────────────────────────────────────
 
+    const unlinkedItems = items.filter(i => !i.productId).length;
+
     res.json({
       ...order, totalAmount: numericToFloat(order.totalAmount),
       allocation: { allocated: allocatedLines, purchaseRequired: purchaseLines },
       shortfallGroups,
+      unlinkedItems,
       emailConfigured: isEmailConfigured,
     });
     return;

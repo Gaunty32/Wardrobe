@@ -364,7 +364,7 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
   const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
   return (
-    <div className="print-only bg-white text-black font-sans text-sm" style={{ width: "210mm", minHeight: "297mm", padding: "12mm 15mm", boxSizing: "border-box" }}>
+    <div className="print-only bg-white text-black font-sans text-sm" style={{ width: "210mm", padding: "12mm 15mm", boxSizing: "border-box" }}>
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "5mm", borderBottom: "2px solid #1e3a5f", paddingBottom: "4mm" }}>
         <div>
