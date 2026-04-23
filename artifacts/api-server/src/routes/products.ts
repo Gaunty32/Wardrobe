@@ -12,20 +12,59 @@ import {
 } from "@workspace/api-zod";
 
 const BESPOKE_TIES_CATEGORY = "Bespoke Ties";
-const BESPOKE_TIE_SIZES = ["Full Length", "Clip-On", "Clip-on Cravat"];
 
-async function ensureBespokeTieSizes(productId: number): Promise<void> {
+const BESPOKE_TIE_SIZES: { label: string; suffix: string; sortOrder: number }[] = [
+  { label: "Full Length Tie", suffix: "FLT", sortOrder: 0 },
+  { label: "Clip-On Tie",     suffix: "COT", sortOrder: 1 },
+  { label: "Clip-on Cravat",  suffix: "COC", sortOrder: 2 },
+];
+
+// Renames applied when old short names are found in the DB
+const BESPOKE_TIE_RENAMES: Record<string, string> = {
+  "Full Length": "Full Length Tie",
+  "Clip-On":     "Clip-On Tie",
+};
+
+async function ensureBespokeTieSizes(productId: number, productSku?: string | null): Promise<void> {
+  // Rename any legacy short values first
+  for (const [oldVal, newVal] of Object.entries(BESPOKE_TIE_RENAMES)) {
+    await db.execute(sql`
+      UPDATE product_attributes
+      SET value = ${newVal}
+      WHERE product_id = ${productId} AND type = 'size' AND value = ${oldVal}
+    `);
+  }
+
+  // Ensure all three size attributes exist
   const existing = await db.select().from(productAttributesTable)
     .where(and(
       eq(productAttributesTable.productId, productId),
       eq(productAttributesTable.type, "size"),
     ));
   const existingValues = new Set(existing.map((a) => a.value));
-  const missing = BESPOKE_TIE_SIZES.filter((s) => !existingValues.has(s));
+  const missing = BESPOKE_TIE_SIZES.filter((s) => !existingValues.has(s.label));
   if (missing.length > 0) {
     await db.insert(productAttributesTable).values(
-      missing.map((value, i) => ({ productId, type: "size", value, sortOrder: i }))
+      missing.map((s) => ({ productId, type: "size", value: s.label, sortOrder: s.sortOrder }))
     );
+  }
+
+  // Auto-create size-only variant rows with SKUs (if product has a SKU)
+  if (productSku) {
+    const existingVariants = await db.select().from(productVariantsTable)
+      .where(eq(productVariantsTable.productId, productId));
+    const existingSizes = new Set(existingVariants.map((v) => v.size).filter(Boolean));
+    const missingVariants = BESPOKE_TIE_SIZES.filter((s) => !existingSizes.has(s.label));
+    if (missingVariants.length > 0) {
+      await db.insert(productVariantsTable).values(
+        missingVariants.map((s) => ({
+          productId,
+          size: s.label,
+          sku: `${productSku}-${s.suffix}`,
+          stockQuantity: 0,
+        }))
+      );
+    }
   }
 }
 
@@ -84,7 +123,7 @@ router.post("/products", async (req, res): Promise<void> => {
     .insert(productsTable)
     .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice), customerId, isBespoke })
     .returning();
-  if (category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id);
+  if (category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku);
   res.status(201).json(fmtProduct(product));
 });
 
@@ -133,7 +172,7 @@ router.post("/products/:id/duplicate", async (req, res): Promise<void> => {
     name: `${original.name} (Copy)`,
     stockQuantity: 0,
   }).returning();
-  if (created.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(created.id);
+  if (created.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(created.id, created.sku);
   res.status(201).json(fmtProduct(created));
 });
 
@@ -187,7 +226,7 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id);
+  if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku);
   res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null, secondarySupplierPrice: product.secondarySupplierPrice != null ? parseFloat(product.secondarySupplierPrice) : null });
 });
 

@@ -536,6 +536,7 @@ export default function ProductDetail() {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
           qc.invalidateQueries({ queryKey: ["product", productId, "attributes"] });
+          qc.invalidateQueries({ queryKey: ["product", productId, "variants"] });
           qc.invalidateQueries({ queryKey: ["product", productId] });
           toast({ title: "Product saved" });
           setDetailsDirty(false);
@@ -660,7 +661,7 @@ export default function ProductDetail() {
                       {categoryNames.map(name => <option key={name} value={name} />)}
                     </datalist>
                     {details.category === "Bespoke Ties" && (
-                      <p className="text-xs text-blue-600">Standard sizes (Full Length, Clip-On, Clip-on Cravat) will be added to the <strong>Available Sizes</strong> list on the Variants tab on save.</p>
+                      <p className="text-xs text-blue-600">On save, standard variants will be auto-created: <strong>Full Length Tie</strong> ({details.sku ? `${details.sku}-FLT` : "SKU-FLT"}), <strong>Clip-On Tie</strong> ({details.sku ? `${details.sku}-COT` : "SKU-COT"}), <strong>Clip-on Cravat</strong> ({details.sku ? `${details.sku}-COC` : "SKU-COC"}).</p>
                     )}
                   </div>
 
@@ -746,7 +747,7 @@ export default function ProductDetail() {
                     </div>
                     {product?.category === "Bespoke Ties" && (
                       <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded p-2 mb-3">
-                        Bespoke Ties automatically include: <strong>Full Length</strong>, <strong>Clip-On</strong>, and <strong>Clip-on Cravat</strong>.
+                        Bespoke Ties automatically include: <strong>Full Length Tie</strong>, <strong>Clip-On Tie</strong>, and <strong>Clip-on Cravat</strong>.
                       </p>
                     )}
                     {product?.category !== "Bespoke Ties" && (
