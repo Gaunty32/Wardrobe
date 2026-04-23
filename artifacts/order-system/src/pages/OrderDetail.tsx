@@ -429,7 +429,7 @@ export default function OrderDetail() {
     setAckLoading(true);
     try {
       // Navigate to the .eml endpoint — browser downloads and Outlook opens it
-      const url = `${BASE}/api/orders/${orderId}/acknowledgement.eml`;
+      const url = `${API_BASE}/orders/${orderId}/acknowledgement.eml`;
       const a = document.createElement("a");
       a.href = url;
       a.download = `Acknowledgement-${order.orderNumber}.eml`;
