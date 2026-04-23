@@ -6,6 +6,7 @@ import {
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
+  customerProcessesTable, customerFinishProcessesTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
 import {
@@ -263,10 +264,16 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
     let allocatedLines = 0;
     let purchaseLines = 0;
+    const allocatedItemIds: number[] = [];
     const shortfallDetails: Array<{
       id: number; productName: string; colour: string | null; size: string | null;
       purchaseQuantity: number; supplierId: number | null; supplierName: string | null; supplierEmail: string | null;
     }> = [];
+
+    // Items with no product link have no stock to allocate — they go straight to production
+    for (const item of items) {
+      if (!item.productId) allocatedItemIds.push(item.id);
+    }
 
     if (productIds.length > 0) {
       const productStocks = await db
@@ -282,9 +289,13 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       const remainingStock = new Map(productStocks.map(p => [p.id, p.stockQuantity ?? 0]));
 
       for (const item of items) {
-        if (!item.productId) continue;
+        if (!item.productId) continue; // Already handled above
         const stock = stockMap.get(item.productId);
-        if (!stock) continue;
+        if (!stock) {
+          // Product not found in our stock map — treat as ready for production
+          allocatedItemIds.push(item.id);
+          continue;
+        }
 
         const available = remainingStock.get(item.productId) ?? 0;
         const qty = item.quantity ?? 0;
@@ -309,6 +320,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           });
         } else {
           allocatedLines++;
+          allocatedItemIds.push(item.id);
         }
       }
 
@@ -352,6 +364,82 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       g.items.push(s);
     }
     const shortfallGroups = [...groupMap.values()];
+
+    // ── Auto-create production worksheet ──────────────────────────────────────
+    // If there are items ready for production (no purchase required), auto-create
+    // a worksheet so the order flows into production automatically on confirmation.
+    if (allocatedItemIds.length > 0) {
+      const existingWs = await db
+        .select({ id: worksheetsTable.id })
+        .from(worksheetsTable)
+        .where(eq(worksheetsTable.orderId, params.data.id))
+        .limit(1);
+
+      if (existingWs.length === 0) {
+        // Generate next worksheet number
+        const wsRows = await db.execute(sql`
+          SELECT worksheet_number FROM worksheets
+          WHERE worksheet_number ~ '^F[0-9]+$'
+          ORDER BY LENGTH(worksheet_number) DESC, worksheet_number DESC
+          LIMIT 1
+        `);
+        const lastWsNum = (wsRows.rows[0] as any)?.worksheet_number as string | undefined;
+        const worksheetNumber = `F${(lastWsNum ? parseInt(lastWsNum.slice(1), 10) : 99) + 1}`;
+
+        const [ws] = await db
+          .insert(worksheetsTable)
+          .values({
+            worksheetNumber,
+            status: "pre_wip",
+            orderId: params.data.id,
+            orderNumber: order.orderNumber,
+            customerId: order.customerId ?? null,
+            customerName: order.customerName ?? null,
+          })
+          .returning();
+
+        const wsOrderItems = await db
+          .select()
+          .from(orderItemsTable)
+          .where(inArray(orderItemsTable.id, allocatedItemIds));
+
+        await Promise.all(
+          wsOrderItems.map(async (oi) => {
+            let processesSnapshot: string | null = null;
+            if (oi.finishId && order.customerId) {
+              const finishProcessLinks = await db
+                .select()
+                .from(customerFinishProcessesTable)
+                .where(eq(customerFinishProcessesTable.finishId, oi.finishId));
+              const processIds = finishProcessLinks.map((fp) => fp.processId);
+              if (processIds.length > 0) {
+                const processes = await db
+                  .select()
+                  .from(customerProcessesTable)
+                  .where(inArray(customerProcessesTable.id, processIds));
+                processesSnapshot = JSON.stringify(
+                  processes.map((p) => ({ id: p.id, name: p.name, type: p.type, placement: p.placement, price: p.price ? parseFloat(p.price as any) : null, notes: p.notes }))
+                );
+              }
+            }
+            return db.insert(worksheetItemsTable).values({
+              worksheetId: ws.id,
+              orderItemId: oi.id,
+              productName: oi.productName,
+              colour: oi.colour ?? null,
+              size: oi.size ?? null,
+              quantity: oi.quantity ?? 1,
+              recipientType: oi.recipientType ?? "stock",
+              recipientName: oi.recipientName ?? null,
+              finishId: oi.finishId ?? null,
+              finishName: oi.finishName ?? null,
+              processesSnapshot,
+            });
+          })
+        );
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
 
     res.json({
       ...order, totalAmount: numericToFloat(order.totalAmount),

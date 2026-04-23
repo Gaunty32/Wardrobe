@@ -29,7 +29,7 @@ import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizes } from "@/lib/sizeUtils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -423,6 +423,18 @@ export default function OrderDetail() {
     win.print();
   };
 
+  const sendAcknowledgementMutation = useMutation({
+    mutationFn: () => apiFetch(`/orders/${orderId}/send-acknowledgement`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      if (data?.sent) {
+        toast({ title: "Acknowledgement sent", description: `Email sent to ${data.to}` });
+      } else {
+        toast({ title: "Email not sent", description: data?.error ?? "SMTP not configured", variant: "destructive" });
+      }
+    },
+    onError: (err: Error) => toast({ title: "Failed to send", description: err.message, variant: "destructive" }),
+  });
+
   const sendToProductionMutation = useMutation({
     mutationFn: async (itemIds: number[]) => {
       return apiFetch("/worksheets", {
@@ -756,6 +768,19 @@ export default function OrderDetail() {
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => sendAcknowledgementMutation.mutate()}
+              disabled={sendAcknowledgementMutation.isPending}
+              title="Send order acknowledgement email to customer"
+            >
+              {sendAcknowledgementMutation.isPending
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Mail className="w-4 h-4" />}
+              Send Ack
+            </Button>
             <Button
               variant="ghost"
               size="sm"
