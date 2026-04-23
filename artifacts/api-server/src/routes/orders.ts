@@ -596,9 +596,24 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     // PDF failure is non-fatal — email still sends without attachment
   }
 
+  // Always return the PDF as base64 so the client can build a .eml file
+  const pdfBase64 = attachments.length > 0 ? attachments[0].content.toString("base64") : null;
+  const pdfFilename = attachments.length > 0 ? attachments[0].filename : null;
+
   const result = await sendEmail({ to: toEmail, subject, html, text, attachments });
 
-  res.json({ sent: result.sent, error: result.error, subject, html, text, to: toEmail, emailConfigured: isEmailConfigured });
+  res.json({
+    sent: result.sent,
+    error: result.error,
+    subject,
+    html,
+    text,
+    to: toEmail,
+    emailConfigured: isEmailConfigured,
+    pdfBase64,
+    pdfFilename,
+    orderNumber: order.orderNumber,
+  });
 });
 
 router.post("/orders/:id/items", async (req, res): Promise<void> => {
