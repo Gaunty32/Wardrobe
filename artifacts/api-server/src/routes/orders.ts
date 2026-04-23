@@ -1000,6 +1000,15 @@ Dim olApp, mail
 Set olApp = CreateObject("Outlook.Application")
 Set mail = olApp.CreateItem(0)
 
+' ── Set sending account so email saves to correct Sent Items ─────────────────
+Dim acct, i
+For i = 1 To olApp.Session.Accounts.Count
+  If LCase(olApp.Session.Accounts(i).SmtpAddress) = "accounts@selectbranding.co.uk" Then
+    Set mail.SendUsingAccount = olApp.Session.Accounts(i)
+    Exit For
+  End If
+Next
+
 mail.To       = toEmail
 mail.Subject  = subj
 mail.HTMLBody = B64ToString(htmlB64)
