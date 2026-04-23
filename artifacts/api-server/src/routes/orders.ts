@@ -1001,13 +1001,17 @@ Set olApp = CreateObject("Outlook.Application")
 Set mail = olApp.CreateItem(0)
 
 ' ── Set sending account so email saves to correct Sent Items ─────────────────
-Dim acct, i
-For i = 1 To olApp.Session.Accounts.Count
-  If LCase(olApp.Session.Accounts(i).SmtpAddress) = "accounts@selectbranding.co.uk" Then
-    Set mail.SendUsingAccount = olApp.Session.Accounts(i)
+On Error Resume Next
+Dim ns, accts, j
+Set ns = olApp.GetNamespace("MAPI")
+Set accts = ns.Accounts
+For j = 1 To accts.Count
+  If LCase(accts.Item(j).SmtpAddress) = "accounts@selectbranding.co.uk" Then
+    Set mail.SendUsingAccount = accts.Item(j)
     Exit For
   End If
 Next
+On Error GoTo 0
 
 mail.To       = toEmail
 mail.Subject  = subj
