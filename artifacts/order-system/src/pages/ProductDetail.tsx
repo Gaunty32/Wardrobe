@@ -709,8 +709,20 @@ export default function ProductDetail() {
                     <div className="flex items-center gap-2 mb-3">
                       <Ruler className="w-4 h-4 text-blue-500" />
                       <h3 className="font-semibold text-foreground">Available Sizes</h3>
+                      {product?.category === "Bespoke Ties" && (
+                        <span className="ml-auto text-[11px] font-medium bg-indigo-100 text-indigo-700 border border-indigo-200 rounded px-2 py-0.5">
+                          Standard sizes auto-assigned
+                        </span>
+                      )}
                     </div>
-                    <p className="text-xs text-muted-foreground mb-3">Define the size range for this product. Use when adding variants.</p>
+                    {product?.category === "Bespoke Ties" && (
+                      <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded p-2 mb-3">
+                        Bespoke Ties automatically include: <strong>Full Length</strong>, <strong>Clip-On</strong>, and <strong>Clip-on Cravat</strong>.
+                      </p>
+                    )}
+                    {product?.category !== "Bespoke Ties" && (
+                      <p className="text-xs text-muted-foreground mb-3">Define the size range for this product. Use when adding variants.</p>
+                    )}
                     <TagInput type="size" productId={productId} attributes={attributes} onRefresh={refetchAttrs} />
                   </div>
                 </div>

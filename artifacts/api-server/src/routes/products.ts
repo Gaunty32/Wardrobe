@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, ilike, or, sql } from "drizzle-orm";
+import { eq, ilike, or, sql, and } from "drizzle-orm";
 import { db, productsTable, productAttributesTable, productVariantsTable } from "@workspace/db";
 import { z } from "zod";
 import {
@@ -10,6 +10,24 @@ import {
   DeleteProductParams,
   ListProductsQueryParams,
 } from "@workspace/api-zod";
+
+const BESPOKE_TIES_CATEGORY = "Bespoke Ties";
+const BESPOKE_TIE_SIZES = ["Full Length", "Clip-On", "Clip-on Cravat"];
+
+async function ensureBespokeTieSizes(productId: number): Promise<void> {
+  const existing = await db.select().from(productAttributesTable)
+    .where(and(
+      eq(productAttributesTable.productId, productId),
+      eq(productAttributesTable.type, "size"),
+    ));
+  const existingValues = new Set(existing.map((a) => a.value));
+  const missing = BESPOKE_TIE_SIZES.filter((s) => !existingValues.has(s));
+  if (missing.length > 0) {
+    await db.insert(productAttributesTable).values(
+      missing.map((value, i) => ({ productId, type: "size", value, sortOrder: i }))
+    );
+  }
+}
 
 const router: IRouter = Router();
 
@@ -66,6 +84,7 @@ router.post("/products", async (req, res): Promise<void> => {
     .insert(productsTable)
     .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice), customerId, isBespoke })
     .returning();
+  if (category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id);
   res.status(201).json(fmtProduct(product));
 });
 
@@ -104,6 +123,7 @@ router.post("/products/:id/duplicate", async (req, res): Promise<void> => {
     name: `${original.name} (Copy)`,
     stockQuantity: 0,
   }).returning();
+  if (created.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(created.id);
   res.status(201).json(fmtProduct(created));
 });
 
@@ -157,6 +177,7 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
+  if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id);
   res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null, secondarySupplierPrice: product.secondarySupplierPrice != null ? parseFloat(product.secondarySupplierPrice) : null });
 });
 
