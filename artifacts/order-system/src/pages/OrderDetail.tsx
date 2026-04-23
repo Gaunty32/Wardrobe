@@ -423,69 +423,26 @@ export default function OrderDetail() {
     win.print();
   };
 
-  function downloadEml(data: {
-    to: string; subject: string; html: string;
-    pdfBase64: string | null; pdfFilename: string | null; orderNumber: string;
-  }) {
-    const boundary = `----=_SBS_${Date.now()}`;
-    const now = new Date().toUTCString();
-    const htmlB64 = btoa(unescape(encodeURIComponent(data.html)));
+  const [ackLoading, setAckLoading] = useState(false);
 
-    let eml = [
-      `MIME-Version: 1.0`,
-      `From: "Select Branding Solutions Ltd" <orders@selectbrandingsolutions.co.uk>`,
-      `To: ${data.to}`,
-      `Subject: ${data.subject}`,
-      `Date: ${now}`,
-      `Content-Type: multipart/mixed; boundary="${boundary}"`,
-      ``,
-      `--${boundary}`,
-      `Content-Type: text/html; charset="utf-8"`,
-      `Content-Transfer-Encoding: base64`,
-      ``,
-      htmlB64.match(/.{1,76}/g)!.join("\r\n"),
-      ``,
-    ].join("\r\n");
-
-    if (data.pdfBase64 && data.pdfFilename) {
-      eml += [
-        `--${boundary}`,
-        `Content-Type: application/pdf; name="${data.pdfFilename}"`,
-        `Content-Transfer-Encoding: base64`,
-        `Content-Disposition: attachment; filename="${data.pdfFilename}"`,
-        ``,
-        data.pdfBase64.match(/.{1,76}/g)!.join("\r\n"),
-        ``,
-      ].join("\r\n");
+  async function handleSendAck() {
+    setAckLoading(true);
+    try {
+      // Navigate to the .eml endpoint — browser downloads and Outlook opens it
+      const url = `${BASE}/api/orders/${orderId}/acknowledgement.eml`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Acknowledgement-${order.orderNumber}.eml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      toast({ title: "Acknowledgement ready", description: "Open the downloaded file to send from Outlook." });
+    } catch (err: any) {
+      toast({ title: "Failed to generate acknowledgement", description: err.message, variant: "destructive" });
+    } finally {
+      setAckLoading(false);
     }
-
-    eml += `--${boundary}--`;
-
-    const blob = new Blob([eml], { type: "message/rfc822" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `Acknowledgement-${data.orderNumber}.eml`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
-
-  const sendAcknowledgementMutation = useMutation({
-    mutationFn: () => apiFetch(`/orders/${orderId}/send-acknowledgement`, { method: "POST" }),
-    onSuccess: (data: any) => {
-      // Always download the .eml so it can be reviewed and sent from Outlook
-      downloadEml({
-        to: data.to,
-        subject: data.subject,
-        html: data.html,
-        pdfBase64: data.pdfBase64 ?? null,
-        pdfFilename: data.pdfFilename ?? null,
-        orderNumber: data.orderNumber ?? orderId,
-      });
-      toast({ title: "Acknowledgement ready", description: `Opening in Outlook — send to ${data.to}` });
-    },
-    onError: (err: Error) => toast({ title: "Failed to generate acknowledgement", description: err.message, variant: "destructive" }),
-  });
 
   const sendToProductionMutation = useMutation({
     mutationFn: async (itemIds: number[]) => {
@@ -824,11 +781,11 @@ export default function OrderDetail() {
               variant="outline"
               size="sm"
               className="gap-1.5"
-              onClick={() => sendAcknowledgementMutation.mutate()}
-              disabled={sendAcknowledgementMutation.isPending}
+              onClick={handleSendAck}
+              disabled={ackLoading}
               title="Send order acknowledgement email to customer"
             >
-              {sendAcknowledgementMutation.isPending
+              {ackLoading
                 ? <Loader2 className="w-4 h-4 animate-spin" />
                 : <Mail className="w-4 h-4" />}
               Send Ack

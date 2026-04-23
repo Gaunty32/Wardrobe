@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import { db, settingsTable, ordersTable, orderItemsTable, customersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
 
 function toFirstName(name: string | null | undefined): string {
   if (!name?.trim()) return "there";
@@ -88,9 +89,18 @@ export function buildAcknowledgementEmail(order: {
       <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
 
         <!-- Header -->
-        <tr><td style="background:#1e293b;padding:24px 32px;">
-          <h1 style="margin:0;color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">Select Branding Solutions Ltd</h1>
-          <p style="margin:4px 0 0;color:#94a3b8;font-size:13px;">Order Acknowledgement · Ref: ${order.orderNumber}</p>
+        <tr><td style="background:#1e293b;padding:20px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="vertical-align:middle;">
+                <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="52" style="display:block;height:52px;width:auto;" />
+              </td>
+              <td style="vertical-align:middle;text-align:right;">
+                <p style="margin:0;color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Order Acknowledgement</p>
+                <p style="margin:4px 0 0;color:#fff;font-size:16px;font-weight:700;">Ref: ${order.orderNumber}</p>
+              </td>
+            </tr>
+          </table>
         </td></tr>
 
         <!-- Body -->

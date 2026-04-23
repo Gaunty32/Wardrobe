@@ -616,6 +616,160 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   });
 });
 
+// ─── GET acknowledgement as .eml (opens Outlook directly) ────────────────────
+
+router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const [order] = await db
+    .select({
+      id: ordersTable.id, orderNumber: ordersTable.orderNumber,
+      customerId: ordersTable.customerId, customerName: ordersTable.customerName,
+      orderDate: ordersTable.orderDate, requiredDate: ordersTable.requiredDate,
+      notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
+      poNumber: ordersTable.poNumber,
+      deliveryAddressId: ordersTable.deliveryAddressId,
+    })
+    .from(ordersTable)
+    .where(eq(ordersTable.id, params.data.id));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const itemRows = await db
+    .select({
+      productName: orderItemsTable.productName,
+      catalogueProductName: productsTable.name,
+      sku: productsTable.sku,
+      colour: orderItemsTable.colour,
+      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
+      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
+      recipientName: orderItemsTable.recipientName,
+    })
+    .from(orderItemsTable)
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(eq(orderItemsTable.orderId, params.data.id));
+
+  const items = itemRows.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
+
+  let toEmail = "";
+  let contactFirstName: string | null = null;
+  let customerAddress: string | null = null;
+  let customerCity: string | null = null;
+  let customerPostcode: string | null = null;
+
+  if (order.customerId) {
+    const [customer] = await db.select({
+      email: customersTable.email,
+      contactFirstName: customersTable.contactFirstName,
+      address: customersTable.address,
+      city: customersTable.city,
+      postcode: customersTable.postcode,
+    }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    toEmail = customer?.email ?? "";
+    contactFirstName = customer?.contactFirstName ?? null;
+    customerAddress = customer?.address ?? null;
+    customerCity = customer?.city ?? null;
+    customerPostcode = customer?.postcode ?? null;
+  }
+
+  let deliveryAddressText: string | null = null;
+  if (order.deliveryAddressId) {
+    const [da] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    if (da) deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
+  }
+
+  const mappedItems = items.map(i => ({
+    productName: i.productName,
+    sku: i.sku ?? null,
+    colour: i.colour ?? null,
+    size: i.size ?? null,
+    quantity: i.quantity ?? 1,
+    unitPrice: parseFloat(String(i.unitPrice ?? 0)),
+    lineTotal: parseFloat(String(i.lineTotal ?? 0)),
+    recipientName: i.recipientName ?? null,
+  }));
+
+  const { subject, html, text } = buildAcknowledgementEmail({
+    orderNumber: order.orderNumber,
+    customerName: order.customerName ?? null,
+    contactFirstName,
+    orderDate: order.orderDate ?? null,
+    requiredDate: order.requiredDate ?? null,
+    notes: order.notes ?? null,
+    totalAmount: numericToFloat(order.totalAmount),
+    items: mappedItems,
+  });
+
+  // Generate PDF
+  let pdfBase64 = "";
+  let pdfFilename = `Order-Acknowledgement-${order.orderNumber}.pdf`;
+  try {
+    const pdfBuffer = await generateOrderAcknowledgementPdf({
+      orderNumber: order.orderNumber,
+      orderDate: order.orderDate ?? null,
+      requiredDate: order.requiredDate ?? null,
+      poNumber: order.poNumber ?? null,
+      customerName: order.customerName ?? null,
+      customerAddress,
+      customerCity,
+      customerPostcode,
+      deliveryAddress: deliveryAddressText,
+      totalAmount: numericToFloat(order.totalAmount),
+      items: mappedItems,
+    });
+    pdfBase64 = pdfBuffer.toString("base64");
+  } catch (_) { /* non-fatal */ }
+
+  // Build MIME .eml
+  const boundary = `----=_SBS_ACK_${Date.now()}`;
+  const htmlB64 = Buffer.from(html, "utf8").toString("base64");
+  const dateStr = new Date().toUTCString();
+
+  let eml = [
+    `MIME-Version: 1.0`,
+    `From: "Select Branding Solutions Ltd" <orders@selectbrandingsolutions.co.uk>`,
+    `To: ${toEmail}`,
+    `Subject: ${subject}`,
+    `Date: ${dateStr}`,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    ``,
+    `--${boundary}`,
+    `Content-Type: text/html; charset="utf-8"`,
+    `Content-Transfer-Encoding: base64`,
+    ``,
+    ...chunkBase64(htmlB64),
+    ``,
+  ].join("\r\n");
+
+  if (pdfBase64) {
+    eml += [
+      `--${boundary}`,
+      `Content-Type: application/pdf; name="${pdfFilename}"`,
+      `Content-Transfer-Encoding: base64`,
+      `Content-Disposition: attachment; filename="${pdfFilename}"`,
+      ``,
+      ...chunkBase64(pdfBase64),
+      ``,
+    ].join("\r\n");
+  }
+
+  eml += `--${boundary}--`;
+
+  const filename = `Acknowledgement-${order.orderNumber}.eml`;
+  res
+    .status(200)
+    .header("Content-Type", "message/rfc822")
+    .header("Content-Disposition", `attachment; filename="${filename}"`)
+    .header("X-Order-Number", order.orderNumber)
+    .send(eml);
+});
+
+function chunkBase64(b64: string): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < b64.length; i += 76) chunks.push(b64.slice(i, i + 76));
+  return chunks;
+}
+
 router.post("/orders/:id/items", async (req, res): Promise<void> => {
   const params = AddOrderItemParams.safeParse(req.params);
   if (!params.success) {
