@@ -475,8 +475,13 @@ export default function ProductDetail() {
     enabled: !!productId,
   });
 
+  const { data: storedCategories = [] } = useQuery<{ id: number; name: string }[]>({
+    queryKey: ["product-categories"],
+    queryFn: () => apiFetch("/categories"),
+  });
+
   const [details, setDetails] = useState<{
-    name: string; sku: string; description: string;
+    name: string; sku: string; description: string; category: string;
     unitPrice: number; supplierId: string; secondarySupplierId: string;
     supplierCode: string; supplierPrice: string;
     secondarySupplierCode: string; secondarySupplierPrice: string;
@@ -491,6 +496,7 @@ export default function ProductDetail() {
         name: product.name,
         sku: product.sku || "",
         description: product.description || "",
+        category: (product as any).category || "",
         unitPrice: product.unitPrice,
         supplierId: product.supplierId ? String(product.supplierId) : "none",
         secondarySupplierId: product.secondarySupplierId ? String(product.secondarySupplierId) : "none",
@@ -516,6 +522,7 @@ export default function ProductDetail() {
           name: details.name,
           sku: details.sku || null,
           description: details.description || null,
+          category: details.category.trim() || null,
           unitPrice: Number(details.unitPrice),
           supplierId: details.supplierId !== "none" ? Number(details.supplierId) : null,
           secondarySupplierId: details.secondarySupplierId !== "none" ? Number(details.secondarySupplierId) : null,
@@ -633,6 +640,22 @@ export default function ProductDetail() {
                   <div className="grid gap-2">
                     <Label>Description</Label>
                     <Textarea rows={3} value={details.description} onChange={e => handleDetailChange("description", e.target.value)} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Category</Label>
+                    <input
+                      list="product-category-list"
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      placeholder="e.g. Bespoke Ties"
+                      value={details.category}
+                      onChange={e => handleDetailChange("category", e.target.value)}
+                    />
+                    <datalist id="product-category-list">
+                      {storedCategories.map(c => <option key={c.id} value={c.name} />)}
+                    </datalist>
+                    {details.category === "Bespoke Ties" && (
+                      <p className="text-xs text-blue-600">Standard sizes (Full Length, Clip-On, Clip-on Cravat) will be auto-assigned on save.</p>
+                    )}
                   </div>
 
                   <div className="border-t border-border/40 pt-5 mt-1">
