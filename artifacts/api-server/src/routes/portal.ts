@@ -9,7 +9,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
-import { generateInvoicePDF, buildAcknowledgementEmail, sendEmail, isEmailConfigured } from "../services/email.js";
+import { generateInvoicePDF, buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email.js";
 
 const router: IRouter = Router();
 
@@ -857,6 +857,53 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
       recipientName: r.recipient_name ?? null,
     }));
 
+    // Fetch customer address for PDF
+    let customerAddress: string | null = null;
+    let customerCity: string | null = null;
+    let customerPostcode: string | null = null;
+    if (ord.customer_id) {
+      const custRows = await db.execute(sql`SELECT address, city, postcode FROM customers WHERE id = ${ord.customer_id} LIMIT 1`);
+      const c = custRows.rows[0] as any;
+      customerAddress = c?.address ?? null;
+      customerCity = c?.city ?? null;
+      customerPostcode = c?.postcode ?? null;
+    }
+
+    // Fetch delivery address text
+    let deliveryAddressText: string | null = null;
+    if (deliveryAddressId) {
+      const daRows = await db.execute(sql`SELECT line1, line2, city, postcode FROM customer_delivery_addresses WHERE id = ${deliveryAddressId} LIMIT 1`);
+      const da = daRows.rows[0] as any;
+      if (da) deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
+    }
+
+    const pdfItems = itemRows.rows ? (itemRows.rows as any[]).map(r => ({
+      productName: r.catalogue_name ?? r.product_name,
+      sku: null,
+      colour: r.colour ?? null,
+      size: r.size ?? null,
+      quantity: Number(r.quantity ?? 1),
+      unitPrice: parseFloat(r.unit_price ?? "0"),
+      lineTotal: parseFloat(r.line_total ?? "0"),
+    })) : items.map(i => ({ ...i, sku: null }));
+
+    // Generate acknowledgement PDF (non-fatal if fails)
+    let ackPdfBuffer: Buffer | null = null;
+    try {
+      ackPdfBuffer = await generateOrderAcknowledgementPdf({
+        orderNumber: ord.order_number,
+        orderDate: ord.order_date ? new Date(ord.order_date) : null,
+        requiredDate: ord.required_date ? new Date(ord.required_date) : null,
+        customerName: ord.customer_name ?? null,
+        customerAddress,
+        customerCity,
+        customerPostcode,
+        deliveryAddress: deliveryAddressText,
+        totalAmount: parseFloat(ord.total_amount ?? "0"),
+        items: pdfItems,
+      });
+    } catch (_e) {}
+
     const emailData = {
       orderNumber: ord.order_number,
       customerName: ord.customer_name ?? null,
@@ -875,12 +922,16 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
       recipients.push({ email: ord.portal_approved_by_email, name: ord.portal_approved_by_name ?? null });
     }
 
+    const pdfAttachments = ackPdfBuffer
+      ? [{ filename: `Order-Acknowledgement-${ord.order_number}.pdf`, content: ackPdfBuffer, contentType: "application/pdf" }]
+      : [];
+
     for (const recipient of recipients) {
       const { subject, html, text } = buildAcknowledgementEmail({
         ...emailData,
         contactFirstName: recipient.name,
       });
-      await sendEmail({ to: recipient.email, subject, html, text }).catch(() => {});
+      await sendEmail({ to: recipient.email, subject, html, text, attachments: pdfAttachments }).catch(() => {});
     }
   }
 

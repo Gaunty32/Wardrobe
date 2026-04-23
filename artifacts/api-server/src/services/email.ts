@@ -49,6 +49,7 @@ export function buildAcknowledgementEmail(order: {
   requiredDate?: Date | null;
   notes?: string | null;
   totalAmount?: number | null;
+  stripePaymentLink?: string | null;
   items: Array<{
     productName: string;
     colour?: string | null;
@@ -59,13 +60,9 @@ export function buildAcknowledgementEmail(order: {
     recipientName?: string | null;
   }>;
 }): { subject: string; html: string; text: string } {
-  const subject = `Order Confirmation – ${order.orderNumber}`;
-  const dateStr = order.orderDate
-    ? new Date(order.orderDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
-    : new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  const requiredStr = order.requiredDate
-    ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
-    : null;
+  const subject = `Select Branding Solutions Ltd Order Acknowledgement - Ref : ${order.orderNumber}`;
+
+  const stripeLink = order.stripePaymentLink ?? "https://buy.stripe.com/bIY16peJJ5j99Us144";
 
   const itemRows = order.items
     .map(
@@ -73,7 +70,6 @@ export function buildAcknowledgementEmail(order: {
         `<tr>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${i.productName}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${i.recipientName || "Stock"}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">£${i.unitPrice.toFixed(2)}</td>
           <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">£${i.lineTotal.toFixed(2)}</td>
@@ -89,40 +85,28 @@ export function buildAcknowledgementEmail(order: {
 <body style="margin:0;padding:0;background:#f9fafb;font-family:Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr><td align="center" style="padding:32px 16px;">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+
+        <!-- Header -->
         <tr><td style="background:#1e293b;padding:24px 32px;">
-          <h1 style="margin:0;color:#fff;font-size:20px;font-weight:700;">Select Branding Solutions</h1>
-          <p style="margin:4px 0 0;color:#94a3b8;font-size:13px;">Order Confirmation</p>
+          <h1 style="margin:0;color:#fff;font-size:20px;font-weight:700;letter-spacing:-0.3px;">Select Branding Solutions Ltd</h1>
+          <p style="margin:4px 0 0;color:#94a3b8;font-size:13px;">Order Acknowledgement · Ref: ${order.orderNumber}</p>
         </td></tr>
+
+        <!-- Body -->
         <tr><td style="padding:32px;">
-          <p style="margin:0 0 24px;font-size:15px;color:#374151;">
-            Hi ${toFirstName(order.contactFirstName)},<br><br>
-            Thank you for your order. We are pleased to confirm the following:
+
+          <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+            Thank you for your order.<br><br>
+            Please find attached your order acknowledgement. Please check this meets your requirements. It is important you check the garments, colours, sizes and quantities as well as the finishes to be applied.
           </p>
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
-            <tr>
-              <td style="padding:8px 0;color:#6b7280;font-size:14px;">Order number</td>
-              <td style="padding:8px 0;font-size:14px;font-weight:700;color:#1e293b;">${order.orderNumber}</td>
-            </tr>
-            <tr>
-              <td style="padding:8px 0;color:#6b7280;font-size:14px;">Order date</td>
-              <td style="padding:8px 0;font-size:14px;color:#374151;">${dateStr}</td>
-            </tr>
-            ${
-              requiredStr
-                ? `<tr>
-              <td style="padding:8px 0;color:#6b7280;font-size:14px;">Required by</td>
-              <td style="padding:8px 0;font-size:14px;color:#374151;">${requiredStr}</td>
-            </tr>`
-                : ""
-            }
-          </table>
-          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:6px;margin-bottom:24px;border-collapse:collapse;">
+
+          <!-- Items table -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:6px;margin-bottom:28px;border-collapse:collapse;">
             <thead>
               <tr style="background:#f8fafc;">
                 <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Product</th>
-                <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Variant</th>
-                <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">For</th>
+                <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Colour / Size</th>
                 <th style="padding:10px 12px;text-align:center;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Qty</th>
                 <th style="padding:10px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Unit</th>
                 <th style="padding:10px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Total</th>
@@ -131,20 +115,61 @@ export function buildAcknowledgementEmail(order: {
             <tbody>${itemRows}</tbody>
             <tfoot>
               <tr style="background:#f8fafc;">
-                <td colspan="5" style="padding:12px;text-align:right;font-weight:600;font-size:15px;color:#1e293b;">Order Total</td>
-                <td style="padding:12px;text-align:right;font-weight:700;font-size:15px;color:#1e293b;">£${total.toFixed(2)}</td>
+                <td colspan="4" style="padding:12px;text-align:right;font-weight:600;font-size:14px;color:#1e293b;border-top:2px solid #e5e7eb;">Order Total (exc. VAT)</td>
+                <td style="padding:12px;text-align:right;font-weight:700;font-size:14px;color:#1e293b;border-top:2px solid #e5e7eb;">£${total.toFixed(2)}</td>
               </tr>
             </tfoot>
           </table>
-          ${order.notes ? `<p style="font-size:14px;color:#374151;margin-bottom:24px;"><strong>Notes:</strong> ${order.notes}</p>` : ""}
-          <p style="font-size:14px;color:#374151;margin:0;">
+
+          <!-- Payment section -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+            <tr><td>
+              <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+                You can make payment by BACS or by card using the details below. Our bank details have recently been updated.
+              </p>
+
+              <!-- Pay by card button -->
+              <table cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
+                <tr><td style="background:#1e293b;border-radius:6px;">
+                  <a href="${stripeLink}" style="display:inline-block;padding:12px 28px;color:#fff;font-size:14px;font-weight:600;text-decoration:none;letter-spacing:0.2px;">
+                    Pay by Card Online →
+                  </a>
+                </td></tr>
+              </table>
+
+              <!-- BACS details -->
+              <table cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:6px;border-collapse:collapse;width:auto;min-width:280px;">
+                <tr style="background:#f8fafc;">
+                  <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:700;color:#6b7280;letter-spacing:0.5px;border-bottom:1px solid #e5e7eb;">BACS PAYMENT DETAILS</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 16px;font-size:13px;color:#6b7280;white-space:nowrap;">Account name</td>
+                  <td style="padding:8px 16px;font-size:13px;font-weight:600;color:#1e293b;">Select Branding Solutions Ltd</td>
+                </tr>
+                <tr style="background:#f8fafc;">
+                  <td style="padding:8px 16px;font-size:13px;color:#6b7280;white-space:nowrap;">Sort code</td>
+                  <td style="padding:8px 16px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">04-06-05</td>
+                </tr>
+                <tr>
+                  <td style="padding:8px 16px;font-size:13px;color:#6b7280;white-space:nowrap;">Account number</td>
+                  <td style="padding:8px 16px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">30422879</td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+
+          ${order.notes ? `<p style="font-size:14px;color:#374151;margin-bottom:20px;"><strong>Notes:</strong> ${order.notes}</p>` : ""}
+
+          <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">
             If you have any questions regarding your order, please don't hesitate to get in touch.<br><br>
             Kind regards,<br>
-            <strong>Select Branding Solutions</strong>
+            <strong>Select Branding Solutions Ltd</strong>
           </p>
         </td></tr>
+
+        <!-- Footer -->
         <tr><td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">Select Branding Solutions · Effortless uniform management from order to delivery.</p>
+          <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, LS13 3HE</p>
         </td></tr>
       </table>
     </td></tr>
@@ -153,15 +178,20 @@ export function buildAcknowledgementEmail(order: {
 </html>`;
 
   const text = [
-    `ORDER CONFIRMATION – ${order.orderNumber}`,
+    `Select Branding Solutions Ltd Order Acknowledgement - Ref : ${order.orderNumber}`,
     ``,
-    `Hi ${toFirstName(order.contactFirstName)},`,
+    `Thank you for your order.`,
     ``,
-    `Thank you for your order. We are pleased to confirm the following details:`,
+    `Please find attached your order acknowledgement. Please check this meets your requirements. It is important you check the garments, colours, sizes and quantities as well as the finishes to be applied.`,
     ``,
-    `Order Number: ${order.orderNumber}`,
-    `Order Date: ${dateStr}`,
-    requiredStr ? `Required By: ${requiredStr}` : null,
+    `You can make payment by BACS or by card using the details below. Our bank details have recently been updated.`,
+    ``,
+    `Pay by card online: ${stripeLink}`,
+    ``,
+    `BACS Payment Details:`,
+    `  Account name:   Select Branding Solutions Ltd`,
+    `  Sort code:      04-06-05`,
+    `  Account number: 30422879`,
     ``,
     `ITEMS:`,
     ...order.items.map(
@@ -169,18 +199,269 @@ export function buildAcknowledgementEmail(order: {
         `  ${i.productName}${[i.colour, i.size].filter(Boolean).length ? ` (${[i.colour, i.size].filter(Boolean).join(", ")})` : ""} – Qty: ${i.quantity} @ £${i.unitPrice.toFixed(2)} = £${i.lineTotal.toFixed(2)}`
     ),
     ``,
-    `ORDER TOTAL: £${total.toFixed(2)}`,
+    `ORDER TOTAL (exc. VAT): £${total.toFixed(2)}`,
     ``,
     order.notes ? `Notes: ${order.notes}\n` : null,
     `If you have any questions, please don't hesitate to get in touch.`,
     ``,
     `Kind regards,`,
-    `Select Branding Solutions`,
+    `Select Branding Solutions Ltd`,
   ]
     .filter((l) => l !== null)
     .join("\n");
 
   return { subject, html, text };
+}
+
+// ─── Order Acknowledgement PDF ────────────────────────────────────────────────
+
+export interface AckOrderItem {
+  productName: string;
+  sku?: string | null;
+  colour?: string | null;
+  size?: string | null;
+  quantity: number;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export interface AckOrderData {
+  orderNumber: string;
+  orderDate: Date | string | null;
+  requiredDate?: Date | string | null;
+  poNumber?: string | null;
+  customerRef?: string | null;
+  customerName: string | null;
+  customerAddress?: string | null;
+  customerCity?: string | null;
+  customerPostcode?: string | null;
+  deliveryAddress?: string | null;
+  totalAmount?: number | null;
+  shippingAmount?: number | null;
+  vatRate?: number;
+  items: AckOrderItem[];
+}
+
+export async function generateOrderAcknowledgementPdf(order: AckOrderData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: "A4" });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const pageW = doc.page.width;
+    const pageH = doc.page.height;
+    const margin = 40;
+    const contentW = pageW - margin * 2;
+
+    const fmtDate = (d: Date | string | null | undefined) =>
+      d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
+
+    // ── Header: title + SBS name ────────────────────────────────────────────
+    const titleY = margin;
+    doc.font("Helvetica-Bold").fontSize(16).fillColor("#000000")
+      .text("Order Acknowledgement", margin, titleY);
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000000")
+      .text("Select Branding Solutions Ltd", margin + contentW - 180, titleY, { width: 180, align: "right" });
+
+    const addrY = titleY + 24;
+    doc.font("Helvetica").fontSize(8.5).fillColor("#444444")
+      .text("Spence Mills, Mill Lane", margin + contentW - 180, addrY, { width: 180, align: "right" });
+    doc.text("Leeds, West Yorkshire", margin + contentW - 180, addrY + 11, { width: 180, align: "right" });
+    doc.text("LS13 3HE", margin + contentW - 180, addrY + 22, { width: 180, align: "right" });
+
+    // ── Customer address block ───────────────────────────────────────────────
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#000000").text(order.customerName ?? "", margin, addrY);
+    const addrLines = [
+      order.customerAddress,
+      order.customerCity,
+      order.customerPostcode,
+      "United Kingdom",
+    ].filter(Boolean) as string[];
+    doc.font("Helvetica").fontSize(9).fillColor("#444444");
+    addrLines.forEach((line, i) => doc.text(line, margin, addrY + 11 + i * 11));
+
+    // ── Divider line ─────────────────────────────────────────────────────────
+    const divY = addrY + 11 + Math.max(addrLines.length, 3) * 11 + 10;
+    doc.moveTo(margin, divY).lineTo(margin + contentW, divY).strokeColor("#cccccc").lineWidth(0.5).stroke();
+
+    // ── Order info row ───────────────────────────────────────────────────────
+    const infoY = divY + 8;
+    const infoCols = [
+      { label: "Order Date:", value: fmtDate(order.orderDate) },
+      { label: "Account No:", value: order.customerRef ?? "" },
+      { label: "Date Required:", value: fmtDate(order.requiredDate) },
+      { label: "Cust Ref:", value: order.poNumber ?? "" },
+      { label: "Order Ref:", value: order.orderNumber },
+    ];
+    const colW = contentW / infoCols.length;
+    infoCols.forEach(({ label, value }, i) => {
+      const x = margin + i * colW;
+      doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#555555").text(label, x, infoY, { width: colW - 4 });
+      doc.font("Helvetica").fontSize(8.5).fillColor("#000000").text(value, x, infoY + 10, { width: colW - 4 });
+    });
+
+    // ── Second divider ───────────────────────────────────────────────────────
+    const div2Y = infoY + 28;
+    doc.moveTo(margin, div2Y).lineTo(margin + contentW, div2Y).strokeColor("#cccccc").lineWidth(0.5).stroke();
+
+    // ── Items table ──────────────────────────────────────────────────────────
+    // Group items by product (name) and colour, building size matrix
+    type Group = {
+      productName: string;
+      sku: string | null;
+      unitPrice: number;
+      colours: string[];
+      sizes: string[];
+      qty: Map<string, Map<string, number>>;
+      lineTotal: number;
+    };
+    const groupKeys: string[] = [];
+    const groups = new Map<string, Group>();
+    const allSizes: string[] = [];
+
+    for (const item of order.items) {
+      const gk = item.productName;
+      if (!groups.has(gk)) {
+        groupKeys.push(gk);
+        groups.set(gk, {
+          productName: item.productName,
+          sku: item.sku ?? null,
+          unitPrice: item.unitPrice,
+          colours: [],
+          sizes: [],
+          qty: new Map(),
+          lineTotal: 0,
+        });
+      }
+      const g = groups.get(gk)!;
+      const c = item.colour ?? "—";
+      const s = item.size ?? "One Size";
+      if (!g.colours.includes(c)) g.colours.push(c);
+      if (!g.sizes.includes(s)) g.sizes.push(s);
+      if (!allSizes.includes(s)) allSizes.push(s);
+      if (!g.qty.has(c)) g.qty.set(c, new Map());
+      g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantity);
+      g.lineTotal += item.lineTotal;
+    }
+
+    const tableHeaderY = div2Y + 8;
+    const rowH = 16;
+
+    // Column layout: Item | Colour | [sizes] | Qty | Unit | Total
+    const itemNameW = 130;
+    const colourW = 55;
+    const unitPriceW = 45;
+    const totalW = 50;
+    const qtyW = 30;
+    const sizemaxW = contentW - itemNameW - colourW - unitPriceW - totalW - qtyW;
+    const sizeColW = allSizes.length > 0 ? Math.min(35, Math.floor(sizemaxW / allSizes.length)) : 35;
+    const tableW = itemNameW + colourW + sizeColW * allSizes.length + qtyW + unitPriceW + totalW;
+
+    // Table header
+    doc.rect(margin, tableHeaderY, tableW, rowH).fill("#1e293b");
+    doc.fillColor("#ffffff").fontSize(7.5).font("Helvetica-Bold");
+    let hx = margin;
+    doc.text("Item", hx + 3, tableHeaderY + 4, { width: itemNameW - 3 }); hx += itemNameW;
+    doc.text("Colour", hx + 3, tableHeaderY + 4, { width: colourW - 3 }); hx += colourW;
+    for (const sz of allSizes) {
+      doc.text(sz, hx + 2, tableHeaderY + 4, { width: sizeColW - 2, align: "center" });
+      hx += sizeColW;
+    }
+    doc.text("Qty", hx + 2, tableHeaderY + 4, { width: qtyW - 2, align: "center" }); hx += qtyW;
+    doc.text("Unit Price", hx + 2, tableHeaderY + 4, { width: unitPriceW - 2, align: "right" }); hx += unitPriceW;
+    doc.text("Total", hx + 2, tableHeaderY + 4, { width: totalW - 2, align: "right" });
+
+    let y = tableHeaderY + rowH;
+    let rowAlt = false;
+
+    for (const gk of groupKeys) {
+      const g = groups.get(gk)!;
+
+      // Product name row
+      doc.rect(margin, y, tableW, rowH).fill("#f0f4f8");
+      doc.fillColor("#111827").fontSize(7.5).font("Helvetica-Bold");
+      const productLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
+      doc.text(productLabel, margin + 3, y + 4, { width: tableW - totalW - 6 });
+      doc.text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 4, { width: totalW - 3, align: "right" });
+      y += rowH;
+
+      // Colour rows
+      for (const colour of g.colours) {
+        const rowTotal = allSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+        doc.rect(margin, y, tableW, rowH).fill(rowAlt ? "#f9fafb" : "#ffffff").stroke("#e5e7eb");
+        doc.fillColor("#374151").fontSize(7.5).font("Helvetica");
+        let rx = margin;
+        doc.text("", rx + 3, y + 4, { width: itemNameW - 3 }); rx += itemNameW;
+        doc.text(colour, rx + 3, y + 4, { width: colourW - 3 }); rx += colourW;
+        for (const sz of allSizes) {
+          const q = g.qty.get(colour)?.get(sz) ?? 0;
+          doc.text(q > 0 ? String(q) : "", rx + 2, y + 4, { width: sizeColW - 2, align: "center" });
+          rx += sizeColW;
+        }
+        doc.font("Helvetica-Bold").text(String(rowTotal), rx + 2, y + 4, { width: qtyW - 2, align: "center" }); rx += qtyW;
+        doc.font("Helvetica").text(`£${g.unitPrice.toFixed(2)}`, rx + 2, y + 4, { width: unitPriceW - 2, align: "right" }); rx += unitPriceW;
+        doc.text("", rx + 2, y + 4, { width: totalW - 3, align: "right" });
+        y += rowH;
+        rowAlt = !rowAlt;
+      }
+
+      if (y > pageH - 140) {
+        doc.addPage();
+        y = margin;
+      }
+    }
+
+    // ── Totals ───────────────────────────────────────────────────────────────
+    const subtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
+    const shipping = order.shippingAmount ?? 0;
+    const vatRate = order.vatRate ?? 0.20;
+    const subtotalPlusShipping = subtotal + shipping;
+    const vatAmount = subtotalPlusShipping * vatRate;
+    const grandTotal = subtotalPlusShipping + vatAmount;
+
+    const totalsX = margin + tableW - 200;
+    const totalsW = 200;
+    y += 8;
+
+    const totalsRows = [
+      { label: "Order Discount at 0%:", value: "£0.00" },
+      { label: "Total Discount:", value: "£0.00", bold: true },
+      { label: `Sub Total (inc discount):`, value: `£${subtotal.toFixed(2)}`, bold: true },
+      ...(shipping > 0 ? [{ label: "Shipping & Handling:", value: `£${shipping.toFixed(2)}` }] : [{ label: "Shipping & Handling:", value: `£${shipping.toFixed(2)}` }]),
+      { label: `Total VAT:`, value: `£${vatAmount.toFixed(2)}` },
+      { label: "TOTAL:", value: `£${grandTotal.toFixed(2)}`, bold: true, big: true },
+    ];
+
+    doc.fontSize(7.5);
+    for (const row of totalsRows) {
+      const rowBg = row.big ? "#1e293b" : row.bold ? "#f0f4f8" : "#ffffff";
+      const fg = row.big ? "#ffffff" : "#111827";
+      doc.rect(totalsX, y, totalsW, 14).fill(rowBg).stroke("#e5e7eb");
+      doc.fillColor(fg).font(row.bold ? "Helvetica-Bold" : "Helvetica");
+      doc.text(row.label, totalsX + 4, y + 3, { width: 130 });
+      doc.font("Helvetica-Bold").text(row.value, totalsX + 134, y + 3, { width: totalsW - 138, align: "right" });
+      y += 14;
+    }
+
+    // ── Delivery Address ─────────────────────────────────────────────────────
+    y += 16;
+    doc.fillColor("#555555").fontSize(8).font("Helvetica-Bold").text("Delivery Address (if applicable)", margin, y);
+    if (order.deliveryAddress) {
+      y += 11;
+      doc.font("Helvetica").fontSize(8).fillColor("#374151").text(order.deliveryAddress, margin, y, { width: 250 });
+    }
+
+    // ── Footer ───────────────────────────────────────────────────────────────
+    const footY = pageH - 30;
+    doc.fontSize(7).fillColor("#9ca3af").font("Helvetica")
+      .text("Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, West Yorkshire, LS13 3HE", margin, footY, { align: "center", width: contentW });
+    const pageNumY = footY + 10;
+    doc.text("1 of 1", margin, pageNumY, { align: "right", width: contentW });
+
+    doc.end();
+  });
 }
 
 // ─── Purchase Order PDF + Email ───────────────────────────────────────────────

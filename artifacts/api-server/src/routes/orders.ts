@@ -7,7 +7,7 @@ import {
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
 } from "@workspace/db";
-import { buildAcknowledgementEmail, sendEmail, isEmailConfigured } from "../services/email";
+import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
 import {
   UpdateOrderBody,
   GetOrderParams,
@@ -409,6 +409,8 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       customerId: ordersTable.customerId, customerName: ordersTable.customerName,
       orderDate: ordersTable.orderDate, requiredDate: ordersTable.requiredDate,
       notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
+      poNumber: ordersTable.poNumber,
+      deliveryAddressId: ordersTable.deliveryAddressId,
     })
     .from(ordersTable)
     .where(eq(ordersTable.id, params.data.id));
@@ -418,6 +420,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     .select({
       productName: orderItemsTable.productName,
       catalogueProductName: productsTable.name,
+      sku: productsTable.sku,
       colour: orderItemsTable.colour,
       size: orderItemsTable.size, quantity: orderItemsTable.quantity,
       unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
@@ -429,19 +432,49 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
 
   const items = itemRows2.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
 
-  // Resolve customer email
+  // Resolve customer email and address
   const body = z.object({ toEmail: z.string().email().optional() }).safeParse(req.body);
   let toEmail = body.success ? body.data.toEmail : undefined;
   let contactFirstName: string | null = null;
-  if (!toEmail && order.customerId) {
-    const [customer] = await db.select({ email: customersTable.email, contactFirstName: customersTable.contactFirstName }).from(customersTable).where(eq(customersTable.id, order.customerId));
-    toEmail = customer?.email ?? undefined;
+  let customerAddress: string | null = null;
+  let customerCity: string | null = null;
+  let customerPostcode: string | null = null;
+
+  if (order.customerId) {
+    const [customer] = await db.select({
+      email: customersTable.email,
+      contactFirstName: customersTable.contactFirstName,
+      address: customersTable.address,
+      city: customersTable.city,
+      postcode: customersTable.postcode,
+    }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    if (!toEmail) toEmail = customer?.email ?? undefined;
     contactFirstName = customer?.contactFirstName ?? null;
-  } else if (order.customerId) {
-    const [customer] = await db.select({ contactFirstName: customersTable.contactFirstName }).from(customersTable).where(eq(customersTable.id, order.customerId));
-    contactFirstName = customer?.contactFirstName ?? null;
+    customerAddress = customer?.address ?? null;
+    customerCity = customer?.city ?? null;
+    customerPostcode = customer?.postcode ?? null;
   }
   if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
+
+  // Resolve delivery address if linked
+  let deliveryAddressText: string | null = null;
+  if (order.deliveryAddressId) {
+    const [da] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    if (da) {
+      deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
+    }
+  }
+
+  const mappedItems = items.map(i => ({
+    productName: i.productName,
+    sku: i.sku ?? null,
+    colour: i.colour ?? null,
+    size: i.size ?? null,
+    quantity: i.quantity ?? 1,
+    unitPrice: parseFloat(String(i.unitPrice ?? 0)),
+    lineTotal: parseFloat(String(i.lineTotal ?? 0)),
+    recipientName: i.recipientName ?? null,
+  }));
 
   const { subject, html, text } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
@@ -451,14 +484,31 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
     totalAmount: numericToFloat(order.totalAmount),
-    items: items.map(i => ({
-      productName: i.productName, colour: i.colour ?? null, size: i.size ?? null,
-      quantity: i.quantity ?? 1, unitPrice: parseFloat(String(i.unitPrice ?? 0)),
-      lineTotal: parseFloat(String(i.lineTotal ?? 0)), recipientName: i.recipientName ?? null,
-    })),
+    items: mappedItems,
   });
 
-  const result = await sendEmail({ to: toEmail, subject, html, text });
+  // Generate PDF attachment
+  let attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
+  try {
+    const pdfBuffer = await generateOrderAcknowledgementPdf({
+      orderNumber: order.orderNumber,
+      orderDate: order.orderDate ?? null,
+      requiredDate: order.requiredDate ?? null,
+      poNumber: order.poNumber ?? null,
+      customerName: order.customerName ?? null,
+      customerAddress,
+      customerCity,
+      customerPostcode,
+      deliveryAddress: deliveryAddressText,
+      totalAmount: numericToFloat(order.totalAmount),
+      items: mappedItems,
+    });
+    attachments = [{ filename: `Order-Acknowledgement-${order.orderNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" }];
+  } catch (_err) {
+    // PDF failure is non-fatal — email still sends without attachment
+  }
+
+  const result = await sendEmail({ to: toEmail, subject, html, text, attachments });
 
   res.json({ sent: result.sent, error: result.error, subject, html, text, to: toEmail, emailConfigured: isEmailConfigured });
 });
