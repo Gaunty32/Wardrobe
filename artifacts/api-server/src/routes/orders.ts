@@ -765,6 +765,203 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     .send(eml);
 });
 
+// ─── GET acknowledgement as .vbs (opens Outlook compose window via COM) ───────
+
+router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const [order] = await db
+    .select({
+      id: ordersTable.id, orderNumber: ordersTable.orderNumber,
+      customerId: ordersTable.customerId, customerName: ordersTable.customerName,
+      orderDate: ordersTable.orderDate, requiredDate: ordersTable.requiredDate,
+      notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
+      poNumber: ordersTable.poNumber, deliveryAddressId: ordersTable.deliveryAddressId,
+    })
+    .from(ordersTable)
+    .where(eq(ordersTable.id, params.data.id));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const itemRows = await db
+    .select({
+      productName: orderItemsTable.productName,
+      catalogueProductName: productsTable.name,
+      sku: productsTable.sku,
+      colour: orderItemsTable.colour,
+      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
+      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
+      recipientName: orderItemsTable.recipientName,
+    })
+    .from(orderItemsTable)
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(eq(orderItemsTable.orderId, params.data.id));
+
+  const items = itemRows.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
+
+  let toEmail = "";
+  let contactFirstName: string | null = null;
+  let customerAddress: string | null = null;
+  let customerCity: string | null = null;
+  let customerPostcode: string | null = null;
+
+  if (order.customerId) {
+    const [customer] = await db.select({
+      email: customersTable.email,
+      contactFirstName: customersTable.contactFirstName,
+      address: customersTable.address,
+      city: customersTable.city,
+      postcode: customersTable.postcode,
+    }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    toEmail = customer?.email ?? "";
+    contactFirstName = customer?.contactFirstName ?? null;
+    customerAddress = customer?.address ?? null;
+    customerCity = customer?.city ?? null;
+    customerPostcode = customer?.postcode ?? null;
+  }
+
+  let deliveryAddressText: string | null = null;
+  if (order.deliveryAddressId) {
+    const [da] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    if (da) deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
+  }
+
+  const mappedItems = items.map(i => ({
+    productName: i.productName,
+    sku: i.sku ?? null,
+    colour: i.colour ?? null,
+    size: i.size ?? null,
+    quantity: i.quantity ?? 1,
+    unitPrice: parseFloat(String(i.unitPrice ?? 0)),
+    lineTotal: parseFloat(String(i.lineTotal ?? 0)),
+    recipientName: i.recipientName ?? null,
+  }));
+
+  const { subject, html } = buildAcknowledgementEmail({
+    orderNumber: order.orderNumber,
+    customerName: order.customerName ?? null,
+    contactFirstName,
+    orderDate: order.orderDate ?? null,
+    requiredDate: order.requiredDate ?? null,
+    notes: order.notes ?? null,
+    totalAmount: numericToFloat(order.totalAmount),
+    items: mappedItems,
+  });
+
+  let pdfBase64 = "";
+  const pdfFilename = `Order-Acknowledgement-${order.orderNumber}.pdf`;
+  try {
+    const pdfBuffer = await generateOrderAcknowledgementPdf({
+      orderNumber: order.orderNumber,
+      orderDate: order.orderDate ?? null,
+      requiredDate: order.requiredDate ?? null,
+      poNumber: order.poNumber ?? null,
+      customerName: order.customerName ?? null,
+      customerAddress,
+      customerCity,
+      customerPostcode,
+      deliveryAddress: deliveryAddressText,
+      totalAmount: numericToFloat(order.totalAmount),
+      items: mappedItems,
+    });
+    pdfBase64 = pdfBuffer.toString("base64");
+  } catch (_) { /* non-fatal */ }
+
+  // Encode HTML and PDF as base64 chunks for embedding in VBScript
+  const htmlB64 = Buffer.from(html, "utf8").toString("base64");
+
+  function vbsChunks(b64: string): string {
+    const size = 60;
+    const lines: string[] = [];
+    for (let i = 0; i < b64.length; i += size) {
+      lines.push(JSON.stringify(b64.slice(i, i + size)));
+    }
+    if (lines.length === 0) return '""';
+    return lines.join(" & _\r\n    ");
+  }
+
+  const escapedSubject = subject.replace(/"/g, '""');
+  const escapedToEmail = toEmail.replace(/"/g, '""');
+  const escapedPdfFilename = pdfFilename.replace(/"/g, '""');
+
+  const vbs = `Option Explicit
+
+' ── Base64 decode helper (via MSXML2) ───────────────────────────────────────
+Function B64ToBytes(b64)
+  Dim doc, node
+  Set doc = CreateObject("MSXML2.DOMDocument")
+  Set node = doc.createElement("b64")
+  node.DataType = "bin.base64"
+  node.Text = b64
+  B64ToBytes = node.NodeTypedValue
+End Function
+
+Function B64ToString(b64)
+  Dim st
+  Set st = CreateObject("ADODB.Stream")
+  st.Type = 1
+  st.Open
+  st.Write B64ToBytes(b64)
+  st.Position = 0
+  st.Type = 2
+  st.Charset = "utf-8"
+  B64ToString = st.ReadText
+  st.Close
+End Function
+
+' ── Embedded data ────────────────────────────────────────────────────────────
+Dim toEmail, subj, pdfFile, htmlB64, pdfB64
+toEmail  = "${escapedToEmail}"
+subj     = "${escapedSubject}"
+pdfFile  = "${escapedPdfFilename}"
+
+htmlB64 = ${vbsChunks(htmlB64)}
+
+${pdfBase64 ? `pdfB64 = ${vbsChunks(pdfBase64)}` : `pdfB64 = ""`}
+
+' ── Write PDF to temp file ───────────────────────────────────────────────────
+Dim fso, tmpPdf
+Set fso = CreateObject("Scripting.FileSystemObject")
+tmpPdf = fso.GetSpecialFolder(2) & "\\" & pdfFile
+
+If Len(pdfB64) > 0 Then
+  Dim pdfStream
+  Set pdfStream = CreateObject("ADODB.Stream")
+  pdfStream.Type = 1
+  pdfStream.Open
+  pdfStream.Write B64ToBytes(pdfB64)
+  pdfStream.SaveToFile tmpPdf, 2
+  pdfStream.Close
+End If
+
+' ── Create Outlook compose window ────────────────────────────────────────────
+Dim olApp, mail
+Set olApp = CreateObject("Outlook.Application")
+Set mail = olApp.CreateItem(0)
+
+mail.To       = toEmail
+mail.Subject  = subj
+mail.HTMLBody = B64ToString(htmlB64)
+
+If Len(pdfB64) > 0 And fso.FileExists(tmpPdf) Then
+  mail.Attachments.Add tmpPdf
+End If
+
+mail.Display
+
+' Clean up temp PDF after Outlook has loaded it
+WScript.Sleep 5000
+If fso.FileExists(tmpPdf) Then fso.DeleteFile tmpPdf
+`;
+
+  const filename = `SendAck-${order.orderNumber}.vbs`;
+  res
+    .status(200)
+    .header("Content-Type", "application/octet-stream")
+    .header("Content-Disposition", `attachment; filename="${filename}"`)
+    .send(vbs);
+});
+
 function chunkBase64(b64: string): string[] {
   const chunks: string[] = [];
   for (let i = 0; i < b64.length; i += 76) chunks.push(b64.slice(i, i + 76));

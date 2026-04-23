@@ -428,15 +428,16 @@ export default function OrderDetail() {
   async function handleSendAck() {
     setAckLoading(true);
     try {
-      // Navigate to the .eml endpoint — browser downloads and Outlook opens it
-      const url = `${API_BASE}/orders/${orderId}/acknowledgement.eml`;
+      // Download .vbs script — double-clicking it uses Windows COM automation
+      // to open a proper Outlook compose window with the PDF already attached
+      const url = `${API_BASE}/orders/${orderId}/acknowledgement.vbs`;
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Acknowledgement-${order.orderNumber}.eml`;
+      a.download = `SendAck-${order.orderNumber}.vbs`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      toast({ title: "Acknowledgement ready", description: "Open the downloaded file to send from Outlook." });
+      toast({ title: "Acknowledgement ready", description: "Double-click the downloaded .vbs file to open the draft in Outlook." });
     } catch (err: any) {
       toast({ title: "Failed to generate acknowledgement", description: err.message, variant: "destructive" });
     } finally {
