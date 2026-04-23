@@ -475,9 +475,9 @@ export default function ProductDetail() {
     enabled: !!productId,
   });
 
-  const { data: storedCategories = [] } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ["product-categories"],
-    queryFn: () => apiFetch("/categories"),
+  const { data: categoryNames = [] } = useQuery<string[]>({
+    queryKey: ["products-category-names"],
+    queryFn: () => apiFetch("/products/category-names"),
   });
 
   const [details, setDetails] = useState<{
@@ -651,7 +651,7 @@ export default function ProductDetail() {
                       onChange={e => handleDetailChange("category", e.target.value)}
                     />
                     <datalist id="product-category-list">
-                      {storedCategories.map(c => <option key={c.id} value={c.name} />)}
+                      {categoryNames.map(name => <option key={name} value={name} />)}
                     </datalist>
                     {details.category === "Bespoke Ties" && (
                       <p className="text-xs text-blue-600">Standard sizes (Full Length, Clip-On, Clip-on Cravat) will be auto-assigned on save.</p>

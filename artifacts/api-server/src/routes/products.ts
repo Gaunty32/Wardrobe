@@ -101,6 +101,16 @@ router.get("/products/next-bsp-sku", async (_req, res): Promise<void> => {
   res.json({ sku: await nextBspSku() });
 });
 
+router.get("/products/category-names", async (_req, res): Promise<void> => {
+  const result = await db.execute(sql`
+    SELECT DISTINCT TRIM(category) AS name
+    FROM products
+    WHERE category IS NOT NULL AND TRIM(category) <> ''
+    ORDER BY name
+  `);
+  res.json((result.rows as any[]).map((r) => r.name as string));
+});
+
 router.post("/products/:id/duplicate", async (req, res): Promise<void> => {
   const params = GetProductParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
