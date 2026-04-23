@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, ilike, or } from "drizzle-orm";
+import { eq, ilike, or, sql } from "drizzle-orm";
 import { db, productsTable, productAttributesTable, productVariantsTable } from "@workspace/db";
 import { z } from "zod";
 import {
@@ -13,27 +13,44 @@ import {
 
 const router: IRouter = Router();
 
+function fmtProduct(p: any) {
+  return {
+    ...p,
+    unitPrice: p.unitPrice != null ? parseFloat(p.unitPrice) : 0,
+    supplierPrice: p.supplierPrice != null ? parseFloat(p.supplierPrice) : null,
+    secondarySupplierPrice: p.secondarySupplierPrice != null ? parseFloat(p.secondarySupplierPrice) : null,
+  };
+}
+
 router.get("/products", async (req, res): Promise<void> => {
   const query = ListProductsQueryParams.safeParse(req.query);
-  let products;
-  if (query.success && query.data.search) {
-    const term = `%${query.data.search}%`;
-    products = await db
-      .select()
-      .from(productsTable)
-      .where(or(ilike(productsTable.name, term), ilike(productsTable.sku, term), ilike(productsTable.description, term)))
-      .orderBy(productsTable.name);
-  } else {
-    products = await db.select().from(productsTable).orderBy(productsTable.name);
-  }
-  res.json(
-    products.map((p) => ({
-      ...p,
-      unitPrice: parseFloat(p.unitPrice),
-      supplierPrice: p.supplierPrice != null ? parseFloat(p.supplierPrice) : null,
-      secondarySupplierPrice: p.secondarySupplierPrice != null ? parseFloat(p.secondarySupplierPrice) : null,
-    }))
-  );
+  const searchTerm = query.success && query.data.search ? `%${query.data.search}%` : null;
+
+  const rows = await db.execute(sql`
+    SELECT p.*,
+           c.name AS customer_name
+    FROM products p
+    LEFT JOIN customers c ON c.id = p.customer_id
+    ${searchTerm
+      ? sql`WHERE (p.name ILIKE ${searchTerm} OR p.sku ILIKE ${searchTerm} OR p.description ILIKE ${searchTerm})`
+      : sql``}
+    ORDER BY p.name
+  `);
+
+  res.json(rows.rows.map((p: any) => ({
+    ...p,
+    unitPrice: p.unit_price != null ? parseFloat(p.unit_price) : 0,
+    supplierPrice: p.supplier_price != null ? parseFloat(p.supplier_price) : null,
+    secondarySupplierPrice: p.secondary_supplier_price != null ? parseFloat(p.secondary_supplier_price) : null,
+    customerName: p.customer_name ?? null,
+    isBespoke: p.is_bespoke ?? false,
+    customerId: p.customer_id ?? null,
+    wooCommerceId: p.woo_commerce_id ?? null,
+    imageUrl: p.image_url ?? null,
+    supplierId: p.supplier_id ?? null,
+    supplierCode: p.supplier_code ?? null,
+    stockQuantity: p.stock_quantity ?? null,
+  })));
 });
 
 router.post("/products", async (req, res): Promise<void> => {
@@ -43,11 +60,13 @@ router.post("/products", async (req, res): Promise<void> => {
     return;
   }
   const category = typeof req.body.category === "string" ? req.body.category.trim() || null : null;
+  const customerId = req.body.customerId != null ? Number(req.body.customerId) || null : null;
+  const isBespoke = customerId != null ? true : (req.body.isBespoke === true);
   const [product] = await db
     .insert(productsTable)
-    .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice) })
+    .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice), customerId, isBespoke })
     .returning();
-  res.status(201).json({ ...product, unitPrice: parseFloat(product.unitPrice) });
+  res.status(201).json(fmtProduct(product));
 });
 
 router.get("/products/:id", async (req, res): Promise<void> => {
@@ -81,6 +100,15 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   }
   if ("category" in req.body) {
     updateData.category = typeof req.body.category === "string" ? req.body.category.trim() || null : null;
+  }
+  if ("customerId" in req.body) {
+    const cid = req.body.customerId != null ? Number(req.body.customerId) || null : null;
+    updateData.customerId = cid;
+    if (cid != null) updateData.isBespoke = true;
+  }
+  if ("isBespoke" in req.body) {
+    updateData.isBespoke = req.body.isBespoke === true;
+    if (req.body.isBespoke === false) updateData.customerId = null;
   }
   const [product] = await db
     .update(productsTable)

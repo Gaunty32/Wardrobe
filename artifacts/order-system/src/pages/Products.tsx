@@ -13,6 +13,7 @@ import {
   Product,
   Supplier
 } from "@workspace/api-client-react";
+import { useListCustomers } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -51,13 +52,14 @@ export default function Products() {
   const [search, setSearch] = useState("");
   const [selectedTopCat, setSelectedTopCat] = useState<ProductCategory | null>(null);
   const [selectedSubCat, setSelectedSubCat] = useState<ProductCategory | null>(null);
-  const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal">("all");
+  const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal" | "bespoke">("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
 
   const [formData, setFormData] = useState({
     name: "", sku: "", category: "", description: "", unitPrice: 0, stockQuantity: 0,
     supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
+    customerId: "none" as string,
   });
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile, isUploading: isImageUploading } = useUpload({
@@ -70,6 +72,7 @@ export default function Products() {
 
   const { data: products, isLoading: productsLoading } = useListProducts({ search });
   const { data: suppliers = [] } = useListSuppliers();
+  const { data: customers = [] } = useListCustomers();
   const { data: storedCategories = [], isLoading: categoriesLoading } = useQuery<ProductCategory[]>({
     queryKey: ["product-categories"],
     queryFn: () => apiFetch("/product-categories"),
@@ -152,7 +155,8 @@ export default function Products() {
     })
     .filter((p) => {
       if (websiteFilter === "website") return !!(p as any).wooCommerceId;
-      if (websiteFilter === "internal") return !(p as any).wooCommerceId;
+      if (websiteFilter === "internal") return !(p as any).wooCommerceId && !(p as any).isBespoke;
+      if (websiteFilter === "bespoke") return !!(p as any).isBespoke;
       return true;
     });
 
@@ -163,6 +167,7 @@ export default function Products() {
       category: defaultCat,
       description: "", unitPrice: 0, stockQuantity: 0,
       supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
+      customerId: "none",
     });
     setIsCreateOpen(true);
   };
@@ -179,6 +184,7 @@ export default function Products() {
       supplierCode: (product as any).supplierCode || "",
       supplierPrice: (product as any).supplierPrice != null ? String((product as any).supplierPrice) : "",
       imageUrl: (product as any).imageUrl || "",
+      customerId: (product as any).customerId ? String((product as any).customerId) : "none",
     });
     setEditingProduct(product);
   };
@@ -188,6 +194,7 @@ export default function Products() {
       toast({ title: "Validation Error", description: "Name and valid price are required", variant: "destructive" });
       return;
     }
+    const customerId = formData.customerId !== "none" ? Number(formData.customerId) : null;
     const payload = {
       ...formData,
       category: formData.category.trim() || null,
@@ -195,6 +202,8 @@ export default function Products() {
       supplierCode: formData.supplierCode || null,
       supplierPrice: formData.supplierPrice !== "" ? parseFloat(formData.supplierPrice) : null,
       imageUrl: formData.imageUrl || null,
+      customerId,
+      isBespoke: customerId != null,
     };
     if (editingProduct) {
       updateMutation.mutate({ id: editingProduct.id, data: payload as any }, {
@@ -340,9 +349,9 @@ export default function Products() {
             />
           </div>
 
-          {/* Website / Internal filter */}
+          {/* Website / Internal / Bespoke filter */}
           <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5">
-            {(["all", "website", "internal"] as const).map((f) => (
+            {(["all", "website", "internal", "bespoke"] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => { setWebsiteFilter(f); setSelectedTopCat(null); setSelectedSubCat(null); }}
@@ -355,7 +364,8 @@ export default function Products() {
               >
                 {f === "website" && <Globe className="w-3 h-3" />}
                 {f === "internal" && <Lock className="w-3 h-3" />}
-                {f === "all" ? "All" : f === "website" ? "Website" : "Internal only"}
+                {f === "bespoke" && <Package className="w-3 h-3" />}
+                {f === "all" ? "All" : f === "website" ? "Website" : f === "internal" ? "Internal only" : "Bespoke"}
               </button>
             ))}
           </div>
@@ -517,6 +527,25 @@ export default function Products() {
             </div>
 
             <div className="border-t border-border/40 pt-3 mt-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Bespoke Assignment</p>
+              <div className="grid gap-2">
+                <Label>Assign to Customer (Bespoke)</Label>
+                <Select value={formData.customerId} onValueChange={(v) => setFormData({ ...formData, customerId: v })}>
+                  <SelectTrigger><SelectValue placeholder="— Standard product (all customers) —" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Standard product (all customers) —</SelectItem>
+                    {(customers as any[]).map((c: any) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {formData.customerId !== "none" && (
+                  <p className="text-xs text-purple-600">This product will be marked bespoke and only visible to this customer on their portal.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-border/40 pt-3 mt-1">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Supplier</p>
               <div className="grid gap-2 mb-3">
                 <Label>Preferred Supplier</Label>
@@ -597,9 +626,13 @@ function ProductTable({
               </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">{product.sku || "—"}</TableCell>
               <TableCell className="font-medium text-foreground hover:text-primary transition-colors">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   {product.name}
-                  {(product as any).wooCommerceId ? (
+                  {(product as any).isBespoke ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex-shrink-0">
+                      <Package className="w-2.5 h-2.5" /> Bespoke{(product as any).customerName ? ` · ${(product as any).customerName}` : ""}
+                    </span>
+                  ) : (product as any).wooCommerceId ? (
                     <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 flex-shrink-0">
                       <Globe className="w-2.5 h-2.5" /> Website
                     </span>
