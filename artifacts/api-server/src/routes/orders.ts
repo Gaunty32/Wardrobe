@@ -9,6 +9,7 @@ import {
   customerProcessesTable, customerFinishProcessesTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
+import { getUncachableStripeClient } from "../services/stripeClient.js";
 import {
   UpdateOrderBody,
   GetOrderParams,
@@ -47,6 +48,40 @@ async function generateOrderNumber(): Promise<string> {
   const last = (rows.rows[0] as any)?.order_number as string | undefined;
   const maxNum = last ? parseInt(last.slice(1), 10) : 99;
   return `O${maxNum + 1}`;
+}
+
+async function createStripePaymentLink(opts: {
+  orderNumber: string;
+  totalAmount: number;
+  stripeCustomerId?: string | null;
+  baseUrl: string;
+}): Promise<string | null> {
+  try {
+    const stripe = await getUncachableStripeClient();
+    const amountPence = Math.round(opts.totalAmount * 100);
+    if (amountPence <= 0) return null;
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [{
+        price_data: {
+          currency: "gbp",
+          product_data: {
+            name: `Order Payment – Ref: ${opts.orderNumber}`,
+            description: "Select Branding Solutions Ltd",
+          },
+          unit_amount: amountPence,
+        },
+        quantity: 1,
+      }],
+      ...(opts.stripeCustomerId ? { customer: opts.stripeCustomerId } : {}),
+      success_url: `${opts.baseUrl}/customer-portal/`,
+      cancel_url: `${opts.baseUrl}/customer-portal/`,
+      metadata: { sbs_order_number: opts.orderNumber },
+    });
+    return session.url;
+  } catch {
+    return null;
+  }
 }
 
 function numericToFloat(val: string | null | undefined): number {
@@ -656,6 +691,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
   let customerAddress: string | null = null;
   let customerCity: string | null = null;
   let customerPostcode: string | null = null;
+  let stripeCustomerId: string | null = null;
 
   if (order.customerId) {
     const [customer] = await db.select({
@@ -664,12 +700,14 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
       address: customersTable.address,
       city: customersTable.city,
       postcode: customersTable.postcode,
+      stripeCustomerId: customersTable.stripeCustomerId,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     toEmail = customer?.email ?? "";
     contactFirstName = customer?.contactFirstName ?? null;
     customerAddress = customer?.address ?? null;
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
+    stripeCustomerId = customer?.stripeCustomerId ?? null;
   }
 
   let deliveryAddressText: string | null = null;
@@ -689,6 +727,15 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     recipientName: i.recipientName ?? null,
   }));
 
+  const baseUrl = `${req.protocol}://${req.get("host")}`;
+  const orderTotal = numericToFloat(order.totalAmount);
+  const stripePaymentLink = await createStripePaymentLink({
+    orderNumber: order.orderNumber,
+    totalAmount: orderTotal,
+    stripeCustomerId,
+    baseUrl,
+  });
+
   const { subject, html, text } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
@@ -696,7 +743,8 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     orderDate: order.orderDate ?? null,
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
-    totalAmount: numericToFloat(order.totalAmount),
+    totalAmount: orderTotal,
+    stripePaymentLink,
     items: mappedItems,
   });
 
@@ -804,6 +852,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
   let customerAddress: string | null = null;
   let customerCity: string | null = null;
   let customerPostcode: string | null = null;
+  let stripeCustomerId2: string | null = null;
 
   if (order.customerId) {
     const [customer] = await db.select({
@@ -812,12 +861,14 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
       address: customersTable.address,
       city: customersTable.city,
       postcode: customersTable.postcode,
+      stripeCustomerId: customersTable.stripeCustomerId,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     toEmail = customer?.email ?? "";
     contactFirstName = customer?.contactFirstName ?? null;
     customerAddress = customer?.address ?? null;
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
+    stripeCustomerId2 = customer?.stripeCustomerId ?? null;
   }
 
   let deliveryAddressText: string | null = null;
@@ -837,6 +888,15 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
     recipientName: i.recipientName ?? null,
   }));
 
+  const baseUrl2 = `${req.protocol}://${req.get("host")}`;
+  const orderTotal2 = numericToFloat(order.totalAmount);
+  const stripePaymentLink2 = await createStripePaymentLink({
+    orderNumber: order.orderNumber,
+    totalAmount: orderTotal2,
+    stripeCustomerId: stripeCustomerId2,
+    baseUrl: baseUrl2,
+  });
+
   const { subject, html } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
@@ -844,7 +904,8 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
     orderDate: order.orderDate ?? null,
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
-    totalAmount: numericToFloat(order.totalAmount),
+    totalAmount: orderTotal2,
+    stripePaymentLink: stripePaymentLink2,
     items: mappedItems,
   });
 
