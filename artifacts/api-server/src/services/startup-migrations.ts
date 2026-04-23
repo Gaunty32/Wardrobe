@@ -218,4 +218,73 @@ export async function runStartupMigrations(): Promise<void> {
   `);
 
   console.log("[startup] Migrations complete");
+
+  // ── Repair Bespoke Ties variants ────────────────────────────────────────────
+  // Rename legacy size values, ensure all 3 variants exist with correct SKUs and
+  // primary supplier info. Safe to run multiple times (idempotent).
+  await db.execute(sql`
+    UPDATE product_attributes
+    SET value = 'Full Length Tie'
+    WHERE type = 'size' AND value = 'Full Length'
+  `);
+  await db.execute(sql`
+    UPDATE product_attributes
+    SET value = 'Clip-On Tie'
+    WHERE type = 'size' AND value = 'Clip-On'
+  `);
+
+  const bespokeTieRows = await db.execute(sql`
+    SELECT id, sku, supplier_id, supplier_code, supplier_price
+    FROM products
+    WHERE category = 'Bespoke Ties' AND sku IS NOT NULL AND sku <> ''
+  `);
+
+  const sizeVariants = [
+    { label: "Full Length Tie", suffix: "FLT" },
+    { label: "Clip-On Tie",     suffix: "COT" },
+    { label: "Clip-on Cravat",  suffix: "COC" },
+  ];
+
+  for (const p of bespokeTieRows.rows as any[]) {
+    // Ensure size attributes
+    for (const sv of sizeVariants) {
+      await db.execute(sql`
+        INSERT INTO product_attributes (product_id, type, value, sort_order)
+        SELECT ${p.id}, 'size', ${sv.label}, 0
+        WHERE NOT EXISTS (
+          SELECT 1 FROM product_attributes
+          WHERE product_id = ${p.id} AND type = 'size' AND value = ${sv.label}
+        )
+      `);
+    }
+
+    // Ensure variant rows with SKU and supplier info
+    for (const sv of sizeVariants) {
+      const variantSku = `${p.sku}-${sv.suffix}`;
+      await db.execute(sql`
+        INSERT INTO product_variants (product_id, size, sku, stock_quantity, primary_supplier_id, supplier_code, supplier_price)
+        SELECT ${p.id}, ${sv.label}, ${variantSku}, 0, ${p.supplier_id}, ${p.supplier_code}, ${p.supplier_price}
+        WHERE NOT EXISTS (
+          SELECT 1 FROM product_variants
+          WHERE product_id = ${p.id} AND size = ${sv.label}
+        )
+      `);
+    }
+
+    // Back-fill supplier info on existing variants missing it
+    if (p.supplier_id) {
+      await db.execute(sql`
+        UPDATE product_variants
+        SET primary_supplier_id = ${p.supplier_id},
+            supplier_code = ${p.supplier_code},
+            supplier_price = ${p.supplier_price}
+        WHERE product_id = ${p.id}
+          AND primary_supplier_id IS NULL
+      `);
+    }
+  }
+
+  if (bespokeTieRows.rows.length > 0) {
+    console.log(`[startup] Repaired ${bespokeTieRows.rows.length} Bespoke Ties product(s)`);
+  }
 }

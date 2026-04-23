@@ -25,7 +25,17 @@ const BESPOKE_TIE_RENAMES: Record<string, string> = {
   "Clip-On":     "Clip-On Tie",
 };
 
-async function ensureBespokeTieSizes(productId: number, productSku?: string | null): Promise<void> {
+type ProductSupplierInfo = {
+  supplierId?: number | null;
+  supplierCode?: string | null;
+  supplierPrice?: string | number | null;
+};
+
+async function ensureBespokeTieSizes(
+  productId: number,
+  productSku?: string | null,
+  supplierInfo?: ProductSupplierInfo,
+): Promise<void> {
   // Rename any legacy short values first
   for (const [oldVal, newVal] of Object.entries(BESPOKE_TIE_RENAMES)) {
     await db.execute(sql`
@@ -42,11 +52,12 @@ async function ensureBespokeTieSizes(productId: number, productSku?: string | nu
       eq(productAttributesTable.type, "size"),
     ));
   const existingValues = new Set(existing.map((a) => a.value));
-  const missing = BESPOKE_TIE_SIZES.filter((s) => !existingValues.has(s.label));
-  if (missing.length > 0) {
-    await db.insert(productAttributesTable).values(
-      missing.map((s) => ({ productId, type: "size", value: s.label, sortOrder: s.sortOrder }))
-    );
+  for (const s of BESPOKE_TIE_SIZES) {
+    if (!existingValues.has(s.label)) {
+      await db.insert(productAttributesTable).values(
+        { productId, type: "size", value: s.label, sortOrder: s.sortOrder }
+      );
+    }
   }
 
   // Auto-create size-only variant rows with SKUs (if product has a SKU)
@@ -54,16 +65,36 @@ async function ensureBespokeTieSizes(productId: number, productSku?: string | nu
     const existingVariants = await db.select().from(productVariantsTable)
       .where(eq(productVariantsTable.productId, productId));
     const existingSizes = new Set(existingVariants.map((v) => v.size).filter(Boolean));
-    const missingVariants = BESPOKE_TIE_SIZES.filter((s) => !existingSizes.has(s.label));
-    if (missingVariants.length > 0) {
-      await db.insert(productVariantsTable).values(
-        missingVariants.map((s) => ({
+
+    const primarySupplierId = supplierInfo?.supplierId ?? null;
+    const supplierCode = supplierInfo?.supplierCode ?? null;
+    const supplierPrice = supplierInfo?.supplierPrice != null
+      ? String(supplierInfo.supplierPrice) : null;
+
+    // Insert each missing variant individually so one failure doesn't block the others
+    for (const s of BESPOKE_TIE_SIZES) {
+      if (!existingSizes.has(s.label)) {
+        await db.insert(productVariantsTable).values({
           productId,
           size: s.label,
           sku: `${productSku}-${s.suffix}`,
           stockQuantity: 0,
-        }))
-      );
+          primarySupplierId,
+          supplierCode,
+          supplierPrice,
+        });
+      }
+    }
+
+    // Back-fill supplier info on any existing variants that are missing it
+    if (primarySupplierId) {
+      for (const v of existingVariants) {
+        if (!v.primarySupplierId) {
+          await db.update(productVariantsTable)
+            .set({ primarySupplierId, supplierCode, supplierPrice })
+            .where(eq(productVariantsTable.id, v.id));
+        }
+      }
     }
   }
 }
@@ -123,7 +154,7 @@ router.post("/products", async (req, res): Promise<void> => {
     .insert(productsTable)
     .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice), customerId, isBespoke })
     .returning();
-  if (category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku);
+  if (category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku, product);
   res.status(201).json(fmtProduct(product));
 });
 
@@ -172,7 +203,7 @@ router.post("/products/:id/duplicate", async (req, res): Promise<void> => {
     name: `${original.name} (Copy)`,
     stockQuantity: 0,
   }).returning();
-  if (created.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(created.id, created.sku);
+  if (created.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(created.id, created.sku, created);
   res.status(201).json(fmtProduct(created));
 });
 
@@ -226,7 +257,7 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku);
+  if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku, product);
   res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null, secondarySupplierPrice: product.secondarySupplierPrice != null ? parseFloat(product.secondarySupplierPrice) : null });
 });
 
