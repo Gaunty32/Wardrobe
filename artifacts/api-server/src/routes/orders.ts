@@ -727,6 +727,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
 
   let eml = [
     `MIME-Version: 1.0`,
+    `X-Unsent: 1`,
     `From: "Select Branding Solutions Ltd" <orders@selectbrandingsolutions.co.uk>`,
     `To: ${toEmail}`,
     `Subject: ${subject}`,
