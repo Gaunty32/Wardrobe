@@ -127,6 +127,15 @@ export const worksheetItemsTable = pgTable("worksheet_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const orderLogsTable = pgTable("order_logs", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
+  action: text("action").notNull(),
+  actor: text("actor").notNull().default("System"),
+  details: text("details"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;
@@ -134,3 +143,5 @@ export type Order = typeof ordersTable.$inferSelect;
 export const insertOrderItemSchema = createInsertSchema(orderItemsTable).omit({ id: true });
 export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
 export type OrderItem = typeof orderItemsTable.$inferSelect;
+
+export type OrderLog = typeof orderLogsTable.$inferSelect;

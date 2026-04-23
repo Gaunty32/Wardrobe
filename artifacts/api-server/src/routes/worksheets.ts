@@ -12,6 +12,7 @@ import {
   customerFinishesTable,
   customerFinishProcessesTable,
 } from "@workspace/db";
+import { logOrderAction, getActor } from "../services/orderLog";
 
 const router: IRouter = Router();
 
@@ -464,6 +465,11 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     })
   );
 
+  if (ws.orderId) {
+    await logOrderAction(ws.orderId, "Production worksheet created", getActor(req),
+      `Worksheet ${ws.worksheetNumber} created with ${wsItems.flat().length} item(s)`);
+  }
+
   res.status(201).json({
     ...ws,
     items: wsItems.flat().map((i) => ({
@@ -496,6 +502,13 @@ router.patch("/worksheets/:id", async (req, res): Promise<void> => {
     .returning();
 
   if (!ws) { res.status(404).json({ error: "Worksheet not found" }); return; }
+
+  if (ws.orderId && parsed.data.status) {
+    const statusLabels: Record<string, string> = { pre_wip: "Production started (pre-WIP)", wip: "Production in progress (WIP)", complete: "Production completed" };
+    await logOrderAction(ws.orderId, statusLabels[parsed.data.status] ?? `Worksheet status: ${parsed.data.status}`, getActor(req),
+      `Worksheet ${ws.worksheetNumber}`);
+  }
+
   res.json(ws);
 });
 

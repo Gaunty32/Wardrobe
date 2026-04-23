@@ -2,13 +2,14 @@ import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql, inArray, and, ne, isNotNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
-  db, ordersTable, orderItemsTable, customersTable, productsTable,
+  db, ordersTable, orderItemsTable, orderLogsTable, customersTable, productsTable,
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
   customerProcessesTable, customerFinishProcessesTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
+import { logOrderAction, getActor } from "../services/orderLog";
 import { getUncachableStripeClient } from "../services/stripeClient.js";
 import {
   UpdateOrderBody,
@@ -184,6 +185,9 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const [updatedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id));
+
+  await logOrderAction(order.id, "Order created", getActor(req), `Order ${order.orderNumber} created${customerName ? ` for ${customerName}` : ""}`);
+
   res.status(201).json({ ...updatedOrder, totalAmount: numericToFloat(updatedOrder.totalAmount) });
 });
 
@@ -478,6 +482,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
     const unlinkedItems = items.filter(i => !i.productId).length;
 
+    await logOrderAction(order.id, "Order confirmed", getActor(req),
+      `Allocated ${allocatedLines} line(s); ${purchaseLines} line(s) raised to PO; ${unlinkedItems} unlinked line(s)`);
+
     res.json({
       ...order, totalAmount: numericToFloat(order.totalAmount),
       allocation: { allocated: allocatedLines, purchaseRequired: purchaseLines },
@@ -520,6 +527,7 @@ router.delete("/orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  await logOrderAction(order.id, "Order deleted", getActor(req), `Order ${order.orderNumber} deleted (was ${order.status})`);
   await db.delete(ordersTable).where(eq(ordersTable.id, order.id));
   res.sendStatus(204);
 });
@@ -639,6 +647,9 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   const pdfFilename = attachments.length > 0 ? attachments[0].filename : null;
 
   const result = await sendEmail({ to: toEmail, subject, html, text, attachments });
+
+  await logOrderAction(order.id, "Acknowledgement sent", getActor(req),
+    result.sent ? `Email sent to ${toEmail}` : `Email not sent (${result.error ?? "unconfigured"}); VBS/EML download`);
 
   res.json({
     sent: result.sent,
@@ -1031,6 +1042,9 @@ WScript.Sleep 5000
 If fso.FileExists(tmpPdf) Then fso.DeleteFile tmpPdf
 `;
 
+  await logOrderAction(order.id, "Acknowledgement prepared", getActor(req),
+    `VBS script downloaded for ${order.orderNumber} — to be sent via Outlook`);
+
   const filename = `SendAck-${order.orderNumber}.vbs`;
   res
     .status(200)
@@ -1353,6 +1367,20 @@ router.get("/orders/:id/backorders", async (req, res): Promise<void> => {
     .orderBy(purchaseOrderItemsTable.estimatedDueDate);
 
   res.json(rows.map((r) => ({ ...r, remaining: r.quantityOrdered - r.quantityDelivered })));
+});
+
+// ─── Order Activity Log ───────────────────────────────────────────────────────
+router.get("/orders/:id/logs", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const logs = await db
+    .select()
+    .from(orderLogsTable)
+    .where(eq(orderLogsTable.orderId, params.data.id))
+    .orderBy(asc(orderLogsTable.createdAt));
+
+  res.json(logs);
 });
 
 export default router;

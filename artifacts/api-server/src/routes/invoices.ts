@@ -4,6 +4,7 @@ import { db, ordersTable, orderItemsTable, customersTable, settingsTable } from 
 import { eq, desc, and, isNotNull, isNull, sql } from "drizzle-orm";
 import { sendInvoiceEmail, getSmtpConfig, testSmtpConnection } from "../services/email";
 import { postInvoiceToXero } from "../services/xero";
+import { logOrderAction, getActor } from "../services/orderLog";
 
 const router: IRouter = Router();
 
@@ -69,11 +70,16 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
   try {
     const result = await sendInvoiceEmail(idParse.data);
 
+    await logOrderAction(idParse.data, "Invoice sent", getActor(req), `Invoice emailed to ${result.sentTo}`);
+
     // Auto-post to Xero if connected (non-blocking — best effort)
     let xeroResult: { xeroInvoiceId?: string; xeroInvoiceStatus?: string } = {};
     try {
       const xeroPosted = await postInvoiceToXero(idParse.data);
       xeroResult = { xeroInvoiceId: xeroPosted.xeroInvoiceId, xeroInvoiceStatus: xeroPosted.xeroInvoiceStatus };
+      if (xeroPosted.xeroInvoiceId) {
+        await logOrderAction(idParse.data, "Posted to Xero", getActor(req), `Xero invoice ID: ${xeroPosted.xeroInvoiceId}`);
+      }
     } catch {
       // Xero not connected or customer not linked — silently skip
     }

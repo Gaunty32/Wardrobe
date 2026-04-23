@@ -6,6 +6,7 @@ import {
   customerEmployeesTable, customerDeliveryAddressesTable, customersTable,
 } from "@workspace/db";
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
+import { logOrderAction, getActor } from "../services/orderLog";
 
 const router: IRouter = Router();
 
@@ -241,6 +242,11 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     .set(updateFields)
     .where(eq(ordersTable.id, parsed.data.id))
     .returning();
+
+  await logOrderAction(parsed.data.id, "Order dispatched", getActor(req),
+    dpdResult
+      ? `DPD consignment ${dpdResult.consignmentNumber}, ${numberOfParcels ?? 1} parcel(s)`
+      : `Local/manual dispatch, ${numberOfParcels ?? 1} box(es)${dpdError ? ` (DPD error: ${dpdError})` : ""}`);
 
   res.json({
     order: updated,

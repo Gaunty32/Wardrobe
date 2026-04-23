@@ -155,7 +155,7 @@ Database layer using Drizzle ORM with PostgreSQL.
 
 - `src/schema/customers.ts` — customers table
 - `src/schema/products.ts` — products table
-- `src/schema/orders.ts` — orders and order_items tables
+- `src/schema/orders.ts` — orders, order_items, worksheets, purchase_orders, order_logs tables
 - `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`)
 
 ### `lib/api-spec` (`@workspace/api-spec`)

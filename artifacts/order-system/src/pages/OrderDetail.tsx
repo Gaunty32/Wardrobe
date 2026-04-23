@@ -37,10 +37,19 @@ const API_BASE = "/api";
 
 const DEFAULT_CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL", "6XL"];
 
+function getStoredActor(): string {
+  return localStorage.getItem("sbs_actor_name") || "";
+}
+
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+  const actor = getStoredActor();
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...opts?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(actor ? { "x-actor": actor } : {}),
+      ...opts?.headers,
+    },
   });
   if (!res.ok) throw new Error(await res.text());
   if (res.status === 204) return null as T;
@@ -288,6 +297,25 @@ export default function OrderDetail() {
 
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
+
+  // ── Actor name (who is using the system) ──────────────────────────────────
+  const [actorName, setActorName] = useState<string>(() => getStoredActor());
+  const [actorEditing, setActorEditing] = useState(false);
+  const [actorDraft, setActorDraft] = useState("");
+  const saveActorName = () => {
+    const trimmed = actorDraft.trim();
+    localStorage.setItem("sbs_actor_name", trimmed);
+    setActorName(trimmed);
+    setActorEditing(false);
+  };
+
+  interface OrderLog { id: number; orderId: number; action: string; actor: string; details: string | null; createdAt: string; }
+  const { data: orderLogs = [], refetch: refetchLogs } = useQuery<OrderLog[]>({
+    queryKey: ["order-logs", orderId],
+    queryFn: () => apiFetch(`/orders/${orderId}/logs`),
+    enabled: orderId > 0,
+    refetchInterval: 30000,
+  });
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [deleteOrderConfirmOpen, setDeleteOrderConfirmOpen] = useState(false);
 
@@ -460,6 +488,8 @@ export default function OrderDetail() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pack-status", orderId] });
+      queryClient.invalidateQueries({ queryKey: ["order-logs", orderId] });
       toast({ title: "Sent to Production", description: "Worksheet created in Pre-WIP." });
       setIsSendToProductionOpen(false);
       setProductionNotes("");
@@ -725,6 +755,7 @@ export default function OrderDetail() {
       {
         onSuccess: (data: any) => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          queryClient.invalidateQueries({ queryKey: ["order-logs", orderId] });
           if (newStatus === "confirmed" && data?.allocation) {
             const { allocated, purchaseRequired } = data.allocation;
             const parts: string[] = [];
@@ -866,6 +897,53 @@ export default function OrderDetail() {
             </div>
           </div>
         )}
+
+        {/* ── Order Lifecycle Progress ───────────────────────────────────── */}
+        {(() => {
+          const hasWorksheet = packStatus?.recipients.some(r => r.items.some(i => i.worksheetNumber));
+          const isConfirmed = order.status !== "draft" && order.status !== "portal_pending";
+          const isCancelled = order.status === "cancelled";
+          const isDispatched = !!(order as any).dispatchedAt;
+          const isInvoiced = !!(order as any).invoiceEmailSentAt;
+
+          const steps: Array<{ label: string; sublabel?: string; done: boolean; active: boolean; icon: string }> = [
+            { label: "Order Created", sublabel: formatDate(order.orderDate), done: true, active: false, icon: "created" },
+            { label: isCancelled ? "Cancelled" : "Confirmed", sublabel: isCancelled ? "" : (isConfirmed ? "" : "Awaiting confirmation"), done: isConfirmed || isCancelled, active: !isConfirmed && !isCancelled, icon: "confirmed" },
+            { label: "In Production", sublabel: hasWorksheet ? "Worksheet created" : "Pending", done: !!hasWorksheet, active: isConfirmed && !hasWorksheet && !isCancelled, icon: "production" },
+            { label: "Dispatched", sublabel: isDispatched ? formatDate((order as any).dispatchedAt) : "Pending", done: isDispatched, active: !!hasWorksheet && !isDispatched && !isCancelled, icon: "dispatched" },
+            { label: "Invoice Sent", sublabel: isInvoiced ? formatDate((order as any).invoiceEmailSentAt) : "Pending", done: isInvoiced, active: isDispatched && !isInvoiced && !isCancelled, icon: "invoiced" },
+          ];
+
+          return (
+            <div className="rounded-xl border border-border/50 bg-card shadow-sm px-5 py-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">Order Progress</span>
+              </div>
+              <div className="relative flex items-start justify-between gap-0">
+                {steps.map((step, idx) => (
+                  <div key={idx} className="flex flex-col items-center flex-1 relative">
+                    {idx < steps.length - 1 && (
+                      <div className={`absolute top-4 left-[50%] w-full h-0.5 -z-0 ${steps[idx + 1].done || (step.done) ? "bg-green-400" : "bg-border"}`} style={{ left: "50%", width: "100%" }} />
+                    )}
+                    <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center border-2 text-xs font-bold transition-all ${
+                      isCancelled && idx === 1 ? "border-red-400 bg-red-50 text-red-600"
+                      : step.done ? "border-green-500 bg-green-500 text-white"
+                      : step.active ? "border-primary bg-primary/10 text-primary animate-pulse"
+                      : "border-border bg-muted text-muted-foreground"
+                    }`}>
+                      {isCancelled && idx === 1 ? <XCircle className="w-4 h-4" /> : step.done ? <Check className="w-4 h-4" /> : <span>{idx + 1}</span>}
+                    </div>
+                    <div className="mt-2 text-center px-1">
+                      <div className={`text-xs font-semibold ${isCancelled && idx === 1 ? "text-red-600" : step.done ? "text-green-700" : step.active ? "text-primary" : "text-muted-foreground"}`}>{step.label}</div>
+                      {step.sublabel && <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{step.sublabel}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-2 shadow-sm border-border/50 flex flex-col">
@@ -1329,6 +1407,80 @@ export default function OrderDetail() {
             </CardContent>
           </Card>
         )}
+
+        {/* ── Activity Log ─────────────────────────────────────────────────── */}
+        <Card className="shadow-sm border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-primary" />
+              <div>
+                <CardTitle className="font-display text-lg">Activity Log</CardTitle>
+                <CardDescription>Full history of actions on this order</CardDescription>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              {actorEditing ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    autoFocus
+                    className="text-sm border rounded px-2 py-1 w-36 outline-none focus:ring-1 focus:ring-primary/40"
+                    placeholder="Your name"
+                    value={actorDraft}
+                    onChange={e => setActorDraft(e.target.value)}
+                    onBlur={saveActorName}
+                    onKeyDown={e => { if (e.key === "Enter") saveActorName(); if (e.key === "Escape") setActorEditing(false); }}
+                  />
+                  <Button size="sm" variant="ghost" onClick={saveActorName} className="h-7 px-2 text-xs">Save</Button>
+                </div>
+              ) : (
+                <button
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => { setActorDraft(actorName); setActorEditing(true); }}
+                  title="Set your name so actions are logged under your name"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  {actorName ? <><span className="font-medium text-foreground">{actorName}</span> <span className="opacity-60">(change)</span></> : <span className="italic">Set your name</span>}
+                </button>
+              )}
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetchLogs()} title="Refresh log">
+                <ClipboardList className="w-4 h-4 text-muted-foreground" />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {orderLogs.length === 0 ? (
+              <div className="py-10 text-center text-muted-foreground">
+                <Clock className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                <p className="text-sm">No activity recorded yet</p>
+                <p className="text-xs mt-1 opacity-60">Actions like confirming or dispatching will appear here</p>
+              </div>
+            ) : (
+              <div className="relative">
+                <div className="absolute left-[2.75rem] top-0 bottom-0 w-px bg-border/50" />
+                <ul className="py-3 space-y-0">
+                  {orderLogs.map((log, idx) => (
+                    <li key={log.id} className={`relative flex gap-4 px-5 py-3 ${idx % 2 === 0 ? "" : "bg-muted/20"}`}>
+                      <div className="relative z-10 flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0 pt-0.5">
+                        <div className="flex items-start justify-between gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-foreground">{log.action}</span>
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(log.createdAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <User className="w-3 h-3 text-muted-foreground/60" />
+                          <span className="text-xs text-muted-foreground">{log.actor === "System" ? <span className="italic">System</span> : <span className="font-medium">{log.actor}</span>}</span>
+                        </div>
+                        {log.details && <p className="text-xs text-muted-foreground/70 mt-1 leading-snug">{log.details}</p>}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Dialog open={isAddItemOpen} onOpenChange={(open) => { if (!open) resetDialog(); else setIsAddItemOpen(true); }}>
           <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
