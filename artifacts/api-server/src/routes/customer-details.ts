@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -16,6 +16,7 @@ import {
   customersTable,
   ordersTable,
   productsTable,
+  productVariantsTable,
 } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -697,6 +698,140 @@ router.get("/customers/:customerId/orders", async (req, res): Promise<void> => {
     .where(eq(ordersTable.customerId, p.data.customerId))
     .orderBy(ordersTable.createdAt);
   res.json(rows.map(o => ({ ...o, totalAmount: o.totalAmount ? parseFloat(o.totalAmount) : 0 })));
+});
+
+// ─── Bespoke Products ─────────────────────────────────────────────────────────
+
+const bespokeProductSchema = z.object({
+  name: z.string().min(1),
+  sku: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  unitPrice: z.number().min(0),
+  category: z.string().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
+  supplierId: z.number().int().positive().optional().nullable(),
+  supplierCode: z.string().optional().nullable(),
+  supplierPrice: z.number().optional().nullable(),
+  stockQuantity: z.number().int().optional().nullable(),
+});
+
+function fmtProduct(p: any) {
+  return {
+    ...p,
+    unitPrice: p.unitPrice ? parseFloat(p.unitPrice) : 0,
+    supplierPrice: p.supplierPrice ? parseFloat(p.supplierPrice) : null,
+  };
+}
+
+router.get("/customers/:customerId/bespoke-products", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const products = await db
+    .select()
+    .from(productsTable)
+    .where(and(eq(productsTable.customerId, p.data.customerId), eq(productsTable.isBespoke, true)));
+  res.json(products.map(fmtProduct));
+});
+
+router.post("/customers/:customerId/bespoke-products", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+
+  const body = bespokeProductSchema.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [product] = await db.insert(productsTable).values({
+    ...body.data,
+    unitPrice: String(body.data.unitPrice),
+    supplierPrice: body.data.supplierPrice != null ? String(body.data.supplierPrice) : null,
+    customerId: p.data.customerId,
+    isBespoke: true,
+  }).returning();
+
+  res.status(201).json(fmtProduct(product));
+});
+
+router.patch("/customers/:customerId/bespoke-products/:productId", async (req, res): Promise<void> => {
+  const p = z.object({ customerId: z.coerce.number().int().positive(), productId: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+
+  const body = bespokeProductSchema.partial().safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const updateData: Record<string, unknown> = { ...body.data, updatedAt: new Date() };
+  if (body.data.unitPrice !== undefined) updateData.unitPrice = String(body.data.unitPrice);
+  if (body.data.supplierPrice !== undefined) updateData.supplierPrice = body.data.supplierPrice != null ? String(body.data.supplierPrice) : null;
+
+  const [product] = await db
+    .update(productsTable)
+    .set(updateData)
+    .where(and(eq(productsTable.id, p.data.productId), eq(productsTable.customerId, p.data.customerId), eq(productsTable.isBespoke, true)))
+    .returning();
+
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  res.json(fmtProduct(product));
+});
+
+router.delete("/customers/:customerId/bespoke-products/:productId", async (req, res): Promise<void> => {
+  const p = z.object({ customerId: z.coerce.number().int().positive(), productId: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+
+  await db.delete(productsTable)
+    .where(and(eq(productsTable.id, p.data.productId), eq(productsTable.customerId, p.data.customerId), eq(productsTable.isBespoke, true)));
+
+  res.sendStatus(204);
+});
+
+// ─── Bespoke Product Variants ─────────────────────────────────────────────────
+
+router.get("/customers/:customerId/bespoke-products/:productId/variants", async (req, res): Promise<void> => {
+  const p = z.object({ customerId: z.coerce.number().int().positive(), productId: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const variants = await db
+    .select()
+    .from(productVariantsTable)
+    .where(eq(productVariantsTable.productId, p.data.productId));
+  res.json(variants.map(v => ({ ...v, price: v.price ? parseFloat(v.price) : null })));
+});
+
+const variantSchema = z.object({
+  colour: z.string().optional().nullable(),
+  size: z.string().optional().nullable(),
+  price: z.number().optional().nullable(),
+  stockQty: z.number().int().optional().nullable(),
+});
+
+router.post("/customers/:customerId/bespoke-products/:productId/variants", async (req, res): Promise<void> => {
+  const p = z.object({ customerId: z.coerce.number().int().positive(), productId: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+
+  const body = variantSchema.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [variant] = await db.insert(productVariantsTable).values({
+    productId: p.data.productId,
+    colour: body.data.colour ?? null,
+    size: body.data.size ?? null,
+    price: body.data.price != null ? String(body.data.price) : null,
+    stockQty: body.data.stockQty ?? null,
+  }).returning();
+
+  res.status(201).json({ ...variant, price: variant.price ? parseFloat(variant.price) : null });
+});
+
+router.delete("/customers/:customerId/bespoke-products/:productId/variants/:variantId", async (req, res): Promise<void> => {
+  const p = z.object({
+    customerId: z.coerce.number().int().positive(),
+    productId: z.coerce.number().int().positive(),
+    variantId: z.coerce.number().int().positive(),
+  }).safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+
+  await db.delete(productVariantsTable)
+    .where(and(eq(productVariantsTable.id, p.data.variantId), eq(productVariantsTable.productId, p.data.productId)));
+
+  res.sendStatus(204);
 });
 
 export default router;

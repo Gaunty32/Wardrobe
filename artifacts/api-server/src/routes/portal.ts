@@ -530,13 +530,16 @@ router.post("/portal/enquiries", portalAuth, async (req: Request, res: Response)
 // ─── portal: browse products ─────────────────────────────────────────────────
 
 router.get("/portal/products", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
   const rows = await db.execute(sql`
     SELECT p.id, p.name, p.sku, p.unit_price, p.image_url, p.category, p.description,
+           p.is_bespoke,
            (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) as variant_count,
            (SELECT json_agg(DISTINCT pv.colour ORDER BY pv.colour) FILTER (WHERE pv.colour IS NOT NULL)
               FROM product_variants pv WHERE pv.product_id = p.id) as colours
     FROM products p
-    ORDER BY p.category NULLS LAST, p.name
+    WHERE p.customer_id IS NULL OR p.customer_id = ${customerId}
+    ORDER BY p.is_bespoke ASC, p.category NULLS LAST, p.name
   `);
   res.json(rows.rows);
 });

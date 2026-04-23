@@ -16,7 +16,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { cn, toTitleCase } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, KeyRound } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, KeyRound, Package, Tag, ChevronDown, ChevronRight } from "lucide-react";
 
 function formatUKPhone(raw: string): string {
   const d = raw.replace(/\D/g, "");
@@ -2317,6 +2317,232 @@ function PaymentMethodsTab({ customerId }: { customerId: number }) {
   );
 }
 
+// ─── Bespoke Products Tab ─────────────────────────────────────────────────────
+
+function BespokeProductsTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [variantForm, setVariantForm] = useState<{ colour: string; size: string; price: string }>({ colour: "", size: "", price: "" });
+  const [addingVariantFor, setAddingVariantFor] = useState<number | null>(null);
+
+  const blankForm = { name: "", sku: "", description: "", unitPrice: "", category: "", supplierCode: "", supplierPrice: "" };
+  const [form, setForm] = useState(blankForm);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "bespoke-products"] });
+
+  const { data: products, isLoading } = useQuery<any[]>({
+    queryKey: ["customer", customerId, "bespoke-products"],
+    queryFn: () => apiFetch(`/customers/${customerId}/bespoke-products`),
+  });
+
+  const variantQueries = useQuery<Record<number, any[]>>({
+    queryKey: ["customer", customerId, "bespoke-product-variants", expanded],
+    queryFn: async () => {
+      const results: Record<number, any[]> = {};
+      await Promise.all(
+        [...expanded].map(async (productId) => {
+          const v = await apiFetch<any[]>(`/customers/${customerId}/bespoke-products/${productId}/variants`);
+          results[productId] = v;
+        })
+      );
+      return results;
+    },
+    enabled: expanded.size > 0,
+  });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/bespoke-products/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/bespoke-products`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); setForm(blankForm); },
+    onError: () => toast({ title: "Error saving product", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/bespoke-products/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Product deleted" }); },
+    onError: () => toast({ title: "Error deleting product", variant: "destructive" }),
+  });
+
+  const addVariant = useMutation({
+    mutationFn: ({ productId, data }: { productId: number; data: any }) =>
+      apiFetch(`/customers/${customerId}/bespoke-products/${productId}/variants`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["customer", customerId, "bespoke-product-variants"] }); setAddingVariantFor(null); setVariantForm({ colour: "", size: "", price: "" }); toast({ title: "Variant added" }); },
+    onError: () => toast({ title: "Error adding variant", variant: "destructive" }),
+  });
+
+  const deleteVariant = useMutation({
+    mutationFn: ({ productId, variantId }: { productId: number; variantId: number }) =>
+      apiFetch(`/customers/${customerId}/bespoke-products/${productId}/variants/${variantId}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["customer", customerId, "bespoke-product-variants"] }); toast({ title: "Variant removed" }); },
+    onError: () => toast({ title: "Error removing variant", variant: "destructive" }),
+  });
+
+  const openAdd = () => { setForm(blankForm); setEditing(null); setOpen(true); };
+  const openEdit = (p: any) => {
+    setForm({ name: p.name || "", sku: p.sku || "", description: p.description || "", unitPrice: String(p.unitPrice || ""), category: p.category || "", supplierCode: p.supplierCode || "", supplierPrice: p.supplierPrice != null ? String(p.supplierPrice) : "" });
+    setEditing(p);
+    setOpen(true);
+  };
+
+  const toggleExpand = (id: number) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+
+  const handleSave = () => {
+    save.mutate({
+      name: form.name.trim(),
+      sku: form.sku.trim() || null,
+      description: form.description.trim() || null,
+      unitPrice: parseFloat(form.unitPrice) || 0,
+      category: form.category.trim() || null,
+      supplierCode: form.supplierCode.trim() || null,
+      supplierPrice: form.supplierPrice ? parseFloat(form.supplierPrice) : null,
+    });
+  };
+
+  const variantData = variantQueries.data ?? {};
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="text-sm text-muted-foreground">Products exclusive to this customer — visible on their portal, not on WooCommerce.</p>
+        </div>
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Product</Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+      ) : !products?.length ? (
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
+          <Package className="w-10 h-10 opacity-30" />
+          <p className="text-sm">No bespoke products yet. Add one to make it available on this customer's portal.</p>
+          <Button size="sm" variant="outline" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add first product</Button>
+        </div>
+      ) : (
+        <div className="border border-border/50 rounded-lg overflow-hidden divide-y divide-border/40">
+          {products.map((p: any) => {
+            const isExpanded = expanded.has(p.id);
+            const variants: any[] = variantData[p.id] ?? [];
+            return (
+              <div key={p.id}>
+                <div className="flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors">
+                  <button className="text-muted-foreground hover:text-foreground transition-colors" onClick={() => toggleExpand(p.id)}>
+                    {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-sm">{p.name}</span>
+                      {p.sku && <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{p.sku}</span>}
+                      {p.category && <Badge variant="outline" className="text-xs">{p.category}</Badge>}
+                      <Badge className="text-xs bg-purple-100 text-purple-700 border-purple-200">Bespoke</Badge>
+                    </div>
+                    {p.description && <p className="text-xs text-muted-foreground mt-0.5 truncate">{p.description}</p>}
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0">
+                    <span className="font-semibold text-sm">£{parseFloat(p.unitPrice).toFixed(2)}</span>
+                    <div className="flex gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(p)}><Edit2 className="w-3.5 h-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:bg-red-50" onClick={() => { if (confirm("Delete this bespoke product?")) del.mutate(p.id); }}><Trash2 className="w-3.5 h-3.5" /></Button>
+                    </div>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="bg-muted/20 px-6 pb-4 pt-2 border-t border-border/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Variants (Colours / Sizes)</p>
+                      <Button size="sm" variant="outline" className="h-6 text-xs px-2" onClick={() => setAddingVariantFor(addingVariantFor === p.id ? null : p.id)}>
+                        <Plus className="w-3 h-3 mr-1" /> Add Variant
+                      </Button>
+                    </div>
+
+                    {addingVariantFor === p.id && (
+                      <div className="flex gap-2 mb-3 flex-wrap">
+                        <Input placeholder="Colour" className="h-7 text-xs flex-1 min-w-24" value={variantForm.colour} onChange={e => setVariantForm(v => ({ ...v, colour: e.target.value }))} />
+                        <Input placeholder="Size" className="h-7 text-xs flex-1 min-w-20" value={variantForm.size} onChange={e => setVariantForm(v => ({ ...v, size: e.target.value }))} />
+                        <Input placeholder="Price (£)" type="number" className="h-7 text-xs flex-1 min-w-20" value={variantForm.price} onChange={e => setVariantForm(v => ({ ...v, price: e.target.value }))} />
+                        <Button size="sm" className="h-7 text-xs px-3" onClick={() => addVariant.mutate({ productId: p.id, data: { colour: variantForm.colour || null, size: variantForm.size || null, price: variantForm.price ? parseFloat(variantForm.price) : null } })}>
+                          {addVariant.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Add"}
+                        </Button>
+                      </div>
+                    )}
+
+                    {variantQueries.isLoading && expanded.has(p.id) ? (
+                      <div className="py-2 text-xs text-muted-foreground">Loading...</div>
+                    ) : variants.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">No variants — orders use the product's default price of £{parseFloat(p.unitPrice).toFixed(2)}</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {variants.map((v: any) => (
+                          <div key={v.id} className="flex items-center gap-1.5 bg-white border border-border/50 rounded-md px-2 py-1 text-xs">
+                            {v.colour && <span className="flex items-center gap-1"><Palette className="w-3 h-3 text-muted-foreground" />{v.colour}</span>}
+                            {v.size && <span className="flex items-center gap-1"><Ruler className="w-3 h-3 text-muted-foreground" />{v.size}</span>}
+                            {v.price != null && <span className="font-semibold">£{parseFloat(v.price).toFixed(2)}</span>}
+                            <button className="text-red-400 hover:text-red-600 ml-0.5" onClick={() => deleteVariant.mutate({ productId: p.id, variantId: v.id })}><X className="w-3 h-3" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setEditing(null); setForm(blankForm); } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Package className="w-4 h-4" /> {editing ? "Edit Bespoke Product" : "Add Bespoke Product"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label>Product Name *</Label>
+                <Input placeholder="e.g. Company Polo Shirt" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <Label>SKU / Code</Label>
+                <Input placeholder="e.g. CUST-001" value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Input placeholder="e.g. Polo Shirts" value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Unit Price (£) *</Label>
+                <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.unitPrice} onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Supplier Code</Label>
+                <Input placeholder="e.g. FCC1919" value={form.supplierCode} onChange={e => setForm(f => ({ ...f, supplierCode: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Supplier Cost (£)</Label>
+                <Input type="number" min="0" step="0.01" placeholder="0.00" value={form.supplierPrice} onChange={e => setForm(f => ({ ...f, supplierPrice: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label>Description</Label>
+                <Textarea placeholder="Optional description of the product" rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave} disabled={!form.name.trim() || !form.unitPrice || save.isPending}>
+              {save.isPending ? <><Loader2 className="w-4 h-4 animate-spin mr-1" /> Saving...</> : "Save Product"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // ─── Main CustomerDetail Page ─────────────────────────────────────────────────
 
 export default function CustomerDetail() {
@@ -2564,6 +2790,7 @@ export default function CustomerDetail() {
             <TabsTrigger value="orders" className="flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Order History</TabsTrigger>
             <TabsTrigger value="processes" className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Processes</TabsTrigger>
             <TabsTrigger value="finishes" className="flex items-center gap-1.5"><Shirt className="w-3.5 h-3.5" /> Finishes</TabsTrigger>
+            <TabsTrigger value="bespoke" className="flex items-center gap-1.5"><Package className="w-3.5 h-3.5" /> Bespoke Products</TabsTrigger>
             <TabsTrigger value="portal" className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Portal Access</TabsTrigger>
             <TabsTrigger value="payments" className="flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Payment Methods</TabsTrigger>
           </TabsList>
@@ -2577,6 +2804,7 @@ export default function CustomerDetail() {
             <TabsContent value="orders" className="mt-0"><OrderHistoryTab customerId={customerId} /></TabsContent>
             <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>
             <TabsContent value="finishes" className="mt-0"><FinishesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="bespoke" className="mt-0"><BespokeProductsTab customerId={customerId} /></TabsContent>
             <TabsContent value="portal" className="mt-0"><PortalAccessTab customerId={customerId} /></TabsContent>
             <TabsContent value="payments" className="mt-0"><PaymentMethodsTab customerId={customerId} /></TabsContent>
           </div>

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, numeric, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, numeric, integer, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -20,6 +20,10 @@ export const productsTable = pgTable("products", {
   wooCommerceId: integer("woo_commerce_id"),
   taxStatus: text("tax_status"),
   taxClass: text("tax_class"),
+  /** If set, this is a bespoke product belonging exclusively to this customer */
+  customerId: integer("customer_id"),
+  /** Bespoke products are hidden from WooCommerce sync */
+  isBespoke: boolean("is_bespoke").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
