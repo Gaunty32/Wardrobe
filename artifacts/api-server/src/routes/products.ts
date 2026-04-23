@@ -69,6 +69,44 @@ router.post("/products", async (req, res): Promise<void> => {
   res.status(201).json(fmtProduct(product));
 });
 
+async function nextBspSku(): Promise<string> {
+  const result = await db.execute(sql`
+    SELECT COALESCE(MAX(CAST(SUBSTRING(sku FROM 4) AS INTEGER)), 0) AS max_num
+    FROM products WHERE sku ~ '^BSP[0-9]+$'
+  `);
+  const maxNum = (result.rows[0] as any)?.max_num ?? 0;
+  return `BSP${String(Number(maxNum) + 1).padStart(3, "0")}`;
+}
+
+router.get("/products/next-bsp-sku", async (_req, res): Promise<void> => {
+  res.json({ sku: await nextBspSku() });
+});
+
+router.post("/products/:id/duplicate", async (req, res): Promise<void> => {
+  const params = GetProductParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [original] = await db.select().from(productsTable).where(eq(productsTable.id, params.data.id));
+  if (!original) { res.status(404).json({ error: "Product not found" }); return; }
+
+  const isBespoke = original.isBespoke ?? false;
+  let newSku: string;
+  if (isBespoke) {
+    newSku = await nextBspSku();
+  } else {
+    const base = original.sku ? original.sku.replace(/-COPY\d*$/, "") : "";
+    newSku = base ? `${base}-COPY` : "";
+  }
+
+  const { id: _id, createdAt: _ca, updatedAt: _ua, wooCommerceId: _woo, ...fields } = original;
+  const [created] = await db.insert(productsTable).values({
+    ...fields,
+    sku: newSku,
+    name: `${original.name} (Copy)`,
+    stockQuantity: 0,
+  }).returning();
+  res.status(201).json(fmtProduct(created));
+});
+
 router.get("/products/:id", async (req, res): Promise<void> => {
   const params = GetProductParams.safeParse(req.params);
   if (!params.success) {

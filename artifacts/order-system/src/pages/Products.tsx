@@ -24,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -235,6 +235,28 @@ export default function Products() {
     }
   };
 
+  const handleDuplicate = async (id: number) => {
+    try {
+      const res = await fetch(`${BASE}/api/products/${id}/duplicate`, { method: "POST" });
+      if (!res.ok) throw new Error(await res.text());
+      const created = await res.json();
+      queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
+      toast({ title: "Product duplicated", description: `Created "${created.name}" (${created.sku || "no SKU"})` });
+    } catch {
+      toast({ title: "Duplicate failed", variant: "destructive" });
+    }
+  };
+
+  const autoFillBspSku = async () => {
+    try {
+      const res = await fetch(`${BASE}/api/products/next-bsp-sku`);
+      const data = await res.json();
+      setFormData((f) => ({ ...f, sku: data.sku }));
+    } catch {
+      toast({ title: "Could not generate SKU", variant: "destructive" });
+    }
+  };
+
   const isSearching = search.trim().length > 0;
   const showTopGrid = !isSearching && !selectedTopCat && websiteFilter === "all";
   const showSubGrid = !isSearching && !!selectedTopCat && currentSubs.length > 0 && !selectedSubCat && websiteFilter === "all";
@@ -413,6 +435,7 @@ export default function Products() {
                 products={filteredProducts}
                 onEdit={openEditDialog}
                 onDelete={handleDelete}
+                onDuplicate={handleDuplicate}
                 onNavigate={(id) => navigate(`/products/${id}`)}
               />
             </div>
@@ -438,7 +461,14 @@ export default function Products() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="sku">SKU</Label>
-                <Input id="sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g. POL-001" />
+                <div className="flex gap-2">
+                  <Input id="sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g. POL-001" className="flex-1" />
+                  {formData.customerId !== "none" && (
+                    <Button type="button" variant="outline" size="sm" onClick={autoFillBspSku} className="gap-1.5 text-xs whitespace-nowrap text-purple-700 border-purple-200 hover:bg-purple-50">
+                      <Wand2 className="w-3.5 h-3.5" /> Auto BSP
+                    </Button>
+                  )}
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="category">Category</Label>
@@ -587,11 +617,13 @@ function ProductTable({
   products,
   onEdit,
   onDelete,
+  onDuplicate,
   onNavigate,
 }: {
   products: ProductWithCategory[];
   onEdit: (p: ProductWithCategory) => void;
   onDelete: (id: number) => void;
+  onDuplicate: (id: number) => void;
   onNavigate: (id: number) => void;
 }) {
   return (
@@ -651,7 +683,10 @@ function ProductTable({
                 </span>
               </TableCell>
               <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Duplicate product" onClick={() => onDuplicate(product.id)}>
+                    <Copy className="w-4 h-4" />
+                  </Button>
                   <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => onEdit(product)}>
                     <Edit2 className="w-4 h-4" />
                   </Button>
