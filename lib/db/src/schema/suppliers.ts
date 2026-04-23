@@ -12,6 +12,7 @@ export const suppliersTable = pgTable("suppliers", {
   postcode: text("postcode"),
   country: text("country").default("United Kingdom"),
   notes: text("notes"),
+  currency: text("currency").notNull().default("GBP"),
   xeroContactId: text("xero_contact_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

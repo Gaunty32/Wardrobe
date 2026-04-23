@@ -16,15 +16,20 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, Truck, Loader2 } from "lucide-react";
+
+const CURRENCY_LABELS: Record<string, string> = { GBP: "£ GBP", USD: "$ USD", EUR: "€ EUR" };
+const CURRENCY_BADGE: Record<string, string> = { USD: "bg-green-100 text-green-800 border-green-200", EUR: "bg-blue-100 text-blue-800 border-blue-200", GBP: "" };
 
 export default function Suppliers() {
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
-  const blank = { name: "", contactName: "", email: "", phone: "", address: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "" };
+  const blank = { name: "", contactName: "", email: "", phone: "", address: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "", currency: "GBP" };
   const [form, setForm] = useState(blank);
 
   const qc = useQueryClient();
@@ -48,6 +53,7 @@ export default function Suppliers() {
       postcode: s.postcode || "",
       country: s.country || "United Kingdom",
       notes: s.notes || "",
+      currency: (s as unknown as { currency: string }).currency || "GBP",
     });
     setEditingSupplier(s);
   };
@@ -126,7 +132,16 @@ export default function Suppliers() {
                   <TableBody>
                     {suppliers.map((s) => (
                       <TableRow key={s.id} className="group hover:bg-muted/30">
-                        <TableCell className="font-medium text-foreground">{s.name}</TableCell>
+                        <TableCell className="font-medium text-foreground">
+                          <div className="flex items-center gap-2">
+                            {s.name}
+                            {(s as unknown as { currency: string }).currency && (s as unknown as { currency: string }).currency !== "GBP" && (
+                              <Badge variant="outline" className={`text-xs ${CURRENCY_BADGE[(s as unknown as { currency: string }).currency] ?? ""}`}>
+                                {(s as unknown as { currency: string }).currency}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{s.contactName || '—'}</TableCell>
                         <TableCell>
                           <div className="flex flex-col text-sm text-muted-foreground">
@@ -198,6 +213,23 @@ export default function Suppliers() {
                 <div className="grid gap-2"><Label>City</Label><Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
                 <div className="grid gap-2"><Label>County</Label><Input value={form.county} onChange={e => setForm({ ...form, county: e.target.value })} /></div>
                 <div className="grid gap-2"><Label>Postcode</Label><Input value={form.postcode} onChange={e => setForm({ ...form, postcode: e.target.value })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Purchasing Currency</Label>
+                  <Select value={form.currency} onValueChange={(v) => setForm({ ...form, currency: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="GBP">£ GBP — British Pound</SelectItem>
+                      <SelectItem value="USD">$ USD — US Dollar</SelectItem>
+                      <SelectItem value="EUR">€ EUR — Euro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Country</Label>
+                  <Input value={form.country} onChange={e => setForm({ ...form, country: e.target.value })} />
+                </div>
               </div>
               <div className="grid gap-2">
                 <Label>Notes</Label>

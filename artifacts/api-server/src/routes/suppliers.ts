@@ -17,6 +17,7 @@ const supplierBody = z.object({
   postcode: z.string().optional().nullable(),
   country: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  currency: z.enum(["GBP", "USD", "EUR"]).optional().default("GBP"),
 });
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });

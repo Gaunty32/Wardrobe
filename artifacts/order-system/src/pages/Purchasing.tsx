@@ -41,7 +41,7 @@ interface PurchaseRequirement {
   supplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
 }
 interface SupplierGroup {
-  supplierId: number | null; supplierName: string; supplierEmail: string | null; items: PurchaseRequirement[];
+  supplierId: number | null; supplierName: string; supplierEmail: string | null; supplierCurrency: string; items: PurchaseRequirement[];
 }
 
 interface POItem {
@@ -54,9 +54,16 @@ interface POItem {
 
 interface PurchaseOrder {
   id: number; poNumber: string; supplierId: number | null; supplierName: string; supplierEmail: string | null;
+  supplierCurrency: string;
   status: "draft" | "ordered" | "delivered"; notes: string | null; sentAt: string | null;
   estimatedDeliveryDate: string | null;
   createdAt: string; updatedAt: string; items: POItem[];
+}
+
+function currencySymbol(currency?: string | null): string {
+  if (currency === "USD") return "$";
+  if (currency === "EUR") return "€";
+  return "£";
 }
 
 interface BackorderLine {
@@ -103,7 +110,7 @@ function buildPOMatrix(items: POItem[]) {
   return { groupKeys, groups, allSizes };
 }
 
-function POMatrixView({ items }: { items: POItem[] }) {
+function POMatrixView({ items, currency }: { items: POItem[]; currency?: string }) {
   const { groupKeys, groups, allSizes } = buildPOMatrix(items);
 
   return (
@@ -131,7 +138,7 @@ function POMatrixView({ items }: { items: POItem[] }) {
                         <TableCell className="font-mono font-bold text-sm text-indigo-700 align-top pt-3">
                           <div>{g.code ?? "—"}</div>
                           <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
-                          {g.price != null && <div className="text-xs text-muted-foreground">£{g.price.toFixed(2)}/u</div>}
+                          {g.price != null && <div className="text-xs text-muted-foreground">{currencySymbol(currency)}{g.price.toFixed(2)}/u</div>}
                         </TableCell>
                       ) : (
                         <TableCell />
@@ -553,7 +560,7 @@ function POCard({
               {hasValue && (
                 <>
                   <span className="mx-1">·</span>
-                  <span className="font-semibold text-foreground">£{totalValue.toFixed(2)}</span>
+                  <span className="font-semibold text-foreground">{currencySymbol(po.supplierCurrency)}{totalValue.toFixed(2)}</span>
                 </>
               )}
               <span className="mx-1">·</span>
@@ -607,7 +614,7 @@ function POCard({
             <div className="text-sm text-muted-foreground py-4 text-center">No lines on this PO yet.</div>
           ) : (
             <>
-              <POMatrixView items={po.items} />
+              <POMatrixView items={po.items} currency={po.supplierCurrency} />
               {po.status === "ordered" && (
                 <div className="space-y-3 pt-3 border-t border-border">
                   <div className="flex items-center justify-between">

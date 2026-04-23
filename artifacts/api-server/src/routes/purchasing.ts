@@ -35,6 +35,7 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       supplierCode: productsTable.supplierCode,
       productSku: productsTable.sku,
       canonicalProductName: productsTable.name,
+      supplierCurrency: sql<string | null>`COALESCE(${itemSupplier.currency}, ${productSupplier.currency})`,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
@@ -60,13 +61,14 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
     supplierId: number | null;
     supplierName: string;
     supplierEmail: string | null;
+    supplierCurrency: string;
     items: typeof rows;
   }> = {};
 
   for (const row of rows) {
     const key = row.resolvedSupplierName ?? row.supplierName ?? "Unknown Supplier";
     if (!grouped[key]) {
-      grouped[key] = { supplierId: row.supplierId, supplierName: key, supplierEmail: row.supplierEmail ?? null, items: [] };
+      grouped[key] = { supplierId: row.supplierId, supplierName: key, supplierEmail: row.supplierEmail ?? null, supplierCurrency: row.supplierCurrency ?? "GBP", items: [] };
     }
     grouped[key].items.push(row);
   }
@@ -167,8 +169,13 @@ async function buildPoItems(orderItemIds: number[], poId: number) {
 }
 
 router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
-  const pos = await db.select().from(purchaseOrdersTable).orderBy(desc(purchaseOrdersTable.createdAt));
-  const poIds = pos.map((p) => p.id);
+  const poAlias = alias(suppliersTable, "po_supplier");
+  const posRaw = await db
+    .select({ po: purchaseOrdersTable, supplierCurrency: poAlias.currency })
+    .from(purchaseOrdersTable)
+    .leftJoin(poAlias, eq(purchaseOrdersTable.supplierId, poAlias.id))
+    .orderBy(desc(purchaseOrdersTable.createdAt));
+  const poIds = posRaw.map((p) => p.po.id);
   const allRows = poIds.length > 0
     ? await db
         .select({
@@ -181,8 +188,9 @@ router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
         .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
         .where(inArray(purchaseOrderItemsTable.poId, poIds))
     : [];
-  const result = pos.map((po) => ({
+  const result = posRaw.map(({ po, supplierCurrency }) => ({
     ...po,
+    supplierCurrency: supplierCurrency ?? "GBP",
     items: allRows
       .filter((r) => r.item.poId === po.id)
       .map((r) => ({
