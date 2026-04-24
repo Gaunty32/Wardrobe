@@ -34,6 +34,7 @@ export const ListCustomersResponseItem = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
+  logoUrl: zod.string().nullish(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
