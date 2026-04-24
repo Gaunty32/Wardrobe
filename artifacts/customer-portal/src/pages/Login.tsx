@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2, X, Smartphone, Share, MoreVertical } from "lucide-react";
+import { Loader2, X, Smartphone, Share, MoreVertical, MailCheck, ExternalLink } from "lucide-react";
 import logo from "@/assets/logo.png";
 
 function MobileInstallPrompt() {
@@ -13,7 +12,6 @@ function MobileInstallPrompt() {
   const [url, setUrl] = useState("");
 
   useEffect(() => {
-    // Only show on desktop: device has a fine pointer (mouse) and wide screen
     const hasMousePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     const isWideEnough = window.innerWidth >= 768;
     if (hasMousePointer && isWideEnough) {
@@ -82,10 +80,10 @@ function MobileInstallPrompt() {
 }
 
 export default function Login() {
-  const [, setLocation] = useLocation();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [devUrl, setDevUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,16 +93,18 @@ export default function Login() {
     try {
       const data = await apiFetch("/portal/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email }),
       });
-      localStorage.setItem("portal_token", data.token);
-      localStorage.setItem("portal_customer_id", String(data.customerId));
-      localStorage.setItem("portal_customer_name", data.customerName ?? "");
-      localStorage.setItem("portal_email", data.email ?? email);
-      localStorage.setItem("portal_role", data.portalRole ?? "member");
-      setLocation("/orders");
+      if (data.noAccount) {
+        setError("No portal account found for that email address. Please contact your account manager at Select Branding Solutions.");
+        return;
+      }
+      if (!data.emailSent && data.magicUrl) {
+        setDevUrl(data.magicUrl);
+      }
+      setSent(true);
     } catch (err: any) {
-      setError("Invalid email or password. Please try again.");
+      setError(err.message ?? "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -123,48 +123,78 @@ export default function Login() {
         <Card className="shadow-lg">
           <CardHeader className="pb-4">
             <CardTitle className="text-xl">Sign in</CardTitle>
-            <CardDescription>Access your ordering portal</CardDescription>
+            <CardDescription>
+              {sent ? "Check your inbox" : "Enter your email to receive a sign-in link"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  required
-                />
+            {sent ? (
+              <div className="text-center py-2 space-y-4">
+                <div className="flex justify-center">
+                  <div className="bg-green-50 rounded-full p-4 border border-green-100">
+                    <MailCheck className="w-10 h-10 text-green-600" />
+                  </div>
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">Sign-in link sent!</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    We've sent a link to <span className="font-medium text-foreground">{email}</span>. Click it to sign in — it expires in 30 minutes.
+                  </p>
+                </div>
+                {devUrl && (
+                  <div className="text-left rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                    <p className="text-xs font-semibold text-amber-800">Dev mode — email not configured</p>
+                    <p className="text-xs text-amber-700">Use this link to sign in:</p>
+                    <a
+                      href={devUrl}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:underline break-all font-mono"
+                    >
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                      {devUrl}
+                    </a>
+                  </div>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={() => { setSent(false); setDevUrl(null); }}
+                >
+                  Use a different email
+                </Button>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                />
-              </div>
-              {error && (
-                <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{error}</p>
-              )}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Sign in
-              </Button>
-            </form>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="email">Email address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    required
+                    autoFocus
+                  />
+                </div>
+                {error && (
+                  <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{error}</p>
+                )}
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Send sign-in link
+                </Button>
+              </form>
+            )}
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-muted-foreground mt-4">
-          Don't have access? Contact your account manager at Select Branding Solutions.
-        </p>
+        {!sent && (
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            Don't have access? Contact your account manager at Select Branding Solutions.
+          </p>
+        )}
       </div>
 
       <MobileInstallPrompt />

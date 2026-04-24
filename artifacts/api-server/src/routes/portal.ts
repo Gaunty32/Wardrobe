@@ -5,7 +5,6 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
@@ -15,6 +14,27 @@ const router: IRouter = Router();
 
 const JWT_SECRET = process.env.PORTAL_JWT_SECRET || "sbs-portal-secret-change-in-production";
 const INVITE_TTL_DAYS = 7;
+const MAGIC_TTL_MINUTES = 30;
+
+function buildMagicLinkEmail(email: string, magicUrl: string): { html: string; text: string } {
+  const html = `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;background:#f8fafc;padding:32px 0;margin:0">
+  <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;border:1px solid #e2e8f0">
+    <img src="https://selectbranding.co.uk/wp-content/uploads/2024/01/SBS-Logo.png" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
+    <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">Your sign-in link</h2>
+    <p style="color:#475569;font-size:15px;margin:0 0 24px">Click the button below to sign in to your Select Branding Solutions ordering portal. This link expires in ${MAGIC_TTL_MINUTES} minutes.</p>
+    <a href="${magicUrl}" style="display:inline-block;background:#1e293b;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;margin-bottom:24px">Sign in to Portal</a>
+    <p style="color:#94a3b8;font-size:13px;margin:0">If you didn't request this, you can safely ignore this email. This link can only be used once.</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0" />
+    <p style="color:#94a3b8;font-size:12px;margin:0">Select Branding Solutions &bull; <a href="${magicUrl}" style="color:#94a3b8;word-break:break-all">${magicUrl}</a></p>
+  </div>
+</body>
+</html>`;
+  const text = `Sign in to your Select Branding Solutions portal\n\nClick this link to sign in (expires in ${MAGIC_TTL_MINUTES} minutes):\n${magicUrl}\n\nIf you didn't request this, ignore this email.`;
+  return { html, text };
+}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -72,52 +92,31 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   res.json({ inviteUrl, token, email, portalRole, expiresAt: expires });
 });
 
-// ─── admin: create user directly (no invite) ──────────────────────────────
+// ─── admin: create user directly (generates a magic link, no password) ────────
 
 router.post("/portal/admin/create-user", async (req: Request, res: Response) => {
-  const { customerId, email, password, portalRole } = z.object({
+  const { customerId, email, portalRole } = z.object({
     customerId: z.number().int().positive(),
     email: z.string().email(),
-    password: z.string().min(8, "Password must be at least 8 characters"),
     portalRole: z.enum(["manager", "dept_manager", "member"]).default("member"),
   }).parse(req.body);
 
-  const hash = await bcrypt.hash(password, 12);
+  const token = randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400 * 1000);
 
   await db.execute(sql`
-    INSERT INTO customer_portal_users (customer_id, email, password_hash, status, portal_role)
-    VALUES (${customerId}, ${email}, ${hash}, 'active', ${portalRole})
+    INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
+    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${portalRole})
     ON CONFLICT (email) DO UPDATE
-      SET password_hash = ${hash},
-          status = 'active',
-          invite_token = NULL,
-          invite_expires_at = NULL,
+      SET invite_token = ${token},
+          invite_expires_at = ${expires.toISOString()},
+          status = 'invited',
           portal_role = ${portalRole},
           updated_at = now()
   `);
 
-  res.status(201).json({ ok: true, email, portalRole });
-});
-
-// ─── admin: reset portal user password ────────────────────────────────────
-
-router.patch("/portal/admin/users/:userId/password", async (req: Request, res: Response) => {
-  const userId = parseInt(req.params.userId, 10);
-  const { password } = z.object({
-    password: z.string().min(8, "Password must be at least 8 characters"),
-  }).parse(req.body);
-
-  const hash = await bcrypt.hash(password, 12);
-  await db.execute(sql`
-    UPDATE customer_portal_users
-    SET password_hash = ${hash},
-        status = 'active',
-        invite_token = NULL,
-        invite_expires_at = NULL,
-        updated_at = now()
-    WHERE id = ${userId}
-  `);
-  res.json({ ok: true });
+  const inviteUrl = `/customer-portal/accept-invite?token=${token}`;
+  res.status(201).json({ ok: true, email, portalRole, inviteUrl, token, expiresAt: expires });
 });
 
 // ─── admin: customer detail (employees for invite suggestions) ─────────────
@@ -166,13 +165,12 @@ router.delete("/portal/admin/users/:userId", async (req: Request, res: Response)
   res.json({ ok: true });
 });
 
-// ─── accept invite ───────────────────────────────────────────────────────────
+// ─── verify magic link / accept invite ───────────────────────────────────────
+// Accepts either a user-requested magic link or an admin-generated invite link.
+// No password required — the token is the credential.
 
 router.post("/portal/auth/accept-invite", async (req: Request, res: Response) => {
-  const { token, password } = z.object({
-    token: z.string().min(1),
-    password: z.string().min(8),
-  }).parse(req.body);
+  const { token } = z.object({ token: z.string().min(1) }).parse(req.body);
 
   const rows = await db.execute(sql`
     SELECT * FROM customer_portal_users
@@ -181,59 +179,76 @@ router.post("/portal/auth/accept-invite", async (req: Request, res: Response) =>
   `);
   const user = rows.rows[0] as any;
   if (!user) {
-    res.status(400).json({ error: "Invalid or expired invite link" });
+    res.status(400).json({ error: "This link has expired or already been used. Please request a new one." });
     return;
   }
 
-  const hash = await bcrypt.hash(password, 12);
   await db.execute(sql`
     UPDATE customer_portal_users
-    SET password_hash = ${hash},
-        invite_token = NULL,
+    SET invite_token = NULL,
         invite_expires_at = NULL,
         status = 'active',
+        last_login_at = now(),
         updated_at = now()
     WHERE id = ${user.id}
   `);
 
   const jwtToken = signToken(user.id, user.customer_id, user.portal_role ?? "member");
-  res.json({ token: jwtToken, customerId: user.customer_id, portalRole: user.portal_role ?? "member" });
-});
-
-// ─── login ───────────────────────────────────────────────────────────────────
-
-router.post("/portal/auth/login", async (req: Request, res: Response) => {
-  const { email, password } = z.object({
-    email: z.string().email(),
-    password: z.string().min(1),
-  }).parse(req.body);
-
-  const rows = await db.execute(sql`
-    SELECT * FROM customer_portal_users WHERE email = ${email} AND status = 'active'
-  `);
-  const user = rows.rows[0] as any;
-  if (!user || !user.password_hash) {
-    res.status(401).json({ error: "Invalid email or password" });
-    return;
-  }
-
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) {
-    res.status(401).json({ error: "Invalid email or password" });
-    return;
-  }
-
-  await db.execute(sql`
-    UPDATE customer_portal_users SET last_login_at = now(), updated_at = now() WHERE id = ${user.id}
-  `);
-
-  const token = signToken(user.id, user.customer_id, user.portal_role ?? "member");
-
-  // Get customer name
   const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${user.customer_id}`);
   const customerName = (custRows.rows[0] as any)?.name ?? "";
+  res.json({ token: jwtToken, customerId: user.customer_id, customerName, email: user.email, portalRole: user.portal_role ?? "member" });
+});
 
-  res.json({ token, customerId: user.customer_id, customerName, email: user.email, portalRole: user.portal_role ?? "member" });
+// ─── request magic link (login) ──────────────────────────────────────────────
+// Takes an email address and sends (or returns in dev) a one-time sign-in link.
+
+router.post("/portal/auth/login", async (req: Request, res: Response) => {
+  const parsed = z.object({ email: z.string().email() }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "A valid email address is required" });
+    return;
+  }
+  const { email } = parsed.data;
+
+  const rows = await db.execute(sql`
+    SELECT * FROM customer_portal_users WHERE lower(email) = lower(${email})
+  `);
+  const user = rows.rows[0] as any;
+
+  // Always respond generically so we don't reveal whether the email exists
+  if (!user) {
+    res.json({ ok: true, emailSent: false, noAccount: true });
+    return;
+  }
+
+  const token = randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + MAGIC_TTL_MINUTES * 60 * 1000);
+
+  await db.execute(sql`
+    UPDATE customer_portal_users
+    SET invite_token = ${token}, invite_expires_at = ${expires.toISOString()}, updated_at = now()
+    WHERE id = ${user.id}
+  `);
+
+  // Build absolute URL from proxy headers
+  const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
+  const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
+  const magicUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
+
+  let emailSent = false;
+  if (isEmailConfigured) {
+    const { html, text } = buildMagicLinkEmail(email, magicUrl);
+    await sendEmail({
+      to: email,
+      subject: "Your sign-in link – Select Branding Solutions Portal",
+      html,
+      text,
+    }).catch(() => {});
+    emailSent = true;
+  }
+
+  // In dev (no email configured) return the URL directly so staff can test
+  res.json({ ok: true, emailSent, ...(!emailSent ? { magicUrl } : {}) });
 });
 
 // ─── me ──────────────────────────────────────────────────────────────────────
