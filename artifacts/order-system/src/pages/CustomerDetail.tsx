@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
@@ -2522,6 +2522,25 @@ export default function CustomerDetail() {
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [logoSaving, setLogoSaving] = useState(false);
   const { toast } = useToast();
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+
+  const { uploadFile: uploadLogoFile, isUploading: isLogoUploading } = useUpload({
+    onSuccess: async (res) => {
+      const url = `/api/storage/objects${res.objectPath.replace(/^\/objects/, "")}`;
+      setLogoUrl(url);
+      try {
+        await apiFetch(`/customers/${customerId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ logoUrl: url }),
+        });
+        queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+        toast({ title: "Logo uploaded and saved" });
+      } catch {
+        toast({ title: "Uploaded but failed to save", variant: "destructive" });
+      }
+    },
+    onError: () => toast({ title: "Upload failed", description: "Could not upload logo", variant: "destructive" }),
+  });
 
   useEffect(() => {
     setLogoUrl((customer as any)?.logoUrl || "");
@@ -2602,8 +2621,26 @@ export default function CustomerDetail() {
                   value={logoUrl}
                   onChange={e => setLogoUrl(e.target.value)}
                   placeholder="Customer logo URL (https://...)"
-                  className="h-7 text-xs w-72"
+                  className="h-7 text-xs w-56"
                 />
+                <input
+                  ref={logoFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogoFile(f); e.target.value = ""; }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1 shrink-0"
+                  disabled={isLogoUploading}
+                  onClick={() => logoFileInputRef.current?.click()}
+                  title="Upload a logo file from your computer"
+                >
+                  {isLogoUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                  {isLogoUploading ? "Uploading…" : "Upload"}
+                </Button>
                 {logoUrl !== ((customer as any).logoUrl || "") && (
                   <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={saveLogo} disabled={logoSaving}>
                     {logoSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
