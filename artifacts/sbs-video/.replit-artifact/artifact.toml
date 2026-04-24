@@ -1,0 +1,31 @@
+kind = "video"
+previewPath = "/sbs-video/"
+title = "SBS System Demo Video"
+version = "1.0.0"
+id = "artifacts/sbs-video"
+router = "path"
+
+[[integratedSkills]]
+name = "video-js"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/sbs-video/" ]
+localPort = 22183
+
+[services.development]
+run = "pnpm --filter @workspace/sbs-video run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/sbs-video", "run", "build" ]
+publicDir = "artifacts/sbs-video/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22183"
+BASE_PATH = "/sbs-video/"
