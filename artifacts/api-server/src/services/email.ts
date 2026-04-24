@@ -478,6 +478,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
 interface POItemData {
   supplierCode: string | null;
+  productSku: string | null;
   productName: string;
   colour: string | null;
   size: string | null;
@@ -500,13 +501,13 @@ interface POData {
 /** Build a matrix: groups by (supplierCode|productName), rows = colours, cols = sizes */
 function buildMatrix(items: POItemData[]) {
   const groupKeys: string[] = [];
-  const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>> }>();
+  const groups = new Map<string, { code: string | null; sbsCode: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>> }>();
 
   for (const item of items) {
     const gk = item.supplierCode ?? item.productName;
     if (!groups.has(gk)) {
       groupKeys.push(gk);
-      groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map() });
+      groups.set(gk, { code: item.supplierCode, sbsCode: item.productSku ?? null, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map() });
     }
     const g = groups.get(gk)!;
     const c = item.colour ?? "—";
@@ -627,7 +628,11 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
         doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold");
 
         if (firstColour) {
-          doc.text(g.code ?? "—", startX + 4, y + 5, { width: codeW - 4 });
+          const primaryCode = g.code ?? g.sbsCode ?? "—";
+          doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold").text(primaryCode, startX + 4, y + 4, { width: codeW - 4 });
+          if (g.sbsCode && g.code && g.sbsCode !== g.code) {
+            doc.fillColor("#64748b").fontSize(6.5).font("Helvetica").text(g.sbsCode, startX + 4, y + 13, { width: codeW - 4 });
+          }
           firstColour = false;
         }
         doc.font("Helvetica").text(colour, startX + codeW + 4, y + 5, { width: colourW - 4 });

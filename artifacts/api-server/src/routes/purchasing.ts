@@ -383,6 +383,7 @@ router.get("/purchasing/purchase-orders/:id/pdf", async (req, res): Promise<void
     notes: po.notes,
     items: po.items.map((i) => ({
       supplierCode: i.supplierCode,
+      productSku: i.productSku ?? null,
       productName: i.productName,
       colour: i.colour,
       size: i.size,
@@ -425,6 +426,7 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
     notes: po.notes,
     items: po.items.map((i) => ({
       supplierCode: i.supplierCode,
+      productSku: i.productSku ?? null,
       productName: i.productName,
       colour: i.colour,
       size: i.size,

@@ -3,6 +3,15 @@ import { eq, ilike, or, and } from "drizzle-orm";
 import { db, processStockTable, suppliersTable, customersTable } from "@workspace/db";
 import { z } from "zod";
 
+async function generateUniqueSku(): Promise<string> {
+  for (let attempts = 0; attempts < 20; attempts++) {
+    const candidate = "SBS" + String(Math.floor(Math.random() * 90000) + 10000);
+    const [existing] = await db.select({ id: processStockTable.id }).from(processStockTable).where(eq(processStockTable.sku, candidate));
+    if (!existing) return candidate;
+  }
+  throw new Error("Could not generate a unique product code — please try again.");
+}
+
 const router: IRouter = Router();
 
 const processStockBody = z.object({
@@ -59,9 +68,21 @@ router.post("/process-stock", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  let sku = parsed.data.sku?.trim() || null;
+  if (!sku) {
+    sku = await generateUniqueSku();
+  } else {
+    const [existing] = await db.select({ id: processStockTable.id }).from(processStockTable).where(eq(processStockTable.sku, sku));
+    if (existing) {
+      res.status(409).json({ error: `Product code "${sku}" is already in use. Please choose a different code.` });
+      return;
+    }
+  }
+
   const [row] = await db
     .insert(processStockTable)
-    .values({ ...parsed.data, unitCost: String(parsed.data.unitCost) })
+    .values({ ...parsed.data, sku, unitCost: String(parsed.data.unitCost) })
     .returning();
   res.status(201).json({ ...row, unitCost: toFloat(row.unitCost) });
 });
