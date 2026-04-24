@@ -489,6 +489,9 @@ interface POData {
   poNumber: string;
   supplierName: string;
   supplierEmail: string | null;
+  supplierContactName?: string | null;
+  supplierPhone?: string | null;
+  supplierAddress?: string | null;
   createdAt: Date | string;
   notes: string | null;
   items: POItemData[];
@@ -527,21 +530,48 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
 
     const W = doc.page.width - 100;
     const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+    const rightX = 50 + W - 190;
+    const logoBuffer = Buffer.from(SBS_LOGO_B64, "base64");
 
-    // Header
-    doc.rect(50, 50, W, 70).fill("#1e293b");
-    doc.fillColor("#ffffff").fontSize(18).font("Helvetica-Bold").text("Select Branding Solutions", 65, 62);
-    doc.fillColor("#94a3b8").fontSize(10).font("Helvetica").text("Purchase Order", 65, 84);
-    doc.fillColor("#ffffff").fontSize(10).text(`${po.poNumber}  ·  ${dateStr}`, 65, 100);
+    // ── Header ────────────────────────────────────────────────────────────────
+    const headerH = 88;
+    doc.rect(50, 50, W, headerH).fill("#1e293b");
 
-    doc.fillColor("#000000").fontSize(10).font("Helvetica").moveDown(2);
+    // Logo — left side
+    doc.image(logoBuffer, 65, 63, { fit: [155, 55], align: "left", valign: "center" });
 
-    // Supplier block
-    doc.font("Helvetica-Bold").text("Supplier:", 50, 140).font("Helvetica").text(po.supplierName, 120, 140);
-    if (po.supplierEmail) doc.font("Helvetica-Bold").text("Email:", 50, 155).font("Helvetica").text(po.supplierEmail, 120, 155);
-    if (po.notes) doc.font("Helvetica-Bold").text("Notes:", 50, 170).font("Helvetica").text(po.notes, 120, 170);
+    // PO label + number + date — right side
+    doc.fillColor("#94a3b8").fontSize(9).font("Helvetica")
+      .text("Purchase Order", rightX, 65, { width: 185, align: "right" });
+    doc.fillColor("#ffffff").fontSize(13).font("Helvetica-Bold")
+      .text(po.poNumber, rightX, 79, { width: 185, align: "right" });
+    doc.fillColor("#cbd5e1").fontSize(9).font("Helvetica")
+      .text(dateStr, rightX, 96, { width: 185, align: "right" });
 
-    const tableTop = po.notes ? 200 : po.supplierEmail ? 185 : 170;
+    // ── Supplier block ────────────────────────────────────────────────────────
+    const supStartY = 50 + headerH + 16;
+    let sy = supStartY;
+    const labelX = 50;
+    const valueX = 130;
+    const valueW = W - 80;
+
+    const supRow = (label: string, value: string) => {
+      doc.font("Helvetica-Bold").fontSize(9).fillColor("#374151")
+        .text(label, labelX, sy, { width: 75 });
+      doc.font("Helvetica").fontSize(9).fillColor("#111827")
+        .text(value, valueX, sy, { width: valueW });
+      sy += 14;
+    };
+
+    supRow("Supplier:", po.supplierName);
+    if (po.supplierContactName) supRow("Attention:", po.supplierContactName);
+    if (po.supplierAddress)     supRow("Address:",   po.supplierAddress);
+    if (po.supplierPhone)       supRow("Phone:",     po.supplierPhone);
+    if (po.supplierEmail)       supRow("Email:",     po.supplierEmail);
+    if (po.notes)               supRow("Notes:",     po.notes);
+
+    sy += 8;
+    const tableTop = sy;
 
     // Build matrix
     const { groupKeys, groups } = buildMatrix(po.items);
@@ -701,12 +731,20 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr><td align="center" style="padding:32px 16px;">
       <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-        <tr><td style="background:#1e293b;padding:24px 32px;">
-          <h1 style="margin:0;color:#fff;font-size:18px;font-weight:700;">Select Branding Solutions</h1>
-          <p style="margin:4px 0 0;color:#94a3b8;font-size:13px;">Purchase Order — ${po.poNumber}</p>
+        <tr><td style="background:#1e293b;padding:20px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td style="vertical-align:middle;">
+              <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="48" style="display:block;height:48px;width:auto;" />
+            </td>
+            <td style="vertical-align:middle;text-align:right;">
+              <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Purchase Order</p>
+              <p style="margin:3px 0 0;color:#fff;font-size:15px;font-weight:700;">${po.poNumber}</p>
+              <p style="margin:2px 0 0;color:#cbd5e1;font-size:11px;">${dateStr}</p>
+            </td>
+          </tr></table>
         </td></tr>
         <tr><td style="padding:28px 32px;">
-          <p style="margin:0 0 20px;font-size:15px;color:#374151;">Dear ${po.supplierName},<br><br>Please supply the following items for order <strong>${po.poNumber}</strong> dated ${dateStr}. A detailed PDF is attached for your records.</p>
+          <p style="margin:0 0 20px;font-size:15px;color:#374151;">Dear ${po.supplierContactName ?? po.supplierName},<br><br>Please supply the following items for order <strong>${po.poNumber}</strong> dated ${dateStr}. A detailed PDF is attached for your records.</p>
           <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:6px;border-collapse:collapse;margin-bottom:20px;">
             <thead><tr>
               <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6b7280;background:#f8fafc;border-bottom:1px solid #e5e7eb;">Code</th>

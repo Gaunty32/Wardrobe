@@ -118,8 +118,17 @@ function parsePOItem(item: Record<string, unknown>) {
 }
 
 async function getPoWithItems(poId: number) {
-  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
-  if (!po) return null;
+  const [poRow] = await db
+    .select({
+      po: purchaseOrdersTable,
+      supplierContactName: suppliersTable.contactName,
+      supplierPhone: suppliersTable.phone,
+      supplierAddress: suppliersTable.address,
+    })
+    .from(purchaseOrdersTable)
+    .leftJoin(suppliersTable, eq(purchaseOrdersTable.supplierId, suppliersTable.id))
+    .where(eq(purchaseOrdersTable.id, poId));
+  if (!poRow) return null;
   const rows = await db
     .select({
       item: purchaseOrderItemsTable,
@@ -131,7 +140,10 @@ async function getPoWithItems(poId: number) {
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(eq(purchaseOrderItemsTable.poId, poId));
   return {
-    ...po,
+    ...poRow.po,
+    supplierContactName: poRow.supplierContactName ?? null,
+    supplierPhone: poRow.supplierPhone ?? null,
+    supplierAddress: poRow.supplierAddress ?? null,
     items: rows.map((r) => ({
       ...parsePOItem(r.item as Record<string, unknown>),
       productSku: r.productSku ?? null,
@@ -364,6 +376,9 @@ router.get("/purchasing/purchase-orders/:id/pdf", async (req, res): Promise<void
     poNumber: po.poNumber,
     supplierName: po.supplierName,
     supplierEmail: po.supplierEmail,
+    supplierContactName: po.supplierContactName ?? null,
+    supplierPhone: po.supplierPhone ?? null,
+    supplierAddress: po.supplierAddress ?? null,
     createdAt: po.createdAt,
     notes: po.notes,
     items: po.items.map((i) => ({
@@ -403,6 +418,9 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
     poNumber: po.poNumber,
     supplierName: po.supplierName,
     supplierEmail: po.supplierEmail,
+    supplierContactName: po.supplierContactName ?? null,
+    supplierPhone: po.supplierPhone ?? null,
+    supplierAddress: po.supplierAddress ?? null,
     createdAt: po.createdAt,
     notes: po.notes,
     items: po.items.map((i) => ({
