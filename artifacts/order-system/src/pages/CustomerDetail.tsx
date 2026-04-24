@@ -540,7 +540,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                 <div className="flex items-center justify-between">
                   <Label className="flex items-center gap-1"><Boxes className="w-3 h-3" /> Process Stock Item</Label>
                   <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs text-primary hover:bg-primary/10 gap-1"
-                    onClick={() => { setQuickAddForm({ name: "", sku: "" }); setQuickAddOpen(true); }}>
+                    onClick={() => { setQuickAddForm({ name: "", sku: "SBS" + String(Math.floor(Math.random() * 9000) + 1000) }); setQuickAddOpen(true); }}>
                     <Plus className="w-3 h-3" /> New
                   </Button>
                 </div>
@@ -619,7 +619,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
             <div className="grid gap-2">
               <Label>Product Code</Label>
               <Input
-                placeholder="e.g. FCC4998"
+                placeholder="e.g. SBS1042"
                 value={quickAddForm.sku}
                 onChange={e => setQuickAddForm(f => ({ ...f, sku: e.target.value }))}
               />
