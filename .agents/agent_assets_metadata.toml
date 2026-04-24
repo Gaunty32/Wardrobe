@@ -1,0 +1,14 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "nZdkAQm_uzpN93YKx9bsG"
+uri = "file://attached_assets/sbs-staff-icon.png"
+type = "image"
+title = "SBS staff app icon"
+
+[[generated]]
+id = "HWhPVndvhHVoJFzHPn3z8"
+uri = "file://attached_assets/sbs-customer-icon.png"
+type = "image"
+title = "SBS customer portal app icon"
