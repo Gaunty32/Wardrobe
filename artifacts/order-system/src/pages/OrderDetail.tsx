@@ -230,6 +230,22 @@ function useCustomerDeliveryAddresses(customerId: number | null) {
   });
 }
 
+/** Returns the unit price for a given total quantity from a price-break table.
+ *  Returns the price for the highest tier whose min qty is ≤ totalQty.
+ *  Returns null if no tier matches (quantity below minimum). */
+function getBreakPrice(
+  priceBreaks: { qty: number; price: number }[] | null | undefined,
+  totalQty: number,
+): number | null {
+  if (!priceBreaks || priceBreaks.length === 0) return null;
+  const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+  let result: number | null = null;
+  for (const tier of sorted) {
+    if (totalQty >= tier.qty) result = tier.price;
+  }
+  return result;
+}
+
 const EMPTY_ITEM = {
   productId: null as number | null,
   productName: "",
@@ -561,10 +577,29 @@ export default function OrderDetail() {
     if (savedSize) setItem(i => ({ ...i, size: savedSize.size }));
   }, [selectedEmployee?.id, item.productName, item.productId, lastOrderedSizes]);
 
+  // Auto-update unit price when total quantity changes for products with price breaks
+  useEffect(() => {
+    if (item.fromWardrobe || !item.productId) return;
+    const prod = products?.find(p => p.id === item.productId);
+    if (!prod) return;
+    const priceBreaks = (prod as any).priceBreaks as { qty: number; price: number }[] | null;
+    if (!priceBreaks || priceBreaks.length === 0) return;
+    const totalQty = sizes.length > 0
+      ? sizeRows.reduce((s, r) => s + (r.qty || 0), 0)
+      : item.quantity;
+    const tierPrice = getBreakPrice(priceBreaks, totalQty);
+    const newPrice = tierPrice !== null ? tierPrice.toFixed(2) : prod.unitPrice.toString();
+    setItem(i => ({ ...i, unitPrice: newPrice, baseUnitPrice: newPrice }));
+  }, [sizeRows, item.quantity, item.productId, item.fromWardrobe, products]);
+
   const handleProductSelect = (productId: number) => {
     const prod = products?.find(p => p.id === productId);
     if (!prod) return;
-    setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: prod.unitPrice.toString(), baseUnitPrice: prod.unitPrice.toString() });
+    const priceBreaks = (prod as any).priceBreaks as { qty: number; price: number }[] | null;
+    const initialPrice = (priceBreaks && priceBreaks.length > 0)
+      ? (getBreakPrice(priceBreaks, 1) ?? prod.unitPrice).toString()
+      : prod.unitPrice.toString();
+    setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: initialPrice, baseUnitPrice: initialPrice });
     setSizeRows([{ size: "", qty: 1 }]);
     setProductSearchOpen(false);
   };
@@ -1950,6 +1985,37 @@ export default function OrderDetail() {
                       <Input id="price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
                     </div>
                   </div>
+
+                  {/* Price break info for products with tiered pricing */}
+                  {item.productId && (() => {
+                    const prod = products?.find(p => p.id === item.productId);
+                    const priceBreaks = (prod as any)?.priceBreaks as { qty: number; price: number }[] | null;
+                    const minOrderQty = (prod as any)?.minOrderQty as number | null;
+                    if (!priceBreaks || priceBreaks.length === 0) return null;
+                    const totalQty = sizes.length > 0 ? sizeRows.reduce((s, r) => s + (r.qty || 0), 0) : item.quantity;
+                    const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+                    const nextTier = sorted.find(t => t.qty > totalQty);
+                    const activeTier = sorted.filter(t => t.qty <= totalQty).at(-1);
+                    const belowMin = minOrderQty != null && totalQty < minOrderQty;
+                    return (
+                      <div className="rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-indigo-800">Price tiers (total qty):</span>
+                          {sorted.map(t => (
+                            <span key={t.qty} className={`px-1.5 py-0.5 rounded font-medium ${t === activeTier ? "bg-indigo-600 text-white" : "bg-white border border-indigo-200 text-indigo-700"}`}>
+                              {t.qty}+ = £{t.price.toFixed(2)}
+                            </span>
+                          ))}
+                        </div>
+                        {belowMin && (
+                          <p className="text-amber-700 font-medium">⚠ Min. order qty is {minOrderQty} — current total is {totalQty}.</p>
+                        )}
+                        {nextTier && !belowMin && (
+                          <p className="text-indigo-600">Add {nextTier.qty - totalQty} more to unlock £{nextTier.price.toFixed(2)}/unit.</p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {item.unitPrice && (
                     <div className="flex justify-end text-sm text-muted-foreground">

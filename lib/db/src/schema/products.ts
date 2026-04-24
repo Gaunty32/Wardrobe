@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, numeric, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, numeric, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -16,6 +16,12 @@ export const productsTable = pgTable("products", {
   supplierPrice: numeric("supplier_price", { precision: 10, scale: 2 }),
   secondarySupplierCode: text("secondary_supplier_code"),
   secondarySupplierPrice: numeric("secondary_supplier_price", { precision: 10, scale: 2 }),
+  /** Currency used when purchasing from supplier (e.g. "USD", "GBP") */
+  supplierCurrency: text("supplier_currency").notNull().default("GBP"),
+  /** Minimum units that must be ordered from the supplier */
+  minOrderQty: integer("min_order_qty"),
+  /** Tiered pricing: [{qty: 25, price: 15.00}, {qty: 50, price: 11.00}, ...] sorted asc by qty */
+  priceBreaks: jsonb("price_breaks").$type<{ qty: number; price: number }[]>(),
   imageUrl: text("image_url"),
   wooCommerceId: integer("woo_commerce_id"),
   taxStatus: text("tax_status"),

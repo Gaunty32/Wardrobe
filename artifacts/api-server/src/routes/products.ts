@@ -107,6 +107,9 @@ function fmtProduct(p: any) {
     unitPrice: p.unitPrice != null ? parseFloat(p.unitPrice) : 0,
     supplierPrice: p.supplierPrice != null ? parseFloat(p.supplierPrice) : null,
     secondarySupplierPrice: p.secondarySupplierPrice != null ? parseFloat(p.secondarySupplierPrice) : null,
+    supplierCurrency: p.supplierCurrency ?? "GBP",
+    minOrderQty: p.minOrderQty ?? null,
+    priceBreaks: p.priceBreaks ?? null,
   };
 }
 
@@ -218,7 +221,7 @@ router.get("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
-  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null, secondarySupplierPrice: product.secondarySupplierPrice != null ? parseFloat(product.secondarySupplierPrice) : null });
+  res.json(fmtProduct(product));
 });
 
 router.patch("/products/:id", async (req, res): Promise<void> => {
@@ -248,6 +251,27 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     updateData.isBespoke = req.body.isBespoke === true;
     if (req.body.isBespoke === false) updateData.customerId = null;
   }
+  if ("supplierCurrency" in req.body) {
+    updateData.supplierCurrency = typeof req.body.supplierCurrency === "string" ? req.body.supplierCurrency : "GBP";
+  }
+  if ("minOrderQty" in req.body) {
+    updateData.minOrderQty = req.body.minOrderQty != null ? Number(req.body.minOrderQty) || null : null;
+  }
+  if ("priceBreaks" in req.body) {
+    updateData.priceBreaks = Array.isArray(req.body.priceBreaks) ? req.body.priceBreaks : null;
+  }
+  if ("supplierPrice" in req.body) {
+    updateData.supplierPrice = req.body.supplierPrice != null && req.body.supplierPrice !== "" ? String(req.body.supplierPrice) : null;
+  }
+  if ("secondarySupplierPrice" in req.body) {
+    updateData.secondarySupplierPrice = req.body.secondarySupplierPrice != null && req.body.secondarySupplierPrice !== "" ? String(req.body.secondarySupplierPrice) : null;
+  }
+  if ("supplierCode" in req.body) {
+    updateData.supplierCode = req.body.supplierCode || null;
+  }
+  if ("secondarySupplierCode" in req.body) {
+    updateData.secondarySupplierCode = req.body.secondarySupplierCode || null;
+  }
   const [product] = await db
     .update(productsTable)
     .set(updateData)
@@ -258,7 +282,7 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     return;
   }
   if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku, product);
-  res.json({ ...product, unitPrice: parseFloat(product.unitPrice), supplierPrice: product.supplierPrice != null ? parseFloat(product.supplierPrice) : null, secondarySupplierPrice: product.secondarySupplierPrice != null ? parseFloat(product.secondarySupplierPrice) : null });
+  res.json(fmtProduct(product));
 });
 
 router.delete("/products/:id", async (req, res): Promise<void> => {

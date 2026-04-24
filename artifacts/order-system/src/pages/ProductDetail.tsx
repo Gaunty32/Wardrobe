@@ -485,6 +485,9 @@ export default function ProductDetail() {
     unitPrice: number; supplierId: string; secondarySupplierId: string;
     supplierCode: string; supplierPrice: string;
     secondarySupplierCode: string; secondarySupplierPrice: string;
+    supplierCurrency: string;
+    minOrderQty: string;
+    priceBreaks: { qty: number; price: number }[];
   } | null>(null);
   const [detailsDirty, setDetailsDirty] = useState(false);
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
@@ -504,6 +507,9 @@ export default function ProductDetail() {
         supplierPrice: product.supplierPrice != null ? String(product.supplierPrice) : "",
         secondarySupplierCode: product.secondarySupplierCode || "",
         secondarySupplierPrice: product.secondarySupplierPrice != null ? String(product.secondarySupplierPrice) : "",
+        supplierCurrency: (product as any).supplierCurrency ?? "GBP",
+        minOrderQty: (product as any).minOrderQty != null ? String((product as any).minOrderQty) : "",
+        priceBreaks: Array.isArray((product as any).priceBreaks) ? (product as any).priceBreaks : [],
       });
     }
   }, [product, details]);
@@ -530,7 +536,12 @@ export default function ProductDetail() {
           supplierPrice: details.supplierPrice !== "" ? parseFloat(details.supplierPrice) : null,
           secondarySupplierCode: details.secondarySupplierCode || null,
           secondarySupplierPrice: details.secondarySupplierPrice !== "" ? parseFloat(details.secondarySupplierPrice) : null,
-        },
+          supplierCurrency: details.supplierCurrency,
+          minOrderQty: details.minOrderQty !== "" ? parseInt(details.minOrderQty, 10) || null : null,
+          priceBreaks: details.priceBreaks.length > 0
+            ? [...details.priceBreaks].sort((a, b) => a.qty - b.qty)
+            : null,
+        } as any,
       },
       {
         onSuccess: () => {
@@ -671,14 +682,32 @@ export default function ProductDetail() {
                       <Label>Supplier</Label>
                       <SupplierSelect value={details.supplierId} onChange={v => handleDetailChange("supplierId", v)} suppliers={suppliers} />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                       <div className="grid gap-2">
                         <Label>Supplier Code</Label>
                         <Input value={details.supplierCode} onChange={e => handleDetailChange("supplierCode", e.target.value)} placeholder="e.g. FCC2105" />
                       </div>
                       <div className="grid gap-2">
-                        <Label>Supplier Price (£)</Label>
-                        <Input type="number" min="0" step="0.01" value={details.supplierPrice} onChange={e => handleDetailChange("supplierPrice", e.target.value)} placeholder="0.00" />
+                        <Label>Supplier Cost</Label>
+                        <div className="flex gap-1.5">
+                          <select
+                            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            value={details.supplierCurrency}
+                            onChange={e => handleDetailChange("supplierCurrency", e.target.value)}
+                          >
+                            <option value="GBP">£</option>
+                            <option value="USD">$</option>
+                            <option value="EUR">€</option>
+                          </select>
+                          <Input type="number" min="0" step="0.01" value={details.supplierPrice} onChange={e => handleDetailChange("supplierPrice", e.target.value)} placeholder="0.00" />
+                        </div>
+                        {details.supplierCurrency !== "GBP" && (
+                          <p className="text-[11px] text-amber-600">Purchased in {details.supplierCurrency} — convert to £ for reporting</p>
+                        )}
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Min. Order Qty</Label>
+                        <Input type="number" min="1" step="1" value={details.minOrderQty} onChange={e => handleDetailChange("minOrderQty", e.target.value)} placeholder="e.g. 25" />
                       </div>
                     </div>
 
@@ -708,6 +737,90 @@ export default function ProductDetail() {
                             <Input type="number" min="0" step="0.01" value={details.secondarySupplierPrice} onChange={e => handleDetailChange("secondarySupplierPrice", e.target.value)} placeholder="0.00" />
                           </div>
                         </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Price Breaks ── */}
+                  <div className="border-t border-border/40 pt-5 mt-1">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Quantity Price Breaks</h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">Unit selling price (£) based on total order quantity</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDetailChange("priceBreaks", [...details.priceBreaks, { qty: 0, price: 0 }])}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" /> Add Tier
+                      </Button>
+                    </div>
+
+                    {details.priceBreaks.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic">No price breaks set — a fixed unit price applies.</p>
+                    ) : (
+                      <div className="rounded-md border border-border/50 overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/50">
+                            <tr>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Min. Qty</th>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Unit Price (£)</th>
+                              <th className="w-10 px-2 py-2" />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...details.priceBreaks]
+                              .sort((a, b) => a.qty - b.qty)
+                              .map((pb, idx) => (
+                                <tr key={idx} className="border-t border-border/30 hover:bg-muted/20">
+                                  <td className="px-3 py-1.5">
+                                    <Input
+                                      type="number"
+                                      min="1"
+                                      step="1"
+                                      className="h-7 w-24 text-sm"
+                                      value={pb.qty || ""}
+                                      onChange={e => {
+                                        const updated = [...details.priceBreaks];
+                                        updated[idx] = { ...pb, qty: parseInt(e.target.value, 10) || 0 };
+                                        handleDetailChange("priceBreaks", updated);
+                                      }}
+                                    />
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-muted-foreground">£</span>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="h-7 w-24 text-sm"
+                                        value={pb.price || ""}
+                                        onChange={e => {
+                                          const updated = [...details.priceBreaks];
+                                          updated[idx] = { ...pb, price: parseFloat(e.target.value) || 0 };
+                                          handleDetailChange("priceBreaks", updated);
+                                        }}
+                                      />
+                                    </div>
+                                  </td>
+                                  <td className="px-2 py-1.5">
+                                    <button
+                                      type="button"
+                                      className="text-muted-foreground hover:text-destructive transition-colors"
+                                      onClick={() => {
+                                        const updated = details.priceBreaks.filter((_, i) => i !== idx);
+                                        handleDetailChange("priceBreaks", updated);
+                                      }}
+                                    >
+                                      <X className="w-4 h-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>
