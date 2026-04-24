@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
+import { useUpload } from "@workspace/object-storage-web";
 import { 
   useListCustomers, 
   useCreateCustomer, 
@@ -19,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail, Upload, X } from "lucide-react";
 
 function formatUKPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -130,8 +131,13 @@ export default function Customers() {
     return (localStorage.getItem("customersViewMode") as "list" | "tile") ?? "list";
   });
   
-  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "" };
+  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "", logoUrl: "" };
   const [formData, setFormData] = useState(initialForm);
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile, isUploading } = useUpload({
+    onSuccess: (res) => setFormData((f) => ({ ...f, logoUrl: `/api/storage/objects${res.objectPath.replace(/^\/objects/, "")}` })),
+    onError: (err) => toast({ title: "Upload failed", description: err.message, variant: "destructive" }),
+  });
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -159,6 +165,7 @@ export default function Customers() {
       postcode: customer.postcode || "",
       notes: customer.notes || "",
       defaultShippingService: (customer as any).defaultShippingService || "",
+      logoUrl: (customer as any).logoUrl || "",
     });
     setEditingCustomer(customer);
   };
@@ -395,6 +402,57 @@ export default function Customers() {
                 <div className="grid gap-2">
                   <Label htmlFor="postcode">Postcode</Label>
                   <Input id="postcode" value={formData.postcode} onChange={(e) => setFormData({...formData, postcode: e.target.value})} />
+                </div>
+              </div>
+
+              <div className="grid gap-2 mt-2">
+                <h4 className="text-sm font-semibold text-muted-foreground tracking-wide">Logo</h4>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <div
+                  className="relative h-16 w-16 rounded-lg border-2 border-dashed border-border flex items-center justify-center bg-muted/30 overflow-hidden cursor-pointer hover:bg-muted/50 transition-colors flex-shrink-0"
+                  onClick={() => logoFileInputRef.current?.click()}
+                  title="Click to upload logo"
+                >
+                  {formData.logoUrl ? (
+                    <img src={formData.logoUrl} alt="Logo" className="h-full w-full object-contain p-1" />
+                  ) : isUploading ? (
+                    <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
+                  ) : (
+                    <Upload className="w-5 h-5 text-muted-foreground" />
+                  )}
+                </div>
+                <div className="flex flex-col gap-1 flex-1 min-w-0">
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-fit"
+                    disabled={isUploading}
+                    onClick={() => logoFileInputRef.current?.click()}
+                  >
+                    {isUploading ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Uploading…</> : <><Upload className="w-3 h-3 mr-2" />{formData.logoUrl ? "Replace Logo" : "Upload Logo"}</>}
+                  </Button>
+                  {formData.logoUrl && (
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 w-fit"
+                      onClick={() => setFormData((f) => ({ ...f, logoUrl: "" }))}
+                    >
+                      <X className="w-3 h-3" /> Remove logo
+                    </button>
+                  )}
+                  {!formData.logoUrl && (
+                    <p className="text-xs text-muted-foreground">PNG, JPG or SVG. Click the square or the button to pick a file.</p>
+                  )}
                 </div>
               </div>
 
