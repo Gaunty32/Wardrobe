@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Truck, Loader2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Truck, Loader2, X } from "lucide-react";
 
 const CURRENCY_LABELS: Record<string, string> = { GBP: "£ GBP", USD: "$ USD", EUR: "€ EUR" };
 const CURRENCY_BADGE: Record<string, string> = { USD: "bg-green-100 text-green-800 border-green-200", EUR: "bg-blue-100 text-blue-800 border-blue-200", GBP: "" };
@@ -29,7 +29,7 @@ export default function Suppliers() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
-  const blank = { name: "", contactName: "", email: "", phone: "", address: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "", currency: "GBP" };
+  const blank = { name: "", contactName: "", email: "", phone: "", address: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "", currency: "GBP", defaultPriceBreaks: [] as { qty: number; price: number }[] };
   const [form, setForm] = useState(blank);
 
   const qc = useQueryClient();
@@ -54,8 +54,20 @@ export default function Suppliers() {
       country: s.country || "United Kingdom",
       notes: s.notes || "",
       currency: (s as unknown as { currency: string }).currency || "GBP",
+      defaultPriceBreaks: Array.isArray((s as any).defaultPriceBreaks) ? (s as any).defaultPriceBreaks : [],
     });
     setEditingSupplier(s);
+  };
+
+  const addPriceBreak = () => setForm(f => ({ ...f, defaultPriceBreaks: [...f.defaultPriceBreaks, { qty: 0, price: 0 }] }));
+  const removePriceBreak = (i: number) => setForm(f => ({ ...f, defaultPriceBreaks: f.defaultPriceBreaks.filter((_, idx) => idx !== i) }));
+  const updatePriceBreak = (i: number, field: "qty" | "price", raw: string) => {
+    const val = field === "qty" ? parseInt(raw, 10) || 0 : parseFloat(raw) || 0;
+    setForm(f => {
+      const breaks = [...f.defaultPriceBreaks];
+      breaks[i] = { ...breaks[i], [field]: val };
+      return { ...f, defaultPriceBreaks: breaks };
+    });
   };
 
   const handleSave = () => {
@@ -179,7 +191,7 @@ export default function Suppliers() {
         </Card>
 
         <Dialog open={isCreateOpen || !!editingSupplier} onOpenChange={(open) => { if (!open) close(); }}>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="font-display text-xl">{editingSupplier ? 'Edit Supplier' : 'Add New Supplier'}</DialogTitle>
             </DialogHeader>
@@ -234,6 +246,36 @@ export default function Suppliers() {
               <div className="grid gap-2">
                 <Label>Notes</Label>
                 <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+              </div>
+
+              <div className="grid gap-2 pt-2">
+                <div className="flex items-center justify-between">
+                  <Label>Default Price Breaks</Label>
+                  <Button type="button" variant="outline" size="sm" className="h-7 text-xs" onClick={addPriceBreak}>
+                    <Plus className="w-3 h-3 mr-1" /> Add Break
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground -mt-1">Auto-applied to products when this supplier is selected (if the product has no price breaks).</p>
+                {form.defaultPriceBreaks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground italic">No default price breaks set.</p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 text-xs font-medium text-muted-foreground px-1">
+                      <span>Min Qty</span>
+                      <span>Unit Price ({form.currency === "USD" ? "$" : form.currency === "EUR" ? "€" : "£"})</span>
+                      <span />
+                    </div>
+                    {form.defaultPriceBreaks.map((pb, i) => (
+                      <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                        <Input type="number" min="1" step="1" value={pb.qty || ""} onChange={e => updatePriceBreak(i, "qty", e.target.value)} placeholder="e.g. 50" className="h-8 text-sm" />
+                        <Input type="number" min="0" step="0.01" value={pb.price || ""} onChange={e => updatePriceBreak(i, "price", e.target.value)} placeholder="0.00" className="h-8 text-sm" />
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => removePriceBreak(i)}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <DialogFooter>

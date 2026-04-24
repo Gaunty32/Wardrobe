@@ -6,6 +6,8 @@ import { pushSupplierToXero } from "../services/xero.js";
 
 const router: IRouter = Router();
 
+const priceBreakItem = z.object({ qty: z.number().int().positive(), price: z.number().nonnegative() });
+
 const supplierBody = z.object({
   name: z.string().min(1),
   contactName: z.string().optional().nullable(),
@@ -18,6 +20,7 @@ const supplierBody = z.object({
   country: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   currency: z.enum(["GBP", "USD", "EUR"]).optional().default("GBP"),
+  defaultPriceBreaks: z.array(priceBreakItem).nullable().optional(),
 });
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });

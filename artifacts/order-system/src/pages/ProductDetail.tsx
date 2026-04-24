@@ -519,6 +519,24 @@ export default function ProductDetail() {
     setDetailsDirty(true);
   };
 
+  // When supplier changes: auto-set currency from supplier record and apply default price breaks if none set
+  const handleSupplierChange = (supplierId: string) => {
+    const supplier = suppliers.find((s: any) => String(s.id) === supplierId);
+    setDetails(prev => {
+      if (!prev) return prev;
+      const currency = (supplier as any)?.currency ?? "GBP";
+      const hasBreaks = prev.priceBreaks.length > 0;
+      const supplierBreaks: { qty: number; price: number }[] = (supplier as any)?.defaultPriceBreaks ?? [];
+      return {
+        ...prev,
+        supplierId,
+        supplierCurrency: currency,
+        priceBreaks: !hasBreaks && supplierBreaks.length > 0 ? supplierBreaks : prev.priceBreaks,
+      };
+    });
+    setDetailsDirty(true);
+  };
+
   const saveDetails = () => {
     if (!details?.name) { toast({ title: "Product name is required", variant: "destructive" }); return; }
     updateMutation.mutate(
@@ -680,7 +698,7 @@ export default function ProductDetail() {
                     <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Preferred Supplier</h4>
                     <div className="grid gap-2 mb-4">
                       <Label>Supplier</Label>
-                      <SupplierSelect value={details.supplierId} onChange={v => handleDetailChange("supplierId", v)} suppliers={suppliers} />
+                      <SupplierSelect value={details.supplierId} onChange={handleSupplierChange} suppliers={suppliers} />
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="grid gap-2">
@@ -689,16 +707,10 @@ export default function ProductDetail() {
                       </div>
                       <div className="grid gap-2">
                         <Label>Supplier Cost</Label>
-                        <div className="flex gap-1.5">
-                          <select
-                            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                            value={details.supplierCurrency}
-                            onChange={e => handleDetailChange("supplierCurrency", e.target.value)}
-                          >
-                            <option value="GBP">£</option>
-                            <option value="USD">$</option>
-                            <option value="EUR">€</option>
-                          </select>
+                        <div className="flex gap-1.5 items-center">
+                          <span className="h-9 flex items-center px-2.5 rounded-md border border-input bg-muted/50 text-sm font-medium text-muted-foreground shrink-0 select-none">
+                            {details.supplierCurrency === "USD" ? "$" : details.supplierCurrency === "EUR" ? "€" : "£"}
+                          </span>
                           <Input type="number" min="0" step="0.01" value={details.supplierPrice} onChange={e => handleDetailChange("supplierPrice", e.target.value)} placeholder="0.00" />
                         </div>
                         {details.supplierCurrency !== "GBP" && (
