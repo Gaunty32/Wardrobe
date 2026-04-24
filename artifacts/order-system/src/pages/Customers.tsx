@@ -40,18 +40,10 @@ function formatUKPhone(raw: string): string {
 
 const SHIPPING_SERVICES = [
   "DPD",
-  "Royal Mail",
-  "Evri (Hermes)",
-  "DHL",
-  "FedEx",
-  "UPS",
-  "TNT",
-  "Yodel",
-  "ParcelForce",
-  "Amazon Logistics",
-  "Click & Collect",
+  "Local Delivery",
+  "Office Collection",
+  "Warehouse Collection",
   "Courier",
-  "Other",
 ];
 
 function CustomerTile({ customer, onEdit, onDelete, onClick }: {
