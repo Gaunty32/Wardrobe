@@ -59,7 +59,7 @@ export default function Products() {
   const [formData, setFormData] = useState({
     name: "", sku: "", category: "", description: "", unitPrice: 0, stockQuantity: 0,
     supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
-    customerId: "none" as string,
+    customerId: "none" as string, supplierCurrency: "GBP",
   });
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile, isUploading: isImageUploading } = useUpload({
@@ -167,7 +167,7 @@ export default function Products() {
       category: defaultCat,
       description: "", unitPrice: 0, stockQuantity: 0,
       supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
-      customerId: "none",
+      customerId: "none", supplierCurrency: "GBP",
     });
     setIsCreateOpen(true);
   };
@@ -185,6 +185,7 @@ export default function Products() {
       supplierPrice: (product as any).supplierPrice != null ? String((product as any).supplierPrice) : "",
       imageUrl: (product as any).imageUrl || "",
       customerId: (product as any).customerId ? String((product as any).customerId) : "none",
+      supplierCurrency: (product as any).supplierCurrency || "GBP",
     });
     setEditingProduct(product);
   };
@@ -579,7 +580,10 @@ export default function Products() {
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Supplier</p>
               <div className="grid gap-2 mb-3">
                 <Label>Preferred Supplier</Label>
-                <Select value={formData.supplierId} onValueChange={(v) => setFormData({ ...formData, supplierId: v })}>
+                <Select value={formData.supplierId} onValueChange={(v) => {
+                  const sup = (suppliers as any[]).find((s: any) => String(s.id) === v);
+                  setFormData({ ...formData, supplierId: v, supplierCurrency: sup?.currency ?? "GBP" });
+                }}>
                   <SelectTrigger><SelectValue placeholder="— None —" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">— None —</SelectItem>
@@ -595,7 +599,7 @@ export default function Products() {
                   <Input value={formData.supplierCode} onChange={(e) => setFormData({ ...formData, supplierCode: e.target.value })} placeholder="e.g. FCC2105" />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Supplier Price (£)</Label>
+                  <Label>Supplier Price ({formData.supplierCurrency === "USD" ? "$" : formData.supplierCurrency === "EUR" ? "€" : "£"})</Label>
                   <Input type="number" min="0" step="0.01" value={formData.supplierPrice} onChange={(e) => setFormData({ ...formData, supplierPrice: e.target.value })} placeholder="0.00" />
                 </div>
               </div>

@@ -293,7 +293,11 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
                 <Input value={variantSupplierCode} onChange={e => setVariantSupplierCode(e.target.value)} placeholder="Override code" />
               </div>
               <div className="grid gap-2">
-                <Label>Supplier Price (£)</Label>
+                {(() => {
+                  const sup = suppliers.find((s: any) => String(s.id) === primaryId);
+                  const sym = (sup as any)?.currency === "USD" ? "$" : (sup as any)?.currency === "EUR" ? "€" : "£";
+                  return <Label>Supplier Price ({sym})</Label>;
+                })()}
                 <Input type="number" min="0" step="0.01" value={variantSupplierPrice} onChange={e => setVariantSupplierPrice(e.target.value)} placeholder="Override price" />
               </div>
             </div>
