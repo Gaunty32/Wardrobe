@@ -111,6 +111,11 @@ export default function Products() {
   const allProductCatNames = [...new Set(allProducts.map((p) => (p as any).category?.trim()).filter(Boolean))];
   const internalOnlyCatNames = allProductCatNames.filter((n) => !storedCatNames.has(n)).sort();
 
+  // Static images for internal categories that have no WooCommerce image
+  const internalCategoryImages: Record<string, string> = {
+    "Bespoke Ties": "/images/bespoke-tie.png",
+  };
+
   // Build top-level grid entries: WooCommerce top-level + internal-only
   type CatEntry = ProductCategory & { liveCount: number; isInternal: boolean };
 
@@ -125,7 +130,7 @@ export default function Products() {
       wooId: null,
       name,
       slug: null,
-      imageUrl: null,
+      imageUrl: internalCategoryImages[name] ?? null,
       parentWooId: null,
       productCount: 0,
       createdAt: new Date(),
