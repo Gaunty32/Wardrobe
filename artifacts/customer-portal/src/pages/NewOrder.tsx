@@ -240,6 +240,20 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
     return sortSizes(all);
   };
 
+  // Returns the unit price after applying quantity-based price breaks.
+  // If special_price is set for this customer, that takes precedence.
+  const resolveUnitPrice = (wi: any, qty: number): number => {
+    if (wi.special_price != null && wi.special_price !== "") {
+      return parseFloat(wi.special_price);
+    }
+    const base = parseFloat(wi.unit_price ?? "0");
+    const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
+    if (breaks.length === 0) return base;
+    const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
+    const match = sorted.find(pb => qty >= pb.qty);
+    return match ? match.price : base;
+  };
+
   const makeItem = (wi: any, recipientType: "stock" | "person", size: string, qty: number, employee?: any): OrderItem => ({
     productId: wi.product_id ?? null,
     productName: wi.product_name ?? wi.name,
@@ -251,7 +265,7 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
     recipientName: employee ? `${employee.first_name} ${employee.last_name}` : "",
     recipientEmployeeId: employee?.id ?? null,
     quantity: qty,
-    unitPrice: parseFloat(wi.special_price ?? wi.unit_price ?? "0"),
+    unitPrice: resolveUnitPrice(wi, qty),
   });
 
   // ── Empty state ────────────────────────────────────────────────────────────
@@ -358,7 +372,6 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
               {/* ── Item cards ─────────────────────────────────────────── */}
               <div className="flex flex-col gap-3">
                 {group.items.map((wi: any, i: number) => {
-                  const price = parseFloat(wi.special_price ?? wi.unit_price ?? "0");
                   const key = `${group.finish_id}-${i}`;
                   const state = getItemState(key);
                   const availSizes = getAvailableSizes(wi);
@@ -417,9 +430,19 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                                 {[wi.colour, wi.role_name].filter(Boolean).join(" · ")}
                               </p>
                             </div>
-                            {price > 0 && (
-                              <span className="text-sm font-bold text-primary shrink-0">{formatCurrency(price)}</span>
-                            )}
+                            {(() => {
+                              const base = parseFloat(wi.unit_price ?? "0");
+                              const active = resolveUnitPrice(wi, state.qty);
+                              const hasBreak = active !== base && base > 0;
+                              return active > 0 ? (
+                                <div className="flex flex-col items-end shrink-0">
+                                  <span className="text-sm font-bold text-primary">{formatCurrency(active)}</span>
+                                  {hasBreak && (
+                                    <span className="text-[10px] text-muted-foreground line-through">{formatCurrency(base)}</span>
+                                  )}
+                                </div>
+                              ) : null;
+                            })()}
                           </div>
 
                           {/* Order for dropdown */}
