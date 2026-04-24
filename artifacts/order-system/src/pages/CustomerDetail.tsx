@@ -1707,10 +1707,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     const prod = products?.find(p => p.id === productId);
     if (!prod) return;
     setProductSearchOpen(false);
-    const currentFinishCost = form.finishId
-      ? ((finishes as any[])?.find((f: any) => f.id === form.finishId)?.totalCost ?? 0)
-      : 0;
-    const newPrice = prod.unitPrice + currentFinishCost;
+    // WooCommerce product prices include the first logo/finish, so use the product price as-is.
+    const newPrice = prod.unitPrice;
     setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "" }));
     setVariantColours([]);
     setVariantSizes([]);
@@ -1730,13 +1728,13 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   };
 
   const handleFinishChange = (value: string) => {
+    // WooCommerce prices include the first logo/finish free of charge.
+    // Do not add the finish cost on top — the product base price already covers it.
     const base = selectedProduct?.unitPrice ?? parseFloat(form.unitPrice) ?? 0;
     if (value === "none") {
       setForm(f => ({ ...f, finishId: null, unitPrice: base.toFixed(2) }));
     } else {
-      const finish = (finishes as any[])?.find((f: any) => f.id.toString() === value);
-      const total = base + (finish?.totalCost ?? 0);
-      setForm(f => ({ ...f, finishId: Number(value), unitPrice: total.toFixed(2) }));
+      setForm(f => ({ ...f, finishId: Number(value), unitPrice: base.toFixed(2) }));
     }
   };
 
@@ -2047,7 +2045,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   value={form.unitPrice}
                   onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
                 />
-                <p className="text-xs text-muted-foreground">Auto-calculated from product + finish.</p>
+                <p className="text-xs text-muted-foreground">WooCommerce price includes the first logo. Override manually if needed.</p>
               </div>
               <div className="grid gap-2">
                 <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Special Price</Label>
