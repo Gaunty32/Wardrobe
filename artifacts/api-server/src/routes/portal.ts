@@ -16,7 +16,7 @@ const JWT_SECRET = process.env.PORTAL_JWT_SECRET || "sbs-portal-secret-change-in
 const INVITE_TTL_DAYS = 7;
 const MAGIC_TTL_MINUTES = 30;
 
-function buildMagicLinkEmail(email: string, magicUrl: string): { html: string; text: string } {
+function buildMagicLinkEmail(_email: string, magicUrl: string): { html: string; text: string } {
   const html = `
 <!DOCTYPE html>
 <html>
