@@ -1873,7 +1873,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       )}
 
       <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Finished Item" : "Add Finished Item"}</DialogTitle>
           </DialogHeader>
@@ -1964,35 +1964,75 @@ function WardrobeTab({ customerId }: { customerId: number }) {
 
             <div className="grid gap-2">
               <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
-              {variantColours.length > 0 ? (
-                <Select value={form.colour || "__all__"} onValueChange={v => setForm(f => ({ ...f, colour: v === "__all__" ? "" : v }))}>
-                  <SelectTrigger><SelectValue placeholder="All colours" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All colours</SelectItem>
-                    {variantColours.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+              {editing ? (
+                /* Edit mode — single value */
+                variantColours.length > 0 ? (
+                  <Select value={form.colour || "__none__"} onValueChange={v => setForm(f => ({ ...f, colour: v === "__none__" ? "" : v }))}>
+                    <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Any colour</SelectItem>
+                      {variantColours.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" placeholder="e.g. Navy Blue (optional)" value={form.colour} onChange={e => setForm(f => ({ ...f, colour: e.target.value }))} />
+                )
               ) : (
-                <input
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="e.g. Navy Blue (optional)"
-                  value={form.colour}
-                  onChange={e => setForm(f => ({ ...f, colour: e.target.value }))}
-                />
+                /* Add mode — multi-select chips */
+                variantColours.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {variantColours.map(col => (
+                      <button key={col} type="button"
+                        onClick={() => toggleColour(col)}
+                        className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", selectedColours.includes(col) ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                      >{col}</button>
+                    ))}
+                    {variantColours.length > 1 && (
+                      <button type="button" onClick={() => setSelectedColours(selectedColours.length === variantColours.length ? [] : [...variantColours])}
+                        className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/50 transition-colors">
+                        {selectedColours.length === variantColours.length ? "None" : "All"}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" placeholder="e.g. Navy Blue (optional)" value={form.colour} onChange={e => setForm(f => ({ ...f, colour: e.target.value }))} />
+                )
               )}
             </div>
 
             <div className="grid gap-2">
               <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-              <Select value={form.size || "__all__"} onValueChange={v => setForm(f => ({ ...f, size: v === "__all__" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="All sizes" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__all__">All sizes</SelectItem>
-                  {(variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).map(s => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
+              {editing ? (
+                /* Edit mode — single value */
+                <Select value={form.size || "__none__"} onValueChange={v => setForm(f => ({ ...f, size: v === "__none__" ? "" : v }))}>
+                  <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Any size</SelectItem>
+                    {(variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).map(s => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                /* Add mode — multi-select chips */
+                <div className="flex flex-wrap gap-1.5">
+                  {(variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).map(sz => (
+                    <button key={sz} type="button"
+                      onClick={() => toggleSize(sz)}
+                      className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", selectedSizes.includes(sz) ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                    >{sz}</button>
                   ))}
-                </SelectContent>
-              </Select>
+                  <button type="button" onClick={() => { const all = variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES; setSelectedSizes(selectedSizes.length === all.length ? [] : [...all]); }}
+                    className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/50 transition-colors">
+                    {selectedSizes.length === (variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).length ? "None" : "All"}
+                  </button>
+                </div>
+              )}
+              {!editing && (selectedColours.length > 0 || selectedSizes.length > 0) && (
+                <p className="text-xs text-muted-foreground">
+                  Will create <strong>{Math.max(1, (selectedColours.length || 1) * (selectedSizes.length || 1))}</strong> wardrobe item{(selectedColours.length || 1) * (selectedSizes.length || 1) > 1 ? "s" : ""}.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
