@@ -1,12 +1,85 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Loader2 } from "lucide-react";
+import { Loader2, X, Smartphone, Share, MoreVertical } from "lucide-react";
 import logo from "@/assets/logo.png";
+
+function MobileInstallPrompt() {
+  const [visible, setVisible] = useState(false);
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    // Only show on desktop: device has a fine pointer (mouse) and wide screen
+    const hasMousePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    const isWideEnough = window.innerWidth >= 768;
+    if (hasMousePointer && isWideEnough) {
+      setVisible(true);
+      setUrl(window.location.href);
+    }
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed bottom-5 right-5 z-50 w-80 shadow-2xl rounded-xl border border-border bg-white animate-in slide-in-from-bottom-4 fade-in duration-300">
+      <div className="flex items-start justify-between p-4 pb-3 border-b border-border/60">
+        <div className="flex items-center gap-2">
+          <div className="bg-primary/10 rounded-lg p-1.5">
+            <Smartphone className="w-4 h-4 text-primary" />
+          </div>
+          <span className="font-semibold text-sm text-foreground">Use this on your phone</span>
+        </div>
+        <button
+          onClick={() => setVisible(false)}
+          className="text-muted-foreground hover:text-foreground transition-colors ml-2 mt-0.5"
+          aria-label="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="p-4 space-y-3 text-xs text-muted-foreground">
+        <p className="text-foreground text-xs font-medium">
+          Open this page on your phone's browser — it works like an app and can be pinned to your home screen.
+        </p>
+
+        <div className="bg-slate-50 rounded-lg px-3 py-2 flex items-center gap-2 border border-border/50">
+          <span className="font-mono text-[11px] text-foreground/70 break-all leading-snug flex-1 select-all">{url}</span>
+        </div>
+
+        <div className="space-y-2.5">
+          <div>
+            <p className="font-semibold text-foreground mb-1 flex items-center gap-1">
+              <Share className="w-3 h-3" /> iPhone / iPad (Safari)
+            </p>
+            <ol className="space-y-0.5 pl-3 list-decimal">
+              <li>Open the link above in <strong>Safari</strong></li>
+              <li>Tap the <strong>Share</strong> button <Share className="w-3 h-3 inline mx-0.5 -mt-0.5" /></li>
+              <li>Scroll down and tap <strong>"Add to Home Screen"</strong></li>
+              <li>Tap <strong>Add</strong> — done!</li>
+            </ol>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1 flex items-center gap-1">
+              <MoreVertical className="w-3 h-3" /> Android (Chrome)
+            </p>
+            <ol className="space-y-0.5 pl-3 list-decimal">
+              <li>Open the link above in <strong>Chrome</strong></li>
+              <li>Tap the <strong>menu</strong> <MoreVertical className="w-3 h-3 inline mx-0.5 -mt-0.5" /> (top right)</li>
+              <li>Tap <strong>"Add to Home screen"</strong></li>
+              <li>Tap <strong>Add</strong> — done!</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -88,10 +161,13 @@ export default function Login() {
             </form>
           </CardContent>
         </Card>
+
         <p className="text-center text-xs text-muted-foreground mt-4">
           Don't have access? Contact your account manager at Select Branding Solutions.
         </p>
       </div>
+
+      <MobileInstallPrompt />
     </div>
   );
 }
