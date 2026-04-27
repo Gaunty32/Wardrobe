@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/collapsible";
 import {
   BarChart2, Mail, Phone, ChevronDown, ChevronRight, Clock, AlertCircle,
-  ExternalLink, RefreshCw, ShoppingCart, Users,
+  ExternalLink, RefreshCw, ShoppingCart, Users, ShoppingBag, Package,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -55,6 +55,27 @@ type PendingCustomer = {
 type ReportData = {
   customers: PendingCustomer[];
   totalOrders: number;
+};
+
+type ActiveBasket = {
+  id: number;
+  portalUserId: number;
+  customerId: number;
+  customerName: string;
+  customerPhone: string | null;
+  userEmail: string | null;
+  userDisplayName: string;
+  itemCount: number;
+  estimatedTotal: number;
+  mode: string | null;
+  step: number;
+  updatedAt: string;
+  createdAt: string;
+};
+
+type BasketReportData = {
+  baskets: ActiveBasket[];
+  total: number;
 };
 
 function portalStatusLabel(s: string): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
@@ -272,8 +293,15 @@ export default function Reports() {
     staleTime: 1000 * 60 * 2,
   });
 
+  const { data: basketData, isLoading: basketsLoading } = useQuery<BasketReportData>({
+    queryKey: ["reports-portal-baskets"],
+    queryFn: () => apiFetch("/reports/portal-baskets"),
+    staleTime: 1000 * 60 * 2,
+  });
+
   const customers = data?.customers ?? [];
   const totalOrders = data?.totalOrders ?? 0;
+  const baskets = basketData?.baskets ?? [];
 
   const awaitingSBS = customers.reduce(
     (n, c) => n + c.orders.filter(o => o.portalStatus === "submitted").length, 0
@@ -386,6 +414,146 @@ export default function Reports() {
           )}
         </CardContent>
       </Card>
+      {/* ── Active Customer Baskets ────────────────────────────────────────────── */}
+      <Card className="mt-6">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <ShoppingBag className="w-4 h-4 text-primary" />
+                Active Customer Baskets
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Customers who have items in their basket but haven't submitted an order yet —
+                a gentle nudge at the right moment could help turn these into confirmed orders.
+              </CardDescription>
+            </div>
+            {!basketsLoading && baskets.length > 0 && (
+              <div className="flex gap-3 shrink-0 text-right">
+                <div className="text-center px-3 py-1.5 rounded-lg bg-muted/50">
+                  <p className="text-lg font-bold tabular-nums">{baskets.length}</p>
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Users className="w-3 h-3" /> customers</p>
+                </div>
+                <div className="text-center px-3 py-1.5 rounded-lg bg-muted/50">
+                  <p className="text-lg font-bold tabular-nums">{baskets.reduce((s, b) => s + b.itemCount, 0)}</p>
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Package className="w-3 h-3" /> items</p>
+                </div>
+                {baskets.some(b => b.estimatedTotal > 0) && (
+                  <div className="text-center px-3 py-1.5 rounded-lg bg-primary/10">
+                    <p className="text-lg font-bold tabular-nums text-primary">
+                      {formatCurrency(baskets.reduce((s, b) => s + b.estimatedTotal, 0))}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">est. value</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-0">
+          {basketsLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" /> Loading report…
+            </div>
+          ) : baskets.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-3">
+                <ShoppingBag className="w-6 h-6 text-green-600" />
+              </div>
+              <p className="font-medium text-sm">No active baskets</p>
+              <p className="text-muted-foreground text-sm mt-1">No customers currently have items saved in their basket.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Portal user</TableHead>
+                    <TableHead className="text-center w-16">Items</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Est. value</TableHead>
+                    <TableHead>Last active</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {baskets.map(basket => (
+                    <BasketRow key={basket.id} basket={basket} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </Layout>
+  );
+}
+
+function BasketRow({ basket }: { basket: ActiveBasket }) {
+  const { toast } = useToast();
+  const copyEmail = () => {
+    if (!basket.userEmail) return;
+    navigator.clipboard.writeText(basket.userEmail);
+    toast({ title: "Email copied", description: basket.userEmail });
+  };
+
+  return (
+    <TableRow className="hover:bg-muted/40 transition-colors">
+      <TableCell className="py-3 font-medium">
+        <div className="flex items-center gap-1">
+          <Link
+            href={`/customers/${basket.customerId}`}
+            className="hover:underline text-primary flex items-center gap-1"
+          >
+            {basket.customerName}
+            <ExternalLink className="w-3 h-3 opacity-50" />
+          </Link>
+        </div>
+        {basket.customerPhone && (
+          <span className="text-[11px] text-muted-foreground">{basket.customerPhone}</span>
+        )}
+      </TableCell>
+      <TableCell className="py-3">
+        <span className="text-sm">{basket.userDisplayName}</span>
+        {basket.userEmail && basket.userEmail !== basket.userDisplayName && (
+          <div className="text-[11px] text-muted-foreground truncate max-w-[200px]">{basket.userEmail}</div>
+        )}
+      </TableCell>
+      <TableCell className="py-3 text-center tabular-nums font-semibold">
+        {basket.itemCount}
+      </TableCell>
+      <TableCell className="py-3">
+        {basket.mode ? (
+          <Badge variant="outline" className="text-[10px] capitalize px-1.5 py-0 h-5">
+            {basket.mode}
+          </Badge>
+        ) : "—"}
+      </TableCell>
+      <TableCell className="py-3 text-right tabular-nums text-sm font-medium">
+        {basket.estimatedTotal > 0 ? formatCurrency(basket.estimatedTotal) : "—"}
+      </TableCell>
+      <TableCell className="py-3">
+        <AgeBadge dateStr={basket.updatedAt} />
+      </TableCell>
+      <TableCell className="py-3">
+        <div className="flex items-center gap-1.5">
+          {basket.userEmail && (
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={copyEmail}>
+              <Mail className="w-3 h-3" /> Copy email
+            </Button>
+          )}
+          {basket.userEmail && (
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" asChild>
+              <a href={`mailto:${basket.userEmail}?subject=Your%20saved%20basket%20with%20Select%20Branding%20Solutions`}>
+                <Mail className="w-3 h-3" /> Send nudge
+              </a>
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

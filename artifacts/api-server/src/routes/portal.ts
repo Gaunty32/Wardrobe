@@ -373,6 +373,59 @@ router.patch("/portal/orders/:id/po", portalAuth, async (req: Request, res: Resp
   res.json(rows.rows[0]);
 });
 
+// ─── portal: basket (save / restore / clear) ─────────────────────────────────
+
+router.get("/portal/basket", portalAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).portalUserId;
+  if (!userId) { res.json({ items: [], mode: null, step: 0 }); return; }
+  const rows = await db.execute(sql`SELECT * FROM portal_baskets WHERE portal_user_id = ${userId}`);
+  const b = rows.rows[0] as any;
+  if (!b) { res.json({ items: [], mode: null, step: 0 }); return; }
+  res.json({ items: b.items ?? [], mode: b.mode ?? null, step: b.step ?? 1, updatedAt: b.updated_at, estimatedTotal: parseFloat(b.estimated_total ?? "0"), itemCount: b.item_count ?? 0 });
+});
+
+router.put("/portal/basket", portalAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).portalUserId;
+  const customerId = (req as any).portalCustomerId;
+  const isPreview = (req as any).portalIsPreview;
+  if (!userId || isPreview) { res.json({ ok: false }); return; }
+
+  const parsed = z.object({
+    items: z.array(z.any()).default([]),
+    mode: z.string().nullable().optional(),
+    step: z.number().int().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const { items, mode, step } = parsed.data;
+  const itemCount = items.length;
+  const estimatedTotal = items.reduce((s: number, i: any) => s + (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0), 0);
+
+  const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
+  const customerName = (custRows.rows[0] as any)?.name ?? null;
+  const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${userId}`);
+  const userEmail = (userRows.rows[0] as any)?.email ?? null;
+
+  await db.execute(sql`
+    INSERT INTO portal_baskets (portal_user_id, customer_id, customer_name, user_email, items, item_count, estimated_total, mode, step)
+    VALUES (${userId}, ${customerId}, ${customerName}, ${userEmail}, ${JSON.stringify(items)}::jsonb, ${itemCount}, ${estimatedTotal.toFixed(2)}, ${mode ?? null}, ${step ?? 1})
+    ON CONFLICT (portal_user_id) DO UPDATE
+      SET items = ${JSON.stringify(items)}::jsonb,
+          item_count = ${itemCount},
+          estimated_total = ${estimatedTotal.toFixed(2)},
+          mode = ${mode ?? null},
+          step = ${step ?? 1},
+          updated_at = now()
+  `);
+  res.json({ ok: true });
+});
+
+router.delete("/portal/basket", portalAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).portalUserId;
+  if (userId) await db.execute(sql`DELETE FROM portal_baskets WHERE portal_user_id = ${userId}`);
+  res.json({ ok: true });
+});
+
 // ─── portal: create order ────────────────────────────────────────────────────
 
 router.post("/portal/orders", portalAuth, async (req: Request, res: Response) => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -1218,7 +1218,7 @@ function clearSession() {
 export default function NewOrder() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { portalRole } = useAuth();
+  const { portalRole, isPreview } = useAuth();
 
   const saved = readSession();
   const [step, setStep] = useState<number>(saved?.step ?? 0);
@@ -1227,6 +1227,7 @@ export default function NewOrder() {
   const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
   const [confirmedOrder, setConfirmedOrder] = useState<{ id: number; orderNumber: string } | null>(null);
   const [confirmedEnquiry, setConfirmedEnquiry] = useState<{ enquiryRef: string } | null>(null);
+  const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Persist draft to sessionStorage whenever basket/step/mode change
   const persistedStep = step;
@@ -1235,6 +1236,39 @@ export default function NewOrder() {
   if (persistedStep > 0 && persistedMode && !confirmedOrder) {
     writeSession({ step: persistedStep, mode: persistedMode, basket: persistedBasket });
   }
+
+  // ── Server-side basket: restore on mount if session was empty ──────────────
+  const { data: serverBasket } = useQuery<{ items: OrderItem[]; mode: string | null; step: number }>({
+    queryKey: ["portal-basket"],
+    queryFn: () => apiFetch("/portal/basket"),
+    staleTime: Infinity,
+    enabled: !isPreview,
+  });
+
+  useEffect(() => {
+    if (!serverBasket || isPreview) return;
+    if (basket.length > 0 || step > 0) return; // local session takes priority
+    if (!serverBasket.items?.length) return;
+    setBasket(serverBasket.items);
+    if (serverBasket.mode === "wardrobe" || serverBasket.mode === "catalogue") setMode(serverBasket.mode);
+    if (serverBasket.step > 0) setStep(serverBasket.step);
+    toast({ title: "Previous basket restored", description: `${serverBasket.items.length} item${serverBasket.items.length !== 1 ? "s" : ""} loaded from your last visit.` });
+  }, [serverBasket]);
+
+  // ── Auto-save basket to server (debounced 2 s) ────────────────────────────
+  useEffect(() => {
+    if (isPreview || confirmedOrder || confirmedEnquiry) return;
+    if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
+    if (basket.length === 0 && step === 0) return;
+    serverSaveTimer.current = setTimeout(() => {
+      if (basket.length === 0) {
+        apiFetch("/portal/basket", { method: "DELETE" }).catch(() => {});
+      } else {
+        apiFetch("/portal/basket", { method: "PUT", body: JSON.stringify({ items: basket, mode, step }) }).catch(() => {});
+      }
+    }, 2000);
+    return () => { if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current); };
+  }, [basket, mode, step]);
 
   const { data: wardrobe } = useQuery<{
     items: any[];
@@ -1275,6 +1309,7 @@ export default function NewOrder() {
       }),
     onSuccess: (data) => {
       clearSession();
+      apiFetch("/portal/basket", { method: "DELETE" }).catch(() => {});
       setConfirmedOrder(data);
       setStep(3);
     },
@@ -1301,6 +1336,7 @@ export default function NewOrder() {
       }),
     onSuccess: (data) => {
       clearSession();
+      apiFetch("/portal/basket", { method: "DELETE" }).catch(() => {});
       setConfirmedEnquiry({ enquiryRef: data.enquiryRef });
       setStep(2);
     },

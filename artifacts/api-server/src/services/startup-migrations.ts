@@ -287,4 +287,22 @@ export async function runStartupMigrations(): Promise<void> {
   if (bespokeTieRows.rows.length > 0) {
     console.log(`[startup] Repaired ${bespokeTieRows.rows.length} Bespoke Ties product(s)`);
   }
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS portal_baskets (
+      id               serial PRIMARY KEY,
+      portal_user_id   integer NOT NULL REFERENCES customer_portal_users(id) ON DELETE CASCADE,
+      customer_id      integer NOT NULL,
+      customer_name    text,
+      user_email       text,
+      items            jsonb NOT NULL DEFAULT '[]',
+      item_count       integer NOT NULL DEFAULT 0,
+      estimated_total  numeric(10,2) NOT NULL DEFAULT 0,
+      mode             text,
+      step             integer NOT NULL DEFAULT 1,
+      updated_at       timestamptz NOT NULL DEFAULT now(),
+      created_at       timestamptz NOT NULL DEFAULT now(),
+      UNIQUE(portal_user_id)
+    )
+  `);
 }

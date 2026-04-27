@@ -88,4 +88,49 @@ router.get("/reports/portal-pending", async (req: Request, res: Response) => {
   res.json({ customers: result, totalOrders: rows.rows.length });
 });
 
+// ─── Active portal baskets ───────────────────────────────────────────────────
+// Returns customers who have items in their basket but haven't submitted yet.
+
+router.get("/reports/portal-baskets", async (req: Request, res: Response) => {
+  const rows = await db.execute(sql`
+    SELECT
+      pb.id,
+      pb.portal_user_id,
+      pb.customer_id,
+      pb.customer_name,
+      pb.user_email,
+      pb.item_count,
+      pb.estimated_total,
+      pb.mode,
+      pb.step,
+      pb.updated_at,
+      pb.created_at,
+      c.phone       AS customer_phone,
+      cpu.email     AS portal_email
+    FROM portal_baskets pb
+    LEFT JOIN customers c  ON c.id  = pb.customer_id
+    LEFT JOIN customer_portal_users cpu ON cpu.id = pb.portal_user_id
+    WHERE pb.item_count > 0
+    ORDER BY pb.updated_at DESC
+  `);
+
+  const baskets = (rows.rows as any[]).map(r => ({
+    id: r.id,
+    portalUserId: r.portal_user_id,
+    customerId: r.customer_id,
+    customerName: r.customer_name,
+    customerPhone: r.customer_phone ?? null,
+    userEmail: r.portal_email ?? r.user_email ?? null,
+    userDisplayName: r.portal_email ?? r.user_email ?? "Unknown",
+    itemCount: parseInt(r.item_count ?? "0"),
+    estimatedTotal: parseFloat(r.estimated_total ?? "0"),
+    mode: r.mode ?? null,
+    step: r.step ?? 1,
+    updatedAt: r.updated_at,
+    createdAt: r.created_at,
+  }));
+
+  res.json({ baskets, total: baskets.length });
+});
+
 export default router;
