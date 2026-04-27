@@ -26,6 +26,25 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
+function ProcessImage({ url, alt }: { url: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
+        <Shirt className="w-5 h-5 text-muted-foreground/40" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={alt}
+      className="h-10 w-10 rounded object-contain bg-white border shrink-0"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 type OrderItem = {
   productId: number | null;
   productName: string;
@@ -358,11 +377,7 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                     {procs.map((p: any) => (
                       <div key={p.process_id} className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 shadow-sm">
                         {p.process_image_url ? (
-                          <img
-                            src={p.process_image_url}
-                            alt={p.item_finish_name}
-                            className="h-10 w-10 rounded object-contain bg-white border shrink-0"
-                          />
+                          <ProcessImage url={p.process_image_url} alt={p.item_finish_name} />
                         ) : (
                           <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
                             <Shirt className="w-5 h-5 text-muted-foreground/40" />
@@ -416,12 +431,12 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                     <Card key={i} className="overflow-hidden">
                       <div className="flex gap-0">
                         {/* Product image — prefer variant colour image */}
-                        <div className="shrink-0 w-20 sm:w-24 aspect-square bg-muted/30 border-r flex items-center justify-center overflow-hidden">
+                        <div className="shrink-0 w-24 sm:w-28 bg-white border-r flex items-center justify-center overflow-hidden self-stretch">
                           {(wi.variant_image_url ?? wi.product_image_url) ? (
                             <img
                               src={wi.variant_image_url ?? wi.product_image_url}
                               alt={wi.product_name ?? wi.name}
-                              className="w-full h-full object-cover"
+                              className="w-full h-full object-contain p-1"
                             />
                           ) : (
                             <Shirt className="w-8 h-8 text-muted-foreground/30" />
