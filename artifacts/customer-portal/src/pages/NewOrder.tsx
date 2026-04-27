@@ -240,18 +240,33 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
     return sortSizes(all);
   };
 
-  // Returns the unit price after applying quantity-based price breaks.
+  // Returns the unit price after applying quantity-based price breaks and finish process costs.
+  // Formula: WooCommerce garment price + (sum of all process prices - cheapest process price)
+  // WooCommerce price already includes the cheapest/first logo; extra logos are additive.
   // If special_price is set for this customer, that takes precedence.
   const resolveUnitPrice = (wi: any, qty: number): number => {
     if (wi.special_price != null && wi.special_price !== "") {
       return parseFloat(wi.special_price);
     }
-    const base = parseFloat(wi.unit_price ?? "0");
+    // Use the WooCommerce base garment price (woo_price) for the calculation.
+    // Fall back to unit_price if woo_price is not available.
+    const wooBase = parseFloat(wi.woo_price ?? wi.unit_price ?? "0");
     const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
-    if (breaks.length === 0) return base;
     const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
-    const match = sorted.find(pb => qty >= pb.qty);
-    return match ? match.price : base;
+    const garmentPrice = breaks.length > 0
+      ? (sorted.find(pb => qty >= pb.qty)?.price ?? wooBase)
+      : wooBase;
+
+    // Add finish decoration costs (all processes in the finish minus the cheapest one,
+    // because the cheapest is already baked into the WooCommerce garment price).
+    const finishProcs = processes.filter((p: any) => p.finish_id === wi.finish_id);
+    if (finishProcs.length > 0) {
+      const prices = finishProcs.map((p: any) => parseFloat(p.price ?? "0")).filter(v => !isNaN(v));
+      const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+      const totalExtra = prices.reduce((s, p) => s + p, 0) - minPrice;
+      return garmentPrice + totalExtra;
+    }
+    return garmentPrice;
   };
 
   const makeItem = (wi: any, recipientType: "stock" | "person", size: string, qty: number, employee?: any): OrderItem => ({
@@ -401,12 +416,12 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                     <Card key={i} className="overflow-hidden">
                       <div className="flex gap-0">
                         {/* Product image — prefer variant colour image */}
-                        <div className="shrink-0 w-20 sm:w-24 bg-muted/30 border-r flex items-center justify-center">
+                        <div className="shrink-0 w-20 sm:w-24 aspect-square bg-muted/30 border-r flex items-center justify-center overflow-hidden">
                           {(wi.variant_image_url ?? wi.product_image_url) ? (
                             <img
                               src={wi.variant_image_url ?? wi.product_image_url}
                               alt={wi.product_name ?? wi.name}
-                              className="w-full h-full object-cover aspect-square"
+                              className="w-full h-full object-cover"
                             />
                           ) : (
                             <Shirt className="w-8 h-8 text-muted-foreground/30" />
@@ -958,12 +973,13 @@ const SHIPPING_OPTIONS = [
   },
 ] as const;
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string }) => void;
   submitting: boolean;
   portalRole: string;
+  onAddMore?: () => void;
 }) {
   const [requiredDate, setRequiredDate] = useState("");
   const [notes, setNotes] = useState("");
@@ -986,7 +1002,14 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole }: {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-2">Review your order</h2>
+      <div className="flex items-center justify-between mb-2 gap-4 flex-wrap">
+        <h2 className="text-xl font-semibold">Review your order</h2>
+        {onAddMore && (
+          <Button variant="outline" size="sm" onClick={onAddMore}>
+            <Plus className="w-3.5 h-3.5 mr-1.5" /> Add more items
+          </Button>
+        )}
+      </div>
       <p className="text-muted-foreground text-sm mb-6">Check everything looks right before submitting.</p>
 
       <Card className="mb-5">
@@ -1328,18 +1351,14 @@ export default function NewOrder() {
       )}
 
       {step === 2 && mode === "wardrobe" && (
-        <div>
-          <Button variant="ghost" size="sm" className="-ml-2 mb-4 text-muted-foreground" onClick={() => setStep(1)}>
-            <ArrowLeft className="w-4 h-4 mr-1" /> Back
-          </Button>
-          <ReviewStep
-            basket={basket}
-            setBasket={setBasket}
-            onSubmit={(d) => submitMutation.mutate(d)}
-            submitting={submitMutation.isPending}
-            portalRole={portalRole}
-          />
-        </div>
+        <ReviewStep
+          basket={basket}
+          setBasket={setBasket}
+          onSubmit={(d) => submitMutation.mutate(d)}
+          submitting={submitMutation.isPending}
+          portalRole={portalRole}
+          onAddMore={() => setStep(1)}
+        />
       )}
 
       {step === 2 && mode === "catalogue" && confirmedEnquiry && (

@@ -591,6 +591,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
       p.name        AS product_name,
       p.sku         AS product_sku,
       p.image_url   AS product_image_url,
+      p.unit_price  AS woo_price,
       p.price_breaks,
       cfi.colour,
       cfi.size,
