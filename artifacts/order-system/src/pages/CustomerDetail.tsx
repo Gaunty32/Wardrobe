@@ -1707,9 +1707,13 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     const prod = products?.find(p => p.id === productId);
     if (!prod) return;
     setProductSearchOpen(false);
-    // WooCommerce product prices include the first logo/finish, so use the product price as-is.
-    const newPrice = prod.unitPrice;
-    setForm(f => ({ ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "" }));
+    // WooCommerce product prices include the first logo/finish.
+    // If a finish with extra logos is already selected, keep those additions.
+    setForm(f => {
+      const newBase = prod.unitPrice;
+      const newPrice = calcPriceForFinish(newBase, f.finishId);
+      return { ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "" };
+    });
     setVariantColours([]);
     setVariantSizes([]);
     setSelectedColours([]);
@@ -1727,14 +1731,26 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     }).catch(() => {});
   };
 
+  const calcPriceForFinish = (basePrice: number, finishId: number | null): number => {
+    if (!finishId) return basePrice;
+    const finish = finishes?.find((f: any) => f.id === finishId);
+    if (!finish || !finish.processes?.length) return basePrice;
+    // WooCommerce price already includes the cheapest (first) logo.
+    // Add the cost of any additional logos on top.
+    const prices: number[] = finish.processes.map((p: any) => p.price ?? 0).sort((a: number, b: number) => a - b);
+    const included = prices[0]; // cheapest = already baked into WooCommerce price
+    const extra = finish.totalCost - included;
+    return basePrice + Math.max(0, extra);
+  };
+
   const handleFinishChange = (value: string) => {
-    // WooCommerce prices include the first logo/finish free of charge.
-    // Do not add the finish cost on top — the product base price already covers it.
     const base = selectedProduct?.unitPrice ?? parseFloat(form.unitPrice) ?? 0;
     if (value === "none") {
       setForm(f => ({ ...f, finishId: null, unitPrice: base.toFixed(2) }));
     } else {
-      setForm(f => ({ ...f, finishId: Number(value), unitPrice: base.toFixed(2) }));
+      const finishId = Number(value);
+      const newPrice = calcPriceForFinish(base, finishId);
+      setForm(f => ({ ...f, finishId, unitPrice: newPrice.toFixed(2) }));
     }
   };
 
@@ -2045,7 +2061,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   value={form.unitPrice}
                   onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
                 />
-                <p className="text-xs text-muted-foreground">WooCommerce price includes the first logo. Override manually if needed.</p>
+                <p className="text-xs text-muted-foreground">WooCommerce price includes the first logo. Extra logos in the finish are added on top. Override manually if needed.</p>
               </div>
               <div className="grid gap-2">
                 <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Special Price</Label>
