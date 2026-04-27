@@ -48,6 +48,7 @@ function ProcessImage({ url, alt }: { url: string; alt: string }) {
 type OrderItem = {
   productId: number | null;
   productName: string;
+  sku: string | null;
   colour: string;
   size: string;
   finishId: number | null;
@@ -62,6 +63,7 @@ type OrderItem = {
 const EMPTY_ITEM: OrderItem = {
   productId: null,
   productName: "",
+  sku: null,
   colour: "",
   size: "",
   finishId: null,
@@ -291,6 +293,7 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
   const makeItem = (wi: any, recipientType: "stock" | "person", size: string, qty: number, employee?: any): OrderItem => ({
     productId: wi.product_id ?? null,
     productName: wi.product_name ?? wi.name,
+    sku: wi.product_sku ?? null,
     colour: wi.colour ?? "",
     size,
     finishId: wi.finish_id ?? null,
@@ -1049,7 +1052,12 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
               <TableBody>
                 {basket.map((item, idx) => (
                   <TableRow key={idx}>
-                    <TableCell className="font-medium text-sm">{item.productName}</TableCell>
+                    <TableCell className="font-medium text-sm">
+                      <div>{item.productName}</div>
+                      {item.sku && (
+                        <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{item.sku}</div>
+                      )}
+                    </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
                     </TableCell>

@@ -114,6 +114,21 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_notes text;
   `);
 
+  // Add portal submission / approval columns and misc order columns
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS po_number                  text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS attention_of               text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_by_email  text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_by_name   text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_approved_by_email   text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_approved_by_name    text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatched_at              timestamptz;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number            text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_email_sent_at      timestamptz;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_email_sent_to      text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address_id        integer;
+  `);
+
   // Customer portal users (invite-based access, one user per customer)
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS customer_portal_users (
