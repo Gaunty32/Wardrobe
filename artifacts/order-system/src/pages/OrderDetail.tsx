@@ -29,7 +29,7 @@ import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizes } from "@/lib/sizeUtils";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -304,6 +304,7 @@ export default function OrderDetail() {
   const [item, setItem] = useState({ ...EMPTY_ITEM });
   const [sizeRows, setSizeRows] = useState<Array<{ size: string; qty: number }>>([{ size: "", qty: 1 }]);
   const [isAddingMulti, setIsAddingMulti] = useState(false);
+  const [priceOverrideEnabled, setPriceOverrideEnabled] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<CustomerEmployee | null>(null);
   const [isNewPerson, setIsNewPerson] = useState(false);
   const [lastOrderedSizes, setLastOrderedSizes] = useState<{
@@ -645,6 +646,7 @@ export default function OrderDetail() {
 
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
     const effectivePrice = fi.specialPrice ?? fi.unitPrice;
+    setPriceOverrideEnabled(false);
     setItem({
       ...EMPTY_ITEM,
       productId: fi.productId,
@@ -1676,20 +1678,27 @@ export default function OrderDetail() {
                       </div>
                     </div>
 
-                    {/* Size picker — only shows sizes from the product's own WooCommerce variations */}
+                    {/* Size picker — always shown for wardrobe items */}
                     {(() => {
                       const variantSizeSet = new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""));
-                      const sizeOptions = [...new Set([...sizes, ...variantSizeSet])];
-                      if (sizeOptions.length === 0) return null;
+                      const sizeOptions = sortSizes([...new Set([...sizes, ...variantSizeSet])]);
                       return (
                         <div className="grid gap-2">
                           <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                          <Select value={item.size || undefined} onValueChange={v => setItem(i => ({ ...i, size: v }))}>
-                            <SelectTrigger><SelectValue placeholder="Select a size" /></SelectTrigger>
-                            <SelectContent>
-                              {sizeOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                            </SelectContent>
-                          </Select>
+                          {sizeOptions.length > 0 ? (
+                            <Select value={item.size || undefined} onValueChange={v => setItem(i => ({ ...i, size: v }))}>
+                              <SelectTrigger><SelectValue placeholder="Select a size" /></SelectTrigger>
+                              <SelectContent>
+                                {sizeOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <Input
+                              placeholder="e.g. M, L, XL or One Size"
+                              value={item.size}
+                              onChange={e => setItem(i => ({ ...i, size: e.target.value }))}
+                            />
+                          )}
                         </div>
                       );
                     })()}
@@ -1763,8 +1772,25 @@ export default function OrderDetail() {
                         <Input id="w-qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
                       </div>
                       <div className="grid gap-2">
-                        <Label htmlFor="w-price">Customer Price (£)</Label>
-                        <Input id="w-price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
+                        <Label htmlFor="w-price" className="flex items-center justify-between">
+                          <span>Customer Price (£)</span>
+                          <button
+                            type="button"
+                            onClick={() => setPriceOverrideEnabled(v => !v)}
+                            className={`flex items-center gap-1 text-xs rounded px-1.5 py-0.5 transition-colors ${priceOverrideEnabled ? "text-amber-700 bg-amber-50 hover:bg-amber-100" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
+                            title={priceOverrideEnabled ? "Lock price" : "Override price"}
+                          >
+                            {priceOverrideEnabled ? <LockOpen className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                            {priceOverrideEnabled ? "Unlocked" : "Override"}
+                          </button>
+                        </Label>
+                        {priceOverrideEnabled ? (
+                          <Input id="w-price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} className="border-amber-300 focus-visible:ring-amber-400" />
+                        ) : (
+                          <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-medium tabular-nums text-muted-foreground select-none">
+                            {item.unitPrice ? `£${parseFloat(item.unitPrice).toFixed(2)}` : "—"}
+                          </div>
+                        )}
                       </div>
                     </div>
 
