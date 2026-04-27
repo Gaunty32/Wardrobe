@@ -21,6 +21,7 @@ import Dispatch from "@/pages/Dispatch";
 import Settings from "@/pages/Settings";
 import Tasks from "@/pages/Tasks";
 import Invoices from "@/pages/Invoices";
+import Reports from "@/pages/Reports";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -67,6 +68,7 @@ function Router() {
       <Route path="/tasks" component={Tasks} />
       <Route path="/invoices" component={Invoices} />
       <Route path="/settings" component={Settings} />
+      <Route path="/reports" component={Reports} />
       <Route component={NotFound} />
     </Switch>
   );
