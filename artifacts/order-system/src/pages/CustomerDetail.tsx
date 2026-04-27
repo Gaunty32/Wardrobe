@@ -472,7 +472,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                 <TableCell>
                   {p.imageUrl ? (
                     <a href={p.imageUrl} target="_blank" rel="noopener noreferrer" title="View process image">
-                      <img src={p.imageUrl} alt={p.name} className="w-8 h-8 object-cover rounded border border-border hover:opacity-80 transition-opacity" />
+                      <img src={p.imageUrl} alt={p.name} className="w-10 h-10 object-contain bg-white rounded border border-border hover:opacity-80 transition-opacity p-0.5" />
                     </a>
                   ) : (
                     <span className="text-muted-foreground/30"><ImageIcon className="w-4 h-4" /></span>
@@ -561,7 +561,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               <Label className="flex items-center gap-1"><ImageIcon className="w-3 h-3" /> Reference Image</Label>
               {form.imageUrl ? (
                 <div className="relative group w-full">
-                  <img src={form.imageUrl} alt="Process reference" className="w-full h-36 object-cover rounded-md border border-border" />
+                  <img src={form.imageUrl} alt="Process reference" className="w-full h-36 object-contain rounded-md border border-border bg-muted/30" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
                     <a href={form.imageUrl} target="_blank" rel="noopener noreferrer">
                       <Button type="button" size="sm" variant="secondary" className="h-7 gap-1 text-xs"><Eye className="w-3 h-3" /> View</Button>
