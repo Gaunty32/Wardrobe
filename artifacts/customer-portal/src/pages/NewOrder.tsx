@@ -996,7 +996,11 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   portalRole: string;
   onAddMore?: () => void;
 }) {
-  const [requiredDate, setRequiredDate] = useState("");
+  const [requiredDate, setRequiredDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().split("T")[0];
+  });
   const [notes, setNotes] = useState("");
   const [poNumber, setPoNumber] = useState("");
   const [shippingId, setShippingId] = useState<string>("");
@@ -1131,12 +1135,12 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="space-y-1.5">
-          <Label htmlFor="reqdate">Required by (optional)</Label>
+          <Label htmlFor="reqdate">Required by</Label>
           <Input
             id="reqdate"
             type="date"
             value={requiredDate}
-            min={(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })()}
+            min={new Date().toISOString().slice(0, 10)}
             onChange={e => setRequiredDate(e.target.value)}
           />
         </div>
@@ -1274,8 +1278,8 @@ export default function NewOrder() {
       setConfirmedOrder(data);
       setStep(3);
     },
-    onError: () => {
-      toast({ title: "Failed to submit order", description: "Please try again.", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "Failed to submit order", description: err?.message ?? "Please try again.", variant: "destructive" });
     },
   });
 

@@ -378,7 +378,7 @@ router.patch("/portal/orders/:id/po", portalAuth, async (req: Request, res: Resp
 router.post("/portal/orders", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
 
-  const body = z.object({
+  const parsed = z.object({
     notes: z.string().optional(),
     requiredDate: z.string().optional(),
     portalNotes: z.string().optional(),
@@ -398,12 +398,14 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       quantity: z.number().int().positive(),
       unitPrice: z.number().nonnegative(),
     })).min(1),
-  }).parse(req.body);
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.errors.map(e => `${e.path.join(".")}: ${e.message}`).join("; ") });
+    return;
+  }
+  const body = parsed.data;
 
-  // Generate order number
-  const countRow = await db.execute(sql`SELECT COUNT(*) as cnt FROM orders WHERE source = 'portal'`);
-  const num = parseInt((countRow.rows[0] as any).cnt, 10) + 1;
-  const orderNumber = `P${num}`;
+  try {
 
   const itemsTotal = body.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const totalAmount = itemsTotal + (body.shippingCost ?? 0);
@@ -442,10 +444,11 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const portalStatus = portalRole === "manager" ? "submitted" : "pending_review";
   const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
 
+  // Insert with a unique temp order number; update to P{id} after getting auto-generated id
   const orderResult = await db.execute(sql`
     INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name)
     VALUES (
-      ${orderNumber},
+      'P-' || gen_random_uuid()::text,
       ${customerId},
       ${customerName},
       ${orderStatus},
@@ -463,9 +466,12 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${submitterEmail},
       ${submitterName}
     )
-    RETURNING id, order_number
+    RETURNING id
   `);
-  const order = orderResult.rows[0] as any;
+  const orderId = (orderResult.rows[0] as any).id as number;
+  const orderNumber = `P${orderId}`;
+  await db.execute(sql`UPDATE orders SET order_number = ${orderNumber} WHERE id = ${orderId}`);
+  const order = { id: orderId, order_number: orderNumber };
 
   for (const item of body.items) {
     const lineTotal = item.quantity * item.unitPrice;
@@ -490,6 +496,10 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   }
 
   res.status(201).json({ id: order.id, orderNumber: order.order_number });
+  } catch (err: any) {
+    console.error("Order create error:", err);
+    res.status(500).json({ error: err?.message ?? "Failed to create order" });
+  }
 });
 
 // ─── portal: submit inspiration enquiry ──────────────────────────────────────
