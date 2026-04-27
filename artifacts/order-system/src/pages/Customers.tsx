@@ -128,7 +128,7 @@ export default function Customers() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "tile">(() => {
-    return (localStorage.getItem("customersViewMode") as "list" | "tile") ?? "list";
+    return (localStorage.getItem("customersViewMode") as "list" | "tile") ?? "tile";
   });
   
   const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "", logoUrl: "" };
