@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Layout from "@/components/Layout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useListSuppliers } from "@workspace/api-client-react";
+import { useUpload } from "@workspace/object-storage-web";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -14,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Loader2, Boxes, AlertTriangle, Check, ChevronsUpDown } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Loader2, Boxes, AlertTriangle, Check, ChevronsUpDown, Paperclip, Download, X, Upload } from "lucide-react";
 
 const API_BASE = "/api";
 
@@ -41,6 +42,7 @@ interface ProcessStockItem {
   customerId: number | null;
   customerName: string | null;
   notes: string | null;
+  fileUrl: string | null;
 }
 
 interface Customer { id: number; name: string; }
@@ -52,6 +54,7 @@ const BLANK_FORM = {
   stockQuantity: "0",
   customerId: "" as string,
   notes: "",
+  fileUrl: null as string | null,
 };
 
 export default function ProcessStock() {
@@ -60,6 +63,9 @@ export default function ProcessStock() {
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
   const [editing, setEditing] = useState<ProcessStockItem | null>(null);
   const [form, setForm] = useState({ ...BLANK_FORM });
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -74,6 +80,10 @@ export default function ProcessStock() {
     queryFn: () => apiFetch(`/process-stock${search ? `?search=${encodeURIComponent(search)}` : ""}`),
   });
 
+  const { uploadFile } = useUpload({
+    onError: (err) => toast({ title: "Upload failed", description: err.message, variant: "destructive" }),
+  });
+
   const inv = () => qc.invalidateQueries({ queryKey: ["process-stock"] });
 
   const saveMutation = useMutation({
@@ -86,6 +96,7 @@ export default function ProcessStock() {
       toast({ title: "Saved", description: editing ? "Stock item updated." : "Stock item created." });
       setOpen(false);
       setEditing(null);
+      setPendingFile(null);
     },
     onError: (e) => toast({ title: "Error", description: (e as Error).message, variant: "destructive" }),
   });
@@ -96,8 +107,19 @@ export default function ProcessStock() {
     onError: (e) => toast({ title: "Error", description: (e as Error).message, variant: "destructive" }),
   });
 
-  const openCreate = () => {
-    setForm({ ...BLANK_FORM });
+  const fetchSuggestedSku = async () => {
+    try {
+      const { sku } = await apiFetch<{ sku: string }>("/process-stock/suggest-sku");
+      return sku;
+    } catch {
+      return "";
+    }
+  };
+
+  const openCreate = async () => {
+    const suggested = await fetchSuggestedSku();
+    setForm({ ...BLANK_FORM, sku: suggested });
+    setPendingFile(null);
     setEditing(null);
     setOpen(true);
   };
@@ -110,16 +132,44 @@ export default function ProcessStock() {
       stockQuantity: item.stockQuantity.toString(),
       customerId: item.customerId?.toString() ?? "",
       notes: [item.description, item.notes].filter(Boolean).join("\n").trim(),
+      fileUrl: item.fileUrl ?? null,
     });
+    setPendingFile(null);
     setEditing(item);
     setOpen(true);
   };
 
-  const handleSave = () => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "eps" && ext !== "pdf") {
+      toast({ title: "Invalid file type", description: "Please upload an EPS or PDF file.", variant: "destructive" });
+      return;
+    }
+    setPendingFile(file);
+  };
+
+  const handleSave = async () => {
     if (!form.name.trim()) {
       toast({ title: "Validation Error", description: "Name is required", variant: "destructive" });
       return;
     }
+
+    let fileUrl = form.fileUrl ?? null;
+
+    if (pendingFile) {
+      setIsUploadingFile(true);
+      try {
+        const result = await uploadFile(pendingFile);
+        fileUrl = result.objectPath;
+      } catch {
+        setIsUploadingFile(false);
+        return;
+      }
+      setIsUploadingFile(false);
+    }
+
     const raptorId = suppliers?.find(s => s.name.toLowerCase().includes("raptor"))?.id ?? null;
     const sku = form.sku.trim() || null;
     saveMutation.mutate({
@@ -132,6 +182,7 @@ export default function ProcessStock() {
       supplierCode: sku,
       customerId: form.customerId ? parseInt(form.customerId, 10) : null,
       notes: form.notes.trim() || null,
+      fileUrl,
     });
   };
 
@@ -142,6 +193,12 @@ export default function ProcessStock() {
   };
 
   const lowStock = (qty: number) => qty <= 5;
+  const isBusy = saveMutation.isPending || isUploadingFile;
+
+  const fileDisplayName = (url: string) => {
+    const parts = url.split("/");
+    return parts[parts.length - 1] || "Attached file";
+  };
 
   return (
     <Layout>
@@ -182,7 +239,7 @@ export default function ProcessStock() {
                       <TableHead className="hidden lg:table-cell">Supplier</TableHead>
                       <TableHead className="text-right">Unit Cost</TableHead>
                       <TableHead className="text-right">In Stock</TableHead>
-                      <TableHead className="w-[100px] text-right">Actions</TableHead>
+                      <TableHead className="w-[120px] text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -219,7 +276,18 @@ export default function ProcessStock() {
                           )}
                         </TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {item.fileUrl && (
+                              <a
+                                href={`${API_BASE}/storage/objects/${item.fileUrl}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                title="Download file"
+                                className="inline-flex items-center justify-center h-8 w-8 rounded-md text-emerald-600 hover:bg-emerald-50 transition-colors"
+                              >
+                                <Download className="w-4 h-4" />
+                              </a>
+                            )}
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(item)}>
                               <Edit2 className="w-4 h-4" />
                             </Button>
@@ -244,8 +312,8 @@ export default function ProcessStock() {
           </CardContent>
         </Card>
 
-        <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
-          <DialogContent className="sm:max-w-[520px]">
+        <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); setPendingFile(null); } }}>
+          <DialogContent className="sm:max-w-[540px]">
             <DialogHeader>
               <DialogTitle className="font-display">{editing ? "Edit Stock Item" : "Add Process Stock Item"}</DialogTitle>
             </DialogHeader>
@@ -260,9 +328,12 @@ export default function ProcessStock() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>Product Code</Label>
+                  <Label>
+                    Product Code
+                    <span className="ml-1 text-xs text-muted-foreground font-normal">(FCC code or PS auto)</span>
+                  </Label>
                   <Input
-                    placeholder="e.g. FCC4998"
+                    placeholder="e.g. FCC4998 or PS0003"
                     value={form.sku}
                     onChange={(e) => setForm({ ...form, sku: e.target.value })}
                   />
@@ -325,6 +396,69 @@ export default function ProcessStock() {
                   />
                 </div>
               </div>
+
+              {/* File upload */}
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  Artwork File
+                  <span className="text-muted-foreground font-normal text-xs">(EPS or PDF)</span>
+                </Label>
+                {form.fileUrl && !pendingFile ? (
+                  <div className="flex items-center gap-2 p-2.5 rounded-md border bg-muted/30">
+                    <Paperclip className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm text-foreground truncate flex-1 font-mono">
+                      {fileDisplayName(form.fileUrl)}
+                    </span>
+                    <a
+                      href={`${API_BASE}/storage/objects/${form.fileUrl}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline text-xs shrink-0"
+                    >
+                      Download
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setForm({ ...form, fileUrl: null })}
+                      className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                      title="Remove file"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : pendingFile ? (
+                  <div className="flex items-center gap-2 p-2.5 rounded-md border border-primary/30 bg-primary/5">
+                    <Paperclip className="w-4 h-4 text-primary shrink-0" />
+                    <span className="text-sm text-foreground truncate flex-1">{pendingFile.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setPendingFile(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
+                      className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                      title="Remove"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-3 py-2.5 rounded-md border border-dashed border-border hover:border-primary/50 hover:bg-muted/30 transition-colors text-sm text-muted-foreground w-full"
+                  >
+                    <Upload className="w-4 h-4 shrink-0" />
+                    <span>Click to upload EPS or PDF</span>
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".eps,.pdf,application/postscript,application/pdf"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </div>
+
               <div className="grid gap-2">
                 <Label>Notes</Label>
                 <Textarea
@@ -336,9 +470,13 @@ export default function ProcessStock() {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-              <Button onClick={handleSave} disabled={saveMutation.isPending || !form.name.trim()}>
-                {saveMutation.isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving...</> : "Save"}
+              <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); setPendingFile(null); }}>Cancel</Button>
+              <Button onClick={handleSave} disabled={isBusy || !form.name.trim()}>
+                {isUploadingFile
+                  ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Uploading...</>
+                  : saveMutation.isPending
+                  ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving...</>
+                  : "Save"}
               </Button>
             </DialogFooter>
           </DialogContent>

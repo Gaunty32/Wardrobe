@@ -1,15 +1,21 @@
 import { Router, type IRouter } from "express";
-import { eq, ilike, or, and } from "drizzle-orm";
+import { eq, ilike, or, and, sql } from "drizzle-orm";
 import { db, processStockTable, suppliersTable, customersTable } from "@workspace/db";
 import { z } from "zod";
 
-async function generateUniqueSku(): Promise<string> {
-  for (let attempts = 0; attempts < 20; attempts++) {
-    const candidate = "SBS" + String(Math.floor(Math.random() * 90000) + 10000);
-    const [existing] = await db.select({ id: processStockTable.id }).from(processStockTable).where(eq(processStockTable.sku, candidate));
-    if (!existing) return candidate;
+async function generateNextPsSku(): Promise<string> {
+  const rows = await db
+    .select({ sku: processStockTable.sku })
+    .from(processStockTable)
+    .where(sql`${processStockTable.sku} ~* '^PS[0-9]+'`);
+
+  let max = 0;
+  for (const { sku } of rows) {
+    if (!sku) continue;
+    const num = parseInt(sku.replace(/^PS0*/i, ""), 10);
+    if (!isNaN(num) && num > max) max = num;
   }
-  throw new Error("Could not generate a unique product code — please try again.");
+  return "PS" + String(max + 1).padStart(4, "0");
 }
 
 const router: IRouter = Router();
@@ -24,6 +30,7 @@ const processStockBody = z.object({
   supplierCode: z.string().optional().nullable(),
   customerId: z.number().int().positive().optional().nullable(),
   notes: z.string().optional().nullable(),
+  fileUrl: z.string().url().optional().nullable(),
 });
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
@@ -32,6 +39,11 @@ function toFloat(val: string | null | undefined): number {
   if (val == null) return 0;
   return parseFloat(val);
 }
+
+router.get("/process-stock/suggest-sku", async (_req, res): Promise<void> => {
+  const suggested = await generateNextPsSku();
+  res.json({ sku: suggested });
+});
 
 router.get("/process-stock", async (req, res): Promise<void> => {
   const search = typeof req.query.search === "string" ? req.query.search : null;
@@ -69,15 +81,24 @@ router.post("/process-stock", async (req, res): Promise<void> => {
     return;
   }
 
+  const supplierCode = parsed.data.supplierCode?.trim() || null;
   let sku = parsed.data.sku?.trim() || null;
+
   if (!sku) {
-    sku = await generateUniqueSku();
-  } else {
-    const [existing] = await db.select({ id: processStockTable.id }).from(processStockTable).where(eq(processStockTable.sku, sku));
-    if (existing) {
-      res.status(409).json({ error: `Product code "${sku}" is already in use. Please choose a different code.` });
-      return;
+    if (supplierCode && /^FCC/i.test(supplierCode)) {
+      sku = supplierCode.toUpperCase();
+    } else {
+      sku = await generateNextPsSku();
     }
+  }
+
+  const [existing] = await db
+    .select({ id: processStockTable.id })
+    .from(processStockTable)
+    .where(eq(processStockTable.sku, sku));
+  if (existing) {
+    res.status(409).json({ error: `Product code "${sku}" is already in use. Please choose a different code.` });
+    return;
   }
 
   const [row] = await db

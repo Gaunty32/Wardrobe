@@ -13,6 +13,7 @@ export const processStockTable = pgTable("process_stock", {
   supplierCode: text("supplier_code"),
   customerId: integer("customer_id").references(() => customersTable.id, { onDelete: "set null" }),
   notes: text("notes"),
+  fileUrl: text("file_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
