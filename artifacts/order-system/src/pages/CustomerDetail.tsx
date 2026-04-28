@@ -1093,6 +1093,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [sizes, setSizes] = useState<{ label: string; size: string }[]>([]);
   const [nameSearch, setNameSearch] = useState("");
   const [empRoleFilter, setEmpRoleFilter] = useState<number | null | "all">("all");
+  const [dupWarning, setDupWarning] = useState<string | null>(null);
 
   const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, email: "", phone: "", department: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
@@ -1160,6 +1161,23 @@ function EmployeesTab({ customerId }: { customerId: number }) {
 
   const activeCount = employees?.filter(e => e.isActive).length ?? 0;
   const inactiveCount = employees?.filter(e => !e.isActive).length ?? 0;
+
+  const handleSave = () => {
+    if (!dupWarning) {
+      const nameToCheck = [form.firstName.trim(), form.lastName.trim()].filter(Boolean).join(' ').toLowerCase();
+      const dup = (employees ?? []).find((e: any) => {
+        if (editing && e.id === editing.id) return false;
+        const existing = [e.firstName, e.lastName].filter(Boolean).join(' ').toLowerCase();
+        return existing === nameToCheck;
+      });
+      if (dup) {
+        setDupWarning([dup.firstName, dup.lastName].filter(Boolean).join(' '));
+        return;
+      }
+    }
+    setDupWarning(null);
+    save.mutate(form);
+  };
 
   const filteredEmployees = (employees ?? []).filter((e: any) => {
     const fullName = [e.firstName, e.lastName].filter(Boolean).join(' ').toLowerCase();
@@ -1262,13 +1280,13 @@ function EmployeesTab({ customerId }: { customerId: number }) {
           </TableBody>
         </SubTable>}
 
-      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); setDupWarning(null); } }}>
         <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editing ? "Edit Employee" : "Add Employee"}</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2"><Label>First Name *</Label><Input value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} /></div>
-              <div className="grid gap-2"><Label>Last Name</Label><Input value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>First Name *</Label><Input value={form.firstName} onChange={e => { setDupWarning(null); setForm({ ...form, firstName: e.target.value }); }} /></div>
+              <div className="grid gap-2"><Label>Last Name</Label><Input value={form.lastName} onChange={e => { setDupWarning(null); setForm({ ...form, lastName: e.target.value }); }} /></div>
             </div>
             <div className="grid gap-2"><Label>Employee Number</Label><Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => setForm({ ...form, employeeNumber: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
@@ -1309,9 +1327,17 @@ function EmployeesTab({ customerId }: { customerId: number }) {
 
             <div className="grid gap-2"><Label>Notes</Label><Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>
+          {dupWarning && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <svg className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+              <span>An employee named <strong>{dupWarning}</strong> already exists. This may be intentional — click <strong>Save anyway</strong> to proceed, or edit the name above.</span>
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.firstName}>{save.isPending ? "Saving..." : "Save"}</Button>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); setDupWarning(null); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={save.isPending || !form.firstName}>
+              {save.isPending ? "Saving..." : dupWarning ? "Save anyway" : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
