@@ -132,8 +132,21 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
   const [showVariantSecondary, setShowVariantSecondary] = useState(false);
   const [editImageUrl, setEditImageUrl] = useState(variant.imageUrl || "");
   const variantImageRef = useRef<HTMLInputElement>(null);
+  const quickImageRef = useRef<HTMLInputElement>(null);
+
+  // Upload used inside the edit dialog (updates local state only)
   const { uploadFile: uploadVariantImage, isUploading: isVariantImageUploading } = useUpload({
     onSuccess: (res) => setEditImageUrl(`/api/storage${res.objectPath}`),
+    onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
+  });
+
+  // Quick-upload: clicks directly on the row image cell → auto-saves immediately
+  const { uploadFile: quickUploadImage, isUploading: isQuickUploading } = useUpload({
+    onSuccess: (res) => {
+      const url = `/api/storage${res.objectPath}`;
+      setEditImageUrl(url);
+      updateMut.mutate({ imageUrl: url });
+    },
     onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
   });
 
@@ -190,13 +203,38 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
   return (
     <>
       <TableRow className="group hover:bg-muted/20">
+        {/* Hidden file input for quick image upload */}
+        <input ref={quickImageRef} type="file" accept="image/*" className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) quickUploadImage(f); e.target.value = ""; }}
+        />
         <TableCell>
           <div className="flex items-center gap-2">
-            {variant.imageUrl ? (
-              <img src={variant.imageUrl} alt={variant.colour ?? ""} className="w-8 h-8 rounded object-cover border border-border/50 flex-shrink-0" />
-            ) : (
-              <div className="w-8 h-8 rounded bg-pink-100 border border-pink-200 flex-shrink-0" />
-            )}
+            {/* Image cell — click to upload */}
+            <button
+              type="button"
+              title={variant.imageUrl ? "Click to replace image" : "Click to upload image"}
+              onClick={() => quickImageRef.current?.click()}
+              className="relative w-8 h-8 rounded overflow-hidden flex-shrink-0 group/img border border-border/50 focus:outline-none focus:ring-2 focus:ring-primary/40"
+            >
+              {isQuickUploading ? (
+                <div className="w-full h-full bg-muted flex items-center justify-center">
+                  <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                </div>
+              ) : (variant.imageUrl || editImageUrl) ? (
+                <>
+                  <img src={variant.imageUrl || editImageUrl} alt={variant.colour ?? ""} className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                    <Camera className="w-3 h-3 text-white" />
+                  </div>
+                </>
+              ) : (
+                <div className="w-full h-full bg-pink-100 border-pink-200 flex items-center justify-center">
+                  <div className="absolute inset-0 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center bg-pink-200/60">
+                    <Camera className="w-3 h-3 text-pink-700" />
+                  </div>
+                </div>
+              )}
+            </button>
             {variant.colour
               ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200">{variant.colour}</span>
               : <span className="text-muted-foreground text-sm italic">Any</span>}
