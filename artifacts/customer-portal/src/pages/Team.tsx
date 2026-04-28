@@ -407,26 +407,60 @@ function UsersTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteSelection, setInviteSelection] = useState<string>("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
 
   const { data: users = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-team-users"],
     queryFn: () => apiFetch("/portal/team/users"),
   });
 
+  const { data: employees = [] } = useQuery<any[]>({
+    queryKey: ["portal-team-employees"],
+    queryFn: () => apiFetch("/portal/team/employees"),
+  });
+
+  const existingEmails = new Set((users as any[]).map((u: any) => u.email?.toLowerCase()));
+  const suggestedEmployees = (employees as any[]).filter(
+    (e: any) => e.email && !existingEmails.has(e.email.toLowerCase())
+  );
+
+  const resetInviteDialog = () => {
+    setInviteSelection("");
+    setInviteEmail("");
+    setInviteRole("member");
+    setInviteLink(null);
+  };
+
+  const sendInvite = (email: string, role: string) =>
+    apiFetch("/portal/team/users/invite", { method: "POST", body: JSON.stringify({ email, portalRole: role }) });
+
   const inviteMutation = useMutation({
-    mutationFn: (data: any) =>
-      apiFetch("/portal/team/users/invite", { method: "POST", body: JSON.stringify(data) }),
+    mutationFn: (data: any) => sendInvite(data.email, data.portalRole),
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ["portal-team-users"] });
       const base = window.location.origin;
       setInviteLink(`${base}${import.meta.env.BASE_URL.replace(/\/$/, "")}${res.inviteUrl}`);
-      setInviteEmail("");
       toast({ title: "Invite created" });
     },
     onError: () => toast({ title: "Failed to send invite", variant: "destructive" }),
+  });
+
+  const resendMutation = useMutation({
+    mutationFn: (u: any) => sendInvite(u.email, u.portal_role),
+    onSuccess: (res: any, u: any) => {
+      qc.invalidateQueries({ queryKey: ["portal-team-users"] });
+      const base = window.location.origin;
+      const link = `${base}${import.meta.env.BASE_URL.replace(/\/$/, "")}${res.inviteUrl}`;
+      navigator.clipboard.writeText(link).catch(() => {});
+      setCopiedLink(u.email);
+      setTimeout(() => setCopiedLink(null), 3000);
+      toast({ title: "Invite link copied to clipboard" });
+    },
+    onError: () => toast({ title: "Failed to regenerate invite", variant: "destructive" }),
   });
 
   const roleMutation = useMutation({
@@ -450,14 +484,18 @@ function UsersTab() {
   });
 
   const formatLastLogin = (ts: string | null) => {
-    if (!ts) return "Never logged in";
-    return `Last login ${new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+    if (!ts) return "Never signed in";
+    return `Last sign-in ${new Date(ts).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
   };
+
+  const finalEmail = inviteSelection === "other" || suggestedEmployees.length === 0
+    ? inviteEmail.trim()
+    : (employees as any[]).find((e: any) => String(e.id) === inviteSelection)?.email ?? "";
 
   return (
     <div>
       <div className="flex justify-end mb-4">
-        <Button size="sm" className="gap-1.5" onClick={() => { setInviteLink(null); setInviteOpen(true); }}>
+        <Button size="sm" className="gap-1.5" onClick={() => { resetInviteDialog(); setInviteOpen(true); }}>
           <Mail className="w-4 h-4" /> Invite user
         </Button>
       </div>
@@ -468,12 +506,12 @@ function UsersTab() {
         <Card>
           <CardContent className="py-12 text-center">
             <UserCheck className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No portal users yet</p>
+            <p className="text-sm text-muted-foreground">No portal users yet — invite someone to get started.</p>
           </CardContent>
         </Card>
       ) : (
         <div className="flex flex-col gap-2">
-          {users.map((u: any) => (
+          {(users as any[]).map((u: any) => (
             <div
               key={u.id}
               className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${u.status === "inactive" ? "opacity-60" : ""}`}
@@ -483,8 +521,27 @@ function UsersTab() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm truncate">{u.email}</p>
-                <p className="text-xs text-muted-foreground">{formatLastLogin(u.last_login_at)}</p>
+                <p className="text-xs text-muted-foreground">
+                  {u.status === "invited" ? "Invite pending — not yet signed in" : formatLastLogin(u.last_login_at)}
+                </p>
               </div>
+
+              {u.status === "invited" && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 text-xs gap-1"
+                  disabled={resendMutation.isPending}
+                  onClick={() => resendMutation.mutate(u)}
+                  title="Regenerate and copy invite link"
+                >
+                  {copiedLink === u.email ? (
+                    <><Mail className="w-3 h-3" /> Copied!</>
+                  ) : (
+                    <><Mail className="w-3 h-3" /> Copy link</>
+                  )}
+                </Button>
+              )}
 
               <Select
                 value={u.portal_role}
@@ -521,7 +578,7 @@ function UsersTab() {
       )}
 
       {/* Invite dialog */}
-      <Dialog open={inviteOpen} onOpenChange={(o) => { if (!o) { setInviteOpen(false); setInviteLink(null); } }}>
+      <Dialog open={inviteOpen} onOpenChange={(o) => { if (!o) { setInviteOpen(false); resetInviteDialog(); } }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Invite a portal user</DialogTitle></DialogHeader>
           {inviteLink ? (
@@ -534,24 +591,70 @@ function UsersTab() {
               <DialogFooter>
                 <Button
                   variant="outline"
-                  onClick={() => { navigator.clipboard.writeText(inviteLink); toast({ title: "Copied to clipboard" }); }}
+                  onClick={() => { navigator.clipboard.writeText(inviteLink!); toast({ title: "Copied to clipboard" }); }}
                 >
                   Copy link
                 </Button>
-                <Button onClick={() => { setInviteOpen(false); setInviteLink(null); }}>Done</Button>
+                <Button onClick={() => { setInviteOpen(false); resetInviteDialog(); }}>Done</Button>
               </DialogFooter>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="space-y-1">
-                <Label>Email address *</Label>
-                <Input
-                  type="email"
-                  value={inviteEmail}
-                  onChange={e => setInviteEmail(e.target.value)}
-                  placeholder="colleague@company.com"
-                />
+                <Label>Recipient *</Label>
+                {suggestedEmployees.length > 0 ? (
+                  <Select
+                    value={inviteSelection}
+                    onValueChange={val => {
+                      setInviteSelection(val);
+                      if (val !== "other") setInviteEmail("");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a team member…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suggestedEmployees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">
+                              {[emp.first_name, emp.last_name].filter(Boolean).join(" ")}
+                            </span>
+                            {emp.email && (
+                              <span className="text-muted-foreground text-xs">{emp.email.toLowerCase()}</span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="other">
+                        <span className="text-muted-foreground">Other (enter email manually)…</span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    placeholder="colleague@company.com"
+                    autoFocus
+                  />
+                )}
               </div>
+
+              {suggestedEmployees.length > 0 && inviteSelection === "other" && (
+                <div className="space-y-1">
+                  <Label>Email address *</Label>
+                  <Input
+                    type="email"
+                    value={inviteEmail}
+                    onChange={e => setInviteEmail(e.target.value)}
+                    placeholder="colleague@company.com"
+                    autoFocus
+                  />
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label>Portal role</Label>
                 {(["manager", "dept_manager", "member"] as const).map((r) => (
@@ -573,10 +676,10 @@ function UsersTab() {
                 ))}
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
+                <Button variant="outline" onClick={() => { setInviteOpen(false); resetInviteDialog(); }}>Cancel</Button>
                 <Button
-                  disabled={inviteMutation.isPending || !inviteEmail.trim()}
-                  onClick={() => inviteMutation.mutate({ email: inviteEmail.trim(), portalRole: inviteRole })}
+                  disabled={inviteMutation.isPending || !finalEmail}
+                  onClick={() => inviteMutation.mutate({ email: finalEmail, portalRole: inviteRole })}
                 >
                   {inviteMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
                   Create invite
