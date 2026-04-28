@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
+import { sortBySize } from "@/lib/sizeUtils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -332,7 +333,7 @@ function EmployeesTab() {
                 )}
                 {emp.sizes && emp.sizes.length > 0 && (
                   <div className="flex gap-1 flex-wrap mt-1">
-                    {emp.sizes.map((s: any, i: number) => (
+                    {sortBySize(emp.sizes as any[], (s: any) => s.size).map((s: any, i: number) => (
                       <span key={i} className="inline-flex items-center gap-0.5 rounded border bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         <Ruler className="w-2.5 h-2.5 shrink-0" />{s.label}: <strong>{s.size}</strong>
                       </span>

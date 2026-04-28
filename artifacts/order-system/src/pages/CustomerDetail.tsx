@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { cn, toTitleCase } from "@/lib/utils";
+import { sortSizes, sortBySize } from "@/lib/sizeUtils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight } from "lucide-react";
@@ -1848,7 +1849,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
       const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
       const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
-      const sizes = [...new Set([...attrSizes, ...variantSizes])];
+      const sizes = sortSizes([...new Set([...attrSizes, ...variantSizes])]);
       setVariantColours(colours);
       setVariantSizes(sizes);
     }).catch(() => {});
@@ -1879,7 +1880,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
       const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
       const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
-      const sizes = [...new Set([...attrSizes, ...variantSizes])];
+      const sizes = sortSizes([...new Set([...attrSizes, ...variantSizes])]);
       setVariantColours(colours);
       setVariantSizes(sizes);
     }).catch(() => {});
@@ -2097,7 +2098,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               <div className="space-y-0.5">
                 {group.colour && <span className="text-foreground/70">{group.colour}</span>}
                 <div className="flex flex-wrap gap-0.5">
-                  {group.sizes.filter(Boolean).map((sz, i) => (
+                  {sortSizes(group.sizes.filter(Boolean)).map((sz, i) => (
                     <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-muted border border-border font-medium text-foreground/60">{sz}</span>
                   ))}
                   {group.sizes.some(s => !s) && <span className="px-1.5 py-0.5 rounded text-[10px] bg-muted border border-border font-medium text-foreground/60">—</span>}
@@ -2128,7 +2129,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             </div>
           </TableCell>
         </TableRow>
-        {isExpanded && group.items.map(item => (
+        {isExpanded && sortBySize(group.items, (i: any) => i.size).map(item => (
           <TableRow key={item.id} className="bg-muted/20 hover:bg-muted/30 group">
             <TableCell colSpan={3} className="pl-8 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
