@@ -793,11 +793,27 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     if (row.product_name) lastSizes[eid][row.product_name] = { size: row.size, colour: row.colour ?? null };
   }
 
+  // Get manually saved sizes per employee (profile sizes set by manager)
+  const savedSizesRows = await db.execute(sql`
+    SELECT s.employee_id, s.label, s.size
+    FROM customer_employee_sizes s
+    JOIN customer_employees e ON e.id = s.employee_id
+    WHERE e.customer_id = ${customerId}
+    ORDER BY s.employee_id, s.id
+  `);
+  const savedSizes: Record<string, Array<{ label: string; size: string }>> = {};
+  for (const row of savedSizesRows.rows as any[]) {
+    const eid = String(row.employee_id);
+    if (!savedSizes[eid]) savedSizes[eid] = [];
+    savedSizes[eid].push({ label: row.label, size: row.size });
+  }
+
   res.json({
     items: finishes.rows,
     processes: processes.rows,
     employees: employees.rows,
     lastSizes,
+    savedSizes,
     sizesMap,
   });
 });
@@ -1148,7 +1164,12 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
            da.label as delivery_address_label,
            da.line1 as delivery_address_line1,
            da.city  as delivery_address_city,
-           da.postcode as delivery_address_postcode
+           da.postcode as delivery_address_postcode,
+           COALESCE(
+             (SELECT json_agg(json_build_object('label', s.label, 'size', s.size) ORDER BY s.id)
+              FROM customer_employee_sizes s WHERE s.employee_id = e.id),
+             '[]'::json
+           ) as sizes
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
     LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
@@ -1232,6 +1253,49 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   `);
   if (rows.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
   res.json(rows.rows[0]);
+});
+
+// ─── portal: team — employee sizes (manager only) ────────────────────────────
+
+router.get("/portal/team/employees/:id/sizes", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const empId = parseInt(req.params.id, 10);
+  if (isNaN(empId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const rows = await db.execute(sql`
+    SELECT s.id, s.label, s.size
+    FROM customer_employee_sizes s
+    JOIN customer_employees e ON e.id = s.employee_id
+    WHERE s.employee_id = ${empId} AND e.customer_id = ${customerId}
+    ORDER BY s.id
+  `);
+  res.json(rows.rows);
+});
+
+router.put("/portal/team/employees/:id/sizes", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const empId = parseInt(req.params.id, 10);
+  if (isNaN(empId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  // Validate employee belongs to this customer
+  const empCheck = await db.execute(sql`SELECT id FROM customer_employees WHERE id = ${empId} AND customer_id = ${customerId}`);
+  if (empCheck.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
+
+  const parsed = z.array(z.object({ label: z.string().min(1), size: z.string().min(1) })).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Expected array of {label, size}" }); return; }
+
+  // Replace all sizes for this employee
+  await db.execute(sql`DELETE FROM customer_employee_sizes WHERE employee_id = ${empId}`);
+  for (const s of parsed.data) {
+    await db.execute(sql`INSERT INTO customer_employee_sizes (employee_id, label, size) VALUES (${empId}, ${s.label}, ${s.size})`);
+  }
+
+  const rows = await db.execute(sql`SELECT id, label, size FROM customer_employee_sizes WHERE employee_id = ${empId} ORDER BY id`);
+  res.json(rows.rows);
 });
 
 // ─── portal: team — portal users (manager only) ──────────────────────────────

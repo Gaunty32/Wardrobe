@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin,
+  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -52,10 +52,11 @@ function RoleBadge({ role }: { role: string }) {
 
 // ─── Employee section ─────────────────────────────────────────────────────────
 
-function EmployeeForm({ initial, addresses, onSave, onCancel, saving }: {
+function EmployeeForm({ initial, initialSizes, addresses, onSave, onCancel, saving }: {
   initial?: any;
+  initialSizes?: Array<{ label: string; size: string }>;
   addresses: any[];
-  onSave: (data: any) => void;
+  onSave: (data: any, sizes: Array<{ label: string; size: string }>) => void;
   onCancel: () => void;
   saving: boolean;
 }) {
@@ -70,8 +71,16 @@ function EmployeeForm({ initial, addresses, onSave, onCancel, saving }: {
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
+  const [sizes, setSizes] = useState<Array<{ label: string; size: string }>>(initialSizes ?? []);
+  const addSize = () => setSizes(s => [...s, { label: "", size: "" }]);
+  const removeSize = (i: number) => setSizes(s => s.filter((_, idx) => idx !== i));
+  const updateSize = (i: number, field: "label" | "size", val: string) =>
+    setSizes(s => s.map((row, idx) => idx === i ? { ...row, [field]: val } : row));
+
+  const validSizes = sizes.filter(s => s.label.trim() && s.size.trim());
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>First name *</Label>
@@ -124,14 +133,63 @@ function EmployeeForm({ initial, addresses, onSave, onCancel, saving }: {
           </p>
         </div>
       )}
+
+      {/* Clothing sizes section */}
+      <div className="space-y-2 pt-1">
+        <div className="flex items-center justify-between">
+          <Label className="flex items-center gap-1.5">
+            <Ruler className="w-3.5 h-3.5 text-muted-foreground" />
+            Clothing sizes
+            <span className="font-normal text-muted-foreground ml-1">(used as suggestions when ordering)</span>
+          </Label>
+          <Button type="button" variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={addSize}>
+            <Plus className="w-3 h-3" /> Add size
+          </Button>
+        </div>
+        {sizes.length === 0 ? (
+          <p className="text-xs text-muted-foreground italic">
+            No sizes saved — add entries like "Polo Shirt: L" or "Jacket: XL".
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {sizes.map((row, i) => (
+              <div key={i} className="flex gap-2 items-center">
+                <Input
+                  className="h-8 text-sm"
+                  placeholder="Item (e.g. Polo Shirt)"
+                  value={row.label}
+                  onChange={e => updateSize(i, "label", e.target.value)}
+                />
+                <Input
+                  className="h-8 text-sm w-24 shrink-0"
+                  placeholder="Size"
+                  value={row.size}
+                  onChange={e => updateSize(i, "size", e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={() => removeSize(i)}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <DialogFooter className="pt-2">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
         <Button
           disabled={saving || !form.firstName.trim() || !form.lastName.trim()}
-          onClick={() => onSave({
-            ...form,
-            deliveryAddressId: form.deliveryAddressId === "none" ? null : parseInt(form.deliveryAddressId, 10),
-          })}
+          onClick={() => onSave(
+            {
+              ...form,
+              deliveryAddressId: form.deliveryAddressId === "none" ? null : parseInt(form.deliveryAddressId, 10),
+            },
+            validSizes
+          )}
         >
           {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
           {initial ? "Save changes" : "Add employee"}
@@ -158,8 +216,28 @@ function EmployeesTab() {
     queryFn: () => apiFetch("/portal/addresses"),
   });
 
+  // Load existing sizes when editing an employee
+  const { data: editSizes = [] } = useQuery<Array<{ id: number; label: string; size: string }>>({
+    queryKey: ["portal-employee-sizes", editTarget?.id],
+    queryFn: () => apiFetch(`/portal/team/employees/${editTarget!.id}/sizes`),
+    enabled: !!editTarget?.id,
+  });
+
+  const saveSizes = async (empId: number, sizes: Array<{ label: string; size: string }>) => {
+    if (sizes.length > 0) {
+      await apiFetch(`/portal/team/employees/${empId}/sizes`, {
+        method: "PUT",
+        body: JSON.stringify(sizes),
+      });
+    }
+  };
+
   const addMutation = useMutation({
-    mutationFn: (data: any) => apiFetch("/portal/team/employees", { method: "POST", body: JSON.stringify(data) }),
+    mutationFn: async ({ data, sizes }: { data: any; sizes: Array<{ label: string; size: string }> }) => {
+      const emp = await apiFetch("/portal/team/employees", { method: "POST", body: JSON.stringify(data) });
+      if (sizes.length > 0) await saveSizes(emp.id, sizes);
+      return emp;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
       setAddOpen(false);
@@ -169,10 +247,13 @@ function EmployeesTab() {
   });
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) =>
-      apiFetch(`/portal/team/employees/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    mutationFn: async ({ id, data, sizes }: { id: number; data: any; sizes: Array<{ label: string; size: string }> }) => {
+      await apiFetch(`/portal/team/employees/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+      await saveSizes(id, sizes);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
+      qc.invalidateQueries({ queryKey: ["portal-employee-sizes"] });
       setEditTarget(null);
       toast({ title: "Employee updated" });
     },
@@ -244,6 +325,15 @@ function EmployeesTab() {
                     {emp.delivery_address_city && `, ${emp.delivery_address_city}`}
                   </p>
                 )}
+                {emp.sizes && emp.sizes.length > 0 && (
+                  <div className="flex gap-1 flex-wrap mt-1">
+                    {emp.sizes.map((s: any, i: number) => (
+                      <span key={i} className="inline-flex items-center gap-0.5 rounded border bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        <Ruler className="w-2.5 h-2.5 shrink-0" />{s.label}: <strong>{s.size}</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               {emp.role_name && (
                 <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>
@@ -279,7 +369,7 @@ function EmployeesTab() {
           <DialogHeader><DialogTitle>Add employee</DialogTitle></DialogHeader>
           <EmployeeForm
             addresses={addresses}
-            onSave={(data) => addMutation.mutate(data)}
+            onSave={(data, sizes) => addMutation.mutate({ data, sizes })}
             onCancel={() => setAddOpen(false)}
             saving={addMutation.isPending}
           />
@@ -293,8 +383,9 @@ function EmployeesTab() {
           {editTarget && (
             <EmployeeForm
               initial={editTarget}
+              initialSizes={editSizes}
               addresses={addresses}
-              onSave={(data) => editMutation.mutate({ id: editTarget.id, data })}
+              onSave={(data, sizes) => editMutation.mutate({ id: editTarget.id, data, sizes })}
               onCancel={() => setEditTarget(null)}
               saving={editMutation.isPending}
             />

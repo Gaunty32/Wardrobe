@@ -198,10 +198,11 @@ function ProcessBadgeInline({ type }: { type: string }) {
 
 type ItemState = { sel: string | null; size: string; qty: number };
 
-function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket, onNext, processes }: {
+function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes }: {
   items: any[];
   employees: any[];
   lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
+  savedSizes: Record<string, Array<{ label: string; size: string }>>;
   sizesMap: Record<string, Record<string, string[]>>;
   processes: any[];
   basket: OrderItem[];
@@ -241,6 +242,30 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
     if (wi.product_id && empSizes[String(wi.product_id)]) return empSizes[String(wi.product_id)].size;
     const name = wi.product_name ?? wi.name;
     if (name && empSizes[name]) return empSizes[name].size;
+    return null;
+  };
+
+  // Fallback: find a saved (profile) size for this item by matching label against the item name
+  const getSavedSize = (wi: any, employeeId: number): string | null => {
+    const empSaved = savedSizes[String(employeeId)];
+    if (!empSaved || empSaved.length === 0) return null;
+    const name = (wi.product_name ?? wi.name ?? "").toLowerCase();
+    if (!name) return null;
+    // Exact match first, then partial
+    const exact = empSaved.find(s => s.label.toLowerCase() === name);
+    if (exact) return exact.size;
+    const partial = empSaved.find(s =>
+      name.includes(s.label.toLowerCase()) || s.label.toLowerCase().includes(name)
+    );
+    return partial?.size ?? null;
+  };
+
+  // Returns { size, source } — source is 'history' | 'saved' | null
+  const getSuggestedSize = (wi: any, employeeId: number): { size: string; source: "history" | "saved" } | null => {
+    const hist = getLastSize(wi, employeeId);
+    if (hist) return { size: hist, source: "history" };
+    const saved = getSavedSize(wi, employeeId);
+    if (saved) return { size: saved, source: "saved" };
     return null;
   };
 
@@ -411,13 +436,15 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                   const selectedEmployee = state.sel && state.sel !== "stock"
                     ? employees.find((e: any) => String(e.id) === state.sel)
                     : null;
-                  const lastSize = selectedEmployee ? getLastSize(wi, selectedEmployee.id) : null;
+                  const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
+                  const lastSize = suggestion?.size ?? null;
+                  const sizeSource = suggestion?.source ?? null;
 
-                  // Auto-fill size from last order when employee is chosen
+                  // Auto-fill size from order history or saved profile when employee is chosen
                   const handleSelChange = (val: string) => {
                     const emp = employees.find((e: any) => String(e.id) === val);
-                    const suggestedSize = emp ? (getLastSize(wi, emp.id) ?? "") : "";
-                    setItemState(key, { sel: val, size: suggestedSize, qty: 1 });
+                    const sugg = emp ? getSuggestedSize(wi, emp.id) : null;
+                    setItemState(key, { sel: val, size: sugg?.size ?? "", qty: 1 });
                   };
 
                   const handleAdd = () => {
@@ -528,8 +555,11 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                                             <SelectItem key={s} value={s}>
                                               <span className="flex items-center gap-1.5">
                                                 {s}
-                                                {lastSize && s === lastSize && (
+                                                {lastSize && s === lastSize && sizeSource === "history" && (
                                                   <span className="text-[10px] text-emerald-600 font-semibold">last</span>
+                                                )}
+                                                {lastSize && s === lastSize && sizeSource === "saved" && (
+                                                  <span className="text-[10px] text-blue-500 font-semibold">saved</span>
                                                 )}
                                               </span>
                                             </SelectItem>
@@ -587,10 +617,10 @@ function WardrobeStep({ items, employees, lastSizes, sizesMap, basket, setBasket
                             )}
                           </div>
 
-                          {/* Last size hint */}
+                          {/* Size suggestion hint */}
                           {lastSize && !state.size && (
-                            <p className="text-[11px] text-emerald-600 mt-1.5">
-                              Last ordered size for {selectedEmployee?.first_name}: <strong>{lastSize}</strong>
+                            <p className={`text-[11px] mt-1.5 ${sizeSource === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
+                              {sizeSource === "saved" ? "Saved size" : "Last ordered size"} for {selectedEmployee?.first_name}: <strong>{lastSize}</strong>
                             </p>
                           )}
                         </div>
@@ -1283,6 +1313,7 @@ export default function NewOrder() {
     employees: any[];
     processes: any[];
     lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
+    savedSizes: Record<string, Array<{ label: string; size: string }>>;
     sizesMap: Record<string, Record<string, string[]>>;
   }>({
     queryKey: ["portal-wardrobe"],
@@ -1396,6 +1427,7 @@ export default function NewOrder() {
             employees={wardrobe?.employees ?? []}
             processes={wardrobe?.processes ?? []}
             lastSizes={wardrobe?.lastSizes ?? {}}
+            savedSizes={wardrobe?.savedSizes ?? {}}
             sizesMap={wardrobe?.sizesMap ?? {}}
             basket={basket}
             setBasket={setBasket}
