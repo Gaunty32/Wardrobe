@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
@@ -1288,6 +1288,24 @@ function EmployeesTab({ customerId }: { customerId: number }) {
 
 // ─── Wardrobe (Finished Items) Tab ───────────────────────────────────────────
 
+interface WardrobeGroup {
+  key: string;
+  items: FinishedItem[];
+  name: string;
+  roleId: number | null;
+  roleName: string | null;
+  productId: number;
+  productName: string | null;
+  productSku: string | null;
+  finishId: number | null;
+  finishName: string | null;
+  colour: string | null;
+  unitPrice: number;
+  specialPrice: number | null;
+  totalStock: number;
+  sizes: (string | null)[];
+}
+
 interface FinishedItem {
   id: number;
   customerId: number;
@@ -1672,6 +1690,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<FinishedItem | null>(null);
+  const [editingGroup, setEditingGroup] = useState<WardrobeGroup | null>(null);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<number | null | "all">("all");
@@ -1679,6 +1698,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [variantSizes, setVariantSizes] = useState<string[]>([]);
   const [selectedColours, setSelectedColours] = useState<string[]>([]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
+  const [freeTextColours, setFreeTextColours] = useState<string[]>([""]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", specialPrice: "", stockQuantity: "0", notes: "" };
@@ -1718,7 +1739,13 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     onError: (e: any) => toast({ title: "Error", description: e.message || "Could not duplicate", variant: "destructive" }),
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setSelectedColours([]); setSelectedSizes([]); setOpen(true); };
+  const toggleExpanded = (key: string) => setExpandedGroups(prev => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+
+  const openAdd = () => { setForm(blank); setEditing(null); setEditingGroup(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setSelectedColours([]); setSelectedSizes([]); setFreeTextColours([""]); setOpen(true); };
 
   const toggleColour = (col: string) => {
     setSelectedColours(prev => {
@@ -1747,11 +1774,13 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       notes: item.notes ?? "",
     });
     setEditing(item);
+    setEditingGroup(null);
     setProductSearchOpen(false);
     setVariantColours([]);
     setVariantSizes([]);
     setSelectedColours([]);
     setSelectedSizes([]);
+    setFreeTextColours([""]);
     // Load variant colours and sizes (also from attributes for products without size variants)
     Promise.all([
       apiFetch<any[]>(`/products/${item.productId}/variants`),
@@ -1833,12 +1862,39 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       notes: form.notes || null,
     };
 
+    // Group edit: update shared fields on all items in the group (preserve each item's size)
+    if (editingGroup) {
+      setSaving(true);
+      try {
+        await Promise.all(editingGroup.items.map(item =>
+          apiFetch(`/customers/${customerId}/finished-items/${item.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ ...base, colour: form.colour || null, size: item.size }),
+          })
+        ));
+        inv();
+        toast({ title: `Group updated (${editingGroup.items.length} items)` });
+        setOpen(false); setEditing(null); setEditingGroup(null);
+      } catch (e: any) {
+        toast({ title: "Error", description: e.message || "Could not save", variant: "destructive" });
+      } finally { setSaving(false); }
+      return;
+    }
+
+    // Single item edit
     if (editing) {
       save.mutate({ ...base, colour: form.colour || null, size: form.size || null });
       return;
     }
 
-    const colours = selectedColours.length > 0 ? selectedColours : [null as string | null];
+    // Add mode: build colour list from chips (variant) or free-text inputs
+    let colours: (string | null)[];
+    if (variantColours.length > 0) {
+      colours = selectedColours.length > 0 ? selectedColours : [null as string | null];
+    } else {
+      const free = freeTextColours.filter(Boolean);
+      colours = free.length > 0 ? free : [form.colour || null];
+    }
     const sizes = selectedSizes.length > 0 ? selectedSizes : [null as string | null];
     const combos = colours.flatMap(col => sizes.map(sz => ({ colour: col, size: sz })));
 
@@ -1871,6 +1927,38 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     if (roleFilter === null) return item.roleId === null;
     return item.roleId === roleFilter;
   }) ?? [];
+
+  const groups = useMemo<WardrobeGroup[]>(() => {
+    const map = new Map<string, WardrobeGroup>();
+    for (const item of filteredItems) {
+      const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? "", item.colour ?? ""].join("|");
+      if (!map.has(key)) {
+        map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, unitPrice: item.unitPrice, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
+      }
+      const g = map.get(key)!;
+      g.items.push(item);
+      g.totalStock += (item.stockQuantity ?? 0);
+      g.sizes.push(item.size);
+    }
+    return [...map.values()];
+  }, [filteredItems]);
+
+  const openGroupEdit = (group: WardrobeGroup) => {
+    const first = group.items[0];
+    setForm({ name: group.name, roleId: group.roleId ?? null, productId: group.productId, finishId: group.finishId ?? null, colour: group.colour ?? "", size: "", unitPrice: group.unitPrice.toFixed(2), specialPrice: group.specialPrice != null ? group.specialPrice.toFixed(2) : "", stockQuantity: "0", notes: first.notes ?? "" });
+    setEditing(first);
+    setEditingGroup(group);
+    setProductSearchOpen(false);
+    setVariantColours([]); setVariantSizes([]); setSelectedColours([]); setSelectedSizes([]);
+    Promise.all([apiFetch<any[]>(`/products/${group.productId}/variants`), apiFetch<any[]>(`/products/${group.productId}/attributes`)]).then(([variants, attrs]) => {
+      const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
+      const vs = variants.map((x: any) => x.size).filter(Boolean) as string[];
+      const as2 = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
+      setVariantColours(colours);
+      setVariantSizes([...new Set([...as2, ...vs])]);
+    }).catch(() => {});
+    setOpen(true);
+  };
 
   const WardrobeItemRow = ({ item }: { item: FinishedItem }) => (
     <TableRow key={item.id} className="group hover:bg-muted/30">
@@ -1911,6 +1999,99 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     </TableRow>
   );
 
+  const WardrobeGroupRow = ({ group }: { group: WardrobeGroup }) => {
+    const isMulti = group.items.length > 1;
+    const isExpanded = expandedGroups.has(group.key);
+    const deleteGroup = () => {
+      const msg = isMulti ? `Delete all ${group.items.length} sizes of "${group.name}"?` : `Delete "${group.name}"?`;
+      if (!confirm(msg)) return;
+      group.items.forEach(item => del.mutate(item.id));
+    };
+    return (
+      <>
+        <TableRow className="group hover:bg-muted/30">
+          <TableCell className="font-medium">
+            <div className="flex items-center gap-1">
+              {isMulti && (
+                <button className="text-muted-foreground hover:text-foreground shrink-0" onClick={() => toggleExpanded(group.key)} title={isExpanded ? "Collapse" : "Expand sizes"}>
+                  {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                </button>
+              )}
+              <div>
+                <p>{group.name}</p>
+                {group.roleName && <span className="text-[10px] font-medium text-primary/70 bg-primary/5 border border-primary/10 rounded px-1">{group.roleName}</span>}
+              </div>
+            </div>
+          </TableCell>
+          <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+            {group.productName || "—"}
+            {group.productSku && <span className="ml-1 text-xs text-muted-foreground/60">({group.productSku})</span>}
+          </TableCell>
+          <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+            {group.finishName
+              ? <span className="inline-flex items-center gap-1"><Sparkles className="w-3 h-3 text-amber-500" />{group.finishName}</span>
+              : <span className="text-muted-foreground/50">Plain</span>}
+          </TableCell>
+          <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+            {isMulti ? (
+              <div className="space-y-0.5">
+                {group.colour && <span className="text-foreground/70">{group.colour}</span>}
+                <div className="flex flex-wrap gap-0.5">
+                  {group.sizes.filter(Boolean).map((sz, i) => (
+                    <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-muted border border-border font-medium text-foreground/60">{sz}</span>
+                  ))}
+                  {group.sizes.some(s => !s) && <span className="px-1.5 py-0.5 rounded text-[10px] bg-muted border border-border font-medium text-foreground/60">—</span>}
+                </div>
+              </div>
+            ) : (
+              [group.colour, group.items[0].size].filter(Boolean).join(" / ") || "—"
+            )}
+          </TableCell>
+          <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(group.unitPrice)}</TableCell>
+          <TableCell className="text-right tabular-nums">
+            {group.specialPrice != null
+              ? <span className="font-semibold text-emerald-600">{formatCurrency(group.specialPrice)}</span>
+              : <span className="text-muted-foreground/40 text-xs">—</span>}
+          </TableCell>
+          <TableCell className="text-right">
+            {isMulti ? (
+              <span className="tabular-nums text-sm text-muted-foreground">{group.totalStock}</span>
+            ) : (
+              <WardrobeStockCell item={group.items[0]} onSave={(qty) => save.mutate({ name: group.name, roleId: group.roleId, productId: group.productId, finishId: group.finishId, colour: group.colour, size: group.items[0].size, unitPrice: group.unitPrice, specialPrice: group.specialPrice, stockQuantity: qty, notes: group.items[0].notes })} />
+            )}
+          </TableCell>
+          <TableCell className="text-right">
+            <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {!isMulti && <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted" title="Duplicate" onClick={() => dup.mutate(group.items[0])} disabled={dup.isPending}><Copy className="w-3 h-3" /></Button>}
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" title={isMulti ? "Edit group" : "Edit"} onClick={() => isMulti ? openGroupEdit(group) : openEdit(group.items[0])}><Edit2 className="w-3 h-3" /></Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={deleteGroup}><Trash2 className="w-3 h-3" /></Button>
+            </div>
+          </TableCell>
+        </TableRow>
+        {isExpanded && group.items.map(item => (
+          <TableRow key={item.id} className="bg-muted/20 hover:bg-muted/30 group">
+            <TableCell colSpan={3} className="pl-8 text-xs text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="px-1.5 py-0.5 rounded bg-muted border border-border font-medium text-foreground/60">{item.size || "—"}</span>
+              </span>
+            </TableCell>
+            <TableCell className="hidden md:table-cell" />
+            <TableCell colSpan={2} />
+            <TableCell className="text-right">
+              <WardrobeStockCell item={item} onSave={(qty) => save.mutate({ name: item.name, roleId: item.roleId, productId: item.productId, finishId: item.finishId, colour: item.colour, size: item.size, unitPrice: item.unitPrice, specialPrice: item.specialPrice, stockQuantity: qty, notes: item.notes })} />
+            </TableCell>
+            <TableCell className="text-right">
+              <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(item)}><Edit2 className="w-3 h-3" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this size?") && del.mutate(item.id)}><Trash2 className="w-3 h-3" /></Button>
+              </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </>
+    );
+  };
+
   return (
     <>
       <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
@@ -1947,15 +2128,20 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredItems.map(item => <WardrobeItemRow key={item.id} item={item} />)}
+            {groups.map(group => <WardrobeGroupRow key={group.key} group={group} />)}
           </TableBody>
         </SubTable>
       )}
 
-      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); setEditingGroup(null); } }}>
         <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Finished Item" : "Add Finished Item"}</DialogTitle>
+            <DialogTitle>
+              {editingGroup
+                ? `Edit Group — ${editingGroup.items.length} sizes`
+                : editing ? "Edit Finished Item" : "Add Finished Item"}
+            </DialogTitle>
+            {editingGroup && <p className="text-xs text-muted-foreground pt-1">Changes to name, role, product, finish, colour, and price will apply to all {editingGroup.items.length} sizes.</p>}
           </DialogHeader>
           <div className="grid gap-4 py-2">
 
@@ -2058,7 +2244,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" placeholder="e.g. Navy Blue (optional)" value={form.colour} onChange={e => setForm(f => ({ ...f, colour: e.target.value }))} />
                 )
               ) : (
-                /* Add mode — multi-select chips */
+                /* Add mode — multi-select chips (variant) or dynamic free-text rows */
                 variantColours.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {variantColours.map(col => (
@@ -2075,12 +2261,33 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                     )}
                   </div>
                 ) : (
-                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" placeholder="e.g. Navy Blue (optional)" value={form.colour} onChange={e => setForm(f => ({ ...f, colour: e.target.value }))} />
+                  <div className="space-y-1.5">
+                    {freeTextColours.map((col, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input
+                          className="flex h-9 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          placeholder="e.g. Navy Blue (optional)"
+                          value={col}
+                          onChange={e => {
+                            const next = freeTextColours.map((c, idx) => idx === i ? e.target.value : c);
+                            setFreeTextColours(next);
+                            if (next.filter(Boolean).length > 0 && selectedSizes.length === 0 && variantSizes.length > 0) setSelectedSizes(variantSizes);
+                          }}
+                        />
+                        {freeTextColours.length > 1 && (
+                          <button type="button" className="h-9 w-9 shrink-0 flex items-center justify-center rounded-md border border-input text-muted-foreground hover:bg-red-50 hover:text-red-500 hover:border-red-200 transition-colors" onClick={() => setFreeTextColours(prev => prev.filter((_, idx) => idx !== i))}><X className="w-3.5 h-3.5" /></button>
+                        )}
+                      </div>
+                    ))}
+                    <button type="button" className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors py-0.5" onClick={() => setFreeTextColours(prev => [...prev, ""])}>
+                      <Plus className="w-3 h-3" /> Add another colour
+                    </button>
+                  </div>
                 )
               )}
             </div>
 
-            <div className="grid gap-2">
+            {!editingGroup && <div className="grid gap-2">
               <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
               {editing ? (
                 /* Edit mode — single value */
@@ -2108,12 +2315,17 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   </button>
                 </div>
               )}
-              {!editing && (selectedColours.length > 0 || selectedSizes.length > 0) && (
-                <p className="text-xs text-muted-foreground">
-                  Will create <strong>{Math.max(1, (selectedColours.length || 1) * (selectedSizes.length || 1))}</strong> wardrobe item{(selectedColours.length || 1) * (selectedSizes.length || 1) > 1 ? "s" : ""}.
-                </p>
-              )}
-            </div>
+              {!editing && !editingGroup && (() => {
+                const colCount = variantColours.length > 0 ? (selectedColours.length || 1) : (freeTextColours.filter(Boolean).length || 1);
+                const szCount = selectedSizes.length || 1;
+                const total = colCount * szCount;
+                return (colCount > 1 || szCount > 1) && (
+                  <p className="text-xs text-muted-foreground">
+                    Will create <strong>{total}</strong> wardrobe item{total > 1 ? "s" : ""}.
+                  </p>
+                );
+              })()}
+            </div>}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-2">
@@ -2142,7 +2354,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                 />
                 <p className="text-xs text-muted-foreground">Customer-specific price override.</p>
               </div>
-              <div className="grid gap-2">
+              {!editingGroup && <div className="grid gap-2">
                 <Label className="flex items-center gap-1">Stock Qty</Label>
                 <input
                   className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -2154,7 +2366,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   onChange={e => setForm(f => ({ ...f, stockQuantity: e.target.value }))}
                 />
                 <p className="text-xs text-muted-foreground">Finished (branded) units in stock.</p>
-              </div>
+              </div>}
             </div>
 
             <div className="grid gap-2">
@@ -2163,9 +2375,9 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={save.isPending || !form.name || !form.productId || !form.unitPrice}>
-              {save.isPending ? "Saving..." : "Save"}
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); setEditingGroup(null); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={save.isPending || saving || !form.name || !form.productId || !form.unitPrice}>
+              {(save.isPending || saving) ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
