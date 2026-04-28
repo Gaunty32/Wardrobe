@@ -1157,7 +1157,7 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
   const showInactive = req.query.showInactive === "true";
 
   const rows = await db.execute(sql`
-    SELECT e.id, e.first_name, e.last_name, e.email, e.phone, e.job_title,
+    SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
            e.department, e.notes, e.is_active,
            cr.id as role_id, cr.name as role_name,
            e.delivery_address_id,
@@ -1188,6 +1188,7 @@ router.post("/portal/team/employees", portalAuth, async (req: Request, res: Resp
   const body = z.object({
     firstName: z.string().min(1),
     lastName: z.string().min(1),
+    employeeNumber: z.string().optional().nullable(),
     email: z.string().email().optional().nullable(),
     phone: z.string().optional().nullable(),
     jobTitle: z.string().optional().nullable(),
@@ -1200,9 +1201,9 @@ router.post("/portal/team/employees", portalAuth, async (req: Request, res: Resp
   const d = body.data;
   const rows = await db.execute(sql`
     INSERT INTO customer_employees
-      (customer_id, first_name, last_name, email, phone, job_title, department, role_id, notes, is_active)
+      (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, role_id, notes, is_active)
     VALUES
-      (${customerId}, ${d.firstName}, ${d.lastName}, ${d.email ?? null}, ${d.phone ?? null},
+      (${customerId}, ${d.firstName}, ${d.lastName}, ${d.employeeNumber ?? null}, ${d.email ?? null}, ${d.phone ?? null},
        ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.roleId ?? null}, ${d.notes ?? null}, true)
     RETURNING *
   `);
@@ -1220,6 +1221,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   const body = z.object({
     firstName: z.string().min(1).optional(),
     lastName: z.string().min(1).optional(),
+    employeeNumber: z.string().optional().nullable(),
     email: z.string().email().optional().nullable(),
     phone: z.string().optional().nullable(),
     jobTitle: z.string().optional().nullable(),
@@ -1235,6 +1237,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   const sets: string[] = [];
   if (d.firstName !== undefined) sets.push(`first_name = '${d.firstName.replace(/'/g, "''")}'`);
   if (d.lastName !== undefined) sets.push(`last_name = '${d.lastName.replace(/'/g, "''")}'`);
+  if (d.employeeNumber !== undefined) sets.push(`employee_number = ${d.employeeNumber === null ? "NULL" : `'${d.employeeNumber.replace(/'/g, "''")}'`}`);
   if (d.email !== undefined) sets.push(`email = ${d.email === null ? "NULL" : `'${d.email.replace(/'/g, "''")}'`}`);
   if (d.phone !== undefined) sets.push(`phone = ${d.phone === null ? "NULL" : `'${d.phone.replace(/'/g, "''")}'`}`);
   if (d.jobTitle !== undefined) sets.push(`job_title = ${d.jobTitle === null ? "NULL" : `'${d.jobTitle.replace(/'/g, "''")}'`}`);

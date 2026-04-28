@@ -418,6 +418,7 @@ router.delete("/customers/:customerId/roles/:id", async (req, res): Promise<void
 const employeeBody = z.object({
   firstName: z.string().min(1),
   lastName: z.string().optional().nullable(),
+  employeeNumber: z.string().optional().nullable(),
   jobTitle: z.string().optional().nullable(),
   roleId: z.number().int().positive().optional().nullable(),
   email: z.string().optional().nullable(),
@@ -439,6 +440,7 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
     customerId: customerEmployeesTable.customerId,
     firstName: customerEmployeesTable.firstName,
     lastName: customerEmployeesTable.lastName,
+    employeeNumber: customerEmployeesTable.employeeNumber,
     jobTitle: customerEmployeesTable.jobTitle,
     roleId: customerEmployeesTable.roleId,
     email: customerEmployeesTable.email,

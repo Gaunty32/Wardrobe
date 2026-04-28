@@ -88,6 +88,7 @@ export const customerEmployeesTable = pgTable("customer_employees", {
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
   firstName: text("first_name").notNull(),
   lastName: text("last_name"),
+  employeeNumber: text("employee_number"),
   jobTitle: text("job_title"),
   roleId: integer("role_id"),
   email: text("email"),

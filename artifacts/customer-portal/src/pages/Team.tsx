@@ -63,6 +63,7 @@ function EmployeeForm({ initial, initialSizes, addresses, onSave, onCancel, savi
   const [form, setForm] = useState({
     firstName: initial?.first_name ?? "",
     lastName: initial?.last_name ?? "",
+    employeeNumber: initial?.employee_number ?? "",
     email: initial?.email ?? "",
     phone: initial?.phone ?? "",
     jobTitle: initial?.job_title ?? "",
@@ -90,6 +91,10 @@ function EmployeeForm({ initial, initialSizes, addresses, onSave, onCancel, savi
           <Label>Last name *</Label>
           <Input value={form.lastName} onChange={e => set("lastName", e.target.value)} />
         </div>
+      </div>
+      <div className="space-y-1">
+        <Label>Employee Number</Label>
+        <Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} />
       </div>
       <div className="space-y-1">
         <Label>Email</Label>
@@ -315,7 +320,7 @@ function EmployeesTab() {
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {[emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
+                  {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
                 </p>
                 {emp.delivery_address_label && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">

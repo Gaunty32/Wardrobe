@@ -1092,7 +1092,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [editing, setEditing] = useState<any>(null);
   const [sizes, setSizes] = useState<{ label: string; size: string }[]>([]);
 
-  const blank = { firstName: "", lastName: "", jobTitle: "", roleId: null as number | null, email: "", phone: "", department: "", notes: "" };
+  const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, email: "", phone: "", department: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => {
@@ -1141,6 +1141,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const openEdit = (e: any) => {
     setForm({
       firstName: e.firstName || "", lastName: e.lastName || "",
+      employeeNumber: e.employeeNumber || "",
       jobTitle: e.jobTitle || "", roleId: e.roleId ?? null,
       email: e.email || "", phone: e.phone || "",
       department: e.department || "", notes: e.notes || "",
@@ -1195,7 +1196,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <div>
-                      <p className="font-medium">{[e.firstName, e.lastName].filter(Boolean).join(' ')}</p>
+                      <p className="font-medium">{[e.firstName, e.lastName].filter(Boolean).join(' ')}{e.employeeNumber && <span className="ml-2 text-[10px] font-mono text-muted-foreground">{e.employeeNumber}</span>}</p>
                       {!e.isActive && <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-100 rounded px-1">Inactive</span>}
                     </div>
                   </div>
@@ -1236,6 +1237,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
               <div className="grid gap-2"><Label>First Name *</Label><Input value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} /></div>
               <div className="grid gap-2"><Label>Last Name</Label><Input value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} /></div>
             </div>
+            <div className="grid gap-2"><Label>Employee Number</Label><Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => setForm({ ...form, employeeNumber: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Job Title</Label><Input placeholder="e.g. Sales Manager" value={form.jobTitle} onChange={e => setForm({ ...form, jobTitle: e.target.value })} /></div>
               <div className="grid gap-2">
