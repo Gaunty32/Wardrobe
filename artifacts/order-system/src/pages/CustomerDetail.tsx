@@ -1323,6 +1323,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteSelection, setInviteSelection] = useState<string>(""); // "emp:{id}" | "other" | ""
   const [inviteRole, setInviteRole] = useState<"manager" | "dept_manager" | "member">("member");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; email: string } | null>(null);
@@ -1519,7 +1520,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
       )}
 
       {/* Add / Invite portal user dialog */}
-      <Dialog open={inviteOpen} onOpenChange={v => { if (!v) { setInviteOpen(false); setInviteResult(null); } }}>
+      <Dialog open={inviteOpen} onOpenChange={v => { if (!v) { setInviteOpen(false); setInviteResult(null); setInviteSelection(""); setInviteEmail(""); } }}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1530,28 +1531,48 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
 
           {!inviteResult ? (
             <div className="grid gap-4 py-2">
-              {suggestedEmployees.length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-2">Suggest from employees</p>
-                  <div className="flex flex-wrap gap-2">
-                    {suggestedEmployees.map((emp: any) => (
-                      <button
-                        key={emp.id}
-                        type="button"
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs border bg-muted/50 hover:bg-primary/10 hover:border-primary/30 transition-colors"
-                        onClick={() => setInviteEmail(emp.email ?? "")}
-                      >
-                        <span className="font-medium">{emp.name}</span>
-                        {emp.email && <span className="text-muted-foreground">{emp.email.toLowerCase()}</span>}
-                      </button>
-                    ))}
-                  </div>
+              <div className="grid gap-2">
+                <Label>Recipient *</Label>
+                {suggestedEmployees.length > 0 ? (
+                  <Select
+                    value={inviteSelection}
+                    onValueChange={val => {
+                      setInviteSelection(val);
+                      if (val === "other") {
+                        setInviteEmail("");
+                      } else {
+                        const emp = suggestedEmployees.find((e: any) => String(e.id) === val);
+                        setInviteEmail(emp?.email ?? "");
+                      }
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an employee…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suggestedEmployees.map((emp: any) => (
+                        <SelectItem key={emp.id} value={String(emp.id)}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{emp.name}</span>
+                            {emp.email && <span className="text-muted-foreground text-xs">{emp.email.toLowerCase()}</span>}
+                          </div>
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="other">
+                        <span className="text-muted-foreground">Other (enter email manually)…</span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input type="email" placeholder="contact@customer.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
+                )}
+              </div>
+              {suggestedEmployees.length > 0 && inviteSelection === "other" && (
+                <div className="grid gap-2">
+                  <Label>Email Address *</Label>
+                  <Input type="email" placeholder="contact@customer.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} autoFocus />
                 </div>
               )}
-              <div className="grid gap-2">
-                <Label>Email Address *</Label>
-                <Input type="email" placeholder="contact@customer.com" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} />
-              </div>
               <div className="grid gap-2">
                 <Label>Portal Role</Label>
                 <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
