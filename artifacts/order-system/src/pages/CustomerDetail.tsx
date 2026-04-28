@@ -998,6 +998,83 @@ function FinishesTab({ customerId }: { customerId: number }) {
   );
 }
 
+// ─── Teams Tab ────────────────────────────────────────────────────────────────
+
+function TeamsTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: teams, isLoading } = useSubResource<any>(customerId, "teams");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { name: "", description: "" };
+  const [form, setForm] = useState(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "teams"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/teams/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/teams`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save team", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/teams/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openEdit = (t: any) => { setForm({ name: t.name || "", description: t.description || "" }); setEditing(t); setOpen(true); };
+
+  return (
+    <>
+      <div className="flex justify-between items-center mb-4">
+        <p className="text-sm text-muted-foreground">Teams group employees — use the Employees tab to filter by team.</p>
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Team</Button>
+      </div>
+
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !teams?.length ? <EmptyState icon={Users} label="teams" onAdd={openAdd} />
+        : <SubTable>
+          <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead>Team Name</TableHead>
+            <TableHead className="hidden md:table-cell">Description</TableHead>
+            <TableHead className="w-20 text-right">Actions</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {teams.map((t: any) => (
+              <TableRow key={t.id} className="group hover:bg-muted/30">
+                <TableCell className="font-medium">{t.name}</TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{t.description || '—'}</TableCell>
+                <TableCell className="text-right">
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(t)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this team?") && del.mutate(t.id)}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </SubTable>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Team" : "Add Team"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Team Name *</Label><Input placeholder="e.g. Warehouse, Admin, Field Sales" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Description</Label><Textarea rows={2} placeholder="Optional description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // ─── Roles Tab ────────────────────────────────────────────────────────────────
 
 function RolesTab({ customerId }: { customerId: number }) {
@@ -1082,6 +1159,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const { toast } = useToast();
   const [showInactive, setShowInactive] = useState(false);
   const { data: roles } = useSubResource<any>(customerId, "roles");
+  const { data: teams } = useSubResource<any>(customerId, "teams");
 
   const { data: employees, isLoading } = useQuery<any[]>({
     queryKey: ["customer", customerId, "employees", showInactive],
@@ -1094,9 +1172,10 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [sizes, setSizes] = useState<{ label: string; size: string }[]>([]);
   const [nameSearch, setNameSearch] = useState("");
   const [empRoleFilter, setEmpRoleFilter] = useState<number | null | "all">("all");
+  const [empTeamFilter, setEmpTeamFilter] = useState<number | null | "all">("all");
   const [dupWarning, setDupWarning] = useState<string | null>(null);
 
-  const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, email: "", phone: "", department: "", notes: "" };
+  const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, teamId: null as number | null, email: "", phone: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => {
@@ -1146,9 +1225,9 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     setForm({
       firstName: e.firstName || "", lastName: e.lastName || "",
       employeeNumber: e.employeeNumber || "",
-      jobTitle: e.jobTitle || "", roleId: e.roleId ?? null,
+      jobTitle: e.jobTitle || "", roleId: e.roleId ?? null, teamId: e.teamId ?? null,
       email: e.email || "", phone: e.phone || "",
-      department: e.department || "", notes: e.notes || "",
+      notes: e.notes || "",
     });
     setSizes((e.sizes || []).map((s: any) => ({ label: s.label, size: s.size })));
     setEditing(e);
@@ -1184,7 +1263,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     const fullName = [e.firstName, e.lastName].filter(Boolean).join(' ').toLowerCase();
     const matchesName = !nameSearch.trim() || fullName.includes(nameSearch.toLowerCase().trim());
     const matchesRole = empRoleFilter === "all" || e.roleId === empRoleFilter;
-    return matchesName && matchesRole;
+    const matchesTeam = empTeamFilter === "all" || e.teamId === empTeamFilter;
+    return matchesName && matchesRole && matchesTeam;
   });
 
   return (
@@ -1221,11 +1301,22 @@ function EmployeesTab({ customerId }: { customerId: number }) {
       </div>
 
       {(roles as any[])?.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          <button onClick={() => setEmpRoleFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === "all" ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All roles</button>
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          <span className="text-xs text-muted-foreground shrink-0">Role:</span>
+          <button onClick={() => setEmpRoleFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === "all" ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All</button>
           <button onClick={() => setEmpRoleFilter(null)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === null ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>No role</button>
           {(roles as any[]).map((r: any) => (
             <button key={r.id} onClick={() => setEmpRoleFilter(r.id)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === r.id ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{r.name}</button>
+          ))}
+        </div>
+      )}
+      {(teams as any[])?.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          <span className="text-xs text-muted-foreground shrink-0">Team:</span>
+          <button onClick={() => setEmpTeamFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empTeamFilter === "all" ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All</button>
+          <button onClick={() => setEmpTeamFilter(null)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empTeamFilter === null ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>No team</button>
+          {(teams as any[]).map((t: any) => (
+            <button key={t.id} onClick={() => setEmpTeamFilter(t.id)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empTeamFilter === t.id ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{t.name}</button>
           ))}
         </div>
       )}
@@ -1257,7 +1348,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                   <div>
                     {e.jobTitle && <p>{e.jobTitle}</p>}
                     {e.roleName && <p className="text-xs text-primary/70">{e.roleName}</p>}
-                    {!e.jobTitle && !e.roleName && '—'}
+                    {e.teamName && <p className="text-xs text-indigo-600/80">{e.teamName}</p>}
+                    {!e.jobTitle && !e.roleName && !e.teamName && '—'}
                   </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
@@ -1303,7 +1395,16 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                 </Select>
               </div>
             </div>
-            <div className="grid gap-2"><Label>Department</Label><Input value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label>Team</Label>
+              <Select value={form.teamId ? form.teamId.toString() : "none"} onValueChange={v => setForm({ ...form, teamId: v === "none" ? null : Number(v) })}>
+                <SelectTrigger><SelectValue placeholder="No team" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No team</SelectItem>
+                  {(teams as any[])?.map((t: any) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
               <div className="grid gap-2"><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} /></div>
@@ -3111,6 +3212,7 @@ export default function CustomerDetail() {
           <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1">
             <TabsTrigger value="employees" className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Employees</TabsTrigger>
             <TabsTrigger value="roles" className="flex items-center gap-1.5"><Boxes className="w-3.5 h-3.5" /> Roles</TabsTrigger>
+            <TabsTrigger value="teams" className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Teams</TabsTrigger>
             <TabsTrigger value="wardrobe" className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5" /> Wardrobe</TabsTrigger>
             <TabsTrigger value="addresses" className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Delivery Addresses</TabsTrigger>
             <TabsTrigger value="contacts" className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Contacts</TabsTrigger>
@@ -3125,6 +3227,7 @@ export default function CustomerDetail() {
           <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
             <TabsContent value="employees" className="mt-0"><EmployeesTab customerId={customerId} /></TabsContent>
             <TabsContent value="roles" className="mt-0"><RolesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="teams" className="mt-0"><TeamsTab customerId={customerId} /></TabsContent>
             <TabsContent value="wardrobe" className="mt-0"><WardrobeTab customerId={customerId} /></TabsContent>
             <TabsContent value="addresses" className="mt-0"><AddressesTab customerId={customerId} customer={customer} /></TabsContent>
             <TabsContent value="contacts" className="mt-0"><ContactsTab customerId={customerId} customer={customer} /></TabsContent>

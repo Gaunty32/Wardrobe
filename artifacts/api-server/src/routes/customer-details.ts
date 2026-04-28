@@ -11,6 +11,7 @@ import {
   customerFinishProductsTable,
   customerFinishedItemsTable,
   customerRolesTable,
+  customerTeamsTable,
   customerEmployeesTable,
   customerEmployeeSizesTable,
   customersTable,
@@ -413,6 +414,56 @@ router.delete("/customers/:customerId/roles/:id", async (req, res): Promise<void
   res.sendStatus(204);
 });
 
+// ─── Teams ────────────────────────────────────────────────────────────────────
+
+const teamBody = z.object({
+  name: z.string().min(1),
+  description: z.string().optional().nullable(),
+});
+
+router.get("/customers/:customerId/teams", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const rows = await db.select().from(customerTeamsTable)
+    .where(eq(customerTeamsTable.customerId, p.data.customerId))
+    .orderBy(customerTeamsTable.name);
+  res.json(rows);
+});
+
+router.post("/customers/:customerId/teams", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const body = teamBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.insert(customerTeamsTable).values({ ...body.data, customerId: p.data.customerId }).returning();
+  res.status(201).json(row);
+});
+
+router.patch("/customers/:customerId/teams/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = teamBody.partial().safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.update(customerTeamsTable)
+    .set({ ...body.data, updatedAt: new Date() })
+    .where(and(eq(customerTeamsTable.id, p.data.id), eq(customerTeamsTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Team not found" }); return; }
+  res.json(row);
+});
+
+router.delete("/customers/:customerId/teams/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const [row] = await db.delete(customerTeamsTable)
+    .where(and(eq(customerTeamsTable.id, p.data.id), eq(customerTeamsTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Team not found" }); return; }
+  res.sendStatus(204);
+});
+
 // ─── Employees ───────────────────────────────────────────────────────────────
 
 const employeeBody = z.object({
@@ -421,9 +472,9 @@ const employeeBody = z.object({
   employeeNumber: z.string().optional().nullable(),
   jobTitle: z.string().optional().nullable(),
   roleId: z.number().int().positive().optional().nullable(),
+  teamId: z.number().int().positive().optional().nullable(),
   email: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
-  department: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
   notes: z.string().optional().nullable(),
 });
@@ -443,9 +494,9 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
     employeeNumber: customerEmployeesTable.employeeNumber,
     jobTitle: customerEmployeesTable.jobTitle,
     roleId: customerEmployeesTable.roleId,
+    teamId: customerEmployeesTable.teamId,
     email: customerEmployeesTable.email,
     phone: customerEmployeesTable.phone,
-    department: customerEmployeesTable.department,
     isActive: customerEmployeesTable.isActive,
     notes: customerEmployeesTable.notes,
     createdAt: customerEmployeesTable.createdAt,
@@ -455,24 +506,28 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
     .where(eq(customerEmployeesTable.customerId, p.data.customerId))
     .orderBy(customerEmployeesTable.lastName);
 
-  const roles = await db.select().from(customerRolesTable)
-    .where(eq(customerRolesTable.customerId, p.data.customerId));
+  const [roles, teams] = await Promise.all([
+    db.select().from(customerRolesTable).where(eq(customerRolesTable.customerId, p.data.customerId)),
+    db.select().from(customerTeamsTable).where(eq(customerTeamsTable.customerId, p.data.customerId)),
+  ]);
   const roleMap = new Map(roles.map(r => [r.id, r.name]));
+  const teamMap = new Map(teams.map(t => [t.id, t.name]));
 
   const filtered = showInactive ? allEmployees : allEmployees.filter(e => e.isActive);
 
-  const withRoles = await Promise.all(filtered.map(async (emp) => {
+  const withMeta = await Promise.all(filtered.map(async (emp) => {
     const sizes = await db.select().from(customerEmployeeSizesTable)
       .where(eq(customerEmployeeSizesTable.employeeId, emp.id))
       .orderBy(customerEmployeeSizesTable.label);
     return {
       ...emp,
       roleName: emp.roleId ? (roleMap.get(emp.roleId) ?? null) : null,
+      teamName: emp.teamId ? (teamMap.get(emp.teamId) ?? null) : null,
       sizes,
     };
   }));
 
-  res.json(withRoles);
+  res.json(withMeta);
 });
 
 router.post("/customers/:customerId/employees", async (req, res): Promise<void> => {
@@ -482,7 +537,7 @@ router.post("/customers/:customerId/employees", async (req, res): Promise<void> 
   const body = employeeBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const [row] = await db.insert(customerEmployeesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
-  res.status(201).json({ ...row, roleName: null, sizes: [] });
+  res.status(201).json({ ...row, roleName: null, teamName: null, sizes: [] });
 });
 
 router.patch("/customers/:customerId/employees/:id", async (req, res): Promise<void> => {

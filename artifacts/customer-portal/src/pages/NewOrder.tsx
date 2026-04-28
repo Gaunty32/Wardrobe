@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -770,6 +770,18 @@ function InspirationStep({ wishlist, setWishlist, onSubmit, submitting }: {
       )
     : products;
 
+  const categoryGroups: { category: string; items: any[] }[] = useMemo(() => {
+    const map = new Map<string, any[]>();
+    for (const p of products) {
+      const cat = p.category || "Other";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(p);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([category, items]) => ({ category, items }));
+  }, [products]);
+
   const toggleProcess = (id: string) =>
     setDraft(d => ({
       ...d,
@@ -821,96 +833,123 @@ function InspirationStep({ wishlist, setWishlist, onSubmit, submitting }: {
 
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-          {filtered.map((p: any) => {
-            const added = alreadyAdded(p.id);
-            const open = expandedId === p.id;
-            return (
-              <div key={p.id} className="flex flex-col">
-                <Card className={cn("transition-colors", open ? "border-primary/50" : "hover:border-primary/30", added && "opacity-60")}>
-                  <CardContent className="py-3 px-4 flex items-center gap-3">
-                    {p.image_url ? (
-                      <img src={p.image_url} alt={p.name} className="w-12 h-12 rounded object-cover shrink-0 bg-muted" />
-                    ) : (
-                      <div className="w-12 h-12 rounded bg-muted shrink-0 flex items-center justify-center">
-                        <ShoppingBag className="w-5 h-5 text-muted-foreground/50" />
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">{p.category || p.sku}</p>
+      ) : (() => {
+        const renderCard = (p: any) => {
+          const added = alreadyAdded(p.id);
+          const isOpen = expandedId === p.id;
+          return (
+            <div key={p.id} className="flex flex-col">
+              <Card className={cn("transition-colors", isOpen ? "border-primary/50" : "hover:border-primary/30", added && "opacity-60")}>
+                <CardContent className="py-3 px-4 flex items-center gap-3">
+                  {p.image_url ? (
+                    <img src={p.image_url} alt={p.name} className="w-12 h-12 rounded object-cover shrink-0 bg-muted" />
+                  ) : (
+                    <div className="w-12 h-12 rounded bg-muted shrink-0 flex items-center justify-center">
+                      <ShoppingBag className="w-5 h-5 text-muted-foreground/50" />
                     </div>
-                    {added ? (
-                      <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 shrink-0">
-                        <Heart className="w-3 h-3 fill-current" /> Added
-                      </span>
-                    ) : (
-                      <Button
-                        size="sm" variant="outline"
-                        className="shrink-0 gap-1 h-7 text-xs"
-                        onClick={() => open ? setExpandedId(null) : openConfig(p.id)}
-                      >
-                        <Heart className="w-3 h-3" /> Wishlist
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{p.name}</p>
+                    <p className="text-xs text-muted-foreground">{p.sku}</p>
+                  </div>
+                  {added ? (
+                    <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 shrink-0">
+                      <Heart className="w-3 h-3 fill-current" /> Added
+                    </span>
+                  ) : (
+                    <Button
+                      size="sm" variant="outline"
+                      className="shrink-0 gap-1 h-7 text-xs"
+                      onClick={() => isOpen ? setExpandedId(null) : openConfig(p.id)}
+                    >
+                      <Heart className="w-3 h-3" /> Wishlist
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Inline config panel */}
+              {isOpen && (
+                <Card className="border-primary/40 border-t-0 rounded-t-none -mt-px">
+                  <CardContent className="px-4 py-3 flex flex-col gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium">Preferred colour(s)</Label>
+                      <Input
+                        className="h-8 text-sm"
+                        placeholder="e.g. Navy, Black, White"
+                        value={draft.colour}
+                        onChange={e => setDraft(d => ({ ...d, colour: e.target.value }))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-medium">Decoration style</Label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {PROCESS_OPTIONS.map(opt => (
+                          <button
+                            key={opt.id}
+                            data-active={draft.processes.includes(opt.id)}
+                            onClick={() => toggleProcess(opt.id)}
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-xs font-medium transition-all",
+                              opt.cls
+                            )}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-medium">Notes (optional)</Label>
+                      <Input
+                        className="h-8 text-sm"
+                        placeholder="Any specific requirements…"
+                        value={draft.notes}
+                        onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
+                      />
+                    </div>
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpandedId(null)}>Cancel</Button>
+                      <Button size="sm" className="h-7 text-xs gap-1" onClick={() => addToWishlist(p)}>
+                        <Heart className="w-3 h-3" /> Add to wishlist
                       </Button>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
+              )}
+            </div>
+          );
+        };
 
-                {/* Inline config panel */}
-                {open && (
-                  <Card className="border-primary/40 border-t-0 rounded-t-none -mt-px">
-                    <CardContent className="px-4 py-3 flex flex-col gap-3">
-                      <div className="space-y-1">
-                        <Label className="text-xs font-medium">Preferred colour(s)</Label>
-                        <Input
-                          className="h-8 text-sm"
-                          placeholder="e.g. Navy, Black, White"
-                          value={draft.colour}
-                          onChange={e => setDraft(d => ({ ...d, colour: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs font-medium">Decoration style</Label>
-                        <div className="flex flex-wrap gap-1.5">
-                          {PROCESS_OPTIONS.map(opt => (
-                            <button
-                              key={opt.id}
-                              data-active={draft.processes.includes(opt.id)}
-                              onClick={() => toggleProcess(opt.id)}
-                              className={cn(
-                                "rounded-full border px-2.5 py-1 text-xs font-medium transition-all",
-                                opt.cls
-                              )}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs font-medium">Notes (optional)</Label>
-                        <Input
-                          className="h-8 text-sm"
-                          placeholder="Any specific requirements…"
-                          value={draft.notes}
-                          onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
-                        />
-                      </div>
-                      <div className="flex gap-2 justify-end">
-                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpandedId(null)}>Cancel</Button>
-                        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => addToWishlist(p)}>
-                          <Heart className="w-3 h-3" /> Add to wishlist
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+        if (search.trim()) {
+          return (
+            <>
+              <p className="text-xs text-muted-foreground mb-3">
+                {filtered.length} result{filtered.length !== 1 ? "s" : ""} for &ldquo;{search}&rdquo;
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                {filtered.map(renderCard)}
               </div>
-            );
-          })}
-        </div>
-      )}
+            </>
+          );
+        }
+
+        return (
+          <>
+            {categoryGroups.map(({ category, items }) => (
+              <div key={category} className="mb-7">
+                <div className="flex items-center gap-2 mb-2.5">
+                  <h3 className="text-sm font-semibold">{category}</h3>
+                  <span className="text-xs text-muted-foreground">({items.length})</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {items.map(renderCard)}
+                </div>
+              </div>
+            ))}
+          </>
+        );
+      })()}
 
       {/* Wishlist summary */}
       {wishlist.length > 0 && (

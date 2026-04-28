@@ -81,6 +81,17 @@ export const customerRolesTable = pgTable("customer_roles", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+// ─── Teams ────────────────────────────────────────────────────────────────────
+
+export const customerTeamsTable = pgTable("customer_teams", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 // ─── Employees ────────────────────────────────────────────────────────────────
 
 export const customerEmployeesTable = pgTable("customer_employees", {
@@ -93,7 +104,7 @@ export const customerEmployeesTable = pgTable("customer_employees", {
   roleId: integer("role_id"),
   email: text("email"),
   phone: text("phone"),
-  department: text("department"),
+  teamId: integer("team_id"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
