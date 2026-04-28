@@ -196,7 +196,7 @@ function ProcessBadgeInline({ type }: { type: string }) {
   );
 }
 
-type ItemState = { sel: string | null; size: string; qty: number };
+type ItemState = { size: string; qty: number };
 
 function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes }: {
   items: any[];
@@ -211,11 +211,54 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 }) {
   const [, setLocation] = useLocation();
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
+  const [selectedRecipient, setSelectedRecipient] = useState<string | null>(null);
 
   const getItemState = (key: string): ItemState =>
-    itemStates[key] ?? { sel: null, size: "", qty: 1 };
+    itemStates[key] ?? { size: "", qty: 1 };
   const setItemState = (key: string, patch: Partial<ItemState>) =>
     setItemStates(s => ({ ...s, [key]: { ...getItemState(key), ...patch } }));
+
+  const handleSelectRecipient = (recipientId: string) => {
+    setSelectedRecipient(recipientId);
+    const emp = recipientId !== "stock"
+      ? employees.find((e: any) => String(e.id) === recipientId)
+      : null;
+    const updates: Record<string, ItemState> = {};
+    const groups = Object.values(
+      items.reduce((acc: any, item: any) => {
+        const fid = item.finish_id ?? 0;
+        if (!acc[fid]) acc[fid] = { finish_id: fid, items: [] };
+        acc[fid].items.push(item);
+        return acc;
+      }, {})
+    ) as Array<{ finish_id: number; items: any[] }>;
+    groups.forEach((g: any) => {
+      g.items.forEach((wi: any, i: number) => {
+        const key = `${g.finish_id}-${i}`;
+        const hist = emp ? (() => {
+          const empSizes = lastSizes[String(emp.id)];
+          if (!empSizes) return null;
+          if (wi.product_id && empSizes[String(wi.product_id)]) return empSizes[String(wi.product_id)].size;
+          const name = wi.product_name ?? wi.name;
+          if (name && empSizes[name]) return empSizes[name].size;
+          return null;
+        })() : null;
+        const saved = !hist && emp ? (() => {
+          const empSaved = savedSizes[String(emp.id)];
+          if (!empSaved?.length) return null;
+          const name = (wi.product_name ?? wi.name ?? "").toLowerCase();
+          const exact = empSaved.find((s: any) => s.label.toLowerCase() === name);
+          if (exact) return exact.size;
+          const partial = empSaved.find((s: any) =>
+            name.includes(s.label.toLowerCase()) || s.label.toLowerCase().includes(name)
+          );
+          return partial?.size ?? null;
+        })() : null;
+        updates[key] = { size: hist ?? saved ?? "", qty: 1 };
+      });
+    });
+    setItemStates(updates);
+  };
 
   // Group items by finish
   const finishGroups = Object.values(
@@ -380,339 +423,359 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   }, {});
   const summaryTotal = basket.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
 
-  // ── Wardrobe items ─────────────────────────────────────────────────────────
+  // ── Shared summary sidebar ─────────────────────────────────────────────────
+  const SummarySidebar = () => (
+    <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
+        <span className="font-semibold text-sm">Order Summary</span>
+        {basket.length > 0 && (
+          <span className="text-xs text-muted-foreground">{basket.length} item{basket.length !== 1 ? "s" : ""}</span>
+        )}
+      </div>
+      {basket.length === 0 ? (
+        <div className="px-4 py-8 text-center text-muted-foreground text-xs">
+          <Package className="w-6 h-6 mx-auto mb-2 opacity-30" />
+          No items added yet
+        </div>
+      ) : (
+        <div className="divide-y max-h-[60vh] overflow-y-auto">
+          {Object.entries(summaryGroups).map(([recipKey, grpItems]) => {
+            const label = recipKey === "__stock__" ? "Bulk Stock" : recipKey;
+            const isStockGrp = recipKey === "__stock__";
+            return (
+              <div key={recipKey} className="px-4 py-3">
+                <div className="flex items-center gap-1.5 mb-2">
+                  {isStockGrp
+                    ? <Package className="w-3 h-3 text-muted-foreground shrink-0" />
+                    : <User className="w-3 h-3 text-muted-foreground shrink-0" />}
+                  <span className="text-xs font-semibold truncate">{label}</span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  {(grpItems as OrderItem[]).map((item, idx) => (
+                    <div key={idx} className="flex items-start gap-2 group">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium leading-tight truncate">{item.productName}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {[item.colour, item.size, item.quantity > 1 ? `×${item.quantity}` : null].filter(Boolean).join(" · ")}
+                        </p>
+                        {item.unitPrice > 0 && (
+                          <p className="text-[11px] text-primary font-semibold">{formatCurrency(item.unitPrice * item.quantity)}</p>
+                        )}
+                      </div>
+                      <button
+                        className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 text-muted-foreground hover:text-destructive"
+                        onClick={() => setBasket(b => b.filter(x => x !== item))}
+                        title="Remove"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {basket.length > 0 && (
+        <div className="px-4 py-3 border-t bg-muted/20">
+          {summaryTotal > 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-muted-foreground">Estimated total</span>
+              <span className="text-sm font-bold">{formatCurrency(summaryTotal)}</span>
+            </div>
+          )}
+          <Button className="w-full" size="sm" onClick={onNext}>
+            Review order <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Person picker (no recipient selected yet) ───────────────────────────────
+  if (!selectedRecipient) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold mb-1">My Wardrobe</h2>
+        <p className="text-muted-foreground text-sm mb-6">
+          Select who you're ordering for — sizes from their order history will be pre-filled automatically.
+        </p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Who is this for?</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+          {employees.map((emp: any) => {
+            const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
+            const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
+            return (
+              <button
+                key={emp.id}
+                onClick={() => handleSelectRecipient(String(emp.id))}
+                className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group relative"
+              >
+                {empItems.length > 0 && (
+                  <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {empItems.length}
+                  </span>
+                )}
+                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm mb-3 group-hover:bg-primary/15 transition-colors">
+                  {initials || <User className="w-4 h-4" />}
+                </div>
+                <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                {emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => handleSelectRecipient("stock")}
+            className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
+          >
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/80 transition-colors">
+              <Package className="w-4 h-4 text-muted-foreground" />
+            </div>
+            <p className="font-semibold text-sm">Bulk Stock</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
+          </button>
+        </div>
+
+        {basket.length > 0 && (
+          <div className="rounded-xl border bg-card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="font-semibold text-sm">{basket.length} item{basket.length !== 1 ? "s" : ""} in order</p>
+                {summaryTotal > 0 && <p className="text-xs text-muted-foreground">{formatCurrency(summaryTotal)} estimated</p>}
+              </div>
+              <Button onClick={onNext} size="sm">
+                Review order <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+              </Button>
+            </div>
+            <div className="flex flex-col gap-1">
+              {Object.entries(summaryGroups).map(([recipKey, grpItems]) => (
+                <div key={recipKey} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                  {recipKey === "__stock__" ? <Package className="w-3 h-3 shrink-0 mt-0.5" /> : <User className="w-3 h-3 shrink-0 mt-0.5" />}
+                  <span><span className="font-medium text-foreground">{recipKey === "__stock__" ? "Bulk Stock" : recipKey}:</span>{" "}
+                    {(grpItems as OrderItem[]).map(it => `${it.productName} (${it.size})`).join(", ")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Product tile grid (recipient selected) ─────────────────────────────────
+  const selectedEmployee = selectedRecipient !== "stock"
+    ? employees.find((e: any) => String(e.id) === selectedRecipient)
+    : null;
+  const recipientName = selectedEmployee
+    ? `${selectedEmployee.first_name} ${selectedEmployee.last_name}`
+    : "Bulk Stock";
+  const recipientInitials = selectedEmployee
+    ? [selectedEmployee.first_name?.[0], selectedEmployee.last_name?.[0]].filter(Boolean).join("").toUpperCase()
+    : "";
+
+  const handleAdd = (wi: any, key: string) => {
+    const state = getItemState(key);
+    if (!state.size) return;
+    const isStock = selectedRecipient === "stock";
+    const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === selectedRecipient);
+    setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", state.size, state.qty, emp)]);
+    setItemState(key, { size: "", qty: 1 });
+  };
+
   return (
     <div>
-      <h2 className="text-xl font-semibold mb-1">My Wardrobe</h2>
-      <p className="text-muted-foreground text-sm mb-5">
-        Order for named individuals (packed &amp; labelled per person) or add as bulk stock — your choice per item.
-      </p>
+      {/* Recipient banner */}
+      <div className="flex items-center gap-3 mb-6 p-3 rounded-xl border bg-muted/30">
+        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0 font-bold text-primary text-sm">
+          {selectedRecipient === "stock"
+            ? <Package className="w-4 h-4" />
+            : (recipientInitials || <User className="w-4 h-4" />)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Ordering for</p>
+          <p className="font-semibold text-sm">{recipientName}</p>
+          {selectedEmployee?.role_name && <p className="text-[11px] text-muted-foreground">{selectedEmployee.role_name}</p>}
+        </div>
+        <button
+          onClick={() => setSelectedRecipient(null)}
+          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline shrink-0"
+        >
+          Change
+        </button>
+      </div>
 
       <div className="flex gap-6 items-start">
-        {/* ── Left: finish groups ─────────────────────────────── */}
+        {/* Left: finish groups + product tiles */}
         <div className="flex-1 min-w-0 flex flex-col gap-8">
-        {finishGroups.map((group) => {
-          const procs = groupProcesses(group.finish_id);
-          return (
-            <div key={group.finish_id}>
-              {/* ── Finish group header ─────────────────────────────────── */}
-              <div className="mb-3">
-                <h3 className="font-bold text-base mb-2">
-                  {group.finish_name ?? "Standard Garments"}
-                </h3>
-                {procs.length > 0 && (
-                  <div className="flex flex-wrap gap-3 mb-2">
-                    {procs.map((p: any) => (
-                      <div key={p.process_id} className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 shadow-sm">
-                        {p.process_image_url ? (
-                          <ProcessImage url={p.process_image_url} alt={p.item_finish_name} />
-                        ) : (
-                          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
-                            <Shirt className="w-5 h-5 text-muted-foreground/40" />
-                          </div>
-                        )}
-                        <div>
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            {p.process_type && <ProcessBadgeInline type={p.process_type} />}
-                          </div>
-                          <p className="text-xs font-medium leading-tight">{p.item_finish_name}</p>
-                          {p.placement && (
-                            <p className="text-[10px] text-muted-foreground">{p.placement}</p>
+          {finishGroups.map((group) => {
+            const procs = groupProcesses(group.finish_id);
+            return (
+              <div key={group.finish_id}>
+                <div className="mb-4">
+                  <h3 className="font-bold text-base mb-2">{group.finish_name ?? "Standard Garments"}</h3>
+                  {procs.length > 0 && (
+                    <div className="flex flex-wrap gap-3 mb-3">
+                      {procs.map((p: any) => (
+                        <div key={p.process_id} className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 shadow-sm">
+                          {p.process_image_url ? (
+                            <ProcessImage url={p.process_image_url} alt={p.item_finish_name} />
+                          ) : (
+                            <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
+                              <Shirt className="w-5 h-5 text-muted-foreground/40" />
+                            </div>
                           )}
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              {p.process_type && <ProcessBadgeInline type={p.process_type} />}
+                            </div>
+                            <p className="text-xs font-medium leading-tight">{p.item_finish_name}</p>
+                            {p.placement && <p className="text-[10px] text-muted-foreground">{p.placement}</p>}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="h-px bg-border" />
-              </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="h-px bg-border" />
+                </div>
 
-              {/* ── Item cards ─────────────────────────────────────────── */}
-              <div className="flex flex-col gap-3">
-                {group.items.map((wi: any, i: number) => {
-                  const key = `${group.finish_id}-${i}`;
-                  const state = getItemState(key);
-                  const availSizes = getAvailableSizes(wi);
-                  const selectedEmployee = state.sel && state.sel !== "stock"
-                    ? employees.find((e: any) => String(e.id) === state.sel)
-                    : null;
-                  const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
-                  const lastSize = suggestion?.size ?? null;
-                  const sizeSource = suggestion?.source ?? null;
+                {/* Product tile grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+                  {group.items.map((wi: any, i: number) => {
+                    const key = `${group.finish_id}-${i}`;
+                    const state = getItemState(key);
+                    const availSizes = getAvailableSizes(wi);
+                    const FALLBACK_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+                    const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
+                    const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
+                    const unitPrice = resolveUnitPrice(wi, state.qty);
+                    const basePrice = parseFloat(wi.unit_price ?? "0");
+                    const hasBreak = unitPrice !== basePrice && basePrice > 0;
 
-                  // Auto-fill size from order history or saved profile when employee is chosen
-                  const handleSelChange = (val: string) => {
-                    const emp = employees.find((e: any) => String(e.id) === val);
-                    const sugg = emp ? getSuggestedSize(wi, emp.id) : null;
-                    setItemState(key, { sel: val, size: sugg?.size ?? "", qty: 1 });
-                  };
-
-                  const handleAdd = () => {
-                    if (!state.sel) return;
-                    const isStock = state.sel === "stock";
-                    const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === state.sel);
-                    setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", state.size, state.qty, emp)]);
-                    // Keep the same recipient so they can immediately pick another size
-                    setItemState(key, { size: "", qty: 1 });
-                  };
-                  const handleDone = () => setItemState(key, { sel: null, size: "", qty: 1 });
-
-                  return (
-                    <Card key={i} className="overflow-hidden">
-                      <div className="flex gap-0">
-                        {/* Product image — prefer variant colour image */}
-                        <div className="shrink-0 w-24 sm:w-28 bg-white border-r flex items-center justify-center overflow-hidden self-stretch">
+                    return (
+                      <Card key={i} className="overflow-hidden flex flex-col">
+                        {/* Product image */}
+                        <div className="aspect-square bg-white border-b overflow-hidden flex items-center justify-center">
                           {(wi.variant_image_url ?? wi.product_image_url) ? (
                             <img
                               src={wi.variant_image_url ?? wi.product_image_url}
                               alt={wi.product_name ?? wi.name}
-                              className="w-full h-full object-contain p-1"
+                              className="w-full h-full object-contain p-2"
                             />
                           ) : (
-                            <Shirt className="w-8 h-8 text-muted-foreground/30" />
+                            <Shirt className="w-10 h-10 text-muted-foreground/20" />
                           )}
                         </div>
 
-                        {/* Content */}
-                        <div className="flex-1 min-w-0 p-3 sm:p-4">
-                          {/* Name + price */}
-                          <div className="flex items-start justify-between gap-2 mb-3">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-sm leading-snug">
-                                {wi.product_name ?? wi.name}
-                              </p>
-                              {wi.product_sku && (
-                                <p className="text-[11px] font-mono text-muted-foreground/70 leading-tight">
-                                  {wi.product_sku}
-                                </p>
-                              )}
-                              <p className="text-xs text-muted-foreground mt-0.5">
+                        {/* Card body */}
+                        <div className="p-3 flex flex-col gap-2 flex-1">
+                          <div>
+                            <p className="font-semibold text-xs leading-snug line-clamp-2">{wi.product_name ?? wi.name}</p>
+                            {wi.product_sku && (
+                              <p className="text-[10px] font-mono text-muted-foreground/60 leading-tight">{wi.product_sku}</p>
+                            )}
+                            {(wi.colour || wi.role_name) && (
+                              <p className="text-[11px] text-muted-foreground mt-0.5">
                                 {[wi.colour, wi.role_name].filter(Boolean).join(" · ")}
                               </p>
-                            </div>
-                            {(() => {
-                              const base = parseFloat(wi.unit_price ?? "0");
-                              const active = resolveUnitPrice(wi, state.qty);
-                              const hasBreak = active !== base && base > 0;
-                              return active > 0 ? (
-                                <div className="flex flex-col items-end shrink-0">
-                                  <span className="text-sm font-bold text-primary">{formatCurrency(active)}</span>
-                                  {hasBreak && (
-                                    <span className="text-[10px] text-muted-foreground line-through">{formatCurrency(base)}</span>
-                                  )}
-                                </div>
-                              ) : null;
-                            })()}
-                          </div>
-
-                          {/* Order for dropdown */}
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <Label className="text-xs font-medium text-muted-foreground shrink-0">For:</Label>
-                              <Select value={state.sel ?? ""} onValueChange={handleSelChange}>
-                                <SelectTrigger className="h-8 text-sm w-44 min-w-0">
-                                  <SelectValue placeholder="Select…" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {employees.length > 0 && employees.map((emp: any) => {
-                                    const ls = getLastSize(wi, emp.id);
-                                    return (
-                                      <SelectItem key={emp.id} value={String(emp.id)}>
-                                        <span className="flex items-center gap-1.5">
-                                          <User className="w-3 h-3 shrink-0" />
-                                          {emp.first_name} {emp.last_name}
-                                          {ls && <span className="text-[10px] text-emerald-600 font-semibold ml-1">{ls}</span>}
-                                        </span>
-                                      </SelectItem>
-                                    );
-                                  })}
-                                  <SelectItem value="stock">
-                                    <span className="flex items-center gap-1.5">
-                                      <Package className="w-3 h-3 shrink-0" />
-                                      Stock order (bulk)
-                                    </span>
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            {/* Size + qty + add — shown once a recipient is chosen */}
-                            {state.sel && (
-                              <>
-                                {/* Size */}
-                                {(() => {
-                                  const FALLBACK_SIZES = ["XS","S","M","L","XL","2XL","3XL","4XL"];
-                                  const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <Label className="text-xs font-medium text-muted-foreground shrink-0">Size:</Label>
-                                      <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
-                                        <SelectTrigger className="h-8 text-sm w-28">
-                                          <SelectValue placeholder="Pick size" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {sizeOptions.map(s => (
-                                            <SelectItem key={s} value={s}>
-                                              <span className="flex items-center gap-1.5">
-                                                {s}
-                                                {lastSize && s === lastSize && sizeSource === "history" && (
-                                                  <span className="text-[10px] text-emerald-600 font-semibold">last</span>
-                                                )}
-                                                {lastSize && s === lastSize && sizeSource === "saved" && (
-                                                  <span className="text-[10px] text-blue-500 font-semibold">saved</span>
-                                                )}
-                                              </span>
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                  );
-                                })()}
-
-                                {/* Qty */}
-                                <div className="flex items-center border rounded-md h-8 overflow-hidden">
-                                  <button
-                                    className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
-                                    onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
-                                  >
-                                    <Minus className="w-3 h-3" />
-                                  </button>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    value={state.qty}
-                                    onChange={e => {
-                                      const v = parseInt(e.target.value, 10);
-                                      if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
-                                    }}
-                                    className="w-10 text-center text-sm font-medium bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                  />
-                                  <button
-                                    className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
-                                    onClick={() => setItemState(key, { qty: state.qty + 1 })}
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                  </button>
-                                </div>
-
-                                {/* Add */}
-                                <Button
-                                  size="sm"
-                                  className="h-8 text-xs shrink-0"
-                                  disabled={!state.size.trim()}
-                                  onClick={handleAdd}
-                                >
-                                  <Plus className="w-3 h-3 mr-1" /> Add to order
-                                </Button>
-
-                                {/* Done — dismiss the card back to recipient picker */}
-                                <button
-                                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline shrink-0"
-                                  onClick={handleDone}
-                                >
-                                  Done
-                                </button>
-                              </>
+                            )}
+                            {unitPrice > 0 && (
+                              <div className="flex items-baseline gap-1.5 mt-1">
+                                <span className="text-xs font-bold text-primary">{formatCurrency(unitPrice)}</span>
+                                {hasBreak && (
+                                  <span className="text-[10px] text-muted-foreground line-through">{formatCurrency(basePrice)}</span>
+                                )}
+                              </div>
                             )}
                           </div>
 
-                          {/* Size suggestion hint */}
-                          {lastSize && !state.size && (
-                            <p className={`text-[11px] mt-1.5 ${sizeSource === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
-                              {sizeSource === "saved" ? "Saved size" : "Last ordered size"} for {selectedEmployee?.first_name}: <strong>{lastSize}</strong>
+                          {/* Size dropdown */}
+                          <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
+                            <SelectTrigger className="h-8 text-xs">
+                              <SelectValue placeholder="Pick size" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sizeOptions.map(s => (
+                                <SelectItem key={s} value={s}>
+                                  <span className="flex items-center gap-1.5">
+                                    {s}
+                                    {suggestion?.size === s && suggestion.source === "history" && (
+                                      <span className="text-[10px] text-emerald-600 font-semibold">last</span>
+                                    )}
+                                    {suggestion?.size === s && suggestion.source === "saved" && (
+                                      <span className="text-[10px] text-blue-500 font-semibold">saved</span>
+                                    )}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          {suggestion && !state.size && (
+                            <p className={`text-[10px] -mt-1 ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
+                              {suggestion.source === "saved" ? "Saved" : "Last ordered"}: <strong>{suggestion.size}</strong>
                             </p>
                           )}
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-        </div>{/* end left column */}
 
-        {/* ── Right: sticky order summary ─────────────────────── */}
-        <div className="hidden lg:block w-72 xl:w-80 shrink-0 sticky top-4 self-start">
-          <div className="rounded-xl border bg-card shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b bg-muted/30 flex items-center justify-between">
-              <span className="font-semibold text-sm">Order Summary</span>
-              {basket.length > 0 && (
-                <span className="text-xs text-muted-foreground">{basket.length} item{basket.length !== 1 ? "s" : ""}</span>
-              )}
-            </div>
-
-            {basket.length === 0 ? (
-              <div className="px-4 py-8 text-center text-muted-foreground text-xs">
-                <Package className="w-6 h-6 mx-auto mb-2 opacity-30" />
-                No items added yet
-              </div>
-            ) : (
-              <div className="divide-y max-h-[60vh] overflow-y-auto">
-                {Object.entries(summaryGroups).map(([key, items]) => {
-                  const label = key === "__stock__" ? "Bulk Stock" : key;
-                  const isStock = key === "__stock__";
-                  return (
-                    <div key={key} className="px-4 py-3">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        {isStock
-                          ? <Package className="w-3 h-3 text-muted-foreground shrink-0" />
-                          : <User className="w-3 h-3 text-muted-foreground shrink-0" />}
-                        <span className="text-xs font-semibold truncate">{label}</span>
-                      </div>
-                      <div className="flex flex-col gap-1.5">
-                        {(items as OrderItem[]).map((item, idx) => {
-                          const basketIdx = basket.findIndex((b, bi) => {
-                            const groupItems = Object.values(summaryGroups).flat();
-                            return b === item;
-                          });
-                          return (
-                            <div key={idx} className="flex items-start gap-2 group">
-                              <div className="flex-1 min-w-0">
-                                <p className="text-xs font-medium leading-tight truncate">{item.productName}</p>
-                                <p className="text-[11px] text-muted-foreground">
-                                  {[item.colour, item.size, item.quantity > 1 ? `×${item.quantity}` : null].filter(Boolean).join(" · ")}
-                                </p>
-                                {item.unitPrice > 0 && (
-                                  <p className="text-[11px] text-primary font-semibold">{formatCurrency(item.unitPrice * item.quantity)}</p>
-                                )}
-                              </div>
+                          {/* Qty + Add */}
+                          <div className="flex items-center gap-1.5 mt-auto">
+                            <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
                               <button
-                                className="opacity-0 group-hover:opacity-100 transition-opacity mt-0.5 text-muted-foreground hover:text-destructive"
-                                onClick={() => setBasket(b => b.filter(x => x !== item))}
-                                title="Remove"
+                                className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
                               >
-                                <X className="w-3.5 h-3.5" />
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <input
+                                type="number"
+                                min={1}
+                                value={state.qty}
+                                onChange={e => {
+                                  const v = parseInt(e.target.value, 10);
+                                  if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
+                                }}
+                                className="w-8 text-center text-xs font-medium bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              />
+                              <button
+                                className="px-2 h-full text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => setItemState(key, { qty: state.qty + 1 })}
+                              >
+                                <Plus className="w-3 h-3" />
                               </button>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                            <Button
+                              size="sm"
+                              className="h-8 text-xs flex-1 min-w-0"
+                              disabled={!state.size.trim()}
+                              onClick={() => handleAdd(wi, key)}
+                            >
+                              <Plus className="w-3 h-3 mr-0.5" /> Add
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
               </div>
-            )}
+            );
+          })}
 
-            {basket.length > 0 && (
-              <div className="px-4 py-3 border-t bg-muted/20">
-                {summaryTotal > 0 && (
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs text-muted-foreground">Estimated total</span>
-                    <span className="text-sm font-bold">{formatCurrency(summaryTotal)}</span>
-                  </div>
-                )}
-                <Button className="w-full" size="sm" onClick={onNext}>
-                  Review order <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-                </Button>
-              </div>
-            )}
-          </div>
+          <button
+            onClick={() => setSelectedRecipient(null)}
+            className="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline flex items-center gap-1.5 mt-2"
+          >
+            <User className="w-3.5 h-3.5" />
+            Order for another person
+          </button>
         </div>
 
-      </div>{/* end two-column flex */}
+        {/* Right: sticky order summary */}
+        <div className="hidden lg:block w-72 xl:w-80 shrink-0 sticky top-4 self-start">
+          <SummarySidebar />
+        </div>
+      </div>
 
       {/* Mobile sticky bottom bar */}
       {basket.length > 0 && (
