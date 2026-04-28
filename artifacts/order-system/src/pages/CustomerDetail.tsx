@@ -335,7 +335,9 @@ function OrderHistoryTab({ customerId }: { customerId: number }) {
 
 const PROCESS_TYPES = ["embroidery", "print", "DTF", "other"] as const;
 
-interface ProcessStockItem { id: number; name: string; sku: string | null; unitCost: number; }
+interface ProcessStockItem { id: number; name: string; sku: string | null; unitCost: number; supplierId: number | null; stockQuantity: number; }
+
+const blankDtf = { supplierId: "", unitCost: "", sku: "", orderQty: "0" };
 
 function ProcessesTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
@@ -345,10 +347,16 @@ function ProcessesTab({ customerId }: { customerId: number }) {
     queryKey: ["process-stock", "customer", customerId],
     queryFn: () => apiFetch(`/process-stock?customerId=${customerId}`),
   });
+  const { data: suppliers } = useQuery<any[]>({
+    queryKey: ["suppliers"],
+    queryFn: () => apiFetch("/suppliers"),
+  });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", notes: "" };
   const [form, setForm] = useState(blank);
+  const [dtfForm, setDtfForm] = useState(blankDtf);
+  const [isSaving, setIsSaving] = useState(false);
 
   const { uploadFile, isUploading } = useUpload({
     onSuccess: (res) => {
@@ -358,32 +366,9 @@ function ProcessesTab({ customerId }: { customerId: number }) {
     onError: () => toast({ title: "Upload failed", description: "Could not upload image", variant: "destructive" }),
   });
 
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [quickAddForm, setQuickAddForm] = useState({ name: "", sku: "" });
-
   const invStock = () => qc.invalidateQueries({ queryKey: ["process-stock", "customer", customerId] });
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "processes"] });
-
-  const quickAdd = useMutation({
-    mutationFn: (data: { name: string; sku: string | null }) =>
-      apiFetch("/process-stock", { method: "POST", body: JSON.stringify({ ...data, customerId, unitCost: 0, stockQuantity: 0 }) }),
-    onSuccess: (newItem: any) => {
-      invStock();
-      setForm(f => ({ ...f, processStockId: String(newItem.id) }));
-      setQuickAddOpen(false);
-      setQuickAddForm({ name: "", sku: "" });
-      toast({ title: "Stock item created", description: `${newItem.name} added and selected.` });
-    },
-    onError: (e: Error) => toast({ title: "Error", description: e.message || "Could not create stock item", variant: "destructive" }),
-  });
-
-  const save = useMutation({
-    mutationFn: (data: any) => editing
-      ? apiFetch(`/customers/${customerId}/processes/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
-      : apiFetch(`/customers/${customerId}/processes`, { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
-    onError: () => toast({ title: "Error", description: "Could not save process", variant: "destructive" }),
-  });
+  const invPO = () => qc.invalidateQueries({ queryKey: ["purchase-orders"] });
 
   const del = useMutation({
     mutationFn: (id: number) => apiFetch(`/customers/${customerId}/processes/${id}`, { method: "DELETE" }),
@@ -392,7 +377,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
 
   const typeColour: Record<string, string> = { embroidery: "bg-purple-100 text-purple-700", print: "bg-blue-100 text-blue-700", other: "bg-gray-100 text-gray-700" };
 
-  const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
+  const openAdd = () => { setForm(blank); setDtfForm(blankDtf); setEditing(null); setOpen(true); };
   const openEdit = (p: any) => {
     setForm({
       name: p.name || "",
@@ -403,20 +388,91 @@ function ProcessesTab({ customerId }: { customerId: number }) {
       imageUrl: p.imageUrl || "",
       notes: p.notes || "",
     });
+    if (p.type === "DTF" && p.processStockId && allProcessStock) {
+      const stockItem = allProcessStock.find((s: ProcessStockItem) => s.id === p.processStockId);
+      setDtfForm(stockItem ? {
+        supplierId: stockItem.supplierId != null ? String(stockItem.supplierId) : "",
+        unitCost: stockItem.unitCost != null ? String(stockItem.unitCost) : "",
+        sku: stockItem.sku || "",
+        orderQty: "0",
+      } : blankDtf);
+    } else {
+      setDtfForm(blankDtf);
+    }
     setEditing(p);
     setOpen(true);
   };
 
-  const handleSave = () => {
-    save.mutate({
-      name: form.name,
-      type: form.type || null,
-      placement: form.placement || null,
-      price: form.price ? parseFloat(form.price) : null,
-      processStockId: form.processStockId ? parseInt(form.processStockId, 10) : null,
-      imageUrl: form.imageUrl || null,
-      notes: form.notes || null,
-    });
+  const handleSave = async () => {
+    if (!form.name.trim() || isSaving) return;
+    setIsSaving(true);
+    try {
+      let stockId: number | null = form.processStockId ? parseInt(form.processStockId, 10) : null;
+
+      if (form.type === "DTF") {
+        const stockPayload = {
+          name: form.name.trim(),
+          sku: dtfForm.sku.trim() || null,
+          supplierId: dtfForm.supplierId ? parseInt(dtfForm.supplierId, 10) : null,
+          unitCost: dtfForm.unitCost ? parseFloat(dtfForm.unitCost) : 0,
+          customerId,
+        };
+        if (stockId) {
+          await apiFetch(`/process-stock/${stockId}`, { method: "PATCH", body: JSON.stringify(stockPayload) });
+        } else {
+          const newStock = await apiFetch("/process-stock", { method: "POST", body: JSON.stringify({ ...stockPayload, stockQuantity: 0 }) });
+          stockId = newStock.id;
+        }
+        const orderQty = parseInt(dtfForm.orderQty || "0", 10);
+        if (orderQty > 0) {
+          const supplier = suppliers?.find((s: any) => s.id === parseInt(dtfForm.supplierId || "0", 10));
+          await apiFetch("/purchasing/purchase-orders/for-process-stock", {
+            method: "POST",
+            body: JSON.stringify({
+              supplierId: dtfForm.supplierId ? parseInt(dtfForm.supplierId, 10) : null,
+              supplierName: supplier?.name || "Unknown Supplier",
+              supplierEmail: supplier?.email || null,
+              notes: `Process stock reorder: ${form.name.trim()}`,
+              items: [{
+                productName: form.name.trim(),
+                supplierCode: dtfForm.sku.trim() || null,
+                supplierPrice: dtfForm.unitCost ? parseFloat(dtfForm.unitCost) : null,
+                quantityOrdered: orderQty,
+              }],
+            }),
+          });
+          invPO();
+        }
+      }
+
+      const processPayload = {
+        name: form.name,
+        type: form.type || null,
+        placement: form.placement || null,
+        price: form.price ? parseFloat(form.price) : null,
+        processStockId: stockId,
+        imageUrl: form.imageUrl || null,
+        notes: form.notes || null,
+      };
+      await (editing
+        ? apiFetch(`/customers/${customerId}/processes/${editing.id}`, { method: "PATCH", body: JSON.stringify(processPayload) })
+        : apiFetch(`/customers/${customerId}/processes`, { method: "POST", body: JSON.stringify(processPayload) })
+      );
+
+      inv();
+      invStock();
+      const orderQty = parseInt(dtfForm.orderQty || "0", 10);
+      toast({
+        title: "Saved",
+        description: form.type === "DTF" && orderQty > 0 ? "Draft purchase order created in Purchasing." : undefined,
+      });
+      setOpen(false);
+      setEditing(null);
+    } catch (e: any) {
+      toast({ title: "Error saving process", description: e.message || "Could not save process", variant: "destructive" });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const getStockName = (id: number | null) => {
@@ -536,25 +592,47 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               />
             </div>
             {form.type === "DTF" && (
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-1"><Boxes className="w-3 h-3" /> Process Stock Item</Label>
-                  <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs text-primary hover:bg-primary/10 gap-1"
-                    onClick={() => { setQuickAddForm({ name: "", sku: "SBS" + String(Math.floor(Math.random() * 90000) + 10000) }); setQuickAddOpen(true); }}>
-                    <Plus className="w-3 h-3" /> New
-                  </Button>
+              <div className="rounded-md border border-amber-200 bg-amber-50/40 p-3 grid gap-3">
+                <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
+                  <Boxes className="w-3 h-3" /> DTF Stock Details
+                  {form.processStockId && (() => {
+                    const s = allProcessStock?.find(x => x.id === parseInt(form.processStockId));
+                    return s ? (
+                      <span className={cn("ml-auto font-normal text-[11px] px-1.5 py-0.5 rounded-full", s.stockQuantity === 0 ? "bg-amber-200 text-amber-800" : "bg-green-100 text-green-700")}>
+                        {s.stockQuantity === 0 ? "⚠ No stock" : `${s.stockQuantity} in stock`}
+                      </span>
+                    ) : null;
+                  })()}
                 </div>
-                <Select value={form.processStockId || "none"} onValueChange={v => setForm({ ...form, processStockId: v === "none" ? "" : v })}>
-                  <SelectTrigger className="w-full"><SelectValue placeholder="Link stock item" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    {allProcessStock?.map(s => (
-                      <SelectItem key={s.id} value={s.id.toString()}>
-                        {s.sku ? `${s.sku} — ${s.name}` : s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Supplier</Label>
+                    <Select value={dtfForm.supplierId || "none"} onValueChange={v => setDtfForm(f => ({ ...f, supplierId: v === "none" ? "" : v }))}>
+                      <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No supplier</SelectItem>
+                        {suppliers?.map((s: any) => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Unit Cost</Label>
+                    <Input className="h-8 text-sm" type="number" min="0" step="0.01" placeholder="0.00"
+                      value={dtfForm.unitCost} onChange={e => setDtfForm(f => ({ ...f, unitCost: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Product Code (SKU)</Label>
+                    <Input className="h-8 text-sm" placeholder="Auto-generated"
+                      value={dtfForm.sku} onChange={e => setDtfForm(f => ({ ...f, sku: e.target.value }))} />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs flex items-center gap-1"><ShoppingBag className="w-3 h-3" /> Draft PO Qty <span className="font-normal text-muted-foreground">(0 = skip)</span></Label>
+                    <Input className="h-8 text-sm" type="number" min="0" step="1" placeholder="0"
+                      value={dtfForm.orderQty} onChange={e => setDtfForm(f => ({ ...f, orderQty: e.target.value }))} />
+                  </div>
+                </div>
               </div>
             )}
             <div className="grid gap-2">
@@ -595,43 +673,8 @@ function ProcessesTab({ customerId }: { customerId: number }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={save.isPending || !form.name || isUploading}>{save.isPending ? "Saving..." : "Save"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Quick-add process stock item */}
-      <Dialog open={quickAddOpen} onOpenChange={v => { if (!v) setQuickAddOpen(false); }}>
-        <DialogContent className="sm:max-w-[360px]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Boxes className="w-4 h-4" /> Add Process Stock Item</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label>Name *</Label>
-              <Input
-                placeholder="e.g. Netty Stars Large Logo"
-                value={quickAddForm.name}
-                onChange={e => setQuickAddForm(f => ({ ...f, name: e.target.value }))}
-                autoFocus
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Product Code</Label>
-              <Input
-                placeholder="e.g. SBS10423"
-                value={quickAddForm.sku}
-                onChange={e => setQuickAddForm(f => ({ ...f, sku: e.target.value }))}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setQuickAddOpen(false)}>Cancel</Button>
-            <Button
-              disabled={quickAdd.isPending || !quickAddForm.name.trim()}
-              onClick={() => quickAdd.mutate({ name: quickAddForm.name.trim(), sku: quickAddForm.sku.trim() || null })}
-            >
-              {quickAdd.isPending ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Creating...</> : "Create & Select"}
+            <Button onClick={handleSave} disabled={isSaving || !form.name || isUploading}>
+              {isSaving ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving...</> : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>
