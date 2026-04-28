@@ -1298,8 +1298,9 @@ export default function NewOrder() {
   const { portalRole, isPreview } = useAuth();
 
   const saved = readSession();
-  const [step, setStep] = useState<number>(saved?.step ?? 0);
-  const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(saved?.mode ?? null);
+  const savedHasItems = (saved?.basket?.length ?? 0) > 0;
+  const [step, setStep] = useState<number>(savedHasItems ? (saved?.step ?? 0) : 0);
+  const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(savedHasItems ? (saved?.mode ?? null) : null);
   const [basket, setBasket] = useState<OrderItem[]>(saved?.basket ?? []);
   const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
   const [confirmedOrder, setConfirmedOrder] = useState<{ id: number; orderNumber: string } | null>(null);
