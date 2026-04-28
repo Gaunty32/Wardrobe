@@ -116,8 +116,9 @@ function SupplierSelect({ value, onChange, suppliers, placeholder = "Select supp
 }
 
 // ── Variant row ─────────────────────────────────────────────────────────────
-function VariantRow({ variant, suppliers, productId, onRefresh }: {
+function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpload }: {
   variant: any; suppliers: any[]; productId: number; onRefresh: () => void;
+  onColourImageUpload: (colour: string | null, imageUrl: string) => void;
 }) {
   const { toast } = useToast();
   const [editOpen, setEditOpen] = useState(false);
@@ -140,12 +141,12 @@ function VariantRow({ variant, suppliers, productId, onRefresh }: {
     onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
   });
 
-  // Quick-upload: clicks directly on the row image cell → auto-saves immediately
+  // Quick-upload: clicks directly on the row image cell → applies to all variants of this colour
   const { uploadFile: quickUploadImage, isUploading: isQuickUploading } = useUpload({
     onSuccess: (res) => {
       const url = `/api/storage${res.objectPath}`;
       setEditImageUrl(url);
-      updateMut.mutate({ imageUrl: url });
+      onColourImageUpload(variant.colour ?? null, url);
     },
     onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
   });
@@ -516,6 +517,22 @@ export default function ProductDetail() {
     queryFn: () => apiFetch(`/products/${productId}/variants`),
     enabled: !!productId,
   });
+
+  // Upload one image and apply it to every variant that shares the same colour
+  async function handleColourImageUpload(colour: string | null, imageUrl: string) {
+    const siblings = (variants as any[]).filter((v) =>
+      colour == null ? v.colour == null : v.colour === colour
+    );
+    await Promise.all(
+      siblings.map((v) =>
+        apiFetch(`/products/${productId}/variants/${v.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ imageUrl }),
+        })
+      )
+    );
+    refetchVariants();
+  }
 
   const { data: categoryNames = [] } = useQuery<string[]>({
     queryKey: ["products-category-names"],
@@ -965,6 +982,7 @@ export default function ProductDetail() {
                               suppliers={suppliers}
                               productId={productId}
                               onRefresh={refetchVariants}
+                              onColourImageUpload={handleColourImageUpload}
                             />
                           ))}
                         </TableBody>
