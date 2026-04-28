@@ -471,12 +471,25 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     WHERE customer_id = ${customerId} AND is_default = true
     LIMIT 1
   `);
-  const defaultAddressId: number | null = (defaultAddrRows.rows[0] as any)?.id ?? null;
+  const customerDefaultAddressId: number | null = (defaultAddrRows.rows[0] as any)?.id ?? null;
 
   // Resolve portal user's email and display name
   const portalUserId = (req as any).portalUserId;
   const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
   const submitterEmail: string | null = (userRows.rows[0] as any)?.email ?? null;
+
+  // If the submitting employee has their own delivery address, prefer it over the customer default
+  let defaultAddressId: number | null = customerDefaultAddressId;
+  if (submitterEmail) {
+    const empAddrRows = await db.execute(sql`
+      SELECT delivery_address_id FROM customer_employees
+      WHERE customer_id = ${customerId} AND lower(email) = lower(${submitterEmail})
+        AND delivery_address_id IS NOT NULL
+      LIMIT 1
+    `);
+    const empAddrId: number | null = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
+    if (empAddrId) defaultAddressId = empAddrId;
+  }
   let submitterName: string | null = null;
   if (submitterEmail) {
     const empRows = await db.execute(sql`
@@ -800,6 +813,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   }
   const rows = await db.execute(sql`
     SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
+           po_number, portal_submitted_by_name, portal_submitted_by_email,
            (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
     FROM orders
     WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
@@ -819,6 +833,11 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
   }
   const orderId = parseInt(req.params.id, 10);
   const managerUserId = (req as any).portalUserId;
+
+  const parsed = z.object({
+    poNumber: z.string().max(100).optional().nullable(),
+  }).safeParse(req.body);
+  const poNumber: string | null = parsed.success ? (parsed.data.poNumber ?? null) : null;
 
   // Resolve manager email and name
   const mgrUserRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${managerUserId} LIMIT 1`);
@@ -841,7 +860,8 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
   await db.execute(sql`
     UPDATE orders SET portal_status = 'submitted', status = 'portal_pending', updated_at = now(),
       portal_approved_by_email = ${mgrEmail},
-      portal_approved_by_name = ${mgrName}
+      portal_approved_by_name = ${mgrName},
+      po_number = COALESCE(${poNumber}, po_number)
     WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
   `);
   res.json({ ok: true });

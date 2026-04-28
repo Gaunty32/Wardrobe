@@ -11,9 +11,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Plus, Loader2, ShoppingBag, ArrowRight, Clock, CheckCircle2, XCircle, Package, AlertCircle,
+  Plus, Loader2, ShoppingBag, ArrowRight, Clock, CheckCircle2, XCircle, Package, AlertCircle, User,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -185,6 +186,8 @@ function ManagerReviewPanel() {
   const { toast } = useToast();
   const [rejectTarget, setRejectTarget] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState("");
+  const [submitTarget, setSubmitTarget] = useState<any | null>(null);
+  const [submitPoNumber, setSubmitPoNumber] = useState("");
 
   const { data: pendingOrders = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-manager-pending"],
@@ -192,10 +195,16 @@ function ManagerReviewPanel() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (orderId: number) => apiFetch(`/portal/manager/orders/${orderId}/submit`, { method: "POST" }),
+    mutationFn: ({ orderId, poNumber }: { orderId: number; poNumber: string }) =>
+      apiFetch(`/portal/manager/orders/${orderId}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ poNumber: poNumber.trim() || null }),
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["portal-manager-pending"] });
       queryClient.invalidateQueries({ queryKey: ["portal-orders"] });
+      setSubmitTarget(null);
+      setSubmitPoNumber("");
       toast({ title: "Order submitted to SBS" });
     },
   });
@@ -214,6 +223,11 @@ function ManagerReviewPanel() {
       toast({ title: "Order rejected" });
     },
   });
+
+  function openSubmitDialog(order: any) {
+    setSubmitTarget(order);
+    setSubmitPoNumber(order.po_number ?? "");
+  }
 
   if (isLoading) return null;
   if (pendingOrders.length === 0) return null;
@@ -235,8 +249,19 @@ function ManagerReviewPanel() {
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-primary text-sm">{order.order_number}</span>
                   <span className="text-xs text-muted-foreground">{formatDate(order.order_date)}</span>
+                  {order.po_number && (
+                    <Badge variant="outline" className="text-xs font-normal">PO: {order.po_number}</Badge>
+                  )}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5 flex gap-2 flex-wrap">
+                <div className="text-xs text-muted-foreground mt-0.5 flex gap-2 flex-wrap items-center">
+                  {order.portal_submitted_by_name && (
+                    <>
+                      <span className="flex items-center gap-1">
+                        <User className="w-3 h-3" />{order.portal_submitted_by_name}
+                      </span>
+                      <span className="text-border">·</span>
+                    </>
+                  )}
                   <span>{order.item_count} item{Number(order.item_count) !== 1 ? "s" : ""}</span>
                   <span className="text-border">·</span>
                   <span className="font-medium text-foreground">{formatCurrency(order.total_amount)}</span>
@@ -260,11 +285,10 @@ function ManagerReviewPanel() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => submitMutation.mutate(order.id)}
+                  onClick={() => openSubmitDialog(order)}
                   disabled={submitMutation.isPending}
                 >
-                  {submitMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-                  Submit to SBS
+                  Approve &amp; Submit
                 </Button>
               </div>
             </div>
@@ -272,6 +296,50 @@ function ManagerReviewPanel() {
         </CardContent>
       </Card>
 
+      {/* Approve & submit dialog — allows manager to add PO number */}
+      <Dialog open={!!submitTarget} onOpenChange={(o) => { if (!o) { setSubmitTarget(null); setSubmitPoNumber(""); } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Approve order {submitTarget?.order_number}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {submitTarget?.portal_submitted_by_name && (
+              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
+                <User className="w-3.5 h-3.5 shrink-0" />
+                Submitted by <span className="font-medium text-foreground">{submitTarget.portal_submitted_by_name}</span>
+              </p>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="submit-po">
+                Purchase Order Number
+                <span className="ml-1 text-muted-foreground font-normal">(optional — can be added later)</span>
+              </Label>
+              <Input
+                id="submit-po"
+                placeholder="e.g. PO-2026-001234"
+                value={submitPoNumber}
+                onChange={e => setSubmitPoNumber(e.target.value)}
+                autoFocus
+              />
+              <p className="text-xs text-muted-foreground">
+                This will be attached to the order and included on the invoice.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setSubmitTarget(null); setSubmitPoNumber(""); }}>Cancel</Button>
+            <Button
+              disabled={submitMutation.isPending}
+              onClick={() => submitMutation.mutate({ orderId: submitTarget.id, poNumber: submitPoNumber })}
+            >
+              {submitMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+              Submit to SBS
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reject dialog */}
       <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectReason(""); } }}>
         <DialogContent>
           <DialogHeader>
