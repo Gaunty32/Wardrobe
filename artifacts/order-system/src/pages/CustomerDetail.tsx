@@ -1091,6 +1091,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [sizes, setSizes] = useState<{ label: string; size: string }[]>([]);
+  const [nameSearch, setNameSearch] = useState("");
+  const [empRoleFilter, setEmpRoleFilter] = useState<number | null | "all">("all");
 
   const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, email: "", phone: "", department: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
@@ -1159,9 +1161,16 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const activeCount = employees?.filter(e => e.isActive).length ?? 0;
   const inactiveCount = employees?.filter(e => !e.isActive).length ?? 0;
 
+  const filteredEmployees = (employees ?? []).filter((e: any) => {
+    const fullName = [e.firstName, e.lastName].filter(Boolean).join(' ').toLowerCase();
+    const matchesName = !nameSearch.trim() || fullName.includes(nameSearch.toLowerCase().trim());
+    const matchesRole = empRoleFilter === "all" || e.roleId === empRoleFilter;
+    return matchesName && matchesRole;
+  });
+
   return (
     <>
-      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+      <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowInactive(false)}
@@ -1178,11 +1187,35 @@ function EmployeesTab({ customerId }: { customerId: number }) {
             All incl. inactive {inactiveCount > 0 && `(+${inactiveCount} hidden)`}
           </button>
         </div>
-        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Employee</Button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <input
+              className="h-8 w-48 rounded-md border border-input bg-transparent pl-7 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              placeholder="Search by name..."
+              value={nameSearch}
+              onChange={e => setNameSearch(e.target.value)}
+            />
+            <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+          <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Employee</Button>
+        </div>
       </div>
+
+      {(roles as any[])?.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          <button onClick={() => setEmpRoleFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === "all" ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All roles</button>
+          <button onClick={() => setEmpRoleFilter(null)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === null ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>No role</button>
+          {(roles as any[]).map((r: any) => (
+            <button key={r.id} onClick={() => setEmpRoleFilter(r.id)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === r.id ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{r.name}</button>
+          ))}
+        </div>
+      )}
 
       {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
         : !employees?.length ? <EmptyState icon={UserCheck} label="employees" onAdd={openAdd} />
+        : filteredEmployees.length === 0 ? (
+          <div className="text-center py-8 text-sm text-muted-foreground">No employees match your search.</div>
+        )
         : <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
             <TableHead>Name</TableHead>
@@ -1191,7 +1224,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
             <TableHead className="text-right w-28">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
-            {employees.map((e: any) => (
+            {filteredEmployees.map((e: any) => (
               <TableRow key={e.id} className={cn("group hover:bg-muted/30", !e.isActive && "opacity-50")}>
                 <TableCell>
                   <div className="flex items-center gap-2">
