@@ -816,6 +816,7 @@ function InspirationStep({ wishlist, setWishlist, onSubmit, submitting }: {
   submitting: boolean;
 }) {
   const [search, setSearch] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [draft, setDraft] = useState({ colour: "", processes: [] as string[], notes: "" });
   const [overallNotes, setOverallNotes] = useState("");
@@ -825,13 +826,6 @@ function InspirationStep({ wishlist, setWishlist, onSubmit, submitting }: {
     queryFn: () => apiFetch("/portal/products"),
   });
 
-  const filtered = search.trim()
-    ? products.filter((p: any) =>
-        p.name?.toLowerCase().includes(search.toLowerCase()) ||
-        p.sku?.toLowerCase().includes(search.toLowerCase()) ||
-        p.category?.toLowerCase().includes(search.toLowerCase())
-      )
-    : products;
 
   const categoryGroups: { category: string; items: any[] }[] = useMemo(() => {
     const map = new Map<string, any[]>();
@@ -875,128 +869,175 @@ function InspirationStep({ wishlist, setWishlist, onSubmit, submitting }: {
   const alreadyAdded = (productId: number) =>
     wishlist.some(w => w.productId === productId);
 
+  // Derive the active product list based on category + search
+  const activeProducts = selectedCategory
+    ? products.filter((p: any) => (p.category || "Other") === selectedCategory)
+    : products;
+  const displayProducts = search.trim()
+    ? activeProducts.filter((p: any) =>
+        p.name?.toLowerCase().includes(search.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(search.toLowerCase()) ||
+        p.category?.toLowerCase().includes(search.toLowerCase())
+      )
+    : activeProducts;
+
+  const renderCard = (p: any) => {
+    const added = alreadyAdded(p.id);
+    const isOpen = expandedId === p.id;
+    return (
+      <div key={p.id} className="flex flex-col">
+        <Card className={cn("transition-colors", isOpen ? "border-primary/50" : "hover:border-primary/30", added && "opacity-60")}>
+          <CardContent className="py-3 px-4 flex items-center gap-3">
+            {p.image_url ? (
+              <img src={p.image_url} alt={p.name} className="w-12 h-12 rounded object-cover shrink-0 bg-muted" />
+            ) : (
+              <div className="w-12 h-12 rounded bg-muted shrink-0 flex items-center justify-center">
+                <ShoppingBag className="w-5 h-5 text-muted-foreground/50" />
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm truncate">{p.name}</p>
+              <p className="text-xs text-muted-foreground">{p.sku}</p>
+            </div>
+            {added ? (
+              <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 shrink-0">
+                <Heart className="w-3 h-3 fill-current" /> Added
+              </span>
+            ) : (
+              <Button
+                size="sm" variant="outline"
+                className="shrink-0 gap-1 h-7 text-xs"
+                onClick={() => isOpen ? setExpandedId(null) : openConfig(p.id)}
+              >
+                <Heart className="w-3 h-3" /> Wishlist
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Inline config panel */}
+        {isOpen && (
+          <Card className="border-primary/40 border-t-0 rounded-t-none -mt-px">
+            <CardContent className="px-4 py-3 flex flex-col gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Preferred colour(s)</Label>
+                <Input
+                  className="h-8 text-sm"
+                  placeholder="e.g. Navy, Black, White"
+                  value={draft.colour}
+                  onChange={e => setDraft(d => ({ ...d, colour: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Decoration style</Label>
+                <div className="flex flex-wrap gap-1.5">
+                  {PROCESS_OPTIONS.map(opt => (
+                    <button
+                      key={opt.id}
+                      data-active={draft.processes.includes(opt.id)}
+                      onClick={() => toggleProcess(opt.id)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs font-medium transition-all",
+                        opt.cls
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium">Notes (optional)</Label>
+                <Input
+                  className="h-8 text-sm"
+                  placeholder="Any specific requirements…"
+                  value={draft.notes}
+                  onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpandedId(null)}>Cancel</Button>
+                <Button size="sm" className="h-7 text-xs gap-1" onClick={() => addToWishlist(p)}>
+                  <Heart className="w-3 h-3" /> Add to wishlist
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       <h2 className="text-xl font-semibold mb-1">Looking for Inspiration</h2>
-      <p className="text-muted-foreground text-sm mb-5">
+      <p className="text-muted-foreground text-sm mb-4">
         Browse our range and add anything that catches your eye to your wishlist.
         Tell us your preferred colours and decoration style — we'll come back with a tailored wardrobe quote.
       </p>
 
       {/* Search */}
-      <div className="relative mb-4">
+      <div className="relative mb-3">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search products by name, SKU or category…"
+          placeholder="Search products by name or SKU…"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
       </div>
 
+      {/* Category chips */}
+      {!isLoading && categoryGroups.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto pb-2 mb-4 scrollbar-none -mx-1 px-1">
+          <button
+            onClick={() => { setSelectedCategory(null); setSearch(""); }}
+            className={cn(
+              "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-all whitespace-nowrap",
+              !selectedCategory
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+            )}
+          >
+            All ({products.length})
+          </button>
+          {categoryGroups.map(({ category, items }) => (
+            <button
+              key={category}
+              onClick={() => { setSelectedCategory(category); setSearch(""); }}
+              className={cn(
+                "shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition-all whitespace-nowrap",
+                selectedCategory === category
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground"
+              )}
+            >
+              {category} ({items.length})
+            </button>
+          ))}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
       ) : (() => {
-        const renderCard = (p: any) => {
-          const added = alreadyAdded(p.id);
-          const isOpen = expandedId === p.id;
-          return (
-            <div key={p.id} className="flex flex-col">
-              <Card className={cn("transition-colors", isOpen ? "border-primary/50" : "hover:border-primary/30", added && "opacity-60")}>
-                <CardContent className="py-3 px-4 flex items-center gap-3">
-                  {p.image_url ? (
-                    <img src={p.image_url} alt={p.name} className="w-12 h-12 rounded object-cover shrink-0 bg-muted" />
-                  ) : (
-                    <div className="w-12 h-12 rounded bg-muted shrink-0 flex items-center justify-center">
-                      <ShoppingBag className="w-5 h-5 text-muted-foreground/50" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{p.name}</p>
-                    <p className="text-xs text-muted-foreground">{p.sku}</p>
-                  </div>
-                  {added ? (
-                    <span className="text-xs text-emerald-600 font-medium flex items-center gap-1 shrink-0">
-                      <Heart className="w-3 h-3 fill-current" /> Added
-                    </span>
-                  ) : (
-                    <Button
-                      size="sm" variant="outline"
-                      className="shrink-0 gap-1 h-7 text-xs"
-                      onClick={() => isOpen ? setExpandedId(null) : openConfig(p.id)}
-                    >
-                      <Heart className="w-3 h-3" /> Wishlist
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Inline config panel */}
-              {isOpen && (
-                <Card className="border-primary/40 border-t-0 rounded-t-none -mt-px">
-                  <CardContent className="px-4 py-3 flex flex-col gap-3">
-                    <div className="space-y-1">
-                      <Label className="text-xs font-medium">Preferred colour(s)</Label>
-                      <Input
-                        className="h-8 text-sm"
-                        placeholder="e.g. Navy, Black, White"
-                        value={draft.colour}
-                        onChange={e => setDraft(d => ({ ...d, colour: e.target.value }))}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs font-medium">Decoration style</Label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {PROCESS_OPTIONS.map(opt => (
-                          <button
-                            key={opt.id}
-                            data-active={draft.processes.includes(opt.id)}
-                            onClick={() => toggleProcess(opt.id)}
-                            className={cn(
-                              "rounded-full border px-2.5 py-1 text-xs font-medium transition-all",
-                              opt.cls
-                            )}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs font-medium">Notes (optional)</Label>
-                      <Input
-                        className="h-8 text-sm"
-                        placeholder="Any specific requirements…"
-                        value={draft.notes}
-                        onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex gap-2 justify-end">
-                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setExpandedId(null)}>Cancel</Button>
-                      <Button size="sm" className="h-7 text-xs gap-1" onClick={() => addToWishlist(p)}>
-                        <Heart className="w-3 h-3" /> Add to wishlist
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          );
-        };
-
-        if (search.trim()) {
+        // Searching or a category is selected → flat list
+        if (search.trim() || selectedCategory) {
           return (
             <>
               <p className="text-xs text-muted-foreground mb-3">
-                {filtered.length} result{filtered.length !== 1 ? "s" : ""} for &ldquo;{search}&rdquo;
+                {displayProducts.length} product{displayProducts.length !== 1 ? "s" : ""}
+                {selectedCategory ? ` in ${selectedCategory}` : ""}
+                {search.trim() ? ` matching "${search}"` : ""}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-                {filtered.map(renderCard)}
+                {displayProducts.map(renderCard)}
               </div>
             </>
           );
         }
 
+        // No filter — show all categories grouped
         return (
           <>
             {categoryGroups.map(({ category, items }) => (
