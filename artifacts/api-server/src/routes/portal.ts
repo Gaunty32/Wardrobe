@@ -654,10 +654,10 @@ router.get("/portal/products/:id/variants", portalAuth, async (req: Request, res
 router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
 
-  // Get all wardrobe items — primary key is customer_id on the item itself;
-  // LEFT JOIN to finishes so items with no finish still appear
+  // Get wardrobe items — deduplicate by (finish, product, colour, role) so each
+  // combination shows as one card in the portal; sizes are served via sizesMap.
   const finishes = await db.execute(sql`
-    SELECT
+    SELECT DISTINCT ON (COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, 0))
       cf.id   AS finish_id,
       cf.name AS finish_name,
       cf.code AS finish_code,
@@ -670,7 +670,6 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
       p.unit_price  AS woo_price,
       p.price_breaks,
       cfi.colour,
-      cfi.size,
       cfi.unit_price,
       cfi.special_price,
       cfi.role_id,
@@ -687,7 +686,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     LEFT JOIN products           p   ON p.id = cfi.product_id
     LEFT JOIN customer_roles     cr  ON cr.id = cfi.role_id
     WHERE cfi.customer_id = ${customerId}
-    ORDER BY cf.name NULLS LAST, cfi.name
+    ORDER BY COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, 0), cfi.id, cf.name NULLS LAST, cfi.name
   `);
 
   // Get decoration processes linked to each finish
