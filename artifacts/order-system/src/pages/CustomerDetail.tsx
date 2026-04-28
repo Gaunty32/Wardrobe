@@ -1807,7 +1807,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setForm(f => {
       const newBase = prod.unitPrice;
       const newPrice = calcPriceForFinish(newBase, f.finishId);
-      return { ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "" };
+      return { ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "", name: f.name || prod.name };
     });
     setVariantColours([]);
     setVariantSizes([]);
@@ -1850,9 +1850,10 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   };
 
   const handleSave = async () => {
-    if (!form.name || !form.productId || !form.unitPrice) return;
+    if (!form.productId || !form.unitPrice) return;
+    const effectiveName = form.name.trim() || selectedProduct?.name || "";
     const base = {
-      name: form.name,
+      name: effectiveName,
       roleId: form.roleId || null,
       productId: form.productId,
       finishId: form.finishId || null,
@@ -2146,10 +2147,10 @@ function WardrobeTab({ customerId }: { customerId: number }) {
           <div className="grid gap-4 py-2">
 
             <div className="grid gap-2">
-              <Label>Name *</Label>
+              <Label>Name <span className="text-muted-foreground font-normal text-xs">(defaults to product name)</span></Label>
               <input
                 className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                placeholder="e.g. Navy Polo — Full Logo"
+                placeholder="Optional — leave blank to use product name"
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               />
@@ -2376,7 +2377,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); setEditingGroup(null); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={save.isPending || saving || !form.name || !form.productId || !form.unitPrice}>
+            <Button onClick={handleSave} disabled={save.isPending || saving || !form.productId || !form.unitPrice}>
               {(save.isPending || saving) ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
