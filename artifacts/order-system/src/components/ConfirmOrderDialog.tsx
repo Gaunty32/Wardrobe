@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import {
   Loader2, CheckCircle2, ShoppingCart, PackageX, Mail, Check,
-  Copy, ChevronRight, Package, AlertTriangle, Truck,
+  Copy, ChevronRight, Package, AlertTriangle, Truck, CreditCard, XCircle,
 } from "lucide-react";
 
 const SHIPPING_OPTIONS = [
@@ -63,6 +63,7 @@ interface AllocationResult {
   shortfallGroups: ShortfallGroup[];
   unlinkedItems: number;
   emailConfigured: boolean;
+  stripeCharge?: { success: boolean; paymentIntentId?: string; cardLast4?: string; error?: string } | null;
 }
 
 type Step = "review" | "confirming" | "purchase_orders" | "creating_pos" | "email" | "sending_email" | "done";
@@ -554,6 +555,22 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                   <li className="flex items-start gap-2">
                     <Mail className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
                     <span>Acknowledgement email sent to {emailTo}</span>
+                  </li>
+                )}
+                {result.stripeCharge?.success && (
+                  <li className="flex items-start gap-2">
+                    <CreditCard className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <span>
+                      Payment taken from card ending <strong>{result.stripeCharge.cardLast4}</strong>
+                    </span>
+                  </li>
+                )}
+                {result.stripeCharge && !result.stripeCharge.success && (
+                  <li className="flex items-start gap-2">
+                    <XCircle className="w-4 h-4 text-destructive mt-0.5 shrink-0" />
+                    <span className="text-destructive">
+                      Payment failed — {result.stripeCharge.error}. Charge the card manually or contact the customer.
+                    </span>
                   </li>
                 )}
               </ul>

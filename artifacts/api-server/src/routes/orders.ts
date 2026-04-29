@@ -482,6 +482,53 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
     const unlinkedItems = items.filter(i => !i.productId).length;
 
+    // ── Stripe: charge most recently added saved card on confirmation ──────────
+    let stripeCharge: { success: boolean; paymentIntentId?: string; cardLast4?: string; error?: string } | null = null;
+    const orderTotal = parseFloat(String(order.totalAmount ?? 0));
+    if (order.customerId && orderTotal > 0) {
+      try {
+        const [customerRow] = await db
+          .select({ stripeCustomerId: customersTable.stripeCustomerId })
+          .from(customersTable)
+          .where(eq(customersTable.id, order.customerId));
+
+        if (customerRow?.stripeCustomerId) {
+          const stripe = await getUncachableStripeClient();
+          // Stripe returns payment methods newest-first — take the first one
+          const pms = await stripe.paymentMethods.list({
+            customer: customerRow.stripeCustomerId,
+            type: "card",
+            limit: 1,
+          });
+          const pm = pms.data[0];
+          if (pm) {
+            const amountPence = Math.round(orderTotal * 100);
+            const intent = await stripe.paymentIntents.create({
+              amount: amountPence,
+              currency: "gbp",
+              customer: customerRow.stripeCustomerId,
+              payment_method: pm.id,
+              confirm: true,
+              off_session: true,
+              description: `Order ${order.orderNumber} — Select Branding Solutions`,
+            });
+            stripeCharge = {
+              success: true,
+              paymentIntentId: intent.id,
+              cardLast4: pm.card?.last4,
+            };
+            await logOrderAction(order.id, "Payment taken", getActor(req),
+              `Charged £${orderTotal.toFixed(2)} to card ending ${pm.card?.last4} (${intent.id})`);
+          }
+        }
+      } catch (err: any) {
+        stripeCharge = { success: false, error: err.message };
+        await logOrderAction(order.id, "Payment failed", getActor(req),
+          `Stripe charge failed: ${err.message}`);
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     await logOrderAction(order.id, "Order confirmed", getActor(req),
       `Allocated ${allocatedLines} line(s); ${purchaseLines} line(s) raised to PO; ${unlinkedItems} unlinked line(s)`);
 
@@ -491,6 +538,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       shortfallGroups,
       unlinkedItems,
       emailConfigured: isEmailConfigured,
+      stripeCharge,
     });
     return;
   }
