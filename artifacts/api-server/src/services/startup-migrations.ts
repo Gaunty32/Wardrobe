@@ -232,6 +232,19 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Demo leads capture table
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS demo_leads (
+      id          serial PRIMARY KEY,
+      first_name  text NOT NULL,
+      last_name   text NOT NULL,
+      email       text NOT NULL,
+      company     text NOT NULL,
+      ip          text,
+      created_at  timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
   // Portal order audit timestamps
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_at timestamptz;

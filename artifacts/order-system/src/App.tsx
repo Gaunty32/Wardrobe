@@ -23,6 +23,10 @@ import Tasks from "@/pages/Tasks";
 import Invoices from "@/pages/Invoices";
 import Reports from "@/pages/Reports";
 import NotFound from "@/pages/not-found";
+import DemoGate from "@/pages/DemoGate";
+import DemoDashboard from "@/pages/DemoDashboard";
+import DemoOrders from "@/pages/DemoOrders";
+import DemoOrderDetail from "@/pages/DemoOrderDetail";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +56,12 @@ function UpdateBanner() {
 function Router() {
   return (
     <Switch>
+      {/* Demo routes — no auth required, must come first */}
+      <Route path="/demo" component={DemoGate} />
+      <Route path="/demo/dashboard" component={DemoDashboard} />
+      <Route path="/demo/orders" component={DemoOrders} />
+      <Route path="/demo/orders/:id" component={DemoOrderDetail} />
+
       <Route path="/" component={Dashboard} />
       <Route path="/orders" component={Orders} />
       <Route path="/orders/:id" component={OrderDetail} />
