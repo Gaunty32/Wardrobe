@@ -326,6 +326,8 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
   const rows = await db.execute(sql`
     SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
            po_number,
+           portal_submitted_by_name, portal_submitted_at,
+           portal_approved_by_name, portal_approved_at,
            (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
     FROM orders
     WHERE customer_id = ${customerId}
@@ -512,7 +514,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
 
   // Insert with a unique temp order number; update to P{id} after getting auto-generated id
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_at)
     VALUES (
       'P-' || gen_random_uuid()::text,
       ${customerId},
@@ -530,7 +532,8 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${defaultAddressId},
       ${submitterName},
       ${submitterEmail},
-      ${submitterName}
+      ${submitterName},
+      now()
     )
     RETURNING id
   `);
@@ -807,6 +810,16 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     savedSizes[eid].push({ label: row.label, size: row.size });
   }
 
+  // Resolve which employee the logged-in user is linked to (used to restrict member ordering)
+  const portalUserId = (req as any).portalUserId ?? null;
+  let myEmployeeId: number | null = null;
+  if (portalUserId) {
+    const linkRows = await db.execute(sql`
+      SELECT linked_employee_id FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1
+    `);
+    myEmployeeId = (linkRows.rows[0] as any)?.linked_employee_id ?? null;
+  }
+
   res.json({
     items: finishes.rows,
     processes: processes.rows,
@@ -814,6 +827,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     lastSizes,
     savedSizes,
     sizesMap,
+    myEmployeeId,
   });
 });
 
@@ -828,7 +842,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   }
   const rows = await db.execute(sql`
     SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
-           po_number, portal_submitted_by_name, portal_submitted_by_email,
+           po_number, portal_submitted_by_name, portal_submitted_by_email, portal_submitted_at,
            (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
     FROM orders
     WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
@@ -876,6 +890,7 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
     UPDATE orders SET portal_status = 'submitted', status = 'portal_pending', updated_at = now(),
       portal_approved_by_email = ${mgrEmail},
       portal_approved_by_name = ${mgrName},
+      portal_approved_at = now(),
       po_number = COALESCE(${poNumber}, po_number)
     WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
   `);
@@ -1308,12 +1323,41 @@ router.get("/portal/team/users", portalAuth, async (req: Request, res: Response)
   if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
 
   const rows = await db.execute(sql`
-    SELECT id, email, status, portal_role, last_login_at, created_at
-    FROM customer_portal_users
-    WHERE customer_id = ${customerId}
-    ORDER BY created_at
+    SELECT u.id, u.email, u.status, u.portal_role, u.last_login_at, u.created_at,
+           u.linked_employee_id,
+           e.first_name AS linked_first_name, e.last_name AS linked_last_name
+    FROM customer_portal_users u
+    LEFT JOIN customer_employees e ON e.id = u.linked_employee_id
+    WHERE u.customer_id = ${customerId}
+    ORDER BY u.created_at
   `);
   res.json(rows.rows);
+});
+
+router.patch("/portal/team/users/:id/link-employee", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({ employeeId: z.number().int().positive().nullable() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  // Verify employee belongs to this customer if not null
+  if (body.data.employeeId !== null) {
+    const empCheck = await db.execute(sql`
+      SELECT id FROM customer_employees WHERE id = ${body.data.employeeId} AND customer_id = ${customerId} LIMIT 1
+    `);
+    if (empCheck.rows.length === 0) { res.status(400).json({ error: "Employee not found" }); return; }
+  }
+
+  await db.execute(sql`
+    UPDATE customer_portal_users SET linked_employee_id = ${body.data.employeeId}, updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+  `);
+  res.json({ ok: true });
 });
 
 router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: Response) => {

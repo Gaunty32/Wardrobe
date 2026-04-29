@@ -171,6 +171,39 @@ export default function OrderDetailPage() {
         </Card>
       </div>
 
+      {/* Audit trail */}
+      {(order.portal_submitted_by_name || order.portal_approved_by_name) && (
+        <Card className="mb-5">
+          <CardContent className="py-4 px-5 space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Order history</p>
+            {order.portal_submitted_by_name && (
+              <div className="flex items-start gap-2 text-sm">
+                <span className="w-2 h-2 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                <span>
+                  <span className="font-medium">{order.portal_submitted_by_name}</span>
+                  {" submitted this order"}
+                  {order.portal_submitted_at && (
+                    <span className="text-muted-foreground"> — {new Date(order.portal_submitted_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</span>
+                  )}
+                </span>
+              </div>
+            )}
+            {order.portal_approved_by_name && (
+              <div className="flex items-start gap-2 text-sm">
+                <span className="w-2 h-2 rounded-full bg-green-500 mt-1.5 shrink-0" />
+                <span>
+                  <span className="font-medium">{order.portal_approved_by_name}</span>
+                  {" approved and forwarded to SBS"}
+                  {order.portal_approved_at && (
+                    <span className="text-muted-foreground"> — {new Date(order.portal_approved_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</span>
+                  )}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {order.portal_notes && (
         <Card className="mb-5">
           <CardContent className="py-4 px-5">

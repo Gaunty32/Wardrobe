@@ -199,7 +199,7 @@ function ProcessBadgeInline({ type }: { type: string }) {
 
 type ItemState = { size: string; qty: number };
 
-function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded }: {
+function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole }: {
   items: any[];
   employees: any[];
   lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
@@ -211,11 +211,16 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   onNext: () => void;
   isManager: boolean;
   onEmployeeAdded: () => void;
+  myEmployeeId: number | null;
+  portalRole: string;
 }) {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
-  const [selectedRecipient, setSelectedRecipient] = useState<string | null>(null);
+  // Members are pre-locked to their own employee record; others choose freely
+  const [selectedRecipient, setSelectedRecipient] = useState<string | null>(
+    portalRole === "member" && myEmployeeId ? String(myEmployeeId) : null
+  );
 
   // Search / filter state
   const [search, setSearch] = useState("");
@@ -246,12 +251,14 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   const filteredEmployees = useMemo(() => {
     const q = search.trim().toLowerCase();
     return employees.filter((emp: any) => {
+      // Members can only order for themselves
+      if (portalRole === "member" && myEmployeeId !== null && emp.id !== myEmployeeId) return false;
       const fullName = `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.toLowerCase();
       if (q && !fullName.includes(q)) return false;
       if (deptMgrOnly && !emp.role_name?.toLowerCase().includes("manager")) return false;
       return true;
     });
-  }, [employees, search, deptMgrOnly]);
+  }, [employees, search, deptMgrOnly, portalRole, myEmployeeId]);
 
   const getItemState = (key: string): ItemState =>
     itemStates[key] ?? { size: "", qty: 1 };
@@ -535,6 +542,22 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
   // ── Person picker (no recipient selected yet) ───────────────────────────────
   if (!selectedRecipient) {
+    // Member role with no linked employee — show helpful warning instead of empty picker
+    if (portalRole === "member" && myEmployeeId === null) {
+      return (
+        <div className="py-10 text-center max-w-md mx-auto">
+          <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-4">
+            <User className="w-7 h-7 text-amber-600" />
+          </div>
+          <h2 className="text-xl font-semibold mb-2">Employee record not linked</h2>
+          <p className="text-muted-foreground text-sm mb-4">
+            Your account needs to be linked to your employee record before you can place wardrobe orders. Please ask your admin to link your account in the Team settings.
+          </p>
+          <Button variant="outline" onClick={() => setLocation("/")}>Back to dashboard</Button>
+        </div>
+      );
+    }
+
     return (
       <div>
         <div className="flex items-start justify-between mb-1">
@@ -546,7 +569,9 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
           )}
         </div>
         <p className="text-muted-foreground text-sm mb-4">
-          Select who you're ordering for — sizes from their order history will be pre-filled automatically.
+          {portalRole === "member"
+            ? "Your wardrobe items are shown below — add what you need and your manager will review before it goes to SBS."
+            : "Select who you're ordering for — sizes from their order history will be pre-filled automatically."}
         </p>
 
         {/* Search + filter row */}
@@ -1701,6 +1726,8 @@ export default function NewOrder() {
             onNext={() => setStep(2)}
             isManager={portalRole === "manager"}
             onEmployeeAdded={() => queryClient.invalidateQueries({ queryKey: ["portal-wardrobe"] })}
+            myEmployeeId={wardrobe?.myEmployeeId ?? null}
+            portalRole={portalRole ?? "member"}
           />
         </div>
       )}

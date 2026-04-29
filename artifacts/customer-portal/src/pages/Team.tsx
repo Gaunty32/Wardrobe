@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2,
+  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -413,6 +413,8 @@ function UsersTab() {
   const [inviteRole, setInviteRole] = useState("member");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const [linkDialogUser, setLinkDialogUser] = useState<any | null>(null);
+  const [linkEmployeeId, setLinkEmployeeId] = useState<string>("none");
 
   const { data: users = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-team-users"],
@@ -482,6 +484,17 @@ function UsersTab() {
       toast({ title: "Access updated" });
     },
     onError: () => toast({ title: "Failed to update access", variant: "destructive" }),
+  });
+
+  const linkMutation = useMutation({
+    mutationFn: ({ id, employeeId }: { id: number; employeeId: number | null }) =>
+      apiFetch(`/portal/team/users/${id}/link-employee`, { method: "PATCH", body: JSON.stringify({ employeeId }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-team-users"] });
+      toast({ title: "Employee linked" });
+      setLinkDialogUser(null);
+    },
+    onError: () => toast({ title: "Failed to link employee", variant: "destructive" }),
   });
 
   const formatLastLogin = (ts: string | null) => {
@@ -573,10 +586,73 @@ function UsersTab() {
               </Button>
 
               <RoleBadge role={u.status === "invited" ? "invited" : u.status === "inactive" ? "inactive" : u.portal_role} />
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`shrink-0 text-xs gap-1 ${u.linked_employee_id ? "text-primary" : "text-muted-foreground"}`}
+                title={u.linked_employee_id ? `Linked to ${u.linked_first_name ?? ""} ${u.linked_last_name ?? ""}` : "Link to employee record"}
+                onClick={() => {
+                  setLinkDialogUser(u);
+                  setLinkEmployeeId(u.linked_employee_id ? String(u.linked_employee_id) : "none");
+                }}
+              >
+                <LinkIcon className="w-3.5 h-3.5" />
+                {u.linked_employee_id
+                  ? <span className="hidden sm:inline">{u.linked_first_name} {u.linked_last_name}</span>
+                  : <span className="hidden sm:inline">Link</span>
+                }
+              </Button>
             </div>
           ))}
         </div>
       )}
+
+      {/* Link employee dialog */}
+      <Dialog open={!!linkDialogUser} onOpenChange={(o) => { if (!o) setLinkDialogUser(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Link to employee record</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Linking a portal user to their employee record lets them place wardrobe orders for themselves.
+            </p>
+            <div className="space-y-1.5">
+              <Label>Employee</Label>
+              <Select value={linkEmployeeId} onValueChange={setLinkEmployeeId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select employee…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— No link —</SelectItem>
+                  {(employees as any[]).map((e: any) => (
+                    <SelectItem key={e.id} value={String(e.id)}>
+                      {e.first_name} {e.last_name}{e.job_title ? ` (${e.job_title})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkDialogUser(null)}>Cancel</Button>
+            <Button
+              disabled={linkMutation.isPending}
+              onClick={() => {
+                if (!linkDialogUser) return;
+                linkMutation.mutate({
+                  id: linkDialogUser.id,
+                  employeeId: linkEmployeeId === "none" ? null : parseInt(linkEmployeeId, 10),
+                });
+              }}
+            >
+              {linkMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(o) => { if (!o) { setInviteOpen(false); resetInviteDialog(); } }}>

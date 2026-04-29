@@ -232,6 +232,17 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Portal order audit timestamps
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_at timestamptz;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_approved_at  timestamptz;
+  `);
+
+  // Link portal users to their employee record (used to restrict member ordering to self)
+  await db.execute(sql`
+    ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS linked_employee_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;
+  `);
+
   console.log("[startup] Migrations complete");
 
   // ── Repair Bespoke Ties variants ────────────────────────────────────────────
