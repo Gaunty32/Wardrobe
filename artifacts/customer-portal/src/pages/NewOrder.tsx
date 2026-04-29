@@ -796,104 +796,100 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                   const hasBreak = unitPrice !== basePrice && basePrice > 0;
 
                   return (
-                    <Card key={key} className="overflow-hidden">
-                      <div className="flex gap-2.5 p-2.5">
-                        {/* Thumbnail */}
-                        <div className="w-[72px] h-[72px] bg-white border rounded-lg overflow-hidden flex items-center justify-center shrink-0">
-                          {(wi.variant_image_url ?? wi.product_image_url) ? (
-                            <img
-                              src={wi.variant_image_url ?? wi.product_image_url}
-                              alt={wi.product_name ?? wi.name}
-                              className="w-full h-full object-contain p-1"
-                            />
-                          ) : (
-                            <Shirt className="w-7 h-7 text-muted-foreground/20" />
+                    <Card key={key} className="overflow-hidden flex flex-col">
+                      {/* Product image — full width */}
+                      <div className="aspect-square bg-white flex items-center justify-center p-4 border-b">
+                        {(wi.variant_image_url ?? wi.product_image_url) ? (
+                          <img
+                            src={wi.variant_image_url ?? wi.product_image_url}
+                            alt={wi.product_name ?? wi.name}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : (
+                          <Shirt className="w-12 h-12 text-muted-foreground/20" />
+                        )}
+                      </div>
+
+                      {/* Info + controls */}
+                      <div className="p-3 flex flex-col gap-2.5 flex-1">
+                        {/* Name, colour, price */}
+                        <div>
+                          <p className="font-semibold text-sm leading-snug line-clamp-2">{wi.product_name ?? wi.name}</p>
+                          {(wi.colour || wi.product_sku) && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {[wi.colour, wi.product_sku].filter(Boolean).join(" · ")}
+                            </p>
+                          )}
+                          {unitPrice > 0 && (
+                            <div className="flex items-baseline gap-1.5 mt-1">
+                              <span className="text-base font-bold text-primary">{formatCurrency(unitPrice)}</span>
+                              {hasBreak && <span className="text-xs text-muted-foreground line-through">{formatCurrency(basePrice)}</span>}
+                            </div>
                           )}
                         </div>
 
-                        {/* Info + controls */}
-                        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                          <div className="flex items-start justify-between gap-1">
-                            <div className="min-w-0">
-                              <p className="font-semibold text-xs leading-snug line-clamp-2">{wi.product_name ?? wi.name}</p>
-                              {(wi.colour || wi.product_sku) && (
-                                <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
-                                  {[wi.colour, wi.product_sku].filter(Boolean).join(" · ")}
-                                </p>
-                              )}
-                            </div>
-                            {unitPrice > 0 && (
-                              <div className="flex flex-col items-end shrink-0 ml-1">
-                                <span className="text-xs font-bold text-primary whitespace-nowrap">{formatCurrency(unitPrice)}</span>
-                                {hasBreak && (
-                                  <span className="text-[10px] text-muted-foreground line-through">{formatCurrency(basePrice)}</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
+                        {/* Size hint */}
+                        {suggestion && !state.size && (
+                          <p className={`text-xs ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
+                            {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
+                          </p>
+                        )}
 
-                          {suggestion && !state.size && (
-                            <p className={`text-[10px] leading-none ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
-                              {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
-                            </p>
-                          )}
+                        {/* Size selector */}
+                        <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
+                          <SelectTrigger className="h-9 text-sm w-full">
+                            <SelectValue placeholder="Select size" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {sizeOptions.map(s => (
+                              <SelectItem key={s} value={s}>
+                                <span className="flex items-center gap-2">
+                                  {s}
+                                  {suggestion?.size === s && suggestion.source === "history" && (
+                                    <span className="text-xs text-emerald-600 font-semibold">last</span>
+                                  )}
+                                  {suggestion?.size === s && suggestion.source === "saved" && (
+                                    <span className="text-xs text-blue-500 font-semibold">saved</span>
+                                  )}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
 
-                          <div className="flex items-center gap-1.5 mt-auto">
-                            <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
-                              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                                <SelectValue placeholder="Size" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {sizeOptions.map(s => (
-                                  <SelectItem key={s} value={s}>
-                                    <span className="flex items-center gap-1.5">
-                                      {s}
-                                      {suggestion?.size === s && suggestion.source === "history" && (
-                                        <span className="text-[10px] text-emerald-600 font-semibold">last</span>
-                                      )}
-                                      {suggestion?.size === s && suggestion.source === "saved" && (
-                                        <span className="text-[10px] text-blue-500 font-semibold">saved</span>
-                                      )}
-                                    </span>
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-
-                            <div className="flex items-center border rounded-md h-7 overflow-hidden shrink-0">
-                              <button
-                                className="px-1.5 h-full text-muted-foreground hover:text-foreground transition-colors"
-                                onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                              <input
-                                type="number"
-                                min={1}
-                                value={state.qty}
-                                onChange={e => {
-                                  const v = parseInt(e.target.value, 10);
-                                  if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
-                                }}
-                                className="w-7 text-center text-xs font-medium bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              />
-                              <button
-                                className="px-1.5 h-full text-muted-foreground hover:text-foreground transition-colors"
-                                onClick={() => setItemState(key, { qty: state.qty + 1 })}
-                              >
-                                <Plus className="w-3 h-3" />
-                              </button>
-                            </div>
-
-                            <Button
-                              size="sm"
-                              className="h-7 text-xs px-2.5 shrink-0"
-                              disabled={!state.size.trim()}
-                              onClick={() => handleAdd(wi, key)}
+                        {/* Qty stepper + Add */}
+                        <div className="flex items-center gap-2 mt-auto">
+                          <div className="flex items-center border rounded-lg h-9 overflow-hidden shrink-0">
+                            <button
+                              className="px-2.5 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                              onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
                             >
-                              <Plus className="w-3 h-3 mr-0.5" /> Add
-                            </Button>
+                              <Minus className="w-4 h-4" />
+                            </button>
+                            <input
+                              type="number"
+                              min={1}
+                              value={state.qty}
+                              onChange={e => {
+                                const v = parseInt(e.target.value, 10);
+                                if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
+                              }}
+                              className="w-8 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            />
+                            <button
+                              className="px-2.5 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                              onClick={() => setItemState(key, { qty: state.qty + 1 })}
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
                           </div>
+                          <Button
+                            className="flex-1 h-9"
+                            disabled={!state.size.trim()}
+                            onClick={() => handleAdd(wi, key)}
+                          >
+                            Add
+                          </Button>
                         </div>
                       </div>
                     </Card>
