@@ -813,7 +813,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                           {procs.map((p: any) => (
                             <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
                               {p.process_type && <ProcessBadgeInline type={p.process_type} />}
-                              {p.placement && <span className="text-[10px] text-muted-foreground">{p.placement}</span>}
+                              {p.item_finish_name && <span className="text-[10px] text-foreground/70 font-medium">{p.item_finish_name}</span>}
+                              {p.placement && <span className="text-[10px] text-muted-foreground">· {p.placement}</span>}
                             </div>
                           ))}
                         </div>
