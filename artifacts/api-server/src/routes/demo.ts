@@ -110,7 +110,7 @@ async function sendDemoEmail(lead: { firstName: string; lastName: string; email:
 
 // ─── POST /api/demo/register ──────────────────────────────────────────────────
 
-router.post("/api/demo/register", async (req: Request, res: Response) => {
+router.post("/demo/register", async (req: Request, res: Response) => {
   const body = z.object({
     firstName: z.string().min(1).max(80),
     lastName:  z.string().min(1).max(80),
@@ -145,7 +145,7 @@ router.post("/api/demo/register", async (req: Request, res: Response) => {
 
 // ─── GET /api/demo/stats ──────────────────────────────────────────────────────
 
-router.get("/api/demo/stats", demoAuth, async (_req: Request, res: Response) => {
+router.get("/demo/stats", demoAuth, async (_req: Request, res: Response) => {
   const rows = await db.execute(sql`
     SELECT
       COUNT(*)                                                              AS total_orders,
@@ -172,7 +172,7 @@ router.get("/api/demo/stats", demoAuth, async (_req: Request, res: Response) => 
 
 // ─── GET /api/demo/orders ─────────────────────────────────────────────────────
 
-router.get("/api/demo/orders", demoAuth, async (req: Request, res: Response) => {
+router.get("/demo/orders", demoAuth, async (req: Request, res: Response) => {
   const page  = Math.max(1, parseInt((req.query.page  as string) ?? "1", 10));
   const limit = 30;
   const offset = (page - 1) * limit;
@@ -192,7 +192,7 @@ router.get("/api/demo/orders", demoAuth, async (req: Request, res: Response) => 
 
 // ─── GET /api/demo/orders/:id ─────────────────────────────────────────────────
 
-router.get("/api/demo/orders/:id", demoAuth, async (req: Request, res: Response) => {
+router.get("/demo/orders/:id", demoAuth, async (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
