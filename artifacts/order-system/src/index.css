@@ -129,3 +129,12 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-muted-foreground/50;
 }
+
+/* Demo gate — infinite scroll columns */
+@keyframes demoScrollUp {
+  from { transform: translateY(0); }
+  to   { transform: translateY(-50%); }
+}
+.demo-scroll-col {
+  animation: demoScrollUp linear infinite;
+}
