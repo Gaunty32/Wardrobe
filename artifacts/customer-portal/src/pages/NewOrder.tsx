@@ -754,167 +754,158 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
       </div>
 
       <div className="flex gap-6 items-start">
-        {/* Left: finish groups + product tiles */}
-        <div className="flex-1 min-w-0 flex flex-col gap-8">
-          {finishGroups.map((group) => {
-            const procs = groupProcesses(group.finish_id);
-            return (
-              <div key={group.finish_id}>
-                <div className="mb-4">
-                  <h3 className="font-bold text-base mb-2">{group.finish_name ?? "Standard Garments"}</h3>
-                  {procs.length > 0 && (
-                    <div className="flex flex-wrap gap-3 mb-3">
-                      {procs.map((p: any) => (
-                        <div key={p.process_id} className="flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2 shadow-sm">
-                          {p.process_image_url ? (
-                            <ProcessImage url={p.process_image_url} alt={p.item_finish_name} />
-                          ) : (
-                            <div className="h-10 w-10 rounded bg-muted flex items-center justify-center shrink-0">
-                              <Shirt className="w-5 h-5 text-muted-foreground/40" />
-                            </div>
-                          )}
-                          <div>
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              {p.process_type && <ProcessBadgeInline type={p.process_type} />}
-                            </div>
-                            <p className="text-xs font-medium leading-tight">{p.item_finish_name}</p>
-                            {p.placement && <p className="text-[10px] text-muted-foreground">{p.placement}</p>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+        {/* Left: unified product grid — all groups flow together */}
+        <div className="flex-1 min-w-0">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
+            {finishGroups.flatMap((group, gi) => {
+              const procs = groupProcesses(group.finish_id);
+              return [
+                // Lightweight section divider — spans all columns
+                <div
+                  key={`hdr-${group.finish_id}`}
+                  className={cn(
+                    "col-span-full flex items-center gap-2 flex-wrap",
+                    gi > 0 ? "mt-3 pt-3 border-t" : ""
                   )}
-                  <div className="h-px bg-border" />
-                </div>
+                >
+                  <span className="text-xs font-semibold text-foreground shrink-0">
+                    {group.finish_name ?? "Standard Garments"}
+                  </span>
+                  {procs.map((p: any) => (
+                    <div key={p.process_id} className="flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-0.5">
+                      {p.process_image_url && (
+                        <img src={p.process_image_url} alt={p.item_finish_name} className="h-5 w-5 object-contain rounded shrink-0" />
+                      )}
+                      {p.process_type && <ProcessBadgeInline type={p.process_type} />}
+                      <span className="text-[10px] text-muted-foreground">{p.item_finish_name}</span>
+                      {p.placement && <span className="text-[10px] text-muted-foreground/60">· {p.placement}</span>}
+                    </div>
+                  ))}
+                </div>,
 
-                {/* Product tile grid — compact horizontal cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-                  {group.items.map((wi: any, i: number) => {
-                    const key = `${group.finish_id}-${i}`;
-                    const state = getItemState(key);
-                    const availSizes = getAvailableSizes(wi);
-                    const FALLBACK_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
-                    const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
-                    const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
-                    const unitPrice = resolveUnitPrice(wi, state.qty);
-                    const basePrice = parseFloat(wi.unit_price ?? "0");
-                    const hasBreak = unitPrice !== basePrice && basePrice > 0;
+                // Product cards — flow into the shared grid
+                ...group.items.map((wi: any, i: number) => {
+                  const key = `${group.finish_id}-${i}`;
+                  const state = getItemState(key);
+                  const availSizes = getAvailableSizes(wi);
+                  const FALLBACK_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+                  const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
+                  const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
+                  const unitPrice = resolveUnitPrice(wi, state.qty);
+                  const basePrice = parseFloat(wi.unit_price ?? "0");
+                  const hasBreak = unitPrice !== basePrice && basePrice > 0;
 
-                    return (
-                      <Card key={i} className="overflow-hidden">
-                        <div className="flex gap-3 p-2.5">
-                          {/* Compact thumbnail */}
-                          <div className="w-[72px] h-[72px] bg-white border rounded-lg overflow-hidden flex items-center justify-center shrink-0">
-                            {(wi.variant_image_url ?? wi.product_image_url) ? (
-                              <img
-                                src={wi.variant_image_url ?? wi.product_image_url}
-                                alt={wi.product_name ?? wi.name}
-                                className="w-full h-full object-contain p-1"
-                              />
-                            ) : (
-                              <Shirt className="w-7 h-7 text-muted-foreground/20" />
-                            )}
-                          </div>
+                  return (
+                    <Card key={key} className="overflow-hidden">
+                      <div className="flex gap-2.5 p-2.5">
+                        {/* Thumbnail */}
+                        <div className="w-[72px] h-[72px] bg-white border rounded-lg overflow-hidden flex items-center justify-center shrink-0">
+                          {(wi.variant_image_url ?? wi.product_image_url) ? (
+                            <img
+                              src={wi.variant_image_url ?? wi.product_image_url}
+                              alt={wi.product_name ?? wi.name}
+                              className="w-full h-full object-contain p-1"
+                            />
+                          ) : (
+                            <Shirt className="w-7 h-7 text-muted-foreground/20" />
+                          )}
+                        </div>
 
-                          {/* Info + controls */}
-                          <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                            {/* Name + price row */}
-                            <div className="flex items-start justify-between gap-1">
-                              <div className="min-w-0">
-                                <p className="font-semibold text-xs leading-snug line-clamp-2">{wi.product_name ?? wi.name}</p>
-                                {(wi.colour || wi.product_sku) && (
-                                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
-                                    {[wi.colour, wi.product_sku].filter(Boolean).join(" · ")}
-                                  </p>
-                                )}
-                              </div>
-                              {unitPrice > 0 && (
-                                <div className="flex flex-col items-end shrink-0 ml-1">
-                                  <span className="text-xs font-bold text-primary whitespace-nowrap">{formatCurrency(unitPrice)}</span>
-                                  {hasBreak && (
-                                    <span className="text-[10px] text-muted-foreground line-through">{formatCurrency(basePrice)}</span>
-                                  )}
-                                </div>
+                        {/* Info + controls */}
+                        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                          <div className="flex items-start justify-between gap-1">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-xs leading-snug line-clamp-2">{wi.product_name ?? wi.name}</p>
+                              {(wi.colour || wi.product_sku) && (
+                                <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                                  {[wi.colour, wi.product_sku].filter(Boolean).join(" · ")}
+                                </p>
                               )}
                             </div>
-
-                            {/* Size hint */}
-                            {suggestion && !state.size && (
-                              <p className={`text-[10px] leading-none ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
-                                {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
-                              </p>
-                            )}
-
-                            {/* Size + qty + add in one row */}
-                            <div className="flex items-center gap-1.5 mt-auto">
-                              <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
-                                <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                                  <SelectValue placeholder="Size" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {sizeOptions.map(s => (
-                                    <SelectItem key={s} value={s}>
-                                      <span className="flex items-center gap-1.5">
-                                        {s}
-                                        {suggestion?.size === s && suggestion.source === "history" && (
-                                          <span className="text-[10px] text-emerald-600 font-semibold">last</span>
-                                        )}
-                                        {suggestion?.size === s && suggestion.source === "saved" && (
-                                          <span className="text-[10px] text-blue-500 font-semibold">saved</span>
-                                        )}
-                                      </span>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-
-                              <div className="flex items-center border rounded-md h-7 overflow-hidden shrink-0">
-                                <button
-                                  className="px-1.5 h-full text-muted-foreground hover:text-foreground transition-colors"
-                                  onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
-                                >
-                                  <Minus className="w-3 h-3" />
-                                </button>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={state.qty}
-                                  onChange={e => {
-                                    const v = parseInt(e.target.value, 10);
-                                    if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
-                                  }}
-                                  className="w-7 text-center text-xs font-medium bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                />
-                                <button
-                                  className="px-1.5 h-full text-muted-foreground hover:text-foreground transition-colors"
-                                  onClick={() => setItemState(key, { qty: state.qty + 1 })}
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </button>
+                            {unitPrice > 0 && (
+                              <div className="flex flex-col items-end shrink-0 ml-1">
+                                <span className="text-xs font-bold text-primary whitespace-nowrap">{formatCurrency(unitPrice)}</span>
+                                {hasBreak && (
+                                  <span className="text-[10px] text-muted-foreground line-through">{formatCurrency(basePrice)}</span>
+                                )}
                               </div>
+                            )}
+                          </div>
 
-                              <Button
-                                size="sm"
-                                className="h-7 text-xs px-2.5 shrink-0"
-                                disabled={!state.size.trim()}
-                                onClick={() => handleAdd(wi, key)}
+                          {suggestion && !state.size && (
+                            <p className={`text-[10px] leading-none ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
+                              {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-1.5 mt-auto">
+                            <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
+                              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                                <SelectValue placeholder="Size" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {sizeOptions.map(s => (
+                                  <SelectItem key={s} value={s}>
+                                    <span className="flex items-center gap-1.5">
+                                      {s}
+                                      {suggestion?.size === s && suggestion.source === "history" && (
+                                        <span className="text-[10px] text-emerald-600 font-semibold">last</span>
+                                      )}
+                                      {suggestion?.size === s && suggestion.source === "saved" && (
+                                        <span className="text-[10px] text-blue-500 font-semibold">saved</span>
+                                      )}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+
+                            <div className="flex items-center border rounded-md h-7 overflow-hidden shrink-0">
+                              <button
+                                className="px-1.5 h-full text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
                               >
-                                <Plus className="w-3 h-3 mr-0.5" /> Add
-                              </Button>
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <input
+                                type="number"
+                                min={1}
+                                value={state.qty}
+                                onChange={e => {
+                                  const v = parseInt(e.target.value, 10);
+                                  if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
+                                }}
+                                className="w-7 text-center text-xs font-medium bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              />
+                              <button
+                                className="px-1.5 h-full text-muted-foreground hover:text-foreground transition-colors"
+                                onClick={() => setItemState(key, { qty: state.qty + 1 })}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
                             </div>
+
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs px-2.5 shrink-0"
+                              disabled={!state.size.trim()}
+                              onClick={() => handleAdd(wi, key)}
+                            >
+                              <Plus className="w-3 h-3 mr-0.5" /> Add
+                            </Button>
                           </div>
                         </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
+                      </div>
+                    </Card>
+                  );
+                }),
+              ];
+            })}
+          </div>
 
           <button
             onClick={() => setSelectedRecipient(null)}
-            className="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline flex items-center gap-1.5 mt-2"
+            className="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline flex items-center gap-1.5 mt-4"
           >
             <User className="w-3.5 h-3.5" />
             Order for another person
