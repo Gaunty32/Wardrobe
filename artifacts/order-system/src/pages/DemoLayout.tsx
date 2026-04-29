@@ -1,12 +1,42 @@
 import { type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, ClipboardList, LogOut, PhoneCall, Eye } from "lucide-react";
+import {
+  LayoutDashboard, ClipboardList, LogOut, PhoneCall, Eye,
+  Users, Package, Warehouse, Boxes, ListChecks, ShoppingBag,
+  Send, FileText, Truck, CheckSquare, ExternalLink, ChevronDown,
+} from "lucide-react";
 import { getDemoUser, clearDemoSession } from "@/lib/demo";
-import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
-const NAV = [
-  { label: "Dashboard",  href: "/demo/dashboard", icon: LayoutDashboard },
-  { label: "Orders",     href: "/demo/orders",    icon: ClipboardList },
+const NAV_SECTIONS = [
+  {
+    label: "",
+    items: [
+      { label: "Dashboard",  href: "/demo/dashboard", icon: LayoutDashboard },
+      { label: "Orders",     href: "/demo/orders",    icon: ClipboardList },
+      { label: "Customers",  href: "/demo/customers", icon: Users },
+      { label: "Products",   href: "/demo/products",  icon: Package },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { label: "Stock",          href: "/demo/stock",          icon: Warehouse  },
+      { label: "Process Stock",  href: "/demo/process-stock",  icon: Boxes      },
+      { label: "Production",     href: "/demo/production",     icon: ListChecks },
+      { label: "Purchasing",     href: "/demo/purchasing",     icon: ShoppingBag},
+      { label: "Dispatch",       href: "/demo/dispatch",       icon: Send       },
+      { label: "Invoicing",      href: "/demo/invoicing",      icon: FileText   },
+      { label: "Suppliers",      href: "/demo/suppliers",      icon: Truck      },
+      { label: "Tasks",          href: "/demo/tasks",          icon: CheckSquare},
+    ],
+  },
+  {
+    label: "Portal",
+    items: [
+      { label: "Customer Portal", href: "/demo/portal", icon: ExternalLink },
+    ],
+  },
 ];
 
 export default function DemoLayout({ children }: { children: ReactNode }) {
@@ -36,26 +66,40 @@ export default function DemoLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 pt-3 space-y-0.5">
-          {NAV.map(({ label, href, icon: Icon }) => {
-            const active = location === href || location.startsWith(href + "/");
-            return (
-              <Link key={href} href={href}>
-                <a className={`flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  active
-                    ? "bg-white/10 text-white"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                }`}>
-                  <Icon className="w-4 h-4 shrink-0" />
-                  {label}
-                </a>
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-3 pt-2 pb-4 space-y-3 overflow-y-auto">
+          {NAV_SECTIONS.map((section) => (
+            <div key={section.label || "__top__"}>
+              {section.label && (
+                <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-slate-500 select-none">
+                  {section.label}
+                </p>
+              )}
+              <div className="space-y-0.5">
+                {section.items.map(({ label, href, icon: Icon }) => {
+                  const active = location === href || location.startsWith(href + "/");
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                        active
+                          ? "bg-white/10 text-white"
+                          : "text-slate-400 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      {label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
-        {/* Book a call CTA */}
-        <div className="px-3 pb-4 space-y-2">
+        {/* Book a call CTA + exit */}
+        <div className="px-3 pb-4 border-t border-slate-700/60 pt-3 space-y-1">
           <a
             href="mailto:chris@selectbranding.co.uk?subject=Demo follow-up"
             className="flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 px-3 py-2.5 text-sm font-medium text-white transition-colors"

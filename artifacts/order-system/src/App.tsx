@@ -27,6 +27,10 @@ import DemoGate from "@/pages/DemoGate";
 import DemoDashboard from "@/pages/DemoDashboard";
 import DemoOrders from "@/pages/DemoOrders";
 import DemoOrderDetail from "@/pages/DemoOrderDetail";
+import DemoProducts from "@/pages/DemoProducts";
+import DemoCustomers from "@/pages/DemoCustomers";
+import DemoPortal from "@/pages/DemoPortal";
+import DemoSection from "@/pages/DemoSection";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +65,17 @@ function Router() {
       <Route path="/demo/dashboard" component={DemoDashboard} />
       <Route path="/demo/orders" component={DemoOrders} />
       <Route path="/demo/orders/:id" component={DemoOrderDetail} />
+      <Route path="/demo/products" component={DemoProducts} />
+      <Route path="/demo/customers" component={DemoCustomers} />
+      <Route path="/demo/portal" component={DemoPortal} />
+      <Route path="/demo/stock" component={() => <DemoSection section="stock" />} />
+      <Route path="/demo/process-stock" component={() => <DemoSection section="process-stock" />} />
+      <Route path="/demo/production" component={() => <DemoSection section="production" />} />
+      <Route path="/demo/purchasing" component={() => <DemoSection section="purchasing" />} />
+      <Route path="/demo/dispatch" component={() => <DemoSection section="dispatch" />} />
+      <Route path="/demo/invoicing" component={() => <DemoSection section="invoicing" />} />
+      <Route path="/demo/suppliers" component={() => <DemoSection section="suppliers" />} />
+      <Route path="/demo/tasks" component={() => <DemoSection section="tasks" />} />
 
       <Route path="/" component={Dashboard} />
       <Route path="/orders" component={Orders} />
