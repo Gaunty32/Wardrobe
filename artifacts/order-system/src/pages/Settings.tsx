@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate } from "@/lib/utils";
+import { getListProductsQueryKey } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
 
@@ -242,6 +243,17 @@ export default function Settings() {
   });
 
   const isSyncRunning = logs[0]?.status === "running";
+
+  // When a sync transitions from "running" → completed/failed, invalidate all product data
+  const prevSyncStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const current = logs[0]?.status;
+    if (prevSyncStatus.current === "running" && current && current !== "running") {
+      queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: ["product"] });
+    }
+    prevSyncStatus.current = current;
+  }, [logs[0]?.status]);
 
   const saveMutation = useMutation({
     mutationFn: (data: Record<string, string | null>) => apiFetch("/settings", { method: "PATCH", body: JSON.stringify(data) }),
