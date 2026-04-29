@@ -16,6 +16,7 @@ import Wardrobe from "@/pages/Wardrobe";
 import Products from "@/pages/Products";
 import Team from "@/pages/Team";
 import Invoices from "@/pages/Invoices";
+import PaymentMethods from "@/pages/PaymentMethods";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -64,6 +65,7 @@ function Router() {
       <Route path="/wardrobe" component={() => <ProtectedRoute component={Wardrobe} />} />
       <Route path="/products" component={() => <ProtectedRoute component={Products} />} />
       <Route path="/team" component={() => <ProtectedRoute component={Team} />} />
+      <Route path="/payment-methods" component={() => <ProtectedRoute component={PaymentMethods} />} />
       <Route path="/">
         {() => {
           const token = localStorage.getItem("portal_token");

@@ -1,7 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt } from "lucide-react";
+import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -17,6 +17,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "Wardrobe", icon: Shirt, href: "/wardrobe" },
     { label: "Products", icon: Package, href: "/products" },
     { label: "Invoices", icon: Receipt, href: "/invoices" },
+    { label: "Payment", icon: CreditCard, href: "/payment-methods" },
     ...(isManager ? [{ label: "Team", icon: Users, href: "/team" }] : []),
   ];
 

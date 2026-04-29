@@ -3,12 +3,13 @@
  * Invite-based auth + order management for customers
  */
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, customersTable } from "@workspace/db";
+import { sql, eq } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { generateInvoicePDF, buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email.js";
+import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
 
 const router: IRouter = Router();
 
@@ -428,6 +429,89 @@ router.delete("/portal/basket", portalAuth, async (req: Request, res: Response) 
   res.json({ ok: true });
 });
 
+// ─── portal: Stripe helpers ───────────────────────────────────────────────────
+
+async function ensurePortalStripeCustomer(customerId: number) {
+  const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, customerId));
+  if (!customer) throw new Error("Customer not found");
+  const stripe = await getUncachableStripeClient();
+  if (customer.stripeCustomerId) {
+    try {
+      const sc = await stripe.customers.retrieve(customer.stripeCustomerId);
+      if (!("deleted" in sc)) return sc;
+    } catch {}
+  }
+  const sc = await stripe.customers.create({
+    name: customer.name,
+    email: customer.email || undefined,
+    metadata: { sbs_customer_id: String(customerId) },
+  });
+  await db.update(customersTable).set({ stripeCustomerId: sc.id }).where(eq(customersTable.id, customerId));
+  return sc;
+}
+
+// ─── portal: Stripe: publishable key ─────────────────────────────────────────
+
+router.get("/portal/stripe/publishable-key", portalAuth, async (_req: Request, res: Response) => {
+  try {
+    const publishableKey = await getStripePublishableKey();
+    res.json({ publishableKey });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── portal: Stripe: list saved cards ────────────────────────────────────────
+
+router.get("/portal/stripe/payment-methods", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  try {
+    const sc = await ensurePortalStripeCustomer(customerId);
+    const stripe = await getUncachableStripeClient();
+    const methods = await stripe.paymentMethods.list({ customer: sc.id, type: "card" });
+    res.json({ paymentMethods: methods.data });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── portal: Stripe: create setup intent ─────────────────────────────────────
+
+router.post("/portal/stripe/setup-intent", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  try {
+    const sc = await ensurePortalStripeCustomer(customerId);
+    const stripe = await getUncachableStripeClient();
+    const intent = await stripe.setupIntents.create({
+      customer: sc.id,
+      payment_method_types: ["card"],
+    });
+    res.json({ clientSecret: intent.client_secret });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── portal: Stripe: remove saved card ───────────────────────────────────────
+
+router.delete("/portal/stripe/payment-methods/:pmId", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const pmId = req.params.pmId;
+  try {
+    const sc = await ensurePortalStripeCustomer(customerId);
+    const stripe = await getUncachableStripeClient();
+    const pm = await stripe.paymentMethods.retrieve(pmId);
+    if (pm.customer !== sc.id) {
+      res.status(403).json({ error: "Payment method does not belong to this customer" });
+      return;
+    }
+    await stripe.paymentMethods.detach(pmId);
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ─── portal: create order ────────────────────────────────────────────────────
 
 router.post("/portal/orders", portalAuth, async (req: Request, res: Response) => {
@@ -440,6 +524,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     poNumber: z.string().max(100).optional(),
     shippingOption: z.string().optional(),
     shippingCost: z.number().nonnegative().optional(),
+    paymentMethodId: z.string().nullable().optional(),
     items: z.array(z.object({
       productId: z.number().nullable().optional(),
       productName: z.string().min(1),
@@ -564,7 +649,46 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     `);
   }
 
-  res.status(201).json({ id: order.id, orderNumber: order.order_number });
+  // ── Stripe charge if customer chose to pay by card ──────────────────────────
+  let stripeCharge: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null = null;
+  if (body.paymentMethodId && totalAmount > 0) {
+    try {
+      const sc = await ensurePortalStripeCustomer(customerId);
+      const stripe = await getUncachableStripeClient();
+      const pm = await stripe.paymentMethods.retrieve(body.paymentMethodId);
+      if (pm.customer !== sc.id) throw new Error("Payment method does not belong to this customer");
+      const intent = await stripe.paymentIntents.create({
+        amount: Math.round(totalAmount * 100),
+        currency: "gbp",
+        customer: sc.id,
+        payment_method: body.paymentMethodId,
+        confirm: true,
+        off_session: true,
+        description: `Order ${order.order_number} — Select Branding Solutions`,
+      });
+      if (intent.status === "succeeded") {
+        stripeCharge = {
+          success: true,
+          last4: pm.card?.last4,
+          brand: pm.card?.brand,
+          amount: totalAmount,
+        };
+        await db.execute(sql`
+          INSERT INTO order_activity_log (order_id, action, actor_type, actor_name, meta)
+          VALUES (${orderId}, 'payment_taken', 'portal', 'Customer', ${JSON.stringify({ amount: totalAmount, last4: pm.card?.last4, brand: pm.card?.brand })}::jsonb)
+        `);
+      }
+    } catch (chargeErr: any) {
+      console.error("Portal order card charge failed:", chargeErr.message);
+      stripeCharge = { success: false, error: chargeErr.message };
+      await db.execute(sql`
+        INSERT INTO order_activity_log (order_id, action, actor_type, actor_name, meta)
+        VALUES (${orderId}, 'payment_failed', 'portal', 'Customer', ${JSON.stringify({ error: chargeErr.message })}::jsonb)
+      `);
+    }
+  }
+
+  res.status(201).json({ id: order.id, orderNumber: order.order_number, stripeCharge });
   } catch (err: any) {
     console.error("Order create error:", err);
     res.status(500).json({ error: err?.message ?? "Failed to create order" });

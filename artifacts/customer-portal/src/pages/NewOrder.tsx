@@ -22,6 +22,7 @@ import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search,
   User, Package, History, Tag, Sparkles, Heart, X, Mail, UserPlus, Filter,
+  CreditCard, FileText, AlertCircle,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -1293,7 +1294,7 @@ const SHIPPING_OPTIONS = [
 function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
-  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string }) => void;
+  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null }) => void;
   submitting: boolean;
   portalRole: string;
   onAddMore?: () => void;
@@ -1306,6 +1307,22 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const [notes, setNotes] = useState("");
   const [poNumber, setPoNumber] = useState("");
   const [shippingId, setShippingId] = useState<string>("");
+  const [paymentChoice, setPaymentChoice] = useState<"card" | "invoice">("invoice");
+  const [selectedPmId, setSelectedPmId] = useState<string | null>(null);
+
+  const { data: pmData, isLoading: pmLoading } = useQuery<{ paymentMethods: any[] }>({
+    queryKey: ["portal-payment-methods"],
+    queryFn: () => apiFetch("/portal/stripe/payment-methods"),
+    enabled: portalRole === "manager",
+    staleTime: 30_000,
+  });
+
+  useEffect(() => {
+    if (pmData?.paymentMethods?.length) {
+      setPaymentChoice("card");
+      setSelectedPmId(pmData.paymentMethods[0].id);
+    }
+  }, [pmData]);
 
   const selectedShipping = SHIPPING_OPTIONS.find(o => o.id === shippingId) ?? null;
   const shippingCost = selectedShipping?.cost ?? 0;
@@ -1467,9 +1484,87 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
+      {/* ── Payment choice (managers only) ──────────────────────────────── */}
+      {portalRole === "manager" && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold mb-3">How would you like to pay?</h3>
+          {pmLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Checking saved cards…
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Invoice option */}
+              <label className={cn(
+                "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                paymentChoice === "invoice"
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-muted-foreground/40"
+              )}>
+                <input
+                  type="radio"
+                  name="payment"
+                  value="invoice"
+                  checked={paymentChoice === "invoice"}
+                  onChange={() => { setPaymentChoice("invoice"); setSelectedPmId(null); }}
+                  className="accent-primary"
+                />
+                <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                <div>
+                  <div className="text-sm font-medium">Invoice me</div>
+                  <div className="text-xs text-muted-foreground">We'll send you an invoice to pay later</div>
+                </div>
+              </label>
+
+              {/* Saved card options */}
+              {pmData?.paymentMethods?.map((pm: any) => (
+                <label key={pm.id} className={cn(
+                  "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                  paymentChoice === "card" && selectedPmId === pm.id
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-muted-foreground/40"
+                )}>
+                  <input
+                    type="radio"
+                    name="payment"
+                    value={pm.id}
+                    checked={paymentChoice === "card" && selectedPmId === pm.id}
+                    onChange={() => { setPaymentChoice("card"); setSelectedPmId(pm.id); }}
+                    className="accent-primary"
+                  />
+                  <CreditCard className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <div className="text-sm font-medium capitalize">
+                      {pm.card?.brand} •••• {pm.card?.last4}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Expires {pm.card?.exp_month?.toString().padStart(2, "0")}/{pm.card?.exp_year} — charged immediately on submission
+                    </div>
+                  </div>
+                </label>
+              ))}
+
+              {/* Link to add a card */}
+              {(!pmData?.paymentMethods?.length) && (
+                <p className="text-xs text-muted-foreground pt-1">
+                  No saved cards. <a href="/payment-methods" className="underline underline-offset-2 hover:text-foreground">Add a card</a> to pay instantly.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1 mt-6">
         <Button
-          onClick={() => onSubmit({ requiredDate, notes, shippingOption: shippingId, shippingCost, poNumber })}
+          onClick={() => onSubmit({
+            requiredDate,
+            notes,
+            shippingOption: shippingId,
+            shippingCost,
+            poNumber,
+            paymentMethodId: portalRole === "manager" && paymentChoice === "card" ? selectedPmId : null,
+          })}
           disabled={submitting || basket.length === 0 || !shippingId}
           className="w-full sm:w-auto"
         >
@@ -1489,7 +1584,11 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
 
 // ─── Step 4: Confirmation ────────────────────────────────────────────────────
 
-function ConfirmStep({ orderNumber, onViewOrder }: { orderNumber: string; onViewOrder: () => void }) {
+function ConfirmStep({ orderNumber, onViewOrder, stripeCharge }: {
+  orderNumber: string;
+  onViewOrder: () => void;
+  stripeCharge?: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null;
+}) {
   return (
     <div className="text-center py-10">
       <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
@@ -1497,7 +1596,26 @@ function ConfirmStep({ orderNumber, onViewOrder }: { orderNumber: string; onView
       </div>
       <h2 className="text-2xl font-bold mb-2">Order submitted!</h2>
       <p className="text-muted-foreground mb-1">Your order <span className="font-semibold text-foreground">{orderNumber}</span> has been submitted for review.</p>
-      <p className="text-sm text-muted-foreground mb-8">We'll be in touch shortly to confirm your order.</p>
+      <p className="text-sm text-muted-foreground mb-4">We'll be in touch shortly to confirm your order.</p>
+
+      {stripeCharge?.success && (
+        <div className="inline-flex items-center gap-2 bg-green-50 text-green-800 border border-green-200 rounded-lg px-4 py-2.5 text-sm mb-6">
+          <CreditCard className="w-4 h-4 shrink-0" />
+          <span>
+            Payment of <strong>£{stripeCharge.amount?.toFixed(2)}</strong> taken from{" "}
+            <span className="capitalize">{stripeCharge.brand}</span> card ending {stripeCharge.last4}
+          </span>
+        </div>
+      )}
+
+      {stripeCharge && !stripeCharge.success && (
+        <div className="inline-flex items-center gap-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-4 py-2.5 text-sm mb-6">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>Card payment could not be processed — we'll be in touch about payment.</span>
+        </div>
+      )}
+
+      <div className="mb-8" />
       <Button onClick={onViewOrder}>View order details <ArrowRight className="w-4 h-4 ml-1.5" /></Button>
     </div>
   );
@@ -1534,7 +1652,7 @@ export default function NewOrder() {
   const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(savedHasItems ? (saved?.mode ?? null) : null);
   const [basket, setBasket] = useState<OrderItem[]>(saved?.basket ?? []);
   const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
-  const [confirmedOrder, setConfirmedOrder] = useState<{ id: number; orderNumber: string } | null>(null);
+  const [confirmedOrder, setConfirmedOrder] = useState<{ id: number; orderNumber: string; stripeCharge?: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null } | null>(null);
   const [confirmedEnquiry, setConfirmedEnquiry] = useState<{ enquiryRef: string } | null>(null);
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1593,7 +1711,7 @@ export default function NewOrder() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string }) =>
+    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null }) =>
       apiFetch("/portal/orders", {
         method: "POST",
         body: JSON.stringify({
@@ -1602,6 +1720,7 @@ export default function NewOrder() {
           poNumber: data.poNumber || undefined,
           shippingOption: data.shippingOption || undefined,
           shippingCost: data.shippingCost,
+          paymentMethodId: data.paymentMethodId ?? null,
           items: basket.map(i => ({
             productId: i.productId,
             productName: i.productName,
@@ -1739,6 +1858,7 @@ export default function NewOrder() {
         <ConfirmStep
           orderNumber={confirmedOrder.orderNumber}
           onViewOrder={() => setLocation(`/orders/${confirmedOrder.id}`)}
+          stripeCharge={confirmedOrder.stripeCharge}
         />
       )}
     </PortalLayout>
