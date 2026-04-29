@@ -753,38 +753,35 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
         </button>
       </div>
 
+      {/* Main layout: product sections + sticky sidebar */}
       <div className="flex gap-6 items-start">
-        {/* Left: unified product grid — all groups flow together */}
-        <div className="flex-1 min-w-0">
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
-            {finishGroups.flatMap((group, gi) => {
-              const procs = groupProcesses(group.finish_id);
-              return [
-                // Lightweight section divider — spans all columns
-                <div
-                  key={`hdr-${group.finish_id}`}
-                  className={cn(
-                    "col-span-full flex items-center gap-2 flex-wrap",
-                    gi > 0 ? "mt-3 pt-3 border-t" : ""
-                  )}
-                >
-                  <span className="text-xs font-semibold text-foreground shrink-0">
-                    {group.finish_name ?? "Standard Garments"}
-                  </span>
-                  {procs.map((p: any) => (
-                    <div key={p.process_id} className="flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-0.5">
-                      {p.process_image_url && (
-                        <img src={p.process_image_url} alt={p.item_finish_name} className="h-5 w-5 object-contain rounded shrink-0" />
-                      )}
-                      {p.process_type && <ProcessBadgeInline type={p.process_type} />}
-                      <span className="text-[10px] text-muted-foreground">{p.item_finish_name}</span>
-                      {p.placement && <span className="text-[10px] text-muted-foreground/60">· {p.placement}</span>}
-                    </div>
-                  ))}
-                </div>,
 
-                // Product cards — flow into the shared grid
-                ...group.items.map((wi: any, i: number) => {
+      {/* Left: per-section product grids */}
+      <div className="flex-1 min-w-0 space-y-6">
+        {finishGroups.map((group, gi) => {
+          const procs = groupProcesses(group.finish_id);
+          return (
+            <div key={`section-${group.finish_id}`}>
+              {/* Section header */}
+              <div className={cn("flex items-center gap-2 flex-wrap mb-3", gi > 0 ? "pt-4 border-t" : "")}>
+                <span className="text-sm font-semibold text-foreground shrink-0">
+                  {group.finish_name ?? "Standard Garments"}
+                </span>
+                {procs.map((p: any) => (
+                  <div key={p.process_id} className="flex items-center gap-1.5 rounded-md border bg-muted/60 px-2 py-0.5">
+                    {p.process_image_url && (
+                      <img src={p.process_image_url} alt={p.item_finish_name} className="h-5 w-5 object-contain rounded shrink-0" />
+                    )}
+                    {p.process_type && <ProcessBadgeInline type={p.process_type} />}
+                    <span className="text-[10px] text-muted-foreground">{p.item_finish_name}</span>
+                    {p.placement && <span className="text-[10px] text-muted-foreground/60">· {p.placement}</span>}
+                  </div>
+                ))}
+              </div>
+
+              {/* Product grid for this section — sidebar appears at lg, so use 3 cols there */}
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                {group.items.map((wi: any, i: number) => {
                   const key = `${group.finish_id}-${i}`;
                   const state = getItemState(key);
                   const availSizes = getAvailableSizes(wi);
@@ -797,8 +794,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
                   return (
                     <Card key={key} className="overflow-hidden flex flex-col">
-                      {/* Product image — full width */}
-                      <div className="aspect-square bg-white flex items-center justify-center p-4 border-b">
+                      {/* Product image */}
+                      <div className="aspect-square bg-white flex items-center justify-center p-3 border-b">
                         {(wi.variant_image_url ?? wi.product_image_url) ? (
                           <img
                             src={wi.variant_image_url ?? wi.product_image_url}
@@ -806,23 +803,23 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                             className="w-full h-full object-contain"
                           />
                         ) : (
-                          <Shirt className="w-12 h-12 text-muted-foreground/20" />
+                          <Shirt className="w-10 h-10 text-muted-foreground/20" />
                         )}
                       </div>
 
                       {/* Info + controls */}
-                      <div className="p-3 flex flex-col gap-2.5 flex-1">
-                        {/* Name, colour, price */}
+                      <div className="p-3 flex flex-col gap-2 flex-1">
+                        {/* Name + colour + price */}
                         <div>
                           <p className="font-semibold text-sm leading-snug line-clamp-2">{wi.product_name ?? wi.name}</p>
                           {(wi.colour || wi.product_sku) && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
                               {[wi.colour, wi.product_sku].filter(Boolean).join(" · ")}
                             </p>
                           )}
                           {unitPrice > 0 && (
                             <div className="flex items-baseline gap-1.5 mt-1">
-                              <span className="text-base font-bold text-primary">{formatCurrency(unitPrice)}</span>
+                              <span className="text-sm font-bold text-primary">{formatCurrency(unitPrice)}</span>
                               {hasBreak && <span className="text-xs text-muted-foreground line-through">{formatCurrency(basePrice)}</span>}
                             </div>
                           )}
@@ -830,14 +827,14 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
                         {/* Size hint */}
                         {suggestion && !state.size && (
-                          <p className={`text-xs ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
+                          <p className={`text-[11px] ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
                             {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
                           </p>
                         )}
 
                         {/* Size selector */}
                         <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
-                          <SelectTrigger className="h-9 text-sm w-full">
+                          <SelectTrigger className="h-8 text-sm w-full">
                             <SelectValue placeholder="Select size" />
                           </SelectTrigger>
                           <SelectContent>
@@ -846,10 +843,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                                 <span className="flex items-center gap-2">
                                   {s}
                                   {suggestion?.size === s && suggestion.source === "history" && (
-                                    <span className="text-xs text-emerald-600 font-semibold">last</span>
+                                    <span className="text-[10px] text-emerald-600 font-semibold">last</span>
                                   )}
                                   {suggestion?.size === s && suggestion.source === "saved" && (
-                                    <span className="text-xs text-blue-500 font-semibold">saved</span>
+                                    <span className="text-[10px] text-blue-500 font-semibold">saved</span>
                                   )}
                                 </span>
                               </SelectItem>
@@ -857,14 +854,14 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                           </SelectContent>
                         </Select>
 
-                        {/* Qty stepper + Add */}
-                        <div className="flex items-center gap-2 mt-auto">
-                          <div className="flex items-center border rounded-lg h-9 overflow-hidden shrink-0">
+                        {/* Qty stepper + Add — always visible */}
+                        <div className="flex items-center gap-1.5 mt-auto">
+                          <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
                             <button
-                              className="px-2.5 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                              className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                               onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
                             >
-                              <Minus className="w-4 h-4" />
+                              <Minus className="w-3.5 h-3.5" />
                             </button>
                             <input
                               type="number"
@@ -874,17 +871,18 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                                 const v = parseInt(e.target.value, 10);
                                 if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
                               }}
-                              className="w-8 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                             />
                             <button
-                              className="px-2.5 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                              className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                               onClick={() => setItemState(key, { qty: state.qty + 1 })}
                             >
-                              <Plus className="w-4 h-4" />
+                              <Plus className="w-3.5 h-3.5" />
                             </button>
                           </div>
                           <Button
-                            className="flex-1 h-9"
+                            size="sm"
+                            className="flex-1 h-8 text-sm"
                             disabled={!state.size.trim()}
                             onClick={() => handleAdd(wi, key)}
                           >
@@ -894,35 +892,33 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                       </div>
                     </Card>
                   );
-                }),
-              ];
-            })}
-          </div>
+                })}
+              </div>
+            </div>
+          );
+        })}
 
-          <button
-            onClick={() => setSelectedRecipient(null)}
-            className="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline flex items-center gap-1.5 mt-4"
-          >
-            <User className="w-3.5 h-3.5" />
-            Order for another person
-          </button>
-        </div>
+        {/* "Order for someone else" link */}
+        <button
+          onClick={() => setSelectedRecipient(null)}
+          className="text-sm text-muted-foreground hover:text-foreground underline-offset-2 hover:underline flex items-center gap-1.5 mt-2"
+        >
+          <User className="w-3.5 h-3.5" />
+          Order for another person
+        </button>
 
-        {/* Right: sticky order summary */}
-        <div className="hidden lg:block w-72 xl:w-80 shrink-0 sticky top-4 self-start">
+        {/* Mobile: inline summary */}
+        <div className="lg:hidden mt-4">
           <SummarySidebar />
         </div>
       </div>
 
-      {/* Mobile sticky bottom bar */}
-      {basket.length > 0 && (
-        <div className="lg:hidden sticky bottom-0 mt-6 bg-background border-t pt-4">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">{basket.length} item{basket.length !== 1 ? "s" : ""} added</span>
-            <Button onClick={onNext}>Review order <ArrowRight className="w-4 h-4 ml-1.5" /></Button>
-          </div>
-        </div>
-      )}
+      {/* Right: sticky order summary (desktop only) */}
+      <div className="hidden lg:block w-72 shrink-0 sticky top-4 self-start">
+        <SummarySidebar />
+      </div>
+
+      </div>{/* end flex gap-6 */}
     </div>
   );
 }
