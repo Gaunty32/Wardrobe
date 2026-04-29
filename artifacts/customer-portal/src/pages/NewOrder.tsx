@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
@@ -21,8 +21,9 @@ import {
 import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search,
-  User, Package, History, Tag, Sparkles, Heart, X, Mail,
+  User, Package, History, Tag, Sparkles, Heart, X, Mail, UserPlus, Filter,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -198,7 +199,7 @@ function ProcessBadgeInline({ type }: { type: string }) {
 
 type ItemState = { size: string; qty: number };
 
-function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes }: {
+function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded }: {
   items: any[];
   employees: any[];
   lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
@@ -208,10 +209,49 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onNext: () => void;
+  isManager: boolean;
+  onEmployeeAdded: () => void;
 }) {
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
   const [selectedRecipient, setSelectedRecipient] = useState<string | null>(null);
+
+  // Search / filter state
+  const [search, setSearch] = useState("");
+  const [deptMgrOnly, setDeptMgrOnly] = useState(false);
+
+  // Add employee dialog
+  const [addOpen, setAddOpen] = useState(false);
+  const [newFirst, setNewFirst] = useState("");
+  const [newLast, setNewLast] = useState("");
+  const [newJobTitle, setNewJobTitle] = useState("");
+  const [newDept, setNewDept] = useState("");
+
+  const addEmpMut = useMutation({
+    mutationFn: () => apiFetch("/portal/team/employees", {
+      method: "POST",
+      body: JSON.stringify({ firstName: newFirst, lastName: newLast, jobTitle: newJobTitle || null, department: newDept || null }),
+    }),
+    onSuccess: () => {
+      toast({ title: "Employee added" });
+      setAddOpen(false);
+      setNewFirst(""); setNewLast(""); setNewJobTitle(""); setNewDept("");
+      onEmployeeAdded();
+    },
+    onError: () => toast({ title: "Could not add employee", variant: "destructive" }),
+  });
+
+  // Filtered employees — computed before any early returns to satisfy Rules of Hooks
+  const filteredEmployees = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return employees.filter((emp: any) => {
+      const fullName = `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.toLowerCase();
+      if (q && !fullName.includes(q)) return false;
+      if (deptMgrOnly && !emp.role_name?.toLowerCase().includes("manager")) return false;
+      return true;
+    });
+  }, [employees, search, deptMgrOnly]);
 
   const getItemState = (key: string): ItemState =>
     itemStates[key] ?? { size: "", qty: 1 };
@@ -497,13 +537,50 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   if (!selectedRecipient) {
     return (
       <div>
-        <h2 className="text-xl font-semibold mb-1">My Wardrobe</h2>
-        <p className="text-muted-foreground text-sm mb-6">
+        <div className="flex items-start justify-between mb-1">
+          <h2 className="text-xl font-semibold">My Wardrobe</h2>
+          {isManager && (
+            <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
+              <UserPlus className="w-4 h-4 mr-1.5" /> Add employee
+            </Button>
+          )}
+        </div>
+        <p className="text-muted-foreground text-sm mb-4">
           Select who you're ordering for — sizes from their order history will be pre-filled automatically.
         </p>
+
+        {/* Search + filter row */}
+        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <Input
+              placeholder="Search by name…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-9"
+            />
+            {search && (
+              <button className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearch("")}>
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setDeptMgrOnly(v => !v)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap",
+              deptMgrOnly
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+            )}
+          >
+            <Filter className="w-3.5 h-3.5" /> Dept. Managers only
+          </button>
+        </div>
+
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Who is this for?</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
-          {employees.map((emp: any) => {
+          {filteredEmployees.map((emp: any) => {
             const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
             const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
             return (
@@ -525,17 +602,62 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
               </button>
             );
           })}
-          <button
-            onClick={() => handleSelectRecipient("stock")}
-            className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
-          >
-            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/80 transition-colors">
-              <Package className="w-4 h-4 text-muted-foreground" />
+          {filteredEmployees.length === 0 && (
+            <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
+              No employees match your search
             </div>
-            <p className="font-semibold text-sm">Bulk Stock</p>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
-          </button>
+          )}
+          {!search && !deptMgrOnly && (
+            <button
+              onClick={() => handleSelectRecipient("stock")}
+              className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
+            >
+              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/80 transition-colors">
+                <Package className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <p className="font-semibold text-sm">Bulk Stock</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
+            </button>
+          )}
         </div>
+
+        {/* Add employee dialog */}
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add employee</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-3 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1.5">
+                  <Label>First name *</Label>
+                  <Input value={newFirst} onChange={e => setNewFirst(e.target.value)} placeholder="Jane" />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Last name *</Label>
+                  <Input value={newLast} onChange={e => setNewLast(e.target.value)} placeholder="Smith" />
+                </div>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Job title</Label>
+                <Input value={newJobTitle} onChange={e => setNewJobTitle(e.target.value)} placeholder="e.g. Operative" />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Department</Label>
+                <Input value={newDept} onChange={e => setNewDept(e.target.value)} placeholder="e.g. Warehouse" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
+              <Button
+                onClick={() => addEmpMut.mutate()}
+                disabled={!newFirst.trim() || !newLast.trim() || addEmpMut.isPending}
+              >
+                {addEmpMut.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding…</> : "Add employee"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {basket.length > 0 && (
           <div className="rounded-xl border bg-card p-4">
@@ -1400,6 +1522,7 @@ export default function NewOrder() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { portalRole, isPreview } = useAuth();
+  const queryClient = useQueryClient();
 
   const saved = readSession();
   const savedHasItems = (saved?.basket?.length ?? 0) > 0;
@@ -1576,6 +1699,8 @@ export default function NewOrder() {
             basket={basket}
             setBasket={setBasket}
             onNext={() => setStep(2)}
+            isManager={portalRole === "manager"}
+            onEmployeeAdded={() => queryClient.invalidateQueries({ queryKey: ["portal-wardrobe"] })}
           />
         </div>
       )}
