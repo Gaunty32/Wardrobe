@@ -606,6 +606,18 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Who is this for?</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+          {!search && !deptMgrOnly && (
+            <button
+              onClick={() => handleSelectRecipient("stock")}
+              className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
+            >
+              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/80 transition-colors">
+                <Package className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <p className="font-semibold text-sm">Bulk Stock</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
+            </button>
+          )}
           {filteredEmployees.map((emp: any) => {
             const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
             const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
@@ -632,18 +644,6 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
             <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
               No employees match your search
             </div>
-          )}
-          {!search && !deptMgrOnly && (
-            <button
-              onClick={() => handleSelectRecipient("stock")}
-              className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
-            >
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/80 transition-colors">
-                <Package className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <p className="font-semibold text-sm">Bulk Stock</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
-            </button>
           )}
         </div>
 
