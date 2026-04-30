@@ -593,4 +593,36 @@ router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void>
   res.sendStatus(204);
 });
 
+// ─── Delete individual PO line ────────────────────────────────────────────────
+
+router.delete("/purchasing/purchase-orders/:poId/items/:itemId", async (req, res): Promise<void> => {
+  const parsed = z.object({
+    poId: z.coerce.number().int().positive(),
+    itemId: z.coerce.number().int().positive(),
+  }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const { poId, itemId } = parsed.data;
+
+  // Check PO is not delivered (prevent altering historical records)
+  const [po] = await db.select({ status: purchaseOrdersTable.status }).from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (po.status === "delivered") { res.status(400).json({ error: "Cannot delete lines from a delivered PO" }); return; }
+
+  // Fetch the line to get the linked order item id
+  const [poItem] = await db.select().from(purchaseOrderItemsTable)
+    .where(and(eq(purchaseOrderItemsTable.id, itemId), eq(purchaseOrderItemsTable.poId, poId)));
+  if (!poItem) { res.status(404).json({ error: "PO line not found" }); return; }
+
+  // Restore purchaseRequired on the linked order item so it reappears in Requirements
+  if (poItem.orderItemId) {
+    await db.update(orderItemsTable)
+      .set({ purchaseRequired: true })
+      .where(eq(orderItemsTable.id, poItem.orderItemId));
+  }
+
+  await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.id, itemId));
+  res.sendStatus(204);
+});
+
 export default router;

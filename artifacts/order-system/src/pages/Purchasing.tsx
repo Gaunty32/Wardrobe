@@ -503,11 +503,12 @@ function MarkOrderedDialog({ po, open, onClose, onConfirm }: {
 }
 
 function POCard({
-  po, onStatusChange, onDelete, onLineUpdate, onRefresh, onReceiveAll,
+  po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll,
 }: {
   po: PurchaseOrder;
   onStatusChange: (id: number, status: string, extra?: Record<string, unknown>) => void;
   onDelete: (id: number) => void;
+  onDeleteLine: (poId: number, itemId: number) => void;
   onLineUpdate: (poId: number, itemId: number, data: Record<string, unknown>) => void;
   onRefresh: () => void;
   onReceiveAll: (id: number) => void;
@@ -599,8 +600,17 @@ function POCard({
               {allDelivered ? "Complete Delivery" : "Book Partial Delivery"}
             </Button>
           )}
-          {po.status === "draft" && (
-            <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => onDelete(po.id)}>
+          {(po.status === "draft" || po.status === "ordered") && (
+            <Button
+              size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-50"
+              title="Delete this purchase order"
+              onClick={() => {
+                const msg = po.status === "ordered"
+                  ? `Delete PO ${po.poNumber}? This PO has already been marked as ordered. All lines will return to the purchasing requirements list.`
+                  : `Delete draft PO ${po.poNumber}?`;
+                if (confirm(msg)) onDelete(po.id);
+              }}
+            >
               <Trash2 className="w-4 h-4" />
             </Button>
           )}
@@ -615,6 +625,40 @@ function POCard({
           ) : (
             <>
               <POMatrixView items={po.items} currency={po.supplierCurrency} />
+
+              {/* Individual lines with delete buttons — only for draft and ordered POs */}
+              {po.status !== "delivered" && (
+                <div className="space-y-1 pt-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Individual Lines</p>
+                  {po.items.map((line) => (
+                    <div key={line.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/10 px-3 py-2 text-sm">
+                      <div className="flex items-baseline gap-2 flex-wrap min-w-0">
+                        {line.supplierCode && <span className="font-mono font-bold text-primary text-xs">{line.supplierCode}</span>}
+                        <span className="font-medium truncate">{line.productName}</span>
+                        {(line.colour || line.size) && (
+                          <span className="text-xs text-muted-foreground">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
+                        )}
+                        <span className="text-xs font-semibold text-foreground">× {line.quantityOrdered}</span>
+                        {line.quantityDelivered > 0 && (
+                          <span className="text-xs text-green-600">{line.quantityDelivered} received</span>
+                        )}
+                      </div>
+                      <button
+                        title="Remove this line"
+                        className="flex-shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"
+                        onClick={() => {
+                          if (confirm(`Remove ${line.productName}${line.colour ? ` (${line.colour}` : ""}${line.size ? ` / ${line.size}` : ""}${line.colour ? ")" : ""} × ${line.quantityOrdered} from this PO?`)) {
+                            onDeleteLine(po.id, line.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {po.status === "ordered" && (
                 <div className="space-y-3 pt-3 border-t border-border">
                   <div className="flex items-center justify-between">
@@ -718,6 +762,17 @@ export default function Purchasing() {
     mutationFn: (id: number) => apiFetch(`/purchasing/purchase-orders/${id}`, { method: "DELETE" }),
     onSuccess: () => { invalidateAll(); toast({ title: "PO deleted" }); },
     onError: () => toast({ title: "Error", variant: "destructive" }),
+  });
+
+  const deleteLineMutation = useMutation({
+    mutationFn: ({ poId, itemId }: { poId: number; itemId: number }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      toast({ title: "Line removed", description: "Item returned to purchasing requirements." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const lineUpdateMutation = useMutation({
@@ -934,7 +989,8 @@ export default function Purchasing() {
                       key={po.id}
                       po={po}
                       onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
-                      onDelete={(id) => { if (confirm("Delete this draft PO?")) deleteMutation.mutate(id); }}
+                      onDelete={(id) => deleteMutation.mutate(id)}
+                      onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
                       onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
                       onRefresh={() => { refetchPos(); refetchReqs(); }}
                       onReceiveAll={(id) => receiveAllMutation.mutate(id)}
@@ -980,9 +1036,22 @@ export default function Purchasing() {
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1 text-right flex-shrink-0">
-                        <Badge className="bg-amber-100 text-amber-800 border border-amber-300 text-xs font-semibold">
-                          {b.remaining} still pending
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-amber-100 text-amber-800 border border-amber-300 text-xs font-semibold">
+                            {b.remaining} still pending
+                          </Badge>
+                          <button
+                            title="Remove this backorder item"
+                            className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"
+                            onClick={() => {
+                              if (confirm(`Remove backorder for ${b.productName}${b.colour ? ` (${b.colour})` : ""} from PO ${b.poNumber}? The item will return to purchasing requirements.`)) {
+                                deleteLineMutation.mutate({ poId: b.poId, itemId: b.id });
+                              }
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                         {b.estimatedDueDate && (
                           <span className="text-xs text-muted-foreground flex items-center gap-1">
                             <CalendarDays className="w-3 h-3" />
