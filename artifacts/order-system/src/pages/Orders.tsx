@@ -112,7 +112,11 @@ function PortalPendingOrders() {
 
   const reject = useMutation({
     mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "" }) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-pending-orders"] }); toast({ title: "Order rejected" }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-pending-orders"] });
+      qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: "Order rejected", description: "The portal order has been declined and removed from the list." });
+    },
   });
 
   if (isLoading || !pending.length) return null;

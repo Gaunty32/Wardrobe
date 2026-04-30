@@ -102,16 +102,16 @@ const DUE_DATE_SORT = [sql`${ordersTable.requiredDate} ASC NULLS LAST`, desc(ord
 
 router.get("/orders", async (req, res): Promise<void> => {
   const query = ListOrdersQueryParams.safeParse(req.query);
+  // Always exclude portal-rejected orders — they are declined portal submissions and have no place in the active orders list
+  const baseCondition = sql`(${ordersTable.portalStatus} IS DISTINCT FROM 'rejected')`;
   let orders;
   if (query.success) {
-    const conditions = [];
+    const conditions = [baseCondition];
     if (query.data.status) conditions.push(eq(ordersTable.status, query.data.status));
     if (query.data.customerId) conditions.push(eq(ordersTable.customerId, query.data.customerId));
-    orders = conditions.length > 0
-      ? await db.select().from(ordersTable).where(and(...conditions)).orderBy(...DUE_DATE_SORT)
-      : await db.select().from(ordersTable).orderBy(...DUE_DATE_SORT);
+    orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(...DUE_DATE_SORT);
   } else {
-    orders = await db.select().from(ordersTable).orderBy(...DUE_DATE_SORT);
+    orders = await db.select().from(ordersTable).where(baseCondition).orderBy(...DUE_DATE_SORT);
   }
   res.json(orders.map((o) => ({ ...o, totalAmount: numericToFloat(o.totalAmount) })));
 });
