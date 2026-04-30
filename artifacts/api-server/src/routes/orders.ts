@@ -405,7 +405,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       const key = s.supplierName ?? "Unknown Supplier";
       if (!groupMap.has(key)) {
         groupMap.set(key, {
-          ...s, itemIds: [], items: [],
+          ...s,
+          supplierName: key, // use the resolved key so supplierName is never null
+          itemIds: [], items: [],
           existingDraftPos: allDraftPos.filter(p => p.supplierId === s.supplierId).map(p => ({ id: p.id, poNumber: p.poNumber })),
         });
       }

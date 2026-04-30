@@ -266,7 +266,7 @@ router.post("/purchasing/purchase-orders/for-process-stock", async (req, res): P
 router.post("/purchasing/purchase-orders", async (req, res): Promise<void> => {
   const parsed = z.object({
     supplierId: z.number().int().positive().optional().nullable(),
-    supplierName: z.string(),
+    supplierName: z.string().nullable().optional(),
     supplierEmail: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     itemIds: z.array(z.number().int().positive()),
@@ -279,7 +279,7 @@ router.post("/purchasing/purchase-orders", async (req, res): Promise<void> => {
   const [po] = await db.insert(purchaseOrdersTable).values({
     poNumber,
     supplierId: parsed.data.supplierId ?? null,
-    supplierName: parsed.data.supplierName,
+    supplierName: parsed.data.supplierName ?? "Unknown Supplier",
     supplierEmail: parsed.data.supplierEmail ?? null,
     status: "draft",
     notes: parsed.data.notes ?? null,
