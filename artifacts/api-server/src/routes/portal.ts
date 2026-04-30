@@ -551,14 +551,25 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const totalAmount = itemsTotal + (body.shippingCost ?? 0);
 
   // Get customer name and default delivery address
-  const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
-  const customerName = (custRows.rows[0] as any)?.name ?? "";
+  const custRows = await db.execute(sql`SELECT name, address, city, postcode FROM customers WHERE id = ${customerId}`);
+  const custRow = custRows.rows[0] as any;
+  const customerName = custRow?.name ?? "";
   const defaultAddrRows = await db.execute(sql`
     SELECT id FROM customer_delivery_addresses
     WHERE customer_id = ${customerId} AND is_default = true
     LIMIT 1
   `);
-  const customerDefaultAddressId: number | null = (defaultAddrRows.rows[0] as any)?.id ?? null;
+  let customerDefaultAddressId: number | null = (defaultAddrRows.rows[0] as any)?.id ?? null;
+
+  // If no delivery address record exists, auto-create one from the customer's main address
+  if (!customerDefaultAddressId && custRow?.address) {
+    const newAddrRows = await db.execute(sql`
+      INSERT INTO customer_delivery_addresses (customer_id, label, line1, city, postcode, is_default, created_at, updated_at)
+      VALUES (${customerId}, 'Main Address', ${custRow.address}, ${custRow.city ?? null}, ${custRow.postcode ?? null}, true, now(), now())
+      RETURNING id
+    `);
+    customerDefaultAddressId = (newAddrRows.rows[0] as any)?.id ?? null;
+  }
 
   // Resolve portal user's email and display name
   const portalUserId = (req as any).portalUserId;
@@ -1070,7 +1081,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
   const ord = orderRows.rows[0] as any;
   if (!ord) { res.status(404).json({ error: "Order not found" }); return; }
 
-  // If no delivery address set, auto-assign the customer's default
+  // If no delivery address set, auto-assign the customer's default (or create from main address)
   let deliveryAddressId = ord.delivery_address_id;
   if (!deliveryAddressId && ord.customer_id) {
     const addrRows = await db.execute(sql`
@@ -1079,21 +1090,30 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
     `);
     if (addrRows.rows.length > 0) {
       deliveryAddressId = (addrRows.rows[0] as any).id;
+    } else {
+      // Fall back to customer's main address — auto-create a delivery address record
+      const custAddrRows = await db.execute(sql`SELECT address, city, postcode FROM customers WHERE id = ${ord.customer_id} LIMIT 1`);
+      const ca = custAddrRows.rows[0] as any;
+      if (ca?.address) {
+        const newAddrRows = await db.execute(sql`
+          INSERT INTO customer_delivery_addresses (customer_id, label, line1, city, postcode, is_default, created_at, updated_at)
+          VALUES (${ord.customer_id}, 'Main Address', ${ca.address}, ${ca.city ?? null}, ${ca.postcode ?? null}, true, now(), now())
+          RETURNING id
+        `);
+        deliveryAddressId = (newAddrRows.rows[0] as any)?.id ?? null;
+      }
     }
   }
 
-  if (deliveryAddressId && !ord.delivery_address_id) {
-    await db.execute(sql`
-      UPDATE orders SET portal_status = 'confirmed', status = 'draft', updated_at = now(),
-        delivery_address_id = ${deliveryAddressId}
-      WHERE id = ${orderId} AND source = 'portal'
-    `);
-  } else {
-    await db.execute(sql`
-      UPDATE orders SET portal_status = 'confirmed', status = 'draft', updated_at = now()
-      WHERE id = ${orderId} AND source = 'portal'
-    `);
-  }
+  // Ensure attention_of is set — use portal_submitted_by_name as the placer's name
+  const attentionOf = ord.attention_of || ord.portal_submitted_by_name || null;
+
+  await db.execute(sql`
+    UPDATE orders SET portal_status = 'confirmed', status = 'draft', updated_at = now(),
+      delivery_address_id = COALESCE(${deliveryAddressId}, delivery_address_id),
+      attention_of = COALESCE(attention_of, ${attentionOf})
+    WHERE id = ${orderId} AND source = 'portal'
+  `);
 
   // Send order acknowledgement emails
   if (isEmailConfigured) {

@@ -1262,9 +1262,21 @@ export default function OrderDetail() {
                 ) : null}
                 {(() => {
                   const addr = (order as any).deliveryAddress as DeliveryAddress | null | undefined;
-                  if (!addr) return (customerDeliveryAddresses?.length ?? 0) === 0
-                    ? <p className="text-sm text-muted-foreground italic">No addresses on file for this customer</p>
-                    : null;
+                  const fallback = (order as any).customerMainAddress as { line1: string; city: string | null; postcode: string | null } | null | undefined;
+                  if (!addr) {
+                    if (fallback) {
+                      return (
+                        <div className="text-sm space-y-0.5 pt-1">
+                          <p className="text-muted-foreground">{fallback.line1}</p>
+                          <p className="text-muted-foreground">{[fallback.city, fallback.postcode].filter(Boolean).join(", ")}</p>
+                          <p className="text-[11px] text-amber-600 mt-1">Using account address — add a delivery address to the customer profile to override</p>
+                        </div>
+                      );
+                    }
+                    return (customerDeliveryAddresses?.length ?? 0) === 0
+                      ? <p className="text-sm text-muted-foreground italic">No addresses on file for this customer</p>
+                      : null;
+                  }
                   return (
                     <div className="text-sm space-y-0.5 pt-1">
                       {addr.label && <p className="font-medium text-foreground">{addr.label}</p>}
@@ -1278,7 +1290,13 @@ export default function OrderDetail() {
               </CardContent>
             </Card>
 
-            <AttentionOfCard orderId={orderId} current={(order as any).attentionOf ?? null} />
+            <AttentionOfCard
+              orderId={orderId}
+              current={
+                (order as any).attentionOf ??
+                (order.source === "portal" ? ((order as any).portalSubmittedByName ?? null) : null)
+              }
+            />
 
             {/* Xero card — only show if posted or order is dispatched */}
             {((order as any).xeroInvoiceId || order.status === "dispatched") && (

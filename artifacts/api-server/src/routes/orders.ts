@@ -220,10 +220,21 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     deliveryAddress = addr ?? null;
   }
 
+  // Fallback: include customer's main address if no delivery address is linked
+  let customerMainAddress: { line1: string; city: string | null; postcode: string | null } | null = null;
+  if (!deliveryAddress && order.customerId) {
+    const [cust] = await db.select({ address: customersTable.address, city: customersTable.city, postcode: customersTable.postcode })
+      .from(customersTable).where(eq(customersTable.id, order.customerId));
+    if (cust?.address) {
+      customerMainAddress = { line1: cust.address, city: cust.city ?? null, postcode: cust.postcode ?? null };
+    }
+  }
+
   res.json({
     ...order,
     totalAmount: numericToFloat(order.totalAmount),
     deliveryAddress,
+    customerMainAddress,
     items: itemRows.map(({ item, catalogueProductName }) => ({
       ...item,
       productName: catalogueProductName ?? item.productName,
