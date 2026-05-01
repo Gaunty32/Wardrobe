@@ -136,7 +136,7 @@ router.get("/portal/admin/customer-detail/:customerId", async (req: Request, res
     LEFT JOIN customer_roles r ON r.id = e.role_id
     LEFT JOIN customer_employees m ON m.id = e.manager_id
     WHERE e.customer_id = ${customerId} AND e.is_active = true
-    ORDER BY e.first_name ASC
+    ORDER BY COALESCE(e.last_name, e.first_name), e.first_name
   `);
   res.json({ employees: employees.rows });
 });

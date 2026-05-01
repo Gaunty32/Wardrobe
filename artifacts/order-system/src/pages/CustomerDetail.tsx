@@ -1415,7 +1415,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
         : <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
             <TableHead>Name</TableHead>
-            <TableHead className="hidden sm:table-cell">Job Title / Role</TableHead>
+            <TableHead className="hidden sm:table-cell">Team Manager</TableHead>
             <TableHead className="hidden md:table-cell">Email</TableHead>
             <TableHead className="text-right w-28">Actions</TableHead>
           </TableRow></TableHeader>
@@ -1431,12 +1431,9 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                   </div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                  <div>
-                    {e.jobTitle && <p>{e.jobTitle}</p>}
-                    {e.roleName && <p className="text-xs text-primary/70">{e.roleName}</p>}
-                    {e.managerName && <p className="text-xs text-indigo-600/80">Reports to: {e.managerName}</p>}
-                    {!e.jobTitle && !e.roleName && !e.managerName && '—'}
-                  </div>
+                  {e.managerName
+                    ? <span className="inline-flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />{e.managerName}</span>
+                    : <span className="text-muted-foreground/40">—</span>}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
                 <TableCell className="text-right">
@@ -1759,7 +1756,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                     })
                     .map((e: any) => {
                       const name = e.name || [e.first_name, e.last_name].filter(Boolean).join(" ") || "—";
-                      const subtitle = [e.job_title, e.role_name, e.manager_name ? `Reports to ${e.manager_name}` : null].filter(Boolean).join(" · ");
+                      const subtitle = [e.job_title, e.role_name, e.manager_name ? `Manager: ${e.manager_name}` : null].filter(Boolean).join(" · ");
                       return (
                         <button
                           key={e.id}
