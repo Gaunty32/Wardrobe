@@ -1709,6 +1709,9 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickerRole("member"); setPickedEmployeeId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
             <Eye className="w-3.5 h-3.5" /> Preview as Employee
           </Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickerRole("dept_manager"); setPickedEmployeeId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
+            <Eye className="w-3.5 h-3.5" /> Preview as Team Manager
+          </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickerRole("manager"); setPickedEmployeeId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
             <Eye className="w-3.5 h-3.5" /> Preview as Manager
           </Button>
@@ -1719,11 +1722,13 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Eye className="w-4 h-4" />
-                  {pickerRole === "manager" ? "Preview as Manager" : "Preview as Employee"}
+                  {pickerRole === "manager" ? "Preview as Manager" : pickerRole === "dept_manager" ? "Preview as Team Manager" : "Preview as Employee"}
                 </DialogTitle>
                 <DialogDescription>
                   {pickerRole === "manager"
-                    ? "Choose which manager to view the portal as — you'll see their team's orders and approval queue."
+                    ? "Choose which manager to view the portal as — you'll see all orders and the approval queue."
+                    : pickerRole === "dept_manager"
+                    ? "Choose which team manager to view the portal as — they'll see their own orders and My Team page."
                     : "Choose which employee to view the portal as — their wardrobe and sizes will be shown."}
                 </DialogDescription>
               </DialogHeader>
@@ -1743,7 +1748,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                     <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === null ? "opacity-100" : "opacity-0")} />
                     <div>
                       <p className="font-medium">
-                        {pickerRole === "manager" ? "Generic manager" : "Generic employee"}
+                        {pickerRole === "manager" ? "Generic manager" : pickerRole === "dept_manager" ? "Generic team manager" : "Generic employee"}
                       </p>
                       <p className="text-xs text-muted-foreground">No specific person — no wardrobe pre-filter</p>
                     </div>
@@ -1777,20 +1782,6 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   )}
                 </div>
               </div>
-              {pickerRole !== "manager" && (
-                <div className="flex items-center gap-1 rounded-lg bg-muted p-1 mb-1">
-                  {(["member", "dept_manager"] as const).map(r => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setPickerRole(r)}
-                      className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${pickerRole === r ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                    >
-                      {r === "member" ? "Employee" : "Team Manager"}
-                    </button>
-                  ))}
-                </div>
-              )}
               <DialogFooter>
                 <Button variant="outline" onClick={() => setEmpPickerOpen(false)}>Cancel</Button>
                 <Button
