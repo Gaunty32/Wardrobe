@@ -1756,7 +1756,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                     })
                     .map((e: any) => {
                       const name = e.name || [e.first_name, e.last_name].filter(Boolean).join(" ") || "—";
-                      const subtitle = [e.job_title, e.role_name, e.manager_name ? `Manager: ${e.manager_name}` : null].filter(Boolean).join(" · ");
+                      const subtitle = [e.job_title, e.role_name, e.manager_name].filter(Boolean).join(" · ");
                       return (
                         <button
                           key={e.id}
