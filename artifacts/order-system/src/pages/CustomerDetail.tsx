@@ -1566,13 +1566,13 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     });
   };
 
-  const openPreview = async () => {
+  const openPreview = async (role: "manager" | "member" = "manager") => {
     setPreviewLoading(true);
     // Open a blank tab synchronously (within the click handler) so the browser
     // doesn't treat it as a popup. We navigate it to the real URL once we have the token.
     const newWindow = window.open("", "_blank");
     try {
-      const data: any = await apiFetch(`/portal/admin/preview/${customerId}`, { method: "POST" });
+      const data: any = await apiFetch(`/portal/admin/preview/${customerId}?role=${role}`, { method: "POST" });
       const href = window.location.origin + data.previewUrl;
       if (newWindow && !newWindow.closed) {
         newWindow.location.href = href;
@@ -1602,8 +1602,11 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <p className="text-sm text-muted-foreground mt-0.5">Manage who can log into the customer ordering portal for this account.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={openPreview} disabled={previewLoading}>
-            {previewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} View as Customer
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openPreview("member")} disabled={previewLoading}>
+            {previewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Preview as Employee
+          </Button>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openPreview("manager")} disabled={previewLoading}>
+            {previewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Preview as Manager
           </Button>
 
           {/* Preview link dialog — opens after token is generated */}
@@ -1611,7 +1614,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
             <DialogContent className="max-w-sm">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2"><Eye className="w-4 h-4" /> Portal Preview Ready</DialogTitle>
-                <DialogDescription>Click the button below to open the portal as a manager. The link expires in 2 hours.</DialogDescription>
+                <DialogDescription>Click the button below to open the portal preview. The link expires in 2 hours.</DialogDescription>
               </DialogHeader>
               <div className="flex flex-col gap-3 pt-1">
                 <Button

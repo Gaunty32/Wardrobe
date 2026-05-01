@@ -113,6 +113,56 @@ router.get("/settings/email/status", async (_req, res): Promise<void> => {
 
 // ─── SMTP test connection ─────────────────────────────────────────────────────
 
+// ─── Orders grouped by customer PO number ────────────────────────────────────
+
+router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
+  const orders = await db
+    .select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      customerId: ordersTable.customerId,
+      totalAmount: ordersTable.totalAmount,
+      status: ordersTable.status,
+      poNumber: ordersTable.poNumber,
+      orderDate: ordersTable.orderDate,
+      dispatchedAt: ordersTable.dispatchedAt,
+      invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
+      xeroInvoiceId: ordersTable.xeroInvoiceId,
+    })
+    .from(ordersTable)
+    .where(isNotNull(ordersTable.poNumber))
+    .orderBy(ordersTable.poNumber, desc(ordersTable.orderDate));
+
+  // Group by poNumber + customer
+  const groupMap = new Map<string, {
+    poNumber: string;
+    customerName: string | null;
+    customerId: number | null;
+    orders: typeof orders;
+    totalEx: number;
+    totalInc: number;
+  }>();
+
+  for (const o of orders) {
+    const key = `${o.poNumber}__${o.customerId ?? "none"}`;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, { poNumber: o.poNumber!, customerName: o.customerName, customerId: o.customerId, orders: [], totalEx: 0, totalInc: 0 });
+    }
+    const g = groupMap.get(key)!;
+    g.orders.push(o);
+    const ex = parseFloat(String(o.totalAmount ?? 0));
+    g.totalEx += ex;
+    g.totalInc += ex * 1.2;
+  }
+
+  res.json([...groupMap.values()].map((g) => ({
+    ...g,
+    totalEx: Math.round(g.totalEx * 100) / 100,
+    totalInc: Math.round(g.totalInc * 100) / 100,
+  })));
+});
+
 router.post("/settings/email/test", async (_req, res): Promise<void> => {
   try {
     const result = await testSmtpConnection();

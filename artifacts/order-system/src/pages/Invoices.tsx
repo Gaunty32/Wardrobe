@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
-  Truck, Clock, ArrowRight, AlertTriangle, Package,
+  Truck, Clock, ArrowRight, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -49,6 +49,29 @@ interface InvoicesData {
   toSend: InvoiceOrder[];
   toPost: InvoiceOrder[];
   done: InvoiceOrder[];
+}
+
+interface PoGroupOrder {
+  id: number;
+  orderNumber: string;
+  customerName: string | null;
+  customerId: number | null;
+  totalAmount: string;
+  status: string;
+  poNumber: string | null;
+  orderDate: string | null;
+  dispatchedAt: string | null;
+  invoiceEmailSentAt: string | null;
+  xeroInvoiceId: string | null;
+}
+
+interface PoGroup {
+  poNumber: string;
+  customerName: string | null;
+  customerId: number | null;
+  orders: PoGroupOrder[];
+  totalEx: number;
+  totalInc: number;
 }
 
 interface EmailStatus {
@@ -294,6 +317,12 @@ export default function Invoices() {
     refetchInterval: 30_000,
   });
 
+  const { data: poGroups, isLoading: poLoading } = useQuery<PoGroup[]>({
+    queryKey: ["invoices-by-po"],
+    queryFn: () => apiFetch("/invoices/by-po-number"),
+    refetchInterval: 30_000,
+  });
+
   const { data: emailStatus } = useQuery<EmailStatus>({
     queryKey: ["email-status"],
     queryFn: () => apiFetch("/settings/email/status"),
@@ -303,6 +332,7 @@ export default function Invoices() {
   const toSend = data?.toSend ?? [];
   const toPost = data?.toPost ?? [];
   const done = data?.done ?? [];
+  const groups = poGroups ?? [];
 
   return (
     <Layout>
@@ -378,6 +408,12 @@ export default function Invoices() {
             </TabsTrigger>
             <TabsTrigger value="done" className="gap-2">
               <CheckCircle2 className="w-4 h-4" /> Complete
+            </TabsTrigger>
+            <TabsTrigger value="by-po" className="gap-2">
+              <Hash className="w-4 h-4" /> By PO #
+              {groups.length > 0 && (
+                <Badge className="ml-1 bg-slate-500 text-white text-xs px-1.5 py-0 h-5">{groups.length}</Badge>
+              )}
             </TabsTrigger>
           </TabsList>
 
@@ -457,8 +493,111 @@ export default function Invoices() {
               </div>
             )}
           </TabsContent>
+          {/* By PO # */}
+          <TabsContent value="by-po" className="mt-4">
+            {poLoading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+              </div>
+            ) : groups.length === 0 ? (
+              <div className="py-16 text-center text-muted-foreground">
+                <Hash className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p className="font-medium">No customer PO numbers yet</p>
+                <p className="text-sm mt-1">Orders with a customer PO number will be grouped here.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {groups.map((g) => (
+                  <PoGroupRow key={`${g.poNumber}__${g.customerId}`} group={g} />
+                ))}
+              </div>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
     </Layout>
+  );
+}
+
+function PoGroupRow({ group }: { group: PoGroup }) {
+  const [open, setOpen] = useState(false);
+  const statusColor: Record<string, string> = {
+    dispatched: "bg-green-100 text-green-800 border-green-200",
+    in_production: "bg-blue-100 text-blue-800 border-blue-200",
+    confirmed: "bg-indigo-100 text-indigo-800 border-indigo-200",
+    draft: "bg-gray-100 text-gray-700 border-gray-200",
+    cancelled: "bg-red-100 text-red-700 border-red-200",
+  };
+  return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      {/* Header row */}
+      <button
+        className="w-full flex items-center gap-3 px-4 py-3 bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+        <Hash className="w-4 h-4 text-primary shrink-0" />
+        <span className="font-semibold text-sm">{group.poNumber}</span>
+        <span className="text-sm text-muted-foreground mx-1">·</span>
+        <span className="text-sm text-muted-foreground">{group.customerName ?? "Unknown customer"}</span>
+        <div className="ml-auto flex items-center gap-4">
+          <span className="text-xs text-muted-foreground">{group.orders.length} order{group.orders.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm font-medium">{formatCurrency(group.totalEx)} ex VAT</span>
+          <span className="text-xs text-muted-foreground">({formatCurrency(group.totalInc)} inc)</span>
+        </div>
+      </button>
+      {/* Expandable order list */}
+      {open && (
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/20">
+              <TableHead className="text-xs">Order #</TableHead>
+              <TableHead className="text-xs">Date</TableHead>
+              <TableHead className="text-xs">Status</TableHead>
+              <TableHead className="text-xs">Dispatched</TableHead>
+              <TableHead className="text-xs">Invoice Sent</TableHead>
+              <TableHead className="text-xs">Xero</TableHead>
+              <TableHead className="text-xs text-right">Total (ex)</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {group.orders.map((o) => (
+              <TableRow key={o.id}>
+                <TableCell className="text-xs font-mono">
+                  <Link href={`/orders/${o.id}`} className="text-primary hover:underline">
+                    {o.orderNumber}
+                  </Link>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{o.orderDate ? formatDate(o.orderDate) : "—"}</TableCell>
+                <TableCell>
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${statusColor[o.status] ?? "bg-gray-100 text-gray-700 border-gray-200"}`}>
+                    {o.status.replace("_", " ")}
+                  </span>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{o.dispatchedAt ? formatDate(o.dispatchedAt) : "—"}</TableCell>
+                <TableCell className="text-xs">
+                  {o.invoiceEmailSentAt
+                    ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{formatDate(o.invoiceEmailSentAt)}</span>
+                    : <span className="text-muted-foreground">Not sent</span>
+                  }
+                </TableCell>
+                <TableCell className="text-xs">
+                  {o.xeroInvoiceId
+                    ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Posted</span>
+                    : <span className="text-muted-foreground">—</span>
+                  }
+                </TableCell>
+                <TableCell className="text-right text-xs font-medium">{formatCurrency(parseFloat(o.totalAmount ?? "0"))}</TableCell>
+              </TableRow>
+            ))}
+            {/* Totals row */}
+            <TableRow className="bg-muted/30 font-semibold">
+              <TableCell colSpan={6} className="text-xs text-right text-muted-foreground">Group total (ex VAT)</TableCell>
+              <TableCell className="text-right text-sm">{formatCurrency(group.totalEx)}</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      )}
+    </div>
   );
 }

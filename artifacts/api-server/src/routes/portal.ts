@@ -43,8 +43,8 @@ function signToken(userId: number, customerId: number, portalRole: string) {
   return jwt.sign({ sub: userId, customerId, portalRole }, JWT_SECRET, { expiresIn: "30d" });
 }
 
-function signPreviewToken(customerId: number) {
-  return jwt.sign({ sub: 0, customerId, portalRole: "manager", isPreview: true }, JWT_SECRET, { expiresIn: "2h" });
+function signPreviewToken(customerId: number, role: "manager" | "member" = "manager") {
+  return jwt.sign({ sub: 0, customerId, portalRole: role, isPreview: true }, JWT_SECRET, { expiresIn: "2h" });
 }
 
 export async function portalAuth(req: Request, res: Response, next: NextFunction) {
@@ -263,12 +263,13 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
   const customer = custRows.rows[0];
 
   if (isPreview) {
+    const previewRole = (req as any).portalRole ?? "manager";
     const contactRows = await db.execute(sql`SELECT contact_first_name FROM customers WHERE id = ${customerId}`);
     const raw = (contactRows.rows[0] as any)?.contact_first_name ?? "there";
     // Take only the first word in case the full name was stored in this field
     const firstName = raw.trim().split(/\s+/)[0];
     res.json({
-      user: { id: 0, email: "staff-preview@sbs.internal", status: "active", portal_role: "manager" },
+      user: { id: 0, email: "staff-preview@sbs.internal", status: "active", portal_role: previewRole },
       customer,
       firstName,
       isPreview: true,
@@ -315,9 +316,10 @@ router.post("/portal/admin/preview/:customerId", async (req: Request, res: Respo
   const custRows = await db.execute(sql`SELECT id, name, logo_url FROM customers WHERE id = ${customerId}`);
   if (!custRows.rows[0]) { res.status(404).json({ error: "Customer not found" }); return; }
 
-  const token = signPreviewToken(customerId);
+  const role: "manager" | "member" = req.query.role === "member" ? "member" : "manager";
+  const token = signPreviewToken(customerId, role);
   const previewUrl = `/customer-portal/preview-login?token=${token}`;
-  res.json({ previewUrl, token, expiresIn: "2h" });
+  res.json({ previewUrl, token, expiresIn: "2h", role });
 });
 
 // ─── portal: list orders ─────────────────────────────────────────────────────
