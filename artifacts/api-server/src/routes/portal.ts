@@ -127,9 +127,16 @@ router.post("/portal/admin/create-user", async (req: Request, res: Response) => 
 router.get("/portal/admin/customer-detail/:customerId", async (req: Request, res: Response) => {
   const customerId = parseInt(req.params.customerId, 10);
   const employees = await db.execute(sql`
-    SELECT id, (first_name || COALESCE(' ' || last_name, '')) AS name, email FROM customer_employees
-    WHERE customer_id = ${customerId} AND is_active = true
-    ORDER BY first_name ASC
+    SELECT e.id,
+      TRIM(CONCAT(e.first_name, ' ', COALESCE(e.last_name, ''))) AS name,
+      e.first_name, e.last_name, e.email, e.job_title,
+      r.name AS role_name,
+      TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) AS manager_name
+    FROM customer_employees e
+    LEFT JOIN customer_roles r ON r.id = e.role_id
+    LEFT JOIN customer_employees m ON m.id = e.manager_id
+    WHERE e.customer_id = ${customerId} AND e.is_active = true
+    ORDER BY e.first_name ASC
   `);
   res.json({ employees: employees.rows });
 });
