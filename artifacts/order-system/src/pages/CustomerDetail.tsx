@@ -998,6 +998,64 @@ function FinishesTab({ customerId }: { customerId: number }) {
   );
 }
 
+// ─── Shared: Manager Combobox ─────────────────────────────────────────────────
+
+function ManagerCombobox({ employees, value, onChange }: {
+  employees: any[];
+  value: number | null;
+  onChange: (v: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const selected = employees.find(e => e.id === value);
+  const label = selected ? [selected.firstName, selected.lastName].filter(Boolean).join(" ") : "No manager";
+  const filtered = search.trim()
+    ? employees.filter(e => [e.firstName, e.lastName, e.jobTitle].filter(Boolean).join(" ").toLowerCase().includes(search.toLowerCase()))
+    : employees;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-ring",
+            !value && "text-muted-foreground"
+          )}
+        >
+          <span className="truncate">{label}</span>
+          <ChevronsUpDown className="w-4 h-4 shrink-0 opacity-50 ml-2" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width]" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Search employees…" value={search} onValueChange={setSearch} />
+          <CommandList className="max-h-56">
+            <CommandEmpty>No employees found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="none" onSelect={() => { onChange(null); setOpen(false); setSearch(""); }}>
+                <Check className={cn("w-4 h-4 mr-2 shrink-0", !value ? "opacity-100" : "opacity-0")} />
+                <span className="text-muted-foreground">No manager</span>
+              </CommandItem>
+              {filtered.map(e => {
+                const name = [e.firstName, e.lastName].filter(Boolean).join(" ");
+                return (
+                  <CommandItem key={e.id} value={String(e.id)} onSelect={() => { onChange(e.id); setOpen(false); setSearch(""); }}>
+                    <Check className={cn("w-4 h-4 mr-2 shrink-0", value === e.id ? "opacity-100" : "opacity-0")} />
+                    <span>{name}{e.jobTitle ? <span className="ml-1.5 text-muted-foreground text-xs">— {e.jobTitle}</span> : null}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 // ─── Teams Tab ────────────────────────────────────────────────────────────────
 
 function TeamsTab({ customerId }: { customerId: number }) {
@@ -1078,16 +1136,11 @@ function TeamsTab({ customerId }: { customerId: number }) {
             </div>
             <div className="grid gap-2">
               <Label>Team Manager</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-                value={form.managerId ?? ""}
-                onChange={e => setForm({ ...form, managerId: e.target.value ? parseInt(e.target.value) : null })}
-              >
-                <option value="">— No manager —</option>
-                {activeEmployees.map((e: any) => (
-                  <option key={e.id} value={e.id}>{[e.firstName, e.lastName].filter(Boolean).join(" ")}{e.jobTitle ? ` (${e.jobTitle})` : ""}</option>
-                ))}
-              </select>
+              <ManagerCombobox
+                employees={activeEmployees}
+                value={form.managerId}
+                onChange={v => setForm({ ...form, managerId: v })}
+              />
             </div>
             <div className="grid gap-2">
               <Label>Description</Label>
@@ -1430,15 +1483,11 @@ function EmployeesTab({ customerId }: { customerId: number }) {
             </div>
             <div className="grid gap-2">
               <Label>Team Manager</Label>
-              <Select value={form.managerId ? form.managerId.toString() : "none"} onValueChange={v => setForm({ ...form, managerId: v === "none" ? null : Number(v) })}>
-                <SelectTrigger><SelectValue placeholder="No manager" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No manager</SelectItem>
-                  {(employees as any[])?.filter((e: any) => e.id !== editing?.id && e.isActive).map((e: any) => (
-                    <SelectItem key={e.id} value={e.id.toString()}>{[e.firstName, e.lastName].filter(Boolean).join(" ")}{e.jobTitle ? ` — ${e.jobTitle}` : ""}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ManagerCombobox
+                employees={(employees as any[])?.filter((e: any) => e.id !== editing?.id && e.isActive !== false) ?? []}
+                value={form.managerId}
+                onChange={v => setForm({ ...form, managerId: v })}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
