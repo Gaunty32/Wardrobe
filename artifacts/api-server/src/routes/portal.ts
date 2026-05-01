@@ -44,7 +44,7 @@ function signToken(userId: number, customerId: number, portalRole: string) {
   return jwt.sign({ sub: userId, customerId, portalRole }, JWT_SECRET, { expiresIn: "30d" });
 }
 
-function signPreviewToken(customerId: number, role: "manager" | "member" = "manager", linkedEmployeeId?: number | null) {
+function signPreviewToken(customerId: number, role: "manager" | "dept_manager" | "member" = "manager", linkedEmployeeId?: number | null) {
   return jwt.sign({ sub: 0, customerId, portalRole: role, isPreview: true, linkedEmployeeId: linkedEmployeeId ?? null }, JWT_SECRET, { expiresIn: "2h" });
 }
 
@@ -338,7 +338,8 @@ router.post("/portal/admin/preview/:customerId", async (req: Request, res: Respo
   const custRows = await db.execute(sql`SELECT id, name, logo_url FROM customers WHERE id = ${customerId}`);
   if (!custRows.rows[0]) { res.status(404).json({ error: "Customer not found" }); return; }
 
-  const role: "manager" | "member" = req.query.role === "member" ? "member" : "manager";
+  const roleParam = req.query.role as string;
+  const role: "manager" | "dept_manager" | "member" = roleParam === "member" ? "member" : roleParam === "dept_manager" ? "dept_manager" : "manager";
   const body = z.object({ employeeId: z.number().int().positive().optional().nullable() }).optional().safeParse(req.body);
   const linkedEmployeeId = body.success ? (body.data?.employeeId ?? null) : null;
 

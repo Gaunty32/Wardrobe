@@ -1598,7 +1598,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const [empPickerOpen, setEmpPickerOpen] = useState(false);
   const [empPickerSearch, setEmpPickerSearch] = useState("");
   const [pickedEmployeeId, setPickedEmployeeId] = useState<number | null>(null);
-  const [pickerRole, setPickerRole] = useState<"member" | "manager">("member");
+  const [pickerRole, setPickerRole] = useState<"member" | "dept_manager" | "manager">("member");
 
   const { data: portalUsers, isLoading } = useQuery<any[]>({
     queryKey: ["portal-users", customerId],
@@ -1667,7 +1667,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     });
   };
 
-  const openPreview = async (role: "manager" | "member" = "manager", employeeId?: number | null) => {
+  const openPreview = async (role: "manager" | "dept_manager" | "member" = "manager", employeeId?: number | null) => {
     setPreviewLoading(true);
     // Open a blank tab synchronously (within the click handler) so the browser
     // doesn't treat it as a popup. We navigate it to the real URL once we have the token.
@@ -1777,6 +1777,20 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   )}
                 </div>
               </div>
+              {pickerRole !== "manager" && (
+                <div className="flex items-center gap-1 rounded-lg bg-muted p-1 mb-1">
+                  {(["member", "dept_manager"] as const).map(r => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setPickerRole(r)}
+                      className={`flex-1 py-1 rounded-md text-xs font-medium transition-colors ${pickerRole === r ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {r === "member" ? "Employee" : "Team Manager"}
+                    </button>
+                  ))}
+                </div>
+              )}
               <DialogFooter>
                 <Button variant="outline" onClick={() => setEmpPickerOpen(false)}>Cancel</Button>
                 <Button
