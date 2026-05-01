@@ -141,7 +141,7 @@ function NotificationBell() {
 }
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const { user, logout, isPreview, isManager, previewEmployeeName } = useAuth();
+  const { user, logout, isPreview, isManager, isDeptManager, previewEmployeeName } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -152,7 +152,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "Products", icon: Package, href: "/products" },
     { label: "Invoices", icon: Receipt, href: "/invoices" },
     { label: "Payment", icon: CreditCard, href: "/payment-methods" },
-    ...(isManager ? [{ label: "Team", icon: Users, href: "/team" }] : []),
+    ...(isManager ? [{ label: "Team", icon: Users, href: "/team" }] : isDeptManager ? [{ label: "My Team", icon: Users, href: "/team" }] : []),
   ];
 
   return (

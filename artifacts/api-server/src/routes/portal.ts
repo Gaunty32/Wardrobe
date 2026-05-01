@@ -1406,6 +1406,129 @@ router.get("/portal/addresses", portalAuth, async (req: Request, res: Response) 
   res.json(rows.rows);
 });
 
+// ─── portal: my-team — employees (dept_manager: their direct reports) ─────────
+
+async function getDeptManagerLinkedEmployeeId(req: Request): Promise<number | null> {
+  const portalUserId = (req as any).portalUserId;
+  const portalIsPreview = (req as any).portalIsPreview;
+  const linkedEmployeeId = (req as any).portalLinkedEmployeeId;
+  if (portalIsPreview) return linkedEmployeeId ?? null;
+  if (!portalUserId) return null;
+  const rows = await db.execute(sql`SELECT linked_employee_id FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+  return (rows.rows[0] as any)?.linked_employee_id ?? null;
+}
+
+router.get("/portal/my-team/employees", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.json([]); return; }
+
+  const showInactive = req.query.showInactive === "true";
+
+  const rows = await db.execute(sql`
+    SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
+           e.department, e.notes, e.is_active,
+           cr.id as role_id, cr.name as role_name,
+           e.delivery_address_id,
+           da.label as delivery_address_label,
+           da.line1 as delivery_address_line1,
+           da.city  as delivery_address_city
+    FROM customer_employees e
+    LEFT JOIN customer_roles cr ON cr.id = e.role_id
+    LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
+    WHERE e.customer_id = ${customerId}
+      AND e.manager_id = ${myEmpId}
+      ${showInactive ? sql`` : sql`AND e.is_active = true`}
+    ORDER BY e.last_name, e.first_name
+  `);
+  res.json(rows.rows);
+});
+
+router.post("/portal/my-team/employees", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.status(400).json({ error: "No linked employee found for your account" }); return; }
+
+  const body = z.object({
+    firstName: z.string().min(1),
+    lastName: z.string().min(1),
+    employeeNumber: z.string().optional().nullable(),
+    email: z.string().email().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    jobTitle: z.string().optional().nullable(),
+    department: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const d = body.data;
+  const rows = await db.execute(sql`
+    INSERT INTO customer_employees
+      (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, notes, manager_id, is_active)
+    VALUES
+      (${customerId}, ${d.firstName}, ${d.lastName}, ${d.employeeNumber ?? null}, ${d.email ?? null},
+       ${d.phone ?? null}, ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.notes ?? null}, ${myEmpId}, true)
+    RETURNING *
+  `);
+  res.status(201).json(rows.rows[0]);
+});
+
+router.patch("/portal/my-team/employees/:id", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.status(400).json({ error: "No linked employee found" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  // Verify this employee is actually in their team
+  const check = await db.execute(sql`
+    SELECT id FROM customer_employees WHERE id = ${id} AND customer_id = ${customerId} AND manager_id = ${myEmpId}
+  `);
+  if (check.rows.length === 0) { res.status(403).json({ error: "Employee not in your team" }); return; }
+
+  const body = z.object({
+    firstName: z.string().min(1).optional(),
+    lastName: z.string().min(1).optional(),
+    employeeNumber: z.string().optional().nullable(),
+    email: z.string().email().optional().nullable(),
+    phone: z.string().optional().nullable(),
+    jobTitle: z.string().optional().nullable(),
+    department: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+    isActive: z.boolean().optional(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const d = body.data;
+  await db.execute(sql`
+    UPDATE customer_employees SET
+      first_name = COALESCE(${d.firstName ?? null}, first_name),
+      last_name = COALESCE(${d.lastName ?? null}, last_name),
+      employee_number = COALESCE(${d.employeeNumber !== undefined ? d.employeeNumber : null}, employee_number),
+      email = COALESCE(${d.email !== undefined ? d.email : null}, email),
+      phone = COALESCE(${d.phone !== undefined ? d.phone : null}, phone),
+      job_title = COALESCE(${d.jobTitle !== undefined ? d.jobTitle : null}, job_title),
+      department = COALESCE(${d.department !== undefined ? d.department : null}, department),
+      notes = COALESCE(${d.notes !== undefined ? d.notes : null}, notes),
+      is_active = COALESCE(${d.isActive !== undefined ? d.isActive : null}, is_active),
+      updated_at = now()
+    WHERE id = ${id}
+  `);
+
+  const updated = await db.execute(sql`SELECT * FROM customer_employees WHERE id = ${id}`);
+  res.json(updated.rows[0]);
+});
+
 // ─── portal: team — employees (manager only) ─────────────────────────────────
 
 router.get("/portal/team/employees", portalAuth, async (req: Request, res: Response) => {

@@ -770,15 +770,198 @@ function UsersTab() {
   );
 }
 
+// ─── My Team tab (dept_manager) ───────────────────────────────────────────────
+
+function MyTeamTab() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [showInactive, setShowInactive] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any | null>(null);
+
+  const { data: employees = [], isLoading } = useQuery<any[]>({
+    queryKey: ["portal-my-team-employees", showInactive],
+    queryFn: () => apiFetch(`/portal/my-team/employees?showInactive=${showInactive}`),
+  });
+
+  const [form, setForm] = useState({ firstName: "", lastName: "", employeeNumber: "", email: "", phone: "", jobTitle: "", department: "" });
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const resetForm = () => setForm({ firstName: "", lastName: "", employeeNumber: "", email: "", phone: "", jobTitle: "", department: "" });
+
+  const openEdit = (emp: any) => {
+    setForm({
+      firstName: emp.first_name ?? "",
+      lastName: emp.last_name ?? "",
+      employeeNumber: emp.employee_number ?? "",
+      email: emp.email ?? "",
+      phone: emp.phone ?? "",
+      jobTitle: emp.job_title ?? "",
+      department: emp.department ?? "",
+    });
+    setEditTarget(emp);
+  };
+
+  const addMutation = useMutation({
+    mutationFn: () => apiFetch("/portal/my-team/employees", { method: "POST", body: JSON.stringify(form) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-my-team-employees"] });
+      setAddOpen(false);
+      resetForm();
+      toast({ title: "Team member added" });
+    },
+    onError: () => toast({ title: "Failed to add team member", variant: "destructive" }),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/portal/my-team/employees/${id}`, { method: "PATCH", body: JSON.stringify(form) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-my-team-employees"] });
+      setEditTarget(null);
+      toast({ title: "Team member updated" });
+    },
+    onError: () => toast({ title: "Failed to update team member", variant: "destructive" }),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
+      apiFetch(`/portal/my-team/employees/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-my-team-employees"] });
+      toast({ title: "Updated" });
+    },
+    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
+  });
+
+  function MemberForm({ saving, onSave, onCancel }: { saving: boolean; onSave: () => void; onCancel: () => void }) {
+    return (
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1"><Label>First name *</Label><Input value={form.firstName} onChange={e => set("firstName", e.target.value)} /></div>
+          <div className="space-y-1"><Label>Last name *</Label><Input value={form.lastName} onChange={e => set("lastName", e.target.value)} /></div>
+        </div>
+        <div className="space-y-1"><Label>Employee Number</Label><Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} /></div>
+        <div className="space-y-1"><Label>Email</Label><Input type="email" value={form.email} onChange={e => set("email", e.target.value)} /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1"><Label>Phone</Label><Input value={form.phone} onChange={e => set("phone", e.target.value)} /></div>
+          <div className="space-y-1"><Label>Job title</Label><Input value={form.jobTitle} onChange={e => set("jobTitle", e.target.value)} /></div>
+        </div>
+        <div className="space-y-1"><Label>Department</Label><Input value={form.department} onChange={e => set("department", e.target.value)} /></div>
+        <DialogFooter className="pt-2">
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button disabled={saving || !form.firstName.trim() || !form.lastName.trim()} onClick={onSave}>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+            {editTarget ? "Save changes" : "Add team member"}
+          </Button>
+        </DialogFooter>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Switch id="show-inactive-my" checked={showInactive} onCheckedChange={setShowInactive} />
+          <Label htmlFor="show-inactive-my" className="cursor-pointer">Show leavers</Label>
+        </div>
+        <Button size="sm" className="gap-1.5" onClick={() => { resetForm(); setAddOpen(true); }}>
+          <Plus className="w-4 h-4" /> Add team member
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+      ) : employees.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+            <p className="text-sm text-muted-foreground">
+              {showInactive ? "No team members found" : "No active team members — add one to get started"}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {employees.map((emp: any) => (
+            <div
+              key={emp.id}
+              className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card transition-opacity ${emp.is_active ? "" : "opacity-60"}`}
+            >
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                {emp.first_name?.[0]}{emp.last_name?.[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm">
+                  {emp.first_name} {emp.last_name}
+                  {!emp.is_active && <span className="ml-2 text-xs text-muted-foreground font-normal">(leaver)</span>}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              {emp.role_name && <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>}
+              <div className="flex items-center gap-1 shrink-0">
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)} title="Edit">
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${emp.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
+                  onClick={() => statusMutation.mutate({ id: emp.id, isActive: !emp.is_active })}
+                  title={emp.is_active ? "Mark as leaver" : "Reactivate"}
+                >
+                  {emp.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={addOpen} onOpenChange={o => { if (!o) { setAddOpen(false); resetForm(); } }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add team member</DialogTitle></DialogHeader>
+          <MemberForm saving={addMutation.isPending} onSave={() => addMutation.mutate()} onCancel={() => { setAddOpen(false); resetForm(); }} />
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editTarget} onOpenChange={o => { if (!o) setEditTarget(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit team member</DialogTitle></DialogHeader>
+          {editTarget && (
+            <MemberForm saving={editMutation.isPending} onSave={() => editMutation.mutate(editTarget.id)} onCancel={() => setEditTarget(null)} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 type TeamTab = "employees" | "users";
 
 export default function Team() {
-  const { isManager } = useAuth();
+  const { isManager, isDeptManager } = useAuth();
   const [tab, setTab] = useState<TeamTab>("employees");
 
-  if (!isManager) return <Redirect to="/orders" />;
+  if (!isManager && !isDeptManager) return <Redirect to="/orders" />;
+
+  // Dept managers see only their own team
+  if (isDeptManager) {
+    return (
+      <PortalLayout>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight">My Team</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            Manage the members of your team — add new starters or mark leavers.
+          </p>
+        </div>
+        <MyTeamTab />
+      </PortalLayout>
+    );
+  }
 
   return (
     <PortalLayout>

@@ -21,7 +21,7 @@ import {
 import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search,
-  User, Package, History, Tag, Sparkles, Heart, X, Mail, UserPlus, Filter,
+  User, Package, History, Tag, Sparkles, Heart, X, Mail, UserPlus,
   CreditCard, FileText, AlertCircle,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -225,7 +225,6 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
   // Search / filter state
   const [search, setSearch] = useState("");
-  const [deptMgrOnly, setDeptMgrOnly] = useState(false);
 
   // Add employee dialog
   const [addOpen, setAddOpen] = useState(false);
@@ -256,10 +255,9 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
       if (portalRole === "member" && myEmployeeId !== null && emp.id !== myEmployeeId) return false;
       const fullName = `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.toLowerCase();
       if (q && !fullName.includes(q)) return false;
-      if (deptMgrOnly && !emp.role_name?.toLowerCase().includes("manager")) return false;
       return true;
     });
-  }, [employees, search, deptMgrOnly, portalRole, myEmployeeId]);
+  }, [employees, search, portalRole, myEmployeeId]);
 
   const getItemState = (key: string): ItemState =>
     itemStates[key] ?? { size: "", qty: 1 };
@@ -569,14 +567,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
             </Button>
           )}
         </div>
-        <p className="text-muted-foreground text-sm mb-4">
-          {portalRole === "member"
-            ? "Your wardrobe items are shown below — add what you need and your manager will review before it goes to SBS."
-            : "Select who you're ordering for — sizes from their order history will be pre-filled automatically."}
-        </p>
-
-        {/* Search + filter row */}
-        <div className="flex flex-col sm:flex-row gap-2 mb-4">
+        {/* Search row */}
+        <div className="flex gap-2 mb-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
             <Input
@@ -591,22 +583,11 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
               </button>
             )}
           </div>
-          <button
-            onClick={() => setDeptMgrOnly(v => !v)}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap",
-              deptMgrOnly
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-background text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-            )}
-          >
-            <Filter className="w-3.5 h-3.5" /> Dept. Managers only
-          </button>
         </div>
 
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Who is this for?</p>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
-          {!search && !deptMgrOnly && (
+          {!search && (
             <button
               onClick={() => handleSelectRecipient("stock")}
               className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
