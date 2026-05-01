@@ -351,6 +351,49 @@ router.post("/portal/admin/preview/:customerId", async (req: Request, res: Respo
 
 router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  const portalUserId = (req as any).portalUserId;
+  const portalIsPreview = (req as any).portalIsPreview;
+  const linkedEmployeeId = (req as any).portalLinkedEmployeeId;
+
+  // Only the Manager grade sees all orders; everyone else sees only their own
+  if (portalRole === "manager") {
+    const rows = await db.execute(sql`
+      SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
+             po_number,
+             portal_submitted_by_name, portal_submitted_at,
+             portal_approved_by_name, portal_approved_at,
+             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+      FROM orders
+      WHERE customer_id = ${customerId}
+        AND source = 'portal'
+      ORDER BY created_at DESC
+      LIMIT 100
+    `);
+    res.json(rows.rows);
+    return;
+  }
+
+  // For dept_manager / member: resolve the submitter's email
+  let submitterEmail: string | null = null;
+  if (portalIsPreview && linkedEmployeeId) {
+    // Preview token — look up the linked employee's email
+    const empRows = await db.execute(sql`
+      SELECT email FROM customer_employees WHERE id = ${linkedEmployeeId} LIMIT 1
+    `);
+    submitterEmail = (empRows.rows[0] as any)?.email ?? null;
+  } else if (portalUserId) {
+    const userRows = await db.execute(sql`
+      SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1
+    `);
+    submitterEmail = (userRows.rows[0] as any)?.email ?? null;
+  }
+
+  if (!submitterEmail) {
+    res.json([]);
+    return;
+  }
+
   const rows = await db.execute(sql`
     SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
            po_number,
@@ -360,6 +403,7 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
     FROM orders
     WHERE customer_id = ${customerId}
       AND source = 'portal'
+      AND lower(portal_submitted_by_email) = lower(${submitterEmail})
     ORDER BY created_at DESC
     LIMIT 100
   `);
