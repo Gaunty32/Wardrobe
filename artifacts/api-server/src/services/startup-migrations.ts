@@ -327,6 +327,26 @@ export async function runStartupMigrations(): Promise<void> {
     console.log(`[startup] Repaired ${bespokeTieRows.rows.length} Bespoke Ties product(s)`);
   }
 
+  // Employee self-referencing manager assignment
+  await db.execute(sql`
+    ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS manager_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;
+  `);
+
+  // In-app notifications for portal users
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS portal_notifications (
+      id             serial PRIMARY KEY,
+      customer_id    integer NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      portal_user_id integer REFERENCES customer_portal_users(id) ON DELETE CASCADE,
+      title          text NOT NULL,
+      body           text,
+      link           text,
+      type           text NOT NULL DEFAULT 'info',
+      is_read        boolean NOT NULL DEFAULT false,
+      created_at     timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS portal_baskets (
       id               serial PRIMARY KEY,

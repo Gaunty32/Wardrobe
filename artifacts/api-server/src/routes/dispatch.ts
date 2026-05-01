@@ -7,6 +7,7 @@ import {
 } from "@workspace/db";
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
 import { logOrderAction, getActor } from "../services/orderLog";
+import { notifyAllPortalUsers } from "../services/notifications.js";
 
 const router: IRouter = Router();
 
@@ -247,6 +248,18 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     dpdResult
       ? `DPD consignment ${dpdResult.consignmentNumber}, ${numberOfParcels ?? 1} parcel(s)`
       : `Local/manual dispatch, ${numberOfParcels ?? 1} box(es)${dpdError ? ` (DPD error: ${dpdError})` : ""}`);
+
+  // Notify all portal users for this customer that their order has been dispatched
+  if (updated.customerId && updated.source === "portal") {
+    const trackingInfo = dpdResult ? ` Tracking: ${dpdResult.consignmentNumber}.` : "";
+    notifyAllPortalUsers({
+      customerId: updated.customerId,
+      title: `Order ${updated.orderNumber} has been dispatched`,
+      body: `Your order is on its way!${trackingInfo}`,
+      link: "/orders",
+      type: "dispatched",
+    }).catch(() => {});
+  }
 
   res.json({
     order: updated,

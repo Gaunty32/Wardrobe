@@ -10,6 +10,7 @@ import { randomBytes } from "crypto";
 import { z } from "zod";
 import { generateInvoicePDF, buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email.js";
 import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
+import { notifyCustomerManagers, notifyPortalUserByEmail, notifyAllPortalUsers, sendMobileInstructionsEmail } from "../services/notifications.js";
 
 const router: IRouter = Router();
 
@@ -701,6 +702,20 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     }
   }
 
+  // ── Notifications ──────────────────────────────────────────────────────────
+  if (portalStatus === "pending_review") {
+    // Employee/dept-manager submitted → notify all managers this order needs approval
+    notifyCustomerManagers({
+      customerId,
+      title: `Order ${orderNumber} awaiting your approval`,
+      body: `${submitterName} has submitted an order that requires your review.`,
+      link: "/orders",
+      type: "needs_approval",
+    }).catch(() => {});
+  } else if (portalStatus === "submitted") {
+    // Manager submitted directly to SBS → no approval step needed, no extra notification
+  }
+
   res.status(201).json({ id: order.id, orderNumber: order.order_number, stripeCharge });
   } catch (err: any) {
     console.error("Order create error:", err);
@@ -1023,14 +1038,27 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
     }
   }
 
-  await db.execute(sql`
+  const approveResult = await db.execute(sql`
     UPDATE orders SET portal_status = 'submitted', status = 'portal_pending', updated_at = now(),
       portal_approved_by_email = ${mgrEmail},
       portal_approved_by_name = ${mgrName},
       portal_approved_at = now(),
       po_number = COALESCE(${poNumber}, po_number)
     WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+    RETURNING order_number, portal_submitted_by_email, portal_submitted_by_name
   `);
+  const approvedOrder = approveResult.rows[0] as any;
+  // Notify the person who originally submitted the order
+  if (approvedOrder?.portal_submitted_by_email) {
+    notifyPortalUserByEmail({
+      customerId,
+      email: approvedOrder.portal_submitted_by_email,
+      title: `Order ${approvedOrder.order_number} has been approved`,
+      body: `Your order has been approved by ${mgrName} and submitted to Select Branding Solutions.`,
+      link: "/orders",
+      type: "approved",
+    }).catch(() => {});
+  }
   res.json({ ok: true });
 });
 
@@ -1575,6 +1603,74 @@ router.patch("/portal/team/users/:id/status", portalAuth, async (req: Request, r
     WHERE id = ${id} AND customer_id = ${customerId}
   `);
   res.json({ ok: true });
+});
+
+// ─── Portal notifications ─────────────────────────────────────────────────────
+
+router.get("/portal/notifications", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalUserId = (req as any).portalUserId;
+  const isPreview = (req as any).portalIsPreview;
+  if (isPreview) { res.json([]); return; }
+
+  // Return notifications for this specific user OR broadcast notifications (portal_user_id IS NULL)
+  const rows = await db.execute(sql`
+    SELECT id, title, body, link, type, is_read, created_at
+    FROM portal_notifications
+    WHERE customer_id = ${customerId}
+      AND (portal_user_id = ${portalUserId} OR portal_user_id IS NULL)
+    ORDER BY created_at DESC
+    LIMIT 50
+  `);
+  res.json(rows.rows);
+});
+
+router.patch("/portal/notifications/:id/read", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  await db.execute(sql`
+    UPDATE portal_notifications SET is_read = true
+    WHERE id = ${id} AND customer_id = ${customerId}
+  `);
+  res.json({ ok: true });
+});
+
+router.patch("/portal/notifications/read-all", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalUserId = (req as any).portalUserId;
+  await db.execute(sql`
+    UPDATE portal_notifications SET is_read = true
+    WHERE customer_id = ${customerId}
+      AND (portal_user_id = ${portalUserId} OR portal_user_id IS NULL)
+  `);
+  res.json({ ok: true });
+});
+
+// ─── Send "Save to Home Screen" instructions email ───────────────────────────
+
+router.post("/portal/admin/send-mobile-instructions/:customerId", async (req: Request, res: Response) => {
+  const customerId = parseInt(req.params.customerId, 10);
+  if (!customerId) { res.status(400).json({ error: "Invalid customer ID" }); return; }
+
+  const body = z.object({ email: z.string().email(), name: z.string().optional() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const custRows = await db.execute(sql`SELECT id, name FROM customers WHERE id = ${customerId}`);
+  if (!custRows.rows[0]) { res.status(404).json({ error: "Customer not found" }); return; }
+  const customerName = (custRows.rows[0] as any).name as string;
+
+  if (!isEmailConfigured) {
+    res.status(400).json({ error: "Email is not configured. Please set up SMTP in Settings first." });
+    return;
+  }
+
+  const portalUrl = `${req.headers.origin ?? "https://selectuniforms.co.uk"}/customer-portal/`;
+  const toEmail = body.data.email;
+  const toName = body.data.name ?? toEmail.split("@")[0];
+
+  await sendMobileInstructionsEmail({ toEmail, toName, portalUrl, customerName });
+  res.json({ ok: true, sentTo: toEmail });
 });
 
 export default router;

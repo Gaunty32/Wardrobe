@@ -105,6 +105,7 @@ export const customerEmployeesTable = pgTable("customer_employees", {
   email: text("email"),
   phone: text("phone"),
   teamId: integer("team_id"),
+  managerId: integer("manager_id"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -17,7 +17,7 @@ import { cn, toTitleCase } from "@/lib/utils";
 import { sortSizes, sortBySize } from "@/lib/sizeUtils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone } from "lucide-react";
 
 function formatUKPhone(raw: string): string {
   const d = raw.replace(/\D/g, "");
@@ -1172,10 +1172,10 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [sizes, setSizes] = useState<{ label: string; size: string }[]>([]);
   const [nameSearch, setNameSearch] = useState("");
   const [empRoleFilter, setEmpRoleFilter] = useState<number | null | "all">("all");
-  const [empTeamFilter, setEmpTeamFilter] = useState<number | null | "all">("all");
+  const [empManagerFilter, setEmpManagerFilter] = useState<number | null | "all">("all");
   const [dupWarning, setDupWarning] = useState<string | null>(null);
 
-  const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, teamId: null as number | null, email: "", phone: "", notes: "" };
+  const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, teamId: null as number | null, managerId: null as number | null, email: "", phone: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => {
@@ -1225,7 +1225,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     setForm({
       firstName: e.firstName || "", lastName: e.lastName || "",
       employeeNumber: e.employeeNumber || "",
-      jobTitle: e.jobTitle || "", roleId: e.roleId ?? null, teamId: e.teamId ?? null,
+      jobTitle: e.jobTitle || "", roleId: e.roleId ?? null, teamId: e.teamId ?? null, managerId: e.managerId ?? null,
       email: e.email || "", phone: e.phone || "",
       notes: e.notes || "",
     });
@@ -1263,8 +1263,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     const fullName = [e.firstName, e.lastName].filter(Boolean).join(' ').toLowerCase();
     const matchesName = !nameSearch.trim() || fullName.includes(nameSearch.toLowerCase().trim());
     const matchesRole = empRoleFilter === "all" || e.roleId === empRoleFilter;
-    const matchesTeam = empTeamFilter === "all" || e.teamId === empTeamFilter;
-    return matchesName && matchesRole && matchesTeam;
+    const matchesManager = empManagerFilter === "all" || e.managerId === empManagerFilter;
+    return matchesName && matchesRole && matchesManager;
   });
 
   return (
@@ -1310,13 +1310,17 @@ function EmployeesTab({ customerId }: { customerId: number }) {
           ))}
         </div>
       )}
-      {(teams as any[])?.length > 0 && (
+      {(employees as any[])?.some((e: any) => e.managerId) && (
         <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          <span className="text-xs text-muted-foreground shrink-0">Team:</span>
-          <button onClick={() => setEmpTeamFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empTeamFilter === "all" ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All</button>
-          <button onClick={() => setEmpTeamFilter(null)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empTeamFilter === null ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>No team</button>
-          {(teams as any[]).map((t: any) => (
-            <button key={t.id} onClick={() => setEmpTeamFilter(t.id)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empTeamFilter === t.id ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{t.name}</button>
+          <span className="text-xs text-muted-foreground shrink-0">Manager:</span>
+          <button onClick={() => setEmpManagerFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empManagerFilter === "all" ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All</button>
+          <button onClick={() => setEmpManagerFilter(null)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empManagerFilter === null ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>No manager</button>
+          {(employees as any[])?.filter((e: any, i: number, arr: any[]) => e.managerId && arr.findIndex((m: any) => m.id === e.managerId) >= 0).reduce((acc: any[], e: any) => {
+            const mgr = (employees as any[]).find((m: any) => m.id === e.managerId);
+            if (mgr && !acc.find((a: any) => a.id === mgr.id)) acc.push(mgr);
+            return acc;
+          }, []).map((mgr: any) => (
+            <button key={mgr.id} onClick={() => setEmpManagerFilter(mgr.id)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empManagerFilter === mgr.id ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{[mgr.firstName, mgr.lastName].filter(Boolean).join(" ")}</button>
           ))}
         </div>
       )}
@@ -1348,8 +1352,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                   <div>
                     {e.jobTitle && <p>{e.jobTitle}</p>}
                     {e.roleName && <p className="text-xs text-primary/70">{e.roleName}</p>}
-                    {e.teamName && <p className="text-xs text-indigo-600/80">{e.teamName}</p>}
-                    {!e.jobTitle && !e.roleName && !e.teamName && '—'}
+                    {e.managerName && <p className="text-xs text-indigo-600/80">Reports to: {e.managerName}</p>}
+                    {!e.jobTitle && !e.roleName && !e.managerName && '—'}
                   </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
@@ -1396,12 +1400,14 @@ function EmployeesTab({ customerId }: { customerId: number }) {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>Team</Label>
-              <Select value={form.teamId ? form.teamId.toString() : "none"} onValueChange={v => setForm({ ...form, teamId: v === "none" ? null : Number(v) })}>
-                <SelectTrigger><SelectValue placeholder="No team" /></SelectTrigger>
+              <Label>Team Manager</Label>
+              <Select value={form.managerId ? form.managerId.toString() : "none"} onValueChange={v => setForm({ ...form, managerId: v === "none" ? null : Number(v) })}>
+                <SelectTrigger><SelectValue placeholder="No manager" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No team</SelectItem>
-                  {(teams as any[])?.map((t: any) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                  <SelectItem value="none">No manager</SelectItem>
+                  {(employees as any[])?.filter((e: any) => e.id !== editing?.id && e.isActive).map((e: any) => (
+                    <SelectItem key={e.id} value={e.id.toString()}>{[e.firstName, e.lastName].filter(Boolean).join(" ")}{e.jobTitle ? ` — ${e.jobTitle}` : ""}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1508,6 +1514,9 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const [inviteRole, setInviteRole] = useState<"manager" | "dept_manager" | "member">("member");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteResult, setInviteResult] = useState<{ inviteUrl: string; email: string } | null>(null);
+  const [mobileEmailOpen, setMobileEmailOpen] = useState(false);
+  const [mobileEmailAddr, setMobileEmailAddr] = useState("");
+  const [mobileEmailName, setMobileEmailName] = useState("");
   const [copied, setCopied] = useState(false);
   const [previewHref, setPreviewHref] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1534,6 +1543,19 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
       setInviteResult(data);
       setInviteEmail("");
       qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const sendMobileInstructions = useMutation({
+    mutationFn: ({ email, name }: { email: string; name: string }) =>
+      apiFetch(`/portal/admin/send-mobile-instructions/${customerId}`, {
+        method: "POST", body: JSON.stringify({ email, name }),
+      }),
+    onSuccess: (data: any) => {
+      toast({ title: "Email sent", description: `Mobile app instructions sent to ${data.sentTo}` });
+      setMobileEmailOpen(false);
+      setMobileEmailAddr(""); setMobileEmailName("");
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1639,9 +1661,49 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
               </div>
             </DialogContent>
           </Dialog>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setMobileEmailAddr(""); setMobileEmailName(""); setMobileEmailOpen(true); }}>
+            <Smartphone className="w-3.5 h-3.5" /> Send App Instructions
+          </Button>
           <Button size="sm" className="gap-1.5" onClick={() => { setInviteResult(null); setInviteEmail(""); setInviteRole("member"); setInviteOpen(true); }}>
             <LogIn className="w-3.5 h-3.5" /> Invite User
           </Button>
+
+          {/* Mobile instructions dialog */}
+          <Dialog open={mobileEmailOpen} onOpenChange={v => { if (!v) setMobileEmailOpen(false); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2"><Smartphone className="w-4 h-4" /> Send Mobile App Instructions</DialogTitle>
+                <DialogDescription>Send an email explaining how to add the portal to their phone home screen like a native app.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 py-1">
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">Recipient name</Label>
+                  <Input placeholder="e.g. Jane Smith" value={mobileEmailName} onChange={e => setMobileEmailName(e.target.value)} />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">Email address *</Label>
+                  <Input type="email" placeholder="contact@customer.com" value={mobileEmailAddr} onChange={e => setMobileEmailAddr(e.target.value)} />
+                </div>
+                {suggestedEmployees.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    <span className="text-[10px] text-muted-foreground w-full">Quick-fill from employees:</span>
+                    {suggestedEmployees.slice(0, 5).map((e: any) => (
+                      <button key={e.id} type="button" onClick={() => { setMobileEmailAddr(e.email); setMobileEmailName([e.firstName, e.lastName].filter(Boolean).join(" ")); }}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-muted hover:bg-muted/80 border border-border text-muted-foreground transition-colors">
+                        {[e.firstName, e.lastName].filter(Boolean).join(" ")}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setMobileEmailOpen(false)}>Cancel</Button>
+                <Button onClick={() => sendMobileInstructions.mutate({ email: mobileEmailAddr, name: mobileEmailName })} disabled={!mobileEmailAddr || sendMobileInstructions.isPending}>
+                  {sendMobileInstructions.isPending ? "Sending…" : "Send Email"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
 

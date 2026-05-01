@@ -473,6 +473,7 @@ const employeeBody = z.object({
   jobTitle: z.string().optional().nullable(),
   roleId: z.number().int().positive().optional().nullable(),
   teamId: z.number().int().positive().optional().nullable(),
+  managerId: z.number().int().positive().optional().nullable(),
   email: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
@@ -495,6 +496,7 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
     jobTitle: customerEmployeesTable.jobTitle,
     roleId: customerEmployeesTable.roleId,
     teamId: customerEmployeesTable.teamId,
+    managerId: customerEmployeesTable.managerId,
     email: customerEmployeesTable.email,
     phone: customerEmployeesTable.phone,
     isActive: customerEmployeesTable.isActive,
@@ -512,6 +514,8 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
   ]);
   const roleMap = new Map(roles.map(r => [r.id, r.name]));
   const teamMap = new Map(teams.map(t => [t.id, t.name]));
+  // Self-referencing manager map: id -> full name
+  const managerNameMap = new Map(allEmployees.map(e => [e.id, [e.firstName, e.lastName].filter(Boolean).join(' ')]));
 
   const filtered = showInactive ? allEmployees : allEmployees.filter(e => e.isActive);
 
@@ -523,6 +527,7 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
       ...emp,
       roleName: emp.roleId ? (roleMap.get(emp.roleId) ?? null) : null,
       teamName: emp.teamId ? (teamMap.get(emp.teamId) ?? null) : null,
+      managerName: emp.managerId ? (managerNameMap.get(emp.managerId) ?? null) : null,
       sizes,
     };
   }));
@@ -537,7 +542,7 @@ router.post("/customers/:customerId/employees", async (req, res): Promise<void> 
   const body = employeeBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
   const [row] = await db.insert(customerEmployeesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
-  res.status(201).json({ ...row, roleName: null, teamName: null, sizes: [] });
+  res.status(201).json({ ...row, roleName: null, teamName: null, managerName: null, sizes: [] });
 });
 
 router.patch("/customers/:customerId/employees/:id", async (req, res): Promise<void> => {
