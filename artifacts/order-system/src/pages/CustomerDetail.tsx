@@ -1004,9 +1004,11 @@ function TeamsTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: teams, isLoading } = useSubResource<any>(customerId, "teams");
+  const { data: employees } = useSubResource<any>(customerId, "employees");
+  const activeEmployees: any[] = (employees ?? []).filter((e: any) => e.isActive !== false);
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", description: "" };
+  const blank = { name: "", description: "", managerId: null as number | null };
   const [form, setForm] = useState(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "teams"] });
@@ -1025,12 +1027,12 @@ function TeamsTab({ customerId }: { customerId: number }) {
   });
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (t: any) => { setForm({ name: t.name || "", description: t.description || "" }); setEditing(t); setOpen(true); };
+  const openEdit = (t: any) => { setForm({ name: t.name || "", description: t.description || "", managerId: t.managerId ?? null }); setEditing(t); setOpen(true); };
 
   return (
     <>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-muted-foreground">Teams group employees — use the Employees tab to filter by team.</p>
+        <p className="text-sm text-muted-foreground">Teams group employees — each team can have a designated manager.</p>
         <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Team</Button>
       </div>
 
@@ -1039,6 +1041,7 @@ function TeamsTab({ customerId }: { customerId: number }) {
         : <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
             <TableHead>Team Name</TableHead>
+            <TableHead className="hidden sm:table-cell">Team Manager</TableHead>
             <TableHead className="hidden md:table-cell">Description</TableHead>
             <TableHead className="w-20 text-right">Actions</TableHead>
           </TableRow></TableHeader>
@@ -1046,6 +1049,13 @@ function TeamsTab({ customerId }: { customerId: number }) {
             {teams.map((t: any) => (
               <TableRow key={t.id} className="group hover:bg-muted/30">
                 <TableCell className="font-medium">{t.name}</TableCell>
+                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                  {t.managerName ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-indigo-500" />{t.managerName}
+                    </span>
+                  ) : <span className="text-muted-foreground/50">—</span>}
+                </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{t.description || '—'}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1062,8 +1072,27 @@ function TeamsTab({ customerId }: { customerId: number }) {
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader><DialogTitle>{editing ? "Edit Team" : "Add Team"}</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2"><Label>Team Name *</Label><Input placeholder="e.g. Warehouse, Admin, Field Sales" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
-            <div className="grid gap-2"><Label>Description</Label><Textarea rows={2} placeholder="Optional description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label>Team Name *</Label>
+              <Input placeholder="e.g. Warehouse, Admin, Field Sales" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Team Manager</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                value={form.managerId ?? ""}
+                onChange={e => setForm({ ...form, managerId: e.target.value ? parseInt(e.target.value) : null })}
+              >
+                <option value="">— No manager —</option>
+                {activeEmployees.map((e: any) => (
+                  <option key={e.id} value={e.id}>{[e.firstName, e.lastName].filter(Boolean).join(" ")}{e.jobTitle ? ` (${e.jobTitle})` : ""}</option>
+                ))}
+              </select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Description</Label>
+              <Textarea rows={2} placeholder="Optional description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>

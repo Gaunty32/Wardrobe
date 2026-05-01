@@ -419,16 +419,27 @@ router.delete("/customers/:customerId/roles/:id", async (req, res): Promise<void
 const teamBody = z.object({
   name: z.string().min(1),
   description: z.string().optional().nullable(),
+  managerId: z.number().int().positive().optional().nullable(),
 });
 
 router.get("/customers/:customerId/teams", async (req, res): Promise<void> => {
   const p = customerIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
-  const rows = await db.select().from(customerTeamsTable)
-    .where(eq(customerTeamsTable.customerId, p.data.customerId))
-    .orderBy(customerTeamsTable.name);
-  res.json(rows);
+  const rows = await db.execute(sql`
+    SELECT t.id, t.customer_id, t.name, t.description, t.manager_id,
+      CASE WHEN e.id IS NOT NULL THEN TRIM(CONCAT(e.first_name, ' ', COALESCE(e.last_name, ''))) ELSE NULL END AS manager_name,
+      t.created_at, t.updated_at
+    FROM customer_teams t
+    LEFT JOIN customer_employees e ON e.id = t.manager_id
+    WHERE t.customer_id = ${p.data.customerId}
+    ORDER BY t.name
+  `);
+  res.json(rows.rows.map((r: any) => ({
+    id: r.id, customerId: r.customer_id, name: r.name, description: r.description,
+    managerId: r.manager_id ?? null, managerName: r.manager_name ?? null,
+    createdAt: r.created_at, updatedAt: r.updated_at,
+  })));
 });
 
 router.post("/customers/:customerId/teams", async (req, res): Promise<void> => {
@@ -437,8 +448,13 @@ router.post("/customers/:customerId/teams", async (req, res): Promise<void> => {
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
   const body = teamBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const [row] = await db.insert(customerTeamsTable).values({ ...body.data, customerId: p.data.customerId }).returning();
-  res.status(201).json(row);
+  const { name, description, managerId } = body.data;
+  const rows = await db.execute(sql`
+    INSERT INTO customer_teams (customer_id, name, description, manager_id)
+    VALUES (${p.data.customerId}, ${name}, ${description ?? null}, ${managerId ?? null})
+    RETURNING *
+  `);
+  res.status(201).json(rows.rows[0]);
 });
 
 router.patch("/customers/:customerId/teams/:id", async (req, res): Promise<void> => {
@@ -446,12 +462,20 @@ router.patch("/customers/:customerId/teams/:id", async (req, res): Promise<void>
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   const body = teamBody.partial().safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const [row] = await db.update(customerTeamsTable)
-    .set({ ...body.data, updatedAt: new Date() })
-    .where(and(eq(customerTeamsTable.id, p.data.id), eq(customerTeamsTable.customerId, p.data.customerId)))
-    .returning();
-  if (!row) { res.status(404).json({ error: "Team not found" }); return; }
-  res.json(row);
+  // Fetch existing row first so unset fields retain their value
+  const existing = await db.execute(sql`SELECT * FROM customer_teams WHERE id = ${p.data.id} AND customer_id = ${p.data.customerId}`);
+  if (!existing.rows[0]) { res.status(404).json({ error: "Team not found" }); return; }
+  const cur = existing.rows[0] as any;
+  const name = body.data.name ?? cur.name;
+  const description = "description" in body.data ? (body.data.description ?? null) : cur.description;
+  const managerId = "managerId" in body.data ? (body.data.managerId ?? null) : cur.manager_id;
+  const rows = await db.execute(sql`
+    UPDATE customer_teams
+    SET name = ${name}, description = ${description}, manager_id = ${managerId}, updated_at = NOW()
+    WHERE id = ${p.data.id} AND customer_id = ${p.data.customerId}
+    RETURNING *
+  `);
+  res.json(rows.rows[0]);
 });
 
 router.delete("/customers/:customerId/teams/:id", async (req, res): Promise<void> => {

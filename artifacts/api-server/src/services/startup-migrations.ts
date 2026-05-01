@@ -332,6 +332,11 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS manager_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;
   `);
 
+  // Team manager (employee) reference on customer_teams
+  await db.execute(sql`
+    ALTER TABLE customer_teams ADD COLUMN IF NOT EXISTS manager_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;
+  `);
+
   // In-app notifications for portal users
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS portal_notifications (
