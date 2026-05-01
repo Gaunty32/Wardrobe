@@ -7,6 +7,8 @@ type AuthUser = {
   customer: { id: number; name: string; logo_url?: string | null };
   firstName?: string;
   isPreview?: boolean;
+  previewEmployeeName?: string | null;
+  linkedEmployeeId?: number | null;
 };
 
 type AuthContextType = {
@@ -16,6 +18,7 @@ type AuthContextType = {
   isManager: boolean;
   isDeptManager: boolean;
   isPreview: boolean;
+  previewEmployeeName: string | null;
   logout: () => void;
   refetchUser: () => Promise<void>;
 };
@@ -63,9 +66,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isManager = portalRole === "manager";
   const isDeptManager = portalRole === "dept_manager";
   const isPreview = user?.isPreview === true;
+  const previewEmployeeName = user?.previewEmployeeName ?? null;
 
   return (
-    <AuthContext.Provider value={{ user, loading, portalRole, isManager, isDeptManager, isPreview, logout, refetchUser: fetchUser }}>
+    <AuthContext.Provider value={{ user, loading, portalRole, isManager, isDeptManager, isPreview, previewEmployeeName, logout, refetchUser: fetchUser }}>
       {children}
     </AuthContext.Provider>
   );

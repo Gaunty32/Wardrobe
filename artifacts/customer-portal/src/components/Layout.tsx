@@ -141,7 +141,7 @@ function NotificationBell() {
 }
 
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
-  const { user, logout, isPreview, isManager } = useAuth();
+  const { user, logout, isPreview, isManager, previewEmployeeName } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -161,7 +161,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {isPreview && (
         <div className="bg-amber-400 text-amber-950 text-xs font-semibold flex items-center justify-center gap-2 px-4 py-1.5 sticky top-0 z-50">
           <Eye className="w-3.5 h-3.5 shrink-0" />
-          Staff preview — you are viewing the portal as this customer. Orders placed here will be real.
+          Staff preview{previewEmployeeName ? <> — viewing as <strong>{previewEmployeeName}</strong></> : " — no specific employee selected"}. Orders placed here will be real.
           <button
             onClick={logout}
             className="ml-3 underline underline-offset-2 hover:no-underline font-medium"

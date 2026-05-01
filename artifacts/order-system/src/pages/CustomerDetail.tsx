@@ -1598,6 +1598,9 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const [copied, setCopied] = useState(false);
   const [previewHref, setPreviewHref] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [empPickerOpen, setEmpPickerOpen] = useState(false);
+  const [empPickerSearch, setEmpPickerSearch] = useState("");
+  const [pickedEmployeeId, setPickedEmployeeId] = useState<number | null>(null);
 
   const { data: portalUsers, isLoading } = useQuery<any[]>({
     queryKey: ["portal-users", customerId],
@@ -1666,13 +1669,16 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     });
   };
 
-  const openPreview = async (role: "manager" | "member" = "manager") => {
+  const openPreview = async (role: "manager" | "member" = "manager", employeeId?: number | null) => {
     setPreviewLoading(true);
     // Open a blank tab synchronously (within the click handler) so the browser
     // doesn't treat it as a popup. We navigate it to the real URL once we have the token.
     const newWindow = window.open("", "_blank");
     try {
-      const data: any = await apiFetch(`/portal/admin/preview/${customerId}?role=${role}`, { method: "POST" });
+      const data: any = await apiFetch(`/portal/admin/preview/${customerId}?role=${role}`, {
+        method: "POST",
+        body: JSON.stringify({ employeeId: employeeId ?? null }),
+      });
       const href = window.location.origin + data.previewUrl;
       if (newWindow && !newWindow.closed) {
         newWindow.location.href = href;
@@ -1702,12 +1708,84 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <p className="text-sm text-muted-foreground mt-0.5">Manage who can log into the customer ordering portal for this account.</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openPreview("member")} disabled={previewLoading}>
-            {previewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Preview as Employee
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickedEmployeeId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
+            <Eye className="w-3.5 h-3.5" /> Preview as Employee
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openPreview("manager")} disabled={previewLoading}>
             {previewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />} Preview as Manager
           </Button>
+
+          {/* Employee picker — choose which employee to preview as */}
+          <Dialog open={empPickerOpen} onOpenChange={v => { if (!v) setEmpPickerOpen(false); }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2"><Eye className="w-4 h-4" /> Preview as Employee</DialogTitle>
+                <DialogDescription>Choose which employee you want to view the portal as. Their wardrobe and sizes will be shown.</DialogDescription>
+              </DialogHeader>
+              <div className="py-1 space-y-2">
+                <Input
+                  placeholder="Search employees…"
+                  value={empPickerSearch}
+                  onChange={e => setEmpPickerSearch(e.target.value)}
+                  autoFocus
+                />
+                <div className="max-h-64 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                  <button
+                    type="button"
+                    onClick={() => setPickedEmployeeId(null)}
+                    className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedEmployeeId === null && "bg-primary/10 font-medium")}
+                  >
+                    <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === null ? "opacity-100" : "opacity-0")} />
+                    <div>
+                      <p className="font-medium">Generic employee</p>
+                      <p className="text-xs text-muted-foreground">No specific employee — no wardrobe pre-filter</p>
+                    </div>
+                  </button>
+                  {employees
+                    .filter((e: any) => e.isActive !== false)
+                    .filter((e: any) => {
+                      const term = empPickerSearch.toLowerCase().trim();
+                      if (!term) return true;
+                      return [e.firstName, e.lastName, e.jobTitle, e.email].filter(Boolean).join(" ").toLowerCase().includes(term);
+                    })
+                    .map((e: any) => {
+                      const name = [e.firstName, e.lastName].filter(Boolean).join(" ");
+                      return (
+                        <button
+                          key={e.id}
+                          type="button"
+                          onClick={() => setPickedEmployeeId(e.id)}
+                          className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedEmployeeId === e.id && "bg-primary/10")}
+                        >
+                          <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === e.id ? "opacity-100" : "opacity-0")} />
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{name}</p>
+                            {(e.jobTitle || e.roleName) && (
+                              <p className="text-xs text-muted-foreground truncate">{[e.jobTitle, e.roleName].filter(Boolean).join(" · ")}</p>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  {employees.filter((e: any) => e.isActive !== false).length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-6">No active employees found.</p>
+                  )}
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEmpPickerOpen(false)}>Cancel</Button>
+                <Button
+                  disabled={previewLoading}
+                  onClick={() => {
+                    setEmpPickerOpen(false);
+                    openPreview("member", pickedEmployeeId);
+                  }}
+                >
+                  {previewLoading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Opening…</> : "Open Preview"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           {/* Preview link dialog — opens after token is generated */}
           <Dialog open={!!previewHref} onOpenChange={(o) => { if (!o) setPreviewHref(null); }}>
