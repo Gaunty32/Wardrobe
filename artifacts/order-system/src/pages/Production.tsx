@@ -4,7 +4,7 @@ import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
   RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
   ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square, RotateCcw, AlertCircle,
-  Search, Calendar, X, FileText,
+  Search, Calendar, X, FileText, Zap, AlertTriangle, Play, Layers, TrendingUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -145,6 +145,52 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = { search: "", finish: "", process: "", dateFrom: "", dateTo: "" };
+
+// ── Daily Work Plan types ──────────────────────────────────────────────────────
+interface PlanTaskItem {
+  productName: string;
+  colour: string | null;
+  size: string | null;
+  qty: number;
+  recipient: string | null;
+}
+
+interface PlanTask {
+  type: "picking" | "pre_wip" | "wip";
+  worksheetId: number | null;
+  worksheetNumber: string | null;
+  orderId: number | null;
+  orderNumber: string | null;
+  customerName: string | null;
+  requiredDate: string | null;
+  qty: number;
+  items: PlanTaskItem[];
+}
+
+interface PlanTaskGroup {
+  finishName: string;
+  totalQty: number;
+  orderCount: number;
+  overallStatus: "in_progress" | "ready" | "pick_first" | "mixed";
+  urgency: "overdue" | "today" | "soon" | "this_week" | "upcoming";
+  daysUntilDue: number | null;
+  earliestRequired: string | null;
+  tasks: PlanTask[];
+}
+
+interface DailyPlan {
+  generatedAt: string;
+  taskGroups: PlanTaskGroup[];
+  summary: {
+    overdue: number;
+    today: number;
+    soon: number;
+    thisWeek: number;
+    upcoming: number;
+    urgentCount: number;
+    totalItems: number;
+  };
+}
 
 function matchesDateFilters(requiredDate: string | null | undefined, dateFrom: string, dateTo: string): boolean {
   if (dateFrom && requiredDate) {
@@ -1462,10 +1508,284 @@ function PickingListTab({ filters }: { filters: Filters }) {
   );
 }
 
+// ── Daily Work Plan ────────────────────────────────────────────────────────────
+
+const URGENCY_CONFIG = {
+  overdue:   { label: "Overdue — Act Now",      bg: "bg-red-50",     border: "border-red-200",   dot: "bg-red-500",    text: "text-red-700",   badge: "bg-red-100 text-red-800 border-red-200" },
+  today:     { label: "Due Today",              bg: "bg-orange-50",  border: "border-orange-200", dot: "bg-orange-500", text: "text-orange-700", badge: "bg-orange-100 text-orange-800 border-orange-200" },
+  soon:      { label: "Due in 1–2 Days",        bg: "bg-amber-50",   border: "border-amber-200",  dot: "bg-amber-500",  text: "text-amber-700",  badge: "bg-amber-100 text-amber-800 border-amber-200" },
+  this_week: { label: "Due This Week",          bg: "bg-blue-50",    border: "border-blue-200",   dot: "bg-blue-400",   text: "text-blue-700",   badge: "bg-blue-100 text-blue-800 border-blue-200" },
+  upcoming:  { label: "Upcoming",               bg: "bg-muted/30",   border: "border-border",     dot: "bg-gray-400",   text: "text-foreground", badge: "bg-muted text-muted-foreground border-border" },
+} as const;
+
+const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+  in_progress: { label: "In Progress",   color: "bg-amber-100 text-amber-800 border-amber-200" },
+  ready:       { label: "Ready to Start", color: "bg-green-100 text-green-800 border-green-200" },
+  pick_first:  { label: "Needs Picking",  color: "bg-purple-100 text-purple-800 border-purple-200" },
+  mixed:       { label: "Mixed Stages",   color: "bg-gray-100 text-gray-700 border-gray-200" },
+};
+
+const TASK_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  picking: { label: "Picking List", color: "text-purple-600" },
+  pre_wip: { label: "Pre-WIP",      color: "text-blue-600" },
+  wip:     { label: "In Progress",  color: "text-amber-600" },
+};
+
+function daysLabel(days: number | null): string {
+  if (days === null) return "No due date";
+  if (days < 0)  return `${Math.abs(days)} day${Math.abs(days) !== 1 ? "s" : ""} overdue`;
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  return `Due in ${days} days`;
+}
+
+function TaskGroupCard({
+  group,
+  onNavigate,
+}: {
+  group: PlanTaskGroup;
+  onNavigate: (tab: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const urg = URGENCY_CONFIG[group.urgency];
+  const stat = STATUS_LABELS[group.overallStatus] ?? STATUS_LABELS.mixed;
+
+  const actionLabel =
+    group.overallStatus === "pick_first" ? "Go to Picking List" :
+    group.overallStatus === "in_progress" ? "View in WIP" :
+    "View in Pre-WIP";
+
+  const actionTab =
+    group.overallStatus === "pick_first" ? "picking_list" :
+    group.overallStatus === "in_progress" ? "wip" :
+    "pre_wip";
+
+  const batchNote = group.orderCount > 1
+    ? `${group.totalQty} items across ${group.orderCount} orders — batch together for maximum efficiency`
+    : `${group.totalQty} item${group.totalQty !== 1 ? "s" : ""} for 1 order`;
+
+  return (
+    <div className={`rounded-xl border ${urg.border} ${urg.bg} shadow-sm overflow-hidden`}>
+      {/* Header */}
+      <div className="flex items-start gap-3 px-5 py-4">
+        <div className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${urg.dot}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-semibold text-base">{group.finishName}</span>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${stat.color}`}>
+              {stat.label}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-1 flex-wrap">
+            <span className="text-sm text-muted-foreground flex items-center gap-1">
+              <Layers className="w-3.5 h-3.5" />
+              {batchNote}
+            </span>
+            <span className={`text-sm font-medium ${urg.text}`}>
+              {daysLabel(group.daysUntilDue)}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs h-7 gap-1"
+            onClick={() => onNavigate(actionTab)}
+          >
+            {group.overallStatus === "in_progress" ? <Play className="w-3 h-3" /> : <ArrowRight className="w-3 h-3" />}
+            {actionLabel}
+          </Button>
+          <button
+            onClick={() => setExpanded((x) => !x)}
+            className="p-1 rounded hover:bg-black/5 text-muted-foreground"
+          >
+            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {/* Task rows */}
+      <div className={`border-t ${urg.border} divide-y divide-${urg.border}`}>
+        {group.tasks.map((task, i) => {
+          const tLabel = TASK_TYPE_LABELS[task.type] ?? TASK_TYPE_LABELS.picking;
+          return (
+            <div key={i} className="px-5 py-3 flex items-start gap-3">
+              <div className="w-2.5 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap text-sm">
+                  {task.worksheetNumber && (
+                    <span className="font-mono font-bold text-foreground">{task.worksheetNumber}</span>
+                  )}
+                  {task.orderNumber && (
+                    <span className={`font-mono ${task.worksheetNumber ? "text-muted-foreground" : "font-bold text-foreground"}`}>
+                      {task.orderNumber}
+                    </span>
+                  )}
+                  {task.customerName && (
+                    <span className="text-muted-foreground">— {task.customerName}</span>
+                  )}
+                  <span className={`text-xs font-medium ${tLabel.color}`}>{tLabel.label}</span>
+                  <span className="ml-auto font-semibold text-foreground">{task.qty} item{task.qty !== 1 ? "s" : ""}</span>
+                </div>
+                {task.requiredDate && (
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    Due {formatDate(task.requiredDate)}
+                  </div>
+                )}
+                {expanded && task.items.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {task.items.map((item, j) => (
+                      <div key={j} className="flex items-center gap-2 text-xs text-muted-foreground pl-2 border-l-2 border-muted">
+                        <span className="font-medium text-foreground">{item.productName}</span>
+                        {item.colour && <span>{item.colour}</span>}
+                        {item.size && <span>/ {item.size}</span>}
+                        {item.recipient && <span className="ml-auto">→ {item.recipient}</span>}
+                        <span className="font-semibold text-foreground">×{item.qty}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DailyPlanTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
+  const { data: plan, isLoading } = useQuery<DailyPlan>({
+    queryKey: ["daily-plan"],
+    queryFn: () => apiFetch("/production/daily-plan"),
+    refetchInterval: 60_000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground">
+        <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Building your work plan…
+      </div>
+    );
+  }
+
+  if (!plan || plan.taskGroups.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
+        <CheckCircle2 className="w-14 h-14 text-green-300" />
+        <p className="text-lg font-medium">No active production work</p>
+        <p className="text-sm text-center max-w-sm text-muted-foreground">
+          All clear! When orders are confirmed and items are allocated to stock, your daily work plan will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  const { summary } = plan;
+  const urgentGroups  = plan.taskGroups.filter((g) => g.urgency === "overdue");
+  const todayGroups   = plan.taskGroups.filter((g) => g.urgency === "today");
+  const soonGroups    = plan.taskGroups.filter((g) => g.urgency === "soon");
+  const weekGroups    = plan.taskGroups.filter((g) => g.urgency === "this_week");
+  const upcomingGroups = plan.taskGroups.filter((g) => g.urgency === "upcoming");
+
+  const needsActionNow = summary.overdue + summary.today + summary.soon;
+
+  return (
+    <div className="space-y-6">
+      {/* ── Summary banner ── */}
+      <div className={`rounded-xl border p-4 flex flex-wrap items-center gap-4 ${needsActionNow > 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200"}`}>
+        <div className="flex items-center gap-2">
+          {needsActionNow > 0
+            ? <AlertTriangle className="w-5 h-5 text-red-600" />
+            : <CheckCircle2 className="w-5 h-5 text-green-600" />
+          }
+          <span className={`font-semibold ${needsActionNow > 0 ? "text-red-700" : "text-green-700"}`}>
+            {needsActionNow > 0
+              ? `${needsActionNow} process batch${needsActionNow !== 1 ? "es" : ""} need attention now`
+              : "All urgent work is under control"}
+          </span>
+        </div>
+        <div className="flex items-center gap-3 ml-auto flex-wrap text-sm">
+          {summary.overdue > 0   && <span className="flex items-center gap-1 text-red-700 font-medium"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{summary.overdue} overdue</span>}
+          {summary.today > 0     && <span className="flex items-center gap-1 text-orange-700 font-medium"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />{summary.today} due today</span>}
+          {summary.soon > 0      && <span className="flex items-center gap-1 text-amber-700 font-medium"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" />{summary.soon} due soon</span>}
+          {summary.thisWeek > 0  && <span className="flex items-center gap-1 text-blue-700 font-medium"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />{summary.thisWeek} this week</span>}
+          {summary.upcoming > 0  && <span className="flex items-center gap-1 text-muted-foreground"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />{summary.upcoming} upcoming</span>}
+        </div>
+      </div>
+
+      {/* Batching tip */}
+      <div className="flex items-start gap-2 rounded-lg bg-muted/40 border border-border px-4 py-3 text-sm text-muted-foreground">
+        <Layers className="w-4 h-4 mt-0.5 flex-shrink-0 text-primary" />
+        <span>
+          <span className="font-medium text-foreground">Batch for efficiency —</span>{" "}
+          Jobs with the same finish are grouped together below. Complete all items in a group in one run rather than returning to them across multiple shifts.
+        </span>
+      </div>
+
+      {/* ── Overdue ── */}
+      {urgentGroups.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-600" />
+            <h3 className="font-semibold text-red-700">Overdue — Complete Immediately</h3>
+          </div>
+          {urgentGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
+        </div>
+      )}
+
+      {/* ── Due today ── */}
+      {todayGroups.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-orange-600" />
+            <h3 className="font-semibold text-orange-700">Due Today — Start First</h3>
+          </div>
+          {todayGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
+        </div>
+      )}
+
+      {/* ── Due soon (1–2 days) ── */}
+      {soonGroups.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-600" />
+            <h3 className="font-semibold text-amber-700">Due in 1–2 Days — Plan Today</h3>
+          </div>
+          {soonGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
+        </div>
+      )}
+
+      {/* ── This week ── */}
+      {weekGroups.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-blue-600" />
+            <h3 className="font-semibold text-blue-700">Due This Week</h3>
+          </div>
+          {weekGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
+        </div>
+      )}
+
+      {/* ── Upcoming ── */}
+      {upcomingGroups.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-semibold text-muted-foreground">Upcoming</h3>
+          </div>
+          {upcomingGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Production() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("picking_list");
+  const [activeTab, setActiveTab] = useState("plan");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [readyOrder, setReadyOrder] = useState<DocOrder | null>(null);
 
@@ -1577,17 +1897,27 @@ export default function Production() {
   const rawComplete = allWorksheets.filter((w) => w.status === "complete").length;
   const hasFilters = Object.values(filters).some(Boolean);
 
+  const { data: dailyPlan } = useQuery<DailyPlan>({
+    queryKey: ["daily-plan"],
+    queryFn: () => apiFetch("/production/daily-plan"),
+    refetchInterval: 60_000,
+  });
+
+  const urgentPlanCount = dailyPlan?.summary.urgentCount ?? 0;
+
   const TAB_COUNTS = [
-    { key: "picking_list", label: "Picking List", count: pickingCount, icon: ListChecks, color: "text-purple-600" },
-    { key: "pre_wip", label: "Pre-WIP", count: hasFilters ? preWipTotal : rawPreWip, icon: Clock, color: "text-blue-600" },
-    { key: "wip", label: "Work in Progress", count: hasFilters ? wip.length : rawWip, icon: ClipboardList, color: "text-amber-600" },
-    { key: "complete", label: "Complete", count: hasFilters ? complete.length : rawComplete, icon: CheckCircle2, color: "text-green-600" },
+    { key: "plan",         label: "Today's Plan",      count: urgentPlanCount,                                  icon: Zap,         color: "text-primary" },
+    { key: "picking_list", label: "Picking List",       count: pickingCount,                                     icon: ListChecks,  color: "text-purple-600" },
+    { key: "pre_wip",      label: "Pre-WIP",            count: hasFilters ? preWipTotal : rawPreWip,             icon: Clock,       color: "text-blue-600" },
+    { key: "wip",          label: "Work in Progress",   count: hasFilters ? wip.length : rawWip,                 icon: ClipboardList, color: "text-amber-600" },
+    { key: "complete",     label: "Complete",           count: hasFilters ? complete.length : rawComplete,       icon: CheckCircle2, color: "text-green-600" },
   ];
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["worksheets"] });
     queryClient.invalidateQueries({ queryKey: ["production-pending"] });
     queryClient.invalidateQueries({ queryKey: ["picking-list"] });
+    queryClient.invalidateQueries({ queryKey: ["daily-plan"] });
   };
 
   return (
@@ -1599,14 +1929,14 @@ export default function Production() {
               <ClipboardList className="w-7 h-7 text-primary" />
               Production
             </h1>
-            <p className="text-muted-foreground mt-1">Manage worksheets and track work in progress.</p>
+            <p className="text-muted-foreground mt-1">Your daily work plan — batched by process for maximum efficiency.</p>
           </div>
           <Button variant="ghost" size="icon" onClick={handleRefresh}>
             <RefreshCw className="w-4 h-4" />
           </Button>
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {TAB_COUNTS.map((t) => {
             const Icon = t.icon;
             return (
@@ -1635,9 +1965,16 @@ export default function Production() {
             ))}
           </TabsList>
 
-          <div className="mt-3">
-            <FiltersBar filters={filters} onChange={setFilters} />
-          </div>
+          {activeTab !== "plan" && (
+            <div className="mt-3">
+              <FiltersBar filters={filters} onChange={setFilters} />
+            </div>
+          )}
+
+          {/* ── Today's Plan Tab ── */}
+          <TabsContent value="plan">
+            <DailyPlanTab onNavigate={setActiveTab} />
+          </TabsContent>
 
           {/* ── Pre-WIP Tab ── */}
           <TabsContent value="pre_wip">

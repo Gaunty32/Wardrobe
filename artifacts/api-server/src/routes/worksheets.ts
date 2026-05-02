@@ -322,6 +322,193 @@ router.get("/production/pending", async (req, res): Promise<void> => {
   });
 });
 
+// ── Daily Work Plan ───────────────────────────────────────────────────────────
+// Returns all active production work grouped by finish type so staff can
+// batch identical processes together and prioritise by required date.
+router.get("/production/daily-plan", async (req, res): Promise<void> => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // 1. Picking list items that need decoration (finish set)
+  const pickingRows = await db.execute(sql`
+    SELECT
+      'picking'          AS work_type,
+      oi.id              AS item_id,
+      COALESCE(oi.finish_name, 'Plain') AS finish_name,
+      oi.finish_id,
+      oi.quantity,
+      oi.product_name,
+      oi.colour,
+      oi.size,
+      oi.recipient_name,
+      oi.recipient_type,
+      o.id               AS order_id,
+      o.order_number,
+      o.customer_name,
+      o.required_date,
+      NULL::int          AS worksheet_id,
+      NULL::text         AS worksheet_number,
+      NULL::text         AS ws_status
+    FROM order_items oi
+    JOIN orders o ON o.id = oi.order_id
+    WHERE oi.stock_status = 'allocated' AND oi.finish_id IS NOT NULL
+    ORDER BY o.required_date ASC NULLS LAST
+  `);
+
+  // 2. All active worksheet items (pre_wip + wip)
+  const wsRows = await db.execute(sql`
+    SELECT
+      'worksheet'        AS work_type,
+      wi.id              AS item_id,
+      COALESCE(wi.finish_name, 'Plain') AS finish_name,
+      wi.finish_id,
+      wi.quantity,
+      wi.product_name,
+      wi.colour,
+      wi.size,
+      wi.recipient_name,
+      wi.recipient_type,
+      o.id               AS order_id,
+      o.order_number,
+      o.customer_name,
+      o.required_date,
+      w.id               AS worksheet_id,
+      w.worksheet_number,
+      w.status           AS ws_status
+    FROM worksheet_items wi
+    JOIN worksheets w ON w.id = wi.worksheet_id
+    LEFT JOIN orders o ON o.id = w.order_id
+    WHERE w.status IN ('pre_wip', 'wip')
+    ORDER BY o.required_date ASC NULLS LAST
+  `);
+
+  const allRows = [...(pickingRows.rows as any[]), ...(wsRows.rows as any[])];
+
+  // Group by finish_name
+  const finishGroups = new Map<string, any[]>();
+  for (const row of allRows) {
+    const key = (row.finish_name as string) ?? "Plain";
+    if (!finishGroups.has(key)) finishGroups.set(key, []);
+    finishGroups.get(key)!.push(row);
+  }
+
+  const taskGroups = Array.from(finishGroups.entries()).map(([finishName, rows]) => {
+    const totalQty = rows.reduce((sum: number, r: any) => sum + Number(r.quantity), 0);
+
+    // Earliest required date across every item in this finish group
+    const dates = rows
+      .map((r: any) => (r.required_date ? new Date(r.required_date) : null))
+      .filter((d): d is Date => d != null);
+    const earliestDate = dates.length > 0
+      ? new Date(Math.min(...dates.map((d) => d.getTime())))
+      : null;
+
+    const daysUntilDue = earliestDate
+      ? Math.floor((earliestDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    let urgency: "overdue" | "today" | "soon" | "this_week" | "upcoming";
+    if (daysUntilDue === null)   urgency = "upcoming";
+    else if (daysUntilDue < 0)  urgency = "overdue";
+    else if (daysUntilDue === 0) urgency = "today";
+    else if (daysUntilDue <= 2) urgency = "soon";
+    else if (daysUntilDue <= 7) urgency = "this_week";
+    else                        urgency = "upcoming";
+
+    const hasWip     = rows.some((r: any) => r.ws_status === "wip");
+    const hasPreWip  = rows.some((r: any) => r.ws_status === "pre_wip");
+    const hasPicking = rows.some((r: any) => r.work_type === "picking");
+
+    let overallStatus: "in_progress" | "ready" | "pick_first" | "mixed";
+    if      (hasWip && !hasPreWip && !hasPicking) overallStatus = "in_progress";
+    else if (hasPreWip && !hasPicking && !hasWip) overallStatus = "ready";
+    else if (hasPicking && !hasWip && !hasPreWip) overallStatus = "pick_first";
+    else                                          overallStatus = "mixed";
+
+    // Sub-group by order + stage so each worksheet / picking batch is one row
+    const byTask = new Map<string, any[]>();
+    for (const row of rows) {
+      const key = `${row.order_id ?? "none"}:${row.ws_status ?? "picking"}:${row.worksheet_id ?? ""}`;
+      if (!byTask.has(key)) byTask.set(key, []);
+      byTask.get(key)!.push(row);
+    }
+
+    const tasks = Array.from(byTask.values()).map((taskRows) => {
+      const first = taskRows[0];
+      return {
+        type:            first.work_type === "picking" ? "picking" : (first.ws_status as string),
+        worksheetId:     first.worksheet_id    as number | null,
+        worksheetNumber: first.worksheet_number as string | null,
+        orderId:         first.order_id         as number | null,
+        orderNumber:     first.order_number     as string | null,
+        customerName:    first.customer_name    as string | null,
+        requiredDate:    first.required_date ? new Date(first.required_date).toISOString() : null,
+        qty:             taskRows.reduce((s: number, r: any) => s + Number(r.quantity), 0),
+        items:           taskRows.map((r: any) => ({
+          productName: r.product_name    as string,
+          colour:      r.colour          as string | null,
+          size:        r.size            as string | null,
+          qty:         Number(r.quantity),
+          recipient:   (r.recipient_name ?? r.recipient_type) as string | null,
+        })),
+      };
+    });
+
+    // Within each group: wip first → pre_wip → picking; then by required date
+    const stageOrder: Record<string, number> = { wip: 0, pre_wip: 1, picking: 2 };
+    tasks.sort((a, b) => {
+      const sa = stageOrder[a.type] ?? 3;
+      const sb = stageOrder[b.type] ?? 3;
+      if (sa !== sb) return sa - sb;
+      if (a.requiredDate && b.requiredDate)
+        return new Date(a.requiredDate).getTime() - new Date(b.requiredDate).getTime();
+      return 0;
+    });
+
+    return {
+      finishName,
+      totalQty,
+      orderCount: new Set(rows.map((r: any) => r.order_id).filter(Boolean)).size,
+      overallStatus,
+      urgency,
+      daysUntilDue,
+      earliestRequired: earliestDate?.toISOString() ?? null,
+      tasks,
+    };
+  });
+
+  // Sort groups: overdue → today → soon → this_week → upcoming
+  const urgencyOrder: Record<string, number> = {
+    overdue: 0, today: 1, soon: 2, this_week: 3, upcoming: 4,
+  };
+  taskGroups.sort((a, b) => {
+    const ua = urgencyOrder[a.urgency] ?? 5;
+    const ub = urgencyOrder[b.urgency] ?? 5;
+    if (ua !== ub) return ua - ub;
+    if (a.daysUntilDue !== null && b.daysUntilDue !== null)
+      return a.daysUntilDue - b.daysUntilDue;
+    return 0;
+  });
+
+  const urgentCount = taskGroups.filter(
+    (g) => g.urgency === "overdue" || g.urgency === "today" || g.urgency === "soon"
+  ).length;
+
+  res.json({
+    generatedAt: new Date().toISOString(),
+    taskGroups,
+    summary: {
+      overdue:    taskGroups.filter((g) => g.urgency === "overdue").length,
+      today:      taskGroups.filter((g) => g.urgency === "today").length,
+      soon:       taskGroups.filter((g) => g.urgency === "soon").length,
+      thisWeek:   taskGroups.filter((g) => g.urgency === "this_week").length,
+      upcoming:   taskGroups.filter((g) => g.urgency === "upcoming").length,
+      urgentCount,
+      totalItems: taskGroups.reduce((s, g) => s + g.totalQty, 0),
+    },
+  });
+});
+
 router.get("/worksheets", async (req, res): Promise<void> => {
   const parsed = z.object({ status: z.string().optional() }).safeParse(req.query);
   const statusFilter = parsed.success ? parsed.data.status : undefined;
