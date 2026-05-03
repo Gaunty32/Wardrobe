@@ -53,10 +53,12 @@ function RoleBadge({ role }: { role: string }) {
 
 // ─── Employee section ─────────────────────────────────────────────────────────
 
-function EmployeeForm({ initial, initialSizes, addresses, onSave, onCancel, saving }: {
+function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, onSave, onCancel, saving }: {
   initial?: any;
   initialSizes?: Array<{ label: string; size: string }>;
   addresses: any[];
+  roles: Array<{ id: number; name: string }>;
+  allEmployees: any[];
   onSave: (data: any, sizes: Array<{ label: string; size: string }>) => void;
   onCancel: () => void;
   saving: boolean;
@@ -70,8 +72,13 @@ function EmployeeForm({ initial, initialSizes, addresses, onSave, onCancel, savi
     jobTitle: initial?.job_title ?? "",
     department: initial?.department ?? "",
     deliveryAddressId: initial?.delivery_address_id ? String(initial.delivery_address_id) : "none",
+    roleId: initial?.role_id ? String(initial.role_id) : "none",
+    managerId: initial?.manager_id ? String(initial.manager_id) : "none",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  // Exclude the employee being edited from the manager list
+  const managerOptions = allEmployees.filter((e: any) => e.id !== initial?.id);
 
   const [sizes, setSizes] = useState<Array<{ label: string; size: string }>>(initialSizes ?? []);
   const addSize = () => setSizes(s => [...s, { label: "", size: "" }]);
@@ -115,6 +122,44 @@ function EmployeeForm({ initial, initialSizes, addresses, onSave, onCancel, savi
         <Label>Department</Label>
         <Input value={form.department} onChange={e => set("department", e.target.value)} />
       </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {roles.length > 0 && (
+          <div className="space-y-1">
+            <Label>Role</Label>
+            <Select value={form.roleId} onValueChange={v => set("roleId", v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="No role" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No role</SelectItem>
+                {roles.map((r) => (
+                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {managerOptions.length > 0 && (
+          <div className="space-y-1">
+            <Label>Team Manager</Label>
+            <Select value={form.managerId} onValueChange={v => set("managerId", v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="No manager" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No manager</SelectItem>
+                {managerOptions.map((e: any) => (
+                  <SelectItem key={e.id} value={String(e.id)}>
+                    {e.first_name} {e.last_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
       {addresses.length > 0 && (
         <div className="space-y-1">
           <Label className="flex items-center gap-1.5">
@@ -193,6 +238,8 @@ function EmployeeForm({ initial, initialSizes, addresses, onSave, onCancel, savi
             {
               ...form,
               deliveryAddressId: form.deliveryAddressId === "none" ? null : parseInt(form.deliveryAddressId, 10),
+              roleId: form.roleId === "none" ? null : parseInt(form.roleId, 10),
+              managerId: form.managerId === "none" ? null : parseInt(form.managerId, 10),
             },
             validSizes
           )}
@@ -215,6 +262,16 @@ function EmployeesTab() {
   const { data: employees = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-team-employees", showInactive],
     queryFn: () => apiFetch(`/portal/team/employees?showInactive=${showInactive}`),
+  });
+
+  const { data: allEmployees = [] } = useQuery<any[]>({
+    queryKey: ["portal-team-employees", false],
+    queryFn: () => apiFetch("/portal/team/employees?showInactive=false"),
+  });
+
+  const { data: roles = [] } = useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ["portal-team-roles"],
+    queryFn: () => apiFetch("/portal/team/roles"),
   });
 
   const { data: addresses = [] } = useQuery<any[]>({
@@ -321,8 +378,11 @@ function EmployeesTab() {
                   )}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
+                  {[emp.employee_number && `#${emp.employee_number}`, emp.role_name, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
                 </p>
+                {emp.manager_name && (
+                  <p className="text-xs text-muted-foreground/70 truncate">Manager: {emp.manager_name}</p>
+                )}
                 {emp.delivery_address_label && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
                     <MapPin className="w-3 h-3 shrink-0" />
@@ -375,6 +435,8 @@ function EmployeesTab() {
           <DialogHeader><DialogTitle>Add employee</DialogTitle></DialogHeader>
           <EmployeeForm
             addresses={addresses}
+            roles={roles}
+            allEmployees={allEmployees}
             onSave={(data, sizes) => addMutation.mutate({ data, sizes })}
             onCancel={() => setAddOpen(false)}
             saving={addMutation.isPending}
@@ -391,6 +453,8 @@ function EmployeesTab() {
               initial={editTarget}
               initialSizes={editSizes}
               addresses={addresses}
+              roles={roles}
+              allEmployees={allEmployees}
               onSave={(data, sizes) => editMutation.mutate({ id: editTarget.id, data, sizes })}
               onCancel={() => setEditTarget(null)}
               saving={editMutation.isPending}

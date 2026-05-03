@@ -1561,6 +1561,14 @@ router.patch("/portal/my-team/employees/:id", portalAuth, async (req: Request, r
 
 // ─── portal: team — employees (manager only) ─────────────────────────────────
 
+router.get("/portal/team/roles", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const rows = await db.execute(sql`SELECT id, name FROM customer_roles WHERE customer_id = ${customerId} ORDER BY name`);
+  res.json(rows.rows);
+});
+
 router.get("/portal/team/employees", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
@@ -1572,6 +1580,8 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
     SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
            e.department, e.notes, e.is_active,
            cr.id as role_id, cr.name as role_name,
+           e.manager_id,
+           TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) as manager_name,
            e.delivery_address_id,
            da.label as delivery_address_label,
            da.line1 as delivery_address_line1,
@@ -1584,6 +1594,7 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
            ) as sizes
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
+    LEFT JOIN customer_employees m ON m.id = e.manager_id
     LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
     WHERE e.customer_id = ${customerId}
       ${showInactive ? sql`` : sql`AND e.is_active = true`}
@@ -1606,6 +1617,7 @@ router.post("/portal/team/employees", portalAuth, async (req: Request, res: Resp
     jobTitle: z.string().optional().nullable(),
     department: z.string().optional().nullable(),
     roleId: z.number().int().optional().nullable(),
+    managerId: z.number().int().optional().nullable(),
     notes: z.string().optional().nullable(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
@@ -1613,10 +1625,10 @@ router.post("/portal/team/employees", portalAuth, async (req: Request, res: Resp
   const d = body.data;
   const rows = await db.execute(sql`
     INSERT INTO customer_employees
-      (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, role_id, notes, is_active)
+      (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, role_id, manager_id, notes, is_active)
     VALUES
       (${customerId}, ${d.firstName}, ${d.lastName}, ${d.employeeNumber ?? null}, ${d.email ?? null}, ${d.phone ?? null},
-       ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.roleId ?? null}, ${d.notes ?? null}, true)
+       ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.roleId ?? null}, ${d.managerId ?? null}, ${d.notes ?? null}, true)
     RETURNING *
   `);
   res.status(201).json(rows.rows[0]);
@@ -1639,6 +1651,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
     jobTitle: z.string().optional().nullable(),
     department: z.string().optional().nullable(),
     roleId: z.number().int().optional().nullable(),
+    managerId: z.number().int().optional().nullable(),
     notes: z.string().optional().nullable(),
     isActive: z.boolean().optional(),
     deliveryAddressId: z.number().int().optional().nullable(),
@@ -1655,6 +1668,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   if (d.jobTitle !== undefined) sets.push(`job_title = ${d.jobTitle === null ? "NULL" : `'${d.jobTitle.replace(/'/g, "''")}'`}`);
   if (d.department !== undefined) sets.push(`department = ${d.department === null ? "NULL" : `'${d.department.replace(/'/g, "''")}'`}`);
   if (d.roleId !== undefined) sets.push(`role_id = ${d.roleId === null ? "NULL" : d.roleId}`);
+  if (d.managerId !== undefined) sets.push(`manager_id = ${d.managerId === null ? "NULL" : d.managerId}`);
   if (d.notes !== undefined) sets.push(`notes = ${d.notes === null ? "NULL" : `'${d.notes.replace(/'/g, "''")}'`}`);
   if (d.isActive !== undefined) sets.push(`is_active = ${d.isActive}`);
   if (d.deliveryAddressId !== undefined) sets.push(`delivery_address_id = ${d.deliveryAddressId === null ? "NULL" : d.deliveryAddressId}`);
