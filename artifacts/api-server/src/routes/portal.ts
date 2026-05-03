@@ -38,6 +38,35 @@ function buildMagicLinkEmail(_email: string, magicUrl: string): { html: string; 
   return { html, text };
 }
 
+function buildInviteEmail(email: string, inviteUrl: string, customerName: string): { html: string; text: string } {
+  const html = `
+<!DOCTYPE html>
+<html>
+<body style="font-family:Arial,sans-serif;background:#f8fafc;padding:32px 0;margin:0">
+  <div style="max-width:500px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;border:1px solid #e2e8f0">
+    <img src="https://selectbranding.co.uk/wp-content/uploads/2024/01/SBS-Logo.png" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
+    <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">You've been invited to the portal</h2>
+    <p style="color:#475569;font-size:15px;margin:0 0 8px">You've been given access to the <strong>${customerName}</strong> ordering portal on Select Branding Solutions.</p>
+    <p style="color:#475569;font-size:15px;margin:0 0 24px">Click the button below to accept your invitation and get started. This link expires in ${INVITE_TTL_DAYS} days.</p>
+    <a href="${inviteUrl}" style="display:inline-block;background:#1e293b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;margin-bottom:28px">Accept invitation</a>
+    <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px">
+      <p style="color:#0f172a;font-size:13px;font-weight:600;margin:0 0 8px">Through the portal you can:</p>
+      <ul style="color:#475569;font-size:13px;margin:0;padding-left:20px;line-height:1.9">
+        <li>Browse and place orders for branded workwear</li>
+        <li>Track the status of your orders in real time</li>
+        <li>Manage your sizing and wardrobe preferences</li>
+      </ul>
+    </div>
+    <p style="color:#94a3b8;font-size:13px;margin:0">If you weren't expecting this invitation, you can safely ignore this email.</p>
+    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0" />
+    <p style="color:#94a3b8;font-size:12px;margin:0">Select Branding Solutions &bull; <a href="${inviteUrl}" style="color:#94a3b8;word-break:break-all">${inviteUrl}</a></p>
+  </div>
+</body>
+</html>`;
+  const text = `You've been invited to the ${customerName} ordering portal\n\nClick this link to accept your invitation (expires in ${INVITE_TTL_DAYS} days):\n${inviteUrl}\n\nThrough the portal you can:\n- Browse and place orders for branded workwear\n- Track the status of your orders in real time\n- Manage your sizing and wardrobe preferences\n\nIf you weren't expecting this invitation, you can safely ignore this email.\n\nSelect Branding Solutions`;
+  return { html, text };
+}
+
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function signToken(userId: number, customerId: number, portalRole: string) {
@@ -1737,10 +1766,11 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
   const body = z.object({
     email: z.string().email(),
     portalRole: z.enum(["manager", "dept_manager", "member"]).default("member"),
+    sendNow: z.boolean().optional().default(false),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
-  const { email, portalRole: role } = body.data;
+  const { email, portalRole: role, sendNow } = body.data;
   const token = randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400_000);
 
@@ -1760,8 +1790,81 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
     return;
   }
 
-  const inviteUrl = `/customer-portal/accept-invite?token=${token}`;
-  res.json({ inviteUrl, token, email, portalRole: role, expiresAt: expires });
+  const proto = req.headers["x-forwarded-proto"] ?? req.protocol;
+  const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+  const inviteUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
+  const relativeUrl = `/customer-portal/accept-invite?token=${token}`;
+
+  let emailSent = false;
+  let emailError: string | undefined;
+
+  if (sendNow && isEmailConfigured) {
+    const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
+    const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+    const { html, text } = buildInviteEmail(email, inviteUrl, customerName);
+    const result = await sendEmail({
+      to: email,
+      subject: `You're invited to the ${customerName} ordering portal`,
+      html,
+      text,
+    });
+    emailSent = result.sent;
+    emailError = result.error;
+  }
+
+  res.json({ inviteUrl: relativeUrl, token, email, portalRole: role, expiresAt: expires, emailSent, emailError });
+});
+
+// ─── Send invite email to an existing pending portal user ────────────────────
+
+router.post("/portal/team/users/:id/send-invite", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  if (!isEmailConfigured) {
+    res.status(400).json({ error: "Email is not configured on this server" });
+    return;
+  }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const token = randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400_000);
+
+  const rows = await db.execute(sql`
+    UPDATE customer_portal_users
+    SET invite_token = ${token}, invite_expires_at = ${expires.toISOString()}, status = 'invited', updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+    RETURNING email, portal_role
+  `);
+
+  const user = rows.rows[0] as any;
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
+  const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+
+  const proto = req.headers["x-forwarded-proto"] ?? req.protocol;
+  const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+  const inviteUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
+
+  const { html, text } = buildInviteEmail(user.email, inviteUrl, customerName);
+  const result = await sendEmail({
+    to: user.email,
+    subject: `You're invited to the ${customerName} ordering portal`,
+    html,
+    text,
+  });
+
+  res.json({ ok: true, emailSent: result.sent, emailError: result.error, sentTo: user.email });
+});
+
+// ─── Email configuration status (so UI can adapt) ─────────────────────────
+
+router.get("/portal/team/email-status", portalAuth, async (_req: Request, res: Response) => {
+  res.json({ configured: isEmailConfigured });
 });
 
 router.patch("/portal/team/users/:id/role", portalAuth, async (req: Request, res: Response) => {

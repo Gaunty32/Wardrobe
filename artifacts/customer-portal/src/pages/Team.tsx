@@ -411,7 +411,8 @@ function UsersTab() {
   const [inviteSelection, setInviteSelection] = useState<string>("");
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState("member");
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteResult, setInviteResult] = useState<{ emailSent: boolean; inviteUrl: string; email: string } | null>(null);
+  const [sendingInviteId, setSendingInviteId] = useState<number | null>(null);
   const [copiedLink, setCopiedLink] = useState<string | null>(null);
   const [linkDialogUser, setLinkDialogUser] = useState<any | null>(null);
   const [linkEmployeeId, setLinkEmployeeId] = useState<string>("none");
@@ -426,6 +427,13 @@ function UsersTab() {
     queryFn: () => apiFetch("/portal/team/employees"),
   });
 
+  const { data: emailStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["portal-email-status"],
+    queryFn: () => apiFetch("/portal/team/email-status"),
+  });
+
+  const emailConfigured = emailStatus?.configured ?? false;
+
   const existingEmails = new Set((users as any[]).map((u: any) => u.email?.toLowerCase()));
   const suggestedEmployees = (employees as any[]).filter(
     (e: any) => e.email && !existingEmails.has(e.email.toLowerCase())
@@ -435,29 +443,51 @@ function UsersTab() {
     setInviteSelection("");
     setInviteEmail("");
     setInviteRole("member");
-    setInviteLink(null);
+    setInviteResult(null);
   };
 
-  const sendInvite = (email: string, role: string) =>
-    apiFetch("/portal/team/users/invite", { method: "POST", body: JSON.stringify({ email, portalRole: role }) });
-
   const inviteMutation = useMutation({
-    mutationFn: (data: any) => sendInvite(data.email, data.portalRole),
+    mutationFn: (data: { email: string; portalRole: string }) =>
+      apiFetch("/portal/team/users/invite", {
+        method: "POST",
+        body: JSON.stringify({ email: data.email, portalRole: data.portalRole, sendNow: emailConfigured }),
+      }),
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ["portal-team-users"] });
-      const base = window.location.origin;
-      setInviteLink(`${base}${import.meta.env.BASE_URL.replace(/\/$/, "")}${res.inviteUrl}`);
-      toast({ title: "Invite created" });
+      setInviteResult({ emailSent: res.emailSent ?? false, inviteUrl: res.inviteUrl, email: res.email });
+      if (res.emailSent) {
+        toast({ title: "Invite sent", description: `Email sent to ${res.email}` });
+      } else {
+        toast({ title: "User created", description: "Share the invite link to give them access" });
+      }
+    },
+    onError: () => toast({ title: "Failed to create invite", variant: "destructive" }),
+  });
+
+  const sendInviteEmailMutation = useMutation({
+    mutationFn: (u: any) => apiFetch(`/portal/team/users/${u.id}/send-invite`, { method: "POST" }),
+    onMutate: (u: any) => setSendingInviteId(u.id),
+    onSettled: () => setSendingInviteId(null),
+    onSuccess: (res: any, u: any) => {
+      qc.invalidateQueries({ queryKey: ["portal-team-users"] });
+      if (res.emailSent) {
+        toast({ title: "Invite sent", description: `Email sent to ${u.email}` });
+      } else {
+        toast({ title: "Failed to send email", description: res.emailError, variant: "destructive" });
+      }
     },
     onError: () => toast({ title: "Failed to send invite", variant: "destructive" }),
   });
 
-  const resendMutation = useMutation({
-    mutationFn: (u: any) => sendInvite(u.email, u.portal_role),
+  const resendLinkMutation = useMutation({
+    mutationFn: (u: any) =>
+      apiFetch("/portal/team/users/invite", {
+        method: "POST",
+        body: JSON.stringify({ email: u.email, portalRole: u.portal_role, sendNow: false }),
+      }),
     onSuccess: (res: any, u: any) => {
       qc.invalidateQueries({ queryKey: ["portal-team-users"] });
-      const base = window.location.origin;
-      const link = `${base}${import.meta.env.BASE_URL.replace(/\/$/, "")}${res.inviteUrl}`;
+      const link = `${window.location.origin}${res.inviteUrl}`;
       navigator.clipboard.writeText(link).catch(() => {});
       setCopiedLink(u.email);
       setTimeout(() => setCopiedLink(null), 3000);
@@ -541,20 +571,37 @@ function UsersTab() {
               </div>
 
               {u.status === "invited" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 text-xs gap-1"
-                  disabled={resendMutation.isPending}
-                  onClick={() => resendMutation.mutate(u)}
-                  title="Regenerate and copy invite link"
-                >
-                  {copiedLink === u.email ? (
-                    <><Mail className="w-3 h-3" /> Copied!</>
-                  ) : (
-                    <><Mail className="w-3 h-3" /> Copy link</>
-                  )}
-                </Button>
+                emailConfigured ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 text-xs gap-1"
+                    disabled={sendingInviteId === u.id}
+                    onClick={() => sendInviteEmailMutation.mutate(u)}
+                    title="Send invite email"
+                  >
+                    {sendingInviteId === u.id ? (
+                      <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</>
+                    ) : (
+                      <><Mail className="w-3 h-3" /> Send invite</>
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0 text-xs gap-1"
+                    disabled={resendLinkMutation.isPending}
+                    onClick={() => resendLinkMutation.mutate(u)}
+                    title="Copy invite link"
+                  >
+                    {copiedLink === u.email ? (
+                      <><Mail className="w-3 h-3" /> Copied!</>
+                    ) : (
+                      <><Mail className="w-3 h-3" /> Copy link</>
+                    )}
+                  </Button>
+                )
               )}
 
               <Select
@@ -657,25 +704,47 @@ function UsersTab() {
       {/* Invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(o) => { if (!o) { setInviteOpen(false); resetInviteDialog(); } }}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Invite a portal user</DialogTitle></DialogHeader>
-          {inviteLink ? (
+          <DialogHeader>
+            <DialogTitle>Invite a portal user</DialogTitle>
+          </DialogHeader>
+
+          {inviteResult ? (
+            /* ── Success state ── */
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">Share this invite link with the new user:</p>
-              <div className="rounded-md border bg-muted p-3 text-xs font-mono break-all select-all">
-                {inviteLink}
-              </div>
-              <p className="text-xs text-muted-foreground">The link expires in 7 days.</p>
+              {inviteResult.emailSent ? (
+                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3">
+                  <Mail className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-green-800">Invite email sent</p>
+                    <p className="text-xs text-green-700 mt-0.5">An invite has been emailed to <strong>{inviteResult.email}</strong>. The link expires in 7 days.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground">User created. Share this link with them to give access:</p>
+                  <div className="rounded-md border bg-muted p-3 text-xs font-mono break-all select-all">
+                    {window.location.origin}{inviteResult.inviteUrl}
+                  </div>
+                  <p className="text-xs text-muted-foreground">The link expires in 7 days.</p>
+                </div>
+              )}
               <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => { navigator.clipboard.writeText(inviteLink!); toast({ title: "Copied to clipboard" }); }}
-                >
-                  Copy link
-                </Button>
+                {!inviteResult.emailSent && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`${window.location.origin}${inviteResult!.inviteUrl}`);
+                      toast({ title: "Copied to clipboard" });
+                    }}
+                  >
+                    Copy link
+                  </Button>
+                )}
                 <Button onClick={() => { setInviteOpen(false); resetInviteDialog(); }}>Done</Button>
               </DialogFooter>
             </div>
           ) : (
+            /* ── Form state ── */
             <div className="space-y-4">
               <div className="space-y-1">
                 <Label>Recipient *</Label>
@@ -752,6 +821,13 @@ function UsersTab() {
                   </button>
                 ))}
               </div>
+
+              {!emailConfigured && (
+                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                  Email is not configured — you'll get a link to share manually instead.
+                </p>
+              )}
+
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setInviteOpen(false); resetInviteDialog(); }}>Cancel</Button>
                 <Button
@@ -759,7 +835,7 @@ function UsersTab() {
                   onClick={() => inviteMutation.mutate({ email: finalEmail, portalRole: inviteRole })}
                 >
                   {inviteMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
-                  Create invite
+                  {emailConfigured ? "Send invite" : "Create invite"}
                 </Button>
               </DialogFooter>
             </div>
