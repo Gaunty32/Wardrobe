@@ -195,6 +195,7 @@ function ManagerReviewPanel() {
   const { data: pendingOrders = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-manager-pending"],
     queryFn: () => apiFetch("/portal/manager/pending-orders"),
+    refetchInterval: 30_000,
   });
 
   useEffect(() => { setSelected(new Set()); }, [pendingOrders]);
