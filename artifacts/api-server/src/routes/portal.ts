@@ -410,8 +410,19 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
   if (portalRole === "dept_manager") {
     let deptEmail: string | null = null;
     if (portalIsPreview && linkedEmployeeId) {
-      const empRows = await db.execute(sql`SELECT email FROM customer_employees WHERE id = ${linkedEmployeeId} LIMIT 1`);
-      deptEmail = (empRows.rows[0] as any)?.email ?? null;
+      // Primary: find the portal user linked to this employee — their email
+      // matches what was stamped on the order when they placed it
+      const puRows = await db.execute(sql`
+        SELECT email FROM customer_portal_users
+        WHERE customer_id = ${customerId} AND linked_employee_id = ${linkedEmployeeId}
+        LIMIT 1
+      `);
+      deptEmail = (puRows.rows[0] as any)?.email ?? null;
+      // Fallback: use the employee record's own email
+      if (!deptEmail) {
+        const empRows = await db.execute(sql`SELECT email FROM customer_employees WHERE id = ${linkedEmployeeId} LIMIT 1`);
+        deptEmail = (empRows.rows[0] as any)?.email ?? null;
+      }
     } else if (portalUserId) {
       const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
       deptEmail = (userRows.rows[0] as any)?.email ?? null;
