@@ -1755,6 +1755,10 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   </button>
                   {employees
                     .filter((e: any) => {
+                      // "Preview as Team Manager" — only show employees with Team Manager role
+                      if (pickerRole === "dept_manager") {
+                        if (!(e.role_name ?? "").toLowerCase().includes("team manager")) return false;
+                      }
                       const term = empPickerSearch.toLowerCase().trim();
                       if (!term) return true;
                       return [e.name, e.first_name, e.last_name, e.job_title, e.role_name, e.email].filter(Boolean).join(" ").toLowerCase().includes(term);

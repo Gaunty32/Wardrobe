@@ -1012,9 +1012,13 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
 
   // Get employees for this customer
   const employees = await db.execute(sql`
-    SELECT e.id, e.first_name, e.last_name, e.job_title, cr.id as role_id, cr.name as role_name
+    SELECT e.id, e.first_name, e.last_name, e.job_title,
+           e.manager_id,
+           TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) AS manager_name,
+           cr.id as role_id, cr.name as role_name
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
+    LEFT JOIN customer_employees m ON m.id = e.manager_id
     WHERE e.customer_id = ${customerId} AND e.is_active = true
     ORDER BY e.last_name, e.first_name
   `);
@@ -1507,6 +1511,29 @@ router.post("/portal/my-team/employees", portalAuth, async (req: Request, res: R
     RETURNING *
   `);
   res.status(201).json(rows.rows[0]);
+});
+
+// ─── portal: team manager adopts an employee from another team ────────────────
+
+router.post("/portal/my-team/employees/:id/adopt", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.status(400).json({ error: "No linked employee found for your account" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const rows = await db.execute(sql`
+    UPDATE customer_employees
+    SET manager_id = ${myEmpId}, updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+    RETURNING id, first_name, last_name, manager_id
+  `);
+  if (rows.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
+  res.json({ ok: true, employee: rows.rows[0] });
 });
 
 router.patch("/portal/my-team/employees/:id", portalAuth, async (req: Request, res: Response) => {

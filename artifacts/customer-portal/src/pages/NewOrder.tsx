@@ -225,6 +225,20 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
   // Search / filter state
   const [search, setSearch] = useState("");
+  const [showOtherTeams, setShowOtherTeams] = useState(false);
+
+  // Transfer dialog (dept_manager ordering for another team's operative)
+  const [transferDialogEmp, setTransferDialogEmp] = useState<any | null>(null);
+  const transferMut = useMutation({
+    mutationFn: (empId: number) => apiFetch(`/portal/my-team/employees/${empId}/adopt`, { method: "POST" }),
+    onSuccess: (_, empId) => {
+      toast({ title: "Employee transferred to your team" });
+      onEmployeeAdded(); // refresh employee list
+      setTransferDialogEmp(null);
+      doSelectRecipient(String(empId));
+    },
+    onError: () => toast({ title: "Could not transfer employee", variant: "destructive" }),
+  });
 
   // Add employee dialog
   const [addOpen, setAddOpen] = useState(false);
@@ -247,24 +261,32 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     onError: () => toast({ title: "Could not add employee", variant: "destructive" }),
   });
 
-  // Filtered employees — computed before any early returns to satisfy Rules of Hooks
-  const filteredEmployees = useMemo(() => {
+  // Split employees into my team vs others (for dept_manager)
+  const isDeptManager = portalRole === "dept_manager";
+  const { myTeamEmployees, otherEmployees } = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return employees.filter((emp: any) => {
-      // Members can only order for themselves
+    const base = employees.filter((emp: any) => {
       if (portalRole === "member" && myEmployeeId !== null && emp.id !== myEmployeeId) return false;
-      const fullName = `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.toLowerCase();
-      if (q && !fullName.includes(q)) return false;
-      return true;
+      if (!q) return true;
+      return `${emp.first_name ?? ""} ${emp.last_name ?? ""}`.toLowerCase().includes(q);
     });
-  }, [employees, search, portalRole, myEmployeeId]);
+    if (!isDeptManager || !myEmployeeId) return { myTeamEmployees: base, otherEmployees: [] };
+    return {
+      myTeamEmployees: base.filter((e: any) => e.manager_id === myEmployeeId),
+      otherEmployees: base.filter((e: any) => e.manager_id !== myEmployeeId),
+    };
+  }, [employees, search, portalRole, myEmployeeId, isDeptManager]);
+
+  // For non-dept-manager paths
+  const filteredEmployees = isDeptManager ? myTeamEmployees : myTeamEmployees;
 
   const getItemState = (key: string): ItemState =>
     itemStates[key] ?? { size: "", qty: 1 };
   const setItemState = (key: string, patch: Partial<ItemState>) =>
     setItemStates(s => ({ ...s, [key]: { ...getItemState(key), ...patch } }));
 
-  const handleSelectRecipient = (recipientId: string) => {
+  // Core selection logic (shared by normal path and post-transfer)
+  const doSelectRecipient = (recipientId: string) => {
     setSelectedRecipient(recipientId);
     const emp = recipientId !== "stock"
       ? employees.find((e: any) => String(e.id) === recipientId)
@@ -304,6 +326,18 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
       });
     });
     setItemStates(updates);
+  };
+
+  // Intercept selection: if dept_manager picks from another team, show transfer dialog
+  const handleSelectRecipient = (recipientId: string) => {
+    if (isDeptManager && recipientId !== "stock" && myEmployeeId) {
+      const emp = employees.find((e: any) => String(e.id) === recipientId);
+      if (emp && emp.manager_id !== myEmployeeId) {
+        setTransferDialogEmp(emp);
+        return;
+      }
+    }
+    doSelectRecipient(recipientId);
   };
 
   // Group items by finish
@@ -586,7 +620,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
         </div>
 
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Who is this for?</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+
+        {/* My Team section */}
+        {isDeptManager && <p className="text-xs font-semibold text-muted-foreground mb-2">My Team</p>}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
           {!search && (
             <button
               onClick={() => handleSelectRecipient("stock")}
@@ -599,7 +636,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
               <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
             </button>
           )}
-          {filteredEmployees.map((emp: any) => {
+          {myTeamEmployees.map((emp: any) => {
             const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
             const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
             return (
@@ -621,12 +658,103 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
               </button>
             );
           })}
-          {filteredEmployees.length === 0 && (
+          {myTeamEmployees.length === 0 && !search && !isDeptManager && (
             <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
+              No employees found
+            </div>
+          )}
+          {myTeamEmployees.length === 0 && search && (
+            <div className="col-span-full py-4 text-center text-muted-foreground text-sm">
               No employees match your search
             </div>
           )}
         </div>
+
+        {/* Other Teams section — dept_manager only */}
+        {isDeptManager && otherEmployees.length > 0 && (
+          <div className="mb-8">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2 hover:text-foreground transition-colors"
+              onClick={() => setShowOtherTeams(v => !v)}
+            >
+              <span className={cn("inline-block transition-transform", showOtherTeams ? "rotate-90" : "rotate-0")}>▶</span>
+              Other teams ({otherEmployees.length})
+            </button>
+            {showOtherTeams && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {otherEmployees.map((emp: any) => {
+                  const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
+                  const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
+                  return (
+                    <button
+                      key={emp.id}
+                      onClick={() => handleSelectRecipient(String(emp.id))}
+                      className="rounded-xl border border-dashed bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group relative"
+                    >
+                      {empItems.length > 0 && (
+                        <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                          {empItems.length}
+                        </span>
+                      )}
+                      <div className="w-10 h-10 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground font-bold text-sm mb-3 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                        {initials || <User className="w-4 h-4" />}
+                      </div>
+                      <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                      {emp.manager_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.manager_name}'s team</p>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {isDeptManager && otherEmployees.length === 0 && myTeamEmployees.length === 0 && (
+          <div className="py-8 text-center text-muted-foreground text-sm mb-8">No employees found</div>
+        )}
+
+        {/* Transfer dialog */}
+        <Dialog open={!!transferDialogEmp} onOpenChange={(o) => { if (!o) setTransferDialogEmp(null); }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Order for another team's operative</DialogTitle>
+            </DialogHeader>
+            {transferDialogEmp && (
+              <div className="space-y-4 py-1">
+                <p className="text-sm text-muted-foreground">
+                  <strong>{transferDialogEmp.first_name} {transferDialogEmp.last_name}</strong> is currently in{" "}
+                  {transferDialogEmp.manager_name ? <strong>{transferDialogEmp.manager_name}'s team</strong> : "another team"}.
+                  Would you like to transfer them to your team, or just order for them without changing their team?
+                </p>
+                <div className="flex flex-col gap-2">
+                  <Button
+                    onClick={() => transferMut.mutate(transferDialogEmp.id)}
+                    disabled={transferMut.isPending}
+                    className="w-full"
+                  >
+                    {transferMut.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Transfer to my team &amp; order
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setTransferDialogEmp(null);
+                      doSelectRecipient(String(transferDialogEmp.id));
+                    }}
+                  >
+                    Order without transferring
+                  </Button>
+                  <Button variant="ghost" className="w-full" onClick={() => setTransferDialogEmp(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        {!isDeptManager && <div className="mb-8" />}
 
         {/* Add employee dialog */}
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -1685,6 +1813,7 @@ export default function NewOrder() {
     lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
     savedSizes: Record<string, Array<{ label: string; size: string }>>;
     sizesMap: Record<string, Record<string, string[]>>;
+    myEmployeeId: number | null;
   }>({
     queryKey: ["portal-wardrobe"],
     queryFn: () => apiFetch("/portal/wardrobe"),

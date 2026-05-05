@@ -77,8 +77,14 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  // Exclude the employee being edited from the manager list
-  const managerOptions = allEmployees.filter((e: any) => e.id !== initial?.id);
+  // When role is Operative, only show Team Manager-role employees as manager options
+  const selectedRoleName = roles.find(r => String(r.id) === form.roleId)?.name ?? "";
+  const isOperativeRole = selectedRoleName.toLowerCase().includes("operative");
+  const managerOptions = allEmployees.filter((e: any) => {
+    if (e.id === initial?.id) return false;
+    if (isOperativeRole) return (e.role_name ?? "").toLowerCase().includes("team manager");
+    return true;
+  });
 
   const [sizes, setSizes] = useState<Array<{ label: string; size: string }>>(initialSizes ?? []);
   const addSize = () => setSizes(s => [...s, { label: "", size: "" }]);
