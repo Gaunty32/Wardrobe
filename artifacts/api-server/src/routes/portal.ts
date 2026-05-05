@@ -1098,14 +1098,28 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   const portalIsPreview = (req as any).portalIsPreview;
   const linkedEmployeeId = (req as any).portalLinkedEmployeeId;
 
-  if (portalRole !== "manager") {
+  if (portalRole !== "manager" && portalRole !== "dept_manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
 
-  // Resolve the manager's own employee ID so we can filter to their team only.
-  // For preview tokens the linkedEmployeeId is embedded in the JWT.
-  // For real sessions we look up by email.
+  // Top-level managers see ALL pending_review orders across every team.
+  // Dept managers (team managers) only see orders from their own team,
+  // resolved via their linked employee record.
+  if (portalRole === "manager") {
+    const rows = await db.execute(sql`
+      SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
+             po_number, portal_submitted_by_name, portal_submitted_by_email, portal_submitted_at,
+             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+      FROM orders
+      WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+      ORDER BY created_at DESC
+    `);
+    res.json(rows.rows);
+    return;
+  }
+
+  // dept_manager: resolve their employee ID and filter to their team only.
   let managerEmployeeId: number | null = linkedEmployeeId ?? null;
 
   if (!managerEmployeeId && !portalIsPreview && portalUserId) {
@@ -1121,9 +1135,8 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
     }
   }
 
-  // If we found the manager's employee record, only show orders submitted by
-  // members of their team (employees whose manager_id = this manager's employee id).
-  // If we can't resolve the manager's employee record, fall back to showing all.
+  // If we can resolve the team manager's employee record, filter to their team.
+  // Otherwise fall back to showing all pending orders (safe default).
   const rows = await db.execute(
     managerEmployeeId !== null
       ? sql`
@@ -1160,7 +1173,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
 router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager") {
+  if (portalRole !== "manager" && portalRole !== "dept_manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
@@ -1219,7 +1232,7 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
 router.post("/portal/manager/orders/:id/reject", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager") {
+  if (portalRole !== "manager" && portalRole !== "dept_manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }

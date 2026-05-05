@@ -421,7 +421,7 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      {isManager && <ManagerReviewPanel />}
+      {(isManager || isDeptManager) && <ManagerReviewPanel />}
 
       {isLoading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
