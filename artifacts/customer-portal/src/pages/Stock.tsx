@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -16,15 +15,20 @@ import {
 } from "@/components/ui/sheet";
 import {
   AlertTriangle, Plus, ArrowUpCircle, ArrowDownCircle, History,
-  Pencil, Trash2, Package, MapPin, TrendingDown, RefreshCw,
+  Pencil, Trash2, Package, MapPin, TrendingDown, RefreshCw, Shirt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface StockItem {
   id: number;
   name: string;
   product_id: number | null;
   product_name: string | null;
+  product_sku: string | null;
+  product_image_url: string | null;
+  variant_image_url: string | null;
   colour: string | null;
   size: string | null;
   unit_price: string | null;
@@ -32,8 +36,18 @@ interface StockItem {
   min_quantity: number;
   location: string | null;
   notes: string | null;
+  finish_id: number | null;
+  finish_name: string | null;
   movement_count: number;
   last_movement_at: string | null;
+}
+
+interface StockProcess {
+  finish_id: number;
+  process_id: number;
+  item_finish_name: string;
+  process_type: string;
+  placement: string | null;
 }
 
 interface Movement {
@@ -47,13 +61,46 @@ interface Movement {
   created_at: string;
 }
 
-function fmt(iso: string) {
-  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+// ─── Card group ───────────────────────────────────────────────────────────────
+
+interface CardGroup {
+  key: string;
+  displayName: string;
+  productSku: string | null;
+  imageUrl: string | null;
+  colour: string | null;
+  finishId: number | null;
+  finishName: string | null;
+  location: string | null;
+  items: StockItem[];
 }
 
-function fmtQty(q: number) {
-  const abs = Math.abs(q);
-  return q > 0 ? `+${abs}` : `${q}`;
+function groupItems(items: StockItem[]): CardGroup[] {
+  const map = new Map<string, CardGroup>();
+  for (const item of items) {
+    const key = `${item.product_id ?? item.name}|${item.colour ?? ""}|${item.finish_id ?? ""}`;
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        displayName: item.product_name ?? item.name,
+        productSku: item.product_sku ?? null,
+        imageUrl: item.variant_image_url ?? item.product_image_url ?? null,
+        colour: item.colour,
+        finishId: item.finish_id,
+        finishName: item.finish_name,
+        location: item.location,
+        items: [],
+      });
+    }
+    map.get(key)!.items.push(item);
+  }
+  return Array.from(map.values());
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function fmt(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 function movementLabel(type: string) {
@@ -65,16 +112,219 @@ function movementLabel(type: string) {
   return { label: type, color: "text-muted-foreground" };
 }
 
+// ─── Process badge ────────────────────────────────────────────────────────────
+
+function ProcessBadge({ type }: { type: string }) {
+  const colours: Record<string, string> = {
+    embroidery: "bg-purple-100 text-purple-700 border-purple-200",
+    print: "bg-blue-100 text-blue-700 border-blue-200",
+    dtf: "bg-cyan-100 text-cyan-700 border-cyan-200",
+    badge: "bg-amber-100 text-amber-700 border-amber-200",
+    heat_transfer: "bg-orange-100 text-orange-700 border-orange-200",
+  };
+  const cls = colours[type?.toLowerCase()] ?? "bg-muted text-muted-foreground border-border";
+  return (
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${cls}`}>
+      {type?.replace(/_/g, " ")}
+    </span>
+  );
+}
+
+// ─── Product image with fallback ──────────────────────────────────────────────
+
+function ProductImage({ src, alt }: { src: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center">
+        <Shirt className="w-10 h-10 text-muted-foreground/20" />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="w-full h-full object-contain p-2"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+// ─── Stock card ───────────────────────────────────────────────────────────────
+
+function StockCard({
+  group,
+  processes,
+  onAdjust,
+  onHistory,
+  onEdit,
+  onDelete,
+}: {
+  group: CardGroup;
+  processes: StockProcess[];
+  onAdjust: (item: StockItem) => void;
+  onHistory: (item: StockItem) => void;
+  onEdit: (item: StockItem) => void;
+  onDelete: (item: StockItem) => void;
+}) {
+  const groupProcesses = group.finishId != null
+    ? processes.filter(p => p.finish_id === group.finishId)
+    : [];
+
+  const hasLow = group.items.some(i => i.min_quantity > 0 && i.stock_quantity <= i.min_quantity);
+
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
+      {/* Image area */}
+      <div className="relative aspect-square bg-white border-b">
+        <ProductImage src={group.imageUrl} alt={group.displayName} />
+        {hasLow && (
+          <div className="absolute top-2 right-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 border border-amber-300 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              <TrendingDown className="w-3 h-3" /> Low stock
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Card body */}
+      <div className="p-3 flex flex-col gap-2 flex-1">
+        {/* Name + colour + SKU */}
+        <div>
+          <p className="font-semibold text-sm leading-snug line-clamp-2">{group.displayName}</p>
+          {(group.colour || group.productSku) && (
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              {[group.colour, group.productSku].filter(Boolean).join(" · ")}
+            </p>
+          )}
+          {group.finishName && (
+            <p className="text-[11px] text-muted-foreground mt-0.5 italic">{group.finishName}</p>
+          )}
+        </div>
+
+        {/* Process badges */}
+        {groupProcesses.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {groupProcesses.map(p => (
+              <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
+                {p.process_type && <ProcessBadge type={p.process_type} />}
+                {p.item_finish_name && (
+                  <span className="text-[10px] text-foreground/70 font-medium">{p.item_finish_name}</span>
+                )}
+                {p.placement && (
+                  <span className="text-[10px] text-muted-foreground">· {p.placement}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Location */}
+        {group.location && (
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <MapPin className="w-3 h-3 shrink-0" />
+            {group.location}
+          </p>
+        )}
+
+        {/* Divider */}
+        <div className="border-t" />
+
+        {/* Per-size rows */}
+        <div className="flex flex-col gap-1.5">
+          {group.items.map(item => {
+            const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
+            return (
+              <div
+                key={item.id}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs",
+                  isLow ? "bg-amber-50 border border-amber-200" : "bg-muted/40"
+                )}
+              >
+                {/* Size chip */}
+                <span className={cn(
+                  "rounded-md px-2 py-0.5 text-xs font-semibold shrink-0",
+                  isLow
+                    ? "bg-amber-200 text-amber-800"
+                    : "bg-background border text-foreground"
+                )}>
+                  {item.size ?? "—"}
+                </span>
+
+                {/* Quantity */}
+                <span className={cn(
+                  "font-bold text-sm tabular-nums",
+                  isLow ? "text-amber-700" : "text-foreground"
+                )}>
+                  {item.stock_quantity}
+                </span>
+                {item.min_quantity > 0 && (
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    / {item.min_quantity} min
+                  </span>
+                )}
+                {isLow && <TrendingDown className="w-3 h-3 text-amber-500 shrink-0" />}
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Actions */}
+                <div className="flex items-center gap-0.5">
+                  <button
+                    onClick={() => onAdjust(item)}
+                    className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
+                    title="Adjust stock"
+                  >
+                    <ArrowUpCircle className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onHistory(item)}
+                    className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
+                    title="Movement history"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onEdit(item)}
+                    className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => onDelete(item)}
+                    className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                    title="Remove"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function StockPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const { data: items = [], isLoading } = useQuery<StockItem[]>({
+  const { data, isLoading } = useQuery<{ items: StockItem[]; processes: StockProcess[] }>({
     queryKey: ["portal-stock"],
     queryFn: () => apiFetch("/portal/stock"),
   });
 
-  // ── Add item dialog ────────────────────────────────────────────────────────
+  const items = data?.items ?? [];
+  const processes = data?.processes ?? [];
+
+  // ── Add item dialog ─────────────────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     name: "", colour: "", size: "", initialQuantity: "0",
@@ -105,7 +355,7 @@ export default function StockPage() {
     });
   }
 
-  // ── Edit item dialog ───────────────────────────────────────────────────────
+  // ── Edit item dialog ────────────────────────────────────────────────────────
   const [editItem, setEditItem] = useState<StockItem | null>(null);
   const [editForm, setEditForm] = useState({ name: "", colour: "", size: "", minQuantity: "0", location: "", notes: "" });
 
@@ -147,7 +397,7 @@ export default function StockPage() {
     });
   }
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
+  // ── Delete ──────────────────────────────────────────────────────────────────
   const [deleteItem, setDeleteItem] = useState<StockItem | null>(null);
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/portal/stock/${id}`, { method: "DELETE" }),
@@ -159,7 +409,7 @@ export default function StockPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  // ── Adjust dialog ──────────────────────────────────────────────────────────
+  // ── Adjust dialog ───────────────────────────────────────────────────────────
   const [adjustItem, setAdjustItem] = useState<StockItem | null>(null);
   const [adjustForm, setAdjustForm] = useState({ type: "in" as "in" | "out" | "adjustment", quantity: "1", notes: "", recipientName: "" });
 
@@ -194,7 +444,7 @@ export default function StockPage() {
     });
   }
 
-  // ── Movement history sheet ─────────────────────────────────────────────────
+  // ── Movement history sheet ──────────────────────────────────────────────────
   const [historyItem, setHistoryItem] = useState<StockItem | null>(null);
   const { data: movements = [], isLoading: movementsLoading } = useQuery<Movement[]>({
     queryKey: ["portal-stock-movements", historyItem?.id],
@@ -203,6 +453,7 @@ export default function StockPage() {
   });
 
   const lowStockCount = items.filter(i => i.min_quantity > 0 && i.stock_quantity <= i.min_quantity).length;
+  const cardGroups = groupItems(items);
 
   return (
     <PortalLayout>
@@ -231,12 +482,12 @@ export default function StockPage() {
           </div>
         )}
 
-        {/* Stock table */}
+        {/* Card grid */}
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">
             <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading…
           </div>
-        ) : items.length === 0 ? (
+        ) : cardGroups.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
             <Package className="w-12 h-12 opacity-20" />
             <p className="font-medium">No items in your stores yet</p>
@@ -246,88 +497,18 @@ export default function StockPage() {
             </Button>
           </div>
         ) : (
-          <div className="rounded-xl border overflow-hidden shadow-sm">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="text-left px-4 py-3 font-semibold">Item</th>
-                  <th className="text-left px-4 py-3 font-semibold hidden sm:table-cell">Colour / Size</th>
-                  <th className="text-left px-4 py-3 font-semibold hidden md:table-cell">Location</th>
-                  <th className="text-right px-4 py-3 font-semibold">Qty</th>
-                  <th className="text-right px-4 py-3 font-semibold hidden sm:table-cell">Min</th>
-                  <th className="text-right px-4 py-3 font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {items.map(item => {
-                  const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
-                  return (
-                    <tr key={item.id} className={cn("hover:bg-muted/30 transition-colors", isLow && "bg-amber-50/60 hover:bg-amber-50")}>
-                      <td className="px-4 py-3">
-                        <div className="font-medium">{item.name}</div>
-                        {item.product_name && (
-                          <div className="text-xs text-muted-foreground">{item.product_name}</div>
-                        )}
-                        <div className="sm:hidden text-xs text-muted-foreground mt-0.5">
-                          {[item.colour, item.size].filter(Boolean).join(" · ")}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 hidden sm:table-cell text-muted-foreground">
-                        {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
-                      </td>
-                      <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">
-                        {item.location ? (
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="w-3 h-3 shrink-0" /> {item.location}
-                          </span>
-                        ) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={cn("font-semibold text-base", isLow ? "text-amber-700" : "text-foreground")}>
-                          {item.stock_quantity}
-                        </span>
-                        {isLow && <TrendingDown className="w-3.5 h-3.5 text-amber-500 inline ml-1" />}
-                      </td>
-                      <td className="px-4 py-3 text-right hidden sm:table-cell text-muted-foreground">
-                        {item.min_quantity > 0 ? item.min_quantity : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => openAdjust(item)}
-                            className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            title="Adjust"
-                          >
-                            <ArrowUpCircle className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setHistoryItem(item)}
-                            className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            title="Movement history"
-                          >
-                            <History className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openEdit(item)}
-                            className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            title="Edit"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteItem(item)}
-                            className="p-1.5 rounded-md hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                            title="Remove"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {cardGroups.map(group => (
+              <StockCard
+                key={group.key}
+                group={group}
+                processes={processes}
+                onAdjust={openAdjust}
+                onHistory={setHistoryItem}
+                onEdit={openEdit}
+                onDelete={setDeleteItem}
+              />
+            ))}
           </div>
         )}
 
@@ -429,7 +610,9 @@ export default function StockPage() {
             <DialogHeader><DialogTitle>Remove Item</DialogTitle></DialogHeader>
             <p className="text-sm text-muted-foreground py-2">
               Remove <strong>{deleteItem?.name}</strong>
-              {deleteItem?.colour || deleteItem?.size ? ` (${[deleteItem?.colour, deleteItem?.size].filter(Boolean).join(", ")})` : ""}?
+              {deleteItem?.colour || deleteItem?.size
+                ? ` (${[deleteItem?.colour, deleteItem?.size].filter(Boolean).join(", ")})`
+                : ""}?
               This will also delete all movement history for this item.
             </p>
             <DialogFooter>
@@ -450,7 +633,7 @@ export default function StockPage() {
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle>
-                Adjust — {adjustItem?.name}
+                Adjust — {adjustItem?.product_name ?? adjustItem?.name}
                 {adjustItem?.size ? ` (${adjustItem.size})` : ""}
               </DialogTitle>
             </DialogHeader>
@@ -488,30 +671,34 @@ export default function StockPage() {
                   <p className="text-xs text-muted-foreground">
                     Current stock: <strong>{adjustItem.stock_quantity}</strong>
                     {parseInt(adjustForm.quantity) > adjustItem.stock_quantity
-                      ? <span className="text-red-500 ml-1">— exceeds available stock</span>
+                      ? <span className="text-amber-600"> — this will go negative</span>
                       : null}
                   </p>
                 )}
               </div>
-              {(adjustForm.type === "out" || adjustForm.type === "in") && (
+              {adjustForm.type === "out" && (
                 <div className="space-y-1.5">
-                  <Label>{adjustForm.type === "out" ? "Recipient Name" : "Supplier / Source"}</Label>
+                  <Label>Recipient Name <span className="text-muted-foreground font-normal">(optional)</span></Label>
                   <Input
-                    placeholder={adjustForm.type === "out" ? "Who is receiving these items?" : "Where are these items from?"}
+                    placeholder="Who is this being issued to?"
                     value={adjustForm.recipientName}
                     onChange={e => setAdjustForm(f => ({ ...f, recipientName: e.target.value }))}
                   />
                 </div>
               )}
               <div className="space-y-1.5">
-                <Label>Notes</Label>
-                <Textarea rows={2} placeholder="Optional notes…" value={adjustForm.notes} onChange={e => setAdjustForm(f => ({ ...f, notes: e.target.value }))} />
+                <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  placeholder="Reason for adjustment…"
+                  value={adjustForm.notes}
+                  onChange={e => setAdjustForm(f => ({ ...f, notes: e.target.value }))}
+                />
               </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAdjustItem(null)}>Cancel</Button>
               <Button onClick={handleAdjust} disabled={adjustMutation.isPending}>
-                {adjustMutation.isPending ? "Saving…" : "Record Movement"}
+                {adjustMutation.isPending ? "Saving…" : "Save"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -519,50 +706,48 @@ export default function StockPage() {
 
         {/* ── Movement History Sheet ───────────────────────────────────────── */}
         <Sheet open={!!historyItem} onOpenChange={v => !v && setHistoryItem(null)}>
-          <SheetContent className="w-full sm:max-w-md overflow-y-auto">
+          <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
             <SheetHeader className="mb-4">
               <SheetTitle>
-                Movement History
-                {historyItem && (
-                  <span className="block text-sm font-normal text-muted-foreground mt-0.5">
-                    {historyItem.name}
-                    {historyItem.size ? ` · ${historyItem.size}` : ""}
-                    {historyItem.colour ? ` · ${historyItem.colour}` : ""}
-                  </span>
-                )}
+                Movement History — {historyItem?.product_name ?? historyItem?.name}
+                {historyItem?.size ? ` (${historyItem.size})` : ""}
               </SheetTitle>
             </SheetHeader>
+
             {movementsLoading ? (
-              <div className="flex items-center gap-2 py-8 text-muted-foreground">
+              <div className="flex items-center gap-2 py-8 justify-center text-muted-foreground">
                 <RefreshCw className="w-4 h-4 animate-spin" /> Loading…
               </div>
             ) : movements.length === 0 ? (
-              <div className="py-12 text-center text-muted-foreground">
+              <div className="text-center py-12 text-muted-foreground">
                 <History className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                <p className="text-sm">No movements recorded yet</p>
+                <p className="text-sm">No movements recorded yet.</p>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {movements.map(m => {
                   const { label, color } = movementLabel(m.movement_type);
+                  const sign = m.movement_type === "out" || m.movement_type === "issue" ? "-" : m.movement_type === "in" ? "+" : "±";
                   return (
-                    <div key={m.id} className="rounded-lg border bg-card px-4 py-3 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={cn("text-sm font-semibold", color)}>{label}</span>
-                        <span className={cn("text-sm font-bold tabular-nums", m.quantity > 0 ? "text-green-600" : "text-red-500")}>
-                          {fmtQty(m.quantity)}
-                        </span>
+                    <div key={m.id} className="rounded-lg border p-3 flex items-start gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={cn("text-xs font-semibold", color)}>{label}</span>
+                          <span className="text-sm font-bold tabular-nums">{sign}{Math.abs(m.quantity)}</span>
+                        </div>
+                        {m.recipient_name && (
+                          <p className="text-xs text-muted-foreground mt-0.5">Issued to: {m.recipient_name}</p>
+                        )}
+                        {m.reference && (
+                          <p className="text-xs text-muted-foreground mt-0.5">Ref: {m.reference}</p>
+                        )}
+                        {m.notes && (
+                          <p className="text-xs text-muted-foreground mt-0.5 italic">{m.notes}</p>
+                        )}
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {fmt(m.created_at)}{m.created_by_name ? ` · ${m.created_by_name}` : ""}
+                        </p>
                       </div>
-                      {m.recipient_name && (
-                        <p className="text-xs text-muted-foreground">Recipient: {m.recipient_name}</p>
-                      )}
-                      {m.reference && (
-                        <p className="text-xs text-muted-foreground">Ref: {m.reference}</p>
-                      )}
-                      {m.notes && <p className="text-xs text-muted-foreground">{m.notes}</p>}
-                      <p className="text-xs text-muted-foreground">
-                        {fmt(m.created_at)}{m.created_by_name ? ` · ${m.created_by_name}` : ""}
-                      </p>
                     </div>
                   );
                 })}

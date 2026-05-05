@@ -2203,17 +2203,37 @@ router.get("/portal/stock", portalAuth, async (req: Request, res: Response) => {
   if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
 
   const rows = await db.execute(sql`
-    SELECT fi.id, fi.name, fi.product_id, p.name AS product_name, fi.colour, fi.size,
-           fi.unit_price, fi.stock_quantity, fi.min_quantity, fi.location, fi.notes,
-           fi.updated_at,
+    SELECT fi.id, fi.name, fi.product_id, p.name AS product_name, p.sku AS product_sku,
+           p.image_url AS product_image_url,
+           (SELECT pv.image_url
+              FROM product_variants pv
+             WHERE pv.product_id = fi.product_id
+               AND lower(pv.colour) = lower(fi.colour)
+               AND pv.image_url IS NOT NULL
+             LIMIT 1
+           ) AS variant_image_url,
+           fi.colour, fi.size, fi.unit_price, fi.stock_quantity, fi.min_quantity,
+           fi.location, fi.notes, fi.finish_id, cf.name AS finish_name, fi.updated_at,
            (SELECT COUNT(*) FROM customer_stock_movements WHERE stock_item_id = fi.id) AS movement_count,
            (SELECT created_at FROM customer_stock_movements WHERE stock_item_id = fi.id ORDER BY created_at DESC LIMIT 1) AS last_movement_at
     FROM customer_finished_items fi
     LEFT JOIN products p ON p.id = fi.product_id
+    LEFT JOIN customer_finishes cf ON cf.id = fi.finish_id
     WHERE fi.customer_id = ${customerId}
     ORDER BY fi.name ASC, fi.colour ASC, fi.size ASC
   `);
-  res.json(rows.rows);
+
+  const processes = await db.execute(sql`
+    SELECT cfp.finish_id, cp.id AS process_id, cp.name AS item_finish_name,
+           cp.type AS process_type, cp.placement
+    FROM customer_finish_processes cfp
+    JOIN customer_processes cp ON cp.id = cfp.process_id
+    JOIN customer_finishes  cf ON cf.id = cfp.finish_id
+    WHERE cf.customer_id = ${customerId}
+    ORDER BY cp.name
+  `);
+
+  res.json({ items: rows.rows, processes: processes.rows });
 });
 
 // ─── POST /portal/stock ───────────────────────────────────────────────────────
