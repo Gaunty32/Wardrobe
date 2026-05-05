@@ -1271,14 +1271,19 @@ router.delete("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
 });
 
 router.get("/dashboard/stats", async (_req, res): Promise<void> => {
+  // Exclude portal_draft orders — these are awaiting customer manager approval
+  // and have not yet entered the SBS workflow
+  const notPortalDraft = sql`${ordersTable.status} IS DISTINCT FROM 'portal_draft'`;
+
   const [{ count: totalOrders }] = await db
     .select({ count: sql<number>`count(*)::int` })
-    .from(ordersTable);
+    .from(ordersTable)
+    .where(notPortalDraft);
 
   const [{ total: totalRevenue }] = await db
     .select({ total: sql<number>`coalesce(sum(total_amount), 0)::float` })
     .from(ordersTable)
-    .where(eq(ordersTable.status, "delivered"));
+    .where(and(eq(ordersTable.status, "delivered"), notPortalDraft));
 
   const [{ count: totalCustomers }] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -1294,6 +1299,7 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
       count: sql<number>`count(*)::int`,
     })
     .from(ordersTable)
+    .where(notPortalDraft)
     .groupBy(ordersTable.status);
 
   const ordersByStatus = { draft: 0, confirmed: 0, shipped: 0, delivered: 0, cancelled: 0 };
@@ -1307,6 +1313,7 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
   const recentOrders = await db
     .select()
     .from(ordersTable)
+    .where(notPortalDraft)
     .orderBy(desc(ordersTable.createdAt))
     .limit(10);
 
