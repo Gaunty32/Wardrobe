@@ -827,6 +827,16 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       submitterName = prefix.replace(/\b\w/g, (c: string) => c.toUpperCase());
     }
   }
+  // For preview sessions there is no email; resolve the name from the employee record directly
+  if (!submitterName && submitterEmployeeId) {
+    const empNameRows = await db.execute(sql`
+      SELECT first_name, last_name FROM customer_employees WHERE id = ${submitterEmployeeId} LIMIT 1
+    `);
+    if (empNameRows.rows.length > 0) {
+      const e = empNameRows.rows[0] as any;
+      submitterName = [e.first_name, e.last_name].filter(Boolean).join(" ") || null;
+    }
+  }
 
   // Managers submit directly; dept_managers/members save for manager review
   const portalStatus = portalRole === "manager" ? "submitted" : "pending_review";
@@ -1247,7 +1257,14 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   if (portalRole === "manager") {
     const rows = await db.execute(sql`
       SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
-             po_number, portal_submitted_by_name, portal_submitted_by_email, portal_submitted_at,
+             po_number, portal_submitted_by_email, portal_submitted_at,
+             COALESCE(
+               portal_submitted_by_name,
+               CASE WHEN portal_submitted_by_employee_id IS NOT NULL THEN (
+                 SELECT TRIM(first_name || ' ' || COALESCE(last_name, ''))
+                 FROM customer_employees WHERE id = portal_submitted_by_employee_id
+               ) END
+             ) AS portal_submitted_by_name,
              (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
       FROM orders
       WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'

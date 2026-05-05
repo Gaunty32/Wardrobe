@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Plus, Loader2, ShoppingBag, ArrowRight, Clock, CheckCircle2, XCircle, Package, AlertCircle, User,
+  Hash, Pencil, Check, X,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -192,6 +193,23 @@ function ManagerReviewPanel() {
   const [bulkPoNumber, setBulkPoNumber] = useState("");
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
+  // Inline per-order PO editing
+  const [editingPoId, setEditingPoId] = useState<number | null>(null);
+  const [poInputValue, setPoInputValue] = useState("");
+
+  const setPoMutation = useMutation({
+    mutationFn: ({ orderId, poNumber }: { orderId: number; poNumber: string }) =>
+      apiFetch(`/portal/orders/${orderId}/po`, {
+        method: "PATCH",
+        body: JSON.stringify({ poNumber: poNumber.trim() }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["portal-manager-pending"] });
+      setEditingPoId(null);
+    },
+    onError: () => toast({ title: "Could not save PO number", variant: "destructive" }),
+  });
+
   const { data: pendingOrders = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-manager-pending"],
     queryFn: () => apiFetch("/portal/manager/pending-orders"),
@@ -300,31 +318,68 @@ function ManagerReviewPanel() {
                 />
 
                 {/* Clickable info area → order detail */}
-                <button
-                  className="flex-1 min-w-0 text-left group"
-                  onClick={() => setLocation(`/orders/${order.id}`)}
-                >
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-primary text-sm group-hover:underline underline-offset-2">
-                      {order.order_number}
-                    </span>
-                    <span className="text-xs text-muted-foreground">{formatDate(order.order_date)}</span>
-                    {order.po_number && (
-                      <Badge variant="outline" className="text-xs font-normal">PO: {order.po_number}</Badge>
+                <div className="flex-1 min-w-0">
+                  <button
+                    className="w-full text-left group"
+                    onClick={() => setLocation(`/orders/${order.id}`)}
+                  >
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-primary text-sm group-hover:underline underline-offset-2">
+                        {order.order_number}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{formatDate(order.order_date)}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <User className="w-3 h-3 text-muted-foreground shrink-0" />
+                      <span className="text-sm text-muted-foreground">
+                        {order.portal_submitted_by_name ?? "Unknown"}
+                      </span>
+                    </div>
+                    {order.portal_notes && (
+                      <p className="text-xs text-muted-foreground italic truncate mt-0.5 max-w-[260px]">
+                        {order.portal_notes}
+                      </p>
                     )}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <User className="w-3 h-3 text-muted-foreground shrink-0" />
-                    <span className="text-sm text-muted-foreground">
-                      {order.portal_submitted_by_name ?? "Unknown"}
-                    </span>
-                  </div>
-                  {order.portal_notes && (
-                    <p className="text-xs text-muted-foreground italic truncate mt-0.5 max-w-[260px]">
-                      {order.portal_notes}
-                    </p>
+                  </button>
+
+                  {/* Inline PO number per order */}
+                  {editingPoId === order.id ? (
+                    <form
+                      className="flex items-center gap-1 mt-1"
+                      onSubmit={e => {
+                        e.preventDefault();
+                        setPoMutation.mutate({ orderId: order.id, poNumber: poInputValue });
+                      }}
+                    >
+                      <Input
+                        autoFocus
+                        value={poInputValue}
+                        onChange={e => setPoInputValue(e.target.value)}
+                        placeholder="PO number"
+                        className="h-6 text-xs w-36 px-2"
+                        maxLength={100}
+                        onKeyDown={e => { if (e.key === "Escape") setEditingPoId(null); }}
+                      />
+                      <Button type="submit" size="icon" className="h-6 w-6" disabled={setPoMutation.isPending}>
+                        <Check className="w-3 h-3" />
+                      </Button>
+                      <Button type="button" size="icon" variant="ghost" className="h-6 w-6"
+                        onClick={() => setEditingPoId(null)}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </form>
+                  ) : (
+                    <button
+                      className="flex items-center gap-1 mt-1 group/po text-xs text-muted-foreground hover:text-foreground"
+                      onClick={e => { e.stopPropagation(); setPoInputValue(order.po_number ?? ""); setEditingPoId(order.id); }}
+                    >
+                      {order.po_number
+                        ? <><Hash className="w-3 h-3 shrink-0" /><span className="font-medium text-foreground/80">{order.po_number}</span><Pencil className="w-2.5 h-2.5 opacity-0 group-hover/po:opacity-60 transition-opacity" /></>
+                        : <span className="italic opacity-60 hover:opacity-100 transition-opacity">+ Add PO number</span>
+                      }
+                    </button>
                   )}
-                </button>
+                </div>
 
                 <span className="w-20 text-right text-sm text-muted-foreground tabular-nums hidden sm:block">
                   {order.item_count} item{Number(order.item_count) !== 1 ? "s" : ""}

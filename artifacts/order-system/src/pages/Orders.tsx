@@ -309,6 +309,9 @@ export default function Orders() {
                               {isPortalPending && <Globe className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
                               <span className={cn("font-bold text-base tracking-wide", isPortalPending ? "text-amber-700" : "text-primary")}>{order.orderNumber}</span>
                             </div>
+                            {(order as any).poNumber && (
+                              <div className="text-xs text-muted-foreground font-mono mt-0.5">PO: {(order as any).poNumber}</div>
+                            )}
                           </TableCell>
                           <TableCell>
                             <DueDateCell requiredDate={(order as any).requiredDate} />
