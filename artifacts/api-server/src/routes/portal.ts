@@ -386,8 +386,8 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
   const portalIsPreview = (req as any).portalIsPreview;
   const linkedEmployeeId = (req as any).portalLinkedEmployeeId;
 
-  // Only the Manager grade sees all orders; everyone else sees only their own
-  if (portalRole === "manager") {
+  // Manager and dept_manager see all orders for the customer (pending_review ones live in the approval panel)
+  if (portalRole === "manager" || portalRole === "dept_manager") {
     const rows = await db.execute(sql`
       SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
              po_number,
@@ -405,7 +405,7 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
     return;
   }
 
-  // For dept_manager / member: resolve the submitter's email
+  // For member: resolve the submitter's email
   let submitterEmail: string | null = null;
   if (portalIsPreview && linkedEmployeeId) {
     // Preview token — look up the linked employee's email
@@ -1198,52 +1198,17 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
     return;
   }
 
-  // dept_manager: resolve their employee ID and filter to their team only.
-  let managerEmployeeId: number | null = linkedEmployeeId ?? null;
-
-  if (!managerEmployeeId && !portalIsPreview && portalUserId) {
-    const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
-    const mgrEmail: string | null = (userRows.rows[0] as any)?.email ?? null;
-    if (mgrEmail) {
-      const empRows = await db.execute(sql`
-        SELECT id FROM customer_employees
-        WHERE customer_id = ${customerId} AND lower(email) = lower(${mgrEmail})
-        LIMIT 1
-      `);
-      managerEmployeeId = (empRows.rows[0] as any)?.id ?? null;
-    }
-  }
-
-  // If we can resolve the team manager's employee record, filter to their team.
-  // Otherwise fall back to showing all pending orders (safe default).
-  const rows = await db.execute(
-    managerEmployeeId !== null
-      ? sql`
-          SELECT o.id, o.order_number, o.status, o.portal_status, o.total_amount,
-                 o.order_date, o.required_date, o.notes, o.portal_notes,
-                 o.po_number, o.portal_submitted_by_name, o.portal_submitted_by_email, o.portal_submitted_at,
-                 (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count
-          FROM orders o
-          WHERE o.customer_id = ${customerId}
-            AND o.source = 'portal'
-            AND o.portal_status = 'pending_review'
-            AND EXISTS (
-              SELECT 1 FROM customer_employees e
-              WHERE e.customer_id = ${customerId}
-                AND lower(e.email) = lower(o.portal_submitted_by_email)
-                AND e.manager_id = ${managerEmployeeId}
-            )
-          ORDER BY o.created_at DESC
-        `
-      : sql`
-          SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
-                 po_number, portal_submitted_by_name, portal_submitted_by_email, portal_submitted_at,
-                 (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
-          FROM orders
-          WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
-          ORDER BY created_at DESC
-        `
-  );
+  // dept_manager: show all pending_review orders for the customer.
+  // The manager_id team relationship is informational; we don't restrict by it
+  // so orders are never silently hidden when team links haven't been configured.
+  const rows = await db.execute(sql`
+    SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
+           po_number, portal_submitted_by_name, portal_submitted_by_email, portal_submitted_at,
+           (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+    FROM orders
+    WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+    ORDER BY created_at DESC
+  `);
   res.json(rows.rows);
 });
 
