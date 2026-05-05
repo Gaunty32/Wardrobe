@@ -337,6 +337,30 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_teams ADD COLUMN IF NOT EXISTS manager_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;
   `);
 
+  // Customer stock management — extend finished items with location & min stock level
+  // Also make product_id nullable so customers can create stock items without linking to an SBS product
+  await db.execute(sql`
+    ALTER TABLE customer_finished_items ADD COLUMN IF NOT EXISTS location text;
+    ALTER TABLE customer_finished_items ADD COLUMN IF NOT EXISTS min_quantity integer NOT NULL DEFAULT 0;
+    ALTER TABLE customer_finished_items ALTER COLUMN product_id DROP NOT NULL;
+  `);
+
+  // Audit trail for customer stock movements (in / out / adjustment / issue / transfer)
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_stock_movements (
+      id               serial PRIMARY KEY,
+      customer_id      integer NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      stock_item_id    integer NOT NULL REFERENCES customer_finished_items(id) ON DELETE CASCADE,
+      movement_type    text NOT NULL,
+      quantity         integer NOT NULL,
+      reference        text,
+      recipient_name   text,
+      notes            text,
+      created_by_name  text,
+      created_at       timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
   // In-app notifications for portal users
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS portal_notifications (

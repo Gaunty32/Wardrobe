@@ -649,7 +649,72 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
 
   try {
 
-  const itemsTotal = body.items.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
+  // ── Stock check: for managers, allocate from customer stock before going to SBS ──
+  const portalRole = (req as any).portalRole ?? "member";
+  let pickingNoteRef: string | null = null;
+  const pickingNoteItems: Array<{
+    stockItemId: number; itemName: string; colour: string | null; size: string | null;
+    quantity: number; recipientName: string | null; location: string | null;
+  }> = [];
+  let sbsItems = body.items;
+
+  if (portalRole === "manager") {
+    sbsItems = [];
+    for (const item of body.items) {
+      let allocatedFromStock = 0;
+      if (item.productId) {
+        const stockRows = await db.execute(sql`
+          SELECT id, name, stock_quantity, location
+          FROM customer_finished_items
+          WHERE customer_id = ${customerId}
+            AND product_id = ${item.productId}
+            AND stock_quantity > 0
+            AND (size IS NULL OR lower(size) = lower(${item.size ?? ""}))
+            AND (colour IS NULL OR lower(colour) = lower(${item.colour ?? ""}))
+          ORDER BY stock_quantity DESC
+          LIMIT 1
+        `);
+        if (stockRows.rows.length > 0) {
+          const si = stockRows.rows[0] as any;
+          allocatedFromStock = Math.min(Number(si.stock_quantity), item.quantity);
+          if (allocatedFromStock > 0) {
+            await db.execute(sql`
+              UPDATE customer_finished_items
+              SET stock_quantity = stock_quantity - ${allocatedFromStock}, updated_at = now()
+              WHERE id = ${si.id}
+            `);
+            pickingNoteItems.push({
+              stockItemId: si.id, itemName: item.productName, colour: item.colour ?? null,
+              size: item.size ?? null, quantity: allocatedFromStock,
+              recipientName: item.recipientName ?? null, location: si.location ?? null,
+            });
+          }
+        }
+      }
+      const remainingQty = item.quantity - allocatedFromStock;
+      if (remainingQty > 0) sbsItems.push({ ...item, quantity: remainingQty });
+    }
+    if (pickingNoteItems.length > 0) pickingNoteRef = `PN-${Date.now()}`;
+  }
+
+  // If all items were fulfilled from stock, skip creating an SBS order
+  if (sbsItems.length === 0 && pickingNoteRef) {
+    // Record movements against the picking note reference
+    const portalUserId = (req as any).portalUserId;
+    const userRowsPN = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+    const mgrEmailPN: string | null = (userRowsPN.rows[0] as any)?.email ?? null;
+    const mgrNamePN: string = mgrEmailPN ? mgrEmailPN.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : "Manager";
+    for (const pi of pickingNoteItems) {
+      await db.execute(sql`
+        INSERT INTO customer_stock_movements (customer_id, stock_item_id, movement_type, quantity, reference, recipient_name, notes, created_by_name, created_at)
+        VALUES (${customerId}, ${pi.stockItemId}, 'issue', ${-pi.quantity}, ${pickingNoteRef}, ${pi.recipientName}, 'Issued via order', ${mgrNamePN}, now())
+      `);
+    }
+    res.status(201).json({ allFromStock: true, pickingNote: { ref: pickingNoteRef, items: pickingNoteItems } });
+    return;
+  }
+
+  const itemsTotal = sbsItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
   const totalAmount = itemsTotal + (body.shippingCost ?? 0);
 
   // Get customer name and default delivery address
@@ -706,7 +771,6 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   }
 
   // Managers submit directly; dept_managers/members save for manager review
-  const portalRole = (req as any).portalRole ?? "member";
   const portalStatus = portalRole === "manager" ? "submitted" : "pending_review";
   const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
 
@@ -740,7 +804,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   await db.execute(sql`UPDATE orders SET order_number = ${orderNumber} WHERE id = ${orderId}`);
   const order = { id: orderId, order_number: orderNumber };
 
-  for (const item of body.items) {
+  for (const item of sbsItems) {
     const lineTotal = item.quantity * item.unitPrice;
     await db.execute(sql`
       INSERT INTO order_items (order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, recipient_employee_id, quantity, unit_price, line_total)
@@ -815,7 +879,22 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     // Manager submitted directly to SBS → no approval step needed, no extra notification
   }
 
-  res.status(201).json({ id: order.id, orderNumber: order.order_number, stripeCharge });
+  // ── Record stock movements for picking note items (mixed order) ──────────────
+  if (pickingNoteRef && pickingNoteItems.length > 0) {
+    for (const pi of pickingNoteItems) {
+      await db.execute(sql`
+        INSERT INTO customer_stock_movements (customer_id, stock_item_id, movement_type, quantity, reference, recipient_name, notes, created_by_name, created_at)
+        VALUES (${customerId}, ${pi.stockItemId}, 'issue', ${-pi.quantity}, ${pickingNoteRef}, ${pi.recipientName}, ${"Issued via order " + order.order_number}, ${submitterName}, now())
+      `);
+    }
+  }
+
+  res.status(201).json({
+    id: order.id,
+    orderNumber: order.order_number,
+    stripeCharge,
+    pickingNote: pickingNoteRef ? { ref: pickingNoteRef, items: pickingNoteItems } : null,
+  });
   } catch (err: any) {
     console.error("Order create error:", err);
     res.status(500).json({ error: err?.message ?? "Failed to create order" });
@@ -2070,6 +2149,198 @@ router.post("/portal/admin/send-mobile-instructions/:customerId", async (req: Re
 
   await sendMobileInstructionsEmail({ toEmail, toName, portalUrl, customerName });
   res.json({ ok: true, sentTo: toEmail });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CUSTOMER STOCK MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── GET /portal/stock ────────────────────────────────────────────────────────
+router.get("/portal/stock", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const rows = await db.execute(sql`
+    SELECT fi.id, fi.name, fi.product_id, p.name AS product_name, fi.colour, fi.size,
+           fi.unit_price, fi.stock_quantity, fi.min_quantity, fi.location, fi.notes,
+           fi.updated_at,
+           (SELECT COUNT(*) FROM customer_stock_movements WHERE stock_item_id = fi.id) AS movement_count,
+           (SELECT created_at FROM customer_stock_movements WHERE stock_item_id = fi.id ORDER BY created_at DESC LIMIT 1) AS last_movement_at
+    FROM customer_finished_items fi
+    LEFT JOIN products p ON p.id = fi.product_id
+    WHERE fi.customer_id = ${customerId}
+    ORDER BY fi.name ASC, fi.colour ASC, fi.size ASC
+  `);
+  res.json(rows.rows);
+});
+
+// ─── POST /portal/stock ───────────────────────────────────────────────────────
+router.post("/portal/stock", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  const portalUserId = (req as any).portalUserId;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const body = z.object({
+    name: z.string().min(1).max(200),
+    productId: z.number().int().positive().nullable().optional(),
+    colour: z.string().max(100).nullable().optional(),
+    size: z.string().max(50).nullable().optional(),
+    unitPrice: z.number().nonnegative().optional().default(0),
+    initialQuantity: z.number().int().min(0).default(0),
+    minQuantity: z.number().int().min(0).default(0),
+    location: z.string().max(200).nullable().optional(),
+    notes: z.string().nullable().optional(),
+  }).parse(req.body);
+
+  // Resolve manager name
+  const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+  const mgrEmail = (userRows.rows[0] as any)?.email ?? null;
+  const mgrName: string = mgrEmail ? mgrEmail.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : "Manager";
+
+  const result = await db.execute(sql`
+    INSERT INTO customer_finished_items (customer_id, name, product_id, colour, size, unit_price, stock_quantity, min_quantity, location, notes, created_at, updated_at)
+    VALUES (${customerId}, ${body.name}, ${body.productId ?? null}, ${body.colour ?? null}, ${body.size ?? null},
+            ${body.unitPrice.toFixed(2)}, ${body.initialQuantity}, ${body.minQuantity}, ${body.location ?? null}, ${body.notes ?? null}, now(), now())
+    RETURNING id
+  `);
+  const newId = (result.rows[0] as any).id as number;
+
+  if (body.initialQuantity > 0) {
+    await db.execute(sql`
+      INSERT INTO customer_stock_movements (customer_id, stock_item_id, movement_type, quantity, notes, created_by_name, created_at)
+      VALUES (${customerId}, ${newId}, 'in', ${body.initialQuantity}, 'Initial stock', ${mgrName}, now())
+    `);
+  }
+
+  res.status(201).json({ id: newId });
+});
+
+// ─── PATCH /portal/stock/:id ──────────────────────────────────────────────────
+router.patch("/portal/stock/:id", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const id = parseInt(req.params.id, 10);
+
+  const body = z.object({
+    name: z.string().min(1).max(200).optional(),
+    colour: z.string().max(100).nullable().optional(),
+    size: z.string().max(50).nullable().optional(),
+    unitPrice: z.number().nonnegative().optional(),
+    minQuantity: z.number().int().min(0).optional(),
+    location: z.string().max(200).nullable().optional(),
+    notes: z.string().nullable().optional(),
+  }).parse(req.body);
+
+  await db.execute(sql`
+    UPDATE customer_finished_items
+    SET name         = COALESCE(${body.name ?? null}, name),
+        colour       = COALESCE(${body.colour !== undefined ? body.colour : null}, colour),
+        size         = COALESCE(${body.size !== undefined ? body.size : null}, size),
+        unit_price   = COALESCE(${body.unitPrice != null ? body.unitPrice.toFixed(2) : null}, unit_price),
+        min_quantity = COALESCE(${body.minQuantity ?? null}, min_quantity),
+        location     = ${body.location !== undefined ? (body.location ?? null) : sql`location`},
+        notes        = ${body.notes !== undefined ? (body.notes ?? null) : sql`notes`},
+        updated_at   = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+  `);
+  res.json({ ok: true });
+});
+
+// ─── DELETE /portal/stock/:id ─────────────────────────────────────────────────
+router.delete("/portal/stock/:id", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const id = parseInt(req.params.id, 10);
+  await db.execute(sql`DELETE FROM customer_finished_items WHERE id = ${id} AND customer_id = ${customerId}`);
+  res.json({ ok: true });
+});
+
+// ─── POST /portal/stock/:id/adjust ───────────────────────────────────────────
+router.post("/portal/stock/:id/adjust", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  const portalUserId = (req as any).portalUserId;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const id = parseInt(req.params.id, 10);
+
+  const body = z.object({
+    type: z.enum(["in", "out", "adjustment"]),
+    quantity: z.number().int().positive(),
+    notes: z.string().nullable().optional(),
+    recipientName: z.string().nullable().optional(),
+  }).parse(req.body);
+
+  // Resolve manager name
+  const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+  const mgrEmail = (userRows.rows[0] as any)?.email ?? null;
+  const mgrName: string = mgrEmail ? mgrEmail.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : "Manager";
+
+  // Determine delta
+  const delta = body.type === "out" ? -body.quantity : body.quantity;
+
+  // Check we won't go negative for "out"
+  if (body.type === "out") {
+    const checkRows = await db.execute(sql`SELECT stock_quantity FROM customer_finished_items WHERE id = ${id} AND customer_id = ${customerId}`);
+    const current = (checkRows.rows[0] as any)?.stock_quantity ?? 0;
+    if (current + delta < 0) {
+      res.status(400).json({ error: `Insufficient stock. Current quantity: ${current}` });
+      return;
+    }
+  }
+
+  const updated = await db.execute(sql`
+    UPDATE customer_finished_items
+    SET stock_quantity = stock_quantity + ${delta}, updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+    RETURNING stock_quantity
+  `);
+  if (!updated.rows.length) { res.status(404).json({ error: "Stock item not found" }); return; }
+
+  await db.execute(sql`
+    INSERT INTO customer_stock_movements (customer_id, stock_item_id, movement_type, quantity, recipient_name, notes, created_by_name, created_at)
+    VALUES (${customerId}, ${id}, ${body.type}, ${delta}, ${body.recipientName ?? null}, ${body.notes ?? null}, ${mgrName}, now())
+  `);
+
+  res.json({ ok: true, newQuantity: (updated.rows[0] as any).stock_quantity });
+});
+
+// ─── GET /portal/stock/:id/movements ─────────────────────────────────────────
+router.get("/portal/stock/:id/movements", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const id = parseInt(req.params.id, 10);
+
+  const rows = await db.execute(sql`
+    SELECT id, movement_type, quantity, reference, recipient_name, notes, created_by_name, created_at
+    FROM customer_stock_movements
+    WHERE stock_item_id = ${id} AND customer_id = ${customerId}
+    ORDER BY created_at DESC
+    LIMIT 200
+  `);
+  res.json(rows.rows);
+});
+
+// ─── GET /portal/stock/picking-note/:ref ─────────────────────────────────────
+router.get("/portal/stock/picking-note/:ref", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const ref = req.params.ref;
+
+  const rows = await db.execute(sql`
+    SELECT m.id, m.quantity, m.recipient_name, m.notes, m.created_at, m.created_by_name,
+           fi.name AS item_name, fi.colour, fi.size, fi.location
+    FROM customer_stock_movements m
+    JOIN customer_finished_items fi ON fi.id = m.stock_item_id
+    WHERE m.reference = ${ref} AND m.customer_id = ${customerId}
+    ORDER BY fi.name ASC, fi.size ASC
+  `);
+  res.json({ ref, items: rows.rows });
 });
 
 export default router;

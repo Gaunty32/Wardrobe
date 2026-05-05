@@ -117,7 +117,8 @@ Tables in PostgreSQL:
 - `customer_finishes` — customerId, name, description
 - `customer_finish_processes` — finishId → processId (many-to-many)
 - `customer_finish_products` — finishId → productId (garment assignments)
-- `customer_finished_items` — customerId, roleId (nullable), name, productId, finishId, colour, size, unitPrice (Wardrobe)
+- `customer_finished_items` — customerId, roleId (nullable), name, productId (nullable), finishId, colour, size, unitPrice, location (nullable), min_quantity (default 0) — Wardrobe + Stock
+- `customer_stock_movements` — itemId, movementType (in/out/issue/adjustment), quantity, recipientName, reference, notes, createdBy, createdAt
 - `products` — name, sku, description, unit_price, stock_quantity, category, supplier_id
 - `product_attributes` — productId, type (colour/size), value
 - `product_variants` — productId, colour, size, stockQty, price
