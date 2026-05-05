@@ -408,57 +408,52 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
   // Dept_manager sees all non-pending orders for the customer, plus their own pending_review orders.
   // They cannot see other dept_managers' pending orders — only a top-level manager approves.
   if (portalRole === "dept_manager") {
+    // Resolve which employee this session belongs to (for filtering their orders).
+    // For preview sessions: the linked employee ID is in the JWT.
+    // For real logins: look up the portal user's linked_employee_id, with email as fallback.
+    let deptEmployeeId: number | null = null;
     let deptEmail: string | null = null;
+
     if (portalIsPreview && linkedEmployeeId) {
-      // Primary: find the portal user linked to this employee — their email
-      // matches what was stamped on the order when they placed it
-      const puRows = await db.execute(sql`
-        SELECT email FROM customer_portal_users
-        WHERE customer_id = ${customerId} AND linked_employee_id = ${linkedEmployeeId}
-        LIMIT 1
-      `);
-      deptEmail = (puRows.rows[0] as any)?.email ?? null;
-      // Fallback: use the employee record's own email
-      if (!deptEmail) {
-        const empRows = await db.execute(sql`SELECT email FROM customer_employees WHERE id = ${linkedEmployeeId} LIMIT 1`);
-        deptEmail = (empRows.rows[0] as any)?.email ?? null;
-      }
+      deptEmployeeId = linkedEmployeeId;
     } else if (portalUserId) {
-      const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+      const userRows = await db.execute(sql`
+        SELECT email, linked_employee_id FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1
+      `);
       deptEmail = (userRows.rows[0] as any)?.email ?? null;
+      deptEmployeeId = (userRows.rows[0] as any)?.linked_employee_id ?? null;
     }
-    // If we couldn't resolve the email (e.g. test accounts without emails or
-    // unlinked employee records), show all orders for the customer so the
-    // preview is still usable. Real logins always have a portalUserId email.
-    const rows = deptEmail
-      ? await db.execute(sql`
-          SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
-                 po_number,
-                 portal_submitted_by_name, portal_submitted_at,
-                 portal_approved_by_name, portal_approved_at,
-                 (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
-          FROM orders
-          WHERE customer_id = ${customerId}
-            AND source = 'portal'
-            AND (
-              portal_status IS DISTINCT FROM 'pending_review'
-              OR lower(portal_submitted_by_email) = lower(${deptEmail})
-            )
-          ORDER BY created_at DESC
-          LIMIT 100
-        `)
-      : await db.execute(sql`
-          SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
-                 po_number,
-                 portal_submitted_by_name, portal_submitted_at,
-                 portal_approved_by_name, portal_approved_at,
-                 (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
-          FROM orders
-          WHERE customer_id = ${customerId}
-            AND source = 'portal'
-          ORDER BY created_at DESC
-          LIMIT 100
-        `);
+
+    // Build the ownership condition:
+    //   - Primary:  match by stamped employee ID (works for all new orders)
+    //   - Secondary: match by email (for orders placed before employee ID was stamped)
+    //   - Fallback: if neither identifier is known, show all orders (test accounts / unlinked)
+    let ownsOrder: string;
+    if (deptEmployeeId !== null) {
+      ownsOrder = `portal_submitted_by_employee_id = ${deptEmployeeId}` +
+        (deptEmail ? ` OR lower(portal_submitted_by_email) = lower('${deptEmail.replace(/'/g, "''")}')` : "");
+    } else if (deptEmail) {
+      ownsOrder = `lower(portal_submitted_by_email) = lower('${deptEmail.replace(/'/g, "''")}')`;
+    } else {
+      ownsOrder = "true"; // no identifier — show all (testing only)
+    }
+
+    const rows = await db.execute(sql`
+      SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
+             po_number,
+             portal_submitted_by_name, portal_submitted_at,
+             portal_approved_by_name, portal_approved_at,
+             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+      FROM orders
+      WHERE customer_id = ${customerId}
+        AND source = 'portal'
+        AND (
+          portal_status IS DISTINCT FROM 'pending_review'
+          OR (${sql.raw(ownsOrder)})
+        )
+      ORDER BY created_at DESC
+      LIMIT 100
+    `);
     res.json(rows.rows);
     return;
   }
@@ -796,10 +791,15 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     customerDefaultAddressId = (newAddrRows.rows[0] as any)?.id ?? null;
   }
 
-  // Resolve portal user's email and display name
+  // Resolve portal user's email, display name, and employee ID
   const portalUserId = (req as any).portalUserId;
-  const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+  const userRows = await db.execute(sql`SELECT email, linked_employee_id FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
   const submitterEmail: string | null = (userRows.rows[0] as any)?.email ?? null;
+  // Employee ID: for preview sessions use the linked employee from the JWT;
+  // for real logins use the portal user's linked_employee_id if set.
+  const previewEmployeeId: number | null = (req as any).portalLinkedEmployeeId ?? null;
+  const submitterEmployeeId: number | null =
+    previewEmployeeId ?? ((userRows.rows[0] as any)?.linked_employee_id ?? null);
 
   // If the submitting employee has their own delivery address, prefer it over the customer default
   let defaultAddressId: number | null = customerDefaultAddressId;
@@ -834,7 +834,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
 
   // Insert with a unique temp order number; update to P{id} after getting auto-generated id
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_at)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at)
     VALUES (
       'P-' || gen_random_uuid()::text,
       ${customerId},
@@ -853,6 +853,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${submitterName},
       ${submitterEmail},
       ${submitterName},
+      ${submitterEmployeeId},
       now()
     )
     RETURNING id

@@ -118,8 +118,9 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS po_number                  text;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS attention_of               text;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_by_email  text;
-    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_by_name   text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_by_email       text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_by_name        text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_submitted_by_employee_id integer;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_approved_by_email   text;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_approved_by_name    text;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatched_at              timestamptz;
