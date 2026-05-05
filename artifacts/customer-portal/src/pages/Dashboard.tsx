@@ -184,29 +184,55 @@ function StatusBadge({ status, portalStatus }: { status: string; portalStatus?: 
 function ManagerReviewPanel() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
+
   const [rejectTarget, setRejectTarget] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [submitTarget, setSubmitTarget] = useState<any | null>(null);
-  const [submitPoNumber, setSubmitPoNumber] = useState("");
+  const [bulkSubmitOpen, setBulkSubmitOpen] = useState(false);
+  const [bulkPoNumber, setBulkPoNumber] = useState("");
+  const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const { data: pendingOrders = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-manager-pending"],
     queryFn: () => apiFetch("/portal/manager/pending-orders"),
   });
 
-  const submitMutation = useMutation({
-    mutationFn: ({ orderId, poNumber }: { orderId: number; poNumber: string }) =>
-      apiFetch(`/portal/manager/orders/${orderId}/submit`, {
-        method: "POST",
-        body: JSON.stringify({ poNumber: poNumber.trim() || null }),
-      }),
+  useEffect(() => { setSelected(new Set()); }, [pendingOrders]);
+
+  const allSelected = pendingOrders.length > 0 && selected.size === pendingOrders.length;
+  const someSelected = selected.size > 0;
+  const selectedOrders = pendingOrders.filter((o: any) => selected.has(o.id));
+  const selectedTotal = selectedOrders.reduce((sum: number, o: any) => sum + parseFloat(o.total_amount || "0"), 0);
+  const selectedItemCount = selectedOrders.reduce((sum: number, o: any) => sum + Number(o.item_count || 0), 0);
+
+  function toggleSelect(id: number) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+  function toggleAll() {
+    setSelected(allSelected ? new Set() : new Set(pendingOrders.map((o: any) => o.id)));
+  }
+
+  const bulkSubmitMutation = useMutation({
+    mutationFn: async ({ orderIds, poNumber }: { orderIds: number[]; poNumber: string }) => {
+      await Promise.all(
+        orderIds.map(orderId =>
+          apiFetch(`/portal/manager/orders/${orderId}/submit`, {
+            method: "POST",
+            body: JSON.stringify({ poNumber: poNumber.trim() || null }),
+          })
+        )
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["portal-manager-pending"] });
       queryClient.invalidateQueries({ queryKey: ["portal-orders"] });
-      setSubmitTarget(null);
-      setSubmitPoNumber("");
-      toast({ title: "Order submitted to SBS" });
+      const count = selected.size;
+      setBulkSubmitOpen(false);
+      setBulkPoNumber("");
+      setSelected(new Set());
+      toast({ title: `${count} order${count !== 1 ? "s" : ""} submitted to SBS` });
     },
+    onError: (e: any) => toast({ title: "Error submitting orders", description: e.message, variant: "destructive" }),
   });
 
   const rejectMutation = useMutation({
@@ -224,126 +250,221 @@ function ManagerReviewPanel() {
     },
   });
 
-  function openSubmitDialog(order: any) {
-    setSubmitTarget(order);
-    setSubmitPoNumber(order.po_number ?? "");
-  }
-
   if (isLoading) return null;
   if (pendingOrders.length === 0) return null;
 
   return (
     <>
-      <Card className="mb-6 border-orange-200 bg-orange-50/40">
-        <CardHeader className="pb-3 pt-4 px-5">
+      <Card className="mb-6 border-orange-200 bg-orange-50/40 overflow-hidden">
+        <CardHeader className="pb-2 pt-4 px-5">
           <CardTitle className="text-base flex items-center gap-2 text-orange-800">
             <AlertCircle className="w-4 h-4" />
             Orders awaiting your approval
             <Badge className="ml-auto bg-orange-500 text-white tabular-nums">{pendingOrders.length}</Badge>
           </CardTitle>
         </CardHeader>
-        <CardContent className="px-5 pb-4 flex flex-col gap-3">
-          {pendingOrders.map((order: any) => (
-            <div key={order.id} className="rounded-lg border border-orange-200 bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-primary text-sm">{order.order_number}</span>
-                  <span className="text-xs text-muted-foreground">{formatDate(order.order_date)}</span>
-                  {order.po_number && (
-                    <Badge variant="outline" className="text-xs font-normal">PO: {order.po_number}</Badge>
-                  )}
-                </div>
-                {order.portal_submitted_by_name && (
-                  <div className="flex items-center gap-1.5 mt-1">
-                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-sm font-medium text-foreground">{order.portal_submitted_by_name}</span>
-                  </div>
+        <CardContent className="px-0 pb-0">
+          {/* Column headers */}
+          <div className="flex items-center gap-3 px-5 py-2 border-b border-orange-100 text-xs font-semibold text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              className="h-4 w-4 rounded border-orange-300 accent-orange-600 cursor-pointer shrink-0"
+              aria-label="Select all orders"
+            />
+            <span className="flex-1">Order / Placed by</span>
+            <span className="w-20 text-right hidden sm:block">Items</span>
+            <span className="w-24 text-right">Value</span>
+            <span className="w-16 text-right">Action</span>
+          </div>
+
+          {/* Order rows */}
+          <div className="divide-y divide-orange-100">
+            {pendingOrders.map((order: any) => (
+              <div
+                key={order.id}
+                className={cn(
+                  "flex items-center gap-3 px-5 py-3 transition-colors",
+                  selected.has(order.id) ? "bg-orange-100/70" : "hover:bg-orange-50/70"
                 )}
-                <div className="text-xs text-muted-foreground mt-0.5 flex gap-2 flex-wrap items-center">
-                  <span>{order.item_count} item{Number(order.item_count) !== 1 ? "s" : ""}</span>
-                  <span className="text-border">·</span>
-                  <span className="font-medium text-foreground">{formatCurrency(order.total_amount)}</span>
+              >
+                <input
+                  type="checkbox"
+                  checked={selected.has(order.id)}
+                  onChange={() => toggleSelect(order.id)}
+                  onClick={e => e.stopPropagation()}
+                  className="h-4 w-4 rounded border-orange-300 accent-orange-600 cursor-pointer shrink-0"
+                  aria-label={`Select order ${order.order_number}`}
+                />
+
+                {/* Clickable info area → order detail */}
+                <button
+                  className="flex-1 min-w-0 text-left group"
+                  onClick={() => setLocation(`/orders/${order.id}`)}
+                >
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-primary text-sm group-hover:underline underline-offset-2">
+                      {order.order_number}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{formatDate(order.order_date)}</span>
+                    {order.po_number && (
+                      <Badge variant="outline" className="text-xs font-normal">PO: {order.po_number}</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <User className="w-3 h-3 text-muted-foreground shrink-0" />
+                    <span className="text-sm text-muted-foreground">
+                      {order.portal_submitted_by_name ?? "Unknown"}
+                    </span>
+                  </div>
                   {order.portal_notes && (
-                    <>
-                      <span className="text-border">·</span>
-                      <span className="italic truncate max-w-[200px]">{order.portal_notes}</span>
-                    </>
+                    <p className="text-xs text-muted-foreground italic truncate mt-0.5 max-w-[260px]">
+                      {order.portal_notes}
+                    </p>
                   )}
+                </button>
+
+                <span className="w-20 text-right text-sm text-muted-foreground tabular-nums hidden sm:block">
+                  {order.item_count} item{Number(order.item_count) !== 1 ? "s" : ""}
+                </span>
+                <span className="w-24 text-right font-semibold text-sm tabular-nums">
+                  {formatCurrency(order.total_amount)}
+                </span>
+                <div className="w-16 flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                    onClick={() => setRejectTarget(order)}
+                  >
+                    Reject
+                  </Button>
                 </div>
               </div>
-              <div className="flex gap-2 shrink-0">
+            ))}
+          </div>
+
+          {/* Bulk action bar — appears when orders are selected */}
+          {someSelected ? (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 px-5 py-3 border-t-2 border-orange-200 bg-orange-100/60">
+              <div className="text-sm font-medium text-orange-900">
+                {selected.size} order{selected.size !== 1 ? "s" : ""} selected
+                <span className="mx-2 text-orange-300">|</span>
+                Total: <span className="font-bold">{formatCurrency(selectedTotal)}</span>
+              </div>
+              <div className="flex gap-2 sm:ml-auto shrink-0 flex-wrap">
                 <Button
                   size="sm"
                   variant="outline"
-                  className="border-red-200 text-red-700 hover:bg-red-50"
-                  onClick={() => setRejectTarget(order)}
-                  disabled={rejectMutation.isPending}
+                  className="h-8 text-xs border-orange-300 text-orange-800 hover:bg-orange-50"
+                  onClick={() => setSelected(new Set())}
                 >
-                  Reject
+                  Deselect all
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => openSubmitDialog(order)}
-                  disabled={submitMutation.isPending}
+                  className="h-8 text-xs"
+                  onClick={() => setBulkSubmitOpen(true)}
                 >
-                  Approve &amp; Submit
+                  Approve &amp; Submit ({selected.size})
                 </Button>
               </div>
             </div>
-          ))}
+          ) : (
+            <div className="px-5 py-2 border-t border-orange-100">
+              <p className="text-xs text-muted-foreground">
+                Select orders above to approve and submit with a PO number, or click an order to view details.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Approve & submit dialog — allows manager to add PO number */}
-      <Dialog open={!!submitTarget} onOpenChange={(o) => { if (!o) { setSubmitTarget(null); setSubmitPoNumber(""); } }}>
-        <DialogContent className="sm:max-w-[420px]">
+      {/* ── Bulk approve & submit dialog ────────────────────────────────────── */}
+      <Dialog open={bulkSubmitOpen} onOpenChange={o => { if (!o) { setBulkSubmitOpen(false); setBulkPoNumber(""); } }}>
+        <DialogContent className="sm:max-w-[520px]">
           <DialogHeader>
-            <DialogTitle>Approve order {submitTarget?.order_number}</DialogTitle>
+            <DialogTitle>
+              Approve &amp; Submit {selectedOrders.length} Order{selectedOrders.length !== 1 ? "s" : ""}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {submitTarget?.portal_submitted_by_name && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 shrink-0" />
-                Submitted by <span className="font-medium text-foreground">{submitTarget.portal_submitted_by_name}</span>
-              </p>
-            )}
+            {/* Order summary table */}
+            <div className="rounded-lg border overflow-hidden text-sm">
+              <table className="w-full">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Order</th>
+                    <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground">Placed by</th>
+                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground hidden sm:table-cell">Items</th>
+                    <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground">Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {selectedOrders.map((o: any) => (
+                    <tr key={o.id}>
+                      <td className="px-3 py-2 font-medium text-primary">{o.order_number}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{o.portal_submitted_by_name ?? "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{o.item_count}</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatCurrency(o.total_amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-muted/30 border-t-2">
+                  <tr>
+                    <td colSpan={2} className="px-3 py-2 font-semibold">Total</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold hidden sm:table-cell">{selectedItemCount} items</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-bold text-base">{formatCurrency(selectedTotal)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* PO number */}
             <div className="space-y-2">
-              <Label htmlFor="submit-po">
+              <Label htmlFor="bulk-po">
                 Purchase Order Number
-                <span className="ml-1 text-muted-foreground font-normal">(optional — can be added later)</span>
+                <span className="ml-1 text-muted-foreground font-normal text-xs">
+                  (optional — applied to all selected orders)
+                </span>
               </Label>
               <Input
-                id="submit-po"
+                id="bulk-po"
                 placeholder="e.g. PO-2026-001234"
-                value={submitPoNumber}
-                onChange={e => setSubmitPoNumber(e.target.value)}
+                value={bulkPoNumber}
+                onChange={e => setBulkPoNumber(e.target.value)}
                 autoFocus
               />
-              <p className="text-xs text-muted-foreground">
-                This will be attached to the order and included on the invoice.
-              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setSubmitTarget(null); setSubmitPoNumber(""); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setBulkSubmitOpen(false); setBulkPoNumber(""); }}>
+              Cancel
+            </Button>
             <Button
-              disabled={submitMutation.isPending}
-              onClick={() => submitMutation.mutate({ orderId: submitTarget.id, poNumber: submitPoNumber })}
+              disabled={bulkSubmitMutation.isPending}
+              onClick={() => bulkSubmitMutation.mutate({ orderIds: Array.from(selected), poNumber: bulkPoNumber })}
             >
-              {submitMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
+              {bulkSubmitMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
               Submit to SBS
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reject dialog */}
-      <Dialog open={!!rejectTarget} onOpenChange={(o) => { if (!o) { setRejectTarget(null); setRejectReason(""); } }}>
+      {/* ── Reject dialog ──────────────────────────────────────────────────── */}
+      <Dialog open={!!rejectTarget} onOpenChange={o => { if (!o) { setRejectTarget(null); setRejectReason(""); } }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reject order {rejectTarget?.order_number}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
+            {rejectTarget?.portal_submitted_by_name && (
+              <p className="text-sm text-muted-foreground">
+                Submitted by <span className="font-medium text-foreground">{rejectTarget.portal_submitted_by_name}</span>
+              </p>
+            )}
             <Label htmlFor="reject-reason">Reason (optional)</Label>
             <Textarea
               id="reject-reason"
