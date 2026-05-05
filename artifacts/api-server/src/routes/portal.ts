@@ -386,8 +386,8 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
   const portalIsPreview = (req as any).portalIsPreview;
   const linkedEmployeeId = (req as any).portalLinkedEmployeeId;
 
-  // Manager and dept_manager see all orders for the customer (pending_review ones live in the approval panel)
-  if (portalRole === "manager" || portalRole === "dept_manager") {
+  // Top-level manager sees all orders except pending_review (those live in the approval panel)
+  if (portalRole === "manager") {
     const rows = await db.execute(sql`
       SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
              po_number,
@@ -398,6 +398,37 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
       WHERE customer_id = ${customerId}
         AND source = 'portal'
         AND portal_status IS DISTINCT FROM 'pending_review'
+      ORDER BY created_at DESC
+      LIMIT 100
+    `);
+    res.json(rows.rows);
+    return;
+  }
+
+  // Dept_manager sees all non-pending orders for the customer, plus their own pending_review orders.
+  // They cannot see other dept_managers' pending orders — only a top-level manager approves.
+  if (portalRole === "dept_manager") {
+    let deptEmail: string | null = null;
+    if (portalIsPreview && linkedEmployeeId) {
+      const empRows = await db.execute(sql`SELECT email FROM customer_employees WHERE id = ${linkedEmployeeId} LIMIT 1`);
+      deptEmail = (empRows.rows[0] as any)?.email ?? null;
+    } else if (portalUserId) {
+      const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
+      deptEmail = (userRows.rows[0] as any)?.email ?? null;
+    }
+    const rows = await db.execute(sql`
+      SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
+             po_number,
+             portal_submitted_by_name, portal_submitted_at,
+             portal_approved_by_name, portal_approved_at,
+             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+      FROM orders
+      WHERE customer_id = ${customerId}
+        AND source = 'portal'
+        AND (
+          portal_status IS DISTINCT FROM 'pending_review'
+          OR lower(portal_submitted_by_email) = lower(${deptEmail})
+        )
       ORDER BY created_at DESC
       LIMIT 100
     `);
@@ -1177,7 +1208,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   const portalIsPreview = (req as any).portalIsPreview;
   const linkedEmployeeId = (req as any).portalLinkedEmployeeId;
 
-  if (portalRole !== "manager" && portalRole !== "dept_manager") {
+  if (portalRole !== "manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
@@ -1217,7 +1248,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
 router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager" && portalRole !== "dept_manager") {
+  if (portalRole !== "manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
@@ -1276,7 +1307,7 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
 router.post("/portal/manager/orders/:id/reject", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager" && portalRole !== "dept_manager") {
+  if (portalRole !== "manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
