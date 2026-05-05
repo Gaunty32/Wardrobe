@@ -153,7 +153,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     { label: "Invoices", icon: Receipt, href: "/invoices" },
     { label: "Payment", icon: CreditCard, href: "/payment-methods" },
     ...(isManager ? [{ label: "Team", icon: Users, href: "/team" }] : isDeptManager ? [{ label: "My Team", icon: Users, href: "/team" }] : []),
-    ...(isManager ? [{ label: "Stock", icon: Boxes, href: "/stock" }] : []),
+    ...(isManager ? [{ label: "Stores", icon: Boxes, href: "/stores" }] : []),
   ];
 
   return (

@@ -87,7 +87,7 @@ export default function StockPage() {
       qc.invalidateQueries({ queryKey: ["portal-stock"] });
       setAddOpen(false);
       setAddForm({ name: "", colour: "", size: "", initialQuantity: "0", minQuantity: "0", location: "", notes: "", unitPrice: "0" });
-      toast({ title: "Stock item added" });
+      toast({ title: "Item added" });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -210,9 +210,9 @@ export default function StockPage() {
         {/* Header */}
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Stock Management</h1>
+            <h1 className="text-2xl font-bold">Stores</h1>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Manage your branded garment stock — items are automatically deducted when you place orders.
+              Manage your store cupboard — items are automatically deducted when you place an order.
             </p>
           </div>
           <Button onClick={() => setAddOpen(true)} className="gap-2 shrink-0">
@@ -234,15 +234,15 @@ export default function StockPage() {
         {/* Stock table */}
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">
-            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading stock…
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Loading…
           </div>
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
             <Package className="w-12 h-12 opacity-20" />
-            <p className="font-medium">No stock items yet</p>
-            <p className="text-sm">Add your first item to start tracking your stock levels.</p>
+            <p className="font-medium">No items in your stores yet</p>
+            <p className="text-sm">Add your first item to start tracking your store levels.</p>
             <Button variant="outline" onClick={() => setAddOpen(true)} className="gap-2 mt-2">
-              <Plus className="w-4 h-4" /> Add Stock Item
+              <Plus className="w-4 h-4" /> Add Item
             </Button>
           </div>
         ) : (
@@ -296,7 +296,7 @@ export default function StockPage() {
                           <button
                             onClick={() => openAdjust(item)}
                             className="p-1.5 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            title="Adjust stock"
+                            title="Adjust"
                           >
                             <ArrowUpCircle className="w-4 h-4" />
                           </button>
@@ -334,7 +334,7 @@ export default function StockPage() {
         {/* ── Add Item Dialog ──────────────────────────────────────────────── */}
         <Dialog open={addOpen} onOpenChange={setAddOpen}>
           <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle>Add Stock Item</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Add Item</DialogTitle></DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <Label>Item Name *</Label>
@@ -385,7 +385,7 @@ export default function StockPage() {
         {/* ── Edit Item Dialog ─────────────────────────────────────────────── */}
         <Dialog open={!!editItem} onOpenChange={v => !v && setEditItem(null)}>
           <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle>Edit Stock Item</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Edit Item</DialogTitle></DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1.5">
                 <Label>Item Name *</Label>
@@ -426,7 +426,7 @@ export default function StockPage() {
         {/* ── Delete Confirm Dialog ────────────────────────────────────────── */}
         <Dialog open={!!deleteItem} onOpenChange={v => !v && setDeleteItem(null)}>
           <DialogContent className="max-w-sm">
-            <DialogHeader><DialogTitle>Remove Stock Item</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle>Remove Item</DialogTitle></DialogHeader>
             <p className="text-sm text-muted-foreground py-2">
               Remove <strong>{deleteItem?.name}</strong>
               {deleteItem?.colour || deleteItem?.size ? ` (${[deleteItem?.colour, deleteItem?.size].filter(Boolean).join(", ")})` : ""}?
@@ -450,7 +450,7 @@ export default function StockPage() {
           <DialogContent className="max-w-sm">
             <DialogHeader>
               <DialogTitle>
-                Adjust Stock — {adjustItem?.name}
+                Adjust — {adjustItem?.name}
                 {adjustItem?.size ? ` (${adjustItem.size})` : ""}
               </DialogTitle>
             </DialogHeader>

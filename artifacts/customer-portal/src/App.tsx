@@ -67,7 +67,7 @@ function Router() {
       <Route path="/products" component={() => <ProtectedRoute component={Products} />} />
       <Route path="/team" component={() => <ProtectedRoute component={Team} />} />
       <Route path="/payment-methods" component={() => <ProtectedRoute component={PaymentMethods} />} />
-      <Route path="/stock" component={() => <ProtectedRoute component={Stock} />} />
+      <Route path="/stores" component={() => <ProtectedRoute component={Stock} />} />
       <Route path="/">
         {() => {
           const token = localStorage.getItem("portal_token");
