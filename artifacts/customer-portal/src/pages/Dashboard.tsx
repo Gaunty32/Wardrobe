@@ -253,15 +253,13 @@ function ManagerReviewPanel() {
                     <Badge variant="outline" className="text-xs font-normal">PO: {order.po_number}</Badge>
                   )}
                 </div>
+                {order.portal_submitted_by_name && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <span className="text-sm font-medium text-foreground">{order.portal_submitted_by_name}</span>
+                  </div>
+                )}
                 <div className="text-xs text-muted-foreground mt-0.5 flex gap-2 flex-wrap items-center">
-                  {order.portal_submitted_by_name && (
-                    <>
-                      <span className="flex items-center gap-1">
-                        <User className="w-3 h-3" />{order.portal_submitted_by_name}
-                      </span>
-                      <span className="text-border">·</span>
-                    </>
-                  )}
                   <span>{order.item_count} item{Number(order.item_count) !== 1 ? "s" : ""}</span>
                   <span className="text-border">·</span>
                   <span className="font-medium text-foreground">{formatCurrency(order.total_amount)}</span>
