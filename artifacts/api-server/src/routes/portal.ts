@@ -397,6 +397,7 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
       FROM orders
       WHERE customer_id = ${customerId}
         AND source = 'portal'
+        AND portal_status IS DISTINCT FROM 'pending_review'
       ORDER BY created_at DESC
       LIMIT 100
     `);
