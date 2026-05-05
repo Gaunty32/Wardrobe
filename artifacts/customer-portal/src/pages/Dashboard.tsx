@@ -372,7 +372,7 @@ function ManagerReviewPanel() {
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { isManager, user } = useAuth();
+  const { isManager, isDeptManager, user } = useAuth();
   const firstName = (user as any)?.firstName ?? "there";
 
   // Computed once per render (consistent for the whole session)
