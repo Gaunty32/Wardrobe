@@ -427,22 +427,38 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
       const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
       deptEmail = (userRows.rows[0] as any)?.email ?? null;
     }
-    const rows = await db.execute(sql`
-      SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
-             po_number,
-             portal_submitted_by_name, portal_submitted_at,
-             portal_approved_by_name, portal_approved_at,
-             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
-      FROM orders
-      WHERE customer_id = ${customerId}
-        AND source = 'portal'
-        AND (
-          portal_status IS DISTINCT FROM 'pending_review'
-          OR lower(portal_submitted_by_email) = lower(${deptEmail})
-        )
-      ORDER BY created_at DESC
-      LIMIT 100
-    `);
+    // If we couldn't resolve the email (e.g. test accounts without emails or
+    // unlinked employee records), show all orders for the customer so the
+    // preview is still usable. Real logins always have a portalUserId email.
+    const rows = deptEmail
+      ? await db.execute(sql`
+          SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
+                 po_number,
+                 portal_submitted_by_name, portal_submitted_at,
+                 portal_approved_by_name, portal_approved_at,
+                 (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+          FROM orders
+          WHERE customer_id = ${customerId}
+            AND source = 'portal'
+            AND (
+              portal_status IS DISTINCT FROM 'pending_review'
+              OR lower(portal_submitted_by_email) = lower(${deptEmail})
+            )
+          ORDER BY created_at DESC
+          LIMIT 100
+        `)
+      : await db.execute(sql`
+          SELECT id, order_number, status, portal_status, total_amount, order_date, required_date,
+                 po_number,
+                 portal_submitted_by_name, portal_submitted_at,
+                 portal_approved_by_name, portal_approved_at,
+                 (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+          FROM orders
+          WHERE customer_id = ${customerId}
+            AND source = 'portal'
+          ORDER BY created_at DESC
+          LIMIT 100
+        `);
     res.json(rows.rows);
     return;
   }
