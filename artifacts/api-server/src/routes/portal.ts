@@ -3,8 +3,12 @@
  * Invite-based auth + order management for customers
  */
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
-import { db, customersTable } from "@workspace/db";
-import { sql, eq } from "drizzle-orm";
+import {
+  db, customersTable, orderItemsTable, productsTable, suppliersTable,
+  worksheetsTable, worksheetItemsTable, customerProcessesTable, customerFinishProcessesTable,
+  purchaseOrdersTable,
+} from "@workspace/db";
+import { sql, eq, inArray } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
@@ -1510,6 +1514,151 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
       attention_of = COALESCE(attention_of, ${attentionOf})
     WHERE id = ${orderId} AND source = 'portal'
   `);
+
+  // ── Stock allocation on portal confirmation ───────────────────────────────
+  {
+    const allItems = await db
+      .select({
+        id: orderItemsTable.id,
+        productId: orderItemsTable.productId,
+        productName: orderItemsTable.productName,
+        colour: orderItemsTable.colour,
+        size: orderItemsTable.size,
+        quantity: orderItemsTable.quantity,
+        finishId: orderItemsTable.finishId,
+        finishName: orderItemsTable.finishName,
+        recipientType: orderItemsTable.recipientType,
+        recipientName: orderItemsTable.recipientName,
+      })
+      .from(orderItemsTable)
+      .where(eq(orderItemsTable.orderId, orderId));
+
+    const productIds = [...new Set(allItems.map(i => i.productId).filter(Boolean))] as number[];
+    const allocatedItemIds: number[] = [];
+
+    // Items with no product link go straight to production
+    for (const item of allItems) {
+      if (!item.productId) allocatedItemIds.push(item.id);
+    }
+
+    if (productIds.length > 0) {
+      const productStocks = await db
+        .select({
+          id: productsTable.id,
+          stockQuantity: productsTable.stockQuantity,
+          supplierId: productsTable.supplierId,
+          supplierName: suppliersTable.name,
+        })
+        .from(productsTable)
+        .leftJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
+        .where(inArray(productsTable.id, productIds));
+
+      const stockMap = new Map(productStocks.map(p => [p.id, p]));
+      const remainingStock = new Map(productStocks.map(p => [p.id, p.stockQuantity ?? 0]));
+
+      for (const item of allItems) {
+        if (!item.productId) continue;
+        const stock = stockMap.get(item.productId);
+        if (!stock) { allocatedItemIds.push(item.id); continue; }
+
+        const available = remainingStock.get(item.productId) ?? 0;
+        const qty = item.quantity ?? 0;
+        const allocatedQty = Math.min(available, qty);
+        const shortfall = qty - allocatedQty;
+        remainingStock.set(item.productId, available - allocatedQty);
+
+        await db.update(orderItemsTable).set({
+          purchaseRequired: shortfall > 0,
+          purchaseQuantity: shortfall > 0 ? shortfall : null,
+          supplierId: shortfall > 0 ? (stock.supplierId ?? null) : null,
+          supplierName: shortfall > 0 ? (stock.supplierName ?? null) : null,
+        }).where(eq(orderItemsTable.id, item.id));
+
+        if (shortfall === 0) allocatedItemIds.push(item.id);
+      }
+
+      // Commit stock decrements
+      for (const [productId, remaining] of remainingStock.entries()) {
+        const original = stockMap.get(productId);
+        if (original && (original.stockQuantity ?? 0) - remaining > 0) {
+          await db.update(productsTable).set({ stockQuantity: remaining }).where(eq(productsTable.id, productId));
+        }
+      }
+    }
+
+    // Auto-create production worksheet for items ready to go
+    if (allocatedItemIds.length > 0) {
+      const existingWs = await db
+        .select({ id: worksheetsTable.id })
+        .from(worksheetsTable)
+        .where(eq(worksheetsTable.orderId, orderId))
+        .limit(1);
+
+      if (existingWs.length === 0) {
+        const wsRows = await db.execute(sql`
+          SELECT worksheet_number FROM worksheets
+          WHERE worksheet_number ~ '^F[0-9]+$'
+          ORDER BY LENGTH(worksheet_number) DESC, worksheet_number DESC
+          LIMIT 1
+        `);
+        const lastWsNum = (wsRows.rows[0] as any)?.worksheet_number as string | undefined;
+        const worksheetNumber = `F${(lastWsNum ? parseInt(lastWsNum.slice(1), 10) : 99) + 1}`;
+
+        const [ws] = await db
+          .insert(worksheetsTable)
+          .values({
+            worksheetNumber,
+            status: "pre_wip",
+            orderId,
+            orderNumber: ord.order_number,
+            customerId: ord.customer_id ?? null,
+            customerName: ord.customer_name ?? null,
+          })
+          .returning();
+
+        const wsOrderItems = await db
+          .select()
+          .from(orderItemsTable)
+          .where(inArray(orderItemsTable.id, allocatedItemIds));
+
+        await Promise.all(
+          wsOrderItems.map(async (oi) => {
+            let processesSnapshot: string | null = null;
+            if (oi.finishId && ord.customer_id) {
+              const finishProcessLinks = await db
+                .select()
+                .from(customerFinishProcessesTable)
+                .where(eq(customerFinishProcessesTable.finishId, oi.finishId));
+              const processIds = finishProcessLinks.map((fp) => fp.processId);
+              if (processIds.length > 0) {
+                const processes = await db
+                  .select()
+                  .from(customerProcessesTable)
+                  .where(inArray(customerProcessesTable.id, processIds));
+                processesSnapshot = JSON.stringify(
+                  processes.map((p) => ({ id: p.id, name: p.name, type: p.type, placement: p.placement, price: p.price ? parseFloat(p.price as any) : null, notes: p.notes }))
+                );
+              }
+            }
+            return db.insert(worksheetItemsTable).values({
+              worksheetId: ws.id,
+              orderItemId: oi.id,
+              productName: oi.productName,
+              colour: oi.colour ?? null,
+              size: oi.size ?? null,
+              quantity: oi.quantity ?? 1,
+              recipientType: oi.recipientType ?? "stock",
+              recipientName: oi.recipientName ?? null,
+              finishId: oi.finishId ?? null,
+              finishName: oi.finishName ?? null,
+              processesSnapshot,
+            });
+          })
+        );
+      }
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   // Send order acknowledgement emails
   if (isEmailConfigured) {
