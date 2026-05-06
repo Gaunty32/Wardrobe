@@ -521,6 +521,7 @@ export default function OrderDetail() {
       queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey({ id: order.id }) });
       queryClient.invalidateQueries({ queryKey: ["portal-pending-orders"] });
       toast({ title: "Order confirmed", description: "Order moved to draft — ready to process." });
+      navigate("/orders");
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
