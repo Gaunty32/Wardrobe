@@ -394,4 +394,120 @@ export async function runStartupMigrations(): Promise<void> {
       UNIQUE(portal_user_id)
     )
   `);
+
+  // ── Backfill stock allocation for confirmed orders that were never processed ──
+  // Finds confirmed orders where items still have purchase_required IS NULL
+  // (i.e., confirmed before the allocation-on-confirm feature was deployed).
+  {
+    const unallocatedOrders = await db.execute(sql`
+      SELECT DISTINCT o.id AS order_id
+      FROM orders o
+      JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.status = 'confirmed'
+        AND oi.purchase_required IS NULL
+        AND oi.product_id IS NOT NULL
+    `);
+
+    for (const row of unallocatedOrders.rows as any[]) {
+      const orderId = row.order_id;
+      try {
+        const itemRows = await db.execute(sql`
+          SELECT id, product_id, quantity FROM order_items
+          WHERE order_id = ${orderId} AND product_id IS NOT NULL AND purchase_required IS NULL
+        `);
+        const items = itemRows.rows as { id: number; product_id: number; quantity: number }[];
+        if (items.length === 0) continue;
+
+        const productIds = [...new Set(items.map(i => i.product_id))];
+        const stockRows = await db.execute(sql`
+          SELECT p.id, p.stock_quantity, p.supplier_id, s.name AS supplier_name
+          FROM products p
+          LEFT JOIN suppliers s ON s.id = p.supplier_id
+          WHERE p.id = ANY(${productIds}::int[])
+        `);
+        const stockMap = new Map<number, { stockQuantity: number; supplierId: number | null; supplierName: string | null }>(
+          (stockRows.rows as any[]).map(r => [r.id, {
+            stockQuantity: Number(r.stock_quantity ?? 0),
+            supplierId: r.supplier_id ?? null,
+            supplierName: r.supplier_name ?? null,
+          }])
+        );
+        const remaining = new Map(Array.from(stockMap.entries()).map(([id, s]) => [id, s.stockQuantity]));
+
+        for (const item of items) {
+          const stock = stockMap.get(item.product_id);
+          if (!stock) {
+            await db.execute(sql`UPDATE order_items SET purchase_required = false WHERE id = ${item.id}`);
+            continue;
+          }
+          const available = remaining.get(item.product_id) ?? 0;
+          const qty = Number(item.quantity ?? 0);
+          const allocated = Math.min(available, qty);
+          const shortfall = qty - allocated;
+          remaining.set(item.product_id, available - allocated);
+
+          if (shortfall > 0) {
+            await db.execute(sql`
+              UPDATE order_items SET purchase_required = true, purchase_quantity = ${shortfall},
+                supplier_id = ${stock.supplierId}, supplier_name = ${stock.supplierName}
+              WHERE id = ${item.id}
+            `);
+          } else {
+            await db.execute(sql`UPDATE order_items SET purchase_required = false WHERE id = ${item.id}`);
+          }
+        }
+
+        // Commit stock decrements
+        for (const [productId, rem] of remaining.entries()) {
+          const orig = stockMap.get(productId);
+          if (orig && orig.stockQuantity - rem > 0) {
+            await db.execute(sql`UPDATE products SET stock_quantity = ${rem} WHERE id = ${productId}`);
+          }
+        }
+
+        // Auto-create worksheet for the order if none exists and there are allocated items
+        const allocatedItemIds = (await db.execute(sql`
+          SELECT id FROM order_items WHERE order_id = ${orderId} AND purchase_required = false
+        `)).rows.map((r: any) => r.id);
+
+        if (allocatedItemIds.length > 0) {
+          const existing = await db.execute(sql`SELECT id FROM worksheets WHERE order_id = ${orderId} LIMIT 1`);
+          if (existing.rows.length === 0) {
+            const orderRow = (await db.execute(sql`
+              SELECT order_number, customer_id, customer_name FROM orders WHERE id = ${orderId}
+            `)).rows[0] as any;
+            const lastWs = (await db.execute(sql`
+              SELECT worksheet_number FROM worksheets WHERE worksheet_number ~ '^F[0-9]+$'
+              ORDER BY LENGTH(worksheet_number) DESC, worksheet_number DESC LIMIT 1
+            `)).rows[0] as any;
+            const wsNum = `F${(lastWs?.worksheet_number ? parseInt(lastWs.worksheet_number.slice(1), 10) : 99) + 1}`;
+            const wsRow = (await db.execute(sql`
+              INSERT INTO worksheets (worksheet_number, status, order_id, order_number, customer_id, customer_name)
+              VALUES (${wsNum}, 'pre_wip', ${orderId}, ${orderRow?.order_number ?? null}, ${orderRow?.customer_id ?? null}, ${orderRow?.customer_name ?? null})
+              RETURNING id
+            `)).rows[0] as any;
+            const wsItems = (await db.execute(sql`
+              SELECT id, product_name, colour, size, quantity, recipient_type, recipient_name, finish_id, finish_name
+              FROM order_items WHERE id = ANY(${allocatedItemIds}::int[])
+            `)).rows as any[];
+            for (const oi of wsItems) {
+              await db.execute(sql`
+                INSERT INTO worksheet_items (worksheet_id, order_item_id, product_name, colour, size, quantity, recipient_type, recipient_name, finish_id, finish_name)
+                VALUES (${wsRow.id}, ${oi.id}, ${oi.product_name}, ${oi.colour ?? null}, ${oi.size ?? null},
+                  ${Number(oi.quantity ?? 1)}, ${oi.recipient_type ?? 'stock'}, ${oi.recipient_name ?? null},
+                  ${oi.finish_id ?? null}, ${oi.finish_name ?? null})
+              `);
+            }
+          }
+        }
+      } catch (_) {
+        // Non-fatal — skip this order and continue
+      }
+    }
+
+    if (unallocatedOrders.rows.length > 0) {
+      console.log(`[startup] Backfilled stock allocation for ${unallocatedOrders.rows.length} order(s)`);
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 }
