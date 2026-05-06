@@ -924,23 +924,56 @@ export default function Purchasing() {
                             <div>
                               <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Line Details</h4>
                               <div className="space-y-2">
-                                {group.items.map((item) => (
-                                  <div key={item.itemId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                                    <Checkbox checked={!!selectedItems[item.itemId]} onCheckedChange={() => toggleItem(item.itemId)} />
-                                    <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="font-medium text-sm">{productDisplayName(item)}</div>
-                                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                        {item.supplierCode && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">Supplier Code: {item.supplierCode}</span>}
-                                        {item.productSku && !item.supplierCode && <span className="text-xs font-mono text-muted-foreground">SKU: {item.productSku}</span>}
-                                        {item.colour && <Badge variant="outline" className="text-xs py-0">{item.colour}</Badge>}
-                                        {item.size && <Badge variant="outline" className="text-xs py-0">{item.size}</Badge>}
-                                        <span className="text-xs text-muted-foreground">Order: <a href={`/orders/${item.orderId}`} className="text-primary hover:underline">{item.orderNumber}</a>{item.customerName && ` · ${item.customerName}`}</span>
+                                {(() => {
+                                  // Consolidate items with same product + colour + size
+                                  const consolidated = new Map<string, { items: PurchaseRequirement[]; totalQty: number }>();
+                                  for (const item of group.items) {
+                                    const key = `${productDisplayName(item)}||${item.colour ?? ""}||${item.size ?? ""}`;
+                                    if (!consolidated.has(key)) consolidated.set(key, { items: [], totalQty: 0 });
+                                    const entry = consolidated.get(key)!;
+                                    entry.items.push(item);
+                                    entry.totalQty += item.purchaseQuantity ?? 0;
+                                  }
+                                  return [...consolidated.values()].map(({ items: grpItems, totalQty }) => {
+                                    const rep = grpItems[0];
+                                    const allSelected = grpItems.every((i) => selectedItems[i.itemId]);
+                                    const someSelected = grpItems.some((i) => selectedItems[i.itemId]);
+                                    const toggleAll = () => {
+                                      const upd = { ...selectedItems };
+                                      grpItems.forEach((i) => { upd[i.itemId] = !allSelected; });
+                                      setSelectedItems(upd);
+                                    };
+                                    // Deduplicate orders (same order may have multiple items)
+                                    const ordersSeen = new Set<number>();
+                                    const orders = grpItems.filter((i) => { if (ordersSeen.has(i.orderId)) return false; ordersSeen.add(i.orderId); return true; });
+                                    return (
+                                      <div key={grpItems.map((i) => i.itemId).join("-")} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+                                        <Checkbox
+                                          checked={allSelected}
+                                          className={someSelected && !allSelected ? "data-[state=unchecked]:bg-primary/20" : ""}
+                                          onCheckedChange={toggleAll}
+                                        />
+                                        <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                          <div className="font-medium text-sm">{productDisplayName(rep)}</div>
+                                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                            {rep.supplierCode && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">Supplier Code: {rep.supplierCode}</span>}
+                                            {rep.productSku && !rep.supplierCode && <span className="text-xs font-mono text-muted-foreground">SKU: {rep.productSku}</span>}
+                                            {rep.colour && <Badge variant="outline" className="text-xs py-0">{rep.colour}</Badge>}
+                                            {rep.size && <Badge variant="outline" className="text-xs py-0">{rep.size}</Badge>}
+                                            <span className="text-xs text-muted-foreground">
+                                              {orders.length === 1
+                                                ? <>Order: <a href={`/orders/${orders[0].orderId}`} className="text-primary hover:underline">{orders[0].orderNumber}</a>{orders[0].customerName && ` · ${orders[0].customerName}`}</>
+                                                : <>Orders: {orders.map((o, idx) => (<span key={o.orderId}>{idx > 0 && ", "}<a href={`/orders/${o.orderId}`} className="text-primary hover:underline">{o.orderNumber}</a></span>))}{orders[0].customerName && ` · ${orders[0].customerName}`}</>
+                                              }
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-sm font-semibold">× {totalQty}</Badge>
                                       </div>
-                                    </div>
-                                    <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-sm font-semibold">× {item.purchaseQuantity ?? 0}</Badge>
-                                  </div>
-                                ))}
+                                    );
+                                  });
+                                })()}
                               </div>
                             </div>
                           </div>
