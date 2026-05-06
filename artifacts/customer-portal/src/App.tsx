@@ -18,6 +18,7 @@ import Team from "@/pages/Team";
 import Invoices from "@/pages/Invoices";
 import PaymentMethods from "@/pages/PaymentMethods";
 import Stock from "@/pages/Stock";
+import OrderHistory from "@/pages/OrderHistory";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -63,6 +64,7 @@ function Router() {
       <Route path="/orders/:id" component={() => <ProtectedRoute component={OrderDetailPage} />} />
       <Route path="/orders" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/invoices" component={() => <ProtectedRoute component={Invoices} />} />
+      <Route path="/order-history" component={() => <ProtectedRoute component={OrderHistory} />} />
       <Route path="/wardrobe" component={() => <ProtectedRoute component={Wardrobe} />} />
       <Route path="/products" component={() => <ProtectedRoute component={Products} />} />
       <Route path="/team" component={() => <ProtectedRoute component={Team} />} />
