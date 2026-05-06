@@ -543,6 +543,34 @@ router.patch("/portal/orders/:id/po", portalAuth, async (req: Request, res: Resp
   res.json(rows.rows[0]);
 });
 
+// ─── portal: manager — bulk assign PO number to multiple orders ──────────────
+
+router.patch("/portal/manager/bulk-po", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") {
+    res.status(403).json({ error: "Manager access required" });
+    return;
+  }
+
+  const parsed = z.object({
+    orderIds: z.array(z.number().int().positive()).min(1).max(100),
+    poNumber: z.string().max(100),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid input" }); return; }
+
+  const { orderIds, poNumber } = parsed.data;
+  const idList = orderIds.map(id => parseInt(String(id), 10)).join(",");
+  await db.execute(sql`
+    UPDATE orders
+    SET po_number = ${poNumber.trim() || null}, updated_at = now()
+    WHERE id IN (${sql.raw(idList)})
+      AND customer_id = ${customerId}
+      AND source = 'portal'
+  `);
+  res.json({ ok: true, updated: orderIds.length });
+});
+
 // ─── portal: basket (save / restore / clear) ─────────────────────────────────
 
 router.get("/portal/basket", portalAuth, async (req: Request, res: Response) => {
