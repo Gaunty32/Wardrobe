@@ -786,6 +786,17 @@ export default function Purchasing() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const clearBackorderMutation = useMutation({
+    mutationFn: ({ poId, itemId, quantityOrdered }: { poId: number; itemId: number; quantityOrdered: number }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ quantityDelivered: quantityOrdered }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      toast({ title: "Backorder cleared", description: "Line marked as fully received." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const toggleGroup = (name: string) => setExpandedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
   const toggleItem = (id: number) => setSelectedItems((prev) => ({ ...prev, [id]: !prev[id] }));
   const toggleGroupItems = (group: SupplierGroup) => {
@@ -1074,11 +1085,12 @@ export default function Purchasing() {
                             {b.remaining} still pending
                           </Badge>
                           <button
-                            title="Remove this backorder item"
+                            title="Mark as fully received"
                             className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"
+                            disabled={clearBackorderMutation.isPending}
                             onClick={() => {
-                              if (confirm(`Remove backorder for ${b.productName}${b.colour ? ` (${b.colour})` : ""} from PO ${b.poNumber}? The item will return to purchasing requirements.`)) {
-                                deleteLineMutation.mutate({ poId: b.poId, itemId: b.id });
+                              if (confirm(`Mark ${b.productName}${b.colour ? ` (${b.colour})` : ""} as fully received? This will clear it from the backorders list.`)) {
+                                clearBackorderMutation.mutate({ poId: b.poId, itemId: b.id, quantityOrdered: b.quantityOrdered });
                               }
                             }}
                           >
