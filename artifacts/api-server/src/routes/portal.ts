@@ -393,7 +393,7 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
              po_number,
              portal_submitted_by_name, portal_submitted_at,
              portal_approved_by_name, portal_approved_at,
-             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+             (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = orders.id) as item_count
       FROM orders
       WHERE customer_id = ${customerId}
         AND source = 'portal'
@@ -455,7 +455,7 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
              po_number,
              portal_submitted_by_name, portal_submitted_at,
              portal_approved_by_name, portal_approved_at,
-             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+             (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = orders.id) as item_count
       FROM orders
       WHERE customer_id = ${customerId}
         AND source = 'portal'
@@ -495,7 +495,7 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
            po_number,
            portal_submitted_by_name, portal_submitted_at,
            portal_approved_by_name, portal_approved_at,
-           (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+           (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = orders.id) as item_count
     FROM orders
     WHERE customer_id = ${customerId}
       AND source = 'portal'
@@ -1305,7 +1305,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
                  FROM customer_employees WHERE id = portal_submitted_by_employee_id
                ) END
              ) AS portal_submitted_by_name,
-             (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+             (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = orders.id) as item_count
       FROM orders
       WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
       ORDER BY created_at DESC
@@ -1320,7 +1320,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   const rows = await db.execute(sql`
     SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
            po_number, portal_submitted_by_name, portal_submitted_by_email, portal_submitted_at,
-           (SELECT COUNT(*) FROM order_items WHERE order_id = orders.id) as item_count
+           (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = orders.id) as item_count
     FROM orders
     WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
     ORDER BY created_at DESC
@@ -1413,7 +1413,7 @@ router.get("/portal/admin/pending-orders", async (req: Request, res: Response) =
   const rows = await db.execute(sql`
     SELECT o.id, o.order_number, o.customer_id, o.customer_name, o.status, o.portal_status,
            o.portal_notes, o.total_amount, o.order_date, o.required_date, o.notes,
-           (SELECT COUNT(*) FROM order_items WHERE order_id = o.id) as item_count
+           (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = o.id) as item_count
     FROM orders o
     WHERE o.status = 'portal_pending'
     ORDER BY o.created_at DESC
