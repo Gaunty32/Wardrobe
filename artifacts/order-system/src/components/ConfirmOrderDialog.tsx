@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 const SHIPPING_OPTIONS = [
+  { value: "free_local", label: "Free Local Delivery" },
   { value: "local_delivery", label: "Local Delivery" },
   { value: "office_collection", label: "Office Collection" },
   { value: "warehouse_collection", label: "Warehouse Collection" },

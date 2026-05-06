@@ -852,6 +852,15 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     `);
     const empAddrId: number | null = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
     if (empAddrId) defaultAddressId = empAddrId;
+  } else if (submitterEmployeeId) {
+    // Preview sessions have no email — look up by employee ID instead
+    const empAddrRows = await db.execute(sql`
+      SELECT delivery_address_id FROM customer_employees
+      WHERE id = ${submitterEmployeeId} AND delivery_address_id IS NOT NULL
+      LIMIT 1
+    `);
+    const empAddrId: number | null = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
+    if (empAddrId) defaultAddressId = empAddrId;
   }
   let submitterName: string | null = null;
   if (submitterEmail) {
@@ -878,6 +887,23 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     }
   }
 
+  // Resolve attention_of: prefer the submitter's team manager, fall back to submitter's own name
+  let attentionOfName: string | null = null;
+  if (submitterEmployeeId) {
+    const mgrRows = await db.execute(sql`
+      SELECT m.first_name, m.last_name
+      FROM customer_employees e
+      LEFT JOIN customer_employees m ON m.id = e.manager_id
+      WHERE e.id = ${submitterEmployeeId} AND m.id IS NOT NULL
+      LIMIT 1
+    `);
+    const mgr = mgrRows.rows[0] as any;
+    if (mgr?.first_name) {
+      attentionOfName = [mgr.first_name, mgr.last_name].filter(Boolean).join(" ");
+    }
+  }
+  if (!attentionOfName) attentionOfName = submitterName;
+
   // Managers submit directly; dept_managers/members save for manager review
   const portalStatus = portalRole === "manager" ? "submitted" : "pending_review";
   const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
@@ -900,7 +926,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${body.shippingOption ?? null},
       ${body.poNumber ?? null},
       ${defaultAddressId},
-      ${submitterName},
+      ${attentionOfName},
       ${submitterEmail},
       ${submitterName},
       ${submitterEmployeeId},
@@ -1429,7 +1455,8 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
   // Load order to get submitter/approver emails and check delivery address
   const orderRows = await db.execute(sql`
     SELECT id, order_number, customer_id, customer_name, order_date, required_date, notes, total_amount,
-           delivery_address_id, portal_submitted_by_email, portal_submitted_by_name,
+           delivery_address_id, attention_of,
+           portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id,
            portal_approved_by_email, portal_approved_by_name
     FROM orders WHERE id = ${orderId} AND source = 'portal'
   `);
@@ -1460,8 +1487,22 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
     }
   }
 
-  // Ensure attention_of is set — use portal_submitted_by_name as the placer's name
-  const attentionOf = ord.attention_of || ord.portal_submitted_by_name || null;
+  // Resolve attention_of: submitter's team manager → approver → submitter's own name
+  let attentionOf: string | null = ord.attention_of || null;
+  if (!attentionOf && ord.portal_submitted_by_employee_id) {
+    const mgrRows = await db.execute(sql`
+      SELECT m.first_name, m.last_name
+      FROM customer_employees e
+      LEFT JOIN customer_employees m ON m.id = e.manager_id
+      WHERE e.id = ${ord.portal_submitted_by_employee_id} AND m.id IS NOT NULL
+      LIMIT 1
+    `);
+    const mgr = mgrRows.rows[0] as any;
+    if (mgr?.first_name) {
+      attentionOf = [mgr.first_name, mgr.last_name].filter(Boolean).join(" ");
+    }
+  }
+  if (!attentionOf) attentionOf = ord.portal_approved_by_name || ord.portal_submitted_by_name || null;
 
   await db.execute(sql`
     UPDATE orders SET portal_status = 'confirmed', status = 'draft', updated_at = now(),
