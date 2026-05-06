@@ -285,6 +285,7 @@ export default function Orders() {
                         <TableHead>Due Date</TableHead>
                         <TableHead>Order Date</TableHead>
                         <TableHead>Customer</TableHead>
+                        <TableHead>PO Number</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Total</TableHead>
                         <TableHead className="w-[80px]"></TableHead>
@@ -309,15 +310,13 @@ export default function Orders() {
                               {isPortalPending && <Globe className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
                               <span className={cn("font-bold text-base tracking-wide", isPortalPending ? "text-amber-700" : "text-primary")}>{order.orderNumber}</span>
                             </div>
-                            {(order as any).poNumber && (
-                              <div className="text-xs text-muted-foreground font-mono mt-0.5">PO: {(order as any).poNumber}</div>
-                            )}
                           </TableCell>
                           <TableCell>
                             <DueDateCell requiredDate={(order as any).requiredDate} />
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">{formatDate(order.orderDate)}</TableCell>
                           <TableCell className="font-medium text-foreground">{toTitleCase(order.customerName) || 'Unknown'}</TableCell>
+                          <TableCell className="text-sm font-mono text-muted-foreground">{(order as any).poNumber ?? <span className="italic text-muted-foreground/50">—</span>}</TableCell>
                           <TableCell><StatusBadge status={order.status} /></TableCell>
                           <TableCell className="text-right font-semibold text-foreground">
                             {formatCurrency(order.totalAmount)}
