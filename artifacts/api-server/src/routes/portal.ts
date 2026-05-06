@@ -1881,17 +1881,18 @@ router.get("/portal/my-team/employees", portalAuth, async (req: Request, res: Re
            da.label as delivery_address_label,
            da.line1 as delivery_address_line1,
            da.city  as delivery_address_city,
-           COALESCE((
-             SELECT SUM(oi.line_total)::numeric
-             FROM order_items oi
-             JOIN orders o ON o.id = oi.order_id
-             WHERE oi.recipient_employee_id = e.id
-               AND o.status NOT IN ('portal_draft', 'cancelled')
-               AND o.created_at >= NOW() - INTERVAL '12 months'
-           ), 0) AS spend_12m
+           COALESCE(spend.total, 0) AS spend_12m
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
     LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
+    LEFT JOIN (
+      SELECT oi.recipient_employee_id, SUM(oi.line_total)::numeric AS total
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status NOT IN ('portal_draft', 'cancelled')
+        AND o.created_at >= NOW() - INTERVAL '12 months'
+      GROUP BY oi.recipient_employee_id
+    ) spend ON spend.recipient_employee_id = e.id
     WHERE e.customer_id = ${customerId}
       AND e.manager_id = ${myEmpId}
       ${showInactive ? sql`` : sql`AND e.is_active = true`}
@@ -2022,39 +2023,45 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
 
   const showInactive = req.query.showInactive === "true";
 
-  const rows = await db.execute(sql`
-    SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
-           e.department, e.notes, e.is_active, e.allowance,
-           cr.id as role_id, cr.name as role_name,
-           e.manager_id,
-           TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) as manager_name,
-           e.delivery_address_id,
-           da.label as delivery_address_label,
-           da.line1 as delivery_address_line1,
-           da.city  as delivery_address_city,
-           da.postcode as delivery_address_postcode,
-           COALESCE(
-             (SELECT json_agg(json_build_object('label', s.label, 'size', s.size) ORDER BY s.id)
-              FROM customer_employee_sizes s WHERE s.employee_id = e.id),
-             '[]'::json
-           ) as sizes,
-           COALESCE((
-             SELECT SUM(oi.line_total)::numeric
-             FROM order_items oi
-             JOIN orders o ON o.id = oi.order_id
-             WHERE oi.recipient_employee_id = e.id
-               AND o.status NOT IN ('portal_draft', 'cancelled')
-               AND o.created_at >= NOW() - INTERVAL '12 months'
-           ), 0) AS spend_12m
-    FROM customer_employees e
-    LEFT JOIN customer_roles cr ON cr.id = e.role_id
-    LEFT JOIN customer_employees m ON m.id = e.manager_id
-    LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
-    WHERE e.customer_id = ${customerId}
-      ${showInactive ? sql`` : sql`AND e.is_active = true`}
-    ORDER BY e.last_name, e.first_name
-  `);
-  res.json(rows.rows);
+  try {
+    const rows = await db.execute(sql`
+      SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
+             e.department, e.notes, e.is_active, e.allowance,
+             cr.id as role_id, cr.name as role_name,
+             e.manager_id,
+             TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) as manager_name,
+             e.delivery_address_id,
+             da.label as delivery_address_label,
+             da.line1 as delivery_address_line1,
+             da.city  as delivery_address_city,
+             da.postcode as delivery_address_postcode,
+             COALESCE(
+               (SELECT json_agg(json_build_object('label', s.label, 'size', s.size) ORDER BY s.id)
+                FROM customer_employee_sizes s WHERE s.employee_id = e.id),
+               '[]'::json
+             ) as sizes,
+             COALESCE(spend.total, 0) AS spend_12m
+      FROM customer_employees e
+      LEFT JOIN customer_roles cr ON cr.id = e.role_id
+      LEFT JOIN customer_employees m ON m.id = e.manager_id
+      LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
+      LEFT JOIN (
+        SELECT oi.recipient_employee_id, SUM(oi.line_total)::numeric AS total
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.status NOT IN ('portal_draft', 'cancelled')
+          AND o.created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY oi.recipient_employee_id
+      ) spend ON spend.recipient_employee_id = e.id
+      WHERE e.customer_id = ${customerId}
+        ${showInactive ? sql`` : sql`AND e.is_active = true`}
+      ORDER BY e.last_name, e.first_name
+    `);
+    res.json(rows.rows);
+  } catch (err: any) {
+    console.error("[portal/team/employees] DB error:", err?.message, err?.cause?.message, err?.code);
+    res.status(500).json({ error: "Failed to load employees" });
+  }
 });
 
 router.post("/portal/team/employees", portalAuth, async (req: Request, res: Response) => {
