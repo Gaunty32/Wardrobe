@@ -183,7 +183,7 @@ function PlainStockTab() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {items.map(v => (
+                      {sortBySize(items, v => v.size).map(v => (
                         <TableRow key={v.variantId} className="group">
                           <TableCell className="font-mono text-xs text-muted-foreground">{v.sku || "—"}</TableCell>
                           <TableCell className="text-sm">{v.colour || "—"}</TableCell>

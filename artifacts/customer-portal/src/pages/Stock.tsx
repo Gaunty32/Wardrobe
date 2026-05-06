@@ -95,7 +95,7 @@ function groupItems(items: StockItem[]): CardGroup[] {
     }
     map.get(key)!.items.push(item);
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).map(g => ({ ...g, items: sortBySize(g.items, i => i.size) }));
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
