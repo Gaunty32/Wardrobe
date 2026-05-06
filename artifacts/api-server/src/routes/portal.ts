@@ -416,12 +416,24 @@ router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => 
 
     if (portalIsPreview && linkedEmployeeId) {
       deptEmployeeId = linkedEmployeeId;
+      // Also look up the employee's email so orders matched only by email are visible
+      const empEmailRows = await db.execute(sql`
+        SELECT email FROM customer_employees WHERE id = ${linkedEmployeeId} LIMIT 1
+      `);
+      deptEmail = (empEmailRows.rows[0] as any)?.email ?? null;
     } else if (portalUserId) {
       const userRows = await db.execute(sql`
         SELECT email, linked_employee_id FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1
       `);
       deptEmail = (userRows.rows[0] as any)?.email ?? null;
       deptEmployeeId = (userRows.rows[0] as any)?.linked_employee_id ?? null;
+      // If we have a linked employee ID but no portal-user email, also check the employee record
+      if (deptEmployeeId && !deptEmail) {
+        const empEmailRows = await db.execute(sql`
+          SELECT email FROM customer_employees WHERE id = ${deptEmployeeId} LIMIT 1
+        `);
+        deptEmail = (empEmailRows.rows[0] as any)?.email ?? null;
+      }
     }
 
     // Build the ownership condition:
