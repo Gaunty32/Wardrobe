@@ -1209,6 +1209,15 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
   });
 });
 
+const UpdateOrderItemBodyExtended = z.object({
+  quantity: z.number().int().positive().optional(),
+  unitPrice: z.number().min(0).optional(),
+  purchaseRequired: z.boolean().optional(),
+  purchaseQuantity: z.number().int().min(0).nullable().optional(),
+  supplierId: z.number().int().positive().nullable().optional(),
+  supplierName: z.string().nullable().optional(),
+});
+
 router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
   const params = UpdateOrderItemParams.safeParse(req.params);
   if (!params.success) {
@@ -1216,7 +1225,7 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
     return;
   }
 
-  const parsed = UpdateOrderItemBody.safeParse(req.body);
+  const parsed = UpdateOrderItemBodyExtended.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -1237,6 +1246,11 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
     unitPrice: String(unitPrice),
     lineTotal: String(lineTotal),
   };
+
+  if (parsed.data.purchaseRequired !== undefined) updateData.purchaseRequired = parsed.data.purchaseRequired;
+  if (parsed.data.purchaseQuantity !== undefined) updateData.purchaseQuantity = parsed.data.purchaseQuantity;
+  if (parsed.data.supplierId !== undefined) updateData.supplierId = parsed.data.supplierId;
+  if (parsed.data.supplierName !== undefined) updateData.supplierName = parsed.data.supplierName;
 
   const [item] = await db
     .update(orderItemsTable)
