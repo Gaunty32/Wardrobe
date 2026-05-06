@@ -1874,12 +1874,21 @@ router.get("/portal/my-team/employees", portalAuth, async (req: Request, res: Re
 
   const rows = await db.execute(sql`
     SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
-           e.department, e.notes, e.is_active,
+           e.department, e.notes, e.is_active, e.allowance,
            cr.id as role_id, cr.name as role_name,
+           e.manager_id,
            e.delivery_address_id,
            da.label as delivery_address_label,
            da.line1 as delivery_address_line1,
-           da.city  as delivery_address_city
+           da.city  as delivery_address_city,
+           COALESCE((
+             SELECT SUM(oi.line_total)::numeric
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             WHERE oi.recipient_employee_id = e.id
+               AND o.status NOT IN ('portal_draft', 'cancelled')
+               AND o.created_at >= NOW() - INTERVAL '12 months'
+           ), 0) AS spend_12m
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
     LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
@@ -2015,7 +2024,7 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
 
   const rows = await db.execute(sql`
     SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
-           e.department, e.notes, e.is_active,
+           e.department, e.notes, e.is_active, e.allowance,
            cr.id as role_id, cr.name as role_name,
            e.manager_id,
            TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) as manager_name,
@@ -2028,7 +2037,15 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
              (SELECT json_agg(json_build_object('label', s.label, 'size', s.size) ORDER BY s.id)
               FROM customer_employee_sizes s WHERE s.employee_id = e.id),
              '[]'::json
-           ) as sizes
+           ) as sizes,
+           COALESCE((
+             SELECT SUM(oi.line_total)::numeric
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             WHERE oi.recipient_employee_id = e.id
+               AND o.status NOT IN ('portal_draft', 'cancelled')
+               AND o.created_at >= NOW() - INTERVAL '12 months'
+           ), 0) AS spend_12m
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
     LEFT JOIN customer_employees m ON m.id = e.manager_id
@@ -2092,6 +2109,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
     notes: z.string().optional().nullable(),
     isActive: z.boolean().optional(),
     deliveryAddressId: z.number().int().optional().nullable(),
+    allowance: z.number().min(0).optional().nullable(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
@@ -2109,6 +2127,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   if (d.notes !== undefined) sets.push(`notes = ${d.notes === null ? "NULL" : `'${d.notes.replace(/'/g, "''")}'`}`);
   if (d.isActive !== undefined) sets.push(`is_active = ${d.isActive}`);
   if (d.deliveryAddressId !== undefined) sets.push(`delivery_address_id = ${d.deliveryAddressId === null ? "NULL" : d.deliveryAddressId}`);
+  if (d.allowance !== undefined) sets.push(`allowance = ${d.allowance === null ? "NULL" : d.allowance}`);
 
   if (sets.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
 

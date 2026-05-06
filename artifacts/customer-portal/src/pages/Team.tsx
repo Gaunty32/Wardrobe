@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon,
+  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -74,6 +74,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
     deliveryAddressId: initial?.delivery_address_id ? String(initial.delivery_address_id) : "none",
     roleId: initial?.role_id ? String(initial.role_id) : "none",
     managerId: initial?.manager_id ? String(initial.manager_id) : "none",
+    allowance: initial?.allowance != null ? String(initial.allowance) : "",
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -191,6 +192,27 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
         </div>
       )}
 
+      {/* Annual allowance */}
+      <div className="space-y-1 pt-1">
+        <Label className="flex items-center gap-1.5">
+          <Wallet className="w-3.5 h-3.5 text-muted-foreground" />
+          Annual allowance (£)
+          <span className="font-normal text-muted-foreground ml-1">(optional — leave blank for no limit)</span>
+        </Label>
+        <div className="relative">
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+          <Input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="e.g. 250.00"
+            className="pl-7"
+            value={form.allowance}
+            onChange={e => set("allowance", e.target.value)}
+          />
+        </div>
+      </div>
+
       {/* Clothing sizes section */}
       <div className="space-y-2 pt-1">
         <div className="flex items-center justify-between">
@@ -246,6 +268,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
               deliveryAddressId: form.deliveryAddressId === "none" ? null : parseInt(form.deliveryAddressId, 10),
               roleId: form.roleId === "none" ? null : parseInt(form.roleId, 10),
               managerId: form.managerId === "none" ? null : parseInt(form.managerId, 10),
+              allowance: form.allowance.trim() !== "" ? parseFloat(form.allowance) : null,
             },
             validSizes
           )}
@@ -406,6 +429,43 @@ function EmployeesTab() {
                     ))}
                   </div>
                 )}
+                {(() => {
+                  const spend = parseFloat(emp.spend_12m ?? "0");
+                  const allowance = emp.allowance != null ? parseFloat(emp.allowance) : null;
+                  if (allowance != null && allowance > 0) {
+                    const pct = Math.min(100, (spend / allowance) * 100);
+                    const over = spend > allowance;
+                    return (
+                      <div className="mt-1.5 max-w-xs">
+                        <div className="flex items-center gap-2 text-[11px] mb-0.5">
+                          <Wallet className="w-3 h-3 text-muted-foreground shrink-0" />
+                          <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
+                            £{spend.toFixed(2)} of £{allowance.toFixed(2)} spent
+                          </span>
+                          {over
+                            ? <span className="text-destructive font-medium">— over budget</span>
+                            : <span className="text-muted-foreground/70">£{(allowance - spend).toFixed(2)} remaining</span>
+                          }
+                        </div>
+                        <div className="h-1.5 w-48 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (spend > 0) {
+                    return (
+                      <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                        <Wallet className="w-3 h-3 shrink-0" />
+                        £{spend.toFixed(2)} spend in last 12 months
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               {emp.role_name && (
                 <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>
@@ -1044,6 +1104,43 @@ function MyTeamTab() {
                 <p className="text-xs text-muted-foreground truncate">
                   {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
                 </p>
+                {(() => {
+                  const spend = parseFloat(emp.spend_12m ?? "0");
+                  const allowance = emp.allowance != null ? parseFloat(emp.allowance) : null;
+                  if (allowance != null && allowance > 0) {
+                    const pct = Math.min(100, (spend / allowance) * 100);
+                    const over = spend > allowance;
+                    return (
+                      <div className="mt-1.5 max-w-xs">
+                        <div className="flex items-center gap-2 text-[11px] mb-0.5">
+                          <Wallet className="w-3 h-3 text-muted-foreground shrink-0" />
+                          <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
+                            £{spend.toFixed(2)} of £{allowance.toFixed(2)} spent
+                          </span>
+                          {over
+                            ? <span className="text-destructive font-medium">— over budget</span>
+                            : <span className="text-muted-foreground/70">£{(allowance - spend).toFixed(2)} remaining</span>
+                          }
+                        </div>
+                        <div className="h-1.5 w-48 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (spend > 0) {
+                    return (
+                      <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                        <Wallet className="w-3 h-3 shrink-0" />
+                        £{spend.toFixed(2)} spend in last 12 months
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               {emp.role_name && <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>}
               <div className="flex items-center gap-1 shrink-0">

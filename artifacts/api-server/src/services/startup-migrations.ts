@@ -395,6 +395,9 @@ export async function runStartupMigrations(): Promise<void> {
     )
   `);
 
+  // Per-employee annual allowance (spend budget)
+  await db.execute(sql`ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS allowance numeric(10,2);`);
+
   // ── Backfill stock allocation for confirmed orders that were never processed ──
   // Finds confirmed orders where items still have purchase_required IS NULL
   // (i.e., confirmed before the allocation-on-confirm feature was deployed).

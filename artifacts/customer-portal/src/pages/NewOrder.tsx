@@ -22,7 +22,7 @@ import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search,
   User, Package, History, Tag, Sparkles, Heart, X, Mail, UserPlus,
-  CreditCard, FileText, AlertCircle, Printer, MapPin, Boxes,
+  CreditCard, FileText, AlertCircle, Printer, MapPin, Boxes, TrendingUp,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -655,6 +655,42 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                 </div>
                 <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
                 {emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>}
+                {(() => {
+                  const spend = parseFloat(emp.spend_12m ?? "0");
+                  const allowance = emp.allowance != null ? parseFloat(emp.allowance) : null;
+                  if (allowance != null && allowance > 0) {
+                    const pct = Math.min(100, (spend / allowance) * 100);
+                    const over = spend > allowance;
+                    return (
+                      <div className="mt-1.5 w-full">
+                        <div className="flex justify-between text-[10px] mb-0.5">
+                          <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
+                            £{spend.toFixed(0)} of £{allowance.toFixed(0)}
+                          </span>
+                          {over
+                            ? <span className="text-destructive font-medium">Over budget</span>
+                            : <span className="text-muted-foreground">£{(allowance - spend).toFixed(0)} left</span>
+                          }
+                        </div>
+                        <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+                  if (spend > 0) {
+                    return (
+                      <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-0.5">
+                        <TrendingUp className="w-2.5 h-2.5 shrink-0" />
+                        £{spend.toFixed(0)} this year
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </button>
             );
           })}
