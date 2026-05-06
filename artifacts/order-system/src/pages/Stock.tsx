@@ -11,6 +11,7 @@ import {
 import { AlertTriangle, Search, Loader2, Package, Shirt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { sortBySize } from "@/lib/sizeUtils";
 
 const API_BASE = "/api";
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {

@@ -15,7 +15,11 @@ function normalise(s: string): string {
 function baseRank(token: string): number {
   const n = normalise(token);
   const idx = SIZE_ORDER.findIndex(r => normalise(r) === n);
-  return idx === -1 ? 9999 : idx;
+  if (idx !== -1) return idx;
+  // Pure numeric sizes (shoe sizes, waist sizes, etc.) — sort numerically after text sizes
+  const num = parseFloat(n);
+  if (!isNaN(num) && String(num) === n) return 500 + num;
+  return 9999;
 }
 
 export function sizeRank(s: string | null | undefined): number {

@@ -18,6 +18,7 @@ import {
   Pencil, Trash2, Package, MapPin, TrendingDown, RefreshCw, Shirt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sortBySize } from "@/lib/sizeUtils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
