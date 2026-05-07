@@ -530,19 +530,17 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    const W = doc.page.width - 100;
+    const MARGIN = 50;
+    const W = doc.page.width - MARGIN * 2;
+    const PAGE_H = doc.page.height;
     const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    const rightX = 50 + W - 190;
     const logoBuffer = Buffer.from(SBS_LOGO_B64, "base64");
 
     // ── Header ────────────────────────────────────────────────────────────────
     const headerH = 88;
-    doc.rect(50, 50, W, headerH).fill("#1e293b");
-
-    // Logo — left side
+    doc.rect(MARGIN, MARGIN, W, headerH).fill("#1e293b");
     doc.image(logoBuffer, 65, 63, { fit: [155, 55], align: "left", valign: "center" });
-
-    // PO label + number + date — right side
+    const rightX = MARGIN + W - 190;
     doc.fillColor("#94a3b8").fontSize(9).font("Helvetica")
       .text("Purchase Order", rightX, 65, { width: 185, align: "right" });
     doc.fillColor("#ffffff").fontSize(13).font("Helvetica-Bold")
@@ -551,20 +549,14 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       .text(dateStr, rightX, 96, { width: 185, align: "right" });
 
     // ── Supplier block ────────────────────────────────────────────────────────
-    const supStartY = 50 + headerH + 16;
-    let sy = supStartY;
-    const labelX = 50;
-    const valueX = 130;
-    const valueW = W - 80;
-
+    let y = MARGIN + headerH + 16;
     const supRow = (label: string, value: string) => {
       doc.font("Helvetica-Bold").fontSize(9).fillColor("#374151")
-        .text(label, labelX, sy, { width: 75 });
+        .text(label, MARGIN, y, { width: 75 });
       doc.font("Helvetica").fontSize(9).fillColor("#111827")
-        .text(value, valueX, sy, { width: valueW });
-      sy += 14;
+        .text(value, 130, y, { width: W - 80 });
+      y += 14;
     };
-
     supRow("Supplier:", po.supplierName);
     if (po.supplierContactName) supRow("Attention:", po.supplierContactName);
     if (po.supplierAddress)     supRow("Address:",   po.supplierAddress);
@@ -572,133 +564,140 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     if (po.supplierEmail)       supRow("Email:",     po.supplierEmail);
     if (po.notes)               supRow("Notes:",     po.notes);
 
-    sy += 8;
-    const tableTop = sy;
+    y += 10;
+    doc.moveTo(MARGIN, y).lineTo(MARGIN + W, y).strokeColor("#e2e8f0").lineWidth(0.5).stroke();
+    y += 14;
 
-    // Build matrix
+    // ── Per-product style sections ────────────────────────────────────────────
     const { groupKeys, groups } = buildMatrix(po.items);
-
-    // Collect all unique sizes across all groups
-    const allSizes: string[] = [];
-    for (const gk of groupKeys) {
-      for (const s of groups.get(gk)!.sizes) {
-        if (!allSizes.includes(s)) allSizes.push(s);
-      }
-    }
-
-    // Column widths: Code | Colour | [sizes] | Total
-    const codeW = 80;
-    const colourW = 100;
-    const totalW = 45;
-    const sizeW = Math.min(55, Math.max(40, Math.floor((W - codeW - colourW - totalW) / Math.max(allSizes.length, 1))));
-    const tableW = codeW + colourW + sizeW * allSizes.length + totalW;
-    const startX = 50 + (W - tableW) / 2;
-
-    // Draw header row
-    let y = tableTop;
-    const rowH = 18;
-    doc.rect(startX, y, tableW, rowH).fill("#1e293b");
-    doc.fillColor("#ffffff").fontSize(8).font("Helvetica-Bold");
-
-    doc.text("Code", startX + 4, y + 5, { width: codeW - 4 });
-    doc.text("Colour", startX + codeW + 4, y + 5, { width: colourW - 4 });
-    let sx = startX + codeW + colourW;
-    for (const s of allSizes) {
-      doc.text(s, sx + 2, y + 5, { width: sizeW - 4, align: "center" });
-      sx += sizeW;
-    }
-    doc.text("Total", sx + 2, y + 5, { width: totalW - 4, align: "center" });
-    y += rowH;
-
-    // Draw data rows
+    const ROW_H = 20;
+    const PROD_HDR_H = 24;
+    const COL_HDR_H = 18;
     let grandTotal = 0;
     let grandValue = 0;
-    let rowAlt = false;
 
     for (const gk of groupKeys) {
       const g = groups.get(gk)!;
-      const groupTotal = g.colours.reduce((sum, c) => sum + g.sizes.reduce((s2, sz) => s2 + (g.qty.get(c)?.get(sz) ?? 0), 0), 0);
+      const productSizes = g.sizes;
+      const numCols = productSizes.length;
+
+      // Column layout: Colour | size… | Total
+      const COLOUR_W = 115;
+      const TOTAL_W  = 48;
+      const SIZE_W   = Math.min(60, Math.max(36, Math.floor((W - COLOUR_W - TOTAL_W) / Math.max(numCols, 1))));
+      const TABLE_W  = COLOUR_W + SIZE_W * numCols + TOTAL_W;
+      const tX       = MARGIN + (W - TABLE_W) / 2;
+
+      // Estimate space needed: product header + col header + rows + totals row
+      const sectionH = PROD_HDR_H + COL_HDR_H + (g.colours.length + 1) * ROW_H + 14;
+      if (y + sectionH > PAGE_H - 60) {
+        doc.addPage();
+        y = MARGIN;
+      }
+
+      // ── Product heading band ──
+      const code        = g.code ?? g.sbsCode ?? null;
+      const sbsCodeNote = g.sbsCode && g.code && g.sbsCode !== g.code ? `  (SBS: ${g.sbsCode})` : "";
+      doc.rect(MARGIN, y, W, PROD_HDR_H).fill("#0f172a");
+      // Code on the left in monospace amber
+      if (code) {
+        doc.fillColor("#fbbf24").fontSize(10).font("Helvetica-Bold")
+          .text(code, MARGIN + 8, y + 7, { width: 120, lineBreak: false });
+        doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
+          .text(`  ${g.productName}${sbsCodeNote}`, MARGIN + 10 + 120, y + 7, { width: W - 148, lineBreak: false });
+      } else {
+        doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
+          .text(g.productName, MARGIN + 8, y + 7, { width: W - 16, lineBreak: false });
+      }
+      y += PROD_HDR_H;
+
+      // ── Column header row ──
+      doc.rect(tX, y, TABLE_W, COL_HDR_H).fill("#334155");
+      doc.fillColor("#e2e8f0").fontSize(8).font("Helvetica-Bold");
+      doc.text("Colour / Style", tX + 6, y + 5, { width: COLOUR_W - 6, lineBreak: false });
+      let sx = tX + COLOUR_W;
+      for (const sz of productSizes) {
+        doc.text(sz, sx, y + 5, { width: SIZE_W, align: "center", lineBreak: false });
+        sx += SIZE_W;
+      }
+      doc.text("Total", sx, y + 5, { width: TOTAL_W, align: "center", lineBreak: false });
+      y += COL_HDR_H;
+
+      // ── Colour rows ──
+      let rowAlt = false;
+      const sizeTotals = new Map<string, number>();
+      let groupTotal = 0;
+
+      for (const colour of g.colours) {
+        if (y + ROW_H > PAGE_H - 60) { doc.addPage(); y = MARGIN; }
+        const rowTotal = productSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+        groupTotal += rowTotal;
+
+        doc.rect(tX, y, TABLE_W, ROW_H)
+          .fill(rowAlt ? "#f1f5f9" : "#ffffff")
+          .stroke("#e2e8f0");
+
+        // Colour label
+        doc.fillColor("#111827").fontSize(9).font("Helvetica")
+          .text(colour, tX + 6, y + 6, { width: COLOUR_W - 6, lineBreak: false });
+
+        // Size quantities
+        sx = tX + COLOUR_W;
+        for (const sz of productSizes) {
+          const qty = g.qty.get(colour)?.get(sz) ?? 0;
+          if (qty > 0) sizeTotals.set(sz, (sizeTotals.get(sz) ?? 0) + qty);
+          if (qty > 0) {
+            doc.fillColor("#111827").fontSize(9).font("Helvetica-Bold")
+              .text(String(qty), sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
+          } else {
+            doc.fillColor("#cbd5e1").fontSize(9).font("Helvetica")
+              .text("—", sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
+          }
+          sx += SIZE_W;
+        }
+
+        // Row total
+        doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
+          .text(String(rowTotal), sx, y + 6, { width: TOTAL_W, align: "center", lineBreak: false });
+
+        y += ROW_H;
+        rowAlt = !rowAlt;
+      }
+
+      // ── Size-totals row ──
+      if (y + ROW_H > PAGE_H - 60) { doc.addPage(); y = MARGIN; }
+      doc.rect(tX, y, TABLE_W, ROW_H).fill("#dde3ea").stroke("#c8d0da");
+      doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold")
+        .text("TOTAL", tX + 6, y + 6, { width: COLOUR_W - 6, lineBreak: false });
+      sx = tX + COLOUR_W;
+      for (const sz of productSizes) {
+        const t = sizeTotals.get(sz) ?? 0;
+        doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
+          .text(t > 0 ? String(t) : "—", sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
+        sx += SIZE_W;
+      }
+      doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
+        .text(String(groupTotal), sx, y + 6, { width: TOTAL_W, align: "center", lineBreak: false });
+      y += ROW_H;
+
       grandTotal += groupTotal;
       if (g.price != null) grandValue += groupTotal * g.price;
-
-      let firstColour = true;
-      for (const colour of g.colours) {
-        const rowTotal = g.sizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
-
-        doc.rect(startX, y, tableW, rowH).fill(rowAlt ? "#f8fafc" : "#ffffff").stroke("#e2e8f0");
-        doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold");
-
-        if (firstColour) {
-          const primaryCode = g.code ?? g.sbsCode ?? "—";
-          doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold").text(primaryCode, startX + 4, y + 4, { width: codeW - 4 });
-          if (g.sbsCode && g.code && g.sbsCode !== g.code) {
-            doc.fillColor("#64748b").fontSize(6.5).font("Helvetica").text(g.sbsCode, startX + 4, y + 13, { width: codeW - 4 });
-          }
-          firstColour = false;
-        }
-        doc.font("Helvetica").text(colour, startX + codeW + 4, y + 5, { width: colourW - 4 });
-
-        sx = startX + codeW + colourW;
-        for (const sz of allSizes) {
-          const qty = g.qty.get(colour)?.get(sz) ?? 0;
-          doc.text(qty > 0 ? String(qty) : "—", sx + 2, y + 5, { width: sizeW - 4, align: "center" });
-          sx += sizeW;
-        }
-        doc.font("Helvetica-Bold").text(String(rowTotal), sx + 2, y + 5, { width: totalW - 4, align: "center" });
-
-        y += rowH;
-        rowAlt = !rowAlt;
-
-        if (y > doc.page.height - 80) {
-          doc.addPage();
-          y = 50;
-        }
-      }
-
-      // Group subtotal if more than one colour
-      if (g.colours.length > 1) {
-        doc.rect(startX, y, tableW, rowH).fill("#e2e8f0");
-        doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold");
-        doc.text("", startX + 4, y + 5, { width: codeW - 4 });
-        doc.text("Subtotal", startX + codeW + 4, y + 5, { width: colourW - 4 });
-        sx = startX + codeW + colourW;
-        for (const sz of allSizes) {
-          const colTotal = g.colours.reduce((sum, c) => sum + (g.qty.get(c)?.get(sz) ?? 0), 0);
-          doc.text(colTotal > 0 ? String(colTotal) : "—", sx + 2, y + 5, { width: sizeW - 4, align: "center" });
-          sx += sizeW;
-        }
-        doc.text(String(groupTotal), sx + 2, y + 5, { width: totalW - 4, align: "center" });
-        y += rowH;
-      }
+      y += 16; // gap between product sections
     }
 
-    // Grand total row
-    doc.rect(startX, y, tableW, rowH).fill("#1e293b");
-    doc.fillColor("#ffffff").fontSize(8).font("Helvetica-Bold");
-    doc.text("TOTAL", startX + 4, y + 5, { width: codeW + colourW - 4 });
-    sx = startX + codeW + colourW;
-    const allSizeTotals = allSizes.map((sz) =>
-      groupKeys.reduce((sum, gk) => {
-        const g = groups.get(gk)!;
-        return sum + g.colours.reduce((s, c) => s + (g.qty.get(c)?.get(sz) ?? 0), 0);
-      }, 0)
-    );
-    for (let i = 0; i < allSizes.length; i++) {
-      doc.text(allSizeTotals[i] > 0 ? String(allSizeTotals[i]) : "—", sx + 2, y + 5, { width: sizeW - 4, align: "center" });
-      sx += sizeW;
-    }
-    doc.text(String(grandTotal), sx + 2, y + 5, { width: totalW - 4, align: "center" });
-    y += rowH + 12;
+    // ── Grand total bar ───────────────────────────────────────────────────────
+    if (y + 26 > PAGE_H - 50) { doc.addPage(); y = MARGIN; }
+    doc.rect(MARGIN, y, W, 26).fill("#1e293b");
+    const gtText = grandValue > 0
+      ? `Total order: ${grandTotal} units  ·  Est. value: £${grandValue.toFixed(2)}`
+      : `Total order: ${grandTotal} units`;
+    doc.fillColor("#ffffff").fontSize(11).font("Helvetica-Bold")
+      .text(gtText, MARGIN + 8, y + 8, { width: W - 16, align: "right", lineBreak: false });
+    y += 38;
 
-    // Summary line
-    doc.fillColor("#374151").fontSize(10).font("Helvetica").text(`Total units: ${grandTotal}`, startX, y);
-    if (grandValue > 0) {
-      doc.text(`  ·  Total value: £${grandValue.toFixed(2)}`, startX + 90, y);
-    }
-
-    // Footer
-    const footerY = doc.page.height - 40;
-    doc.fillColor("#9ca3af").fontSize(8).text("Select Branding Solutions · Effortless uniform management from order to delivery.", 50, footerY, { align: "center", width: W });
+    // ── Footer ────────────────────────────────────────────────────────────────
+    doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
+      .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 38, { align: "center", width: W });
 
     doc.end();
   });
@@ -709,26 +708,65 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
   const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const subject = `Purchase Order ${po.poNumber} — Select Branding Solutions`;
 
-  const rowsHtml = groupKeys.map((gk) => {
+  // Per-product section HTML
+  const productSectionsHtml = groupKeys.map((gk) => {
     const g = groups.get(gk)!;
-    return g.colours.map((colour) => {
-      const rowTotal = g.sizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
-      const sizeCells = g.sizes.map((sz) => {
+    const code = g.code ?? g.sbsCode ?? null;
+    const productSizes = g.sizes;
+    const sizeHeaders = productSizes.map((s) =>
+      `<th style="padding:7px 8px;text-align:center;font-size:11px;font-weight:700;color:#e2e8f0;background:#334155;border-left:1px solid #475569;">${s}</th>`
+    ).join("");
+
+    let groupTotal = 0;
+    const sizeTotals = new Map<string, number>();
+
+    const dataRows = g.colours.map((colour, ci) => {
+      const rowTotal = productSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+      groupTotal += rowTotal;
+      const bg = ci % 2 === 0 ? "#ffffff" : "#f8fafc";
+      const sizeCells = productSizes.map((sz) => {
         const qty = g.qty.get(colour)?.get(sz) ?? 0;
-        return `<td style="padding:6px 10px;text-align:center;border-bottom:1px solid #e5e7eb;">${qty > 0 ? `<strong>${qty}</strong>` : "—"}</td>`;
+        if (qty > 0) sizeTotals.set(sz, (sizeTotals.get(sz) ?? 0) + qty);
+        return `<td style="padding:7px 8px;text-align:center;border-left:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;font-size:13px;${qty > 0 ? "font-weight:700;color:#111827;" : "color:#d1d5db;"}">${qty > 0 ? qty : "—"}</td>`;
       }).join("");
-      return `<tr>
-        <td style="padding:6px 10px;font-family:monospace;border-bottom:1px solid #e5e7eb;">${g.code ?? "—"}</td>
-        <td style="padding:6px 10px;border-bottom:1px solid #e5e7eb;">${colour}</td>
+      return `<tr style="background:${bg};">
+        <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;">${colour}</td>
         ${sizeCells}
-        <td style="padding:6px 10px;text-align:center;font-weight:700;border-bottom:1px solid #e5e7eb;">${rowTotal}</td>
+        <td style="padding:7px 8px;text-align:center;border-left:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:#1e293b;">${rowTotal}</td>
       </tr>`;
     }).join("");
+
+    const totalCells = productSizes.map((sz) => {
+      const t = sizeTotals.get(sz) ?? 0;
+      return `<td style="padding:7px 8px;text-align:center;border-left:1px solid #c8d0da;font-size:13px;font-weight:700;color:#1e293b;background:#dde3ea;">${t > 0 ? t : "—"}</td>`;
+    }).join("");
+
+    const headingBg = "#0f172a";
+    const codeHtml = code
+      ? `<span style="font-family:monospace;color:#fbbf24;font-size:12px;font-weight:700;">${code}</span>&nbsp;&nbsp;`
+      : "";
+
+    return `
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;margin-bottom:18px;border:1px solid #e2e8f0;">
+        <tr>
+          <td colspan="${1 + productSizes.length + 1}" style="background:${headingBg};padding:9px 12px;">
+            ${codeHtml}<span style="color:#f1f5f9;font-size:13px;font-weight:700;">${g.productName}</span>
+          </td>
+        </tr>
+        <tr style="background:#334155;">
+          <th style="padding:7px 10px;text-align:left;font-size:11px;font-weight:700;color:#e2e8f0;">Colour / Style</th>
+          ${sizeHeaders}
+          <th style="padding:7px 8px;text-align:center;font-size:11px;font-weight:700;color:#e2e8f0;border-left:1px solid #475569;">Total</th>
+        </tr>
+        ${dataRows}
+        <tr style="background:#dde3ea;">
+          <td style="padding:7px 10px;font-size:12px;font-weight:700;color:#1e293b;">TOTAL</td>
+          ${totalCells}
+          <td style="padding:7px 8px;text-align:center;border-left:1px solid #c8d0da;font-size:13px;font-weight:700;color:#1e293b;">${groupTotal}</td>
+        </tr>
+      </table>`;
   }).join("");
 
-  const allSizes: string[] = [];
-  for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) if (!allSizes.includes(s)) allSizes.push(s);
-  const sizeHeaders = allSizes.map((s) => `<th style="padding:8px 10px;text-align:center;font-size:12px;color:#6b7280;background:#f8fafc;border-bottom:1px solid #e5e7eb;">${s}</th>`).join("");
   const totalUnits = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
   const totalValue = po.items.reduce((s, i) => s + (i.supplierPrice != null ? i.supplierPrice * i.quantityOrdered : 0), 0);
 
@@ -736,7 +774,7 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
 <body style="margin:0;padding:0;background:#f9fafb;font-family:Arial,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr><td align="center" style="padding:32px 16px;">
-      <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
         <tr><td style="background:#1e293b;padding:20px 32px;">
           <table width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:middle;">
@@ -750,22 +788,16 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
           </tr></table>
         </td></tr>
         <tr><td style="padding:28px 32px;">
-          <p style="margin:0 0 20px;font-size:15px;color:#374151;">Dear ${po.supplierContactName ?? po.supplierName},<br><br>Please supply the following items for order <strong>${po.poNumber}</strong> dated ${dateStr}. A detailed PDF is attached for your records.</p>
-          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:6px;border-collapse:collapse;margin-bottom:20px;">
-            <thead><tr>
-              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6b7280;background:#f8fafc;border-bottom:1px solid #e5e7eb;">Code</th>
-              <th style="padding:8px 10px;text-align:left;font-size:12px;color:#6b7280;background:#f8fafc;border-bottom:1px solid #e5e7eb;">Colour</th>
-              ${sizeHeaders}
-              <th style="padding:8px 10px;text-align:center;font-size:12px;color:#6b7280;background:#f8fafc;border-bottom:1px solid #e5e7eb;">Total</th>
-            </tr></thead>
-            <tbody>${rowsHtml}</tbody>
-            <tfoot><tr>
-              <td colspan="${2 + allSizes.length}" style="padding:10px;text-align:right;font-weight:600;font-size:14px;background:#f8fafc;">Total units</td>
-              <td style="padding:10px;text-align:center;font-weight:700;font-size:14px;background:#f8fafc;">${totalUnits}</td>
-            </tr>${totalValue > 0 ? `<tr><td colspan="${2 + allSizes.length}" style="padding:10px;text-align:right;font-weight:600;font-size:14px;background:#f8fafc;">Total value</td><td style="padding:10px;text-align:center;font-weight:700;font-size:14px;background:#f8fafc;">£${totalValue.toFixed(2)}</td></tr>` : ""}</tfoot>
+          <p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.6;">Dear ${po.supplierContactName ?? po.supplierName},<br><br>Please supply the following items for purchase order <strong>${po.poNumber}</strong> dated ${dateStr}. The PDF attached contains the same information for your records.</p>
+          ${productSectionsHtml}
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;margin-bottom:24px;">
+            <tr style="background:#1e293b;">
+              <td style="padding:10px 16px;color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;">Total order</td>
+              <td style="padding:10px 16px;color:#ffffff;font-size:15px;font-weight:700;text-align:right;">${totalUnits} units${totalValue > 0 ? `  ·  £${totalValue.toFixed(2)}` : ""}</td>
+            </tr>
           </table>
-          ${po.notes || extraNotes ? `<p style="font-size:14px;color:#374151;margin-bottom:20px;"><strong>Notes:</strong> ${[po.notes, extraNotes].filter(Boolean).join(" — ")}</p>` : ""}
-          <p style="font-size:14px;color:#374151;margin:0;">Please confirm receipt of this order at your earliest convenience.<br><br>Kind regards,<br><strong>Select Branding Solutions</strong></p>
+          ${po.notes || extraNotes ? `<p style="font-size:14px;color:#374151;margin-bottom:20px;padding:10px 14px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 4px 4px 0;"><strong>Notes:</strong> ${[po.notes, extraNotes].filter(Boolean).join(" — ")}</p>` : ""}
+          <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">Please confirm receipt of this order at your earliest convenience.<br><br>Kind regards,<br><strong>Select Branding Solutions</strong></p>
         </td></tr>
         <tr><td style="background:#f8fafc;padding:14px 32px;border-top:1px solid #e5e7eb;">
           <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Select Branding Solutions · Effortless uniform management from order to delivery.</p>
@@ -775,18 +807,26 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
   </table>
 </body></html>`;
 
+  // Plain-text fallback
   const lines = [`Dear ${po.supplierName},`, ``, `Please supply the following items for PO ${po.poNumber} (${dateStr}):`, ``];
   for (const gk of groupKeys) {
     const g = groups.get(gk)!;
-    lines.push(`${g.productName}${g.code ? ` [${g.code}]` : ""}:`);
+    const code = g.code ?? g.sbsCode;
+    lines.push(`${code ? `[${code}] ` : ""}${g.productName}`);
+    lines.push("-".repeat(40));
+    // Header
+    const hdr = ["Colour".padEnd(20), ...g.sizes.map((s) => s.padStart(6)), "Total".padStart(7)].join("  ");
+    lines.push(hdr);
     for (const colour of g.colours) {
-      const parts = g.sizes.map((sz) => { const q = g.qty.get(colour)?.get(sz) ?? 0; return q > 0 ? `${sz}: ${q}` : null; }).filter(Boolean);
-      lines.push(`  ${colour} — ${parts.join(", ")}`);
+      const rowTotal = g.sizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+      const cells = g.sizes.map((sz) => { const q = g.qty.get(colour)?.get(sz) ?? 0; return (q > 0 ? String(q) : "—").padStart(6); });
+      lines.push([colour.padEnd(20), ...cells, String(rowTotal).padStart(7)].join("  "));
     }
     lines.push(``);
   }
-  if (po.notes || extraNotes) lines.push(`Notes: ${[po.notes, extraNotes].filter(Boolean).join(" — ")}`, ``);
-  lines.push(`Kind regards,`, `Select Branding Solutions`);
+  lines.push(`Total: ${totalUnits} units`);
+  if (po.notes || extraNotes) lines.push(``, `Notes: ${[po.notes, extraNotes].filter(Boolean).join(" — ")}`);
+  lines.push(``, `Kind regards,`, `Select Branding Solutions`);
 
   return { subject, html, text: lines.join("\n") };
 }
