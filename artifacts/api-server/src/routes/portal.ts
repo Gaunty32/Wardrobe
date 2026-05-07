@@ -13,6 +13,7 @@ import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { generateInvoicePDF, buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email.js";
+import { SBS_LOGO_DATA_URL } from "../assets/logo-data.js";
 import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
 import { notifyCustomerManagers, notifyPortalUserByEmail, notifyAllPortalUsers, sendMobileInstructionsEmail } from "../services/notifications.js";
 
@@ -28,7 +29,7 @@ function buildMagicLinkEmail(_email: string, magicUrl: string): { html: string; 
 <html>
 <body style="font-family:Arial,sans-serif;background:#f8fafc;padding:32px 0;margin:0">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;border:1px solid #e2e8f0">
-    <img src="https://selectbranding.co.uk/wp-content/uploads/2024/01/SBS-Logo.png" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
+    <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
     <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">Your sign-in link</h2>
     <p style="color:#475569;font-size:15px;margin:0 0 24px">Click the button below to sign in to your Select Branding Solutions ordering portal. This link expires in ${MAGIC_TTL_MINUTES} minutes.</p>
     <a href="${magicUrl}" style="display:inline-block;background:#1e293b;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;margin-bottom:24px">Sign in to Portal</a>
@@ -48,7 +49,7 @@ function buildInviteEmail(email: string, inviteUrl: string, customerName: string
 <html>
 <body style="font-family:Arial,sans-serif;background:#f8fafc;padding:32px 0;margin:0">
   <div style="max-width:500px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;border:1px solid #e2e8f0">
-    <img src="https://selectbranding.co.uk/wp-content/uploads/2024/01/SBS-Logo.png" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
+    <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
     <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">You've been invited to the portal</h2>
     <p style="color:#475569;font-size:15px;margin:0 0 8px">You've been given access to the <strong>${customerName}</strong> ordering portal on Select Branding Solutions.</p>
     <p style="color:#475569;font-size:15px;margin:0 0 24px">Click the button below to accept your invitation and get started. This link expires in ${INVITE_TTL_DAYS} days.</p>
@@ -138,6 +139,7 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
     const { html, text } = buildInviteEmail(email, absoluteInviteUrl, customerName);
     const result = await sendEmail({
       to: email,
+      cc: "info@selectbranding.co.uk",
       subject: `You're invited to the ${customerName} ordering portal`,
       html,
       text,
@@ -324,6 +326,7 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
     const { html, text } = buildMagicLinkEmail(email, magicUrl);
     const result = await sendEmail({
       to: email,
+      cc: "info@selectbranding.co.uk",
       subject: "Your sign-in link – Select Branding Solutions Portal",
       html,
       text,
@@ -2326,6 +2329,7 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
     const { html, text } = buildInviteEmail(email, inviteUrl, customerName);
     const result = await sendEmail({
       to: email,
+      cc: "info@selectbranding.co.uk",
       subject: `You're invited to the ${customerName} ordering portal`,
       html,
       text,
@@ -2375,6 +2379,7 @@ router.post("/portal/team/users/:id/send-invite", portalAuth, async (req: Reques
   const { html, text } = buildInviteEmail(user.email, inviteUrl, customerName);
   const result = await sendEmail({
     to: user.email,
+    cc: "info@selectbranding.co.uk",
     subject: `You're invited to the ${customerName} ordering portal`,
     html,
     text,

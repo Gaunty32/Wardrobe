@@ -25,6 +25,7 @@ const transporter = isEmailConfigured
 
 export async function sendEmail(opts: {
   to: string;
+  cc?: string | string[];
   subject: string;
   html: string;
   text: string;
