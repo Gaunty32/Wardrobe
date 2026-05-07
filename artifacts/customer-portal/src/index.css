@@ -1,5 +1,22 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+
+/* ── Bin / explosion animations ────────────────────────────────────────────── */
+@keyframes particle-fly {
+  0%   { transform: translate(-50%, -50%) scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0) rotate(var(--rot)); opacity: 0; }
+}
+@keyframes bin-shake {
+  0%, 100% { transform: rotate(-4deg) scale(1.08); }
+  25%       { transform: rotate(6deg)  scale(1.12); }
+  50%       { transform: rotate(-6deg) scale(1.08); }
+  75%       { transform: rotate(5deg)  scale(1.10); }
+}
+@keyframes bye-float {
+  0%   { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+  20%  { transform: translate(-50%, -70px) scale(1.5); opacity: 1; }
+  100% { transform: translate(-50%, -220px) scale(0.7); opacity: 0; }
+}
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));

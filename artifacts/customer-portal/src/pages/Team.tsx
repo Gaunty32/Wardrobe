@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
@@ -48,6 +48,123 @@ function RoleBadge({ role }: { role: string }) {
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${colours[role] ?? colours.member}`}>
       {ROLE_LABELS[role] ?? role}
     </span>
+  );
+}
+
+// ─── Explosion particles ──────────────────────────────────────────────────────
+
+const CONFETTI_COLORS = ["#ef4444","#f97316","#eab308","#22c55e","#3b82f6","#a855f7","#ec4899","#14b8a6"];
+
+function Explosion({ x, y, onDone }: { x: number; y: number; onDone: () => void }) {
+  const particles = useMemo(() =>
+    Array.from({ length: 28 }, (_, i) => {
+      const angle = (i / 28) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+      const dist  = 55 + Math.random() * 160;
+      return {
+        id:       i,
+        tx:       Math.cos(angle) * dist,
+        ty:       Math.sin(angle) * dist - Math.random() * 30,
+        color:    CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+        size:     5 + Math.random() * 9,
+        rot:      Math.random() * 720 - 360,
+        dur:      480 + Math.random() * 320,
+        round:    i % 3 !== 1,
+      };
+    }), []);
+
+  useEffect(() => {
+    const t = setTimeout(onDone, 950);
+    return () => clearTimeout(t);
+  }, [onDone]);
+
+  return (
+    <div className="fixed inset-0 pointer-events-none" style={{ zIndex: 9999 }}>
+      {particles.map(p => (
+        <div
+          key={p.id}
+          style={{
+            position: "fixed",
+            left: x,
+            top: y,
+            width:  p.size,
+            height: p.size,
+            backgroundColor: p.color,
+            borderRadius: p.round ? "50%" : "2px",
+            animation: `particle-fly ${p.dur}ms ease-out forwards`,
+            "--tx": `${p.tx}px`,
+            "--ty": `${p.ty}px`,
+            "--rot": `${p.rot}deg`,
+          } as React.CSSProperties}
+        />
+      ))}
+      <div
+        style={{
+          position: "fixed",
+          left: x,
+          top: y,
+          fontSize: "2.4rem",
+          lineHeight: 1,
+          animation: "bye-float 0.95s ease-out forwards",
+          userSelect: "none",
+        } as React.CSSProperties}
+      >
+        👋
+      </div>
+    </div>
+  );
+}
+
+// ─── Bin drop zone ────────────────────────────────────────────────────────────
+
+function BinZone({
+  visible,
+  hovering,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: {
+  visible: boolean;
+  hovering: boolean;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: (e: React.DragEvent) => void;
+  onDrop:     (e: React.DragEvent) => void;
+}) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        bottom: "28px",
+        left:   "50%",
+        transform: `translateX(-50%) translateY(${visible ? "0" : "calc(100% + 40px)"})`,
+        transition: "transform 0.38s cubic-bezier(0.34,1.56,0.64,1)",
+        zIndex: 200,
+        pointerEvents: visible ? "all" : "none",
+      }}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      <div
+        className={`flex items-center gap-3 rounded-2xl border-2 px-6 py-3.5 shadow-2xl backdrop-blur-sm select-none transition-all duration-150
+          ${hovering
+            ? "border-red-500 bg-red-500 text-white scale-110"
+            : "border-red-300 bg-white/95 text-red-500"
+          }`}
+      >
+        <Trash2
+          className={`w-6 h-6 shrink-0 transition-transform ${hovering ? "" : ""}`}
+          style={hovering ? { animation: "bin-shake 0.3s ease-in-out infinite" } : undefined}
+        />
+        <div>
+          <p className="font-bold text-sm leading-tight">
+            {hovering ? "Release to say goodbye! 😬" : "Gone but not forgotten"}
+          </p>
+          <p className={`text-xs leading-tight mt-0.5 ${hovering ? "text-red-100" : "text-red-400"}`}>
+            {hovering ? "They'll be marked as inactive — no take-backs*" : "Drop here if they've left the company 👋"}
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -373,6 +490,8 @@ function EmployeesTab() {
   // ── drag & drop ───────────────────────────────────────────────────────────────
   const [dragEmpId, setDragEmpId] = useState<number | null>(null);
   const [dragOverKey, setDragOverKey] = useState<number | null | undefined>(undefined);
+  const [dragOverBin, setDragOverBin] = useState(false);
+  const [explosionPos, setExplosionPos] = useState<{ x: number; y: number } | null>(null);
 
   const reassignMutation = useMutation({
     mutationFn: ({ id, managerId }: { id: number; managerId: number | null }) =>
@@ -436,6 +555,21 @@ function EmployeesTab() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-team-employees"] }); toast({ title: "Employee updated" }); },
     onError: () => toast({ title: "Failed to update employee", variant: "destructive" }),
   });
+
+  const handleBinDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragEmpId == null) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = rect.left + rect.width  / 2;
+    const y = rect.top  + rect.height / 2;
+    const empId = dragEmpId;
+    setDragEmpId(null);
+    setDragOverKey(undefined);
+    setDragOverBin(false);
+    setExplosionPos({ x, y });
+    statusMutation.mutate({ id: empId, isActive: false });
+    toast({ title: "👋 Bye then! Employee moved to inactive." });
+  }, [dragEmpId, statusMutation, toast]);
 
   // ── top-up ────────────────────────────────────────────────────────────────────
   const [topupTarget, setTopupTarget] = useState<any | null>(null);
@@ -511,7 +645,7 @@ function EmployeesTab() {
         key={emp.id}
         draggable
         onDragStart={(e) => { setDragEmpId(emp.id); e.dataTransfer.effectAllowed = "move"; }}
-        onDragEnd={() => { setDragEmpId(null); setDragOverKey(undefined); }}
+        onDragEnd={() => { setDragEmpId(null); setDragOverKey(undefined); setDragOverBin(false); }}
         className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 bg-card select-none transition-all
           ${emp.is_active ? "" : "opacity-60"}
           ${isDragging ? "opacity-40 border-dashed" : ""}
@@ -749,8 +883,26 @@ function EmployeesTab() {
       {/* Drag-in-progress hint */}
       {dragEmpId != null && (
         <p className="text-xs text-center text-muted-foreground mt-3 animate-pulse">
-          Drop onto a team leader section to reassign
+          Drop onto a team leader section to reassign — or into the bin below 👇
         </p>
+      )}
+
+      {/* Bin zone — slides up from bottom when dragging */}
+      <BinZone
+        visible={dragEmpId != null}
+        hovering={dragOverBin}
+        onDragOver={(e) => { e.preventDefault(); setDragOverBin(true); }}
+        onDragLeave={() => setDragOverBin(false)}
+        onDrop={handleBinDrop}
+      />
+
+      {/* Particle explosion overlay */}
+      {explosionPos && (
+        <Explosion
+          x={explosionPos.x}
+          y={explosionPos.y}
+          onDone={() => setExplosionPos(null)}
+        />
       )}
 
       {/* ── Dialogs ─────────────────────────────────────────────────────────── */}
@@ -1375,6 +1527,9 @@ function MyTeamTab() {
   const [showInactive, setShowInactive] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<any | null>(null);
+  const [dragEmpId, setDragEmpId] = useState<number | null>(null);
+  const [dragOverBin, setDragOverBin] = useState(false);
+  const [explosionPos, setExplosionPos] = useState<{ x: number; y: number } | null>(null);
 
   const { data: employees = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-my-team-employees", showInactive],
@@ -1429,6 +1584,20 @@ function MyTeamTab() {
     onError: () => toast({ title: "Failed to update", variant: "destructive" }),
   });
 
+  const handleBinDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragEmpId == null) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = rect.left + rect.width  / 2;
+    const y = rect.top  + rect.height / 2;
+    const empId = dragEmpId;
+    setDragEmpId(null);
+    setDragOverBin(false);
+    setExplosionPos({ x, y });
+    statusMutation.mutate({ id: empId, isActive: false });
+    toast({ title: "👋 Bye then! Team member moved to leavers." });
+  }, [dragEmpId, statusMutation, toast]);
+
   function MemberForm({ saving, onSave, onCancel }: { saving: boolean; onSave: () => void; onCancel: () => void }) {
     return (
       <div className="space-y-3">
@@ -1482,8 +1651,15 @@ function MyTeamTab() {
           {employees.map((emp: any) => (
             <div
               key={emp.id}
-              className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card transition-opacity ${emp.is_active ? "" : "opacity-60"}`}
+              draggable={emp.is_active}
+              onDragStart={(e) => { if (!emp.is_active) return; setDragEmpId(emp.id); e.dataTransfer.effectAllowed = "move"; }}
+              onDragEnd={() => { setDragEmpId(null); setDragOverBin(false); }}
+              className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card transition-all select-none
+                ${emp.is_active ? "" : "opacity-60"}
+                ${dragEmpId === emp.id ? "opacity-40 border-dashed" : ""}
+              `}
             >
+              <GripVertical className={`w-3.5 h-3.5 text-muted-foreground/30 shrink-0 cursor-grab active:cursor-grabbing ${emp.is_active ? "" : "invisible"}`} />
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
                 {emp.first_name?.[0]}{emp.last_name?.[0]}
               </div>
@@ -1558,6 +1734,31 @@ function MyTeamTab() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Drag-in-progress hint */}
+      {dragEmpId != null && (
+        <p className="text-xs text-center text-muted-foreground mt-3 animate-pulse">
+          Drag to the bin below to mark as leaver 👇
+        </p>
+      )}
+
+      {/* Bin zone */}
+      <BinZone
+        visible={dragEmpId != null}
+        hovering={dragOverBin}
+        onDragOver={(e) => { e.preventDefault(); setDragOverBin(true); }}
+        onDragLeave={() => setDragOverBin(false)}
+        onDrop={handleBinDrop}
+      />
+
+      {/* Explosion overlay */}
+      {explosionPos && (
+        <Explosion
+          x={explosionPos.x}
+          y={explosionPos.y}
+          onDone={() => setExplosionPos(null)}
+        />
       )}
 
       <Dialog open={addOpen} onOpenChange={o => { if (!o) { setAddOpen(false); resetForm(); } }}>
