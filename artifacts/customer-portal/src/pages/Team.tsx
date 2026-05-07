@@ -1345,7 +1345,7 @@ function UsersTab() {
 
               {!emailConfigured && (
                 <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                  Email is not configured — you'll get a link to share manually instead.
+                  Email sending is not set up on this account — you'll get a link to share manually instead.
                 </p>
               )}
 

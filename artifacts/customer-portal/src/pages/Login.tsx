@@ -143,7 +143,7 @@ export default function Login() {
                 </div>
                 {devUrl && (
                   <div className="text-left rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-amber-800">Dev mode — email not configured</p>
+                    <p className="text-xs font-semibold text-amber-800">Email sending is not set up on this account</p>
                     <p className="text-xs text-amber-700">Use this link to sign in:</p>
                     <a
                       href={devUrl}
