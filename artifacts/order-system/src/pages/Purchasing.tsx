@@ -223,8 +223,9 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
     a.download = `${po.poNumber}.pdf`;
     a.click();
     // Small delay so the download starts before the email client opens
-    setTimeout(() => window.open(mailto, "_self"), 300);
+    setTimeout(() => window.open(mailto, "_blank"), 300);
     onClose();
+    onSent();
   };
 
   return (
@@ -748,7 +749,16 @@ export default function Purchasing() {
   const statusMutation = useMutation({
     mutationFn: ({ id, status, extra }: { id: number; status: string; extra?: Record<string, unknown> }) =>
       apiFetch(`/purchasing/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status, ...extra }) }),
-    onSuccess: () => { invalidateAll(); toast({ title: "Status updated" }); },
+    onSuccess: (_data, vars) => {
+      invalidateAll();
+      setStatusFilter("all");
+      const msgs: Record<string, string> = {
+        ordered: "PO marked as Ordered — now showing in the Ordered tab.",
+        delivered: "Delivery booked — PO moved to Delivered.",
+        draft: "PO moved back to Draft.",
+      };
+      toast({ title: "Status updated", description: msgs[vars.status] });
+    },
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
