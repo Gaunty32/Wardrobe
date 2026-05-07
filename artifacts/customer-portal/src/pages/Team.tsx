@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet,
+  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet, GripVertical, ChevronRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -284,31 +284,117 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
 function EmployeesTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
+
+  // ── data ─────────────────────────────────────────────────────────────────────
   const [showInactive, setShowInactive] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<any | null>(null);
 
   const { data: employees = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-team-employees", showInactive],
     queryFn: () => apiFetch(`/portal/team/employees?showInactive=${showInactive}`),
   });
-
   const { data: allEmployees = [] } = useQuery<any[]>({
     queryKey: ["portal-team-employees", false],
     queryFn: () => apiFetch("/portal/team/employees?showInactive=false"),
   });
-
   const { data: roles = [] } = useQuery<Array<{ id: number; name: string }>>({
     queryKey: ["portal-team-roles"],
     queryFn: () => apiFetch("/portal/team/roles"),
   });
-
   const { data: addresses = [] } = useQuery<any[]>({
     queryKey: ["portal-addresses"],
     queryFn: () => apiFetch("/portal/addresses"),
   });
+  const { data: portalUsers = [] } = useQuery<any[]>({
+    queryKey: ["portal-team-users"],
+    queryFn: () => apiFetch("/portal/team/users"),
+  });
+  const { data: emailStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["portal-email-status"],
+    queryFn: () => apiFetch("/portal/team/email-status"),
+  });
+  const emailConfigured = emailStatus?.configured ?? false;
 
-  // Load existing sizes when editing an employee
+  // ── portal user lookup ────────────────────────────────────────────────────────
+  const portalByEmpId = useMemo(() => {
+    const m = new Map<number, any>();
+    for (const u of portalUsers as any[]) {
+      if (u.linked_employee_id) m.set(Number(u.linked_employee_id), u);
+    }
+    return m;
+  }, [portalUsers]);
+
+  const unlinkedPortalUsers = useMemo(
+    () => (portalUsers as any[]).filter((u: any) => !u.linked_employee_id),
+    [portalUsers],
+  );
+
+  // ── hierarchy ─────────────────────────────────────────────────────────────────
+  // groups: manager_id → direct reports list
+  const groups = useMemo(() => {
+    const m = new Map<number | null, any[]>();
+    for (const e of employees as any[]) {
+      const key = e.manager_id != null ? Number(e.manager_id) : null;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(e);
+    }
+    return m;
+  }, [employees]);
+
+  // IDs of employees who are managers of at least one other
+  const leaderIds = useMemo(() => {
+    const s = new Set<number>();
+    for (const e of employees as any[]) {
+      if (e.manager_id != null) s.add(Number(e.manager_id));
+    }
+    return s;
+  }, [employees]);
+
+  // Section keys: the leader IDs, sorted by leader surname
+  const sectionKeys = useMemo(() => {
+    const keys = [...groups.keys()].filter((k): k is number => k !== null);
+    return keys.sort((a, b) => {
+      const la = (employees as any[]).find((e: any) => e.id === a);
+      const lb = (employees as any[]).find((e: any) => e.id === b);
+      return (la?.last_name ?? "").localeCompare(lb?.last_name ?? "");
+    });
+  }, [groups, employees]);
+
+  // Unassigned: top-level employees who do NOT lead anyone
+  const unassigned = useMemo(
+    () => (groups.get(null) ?? []).filter((e: any) => !leaderIds.has(e.id)),
+    [groups, leaderIds],
+  );
+
+  // ── expanded sections ─────────────────────────────────────────────────────────
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggle = (id: number) =>
+    setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // ── drag & drop ───────────────────────────────────────────────────────────────
+  const [dragEmpId, setDragEmpId] = useState<number | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<number | null | undefined>(undefined);
+
+  const reassignMutation = useMutation({
+    mutationFn: ({ id, managerId }: { id: number; managerId: number | null }) =>
+      apiFetch(`/portal/team/employees/${id}`, { method: "PATCH", body: JSON.stringify({ managerId }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
+      toast({ title: "Employee reassigned" });
+    },
+    onError: () => toast({ title: "Failed to reassign", variant: "destructive" }),
+  });
+
+  const handleDrop = (newManagerId: number | null) => {
+    if (dragEmpId == null || dragEmpId === newManagerId) return;
+    reassignMutation.mutate({ id: dragEmpId, managerId: newManagerId });
+    setDragEmpId(null);
+    setDragOverKey(undefined);
+  };
+
+  // ── add / edit ────────────────────────────────────────────────────────────────
+  const [addOpen, setAddOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any | null>(null);
+
   const { data: editSizes = [] } = useQuery<Array<{ id: number; label: string; size: string }>>({
     queryKey: ["portal-employee-sizes", editTarget?.id],
     queryFn: () => apiFetch(`/portal/team/employees/${editTarget!.id}/sizes`),
@@ -316,12 +402,8 @@ function EmployeesTab() {
   });
 
   const saveSizes = async (empId: number, sizes: Array<{ label: string; size: string }>) => {
-    if (sizes.length > 0) {
-      await apiFetch(`/portal/team/employees/${empId}/sizes`, {
-        method: "PUT",
-        body: JSON.stringify(sizes),
-      });
-    }
+    if (sizes.length > 0)
+      await apiFetch(`/portal/team/employees/${empId}/sizes`, { method: "PUT", body: JSON.stringify(sizes) });
   };
 
   const addMutation = useMutation({
@@ -330,11 +412,7 @@ function EmployeesTab() {
       if (sizes.length > 0) await saveSizes(emp.id, sizes);
       return emp;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
-      setAddOpen(false);
-      toast({ title: "Employee added" });
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-team-employees"] }); setAddOpen(false); toast({ title: "Employee added" }); },
     onError: () => toast({ title: "Failed to add employee", variant: "destructive" }),
   });
 
@@ -355,42 +433,165 @@ function EmployeesTab() {
   const statusMutation = useMutation({
     mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
       apiFetch(`/portal/team/employees/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
-      toast({ title: "Employee updated" });
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-team-employees"] }); toast({ title: "Employee updated" }); },
     onError: () => toast({ title: "Failed to update employee", variant: "destructive" }),
   });
 
+  // ── top-up ────────────────────────────────────────────────────────────────────
   const [topupTarget, setTopupTarget] = useState<any | null>(null);
   const [topupAmount, setTopupAmount] = useState("");
+  const openTopup = (emp: any) => {
+    setTopupTarget(emp);
+    setTopupAmount(parseFloat(emp.allowance_topup ?? "0") > 0 ? String(parseFloat(emp.allowance_topup)) : "");
+  };
 
   const topupMutation = useMutation({
     mutationFn: ({ id, topup }: { id: number; topup: number }) =>
       apiFetch(`/portal/team/employees/${id}/topup`, { method: "PATCH", body: JSON.stringify({ topup }) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
-      setTopupTarget(null);
-      setTopupAmount("");
+      setTopupTarget(null); setTopupAmount("");
       toast({ title: "Extra credits updated" });
     },
     onError: () => toast({ title: "Failed to update credits", variant: "destructive" }),
   });
 
-  const openTopup = (emp: any) => {
-    setTopupTarget(emp);
-    setTopupAmount(parseFloat(emp.allowance_topup ?? "0") > 0 ? String(parseFloat(emp.allowance_topup)) : "");
+  // ── portal management ─────────────────────────────────────────────────────────
+  // portalTarget: { emp, user } — user=null means invite flow
+  const [portalTarget, setPortalTarget] = useState<{ emp: any; user: any | null } | null>(null);
+  const [portalInviteRole, setPortalInviteRole] = useState("member");
+  const [portalInviteResult, setPortalInviteResult] = useState<{ emailSent: boolean; inviteUrl: string; email: string } | null>(null);
+
+  const openPortal = (emp: any) => {
+    const user = portalByEmpId.get(emp.id) ?? null;
+    setPortalTarget({ emp, user });
+    setPortalInviteRole("member");
+    setPortalInviteResult(null);
   };
 
+  const inviteFromEmpMutation = useMutation({
+    mutationFn: (data: { email: string; portalRole: string }) =>
+      apiFetch("/portal/team/users/invite", { method: "POST", body: JSON.stringify({ ...data, sendNow: emailConfigured }) }),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ["portal-team-users"] });
+      setPortalInviteResult({ emailSent: res.emailSent ?? false, inviteUrl: res.inviteUrl, email: res.email });
+    },
+    onError: () => toast({ title: "Failed to invite", variant: "destructive" }),
+  });
+
+  const portalRoleMutation = useMutation({
+    mutationFn: ({ id, role }: { id: number; role: string }) =>
+      apiFetch(`/portal/team/users/${id}/role`, { method: "PATCH", body: JSON.stringify({ role }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-team-users"] }); toast({ title: "Role updated" }); },
+    onError: () => toast({ title: "Failed to update role", variant: "destructive" }),
+  });
+
+  const portalStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      apiFetch(`/portal/team/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-team-users"] });
+      toast({ title: "Access updated" });
+      setPortalTarget(null);
+    },
+    onError: () => toast({ title: "Failed to update access", variant: "destructive" }),
+  });
+
+  // ── employee card renderer ────────────────────────────────────────────────────
+  const renderEmpCard = (emp: any) => {
+    const portalUser = portalByEmpId.get(emp.id);
+    const spend = parseFloat(emp.spend_12m ?? "0");
+    const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
+    const topup = parseFloat(emp.allowance_topup ?? "0");
+    const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+    const isDragging = dragEmpId === emp.id;
+
+    return (
+      <div
+        key={emp.id}
+        draggable
+        onDragStart={(e) => { setDragEmpId(emp.id); e.dataTransfer.effectAllowed = "move"; }}
+        onDragEnd={() => { setDragEmpId(null); setDragOverKey(undefined); }}
+        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 bg-card select-none transition-all
+          ${emp.is_active ? "" : "opacity-60"}
+          ${isDragging ? "opacity-40 border-dashed" : ""}
+        `}
+      >
+        <GripVertical className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0 cursor-grab active:cursor-grabbing" />
+        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+          {emp.first_name?.[0]}{emp.last_name?.[0]}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm leading-tight">
+            {emp.first_name} {emp.last_name}
+            {!emp.is_active && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(inactive)</span>}
+          </p>
+          <p className="text-xs text-muted-foreground truncate mt-0.5">
+            {[emp.employee_number && `#${emp.employee_number}`, emp.role_name, emp.job_title, emp.department].filter(Boolean).join(" · ")}
+          </p>
+          {totalBudget != null && totalBudget > 0 && (() => {
+            const pct = Math.min(100, (spend / totalBudget) * 100);
+            const over = spend > totalBudget;
+            return (
+              <div className="mt-1 max-w-[220px]">
+                <div className="flex justify-between text-[10px] mb-0.5">
+                  <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>£{spend.toFixed(0)} / £{totalBudget.toFixed(0)}</span>
+                  {over ? <span className="text-destructive font-medium">Over</span> : <span className="text-muted-foreground">£{(totalBudget - spend).toFixed(0)} left</span>}
+                </div>
+                <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                  <div className={`h-full rounded-full ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+
+        {/* Portal badge or Invite */}
+        {portalUser ? (
+          <button onClick={() => openPortal(emp)} className="shrink-0" title="Manage portal access">
+            <RoleBadge role={portalUser.status === "invited" ? "invited" : portalUser.status === "inactive" ? "inactive" : portalUser.portal_role} />
+          </button>
+        ) : emp.email ? (
+          <Button variant="ghost" size="sm" className="shrink-0 text-xs h-6 px-2 gap-1 text-muted-foreground hover:text-primary"
+            onClick={() => openPortal(emp)}>
+            <Mail className="w-3 h-3" /> Invite
+          </Button>
+        ) : null}
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-0.5 shrink-0">
+          {effectiveAllowance != null && (
+            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => openTopup(emp)} title="Extra credits">
+              <Plus className="w-3.5 h-3.5" />
+            </Button>
+          )}
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditTarget(emp)} title="Edit">
+            <Pencil className="w-3.5 h-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon"
+            className={`h-7 w-7 ${emp.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
+            onClick={() => statusMutation.mutate({ id: emp.id, isActive: !emp.is_active })}
+            title={emp.is_active ? "Deactivate" : "Reactivate"}>
+            {emp.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  // Drop zone styles helper
+  const dropZoneCls = (key: number | null) =>
+    dragEmpId != null && dragOverKey === key
+      ? "border-primary ring-1 ring-primary/50 bg-primary/5"
+      : "";
+
+  // ── JSX ───────────────────────────────────────────────────────────────────────
   return (
     <div>
+      {/* Toolbar */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Switch
-            id="show-inactive-emp"
-            checked={showInactive}
-            onCheckedChange={setShowInactive}
-          />
+          <Switch id="show-inactive-emp" checked={showInactive} onCheckedChange={setShowInactive} />
           <Label htmlFor="show-inactive-emp" className="cursor-pointer">Show inactive</Label>
         </div>
         <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
@@ -404,228 +605,205 @@ function EmployeesTab() {
         <Card>
           <CardContent className="py-12 text-center">
             <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              {showInactive ? "No employees found" : "No active employees"}
-            </p>
+            <p className="text-sm text-muted-foreground">{showInactive ? "No employees found" : "No active employees"}</p>
           </CardContent>
         </Card>
       ) : (
-        <div className="flex flex-col gap-2">
-          {employees.map((emp: any) => (
-            <div
-              key={emp.id}
-              className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card transition-opacity ${emp.is_active ? "" : "opacity-60"}`}
-            >
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                {emp.first_name?.[0]}{emp.last_name?.[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm">
-                  {emp.first_name} {emp.last_name}
-                  {!emp.is_active && (
-                    <span className="ml-2 text-xs text-muted-foreground font-normal">(inactive)</span>
+        <div className="space-y-2">
+          {/* ── Team sections (leaders with direct reports) ── */}
+          {sectionKeys.map((leaderId) => {
+            const leader = (employees as any[]).find((e: any) => e.id === leaderId);
+            if (!leader) return null;
+            const members = groups.get(leaderId) ?? [];
+            const isOpen = expanded.has(leaderId);
+            const leaderPortalUser = portalByEmpId.get(leaderId);
+            const leaderPortalRole = leaderPortalUser
+              ? (leaderPortalUser.status === "invited" ? "invited" : leaderPortalUser.status === "inactive" ? "inactive" : leaderPortalUser.portal_role)
+              : null;
+
+            return (
+              <div
+                key={leaderId}
+                className={`rounded-xl border bg-card overflow-hidden transition-all ${dropZoneCls(leaderId)}`}
+                onDragOver={(e) => { if (dragEmpId != null) { e.preventDefault(); setDragOverKey(leaderId); } }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
+                onDrop={(e) => { e.preventDefault(); handleDrop(leaderId); }}
+              >
+                {/* Leader header row */}
+                <div className="flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors">
+                  <button className="flex items-center gap-2 flex-1 min-w-0 text-left" onClick={() => toggle(leaderId)}>
+                    <ChevronRight className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${leader.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                      {leader.first_name?.[0]}{leader.last_name?.[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm leading-tight">
+                        {leader.first_name} {leader.last_name}
+                        {!leader.is_active && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(inactive)</span>}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {[leader.role_name, leader.job_title].filter(Boolean).join(" · ") || "Team Leader"}
+                        {" · "}{members.length} {members.length === 1 ? "member" : "members"}
+                      </p>
+                    </div>
+                  </button>
+                  {/* Portal badge on leader */}
+                  {leaderPortalRole ? (
+                    <button onClick={() => openPortal(leader)} className="shrink-0" title="Manage portal access">
+                      <RoleBadge role={leaderPortalRole} />
+                    </button>
+                  ) : leader.email ? (
+                    <Button variant="ghost" size="sm" className="shrink-0 text-xs h-6 px-2 gap-1 text-muted-foreground hover:text-primary"
+                      onClick={() => openPortal(leader)}>
+                      <Mail className="w-3 h-3" /> Invite
+                    </Button>
+                  ) : null}
+                  {leader.effective_allowance != null && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary shrink-0" onClick={() => openTopup(leader)} title="Extra credits">
+                      <Plus className="w-3.5 h-3.5" />
+                    </Button>
                   )}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {[emp.employee_number && `#${emp.employee_number}`, emp.role_name, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
-                </p>
-                {emp.manager_name && (
-                  <p className="text-xs text-muted-foreground/70 truncate">Manager: {emp.manager_name}</p>
-                )}
-                {emp.delivery_address_label && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                    <MapPin className="w-3 h-3 shrink-0" />
-                    {emp.delivery_address_label}
-                    {emp.delivery_address_line1 && ` — ${emp.delivery_address_line1}`}
-                    {emp.delivery_address_city && `, ${emp.delivery_address_city}`}
-                  </p>
-                )}
-                {emp.sizes && emp.sizes.length > 0 && (
-                  <div className="flex gap-1 flex-wrap mt-1">
-                    {sortBySize(emp.sizes as any[], (s: any) => s.size).map((s: any, i: number) => (
-                      <span key={i} className="inline-flex items-center gap-0.5 rounded border bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        <Ruler className="w-2.5 h-2.5 shrink-0" />{s.label}: <strong>{s.size}</strong>
-                      </span>
-                    ))}
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setEditTarget(leader)} title="Edit">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon"
+                    className={`h-7 w-7 shrink-0 ${leader.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
+                    onClick={() => statusMutation.mutate({ id: leader.id, isActive: !leader.is_active })}
+                    title={leader.is_active ? "Deactivate" : "Reactivate"}>
+                    {leader.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+
+                {/* Expanded members */}
+                {isOpen && (
+                  <div className="border-t bg-muted/10 px-3 py-2 space-y-1.5">
+                    {members.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-3">No team members yet — drag employees here to assign them.</p>
+                    ) : (
+                      members.map((emp: any) => renderEmpCard(emp))
+                    )}
                   </div>
                 )}
-                {(() => {
-                  const spend = parseFloat(emp.spend_12m ?? "0");
-                  const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
-                  const topup = parseFloat(emp.allowance_topup ?? "0");
-                  const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
-                  if (totalBudget != null && totalBudget > 0) {
-                    const pct = Math.min(100, (spend / totalBudget) * 100);
-                    const over = spend > totalBudget;
-                    return (
-                      <div className="mt-1.5 max-w-xs">
-                        <div className="flex items-center gap-2 text-[11px] mb-0.5">
-                          <Wallet className="w-3 h-3 text-muted-foreground shrink-0" />
-                          <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
-                            £{spend.toFixed(2)} of £{totalBudget.toFixed(2)} spent
-                          </span>
-                          {over
-                            ? <span className="text-destructive font-medium">— over budget</span>
-                            : <span className="text-muted-foreground/70">£{(totalBudget - spend).toFixed(2)} remaining</span>
-                          }
-                        </div>
-                        <div className="h-1.5 w-48 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        {topup > 0 && (
-                          <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                            Includes £{topup.toFixed(2)} extra credits
-                          </p>
-                        )}
-                      </div>
-                    );
-                  }
-                  if (spend > 0) {
-                    return (
-                      <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
-                        <Wallet className="w-3 h-3 shrink-0" />
-                        £{spend.toFixed(2)} spend in last 12 months
-                      </p>
-                    );
-                  }
-                  return null;
-                })()}
               </div>
-              {emp.role_name && (
-                <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>
-              )}
-              <div className="flex items-center gap-1 shrink-0">
-                {emp.effective_allowance != null && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-primary"
-                    onClick={() => openTopup(emp)}
-                    title="Add extra credits"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => setEditTarget(emp)}
-                  title="Edit"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-7 w-7 ${emp.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
-                  onClick={() => statusMutation.mutate({ id: emp.id, isActive: !emp.is_active })}
-                  title={emp.is_active ? "Deactivate" : "Reactivate"}
-                >
-                  {emp.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                </Button>
+            );
+          })}
+
+          {/* ── Unassigned (no manager, not a leader) ── */}
+          {unassigned.length > 0 && (
+            <div
+              className={`rounded-xl border bg-card overflow-hidden transition-all ${dropZoneCls(null)}`}
+              onDragOver={(e) => { if (dragEmpId != null) { e.preventDefault(); setDragOverKey(null); } }}
+              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
+              onDrop={(e) => { e.preventDefault(); handleDrop(null); }}
+            >
+              <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b bg-muted/20">
+                <Users className="w-3.5 h-3.5" /> Unassigned ({unassigned.length})
+              </div>
+              <div className="px-3 py-2 space-y-1.5">
+                {unassigned.map((emp: any) => renderEmpCard(emp))}
               </div>
             </div>
-          ))}
+          )}
+
+          {/* ── Portal-only users (not linked to an employee) ── */}
+          {unlinkedPortalUsers.length > 0 && (
+            <div className="rounded-xl border bg-card overflow-hidden">
+              <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b bg-muted/20">
+                <ShieldCheck className="w-3.5 h-3.5" /> Portal access only ({unlinkedPortalUsers.length})
+              </div>
+              <div className="px-3 py-2 space-y-1.5">
+                {unlinkedPortalUsers.map((u: any) => (
+                  <div key={u.id} className="flex items-center gap-2.5 rounded-lg border px-3 py-2.5 bg-card">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                      <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{u.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {u.status === "invited" ? "Invite pending" : u.last_login_at
+                          ? `Last sign-in ${new Date(u.last_login_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                          : "Never signed in"}
+                      </p>
+                    </div>
+                    <RoleBadge role={u.status === "invited" ? "invited" : u.status === "inactive" ? "inactive" : u.portal_role} />
+                    <Select value={u.portal_role} onValueChange={(v) => portalRoleMutation.mutate({ id: u.id, role: v })} disabled={u.status === "inactive"}>
+                      <SelectTrigger className="h-7 text-xs w-28 shrink-0"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="member">User</SelectItem>
+                        <SelectItem value="dept_manager">Manager</SelectItem>
+                        <SelectItem value="manager">Admin</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button variant={u.status !== "inactive" ? "outline" : "secondary"} size="sm" className="shrink-0 text-xs"
+                      onClick={() => portalStatusMutation.mutate({ id: u.id, status: u.status === "inactive" ? "active" : "inactive" })}>
+                      {u.status === "inactive" ? <><RotateCcw className="w-3 h-3 mr-1" />Reactivate</> : <><UserX className="w-3 h-3 mr-1" />Deactivate</>}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Add dialog */}
+      {/* Drag-in-progress hint */}
+      {dragEmpId != null && (
+        <p className="text-xs text-center text-muted-foreground mt-3 animate-pulse">
+          Drop onto a team leader section to reassign
+        </p>
+      )}
+
+      {/* ── Dialogs ─────────────────────────────────────────────────────────── */}
+
+      {/* Add */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add employee</DialogTitle></DialogHeader>
-          <EmployeeForm
-            addresses={addresses}
-            roles={roles}
-            allEmployees={allEmployees}
+          <EmployeeForm addresses={addresses} roles={roles} allEmployees={allEmployees}
             onSave={(data, sizes) => addMutation.mutate({ data, sizes })}
-            onCancel={() => setAddOpen(false)}
-            saving={addMutation.isPending}
-          />
+            onCancel={() => setAddOpen(false)} saving={addMutation.isPending} />
         </DialogContent>
       </Dialog>
 
-      {/* Edit dialog */}
+      {/* Edit */}
       <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o) setEditTarget(null); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Edit employee</DialogTitle></DialogHeader>
           {editTarget && (
-            <EmployeeForm
-              initial={editTarget}
-              initialSizes={editSizes}
-              addresses={addresses}
-              roles={roles}
-              allEmployees={allEmployees}
+            <EmployeeForm initial={editTarget} initialSizes={editSizes} addresses={addresses} roles={roles} allEmployees={allEmployees}
               onSave={(data, sizes) => editMutation.mutate({ id: editTarget.id, data, sizes })}
-              onCancel={() => setEditTarget(null)}
-              saving={editMutation.isPending}
-            />
+              onCancel={() => setEditTarget(null)} saving={editMutation.isPending} />
           )}
         </DialogContent>
       </Dialog>
 
-      {/* Top-up credits dialog */}
+      {/* Top-up credits */}
       <Dialog open={!!topupTarget} onOpenChange={(o) => { if (!o) { setTopupTarget(null); setTopupAmount(""); } }}>
         <DialogContent className="sm:max-w-[380px]">
           <DialogHeader><DialogTitle>Extra credits — {topupTarget?.first_name} {topupTarget?.last_name}</DialogTitle></DialogHeader>
           {topupTarget && (() => {
-            const effectiveAllowance = topupTarget.effective_allowance != null ? parseFloat(topupTarget.effective_allowance) : null;
-            const roleAllowance = topupTarget.role_allowance != null ? parseFloat(topupTarget.role_allowance) : null;
-            const hasOverride = topupTarget.allowance != null;
-            const currentTopup = parseFloat(topupTarget.allowance_topup ?? "0");
-            const spend = parseFloat(topupTarget.spend_12m ?? "0");
-            const newTopup = topupAmount.trim() !== "" ? parseFloat(topupAmount) : 0;
-            const newTotal = effectiveAllowance != null ? effectiveAllowance + newTopup : null;
+            const ea = topupTarget.effective_allowance != null ? parseFloat(topupTarget.effective_allowance) : null;
+            const ra = topupTarget.role_allowance != null ? parseFloat(topupTarget.role_allowance) : null;
+            const ct = parseFloat(topupTarget.allowance_topup ?? "0");
+            const sp = parseFloat(topupTarget.spend_12m ?? "0");
+            const nt = topupAmount.trim() !== "" ? parseFloat(topupAmount) : 0;
+            const total = ea != null ? ea + nt : null;
             return (
               <div className="space-y-4 py-1">
                 <div className="rounded-lg bg-muted/40 border px-4 py-3 text-sm space-y-1.5">
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Role default</span>
-                    <span>{roleAllowance != null ? `£${roleAllowance.toFixed(2)}` : "No limit"}</span>
-                  </div>
-                  {hasOverride && (
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Employee override</span>
-                      <span>£{parseFloat(topupTarget.allowance).toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Spent this year</span>
-                    <span className={spend > (effectiveAllowance ?? Infinity) ? "text-destructive font-medium" : ""}>£{spend.toFixed(2)}</span>
-                  </div>
-                  {currentTopup > 0 && (
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Current extra credits</span>
-                      <span>£{currentTopup.toFixed(2)}</span>
-                    </div>
-                  )}
+                  <div className="flex justify-between text-muted-foreground"><span>Role default</span><span>{ra != null ? `£${ra.toFixed(2)}` : "No limit"}</span></div>
+                  {topupTarget.allowance != null && <div className="flex justify-between text-muted-foreground"><span>Employee override</span><span>£{parseFloat(topupTarget.allowance).toFixed(2)}</span></div>}
+                  <div className="flex justify-between text-muted-foreground"><span>Spent this year</span><span className={sp > (ea ?? Infinity) ? "text-destructive font-medium" : ""}>£{sp.toFixed(2)}</span></div>
+                  {ct > 0 && <div className="flex justify-between text-muted-foreground"><span>Current extra credits</span><span>£{ct.toFixed(2)}</span></div>}
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="flex items-center gap-1.5">
-                    <Wallet className="w-3.5 h-3.5 text-muted-foreground" />
-                    Set total extra credits (£)
-                  </Label>
+                  <Label className="flex items-center gap-1.5"><Wallet className="w-3.5 h-3.5 text-muted-foreground" /> Set total extra credits (£)</Label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="0.00"
-                      className="pl-7"
-                      value={topupAmount}
-                      onChange={e => setTopupAmount(e.target.value)}
-                      autoFocus
-                    />
+                    <Input type="number" min="0" step="0.01" placeholder="0.00" className="pl-7" value={topupAmount} onChange={e => setTopupAmount(e.target.value)} autoFocus />
                   </div>
-                  {newTotal != null && (
-                    <p className="text-xs text-muted-foreground">
-                      New total budget: <strong>£{newTotal.toFixed(2)}</strong>
-                      {newTotal > spend ? ` — £${(newTotal - spend).toFixed(2)} remaining` : " — still over budget"}
-                    </p>
+                  {total != null && (
+                    <p className="text-xs text-muted-foreground">New total: <strong>£{total.toFixed(2)}</strong>{total > sp ? ` — £${(total - sp).toFixed(2)} remaining` : " — still over budget"}</p>
                   )}
                 </div>
               </div>
@@ -633,14 +811,112 @@ function EmployeesTab() {
           })()}
           <DialogFooter>
             <Button variant="outline" onClick={() => { setTopupTarget(null); setTopupAmount(""); }}>Cancel</Button>
-            <Button
-              disabled={topupMutation.isPending || topupAmount.trim() === ""}
-              onClick={() => topupMutation.mutate({ id: topupTarget!.id, topup: parseFloat(topupAmount) || 0 })}
-            >
-              {topupMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
-              Save credits
+            <Button disabled={topupMutation.isPending || topupAmount.trim() === ""} onClick={() => topupMutation.mutate({ id: topupTarget!.id, topup: parseFloat(topupAmount) || 0 })}>
+              {topupMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null} Save credits
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Portal access dialog */}
+      <Dialog open={!!portalTarget} onOpenChange={(o) => { if (!o) { setPortalTarget(null); setPortalInviteResult(null); } }}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>
+              {portalTarget?.emp ? `Portal access — ${portalTarget.emp.first_name} ${portalTarget.emp.last_name}` : "Portal access"}
+            </DialogTitle>
+          </DialogHeader>
+          {portalTarget && (
+            portalTarget.user ? (
+              /* ── Manage existing user ── */
+              <div className="space-y-4 py-1">
+                <div className="rounded-lg bg-muted/40 border px-4 py-3 text-sm space-y-1.5">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span className="font-medium">{portalTarget.user.email}</span></div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Status</span>
+                    <RoleBadge role={portalTarget.user.status === "invited" ? "invited" : portalTarget.user.status === "inactive" ? "inactive" : portalTarget.user.portal_role} />
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Last sign-in</span>
+                    <span className="text-xs">{portalTarget.user.last_login_at ? new Date(portalTarget.user.last_login_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Never"}</span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Portal role</Label>
+                  <Select value={portalTarget.user.portal_role}
+                    onValueChange={(v) => portalRoleMutation.mutate({ id: portalTarget.user.id, role: v })}
+                    disabled={portalTarget.user.status === "inactive" || portalRoleMutation.isPending}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">User — place orders for themselves only</SelectItem>
+                      <SelectItem value="dept_manager">Manager — place orders for their team</SelectItem>
+                      <SelectItem value="manager">Admin — full access</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" className="mr-auto text-destructive border-destructive/30 hover:bg-destructive/5"
+                    onClick={() => portalStatusMutation.mutate({ id: portalTarget.user.id, status: portalTarget.user.status === "inactive" ? "active" : "inactive" })}
+                    disabled={portalStatusMutation.isPending}>
+                    {portalTarget.user.status === "inactive" ? "Reactivate access" : "Deactivate access"}
+                  </Button>
+                  <Button onClick={() => setPortalTarget(null)}>Done</Button>
+                </DialogFooter>
+              </div>
+            ) : portalInviteResult ? (
+              /* ── Invite success ── */
+              <div className="space-y-4 py-1">
+                {portalInviteResult.emailSent ? (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3">
+                    <Mail className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Invite email sent</p>
+                      <p className="text-xs text-green-700 mt-0.5">Sent to <strong>{portalInviteResult.email}</strong>. The link expires in 7 days.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Share this link to give access:</p>
+                    <div className="rounded-md border bg-muted p-3 text-xs font-mono break-all select-all">{window.location.origin}{portalInviteResult.inviteUrl}</div>
+                    <p className="text-xs text-muted-foreground">The link expires in 7 days.</p>
+                  </div>
+                )}
+                <DialogFooter>
+                  {!portalInviteResult.emailSent && (
+                    <Button variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${portalInviteResult!.inviteUrl}`); toast({ title: "Copied to clipboard" }); }}>Copy link</Button>
+                  )}
+                  <Button onClick={() => { setPortalTarget(null); setPortalInviteResult(null); }}>Done</Button>
+                </DialogFooter>
+              </div>
+            ) : (
+              /* ── Invite form ── */
+              <div className="space-y-4 py-1">
+                {portalTarget.emp?.email && (
+                  <div className="rounded-lg bg-muted/40 border px-3 py-2 text-sm text-muted-foreground">
+                    Inviting <strong className="text-foreground">{portalTarget.emp.email}</strong>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Portal role</Label>
+                  {(["manager", "dept_manager", "member"] as const).map((r) => (
+                    <button key={r} type="button" onClick={() => setPortalInviteRole(r)}
+                      className={`w-full text-left rounded-lg border px-4 py-3 transition-colors ${portalInviteRole === r ? "border-primary bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30"}`}>
+                      <p className={`font-semibold text-sm ${portalInviteRole === r ? "text-primary" : ""}`}>{ROLE_LABELS[r]}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{ROLE_DESCRIPTIONS[r]}</p>
+                    </button>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setPortalTarget(null)}>Cancel</Button>
+                  <Button disabled={inviteFromEmpMutation.isPending || !portalTarget.emp?.email}
+                    onClick={() => inviteFromEmpMutation.mutate({ email: portalTarget.emp!.email, portalRole: portalInviteRole })}>
+                    {inviteFromEmpMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+                    {emailConfigured ? "Send invite" : "Create invite"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            )
+          )}
         </DialogContent>
       </Dialog>
     </div>
@@ -1305,11 +1581,8 @@ function MyTeamTab() {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type TeamTab = "employees" | "users";
-
 export default function Team() {
   const { isManager, isDeptManager } = useAuth();
-  const [tab, setTab] = useState<TeamTab>("employees");
 
   if (!isManager && !isDeptManager) return <Redirect to="/orders" />;
 
@@ -1333,28 +1606,10 @@ export default function Team() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Team</h1>
         <p className="text-muted-foreground text-sm mt-0.5">
-          Manage your employees and control who has access to the portal.
+          Manage employees and portal access. Drag team members between leaders to reassign them.
         </p>
       </div>
-
-      {/* Tab switcher */}
-      <div className="flex gap-1 rounded-lg bg-muted p-1 w-fit mb-6">
-        {(["employees", "users"] as TeamTab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === t
-                ? "bg-background shadow-sm text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t === "employees" ? "Employees" : "Portal Users"}
-          </button>
-        ))}
-      </div>
-
-      {tab === "employees" ? <EmployeesTab /> : <UsersTab />}
+      <EmployeesTab />
     </PortalLayout>
   );
 }
