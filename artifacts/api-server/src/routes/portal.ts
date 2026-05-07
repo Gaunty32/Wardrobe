@@ -194,7 +194,14 @@ router.get("/portal/admin/users/:customerId", async (req: Request, res: Response
 router.patch("/portal/admin/users/:userId/email", async (req: Request, res: Response) => {
   const userId = parseInt(req.params.userId, 10);
   const { email } = z.object({ email: z.string().email() }).parse(req.body);
-  await db.execute(sql`UPDATE customer_portal_users SET email = ${email.toLowerCase().trim()}, updated_at = now() WHERE id = ${userId}`);
+  const normalised = email.toLowerCase().trim();
+  const existing = await db.execute(sql`SELECT employee_id FROM customer_portal_users WHERE id = ${userId}`);
+  const portalUser = existing.rows[0] as any;
+  if (!portalUser) { res.status(404).json({ error: "Portal user not found" }); return; }
+  await db.execute(sql`UPDATE customer_portal_users SET email = ${normalised}, updated_at = now() WHERE id = ${userId}`);
+  if (portalUser.employee_id) {
+    await db.execute(sql`UPDATE customer_employees SET email = ${normalised}, updated_at = now() WHERE id = ${portalUser.employee_id}`);
+  }
   res.json({ ok: true });
 });
 

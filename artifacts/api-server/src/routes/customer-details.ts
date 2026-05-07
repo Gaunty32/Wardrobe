@@ -579,6 +579,10 @@ router.patch("/customers/:customerId/employees/:id", async (req, res): Promise<v
     .where(and(eq(customerEmployeesTable.id, p.data.id), eq(customerEmployeesTable.customerId, p.data.customerId)))
     .returning();
   if (!row) { res.status(404).json({ error: "Employee not found" }); return; }
+  if (body.data.email !== undefined) {
+    const normalised = body.data.email ? body.data.email.toLowerCase().trim() : body.data.email;
+    await db.execute(sql`UPDATE customer_portal_users SET email = ${normalised}, updated_at = now() WHERE employee_id = ${p.data.id}`);
+  }
   res.json(row);
 });
 
