@@ -1599,6 +1599,8 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const [empPickerSearch, setEmpPickerSearch] = useState("");
   const [pickedEmployeeId, setPickedEmployeeId] = useState<number | null>(null);
   const [pickerRole, setPickerRole] = useState<"member" | "dept_manager" | "manager">("member");
+  const [editEmailUser, setEditEmailUser] = useState<any | null>(null);
+  const [editEmailValue, setEditEmailValue] = useState("");
 
   const { data: portalUsers, isLoading } = useQuery<any[]>({
     queryKey: ["portal-users", customerId],
@@ -1657,6 +1659,20 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
       qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
       toast({ title: "Role updated" });
     },
+  });
+
+  const changeEmail = useMutation({
+    mutationFn: ({ userId, email }: { userId: number; email: string }) =>
+      apiFetch(`/portal/admin/users/${userId}/email`, {
+        method: "PATCH",
+        body: JSON.stringify({ email }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
+      toast({ title: "Email updated" });
+      setEditEmailUser(null);
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   const copyLink = (url: string) => {
@@ -1923,6 +1939,11 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                       onClick={() => { setInviteEmail(u.email); setInviteRole(u.portal_role ?? "member"); setInviteResult(null); setInviteOpen(true); }}>
                       <LogIn className="w-3 h-3" /> Send link
                     </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted"
+                      title="Edit email address"
+                      onClick={() => { setEditEmailUser(u); setEditEmailValue(u.email ?? ""); }}>
+                      <Edit2 className="w-3 h-3" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50"
                       onClick={() => confirm(`Revoke portal access for ${u.email}?`) && revokeUser.mutate(u.id)}>
                       <UserX className="w-3 h-3" />
@@ -1934,6 +1955,42 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           </TableBody>
         </SubTable>
       )}
+
+      {/* Edit email dialog */}
+      <Dialog open={!!editEmailUser} onOpenChange={v => { if (!v) setEditEmailUser(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Edit2 className="w-4 h-4" /> Edit Email Address</DialogTitle>
+            <DialogDescription>Update the email address for this portal user. They will need to use the new address to log in.</DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div className="grid gap-1.5">
+              <Label className="text-xs">Current email</Label>
+              <p className="text-sm text-muted-foreground font-mono">{editEmailUser?.email}</p>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs">New email *</Label>
+              <Input
+                type="email"
+                placeholder="new@example.com"
+                value={editEmailValue}
+                onChange={e => setEditEmailValue(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && editEmailValue && editEmailUser) changeEmail.mutate({ userId: editEmailUser.id, email: editEmailValue }); }}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditEmailUser(null)}>Cancel</Button>
+            <Button
+              onClick={() => editEmailUser && changeEmail.mutate({ userId: editEmailUser.id, email: editEmailValue })}
+              disabled={!editEmailValue || editEmailValue === editEmailUser?.email || changeEmail.isPending}
+            >
+              {changeEmail.isPending ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add / Invite portal user dialog */}
       <Dialog open={inviteOpen} onOpenChange={v => { if (!v) { setInviteOpen(false); setInviteResult(null); setInviteSelection(""); setInviteEmail(""); } }}>

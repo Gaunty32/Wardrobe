@@ -189,6 +189,15 @@ router.get("/portal/admin/users/:customerId", async (req: Request, res: Response
   res.json(rows.rows);
 });
 
+// ─── admin: update portal user email ─────────────────────────────────────────
+
+router.patch("/portal/admin/users/:userId/email", async (req: Request, res: Response) => {
+  const userId = parseInt(req.params.userId, 10);
+  const { email } = z.object({ email: z.string().email() }).parse(req.body);
+  await db.execute(sql`UPDATE customer_portal_users SET email = ${email.toLowerCase().trim()}, updated_at = now() WHERE id = ${userId}`);
+  res.json({ ok: true });
+});
+
 // ─── admin: update portal user role ──────────────────────────────────────────
 
 router.patch("/portal/admin/users/:userId/role", async (req: Request, res: Response) => {
