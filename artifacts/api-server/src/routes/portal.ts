@@ -125,7 +125,31 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   `);
 
   const inviteUrl = `/customer-portal/accept-invite?token=${token}`;
-  res.json({ inviteUrl, token, email, portalRole, expiresAt: expires });
+
+  let emailSent = false;
+  let emailError: string | undefined;
+
+  if (isEmailConfigured) {
+    const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
+    const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
+    const absoluteInviteUrl = `${proto}://${host}${inviteUrl}`;
+    const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
+    const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+    const { html, text } = buildInviteEmail(email, absoluteInviteUrl, customerName);
+    const result = await sendEmail({
+      to: email,
+      subject: `You're invited to the ${customerName} ordering portal`,
+      html,
+      text,
+    });
+    emailSent = result.sent;
+    emailError = result.error;
+    if (!result.sent) {
+      console.error(`[portal/admin/invite] SMTP failed for ${email}: ${result.error}`);
+    }
+  }
+
+  res.json({ inviteUrl, token, email, portalRole, expiresAt: expires, emailSent, emailError });
 });
 
 // ─── admin: create user directly (generates a magic link, no password) ────────
@@ -295,19 +319,24 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
   const magicUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
 
   let emailSent = false;
+  let emailError: string | undefined;
   if (isEmailConfigured) {
     const { html, text } = buildMagicLinkEmail(email, magicUrl);
-    await sendEmail({
+    const result = await sendEmail({
       to: email,
       subject: "Your sign-in link – Select Branding Solutions Portal",
       html,
       text,
-    }).catch(() => {});
-    emailSent = true;
+    });
+    emailSent = result.sent;
+    emailError = result.error;
+    if (!result.sent) {
+      console.error(`[portal/auth/login] SMTP failed for ${email}: ${result.error}`);
+    }
   }
 
   // In dev (no email configured) return the URL directly so staff can test
-  res.json({ ok: true, emailSent, ...(!emailSent ? { magicUrl } : {}) });
+  res.json({ ok: true, emailSent, ...(!emailSent ? { magicUrl, emailError } : {}) });
 });
 
 // ─── me ──────────────────────────────────────────────────────────────────────
