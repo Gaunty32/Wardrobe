@@ -519,5 +519,9 @@ export async function runStartupMigrations(): Promise<void> {
   // Per-employee top-up credits (extra budget granted by a manager on top of role/override allowance)
   await db.execute(sql`ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS allowance_topup numeric(10,2) NOT NULL DEFAULT 0;`);
 
+  // Per-employee department field and delivery address assignment
+  await db.execute(sql`ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS department text;`);
+  await db.execute(sql`ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS delivery_address_id integer REFERENCES customer_delivery_addresses(id) ON DELETE SET NULL;`);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
