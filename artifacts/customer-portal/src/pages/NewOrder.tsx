@@ -657,19 +657,21 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                 {emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>}
                 {(() => {
                   const spend = parseFloat(emp.spend_12m ?? "0");
-                  const allowance = emp.allowance != null ? parseFloat(emp.allowance) : null;
-                  if (allowance != null && allowance > 0) {
-                    const pct = Math.min(100, (spend / allowance) * 100);
-                    const over = spend > allowance;
+                  const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
+                  const topup = parseFloat(emp.allowance_topup ?? "0");
+                  const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+                  if (totalBudget != null && totalBudget > 0) {
+                    const pct = Math.min(100, (spend / totalBudget) * 100);
+                    const over = spend > totalBudget;
                     return (
                       <div className="mt-1.5 w-full">
                         <div className="flex justify-between text-[10px] mb-0.5">
                           <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
-                            £{spend.toFixed(0)} of £{allowance.toFixed(0)}
+                            £{spend.toFixed(0)} of £{totalBudget.toFixed(0)}
                           </span>
                           {over
                             ? <span className="text-destructive font-medium">Over budget</span>
-                            : <span className="text-muted-foreground">£{(allowance - spend).toFixed(0)} left</span>
+                            : <span className="text-muted-foreground">£{(totalBudget - spend).toFixed(0)} left</span>
                           }
                         </div>
                         <div className="h-1 w-full rounded-full bg-muted overflow-hidden">

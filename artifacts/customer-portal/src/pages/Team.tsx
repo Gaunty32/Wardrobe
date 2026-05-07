@@ -196,8 +196,8 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
       <div className="space-y-1 pt-1">
         <Label className="flex items-center gap-1.5">
           <Wallet className="w-3.5 h-3.5 text-muted-foreground" />
-          Annual allowance (£)
-          <span className="font-normal text-muted-foreground ml-1">(optional — leave blank for no limit)</span>
+          Annual allowance override (£)
+          <span className="font-normal text-muted-foreground ml-1">(leave blank to use role default)</span>
         </Label>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
@@ -362,6 +362,26 @@ function EmployeesTab() {
     onError: () => toast({ title: "Failed to update employee", variant: "destructive" }),
   });
 
+  const [topupTarget, setTopupTarget] = useState<any | null>(null);
+  const [topupAmount, setTopupAmount] = useState("");
+
+  const topupMutation = useMutation({
+    mutationFn: ({ id, topup }: { id: number; topup: number }) =>
+      apiFetch(`/portal/team/employees/${id}/topup`, { method: "PATCH", body: JSON.stringify({ topup }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
+      setTopupTarget(null);
+      setTopupAmount("");
+      toast({ title: "Extra credits updated" });
+    },
+    onError: () => toast({ title: "Failed to update credits", variant: "destructive" }),
+  });
+
+  const openTopup = (emp: any) => {
+    setTopupTarget(emp);
+    setTopupAmount(parseFloat(emp.allowance_topup ?? "0") > 0 ? String(parseFloat(emp.allowance_topup)) : "");
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -431,20 +451,22 @@ function EmployeesTab() {
                 )}
                 {(() => {
                   const spend = parseFloat(emp.spend_12m ?? "0");
-                  const allowance = emp.allowance != null ? parseFloat(emp.allowance) : null;
-                  if (allowance != null && allowance > 0) {
-                    const pct = Math.min(100, (spend / allowance) * 100);
-                    const over = spend > allowance;
+                  const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
+                  const topup = parseFloat(emp.allowance_topup ?? "0");
+                  const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+                  if (totalBudget != null && totalBudget > 0) {
+                    const pct = Math.min(100, (spend / totalBudget) * 100);
+                    const over = spend > totalBudget;
                     return (
                       <div className="mt-1.5 max-w-xs">
                         <div className="flex items-center gap-2 text-[11px] mb-0.5">
                           <Wallet className="w-3 h-3 text-muted-foreground shrink-0" />
                           <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
-                            £{spend.toFixed(2)} of £{allowance.toFixed(2)} spent
+                            £{spend.toFixed(2)} of £{totalBudget.toFixed(2)} spent
                           </span>
                           {over
                             ? <span className="text-destructive font-medium">— over budget</span>
-                            : <span className="text-muted-foreground/70">£{(allowance - spend).toFixed(2)} remaining</span>
+                            : <span className="text-muted-foreground/70">£{(totalBudget - spend).toFixed(2)} remaining</span>
                           }
                         </div>
                         <div className="h-1.5 w-48 rounded-full bg-muted overflow-hidden">
@@ -453,6 +475,11 @@ function EmployeesTab() {
                             style={{ width: `${pct}%` }}
                           />
                         </div>
+                        {topup > 0 && (
+                          <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                            Includes £{topup.toFixed(2)} extra credits
+                          </p>
+                        )}
                       </div>
                     );
                   }
@@ -471,6 +498,17 @@ function EmployeesTab() {
                 <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>
               )}
               <div className="flex items-center gap-1 shrink-0">
+                {emp.effective_allowance != null && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                    onClick={() => openTopup(emp)}
+                    title="Add extra credits"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -526,6 +564,83 @@ function EmployeesTab() {
               saving={editMutation.isPending}
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Top-up credits dialog */}
+      <Dialog open={!!topupTarget} onOpenChange={(o) => { if (!o) { setTopupTarget(null); setTopupAmount(""); } }}>
+        <DialogContent className="sm:max-w-[380px]">
+          <DialogHeader><DialogTitle>Extra credits — {topupTarget?.first_name} {topupTarget?.last_name}</DialogTitle></DialogHeader>
+          {topupTarget && (() => {
+            const effectiveAllowance = topupTarget.effective_allowance != null ? parseFloat(topupTarget.effective_allowance) : null;
+            const roleAllowance = topupTarget.role_allowance != null ? parseFloat(topupTarget.role_allowance) : null;
+            const hasOverride = topupTarget.allowance != null;
+            const currentTopup = parseFloat(topupTarget.allowance_topup ?? "0");
+            const spend = parseFloat(topupTarget.spend_12m ?? "0");
+            const newTopup = topupAmount.trim() !== "" ? parseFloat(topupAmount) : 0;
+            const newTotal = effectiveAllowance != null ? effectiveAllowance + newTopup : null;
+            return (
+              <div className="space-y-4 py-1">
+                <div className="rounded-lg bg-muted/40 border px-4 py-3 text-sm space-y-1.5">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Role default</span>
+                    <span>{roleAllowance != null ? `£${roleAllowance.toFixed(2)}` : "No limit"}</span>
+                  </div>
+                  {hasOverride && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Employee override</span>
+                      <span>£{parseFloat(topupTarget.allowance).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Spent this year</span>
+                    <span className={spend > (effectiveAllowance ?? Infinity) ? "text-destructive font-medium" : ""}>£{spend.toFixed(2)}</span>
+                  </div>
+                  {currentTopup > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>Current extra credits</span>
+                      <span>£{currentTopup.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5">
+                    <Wallet className="w-3.5 h-3.5 text-muted-foreground" />
+                    Set total extra credits (£)
+                  </Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      className="pl-7"
+                      value={topupAmount}
+                      onChange={e => setTopupAmount(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  {newTotal != null && (
+                    <p className="text-xs text-muted-foreground">
+                      New total budget: <strong>£{newTotal.toFixed(2)}</strong>
+                      {newTotal > spend ? ` — £${(newTotal - spend).toFixed(2)} remaining` : " — still over budget"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setTopupTarget(null); setTopupAmount(""); }}>Cancel</Button>
+            <Button
+              disabled={topupMutation.isPending || topupAmount.trim() === ""}
+              onClick={() => topupMutation.mutate({ id: topupTarget!.id, topup: parseFloat(topupAmount) || 0 })}
+            >
+              {topupMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+              Save credits
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -1106,20 +1221,22 @@ function MyTeamTab() {
                 </p>
                 {(() => {
                   const spend = parseFloat(emp.spend_12m ?? "0");
-                  const allowance = emp.allowance != null ? parseFloat(emp.allowance) : null;
-                  if (allowance != null && allowance > 0) {
-                    const pct = Math.min(100, (spend / allowance) * 100);
-                    const over = spend > allowance;
+                  const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
+                  const topup = parseFloat(emp.allowance_topup ?? "0");
+                  const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+                  if (totalBudget != null && totalBudget > 0) {
+                    const pct = Math.min(100, (spend / totalBudget) * 100);
+                    const over = spend > totalBudget;
                     return (
                       <div className="mt-1.5 max-w-xs">
                         <div className="flex items-center gap-2 text-[11px] mb-0.5">
                           <Wallet className="w-3 h-3 text-muted-foreground shrink-0" />
                           <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
-                            £{spend.toFixed(2)} of £{allowance.toFixed(2)} spent
+                            £{spend.toFixed(2)} of £{totalBudget.toFixed(2)} spent
                           </span>
                           {over
                             ? <span className="text-destructive font-medium">— over budget</span>
-                            : <span className="text-muted-foreground/70">£{(allowance - spend).toFixed(2)} remaining</span>
+                            : <span className="text-muted-foreground/70">£{(totalBudget - spend).toFixed(2)} remaining</span>
                           }
                         </div>
                         <div className="h-1.5 w-48 rounded-full bg-muted overflow-hidden">
@@ -1128,6 +1245,11 @@ function MyTeamTab() {
                             style={{ width: `${pct}%` }}
                           />
                         </div>
+                        {topup > 0 && (
+                          <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                            Includes £{topup.toFixed(2)} extra credits
+                          </p>
+                        )}
                       </div>
                     );
                   }

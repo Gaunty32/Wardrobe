@@ -1923,7 +1923,10 @@ router.get("/portal/my-team/employees", portalAuth, async (req: Request, res: Re
   const rows = await db.execute(sql`
     SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
            e.department, e.notes, e.is_active, e.allowance,
+           COALESCE(e.allowance_topup, 0) AS allowance_topup,
            cr.id as role_id, cr.name as role_name,
+           cr.annual_allowance as role_allowance,
+           COALESCE(e.allowance, cr.annual_allowance) AS effective_allowance,
            e.manager_id,
            e.delivery_address_id,
            da.label as delivery_address_label,
@@ -2075,7 +2078,10 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
     const rows = await db.execute(sql`
       SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
              e.department, e.notes, e.is_active, e.allowance,
+             COALESCE(e.allowance_topup, 0) AS allowance_topup,
              cr.id as role_id, cr.name as role_name,
+             cr.annual_allowance as role_allowance,
+             COALESCE(e.allowance, cr.annual_allowance) AS effective_allowance,
              e.manager_id,
              TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) as manager_name,
              e.delivery_address_id,
@@ -2165,6 +2171,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
     isActive: z.boolean().optional(),
     deliveryAddressId: z.number().int().optional().nullable(),
     allowance: z.number().min(0).optional().nullable(),
+    allowanceTopup: z.number().min(0).optional().nullable(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
@@ -2183,6 +2190,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   if (d.isActive !== undefined) sets.push(`is_active = ${d.isActive}`);
   if (d.deliveryAddressId !== undefined) sets.push(`delivery_address_id = ${d.deliveryAddressId === null ? "NULL" : d.deliveryAddressId}`);
   if (d.allowance !== undefined) sets.push(`allowance = ${d.allowance === null ? "NULL" : d.allowance}`);
+  if (d.allowanceTopup !== undefined) sets.push(`allowance_topup = ${d.allowanceTopup === null ? "0" : d.allowanceTopup}`);
 
   if (sets.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
 
@@ -2190,6 +2198,28 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
     UPDATE customer_employees SET ${sql.raw(sets.join(", "))}, updated_at = now()
     WHERE id = ${id} AND customer_id = ${customerId}
     RETURNING *
+  `);
+  if (rows.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
+  res.json(rows.rows[0]);
+});
+
+// ─── portal: team — manager top-up credits for an employee ───────────────────
+
+router.patch("/portal/team/employees/:id/topup", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  const empId = parseInt(req.params.id, 10);
+  if (isNaN(empId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+  const body = z.object({ topup: z.number().min(0) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const rows = await db.execute(sql`
+    UPDATE customer_employees
+    SET allowance_topup = ${body.data.topup}, updated_at = now()
+    WHERE id = ${empId} AND customer_id = ${customerId}
+    RETURNING id, allowance, allowance_topup,
+              (SELECT annual_allowance FROM customer_roles WHERE id = customer_employees.role_id) AS role_allowance,
+              COALESCE(allowance, (SELECT annual_allowance FROM customer_roles WHERE id = customer_employees.role_id)) AS effective_allowance
   `);
   if (rows.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
   res.json(rows.rows[0]);

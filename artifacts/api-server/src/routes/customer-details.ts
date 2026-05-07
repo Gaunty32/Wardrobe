@@ -369,16 +369,20 @@ router.delete("/customers/:customerId/finishes/:finishId/garments/:id", async (r
 const roleBody = z.object({
   name: z.string().min(1),
   description: z.string().optional().nullable(),
+  annualAllowance: z.number().min(0).optional().nullable(),
 });
 
 router.get("/customers/:customerId/roles", async (req, res): Promise<void> => {
   const p = customerIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
-  const rows = await db.select().from(customerRolesTable)
-    .where(eq(customerRolesTable.customerId, p.data.customerId))
-    .orderBy(customerRolesTable.name);
-  res.json(rows);
+  const rows = await db.execute(sql`
+    SELECT id, customer_id, name, description, annual_allowance, created_at, updated_at
+    FROM customer_roles
+    WHERE customer_id = ${p.data.customerId}
+    ORDER BY name
+  `);
+  res.json(rows.rows);
 });
 
 router.post("/customers/:customerId/roles", async (req, res): Promise<void> => {
@@ -387,8 +391,13 @@ router.post("/customers/:customerId/roles", async (req, res): Promise<void> => {
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
   const body = roleBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const [row] = await db.insert(customerRolesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
-  res.status(201).json(row);
+  const d = body.data;
+  const rows = await db.execute(sql`
+    INSERT INTO customer_roles (customer_id, name, description, annual_allowance)
+    VALUES (${p.data.customerId}, ${d.name}, ${d.description ?? null}, ${d.annualAllowance ?? null})
+    RETURNING id, customer_id, name, description, annual_allowance, created_at, updated_at
+  `);
+  res.status(201).json(rows.rows[0]);
 });
 
 router.patch("/customers/:customerId/roles/:id", async (req, res): Promise<void> => {
@@ -396,12 +405,18 @@ router.patch("/customers/:customerId/roles/:id", async (req, res): Promise<void>
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   const body = roleBody.partial().safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const [row] = await db.update(customerRolesTable)
-    .set({ ...body.data, updatedAt: new Date() })
-    .where(and(eq(customerRolesTable.id, p.data.id), eq(customerRolesTable.customerId, p.data.customerId)))
-    .returning();
-  if (!row) { res.status(404).json({ error: "Role not found" }); return; }
-  res.json(row);
+  const d = body.data;
+  const sets: string[] = ["updated_at = now()"];
+  if (d.name !== undefined) sets.push(`name = '${d.name.replace(/'/g, "''")}'`);
+  if (d.description !== undefined) sets.push(`description = ${d.description === null ? "NULL" : `'${d.description.replace(/'/g, "''")}'`}`);
+  if (d.annualAllowance !== undefined) sets.push(`annual_allowance = ${d.annualAllowance === null ? "NULL" : d.annualAllowance}`);
+  const rows = await db.execute(sql`
+    UPDATE customer_roles SET ${sql.raw(sets.join(", "))}
+    WHERE id = ${p.data.id} AND customer_id = ${p.data.customerId}
+    RETURNING id, customer_id, name, description, annual_allowance, created_at, updated_at
+  `);
+  if (rows.rows.length === 0) { res.status(404).json({ error: "Role not found" }); return; }
+  res.json(rows.rows[0]);
 });
 
 router.delete("/customers/:customerId/roles/:id", async (req, res): Promise<void> => {

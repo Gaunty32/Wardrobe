@@ -1165,7 +1165,7 @@ function RolesTab({ customerId }: { customerId: number }) {
   const { data: roles, isLoading } = useSubResource<any>(customerId, "roles");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", description: "" };
+  const blank = { name: "", description: "", annualAllowance: "" };
   const [form, setForm] = useState(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "roles"] });
@@ -1184,7 +1184,21 @@ function RolesTab({ customerId }: { customerId: number }) {
   });
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (r: any) => { setForm({ name: r.name || "", description: r.description || "" }); setEditing(r); setOpen(true); };
+  const openEdit = (r: any) => {
+    setForm({
+      name: r.name || "",
+      description: r.description || "",
+      annualAllowance: r.annual_allowance != null ? String(r.annual_allowance) : "",
+    });
+    setEditing(r);
+    setOpen(true);
+  };
+
+  const handleSave = () => {
+    const payload: any = { name: form.name, description: form.description || null };
+    payload.annualAllowance = form.annualAllowance.trim() !== "" ? parseFloat(form.annualAllowance) : null;
+    save.mutate(payload);
+  };
 
   return (
     <>
@@ -1199,6 +1213,7 @@ function RolesTab({ customerId }: { customerId: number }) {
           <TableHeader><TableRow className="hover:bg-transparent">
             <TableHead>Role Name</TableHead>
             <TableHead className="hidden md:table-cell">Description</TableHead>
+            <TableHead className="hidden sm:table-cell text-right">Annual Allowance</TableHead>
             <TableHead className="w-20 text-right">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
@@ -1206,6 +1221,9 @@ function RolesTab({ customerId }: { customerId: number }) {
               <TableRow key={r.id} className="group hover:bg-muted/30">
                 <TableCell className="font-medium">{r.name}</TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{r.description || '—'}</TableCell>
+                <TableCell className="hidden sm:table-cell text-right text-sm text-muted-foreground">
+                  {r.annual_allowance != null ? `£${parseFloat(r.annual_allowance).toFixed(2)}` : <span className="text-muted-foreground/40">No limit</span>}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(r)}><Edit2 className="w-3 h-3" /></Button>
@@ -1223,10 +1241,29 @@ function RolesTab({ customerId }: { customerId: number }) {
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Role Name *</Label><Input placeholder="e.g. Manager, Driver, Sales Rep" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div className="grid gap-2"><Label>Description</Label><Textarea rows={2} placeholder="Optional description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1.5">
+                Annual Allowance (£)
+                <span className="text-muted-foreground font-normal text-xs ml-1">— leave blank for no limit</span>
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g. 250.00"
+                  className="pl-7"
+                  value={form.annualAllowance}
+                  onChange={e => setForm({ ...form, annualAllowance: e.target.value })}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Default budget for all employees in this role. Can be overridden per employee.</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+            <Button onClick={handleSave} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -512,5 +512,12 @@ export async function runStartupMigrations(): Promise<void> {
       console.log(`[startup] Backfilled stock allocation for ${unallocatedOrders.rows.length} order(s)`);
     }
   }
+
+  // Role-level annual allowance (default budget for all employees in that role)
+  await db.execute(sql`ALTER TABLE customer_roles ADD COLUMN IF NOT EXISTS annual_allowance numeric(10,2);`);
+
+  // Per-employee top-up credits (extra budget granted by a manager on top of role/override allowance)
+  await db.execute(sql`ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS allowance_topup numeric(10,2) NOT NULL DEFAULT 0;`);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
