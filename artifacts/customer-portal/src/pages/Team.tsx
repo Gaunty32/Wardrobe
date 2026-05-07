@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet, GripVertical, ChevronRight,
+  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet, GripVertical, ChevronRight, Search, X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -403,16 +403,32 @@ function EmployeesTab() {
   const { toast } = useToast();
 
   // ── data ─────────────────────────────────────────────────────────────────────
-  const [showInactive, setShowInactive] = useState(false);
+  const [search, setSearch] = useState("");
+  const searchTrimmed = search.trim().toLowerCase();
 
   const { data: employees = [], isLoading } = useQuery<any[]>({
-    queryKey: ["portal-team-employees", showInactive],
-    queryFn: () => apiFetch(`/portal/team/employees?showInactive=${showInactive}`),
+    queryKey: ["portal-team-employees", true],
+    queryFn: () => apiFetch("/portal/team/employees?showInactive=true"),
   });
+  // Active-only list used by the employee form manager picker
   const { data: allEmployees = [] } = useQuery<any[]>({
     queryKey: ["portal-team-employees", false],
     queryFn: () => apiFetch("/portal/team/employees?showInactive=false"),
   });
+  // When not searching, hierarchy only shows active employees
+  const activeEmployees = useMemo(
+    () => (employees as any[]).filter((e: any) => e.is_active),
+    [employees],
+  );
+  // When searching, flat list across all employees
+  const searchResults = useMemo(() => {
+    if (!searchTrimmed) return [];
+    return (employees as any[]).filter((e: any) =>
+      `${e.first_name ?? ""} ${e.last_name ?? ""} ${e.employee_number ?? ""} ${e.email ?? ""} ${e.department ?? ""} ${e.job_title ?? ""}`
+        .toLowerCase()
+        .includes(searchTrimmed),
+    );
+  }, [employees, searchTrimmed]);
   const { data: roles = [] } = useQuery<Array<{ id: number; name: string }>>({
     queryKey: ["portal-team-roles"],
     queryFn: () => apiFetch("/portal/team/roles"),
@@ -445,36 +461,36 @@ function EmployeesTab() {
     [portalUsers],
   );
 
-  // ── hierarchy ─────────────────────────────────────────────────────────────────
+  // ── hierarchy (active employees only) ────────────────────────────────────────
   // groups: manager_id → direct reports list
   const groups = useMemo(() => {
     const m = new Map<number | null, any[]>();
-    for (const e of employees as any[]) {
+    for (const e of activeEmployees as any[]) {
       const key = e.manager_id != null ? Number(e.manager_id) : null;
       if (!m.has(key)) m.set(key, []);
       m.get(key)!.push(e);
     }
     return m;
-  }, [employees]);
+  }, [activeEmployees]);
 
   // IDs of employees who are managers of at least one other
   const leaderIds = useMemo(() => {
     const s = new Set<number>();
-    for (const e of employees as any[]) {
+    for (const e of activeEmployees as any[]) {
       if (e.manager_id != null) s.add(Number(e.manager_id));
     }
     return s;
-  }, [employees]);
+  }, [activeEmployees]);
 
   // Section keys: the leader IDs, sorted by leader surname
   const sectionKeys = useMemo(() => {
     const keys = [...groups.keys()].filter((k): k is number => k !== null);
     return keys.sort((a, b) => {
-      const la = (employees as any[]).find((e: any) => e.id === a);
-      const lb = (employees as any[]).find((e: any) => e.id === b);
+      const la = (activeEmployees as any[]).find((e: any) => e.id === a);
+      const lb = (activeEmployees as any[]).find((e: any) => e.id === b);
       return (la?.last_name ?? "").localeCompare(lb?.last_name ?? "");
     });
-  }, [groups, employees]);
+  }, [groups, activeEmployees]);
 
   // Unassigned: top-level employees who do NOT lead anyone
   const unassigned = useMemo(
@@ -723,30 +739,83 @@ function EmployeesTab() {
   return (
     <div>
       {/* Toolbar */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Switch id="show-inactive-emp" checked={showInactive} onCheckedChange={setShowInactive} />
-          <Label htmlFor="show-inactive-emp" className="cursor-pointer">Show inactive</Label>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, email, department…"
+            className="pl-9 pr-8"
+          />
+          {search && (
+            <button className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearch("")}>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setAddOpen(true)}>
+        <Button size="sm" className="gap-1.5 shrink-0" onClick={() => setAddOpen(true)}>
           <Plus className="w-4 h-4" /> Add employee
         </Button>
       </div>
 
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : employees.length === 0 ? (
+      ) : searchTrimmed ? (
+        /* ── Search results: flat list ── */
+        searchResults.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">No employees match "{search}"</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {searchResults.map((emp: any) => (
+              <div
+                key={emp.id}
+                className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${emp.is_active ? "" : "opacity-60"}`}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  {emp.first_name?.[0]}{emp.last_name?.[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">
+                    {emp.first_name} {emp.last_name}
+                    {!emp.is_active && <span className="ml-2 text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-normal">leaver</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {[emp.employee_number && `#${emp.employee_number}`, emp.role_name, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditTarget(emp); }} title="Edit">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  {!emp.is_active && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-green-600"
+                      onClick={() => statusMutation.mutate({ id: emp.id, isActive: true })} title="Reactivate">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : activeEmployees.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">{showInactive ? "No employees found" : "No active employees"}</p>
+            <p className="text-sm text-muted-foreground">No active employees — add one to get started</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
           {/* ── Team sections (leaders with direct reports) ── */}
           {sectionKeys.map((leaderId) => {
-            const leader = (employees as any[]).find((e: any) => e.id === leaderId);
+            const leader = (activeEmployees as any[]).find((e: any) => e.id === leaderId);
             if (!leader) return null;
             const members = groups.get(leaderId) ?? [];
             const isOpen = expanded.has(leaderId);
@@ -1524,7 +1593,8 @@ function UsersTab() {
 function MyTeamTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [showInactive, setShowInactive] = useState(false);
+  const [search, setSearch] = useState("");
+  const searchTrimmed = search.trim().toLowerCase();
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<any | null>(null);
   const [dragEmpId, setDragEmpId] = useState<number | null>(null);
@@ -1532,9 +1602,22 @@ function MyTeamTab() {
   const [explosionPos, setExplosionPos] = useState<{ x: number; y: number } | null>(null);
 
   const { data: employees = [], isLoading } = useQuery<any[]>({
-    queryKey: ["portal-my-team-employees", showInactive],
-    queryFn: () => apiFetch(`/portal/my-team/employees?showInactive=${showInactive}`),
+    queryKey: ["portal-my-team-employees", true],
+    queryFn: () => apiFetch("/portal/my-team/employees?showInactive=true"),
   });
+
+  const activeEmployees = useMemo(
+    () => (employees as any[]).filter((e: any) => e.is_active),
+    [employees],
+  );
+  const searchResults = useMemo(() => {
+    if (!searchTrimmed) return [];
+    return (employees as any[]).filter((e: any) =>
+      `${e.first_name ?? ""} ${e.last_name ?? ""} ${e.employee_number ?? ""} ${e.email ?? ""} ${e.department ?? ""} ${e.job_title ?? ""}`
+        .toLowerCase()
+        .includes(searchTrimmed),
+    );
+  }, [employees, searchTrimmed]);
 
   const [form, setForm] = useState({ firstName: "", lastName: "", employeeNumber: "", email: "", phone: "", jobTitle: "", department: "" });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
@@ -1625,30 +1708,80 @@ function MyTeamTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Switch id="show-inactive-my" checked={showInactive} onCheckedChange={setShowInactive} />
-          <Label htmlFor="show-inactive-my" className="cursor-pointer">Show leavers</Label>
+      <div className="flex items-center gap-3 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by name, email, department…"
+            className="pl-9 pr-8"
+          />
+          {search && (
+            <button className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearch("")}>
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
-        <Button size="sm" className="gap-1.5" onClick={() => { resetForm(); setAddOpen(true); }}>
+        <Button size="sm" className="gap-1.5 shrink-0" onClick={() => { resetForm(); setAddOpen(true); }}>
           <Plus className="w-4 h-4" /> Add team member
         </Button>
       </div>
 
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : employees.length === 0 ? (
+      ) : searchTrimmed ? (
+        searchResults.length === 0 ? (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground">No team members match "{search}"</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {searchResults.map((emp: any) => (
+              <div
+                key={emp.id}
+                className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${emp.is_active ? "" : "opacity-60"}`}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                  {emp.first_name?.[0]}{emp.last_name?.[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">
+                    {emp.first_name} {emp.last_name}
+                    {!emp.is_active && <span className="ml-2 text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-normal">leaver</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)} title="Edit">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  {!emp.is_active && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-green-600"
+                      onClick={() => statusMutation.mutate({ id: emp.id, isActive: true })} title="Reactivate">
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      ) : activeEmployees.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">
-              {showInactive ? "No team members found" : "No active team members — add one to get started"}
-            </p>
+            <p className="text-sm text-muted-foreground">No active team members — add one to get started</p>
           </CardContent>
         </Card>
       ) : (
         <div className="flex flex-col gap-2">
-          {employees.map((emp: any) => (
+          {activeEmployees.map((emp: any) => (
             <div
               key={emp.id}
               draggable={emp.is_active}
