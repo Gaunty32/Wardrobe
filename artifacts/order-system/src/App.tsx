@@ -31,6 +31,7 @@ import DemoProducts from "@/pages/DemoProducts";
 import DemoCustomers from "@/pages/DemoCustomers";
 import DemoPortal from "@/pages/DemoPortal";
 import DemoSection from "@/pages/DemoSection";
+import PortalGuide from "@/pages/PortalGuide";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,6 +61,9 @@ function UpdateBanner() {
 function Router() {
   return (
     <Switch>
+      {/* Public routes — no auth required */}
+      <Route path="/portal-guide" component={PortalGuide} />
+
       {/* Demo routes — no auth required, must come first */}
       <Route path="/demo" component={DemoGate} />
       <Route path="/demo/dashboard" component={DemoDashboard} />
