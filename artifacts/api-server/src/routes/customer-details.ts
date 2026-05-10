@@ -596,7 +596,24 @@ router.patch("/customers/:customerId/employees/:id", async (req, res): Promise<v
   if (!row) { res.status(404).json({ error: "Employee not found" }); return; }
   if (body.data.email !== undefined) {
     const normalised = body.data.email ? body.data.email.toLowerCase().trim() : body.data.email;
-    await db.execute(sql`UPDATE customer_portal_users SET email = ${normalised}, updated_at = now() WHERE employee_id = ${p.data.id}`);
+    if (normalised) {
+      const conflict = await db.execute(
+        sql`SELECT id FROM customer_portal_users WHERE email = ${normalised} AND employee_id != ${p.data.id} LIMIT 1`
+      );
+      if ((conflict.rows ?? []).length > 0) {
+        res.status(409).json({ error: "This email address is already linked to another portal account. Each portal account must have a unique email." });
+        return;
+      }
+    }
+    try {
+      await db.execute(sql`UPDATE customer_portal_users SET email = ${normalised}, updated_at = now() WHERE employee_id = ${p.data.id}`);
+    } catch (err: any) {
+      if (err.message?.includes("unique") || err.code === "23505") {
+        res.status(409).json({ error: "This email address is already linked to another portal account." });
+        return;
+      }
+      throw err;
+    }
   }
   res.json(row);
 });

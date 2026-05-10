@@ -43,7 +43,10 @@ async function apiFetch(path: string, opts?: RequestInit) {
     ...opts,
     headers: { "Content-Type": "application/json", ...opts?.headers },
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    try { const j = JSON.parse(text); throw new Error(j.error ?? text); } catch (e: any) { if (e.message !== text) throw e; throw new Error(text); }
+  }
   if (res.status === 204) return null;
   return res.json();
 }
@@ -1325,7 +1328,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
       return emp;
     },
     onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
-    onError: () => toast({ title: "Error", description: "Could not save employee", variant: "destructive" }),
+    onError: (err: any) => toast({ title: "Could not save employee", description: err?.message ?? "An unexpected error occurred", variant: "destructive" }),
   });
 
   const setActive = useMutation({
