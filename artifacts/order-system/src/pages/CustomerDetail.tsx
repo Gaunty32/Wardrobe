@@ -45,7 +45,9 @@ async function apiFetch(path: string, opts?: RequestInit) {
   });
   if (!res.ok) {
     const text = await res.text();
-    try { const j = JSON.parse(text); throw new Error(j.error ?? text); } catch (e: any) { if (e.message !== text) throw e; throw new Error(text); }
+    let message = `HTTP ${res.status}`;
+    try { const j = JSON.parse(text); if (j?.error) message = j.error; } catch {}
+    throw new Error(message);
   }
   if (res.status === 204) return null;
   return res.json();
