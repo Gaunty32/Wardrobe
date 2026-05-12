@@ -50,25 +50,25 @@ function buildInviteEmail(email: string, inviteUrl: string, customerName: string
 <body style="font-family:Arial,sans-serif;background:#f8fafc;padding:32px 0;margin:0">
   <div style="max-width:500px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;border:1px solid #e2e8f0">
     <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
-    <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">You've been invited to the portal</h2>
-    <p style="color:#475569;font-size:15px;margin:0 0 8px">You've been given access to the <strong>${customerName}</strong> ordering portal on Select Branding Solutions.</p>
-    <p style="color:#475569;font-size:15px;margin:0 0 24px">Click the button below to accept your invitation and get started. This link expires in ${INVITE_TTL_DAYS} days.</p>
-    <a href="${inviteUrl}" style="display:inline-block;background:#1e293b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;margin-bottom:28px">Accept invitation</a>
+    <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">Your ${customerName} account is ready</h2>
+    <p style="color:#475569;font-size:15px;margin:0 0 8px">Hi,</p>
+    <p style="color:#475569;font-size:15px;margin:0 0 24px">We've set up your account on the Select Branding Solutions wardrobe portal. Use the link below to sign in and get started — it expires in ${INVITE_TTL_DAYS} days.</p>
+    <a href="${inviteUrl}" style="display:inline-block;background:#1e293b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;margin-bottom:28px">Sign in to your account</a>
     <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px">
-      <p style="color:#0f172a;font-size:13px;font-weight:600;margin:0 0 8px">Through the portal you can:</p>
+      <p style="color:#0f172a;font-size:13px;font-weight:600;margin:0 0 8px">From the portal you can:</p>
       <ul style="color:#475569;font-size:13px;margin:0;padding-left:20px;line-height:1.9">
         <li>Browse and place orders for branded workwear</li>
         <li>Track the status of your orders in real time</li>
         <li>Manage your sizing and wardrobe preferences</li>
       </ul>
     </div>
-    <p style="color:#94a3b8;font-size:13px;margin:0">If you weren't expecting this invitation, you can safely ignore this email.</p>
+    <p style="color:#94a3b8;font-size:13px;margin:0">If you were not expecting this email, please contact us at info@selectbranding.co.uk.</p>
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0" />
-    <p style="color:#94a3b8;font-size:12px;margin:0">Select Branding Solutions &bull; <a href="${inviteUrl}" style="color:#94a3b8;word-break:break-all">${inviteUrl}</a></p>
+    <p style="color:#94a3b8;font-size:12px;margin:0">Select Branding Solutions &bull; info@selectbranding.co.uk</p>
   </div>
 </body>
 </html>`;
-  const text = `You've been invited to the ${customerName} ordering portal\n\nClick this link to accept your invitation (expires in ${INVITE_TTL_DAYS} days):\n${inviteUrl}\n\nThrough the portal you can:\n- Browse and place orders for branded workwear\n- Track the status of your orders in real time\n- Manage your sizing and wardrobe preferences\n\nIf you weren't expecting this invitation, you can safely ignore this email.\n\nSelect Branding Solutions`;
+  const text = `Your ${customerName} account is ready\n\nHi,\n\nWe've set up your account on the Select Branding Solutions wardrobe portal.\n\nSign in here (link expires in ${INVITE_TTL_DAYS} days):\n${inviteUrl}\n\nFrom the portal you can:\n- Browse and place orders for branded workwear\n- Track the status of your orders in real time\n- Manage your sizing and wardrobe preferences\n\nIf you were not expecting this email, please contact us at info@selectbranding.co.uk.\n\nSelect Branding Solutions`;
   return { html, text };
 }
 
@@ -140,7 +140,7 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
     const result = await sendEmail({
       to: email,
       cc: "info@selectbranding.co.uk",
-      subject: `You're invited to the ${customerName} ordering portal`,
+      subject: `Your ${customerName} account is ready — Select Branding Solutions`,
       html,
       text,
     });
@@ -2360,7 +2360,7 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
     const result = await sendEmail({
       to: email,
       cc: "info@selectbranding.co.uk",
-      subject: `You're invited to the ${customerName} ordering portal`,
+      subject: `Your ${customerName} account is ready — Select Branding Solutions`,
       html,
       text,
     });
