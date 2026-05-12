@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Loader2, X, Smartphone, Share, MoreVertical, MailCheck, ExternalLink } from "lucide-react";
 import logo from "@/assets/logo.png";
+import IosInstallBanner from "@/components/IosInstallBanner";
 
 function MobileInstallPrompt() {
   const [visible, setVisible] = useState(false);
@@ -198,6 +199,7 @@ export default function Login() {
       </div>
 
       <MobileInstallPrompt />
+      <IosInstallBanner />
     </div>
   );
 }

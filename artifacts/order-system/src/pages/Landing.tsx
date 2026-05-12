@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { isStaffAuthenticated } from "@/lib/staff-auth";
 import { ArrowRight, ShoppingBag, ClipboardList } from "lucide-react";
+import IosInstallBanner from "@/components/IosInstallBanner";
 
 export default function Landing() {
   const [, setLocation] = useLocation();
@@ -78,6 +79,8 @@ export default function Landing() {
       <footer className="text-center py-6 text-slate-600 text-xs">
         &copy; {new Date().getFullYear()} Select Branding Solutions Ltd
       </footer>
+
+      <IosInstallBanner />
     </div>
   );
 }
