@@ -1,8 +1,15 @@
-// Resend email client — uses Replit Connectors credential proxy.
-// WARNING: Never cache this client. Tokens expire; call getResendClient() fresh each time.
+// Resend email client.
+// Prefers RESEND_API_KEY env var; falls back to Replit Connectors credential proxy.
+// WARNING: Never cache this client. Call getResendClient() fresh each time.
 import { Resend } from "resend";
 
-async function getCredentials(): Promise<{ apiKey: string; fromEmail: string | null }> {
+async function getCredentials(): Promise<{ apiKey: string }> {
+  // Direct env var takes priority (most reliable)
+  if (process.env.RESEND_API_KEY) {
+    return { apiKey: process.env.RESEND_API_KEY };
+  }
+
+  // Fallback: Replit Connectors proxy
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
   const xReplitToken = process.env.REPL_IDENTITY
     ? "repl " + process.env.REPL_IDENTITY
@@ -11,7 +18,7 @@ async function getCredentials(): Promise<{ apiKey: string; fromEmail: string | n
     : null;
 
   if (!hostname || !xReplitToken) {
-    throw new Error("Resend not connected: missing Replit connector environment variables");
+    throw new Error("Resend not connected: set RESEND_API_KEY secret");
   }
 
   const data = await fetch(
@@ -27,10 +34,10 @@ async function getCredentials(): Promise<{ apiKey: string; fromEmail: string | n
   const settings = data?.items?.[0]?.settings;
   if (!settings?.api_key) throw new Error("Resend not connected");
 
-  return { apiKey: settings.api_key, fromEmail: settings.from_email ?? null };
+  return { apiKey: settings.api_key };
 }
 
 export async function getResendClient() {
-  const { apiKey, fromEmail } = await getCredentials();
-  return { client: new Resend(apiKey), fromEmail };
+  const { apiKey } = await getCredentials();
+  return { client: new Resend(apiKey), fromEmail: null };
 }
