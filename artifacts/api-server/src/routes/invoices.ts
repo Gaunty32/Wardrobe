@@ -104,14 +104,18 @@ router.post("/invoices/:orderId/post-xero", async (req, res): Promise<void> => {
   }
 });
 
-// ─── SMTP status ─────────────────────────────────────────────────────────────
+// ─── Email status ─────────────────────────────────────────────────────────────
+
+const isResendAvailable = !!(process.env.REPLIT_CONNECTORS_HOSTNAME);
 
 router.get("/settings/email/status", async (_req, res): Promise<void> => {
+  if (isResendAvailable) {
+    res.json({ configured: true, provider: "resend", host: null, fromEmail: null });
+    return;
+  }
   const config = await getSmtpConfig();
-  res.json({ configured: !!config, host: config?.host ?? null, fromEmail: config?.fromEmail ?? null });
+  res.json({ configured: !!config, provider: "smtp", host: config?.host ?? null, fromEmail: config?.fromEmail ?? null });
 });
-
-// ─── SMTP test connection ─────────────────────────────────────────────────────
 
 // ─── Orders grouped by customer PO number ────────────────────────────────────
 
@@ -165,8 +169,18 @@ router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
 
 router.post("/settings/email/test", async (_req, res): Promise<void> => {
   try {
+    if (isResendAvailable) {
+      // Test Resend by fetching credentials — throws if not connected
+      const { getResendClient } = await import("../services/resend-client.js");
+      const { client } = await getResendClient();
+      // Send a quick API ping by listing domains (read-only, no email sent)
+      const domains = await client.domains.list();
+      if ((domains as any).error) throw new Error((domains as any).error.message);
+      res.json({ ok: true, provider: "resend" });
+      return;
+    }
     const result = await testSmtpConnection();
-    res.json(result);
+    res.json({ ...result, provider: "smtp" });
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : "Test failed" });
   }

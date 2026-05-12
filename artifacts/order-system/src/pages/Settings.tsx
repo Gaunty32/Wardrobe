@@ -318,7 +318,7 @@ export default function Settings() {
               <BookOpen className="w-4 h-4" /> Xero Accounting
             </TabsTrigger>
             <TabsTrigger value="email" className="gap-2">
-              <Mail className="w-4 h-4" /> Email (SMTP)
+              <Mail className="w-4 h-4" /> Email
             </TabsTrigger>
           </TabsList>
 
@@ -742,10 +742,34 @@ export default function Settings() {
           {/* ─── Email Tab ─────────────────────────────────────────── */}
           <TabsContent value="email" className="mt-6">
             <div className="grid gap-6 max-w-2xl">
+
+              {/* Resend active banner */}
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 space-y-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <h2 className="font-semibold text-base text-emerald-900">Email sending active via Resend</h2>
+                </div>
+                <p className="text-sm text-emerald-800 leading-relaxed">
+                  Outgoing emails (invoices, portal sign-in links, order acknowledgements, and purchase orders) are sent through <strong>Resend</strong>. No SMTP configuration is needed.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testSmtpMutation.mutate()}
+                  disabled={testSmtpMutation.isPending}
+                  className="gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+                >
+                  {testSmtpMutation.isPending
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />Testing…</>
+                    : <><Send className="w-4 h-4" />Test Resend connection</>}
+                </Button>
+              </div>
+
+              {/* SMTP fallback (collapsed / reference only) */}
               <div className="rounded-xl border border-border bg-card p-5 space-y-4">
-                <h2 className="font-semibold text-base">SMTP Configuration</h2>
+                <h2 className="font-semibold text-base text-muted-foreground">SMTP (fallback — not currently used)</h2>
                 <p className="text-sm text-muted-foreground">
-                  Used to email invoices to customers. For <strong>Microsoft 365</strong>, use host <code className="text-xs bg-muted px-1 rounded">smtp.office365.com</code>, port <code className="text-xs bg-muted px-1 rounded">587</code>, and your full email address as the username.
+                  These settings are only used if Resend is unavailable. Leave them blank unless you have a specific reason to configure an SMTP fallback.
                 </p>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -758,12 +782,10 @@ export default function Settings() {
                     <Input placeholder="587" value={smtpPort} onChange={(e) => setSmtpPort(e.target.value)} />
                   </div>
                 </div>
-
                 <div className="space-y-1.5">
-                  <Label>Username (your email address)</Label>
+                  <Label>Username</Label>
                   <Input placeholder="you@yourdomain.com" value={smtpUser} onChange={(e) => setSmtpUser(e.target.value)} />
                 </div>
-
                 <div className="space-y-1.5">
                   <Label>Password / App Password</Label>
                   <div className="relative">
@@ -782,44 +804,33 @@ export default function Settings() {
                       {showSmtpPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  <p className="text-xs text-muted-foreground">For Microsoft 365, you may need to use an <strong>App Password</strong> if MFA is enabled, or enable SMTP AUTH on the account in the M365 admin portal.</p>
                 </div>
-
                 <div className="space-y-1.5">
                   <Label>From Email Address</Label>
                   <Input placeholder="invoices@yourdomain.com" value={smtpFromEmail} onChange={(e) => setSmtpFromEmail(e.target.value)} />
                 </div>
-
                 <div className="space-y-1.5">
                   <Label>From Name</Label>
                   <Input placeholder="Select Branding Solutions" value={smtpFromName} onChange={(e) => setSmtpFromName(e.target.value)} />
                 </div>
-
-                <div className="flex items-center gap-3 flex-wrap pt-1">
-                  <Button
-                    onClick={() => saveSmtpMutation.mutate({
-                      smtp_host: smtpHost || null,
-                      smtp_port: smtpPort || null,
-                      smtp_user: smtpUser || null,
-                      smtp_pass: smtpPass || null,
-                      smtp_from_email: smtpFromEmail || null,
-                      smtp_from_name: smtpFromName || null,
-                    })}
-                    disabled={saveSmtpMutation.isPending || !smtpHost || !smtpUser || !smtpFromEmail}
-                    className="gap-2"
-                  >
-                    {saveSmtpMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><CheckCircle className="w-4 h-4" />Save Settings</>}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => testSmtpMutation.mutate()}
-                    disabled={testSmtpMutation.isPending}
-                    className="gap-2"
-                  >
-                    {testSmtpMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Testing...</> : <><Send className="w-4 h-4" />Test Connection</>}
-                  </Button>
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => saveSmtpMutation.mutate({
+                    smtp_host: smtpHost || null,
+                    smtp_port: smtpPort || null,
+                    smtp_user: smtpUser || null,
+                    smtp_pass: smtpPass || null,
+                    smtp_from_email: smtpFromEmail || null,
+                    smtp_from_name: smtpFromName || null,
+                  })}
+                  disabled={saveSmtpMutation.isPending}
+                  className="gap-2"
+                >
+                  {saveSmtpMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><CheckCircle className="w-4 h-4" />Save SMTP Settings</>}
+                </Button>
               </div>
+
             </div>
           </TabsContent>
 
