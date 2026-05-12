@@ -598,7 +598,7 @@ router.patch("/customers/:customerId/employees/:id", async (req, res): Promise<v
     const normalised = body.data.email ? body.data.email.toLowerCase().trim() : body.data.email;
     if (normalised) {
       const conflict = await db.execute(
-        sql`SELECT id FROM customer_portal_users WHERE email = ${normalised} AND employee_id != ${p.data.id} LIMIT 1`
+        sql`SELECT id FROM customer_portal_users WHERE email = ${normalised} AND linked_employee_id != ${p.data.id} LIMIT 1`
       );
       if ((conflict.rows ?? []).length > 0) {
         res.status(409).json({ error: "This email address is already linked to another portal account. Each portal account must have a unique email." });
@@ -606,7 +606,7 @@ router.patch("/customers/:customerId/employees/:id", async (req, res): Promise<v
       }
     }
     try {
-      await db.execute(sql`UPDATE customer_portal_users SET email = ${normalised}, updated_at = now() WHERE employee_id = ${p.data.id}`);
+      await db.execute(sql`UPDATE customer_portal_users SET email = ${normalised}, updated_at = now() WHERE linked_employee_id = ${p.data.id}`);
     } catch (err: any) {
       if (err.message?.includes("unique") || err.code === "23505") {
         res.status(409).json({ error: "This email address is already linked to another portal account." });
