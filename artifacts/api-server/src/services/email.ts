@@ -3,6 +3,7 @@ import PDFDocument from "pdfkit";
 import { db, settingsTable, ordersTable, orderItemsTable, customersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
+import { getResendClient } from "./resend-client.js";
 
 function toFirstName(name: string | null | undefined): string {
   if (!name?.trim()) return "there";
@@ -10,11 +11,17 @@ function toFirstName(name: string | null | undefined): string {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
-export const isEmailConfigured = !!(
+// Resend is available when the Replit Connectors proxy is present
+const isResendAvailable = !!(process.env.REPLIT_CONNECTORS_HOSTNAME);
+
+const isSmtpConfigured = !!(
   process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
 );
 
-const transporter = isEmailConfigured
+// isEmailConfigured = true if either Resend or SMTP is available
+export const isEmailConfigured = isResendAvailable || isSmtpConfigured;
+
+const smtpTransporter = isSmtpConfigured
   ? nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT ?? "587"),
@@ -22,6 +29,9 @@ const transporter = isEmailConfigured
       auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
     })
   : null;
+
+const DEFAULT_FROM = process.env.SMTP_FROM
+  ?? (process.env.SMTP_USER ? `"Select Branding Solutions" <${process.env.SMTP_USER}>` : "SBS <noreply@selectbranding.co.uk>");
 
 export async function sendEmail(opts: {
   to: string;
@@ -31,12 +41,39 @@ export async function sendEmail(opts: {
   text: string;
   attachments?: Array<{ filename: string; content: Buffer; contentType: string }>;
 }): Promise<{ sent: boolean; error?: string }> {
-  if (!transporter) return { sent: false, error: "SMTP not configured" };
+
+  // ── Resend (preferred) ──────────────────────────────────────────────────────
+  if (isResendAvailable) {
+    try {
+      const { client, fromEmail } = await getResendClient();
+      const from = fromEmail ?? DEFAULT_FROM;
+      const ccArr = opts.cc
+        ? (Array.isArray(opts.cc) ? opts.cc : [opts.cc])
+        : undefined;
+      const { error } = await client.emails.send({
+        from,
+        to: [opts.to],
+        ...(ccArr?.length ? { cc: ccArr } : {}),
+        subject: opts.subject,
+        html: opts.html,
+        text: opts.text,
+        attachments: opts.attachments?.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+        })),
+      });
+      if (error) return { sent: false, error: error.message };
+      return { sent: true };
+    } catch (err: any) {
+      // If connector fails for any reason, fall through to SMTP
+      console.error("[email] Resend failed, trying SMTP fallback:", err.message);
+    }
+  }
+
+  // ── SMTP fallback ───────────────────────────────────────────────────────────
+  if (!smtpTransporter) return { sent: false, error: "Email not configured" };
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM ?? `"Select Branding Solutions" <${process.env.SMTP_USER}>`,
-      ...opts,
-    });
+    await smtpTransporter.sendMail({ from: DEFAULT_FROM, ...opts });
     return { sent: true };
   } catch (err: any) {
     return { sent: false, error: err.message };
