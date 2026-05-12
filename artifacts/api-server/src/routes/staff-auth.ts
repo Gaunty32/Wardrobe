@@ -39,6 +39,30 @@ router.post("/auth/staff/login", async (req, res): Promise<void> => {
   res.json({ token, usingDefault: !hash });
 });
 
+router.get("/auth/staff/status", async (_req, res): Promise<void> => {
+  const hash = await getPasswordHash();
+  res.json({ passwordConfigured: !!hash });
+});
+
+router.post("/auth/staff/setup", async (req, res): Promise<void> => {
+  const hash = await getPasswordHash();
+  if (hash) {
+    res.status(409).json({ error: "Password already configured — use set-password instead" });
+    return;
+  }
+  const { newPassword } = req.body ?? {};
+  if (!newPassword || typeof newPassword !== "string" || newPassword.length < 8) {
+    res.status(400).json({ error: "Password must be at least 8 characters" });
+    return;
+  }
+  const newHash = await bcrypt.hash(newPassword, 12);
+  await db.insert(settingsTable)
+    .values({ key: "staff_password_hash", value: newHash })
+    .onConflictDoUpdate({ target: settingsTable.key, set: { value: newHash, updatedAt: new Date() } });
+  const token = jwt.sign({ role: "staff" }, JWT_SECRET, { expiresIn: "7d" });
+  res.json({ ok: true, token });
+});
+
 router.post("/auth/staff/set-password", async (req, res): Promise<void> => {
   const { currentPassword, newPassword } = req.body ?? {};
 
