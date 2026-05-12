@@ -30,8 +30,8 @@ const smtpTransporter = isSmtpConfigured
     })
   : null;
 
-const DEFAULT_FROM = process.env.SMTP_FROM
-  ?? (process.env.SMTP_USER ? `"Select Branding Solutions" <${process.env.SMTP_USER}>` : "SBS <noreply@selectbranding.co.uk>");
+const SBS_FROM = "Select Branding Solutions <info@selectbranding.co.uk>";
+const DEFAULT_FROM = process.env.SMTP_FROM ?? SBS_FROM;
 
 export async function sendEmail(opts: {
   to: string;
@@ -45,8 +45,8 @@ export async function sendEmail(opts: {
   // ── Resend (preferred) ──────────────────────────────────────────────────────
   if (isResendAvailable) {
     try {
-      const { client, fromEmail } = await getResendClient();
-      const from = fromEmail ?? DEFAULT_FROM;
+      const { client } = await getResendClient();
+      const from = SBS_FROM;
       const ccArr = opts.cc
         ? (Array.isArray(opts.cc) ? opts.cc : [opts.cc])
         : undefined;
