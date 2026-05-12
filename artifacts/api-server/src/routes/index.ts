@@ -22,6 +22,7 @@ import invoicesRouter from "./invoices";
 import stockRouter from "./stock";
 import stripePaymentsRouter from "./stripe-payments";
 import reportsRouter from "./reports";
+import staffAuthRouter from "./staff-auth";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use(invoicesRouter);
 router.use(stockRouter);
 router.use(stripePaymentsRouter);
 router.use(reportsRouter);
+router.use(staffAuthRouter);
 
 export default router;

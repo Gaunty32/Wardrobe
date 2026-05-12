@@ -32,6 +32,8 @@ import DemoCustomers from "@/pages/DemoCustomers";
 import DemoPortal from "@/pages/DemoPortal";
 import DemoSection from "@/pages/DemoSection";
 import PortalGuide from "@/pages/PortalGuide";
+import Landing from "@/pages/Landing";
+import StaffLogin from "@/pages/StaffLogin";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,10 +63,12 @@ function UpdateBanner() {
 function Router() {
   return (
     <Switch>
-      {/* Public routes — no auth required */}
+      {/* Public routes */}
+      <Route path="/" component={Landing} />
+      <Route path="/login" component={StaffLogin} />
       <Route path="/portal-guide" component={PortalGuide} />
 
-      {/* Demo routes — no auth required, must come first */}
+      {/* Demo routes — no auth required */}
       <Route path="/demo" component={DemoGate} />
       <Route path="/demo/dashboard" component={DemoDashboard} />
       <Route path="/demo/orders" component={DemoOrders} />
@@ -81,7 +85,8 @@ function Router() {
       <Route path="/demo/suppliers" component={() => <DemoSection section="suppliers" />} />
       <Route path="/demo/tasks" component={() => <DemoSection section="tasks" />} />
 
-      <Route path="/" component={Dashboard} />
+      {/* Staff routes — auth enforced inside Layout */}
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/orders" component={Orders} />
       <Route path="/orders/:id" component={OrderDetail} />
       <Route path="/customers" component={Customers} />

@@ -1,7 +1,8 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isStaffAuthenticated, clearStaffToken } from "@/lib/staff-auth";
 
 interface LayoutProps {
   children: ReactNode;
@@ -11,13 +12,26 @@ type NavItem = { name: string; href: string; icon: React.ElementType };
 type NavSection = { label: string; items: NavItem[] };
 
 export default function Layout({ children }: LayoutProps) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isStaffAuthenticated()) {
+      setLocation("/login");
+    }
+  }, [location]);
+
+  if (!isStaffAuthenticated()) return null;
+
+  function handleSignOut() {
+    clearStaffToken();
+    setLocation("/");
+  }
 
   const navSections: NavSection[] = [
     {
       label: "",
       items: [
-        { name: "Dashboard", href: "/", icon: LayoutDashboard },
+        { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { name: "Orders", href: "/orders", icon: ShoppingCart },
         { name: "Customers", href: "/customers", icon: Users },
         { name: "Products", href: "/products", icon: Package },
@@ -74,7 +88,7 @@ export default function Layout({ children }: LayoutProps) {
               )}
               <div className="space-y-0.5">
                 {section.items.map((item) => {
-                  const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+                  const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href));
                   return (
                     <Link
                       key={item.name}
@@ -121,7 +135,10 @@ export default function Layout({ children }: LayoutProps) {
               </Link>
             );
           })}
-          <button className="flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:bg-red-500/20 hover:text-red-300 transition-colors group">
+          <button
+            onClick={handleSignOut}
+            className="flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:bg-red-500/20 hover:text-red-300 transition-colors group"
+          >
             <LogOut className="w-5 h-5 mr-3 transition-colors" />
             Sign Out
           </button>
@@ -147,7 +164,7 @@ export default function Layout({ children }: LayoutProps) {
       {/* Mobile Navigation Bottom Bar — shows first 5 items only */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 h-16 bg-card border-t border-border/60 flex items-center justify-around px-2 z-20 pb-safe">
         {allNavItems.slice(0, 5).map((item) => {
-          const isActive = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+          const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href));
           return (
             <Link
               key={item.name}
