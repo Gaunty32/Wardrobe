@@ -345,7 +345,11 @@ export default function Customers() {
         <Dialog open={isCreateOpen || !!editingCustomer} onOpenChange={(open) => {
           if (!open) { setIsCreateOpen(false); setEditingCustomer(null); }
         }}>
-          <DialogContent className="sm:max-w-[600px]">
+          <DialogContent
+            className="sm:max-w-[600px]"
+            onInteractOutside={(e) => e.preventDefault()}
+            onEscapeKeyDown={(e) => e.preventDefault()}
+          >
             <DialogHeader>
               <DialogTitle className="font-display text-xl">{editingCustomer ? 'Edit Customer' : 'Add New Customer'}</DialogTitle>
             </DialogHeader>
