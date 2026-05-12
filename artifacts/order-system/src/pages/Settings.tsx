@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
-  Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send
+  Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +65,110 @@ interface XeroStatus {
   tenantId: string | null;
   tenantName: string | null;
   expiresAt: string | null;
+}
+
+function SecurityTab() {
+  const [current, setCurrent]     = useState("");
+  const [newPass, setNewPass]     = useState("");
+  const [confirm, setConfirm]     = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew]     = useState(false);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [success, setSuccess]     = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(false);
+    if (newPass !== confirm) { setError("New passwords don't match"); return; }
+    if (newPass.length < 8) { setError("New password must be at least 8 characters"); return; }
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/staff/set-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: newPass }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Failed to change password"); return; }
+      setSuccess(true);
+      setCurrent(""); setNewPass(""); setConfirm("");
+    } catch {
+      setError("Could not reach the server.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-6 max-w-2xl">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="font-semibold text-base">Change Staff Password</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            All staff share a single login password for the order system. Update it here when needed.
+          </p>
+        </div>
+
+        {success && (
+          <div className="flex items-center gap-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+            <CheckCircle className="w-4 h-4 shrink-0" /> Password changed successfully.
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Current password</Label>
+            <div className="relative">
+              <Input type={showCurrent ? "text" : "password"} value={current}
+                onChange={e => setCurrent(e.target.value)} placeholder="Enter current password"
+                className="pr-10" />
+              <button type="button" onClick={() => setShowCurrent(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showCurrent ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>New password</Label>
+            <div className="relative">
+              <Input type={showNew ? "text" : "password"} value={newPass}
+                onChange={e => setNewPass(e.target.value)} placeholder="At least 8 characters"
+                className="pr-10" />
+              <button type="button" onClick={() => setShowNew(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                {showNew ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Confirm new password</Label>
+            <Input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+              placeholder="Repeat new password" />
+          </div>
+
+          {error && (
+            <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">{error}</p>
+          )}
+
+          <Button type="submit" disabled={loading || !current || !newPass || !confirm} className="gap-2">
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><Lock className="w-4 h-4" />Update password</>}
+          </Button>
+        </form>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5 space-y-2">
+        <h2 className="font-semibold text-base">Forgotten your password?</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          If you're completely locked out, go to the login page and click <strong>"Forgot password?"</strong>.
+          You'll be asked for a recovery key — find it in the Replit Secrets panel under{" "}
+          <code className="text-xs bg-muted px-1.5 py-0.5 rounded">STAFF_RECOVERY_KEY</code>.
+          Entering it will clear the password so you can set a new one.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 export default function Settings() {
@@ -319,6 +423,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="email" className="gap-2">
               <Mail className="w-4 h-4" /> Email
+            </TabsTrigger>
+            <TabsTrigger value="security" className="gap-2">
+              <Lock className="w-4 h-4" /> Security
             </TabsTrigger>
           </TabsList>
 
@@ -832,6 +939,11 @@ export default function Settings() {
               </div>
 
             </div>
+          </TabsContent>
+
+          {/* ─── Security Tab ──────────────────────────────────────── */}
+          <TabsContent value="security" className="mt-6">
+            <SecurityTab />
           </TabsContent>
 
         </Tabs>

@@ -63,6 +63,17 @@ router.post("/auth/staff/setup", async (req, res): Promise<void> => {
   res.json({ ok: true, token });
 });
 
+router.post("/auth/staff/recover", async (req, res): Promise<void> => {
+  const { recoveryKey } = req.body ?? {};
+  const expected = process.env.STAFF_RECOVERY_KEY;
+  if (!expected || !recoveryKey || recoveryKey !== expected) {
+    res.status(401).json({ error: "Invalid recovery key" });
+    return;
+  }
+  await db.delete(settingsTable).where(eq(settingsTable.key, "staff_password_hash"));
+  res.json({ ok: true, message: "Password cleared — you can now create a new one" });
+});
+
 router.post("/auth/staff/set-password", async (req, res): Promise<void> => {
   const { currentPassword, newPassword } = req.body ?? {};
 
