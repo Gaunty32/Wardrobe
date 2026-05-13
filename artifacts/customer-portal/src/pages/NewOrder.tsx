@@ -48,6 +48,13 @@ function ProcessImage({ url, alt }: { url: string; alt: string }) {
   );
 }
 
+type ProcessLine = {
+  name: string;
+  type: string | null;
+  price: number;
+  included: boolean;
+};
+
 type OrderItem = {
   productId: number | null;
   productName: string;
@@ -60,6 +67,8 @@ type OrderItem = {
   recipientName: string;
   recipientEmployeeId: number | null;
   quantity: number;
+  garmentBasePrice: number;
+  processLines: ProcessLine[];
   unitPrice: number;
 };
 
@@ -75,6 +84,8 @@ const EMPTY_ITEM: OrderItem = {
   recipientName: "",
   recipientEmployeeId: null,
   quantity: 1,
+  garmentBasePrice: 0,
+  processLines: [],
   unitPrice: 0,
 };
 
@@ -411,49 +422,66 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     return sortSizesWithOrder(all, sizeOrder);
   };
 
-  // Returns the unit price after applying quantity-based price breaks and finish process costs.
-  // Formula: WooCommerce garment price + (sum of all process prices - cheapest process price)
-  // WooCommerce price already includes the cheapest/first logo; extra logos are additive.
-  // If special_price is set for this customer, that takes precedence.
-  const resolveUnitPrice = (wi: any, qty: number): number => {
+  // Computes the garment base price (with quantity breaks) and decoration process lines.
+  // The WooCommerce price already includes the cheapest/first logo; extra logos are additive.
+  // Returns { garmentPrice, processLines, unitPrice }.
+  const resolveItemPricing = (wi: any, qty: number): { garmentPrice: number; processLines: ProcessLine[]; unitPrice: number } => {
+    let garmentPrice: number;
     if (wi.special_price != null && wi.special_price !== "") {
-      return parseFloat(wi.special_price);
+      garmentPrice = parseFloat(wi.special_price);
+    } else {
+      const wooBase = parseFloat(wi.woo_price ?? wi.unit_price ?? "0");
+      const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
+      const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
+      garmentPrice = breaks.length > 0 ? (sorted.find(pb => qty >= pb.qty)?.price ?? wooBase) : wooBase;
     }
-    // Use the WooCommerce base garment price (woo_price) for the calculation.
-    // Fall back to unit_price if woo_price is not available.
-    const wooBase = parseFloat(wi.woo_price ?? wi.unit_price ?? "0");
-    const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
-    const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
-    const garmentPrice = breaks.length > 0
-      ? (sorted.find(pb => qty >= pb.qty)?.price ?? wooBase)
-      : wooBase;
 
-    // Add finish decoration costs (all processes in the finish minus the cheapest one,
-    // because the cheapest is already baked into the WooCommerce garment price).
     const finishProcs = processes.filter((p: any) => p.finish_id === wi.finish_id);
+    const processLines: ProcessLine[] = [];
+    let totalExtra = 0;
+
     if (finishProcs.length > 0) {
-      const prices = finishProcs.map((p: any) => parseFloat(p.price ?? "0")).filter(v => !isNaN(v));
-      const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
-      const totalExtra = prices.reduce((s, p) => s + p, 0) - minPrice;
-      return garmentPrice + totalExtra;
+      const priced = finishProcs.map((p: any) => ({ ...p, numPrice: parseFloat(p.price ?? "0") || 0 }));
+      const minPrice = Math.min(...priced.map(p => p.numPrice));
+      let includedDone = false;
+      for (const p of priced) {
+        const included = !includedDone && p.numPrice === minPrice;
+        if (included) includedDone = true;
+        else totalExtra += p.numPrice;
+        processLines.push({
+          name: p.item_finish_name ?? p.process_type ?? "",
+          type: p.process_type ?? null,
+          price: p.numPrice,
+          included,
+        });
+      }
     }
-    return garmentPrice;
+
+    return { garmentPrice, processLines, unitPrice: garmentPrice + totalExtra };
   };
 
-  const makeItem = (wi: any, recipientType: "stock" | "person", size: string, qty: number, employee?: any): OrderItem => ({
-    productId: wi.product_id ?? null,
-    productName: wi.product_name ?? wi.name,
-    sku: wi.product_sku ?? null,
-    colour: wi.colour ?? "",
-    size,
-    finishId: wi.finish_id ?? null,
-    finishName: wi.finish_name ?? "",
-    recipientType,
-    recipientName: employee ? `${employee.first_name} ${employee.last_name}` : "",
-    recipientEmployeeId: employee?.id ?? null,
-    quantity: qty,
-    unitPrice: resolveUnitPrice(wi, qty),
-  });
+  // Quick price-only helper used for the live price display on cards before adding to basket.
+  const resolveUnitPrice = (wi: any, qty: number): number => resolveItemPricing(wi, qty).unitPrice;
+
+  const makeItem = (wi: any, recipientType: "stock" | "person", size: string, qty: number, employee?: any): OrderItem => {
+    const { garmentPrice, processLines, unitPrice } = resolveItemPricing(wi, qty);
+    return {
+      productId: wi.product_id ?? null,
+      productName: wi.product_name ?? wi.name,
+      sku: wi.product_sku ?? null,
+      colour: wi.colour ?? "",
+      size,
+      finishId: wi.finish_id ?? null,
+      finishName: wi.finish_name ?? "",
+      recipientType,
+      recipientName: employee ? `${employee.first_name} ${employee.last_name}` : "",
+      recipientEmployeeId: employee?.id ?? null,
+      quantity: qty,
+      garmentBasePrice: garmentPrice,
+      processLines,
+      unitPrice,
+    };
+  };
 
   // ── Empty state ────────────────────────────────────────────────────────────
   if (finishGroups.length === 0) {
@@ -1550,38 +1578,66 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
               </TableHeader>
               <TableBody>
                 {basket.map((item, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell className="font-medium text-sm">
-                      <div>{item.productName}</div>
-                      {item.sku && (
-                        <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{item.sku}</div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {item.recipientName || (item.recipientType === "stock" ? "Stock" : "—")}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-0.5">
-                        <button className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => updateQty(idx, -1)}><Minus className="w-3 h-3" /></button>
-                        <input
-                          type="number"
-                          min={1}
-                          value={item.quantity}
-                          onChange={e => setQty(idx, parseInt(e.target.value, 10))}
-                          className="w-10 text-center text-sm font-medium border rounded outline-none focus:ring-1 focus:ring-primary/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none py-0.5"
-                        />
-                        <button className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => updateQty(idx, 1)}><Plus className="w-3 h-3" /></button>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right text-sm">{formatCurrency(item.unitPrice)}</TableCell>
-                    <TableCell className="text-right text-sm font-medium">{formatCurrency(item.quantity * item.unitPrice)}</TableCell>
-                    <TableCell>
-                      <button onClick={() => removeItem(idx)} className="text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-4 h-4" /></button>
-                    </TableCell>
-                  </TableRow>
+                  <React.Fragment key={idx}>
+                    <TableRow>
+                      <TableCell className="font-medium text-sm align-top">
+                        <div>{item.productName}</div>
+                        {item.sku && (
+                          <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{item.sku}</div>
+                        )}
+                        {item.finishName && (
+                          <div className="text-[11px] text-primary/70 font-semibold mt-1">{item.finishName}</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground align-top">
+                        {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground align-top">
+                        {item.recipientName || (item.recipientType === "stock" ? "Stock" : "—")}
+                      </TableCell>
+                      <TableCell className="text-right align-top">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => updateQty(idx, -1)}><Minus className="w-3 h-3" /></button>
+                          <input
+                            type="number"
+                            min={1}
+                            value={item.quantity}
+                            onChange={e => setQty(idx, parseInt(e.target.value, 10))}
+                            className="w-10 text-center text-sm font-medium border rounded outline-none focus:ring-1 focus:ring-primary/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none py-0.5"
+                          />
+                          <button className="w-6 h-6 rounded flex items-center justify-center hover:bg-muted" onClick={() => updateQty(idx, 1)}><Plus className="w-3 h-3" /></button>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right text-sm align-top">
+                        <div>{formatCurrency(item.unitPrice)}</div>
+                        {item.garmentBasePrice > 0 && item.processLines?.some(p => !p.included) && (
+                          <div className="text-[10px] text-muted-foreground mt-0.5">garment {formatCurrency(item.garmentBasePrice)}</div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-sm font-medium align-top">{formatCurrency(item.quantity * item.unitPrice)}</TableCell>
+                      <TableCell className="align-top">
+                        <button onClick={() => removeItem(idx)} className="text-muted-foreground hover:text-destructive transition-colors"><Trash2 className="w-4 h-4" /></button>
+                      </TableCell>
+                    </TableRow>
+                    {(item.processLines?.length ?? 0) > 0 && (
+                      <TableRow className="bg-muted/20 hover:bg-muted/20">
+                        <TableCell colSpan={7} className="py-1.5 pb-2.5 pt-0">
+                          <div className="flex flex-wrap gap-1.5 pl-1">
+                            {item.processLines.map((pl, pi) => (
+                              <span key={pi} className="inline-flex items-center gap-1 text-[10px] rounded border bg-background px-1.5 py-0.5">
+                                {pl.type && <ProcessBadgeInline type={pl.type} />}
+                                <span className="text-foreground/70">{pl.name}</span>
+                                {pl.included
+                                  ? <span className="text-emerald-600 font-medium">incl.</span>
+                                  : <span className="text-foreground font-semibold">+{formatCurrency(pl.price)}</span>
+                                }
+                              </span>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
                 ))}
               </TableBody>
             </Table>
