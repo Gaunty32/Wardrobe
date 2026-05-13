@@ -27,7 +27,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { sortSizes } from "@/lib/sizeUtils";
+import { sortSizesWithOrder } from "@/lib/sizeUtils";
+import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen } from "lucide-react";
 import { Link } from "wouter";
@@ -270,6 +271,7 @@ export default function OrderDetail() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const sizeOrder = useSizeOrder();
 
   const { data: order, isLoading: isOrderLoading } = useGetOrder(orderId);
   const { data: products } = useListProducts();
@@ -540,7 +542,7 @@ export default function OrderDetail() {
   const { data: productVariants } = useProductVariants(item.productId);
 
   const colours = [...new Set((productAttributes ?? []).filter(a => a.type === "colour").map(a => a.value))];
-  const sizes = sortSizes([...new Set((productAttributes ?? []).filter(a => a.type === "size").map(a => a.value))]);
+  const sizes = sortSizesWithOrder([...new Set((productAttributes ?? []).filter(a => a.type === "size").map(a => a.value))], sizeOrder);
 
   useEffect(() => {
     // Skip variant price lookup for wardrobe items — they use the customer's special/wardrobe price
@@ -1701,7 +1703,7 @@ export default function OrderDetail() {
                     {/* Size picker — always shown for wardrobe items */}
                     {(() => {
                       const variantSizeSet = new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""));
-                      const sizeOptions = sortSizes([...new Set([...sizes, ...variantSizeSet])]);
+                      const sizeOptions = sortSizesWithOrder([...new Set([...sizes, ...variantSizeSet])], sizeOrder);
                       return (
                         <div className="grid gap-2">
                           <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>

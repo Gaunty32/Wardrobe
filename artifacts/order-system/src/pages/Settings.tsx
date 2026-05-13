@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
-  Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock
+  Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +65,108 @@ interface XeroStatus {
   tenantId: string | null;
   tenantName: string | null;
   expiresAt: string | null;
+}
+
+const DEFAULT_SIZE_ORDER = [
+  "XXXS", "XXS", "XS", "S", "M", "L", "XL",
+  "2XL", "3XL", "4XL", "5XL", "6XL", "7XL", "8XL",
+  "X-Small", "Small", "Medium", "Large", "X-Large", "XX-Large",
+  "One Size",
+];
+
+function SizesTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const { data: rawSettings } = useQuery<Record<string, string | null>>({
+    queryKey: ["settings"],
+    queryFn: () => fetch(`${API_BASE}/settings`).then(r => r.json()),
+    staleTime: 1000 * 60 * 10,
+  });
+
+  const [order, setOrder] = useState<string[]>(DEFAULT_SIZE_ORDER);
+  const [dirty, setDirty] = useState(false);
+  const dragIdx = useRef<number | null>(null);
+
+  useEffect(() => {
+    const raw = rawSettings?.["size_order"];
+    if (raw) {
+      try { setOrder(JSON.parse(raw)); } catch {}
+    }
+  }, [rawSettings]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      fetch(`${API_BASE}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ size_order: JSON.stringify(order) }),
+      }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["settings"] });
+      toast({ title: "Size order saved" });
+      setDirty(false);
+    },
+    onError: () => toast({ title: "Error", description: "Could not save size order", variant: "destructive" }),
+  });
+
+  const handleDragStart = (idx: number) => { dragIdx.current = idx; };
+  const handleDragOver = (e: DragEvent<HTMLDivElement>, idx: number) => {
+    e.preventDefault();
+    if (dragIdx.current === null || dragIdx.current === idx) return;
+    setOrder(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(dragIdx.current!, 1);
+      next.splice(idx, 0, moved);
+      dragIdx.current = idx;
+      return next;
+    });
+    setDirty(true);
+  };
+  const handleDragEnd = () => { dragIdx.current = null; };
+
+  return (
+    <div className="grid gap-6 max-w-xl">
+      <div>
+        <h3 className="text-sm font-semibold mb-1">Size Display Order</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Drag to reorder. This order is used everywhere sizes appear — wardrobe items, order forms, stock tables, and the customer portal.
+        </p>
+        <div className="border rounded-lg divide-y overflow-hidden">
+          {order.map((size, idx) => (
+            <div
+              key={size}
+              draggable
+              onDragStart={() => handleDragStart(idx)}
+              onDragOver={(e) => handleDragOver(e, idx)}
+              onDragEnd={handleDragEnd}
+              className="flex items-center gap-3 px-4 py-2.5 cursor-grab active:cursor-grabbing hover:bg-muted/50 select-none transition-colors"
+            >
+              <GripVertical className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
+              <span className="text-sm font-medium">{size}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={!dirty || saveMutation.isPending}
+          className="gap-2"
+        >
+          {saveMutation.isPending
+            ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+            : <><CheckCircle className="w-4 h-4" />Save Order</>}
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => { setOrder(DEFAULT_SIZE_ORDER); setDirty(true); }}
+        >
+          Reset to Default
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 function SecurityTab() {
@@ -426,6 +528,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="security" className="gap-2">
               <Lock className="w-4 h-4" /> Security
+            </TabsTrigger>
+            <TabsTrigger value="sizes" className="gap-2">
+              <Ruler className="w-4 h-4" /> Sizes
             </TabsTrigger>
           </TabsList>
 
@@ -944,6 +1049,11 @@ export default function Settings() {
           {/* ─── Security Tab ──────────────────────────────────────── */}
           <TabsContent value="security" className="mt-6">
             <SecurityTab />
+          </TabsContent>
+
+          {/* ─── Sizes Tab ─────────────────────────────────────────── */}
+          <TabsContent value="sizes" className="mt-6">
+            <SizesTab />
           </TabsContent>
 
         </Tabs>

@@ -18,7 +18,8 @@ import {
   Pencil, Trash2, Package, MapPin, TrendingDown, RefreshCw, Shirt,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { sortBySize } from "@/lib/sizeUtils";
+import { sortBySizeWithOrder } from "@/lib/sizeUtils";
+import { useSizeOrder } from "@/hooks/useSizeOrder";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ interface CardGroup {
   items: StockItem[];
 }
 
-function groupItems(items: StockItem[]): CardGroup[] {
+function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
   const map = new Map<string, CardGroup>();
   for (const item of items) {
     const key = `${item.product_id ?? item.name}|${item.colour ?? ""}|${item.finish_id ?? ""}`;
@@ -95,7 +96,7 @@ function groupItems(items: StockItem[]): CardGroup[] {
     }
     map.get(key)!.items.push(item);
   }
-  return Array.from(map.values()).map(g => ({ ...g, items: sortBySize(g.items, i => i.size) }));
+  return Array.from(map.values()).map(g => ({ ...g, items: sortBySizeWithOrder(g.items, i => i.size, sizeOrder) }));
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -316,6 +317,7 @@ function StockCard({
 export default function StockPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const sizeOrder = useSizeOrder();
 
   const { data, isLoading } = useQuery<{ items: StockItem[]; processes: StockProcess[] }>({
     queryKey: ["portal-stock"],
@@ -454,7 +456,7 @@ export default function StockPage() {
   });
 
   const lowStockCount = items.filter(i => i.min_quantity > 0 && i.stock_quantity <= i.min_quantity).length;
-  const cardGroups = groupItems(items);
+  const cardGroups = groupItems(items, sizeOrder);
 
   return (
     <PortalLayout>

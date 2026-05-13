@@ -11,7 +11,8 @@ import {
 import { AlertTriangle, Search, Loader2, Package, Shirt } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { sortBySize } from "@/lib/sizeUtils";
+import { sortBySizeWithOrder } from "@/lib/sizeUtils";
+import { useSizeOrder } from "@/hooks/useSizeOrder";
 
 const API_BASE = "/api";
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
@@ -89,6 +90,7 @@ function InlineQty({ value, onSave }: { value: number; onSave: (qty: number) => 
 function PlainStockTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const sizeOrder = useSizeOrder();
   const [search, setSearch] = useState("");
 
   const { data: variants = [], isLoading } = useQuery<PlainVariant[]>({
@@ -183,7 +185,7 @@ function PlainStockTab() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sortBySize(items, v => v.size).map(v => (
+                      {sortBySizeWithOrder(items, v => v.size, sizeOrder).map(v => (
                         <TableRow key={v.variantId} className="group">
                           <TableCell className="font-mono text-xs text-muted-foreground">{v.sku || "—"}</TableCell>
                           <TableCell className="text-sm">{v.colour || "—"}</TableCell>

@@ -16,7 +16,6 @@ function baseRank(token: string): number {
   const n = normalise(token);
   const idx = SIZE_ORDER.findIndex(r => normalise(r) === n);
   if (idx !== -1) return idx;
-  // Pure numeric sizes (shoe sizes, waist sizes, etc.) — sort numerically after text sizes
   const num = parseFloat(n);
   if (!isNaN(num) && String(num) === n) return 500 + num;
   return 9999;
@@ -41,5 +40,34 @@ export function sortBySize<T>(arr: T[], key: (item: T) => string | null | undefi
     const diff = sizeRank(key(a)) - sizeRank(key(b));
     if (diff !== 0) return diff;
     return (key(a) ?? "").localeCompare(key(b) ?? "");
+  });
+}
+
+/** Sort using a custom user-defined order. Falls back to built-in ranking for sizes not in the list. */
+export function sortSizesWithOrder(sizes: string[], customOrder: string[]): string[] {
+  if (customOrder.length === 0) return sortSizes(sizes);
+  return [...sizes].sort((a, b) => {
+    const ia = customOrder.findIndex(o => normalise(o) === normalise(a));
+    const ib = customOrder.findIndex(o => normalise(o) === normalise(b));
+    const ra = ia !== -1 ? ia : 10000 + sizeRank(a);
+    const rb = ib !== -1 ? ib : 10000 + sizeRank(b);
+    return ra - rb || a.localeCompare(b);
+  });
+}
+
+export function sortBySizeWithOrder<T>(
+  arr: T[],
+  key: (item: T) => string | null | undefined,
+  customOrder: string[],
+): T[] {
+  if (customOrder.length === 0) return sortBySize(arr, key);
+  return [...arr].sort((a, b) => {
+    const sa = key(a) ?? "";
+    const sb = key(b) ?? "";
+    const ia = customOrder.findIndex(o => normalise(o) === normalise(sa));
+    const ib = customOrder.findIndex(o => normalise(o) === normalise(sb));
+    const ra = ia !== -1 ? ia : 10000 + sizeRank(sa);
+    const rb = ib !== -1 ? ib : 10000 + sizeRank(sb);
+    return ra - rb || sa.localeCompare(sb);
   });
 }

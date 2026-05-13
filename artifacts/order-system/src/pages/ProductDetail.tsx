@@ -20,7 +20,8 @@ import {
   Layers, Palette, Ruler, Upload, Camera
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { sortBySize } from "@/lib/sizeUtils";
+import { sortBySizeWithOrder } from "@/lib/sizeUtils";
+import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useGetProduct, useUpdateProduct, getListProductsQueryKey, useListSuppliers } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
@@ -491,6 +492,7 @@ export default function ProductDetail() {
   const [, navigate] = useLocation();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const sizeOrder = useSizeOrder();
 
   const { data: product, isLoading } = useGetProduct(productId);
   const { data: suppliers = [] } = useListSuppliers({});
@@ -648,7 +650,7 @@ export default function ProductDetail() {
   const defaultSecondaryId = details.secondarySupplierId;
 
   // Group variants for display summary — sorted colour-first, then size smallest→largest
-  const sortedVariants = sortBySize(variants, (v: any) => v.size);
+  const sortedVariants = sortBySizeWithOrder(variants, (v: any) => v.size, sizeOrder);
   const colours = [...new Set(variants.map((v: any) => v.colour).filter(Boolean))];
   const sizes = [...new Set(sortedVariants.map((v: any) => v.size).filter(Boolean))];
 

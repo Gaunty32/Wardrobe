@@ -5,7 +5,8 @@ import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { sortSizes } from "@/lib/sizeUtils";
+import { sortSizesWithOrder } from "@/lib/sizeUtils";
+import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -216,6 +217,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   portalRole: string;
 }) {
   const { toast } = useToast();
+  const sizeOrder = useSizeOrder();
   const [, setLocation] = useLocation();
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
   // Members are pre-locked to their own employee record; others choose freely
@@ -399,14 +401,14 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     const colour = wi.colour?.trim();
     // Try exact colour match, then case-insensitive, then all sizes for product
     const exactMatch = colour ? byColour[colour] : null;
-    if (exactMatch?.length) return sortSizes(exactMatch);
+    if (exactMatch?.length) return sortSizesWithOrder(exactMatch, sizeOrder);
     if (colour) {
       const ciMatch = Object.entries(byColour).find(([k]) => k.toLowerCase() === colour.toLowerCase());
-      if (ciMatch?.[1]?.length) return sortSizes(ciMatch[1]);
+      if (ciMatch?.[1]?.length) return sortSizesWithOrder(ciMatch[1], sizeOrder);
     }
     // fallback: all sizes for this product
     const all = [...new Set(Object.values(byColour).flat())];
-    return sortSizes(all);
+    return sortSizesWithOrder(all, sizeOrder);
   };
 
   // Returns the unit price after applying quantity-based price breaks and finish process costs.

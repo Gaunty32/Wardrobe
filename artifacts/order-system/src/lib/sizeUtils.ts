@@ -43,3 +43,32 @@ export function sortBySize<T>(arr: T[], key: (item: T) => string | null | undefi
     return (key(a) ?? "").localeCompare(key(b) ?? "");
   });
 }
+
+/** Sort using a custom user-defined order. Falls back to built-in ranking for sizes not in the list. */
+export function sortSizesWithOrder(sizes: string[], customOrder: string[]): string[] {
+  if (customOrder.length === 0) return sortSizes(sizes);
+  return [...sizes].sort((a, b) => {
+    const ia = customOrder.findIndex(o => normalise(o) === normalise(a));
+    const ib = customOrder.findIndex(o => normalise(o) === normalise(b));
+    const ra = ia !== -1 ? ia : 10000 + sizeRank(a);
+    const rb = ib !== -1 ? ib : 10000 + sizeRank(b);
+    return ra - rb || a.localeCompare(b);
+  });
+}
+
+export function sortBySizeWithOrder<T>(
+  arr: T[],
+  key: (item: T) => string | null | undefined,
+  customOrder: string[],
+): T[] {
+  if (customOrder.length === 0) return sortBySize(arr, key);
+  return [...arr].sort((a, b) => {
+    const sa = key(a) ?? "";
+    const sb = key(b) ?? "";
+    const ia = customOrder.findIndex(o => normalise(o) === normalise(sa));
+    const ib = customOrder.findIndex(o => normalise(o) === normalise(sb));
+    const ra = ia !== -1 ? ia : 10000 + sizeRank(sa);
+    const rb = ib !== -1 ? ib : 10000 + sizeRank(sb);
+    return ra - rb || sa.localeCompare(sb);
+  });
+}
