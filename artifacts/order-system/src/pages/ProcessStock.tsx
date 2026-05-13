@@ -155,6 +155,10 @@ export default function ProcessStock() {
       toast({ title: "Validation Error", description: "Name is required", variant: "destructive" });
       return;
     }
+    if (!editing && !form.customerId) {
+      toast({ title: "Customer required", description: "Process stock must be assigned to a customer.", variant: "destructive" });
+      return;
+    }
 
     let fileUrl = form.fileUrl ?? null;
 
@@ -352,14 +356,19 @@ export default function ProcessStock() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
-                  <Label>Customer (allocation)</Label>
+                  <Label>Customer {!editing && <span className="text-destructive">*</span>}</Label>
                   <Popover open={customerComboOpen} onOpenChange={setCustomerComboOpen}>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" role="combobox" aria-expanded={customerComboOpen} className="justify-between font-normal w-full">
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={customerComboOpen}
+                        className={`justify-between font-normal w-full ${!editing && !form.customerId ? "border-amber-300 text-muted-foreground" : ""}`}
+                      >
                         <span className="truncate">
                           {form.customerId
                             ? customers?.find(c => c.id.toString() === form.customerId)?.name ?? "Unknown"
-                            : "No customer / global"}
+                            : "Select a customer…"}
                         </span>
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
@@ -370,10 +379,12 @@ export default function ProcessStock() {
                         <CommandList>
                           <CommandEmpty>No customer found.</CommandEmpty>
                           <CommandGroup>
-                            <CommandItem value="none" onSelect={() => { setForm({ ...form, customerId: "" }); setCustomerComboOpen(false); }}>
-                              <Check className={`mr-2 h-4 w-4 ${!form.customerId ? "opacity-100" : "opacity-0"}`} />
-                              No customer / global
-                            </CommandItem>
+                            {editing && (
+                              <CommandItem value="none" onSelect={() => { setForm({ ...form, customerId: "" }); setCustomerComboOpen(false); }}>
+                                <Check className={`mr-2 h-4 w-4 ${!form.customerId ? "opacity-100" : "opacity-0"}`} />
+                                No customer / global
+                              </CommandItem>
+                            )}
                             {customers?.map(c => (
                               <CommandItem key={c.id} value={c.name} onSelect={() => { setForm({ ...form, customerId: c.id.toString() }); setCustomerComboOpen(false); }}>
                                 <Check className={`mr-2 h-4 w-4 ${form.customerId === c.id.toString() ? "opacity-100" : "opacity-0"}`} />

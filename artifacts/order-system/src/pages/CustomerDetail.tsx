@@ -357,6 +357,19 @@ function ProcessesTab({ customerId }: { customerId: number }) {
     queryKey: ["suppliers"],
     queryFn: () => apiFetch("/suppliers"),
   });
+  const [isFetchingSku, setIsFetchingSku] = useState(false);
+
+  const fetchAndSetSku = async () => {
+    setIsFetchingSku(true);
+    try {
+      const { sku } = await apiFetch<{ sku: string }>("/process-stock/suggest-sku");
+      setDtfForm(f => ({ ...f, sku }));
+    } catch {
+      // leave blank, server will generate on save
+    } finally {
+      setIsFetchingSku(false);
+    }
+  };
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", notes: "" };
@@ -574,7 +587,11 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                 <Label>Type</Label>
                 <Select value={form.type || "none"} onValueChange={v => {
                   const newType = v === "none" ? "" : v;
-                  setForm({ ...form, type: newType, processStockId: newType === "DTF" ? form.processStockId : "" });
+                  setForm(f => ({ ...f, type: newType, processStockId: newType === "DTF" ? f.processStockId : "" }));
+                  if (newType === "DTF" && !editing) {
+                    setDtfForm(blankDtf);
+                    fetchAndSetSku();
+                  }
                 }}>
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
@@ -630,8 +647,12 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="grid gap-1.5">
                     <Label className="text-xs">Product Code (SKU)</Label>
-                    <Input className="h-8 text-sm" placeholder="Auto-generated"
-                      value={dtfForm.sku} onChange={e => setDtfForm(f => ({ ...f, sku: e.target.value }))} />
+                    <div className="relative">
+                      <Input className="h-8 text-sm font-mono" placeholder={isFetchingSku ? "Fetching…" : "e.g. PS0005"}
+                        value={dtfForm.sku} onChange={e => setDtfForm(f => ({ ...f, sku: e.target.value }))}
+                        disabled={isFetchingSku} />
+                      {isFetchingSku && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                    </div>
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs flex items-center gap-1"><ShoppingBag className="w-3 h-3" /> Draft PO Qty <span className="font-normal text-muted-foreground">(0 = skip)</span></Label>
