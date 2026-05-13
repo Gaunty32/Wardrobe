@@ -3420,9 +3420,10 @@ export default function CustomerDetail() {
                   </a>
                 )}
                 {(customer as any).address && <span>{(customer as any).address}</span>}
-                {customer.city && (
+                {customer.state && <span>{customer.state}</span>}
+                {(customer.city || (customer as any).postcode) && (
                   <span>
-                    {customer.city}{customer.state ? `, ${customer.state}` : ''}{(customer as any).postcode ? ` ${(customer as any).postcode}` : ''}
+                    {customer.city}{(customer as any).postcode ? ` ${(customer as any).postcode}` : ''}
                   </span>
                 )}
                 {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}

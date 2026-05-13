@@ -394,14 +394,15 @@ export default function Customers() {
                 <Input id="address" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="state">Address Line 2</Label>
+                <Input id="state" placeholder="Estate, district, etc." value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="city">City</Label>
                   <Input id="city" value={formData.city} onChange={(e) => setFormData({...formData, city: e.target.value})} />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="state">County</Label>
-                  <Input id="state" value={formData.state} onChange={(e) => setFormData({...formData, state: e.target.value})} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="postcode">Postcode</Label>
