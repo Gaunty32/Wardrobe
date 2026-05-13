@@ -6,6 +6,18 @@ import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage"
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
+const EXT_MIME: Record<string, string> = {
+  jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
+  webp: "image/webp", svg: "image/svg+xml", pdf: "application/pdf",
+  eps: "application/postscript", ai: "application/postscript",
+  bmp: "image/bmp", tiff: "image/tiff", tif: "image/tiff",
+};
+
+function mimeFromName(name: string): string | null {
+  const ext = name.split(".").pop()?.toLowerCase();
+  return (ext && EXT_MIME[ext]) ?? null;
+}
+
 const RequestUploadUrlBody = z.object({
   name: z.string().min(1),
   size: z.number().int().positive(),
@@ -56,27 +68,30 @@ router.get("/storage/public-objects/*filePath", async (req: Request, res: Respon
       return;
     }
 
-    const response = await objectStorageService.downloadObject(file);
+    const [metadata] = await file.getMetadata();
+    const contentType = (metadata.contentType as string | undefined)?.trim() || mimeFromName(file.name) || "application/octet-stream";
 
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    if (metadata.size) res.setHeader("Content-Length", String(metadata.size));
 
-    if (response.body) {
-      const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
-      nodeStream.pipe(res);
-    } else {
-      res.end();
-    }
+    const stream = file.createReadStream();
+    stream.on("error", (err) => {
+      req.log.error({ err }, "Stream error serving public object");
+      if (!res.headersSent) res.status(500).end();
+    });
+    stream.pipe(res);
   } catch (error) {
     req.log.error({ err: error }, "Error serving public object");
-    res.status(500).json({ error: "Failed to serve public object" });
+    if (!res.headersSent) res.status(500).json({ error: "Failed to serve public object" });
   }
 });
 
 /**
  * GET /storage/objects/*
  *
- * Serve object entities from PRIVATE_OBJECT_DIR.
+ * Stream object entities from PRIVATE_OBJECT_DIR directly to the browser.
+ * Piping GCS → Express response avoids redirect issues in proxied environments.
  */
 router.get("/storage/objects/*path", async (req: Request, res: Response) => {
   try {
@@ -85,10 +100,22 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
-    // Redirect to a short-lived signed GCS URL so the browser fetches directly
-    // from GCS — avoids fragile Node→Web→Node stream conversion in the API layer.
-    const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
-    res.redirect(302, signedUrl);
+    const [metadata] = await objectFile.getMetadata();
+    let contentType = (metadata.contentType as string | undefined)?.trim() || "";
+    if (!contentType || contentType === "application/octet-stream") {
+      contentType = mimeFromName(objectFile.name) || "application/octet-stream";
+    }
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    if (metadata.size) res.setHeader("Content-Length", String(metadata.size));
+
+    const stream = objectFile.createReadStream();
+    stream.on("error", (err) => {
+      req.log.error({ err }, "Stream error serving object");
+      if (!res.headersSent) res.status(500).end();
+    });
+    stream.pipe(res);
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
       res.status(404).json({ error: "Object not found" });
