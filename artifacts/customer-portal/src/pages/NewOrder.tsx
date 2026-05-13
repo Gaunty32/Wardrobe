@@ -909,6 +909,33 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     setItemState(key, { size: "", qty: 1 });
   };
 
+  const handleAddAll = () => {
+    const newItems: OrderItem[] = [];
+    const keysToReset: string[] = [];
+    const isStock = selectedRecipient === "stock";
+    const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === selectedRecipient);
+    finishGroups.forEach((group) => {
+      group.items.forEach((wi: any, i: number) => {
+        const key = `${group.finish_id}-${i}`;
+        const state = getItemState(key);
+        if (!state.size.trim()) return;
+        newItems.push(makeItem(wi, isStock ? "stock" : "person", state.size, state.qty, emp));
+        keysToReset.push(key);
+      });
+    });
+    if (newItems.length === 0) return;
+    setBasket(b => [...b, ...newItems]);
+    setItemStates(s => {
+      const next = { ...s };
+      keysToReset.forEach(key => { next[key] = { size: "", qty: 1 }; });
+      return next;
+    });
+  };
+
+  const configuredCount = finishGroups.reduce((count, group) =>
+    count + group.items.filter((_: any, i: number) => !!getItemState(`${group.finish_id}-${i}`).size.trim()).length,
+  0);
+
   return (
     <div>
       {/* Recipient banner */}
@@ -1081,6 +1108,26 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
               });
             })}
           </div>
+
+          {/* Bulk add bar — appears when any card has a size selected */}
+          {configuredCount > 0 && (
+            <div className="sticky bottom-4 mt-4 z-20">
+              <div className="rounded-xl border border-primary/30 bg-primary text-primary-foreground shadow-xl px-4 py-3 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold">{configuredCount} item{configuredCount !== 1 ? "s" : ""} ready</p>
+                  <p className="text-xs text-primary-foreground/70">Add them all to your basket at once</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0 font-semibold"
+                  onClick={handleAddAll}
+                >
+                  Add all to basket
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* "Order for someone else" link */}
           <button
