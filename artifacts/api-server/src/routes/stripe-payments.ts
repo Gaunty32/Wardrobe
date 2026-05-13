@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, customersTable } from "@workspace/db";
+import { db, customersTable, ordersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
 
@@ -115,6 +115,83 @@ router.post("/stripe/customers/:id/charge", async (req, res): Promise<void> => {
       description: description || `Order payment — SBS`,
     });
     res.json({ success: true, paymentIntentId: intent.id, status: intent.status });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post("/stripe/orders/:orderId/payment-link", async (req, res): Promise<void> => {
+  const orderId = parseInt(req.params.orderId);
+  if (isNaN(orderId)) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  try {
+    const [order] = await db.select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      totalAmount: ordersTable.totalAmount,
+      stripePaymentLinkUrl: ordersTable.stripePaymentLinkUrl,
+      stripePaymentLinkId: ordersTable.stripePaymentLinkId,
+    }).from(ordersTable).where(eq(ordersTable.id, orderId));
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+    if (order.stripePaymentLinkUrl) {
+      res.json({ url: order.stripePaymentLinkUrl, id: order.stripePaymentLinkId, existing: true });
+      return;
+    }
+
+    const totalAmount = parseFloat(String(order.totalAmount ?? 0));
+    if (totalAmount <= 0) { res.status(400).json({ error: "Order has no total amount — set an order total before generating a payment link" }); return; }
+
+    const stripe = await getUncachableStripeClient();
+
+    const price = await stripe.prices.create({
+      unit_amount: Math.round(totalAmount * 100 * 1.2),
+      currency: "gbp",
+      product_data: {
+        name: `Order ${order.orderNumber} — Select Branding Solutions Ltd`,
+      },
+    });
+
+    const link = await stripe.paymentLinks.create({
+      line_items: [{ price: price.id, quantity: 1 }],
+      metadata: { order_id: String(orderId), order_number: order.orderNumber },
+      after_completion: {
+        type: "hosted_confirmation",
+        hosted_confirmation: {
+          custom_message: `Payment received for order ${order.orderNumber}. Thank you — Select Branding Solutions Ltd`,
+        },
+      },
+    });
+
+    await db.update(ordersTable)
+      .set({ stripePaymentLinkUrl: link.url, stripePaymentLinkId: link.id })
+      .where(eq(ordersTable.id, orderId));
+
+    res.json({ url: link.url, id: link.id, existing: false });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete("/stripe/orders/:orderId/payment-link", async (req, res): Promise<void> => {
+  const orderId = parseInt(req.params.orderId);
+  if (isNaN(orderId)) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  try {
+    const [order] = await db.select({
+      id: ordersTable.id,
+      stripePaymentLinkId: ordersTable.stripePaymentLinkId,
+    }).from(ordersTable).where(eq(ordersTable.id, orderId));
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+    if (order.stripePaymentLinkId) {
+      const stripe = await getUncachableStripeClient();
+      await stripe.paymentLinks.update(order.stripePaymentLinkId, { active: false });
+    }
+
+    await db.update(ordersTable)
+      .set({ stripePaymentLinkUrl: null, stripePaymentLinkId: null })
+      .where(eq(ordersTable.id, orderId));
+
+    res.json({ success: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }

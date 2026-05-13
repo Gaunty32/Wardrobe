@@ -35,6 +35,8 @@ export const ordersTable = pgTable("orders", {
   portalSubmittedByName: text("portal_submitted_by_name"),
   portalApprovedByEmail: text("portal_approved_by_email"),
   portalApprovedByName: text("portal_approved_by_name"),
+  stripePaymentLinkUrl: text("stripe_payment_link_url"),
+  stripePaymentLinkId: text("stripe_payment_link_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
@@ -136,6 +138,18 @@ export const orderLogsTable = pgTable("order_logs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const orderEmailLogsTable = pgTable("order_email_logs", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
+  emailType: text("email_type").notNull().default("acknowledgement"),
+  toEmail: text("to_email").notNull(),
+  subject: text("subject"),
+  sentBy: text("sent_by"),
+  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  success: boolean("success").notNull().default(true),
+  error: text("error"),
+});
+
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;
@@ -145,3 +159,4 @@ export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
 export type OrderItem = typeof orderItemsTable.$inferSelect;
 
 export type OrderLog = typeof orderLogsTable.$inferSelect;
+export type OrderEmailLog = typeof orderEmailLogsTable.$inferSelect;

@@ -335,6 +335,13 @@ export default function OrderDetail() {
     enabled: orderId > 0,
     refetchInterval: 30000,
   });
+
+  interface OrderEmailLog { id: number; orderId: number; emailType: string; toEmail: string; subject: string | null; sentBy: string | null; sentAt: string; success: boolean; error: string | null; }
+  const { data: emailLogs = [], refetch: refetchEmailLogs } = useQuery<OrderEmailLog[]>({
+    queryKey: ["order-email-logs", orderId],
+    queryFn: () => apiFetch(`/orders/${orderId}/email-logs`),
+    enabled: orderId > 0,
+  });
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [deleteOrderConfirmOpen, setDeleteOrderConfirmOpen] = useState(false);
 
@@ -1463,6 +1470,52 @@ export default function OrderDetail() {
                   </div>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Email Log ────────────────────────────────────────────────────── */}
+        {emailLogs.length > 0 && (
+          <Card className="shadow-sm border-border/50">
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-primary" />
+                <div>
+                  <CardTitle className="font-display text-lg">Email Log</CardTitle>
+                  <CardDescription>Customer emails sent for this order</CardDescription>
+                </div>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetchEmailLogs()} title="Refresh">
+                <Mail className="w-4 h-4 text-muted-foreground" />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ul className="divide-y divide-border/40">
+                {emailLogs.map((log) => (
+                  <li key={log.id} className="flex items-start gap-3 px-5 py-3">
+                    <div className={`mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${log.success ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}>
+                      {log.success
+                        ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                        : <XCircle className="w-3.5 h-3.5 text-red-500" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-foreground">{log.success ? "Sent" : "Failed"} to {log.toEmail}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(log.sentAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                      </div>
+                      {log.subject && <p className="text-xs text-muted-foreground mt-0.5 truncate">{log.subject}</p>}
+                      <div className="flex items-center gap-3 mt-0.5">
+                        {log.sentBy && log.sentBy !== "System" && (
+                          <span className="text-xs text-muted-foreground/70">by {log.sentBy}</span>
+                        )}
+                        {!log.success && log.error && (
+                          <span className="text-xs text-red-500">{log.error}</span>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             </CardContent>
           </Card>
         )}

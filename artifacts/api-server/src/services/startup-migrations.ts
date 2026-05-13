@@ -536,5 +536,26 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Stripe Payment Link columns on orders
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_payment_link_url text;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_payment_link_id text;
+  `);
+
+  // Email send log — one row per customer email sent
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS order_email_logs (
+      id serial PRIMARY KEY,
+      order_id integer NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      email_type text NOT NULL DEFAULT 'acknowledgement',
+      to_email text NOT NULL,
+      subject text,
+      sent_by text,
+      sent_at timestamptz NOT NULL DEFAULT now(),
+      success boolean NOT NULL DEFAULT true,
+      error text
+    );
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }

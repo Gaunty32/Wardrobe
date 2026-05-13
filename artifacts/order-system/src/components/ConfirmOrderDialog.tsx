@@ -99,6 +99,10 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
   const [copied, setCopied] = useState(false);
   const [requiredDate, setRequiredDate] = useState(defaultRequiredDate);
   const [shippingMethod, setShippingMethod] = useState<string>("");
+  const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null);
+  const [paymentLinkLoading, setPaymentLinkLoading] = useState(false);
+  const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
+  const [paymentLinkCopied, setPaymentLinkCopied] = useState(false);
 
   const initialRequiredDate = () =>
     order.requiredDate ? new Date(order.requiredDate).toISOString().slice(0, 10) : defaultRequiredDate();
@@ -115,6 +119,10 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     setCopied(false);
     setRequiredDate(initialRequiredDate());
     setShippingMethod(initialShippingMethod());
+    setPaymentLinkUrl(null);
+    setPaymentLinkLoading(false);
+    setPaymentLinkError(null);
+    setPaymentLinkCopied(false);
   };
 
   useEffect(() => {
@@ -129,6 +137,31 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     if (!open) reset();
     onOpenChange(open);
   };
+
+  // ─── Generate Stripe Payment Link ────────────────────────────────────────
+  const generatePaymentLink = async () => {
+    if (paymentLinkLoading) return;
+    setPaymentLinkLoading(true);
+    setPaymentLinkError(null);
+    try {
+      const data = await apiFetch<{ url: string; existing?: boolean }>(
+        `/stripe/orders/${order.id}/payment-link`,
+        { method: "POST" }
+      );
+      setPaymentLinkUrl(data.url);
+    } catch (err: any) {
+      setPaymentLinkError(err.message);
+    } finally {
+      setPaymentLinkLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (step === "email" && open && !paymentLinkUrl && !paymentLinkLoading) {
+      generatePaymentLink();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, open]);
 
   // ─── Step 1: Confirm ──────────────────────────────────────────────────────
   const handleConfirm = async () => {
@@ -465,6 +498,71 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                   ))}
                 </div>
               )}
+
+              {/* Stripe Payment Link */}
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-sm font-medium">
+                    <CreditCard className="w-4 h-4 text-blue-600" />
+                    Stripe Payment Link
+                  </div>
+                  {!paymentLinkUrl && (
+                    <button
+                      onClick={generatePaymentLink}
+                      disabled={paymentLinkLoading}
+                      className="text-xs text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      {paymentLinkLoading ? <><Loader2 className="w-3 h-3 animate-spin" /> Generating…</> : "Regenerate"}
+                    </button>
+                  )}
+                  {paymentLinkUrl && (
+                    <button
+                      onClick={generatePaymentLink}
+                      disabled={paymentLinkLoading}
+                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 flex items-center gap-1"
+                      title="Generate a new payment link"
+                    >
+                      {paymentLinkLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Regenerate"}
+                    </button>
+                  )}
+                </div>
+                {paymentLinkError && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <XCircle className="w-3 h-3" /> {paymentLinkError}
+                  </p>
+                )}
+                {paymentLinkLoading && !paymentLinkUrl && (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Creating payment link…
+                  </div>
+                )}
+                {paymentLinkUrl ? (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        readOnly
+                        value={paymentLinkUrl}
+                        className="text-xs flex-1 rounded border bg-background px-2 py-1 font-mono outline-none select-all min-w-0"
+                      />
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(paymentLinkUrl).catch(() => {});
+                          setPaymentLinkCopied(true);
+                          setTimeout(() => setPaymentLinkCopied(false), 2000);
+                        }}
+                        className="shrink-0 flex items-center gap-1 text-xs border rounded px-2 py-1 hover:bg-muted transition-colors"
+                      >
+                        {paymentLinkCopied ? <><Check className="w-3 h-3 text-green-600" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">Total inc. 20% VAT — included automatically in the acknowledgement email.</p>
+                  </div>
+                ) : (!paymentLinkLoading && (
+                  <p className="text-xs text-muted-foreground">
+                    {paymentLinkError ? "Could not generate link — the email will use a generic payment link." : "Generating a payment link for this order…"}
+                  </p>
+                ))}
+              </div>
 
               {emailSent ? (
                 <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 p-3 text-sm text-green-700">

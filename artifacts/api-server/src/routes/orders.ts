@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql, inArray, and, ne, isNotNull, lt } from "drizzle-orm";
 import { z } from "zod";
 import {
-  db, ordersTable, orderItemsTable, orderLogsTable, customersTable, productsTable,
+  db, ordersTable, orderItemsTable, orderLogsTable, orderEmailLogsTable, customersTable, productsTable,
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
@@ -607,6 +607,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
       poNumber: ordersTable.poNumber,
       deliveryAddressId: ordersTable.deliveryAddressId,
+      stripePaymentLinkUrl: ordersTable.stripePaymentLinkUrl,
     })
     .from(ordersTable)
     .where(eq(ordersTable.id, params.data.id));
@@ -629,7 +630,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   const items = itemRows2.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
 
   // Resolve customer email and address
-  const body = z.object({ toEmail: z.string().email().optional() }).safeParse(req.body);
+  const body = z.object({ toEmail: z.string().email().optional(), previewOnly: z.boolean().optional() }).safeParse(req.body);
   let toEmail = body.success ? body.data.toEmail : undefined;
   let contactFirstName: string | null = null;
   let customerAddress: string | null = null;
@@ -681,6 +682,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     notes: order.notes ?? null,
     totalAmount: numericToFloat(order.totalAmount),
     items: mappedItems,
+    stripePaymentLink: order.stripePaymentLinkUrl ?? null,
   });
 
   // Generate PDF attachment
@@ -708,10 +710,24 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   const pdfBase64 = attachments.length > 0 ? attachments[0].content.toString("base64") : null;
   const pdfFilename = attachments.length > 0 ? attachments[0].filename : null;
 
-  const result = await sendEmail({ to: toEmail, subject, html, text, attachments });
+  const previewOnly = body.success ? (body.data.previewOnly ?? false) : false;
+  const result = previewOnly
+    ? { sent: false as const, error: null as string | null }
+    : await sendEmail({ to: toEmail, subject, html, text, attachments });
 
-  await logOrderAction(order.id, "Acknowledgement sent", getActor(req),
-    result.sent ? `Email sent to ${toEmail}` : `Email not sent (${result.error ?? "unconfigured"}); VBS/EML download`);
+  if (!previewOnly) {
+    await logOrderAction(order.id, "Acknowledgement sent", getActor(req),
+      result.sent ? `Email sent to ${toEmail}` : `Email not sent (${result.error ?? "unconfigured"}); VBS/EML download`);
+    await db.insert(orderEmailLogsTable).values({
+      orderId: order.id,
+      emailType: "acknowledgement",
+      toEmail,
+      subject,
+      sentBy: getActor(req),
+      success: result.sent,
+      error: result.sent ? null : (result.error ?? "not configured"),
+    }).catch((err) => console.error("[orderEmailLog] Failed to log:", err));
+  }
 
   res.json({
     sent: result.sent,
@@ -724,7 +740,23 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     pdfBase64,
     pdfFilename,
     orderNumber: order.orderNumber,
+    stripePaymentLinkUrl: order.stripePaymentLinkUrl ?? null,
   });
+});
+
+// ─── GET email send log for an order ─────────────────────────────────────────
+
+router.get("/orders/:id/email-logs", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const logs = await db
+    .select()
+    .from(orderEmailLogsTable)
+    .where(eq(orderEmailLogsTable.orderId, params.data.id))
+    .orderBy(desc(orderEmailLogsTable.sentAt));
+
+  res.json(logs);
 });
 
 // ─── GET acknowledgement as .eml (opens Outlook directly) ────────────────────
