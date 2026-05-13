@@ -579,12 +579,18 @@ router.delete("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Restore stock only for confirmed orders (stock is deducted at confirmation).
-  // Shipped/delivered orders have already left — don't restore.
-  if (order.status === "confirmed") {
-    const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+  const itemIds = items.map(i => i.id);
+
+  // ── 1. Restore stock ────────────────────────────────────────────────────────
+  // Stock is deducted at confirmation. Restore for any status that isn't
+  // a pre-confirmation draft or a post-dispatch state (items have already left).
+  const NO_STOCK_YET = ["draft", "portal_draft", "portal_pending"];
+  const ALREADY_GONE = ["dispatched", "delivered"];
+  const shouldRestoreStock = !NO_STOCK_YET.includes(order.status) && !ALREADY_GONE.includes(order.status);
+
+  if (shouldRestoreStock) {
     for (const item of items) {
-      // Only items where stock was actually allocated (not purchase-required)
       if (!item.purchaseRequired && item.productId && item.quantity) {
         await db.execute(
           sql`UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${item.quantity} WHERE id = ${item.productId}`
@@ -593,6 +599,55 @@ router.delete("/orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // ── 2. Clean up purchase order items linked to this order ──────────────────
+  // Delete PO items that reference this order, then remove any POs that are
+  // now empty and haven't been sent to the supplier yet.
+  if (itemIds.length > 0) {
+    await db.delete(purchaseOrderItemsTable)
+      .where(inArray(purchaseOrderItemsTable.orderItemId, itemIds));
+  }
+  // Also catch any PO items linked by orderId (in case orderItemId wasn't set)
+  await db.delete(purchaseOrderItemsTable)
+    .where(eq(purchaseOrderItemsTable.orderId, order.id));
+
+  // Remove draft POs that are now empty
+  const emptyDraftPoIds = await db
+    .select({ id: purchaseOrdersTable.id })
+    .from(purchaseOrdersTable)
+    .where(and(eq(purchaseOrdersTable.status, "draft")))
+    .then(async (pos) => {
+      const ids: number[] = [];
+      for (const po of pos) {
+        const [{ count }] = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(purchaseOrderItemsTable)
+          .where(eq(purchaseOrderItemsTable.poId, po.id));
+        if (count === 0) ids.push(po.id);
+      }
+      return ids;
+    });
+  if (emptyDraftPoIds.length > 0) {
+    await db.delete(purchaseOrdersTable).where(inArray(purchaseOrdersTable.id, emptyDraftPoIds));
+  }
+
+  // ── 3. Clean up worksheets linked to this order ────────────────────────────
+  // Remove worksheets that haven't been completed yet. Completed worksheets
+  // represent work already done and are kept for records.
+  const linkedWorksheets = await db
+    .select({ id: worksheetsTable.id, status: worksheetsTable.status })
+    .from(worksheetsTable)
+    .where(eq(worksheetsTable.orderId, order.id));
+
+  const worksheetIdsToDelete = linkedWorksheets
+    .filter(ws => ws.status !== "complete")
+    .map(ws => ws.id);
+
+  if (worksheetIdsToDelete.length > 0) {
+    // worksheet_items cascade-delete when worksheet is deleted
+    await db.delete(worksheetsTable).where(inArray(worksheetsTable.id, worksheetIdsToDelete));
+  }
+
+  // ── 4. Delete the order (cascades to order_items, logs, email_logs) ─────────
   await logOrderAction(order.id, "Order deleted", getActor(req), `Order ${order.orderNumber} deleted (was ${order.status})`);
   await db.delete(ordersTable).where(eq(ordersTable.id, order.id));
   res.sendStatus(204);
