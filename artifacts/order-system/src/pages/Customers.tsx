@@ -432,7 +432,7 @@ export default function Customers() {
                   <input
                     ref={logoFileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.pdf,.eps,.ai"
                     className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
                   />
@@ -456,7 +456,7 @@ export default function Customers() {
                     </button>
                   )}
                   {!formData.logoUrl && (
-                    <p className="text-xs text-muted-foreground">PNG, JPG or SVG. Click the square or the button to pick a file.</p>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, SVG, WebP, PDF or EPS. Click the square or the button to pick a file.</p>
                   )}
                 </div>
               </div>
