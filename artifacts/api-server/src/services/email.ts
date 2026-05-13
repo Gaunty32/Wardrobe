@@ -30,6 +30,13 @@ const smtpTransporter = isSmtpConfigured
     })
   : null;
 
+// ── SBS contact details ──────────────────────────────────────────────────────
+const SBS_PHONE_DISPLAY = "0113 246 0000"; // ← update with real number
+const SBS_PHONE_HREF    = "tel:+441132460000"; // ← update with real number
+const SBS_WHATSAPP_URL  = "https://wa.me/441132460000"; // ← update with real WhatsApp number
+const SBS_CHAT_URL      = "https://www.selectbranding.co.uk/contact";
+// ─────────────────────────────────────────────────────────────────────────────
+
 const SBS_FROM = "Select Branding Solutions <info@selectbranding.co.uk>";
 const DEFAULT_FROM = process.env.SMTP_FROM ?? SBS_FROM;
 
@@ -118,7 +125,9 @@ export function buildAcknowledgementEmail(order: {
     )
     .join("\n");
 
-  const total = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
+  const subtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
+  const vatAmount = subtotal * 0.2;
+  const totalIncVat = subtotal + vatAmount;
 
   const customerLogoBlock = order.customerLogoUrl
     ? `<td style="vertical-align:middle;text-align:right;">
@@ -145,117 +154,153 @@ export function buildAcknowledgementEmail(order: {
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
     <tr><td align="center" style="padding:32px 16px;">
-      <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.10);">
 
-        <!-- Header -->
+        <!-- Header: dark bar with SBS logo + customer logo or order ref -->
         <tr><td style="background:#1e293b;padding:22px 32px;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr>
-              <td style="vertical-align:middle;">
-                <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="50" style="display:block;height:50px;width:auto;" />
-              </td>
-              ${customerLogoBlock}
-            </tr>
-          </table>
+          <table width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td style="vertical-align:middle;">
+              <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="48" style="display:block;height:48px;width:auto;" />
+            </td>
+            ${customerLogoBlock}
+          </tr></table>
         </td></tr>
         ${orderRefSubBar}
 
-        <!-- Greeting band -->
-        <tr><td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:28px 32px;">
-          <p style="margin:0;font-size:22px;font-weight:700;color:#fff;line-height:1.3;">Thank you, ${firstName}!</p>
-          <p style="margin:8px 0 0;font-size:14px;color:#bfdbfe;line-height:1.5;">We're delighted to have received your order and can't wait to get started.</p>
+        <!-- Greeting band: solid navy (gradients unreliable in email) -->
+        <tr><td style="background:#1e3a5f;padding:24px 32px;">
+          <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Thank you, ${firstName}!</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">We're delighted to have received your order and can't wait to get started.</p>
         </td></tr>
 
         <!-- Body -->
-        <tr><td style="padding:32px;">
-
-          <p style="margin:0 0 8px;font-size:15px;color:#374151;line-height:1.7;">
-            We've put together the details below for your records. Please take a moment to check everything looks right — particularly the garments, colours, sizes and any finishes. If anything needs adjusting, just let us know and we'll sort it straight away.
+        <tr><td style="padding:28px 32px 0;">
+          <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.7;">
+            We've put together the details below for your records. Please check everything looks right — particularly the garments, colours, sizes and any finishes. If anything needs adjusting, just get in touch and we'll sort it straight away.
           </p>
+        </td></tr>
 
-          <p style="margin:0 0 24px;font-size:15px;color:#374151;line-height:1.7;">
-            We see this as the beginning of a brilliant partnership, and our team is fully committed to delivering something you'll be genuinely proud of.
-          </p>
-
-          <!-- Items table -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:28px;border-collapse:collapse;overflow:hidden;">
+        <!-- Items table -->
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
             <thead>
-              <tr style="background:#f8fafc;">
-                <th style="padding:11px 14px;text-align:left;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Product</th>
-                <th style="padding:11px 14px;text-align:left;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Colour / Size</th>
-                <th style="padding:11px 14px;text-align:center;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Qty</th>
-                <th style="padding:11px 14px;text-align:right;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Unit</th>
-                <th style="padding:11px 14px;text-align:right;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Total</th>
+              <tr style="background:#1e293b;">
+                <th style="padding:10px 12px;text-align:left;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Product</th>
+                <th style="padding:10px 12px;text-align:left;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Colour / Size</th>
+                <th style="padding:10px 12px;text-align:center;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Qty</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Unit</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Total</th>
               </tr>
             </thead>
             <tbody>${itemRows}</tbody>
             <tfoot>
               <tr style="background:#f8fafc;">
-                <td colspan="4" style="padding:13px 14px;text-align:right;font-weight:700;font-size:13px;color:#64748b;border-top:2px solid #e2e8f0;text-transform:uppercase;letter-spacing:0.3px;">Order Total (exc. VAT)</td>
-                <td style="padding:13px 14px;text-align:right;font-weight:800;font-size:15px;color:#1e293b;border-top:2px solid #e2e8f0;">£${total.toFixed(2)}</td>
+                <td colspan="4" style="padding:10px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">Subtotal (exc. VAT)</td>
+                <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;border-top:1px solid #e2e8f0;">£${subtotal.toFixed(2)}</td>
+              </tr>
+              <tr style="background:#f8fafc;">
+                <td colspan="4" style="padding:6px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">VAT (20%)</td>
+                <td style="padding:6px 12px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${vatAmount.toFixed(2)}</td>
+              </tr>
+              <tr style="background:#1e293b;">
+                <td colspan="4" style="padding:12px;text-align:right;font-size:13px;font-weight:700;color:#ffffff;letter-spacing:0.3px;">Total (inc. VAT)</td>
+                <td style="padding:12px;text-align:right;font-size:15px;font-weight:800;color:#ffffff;">£${totalIncVat.toFixed(2)}</td>
               </tr>
             </tfoot>
           </table>
+        </td></tr>
 
-          <!-- Payment section -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-            <tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px 24px;">
-              <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px;">Ready to pay?</p>
-              <p style="margin:0 0 16px;font-size:14px;color:#64748b;line-height:1.5;">
-                You can pay securely by card online or by BACS transfer using the details below.
-              </p>
+        ${order.notes ? `<tr><td style="padding:0 32px 16px;"><div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 16px;"><p style="margin:0;font-size:13px;color:#92400e;"><strong>Order notes:</strong> ${order.notes}</p></div></td></tr>` : ""}
 
-              <!-- Pay by card button -->
-              <table cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
-                <tr><td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);border-radius:8px;box-shadow:0 4px 12px rgba(37,99,235,.3);">
-                  <a href="${stripeLink}" style="display:inline-block;padding:13px 32px;color:#fff;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:0.3px;">
-                    Pay by Card Online &rarr;
+        <!-- Payment section -->
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <tr><td style="background:#f8fafc;padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+              <p style="margin:0;font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px;">Payment Options</p>
+              <p style="margin:4px 0 0;font-size:13px;color:#64748b;">Pay securely by card online or by BACS transfer.</p>
+            </td></tr>
+            <tr><td style="padding:16px 18px;">
+              <!-- Pay by card button: solid background (gradients unreliable in email) -->
+              <table cellpadding="0" cellspacing="0" style="margin-bottom:16px;">
+                <tr><td style="background:#1e3a5f;border-radius:6px;">
+                  <a href="${stripeLink}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:0.3px;">
+                    Pay by Card Online &#8594;
                   </a>
                 </td></tr>
               </table>
-
               <!-- BACS details -->
-              <table cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:6px;border-collapse:collapse;width:auto;min-width:260px;">
+              <table cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:6px;border-collapse:collapse;min-width:260px;">
                 <tr style="background:#f1f5f9;">
-                  <td colspan="2" style="padding:9px 14px;font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.8px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;">BACS Payment Details</td>
+                  <td colspan="2" style="padding:8px 12px;font-size:10px;font-weight:700;color:#64748b;letter-spacing:0.8px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;">BACS Bank Transfer</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 14px;font-size:13px;color:#64748b;white-space:nowrap;">Account name</td>
-                  <td style="padding:8px 14px;font-size:13px;font-weight:600;color:#1e293b;">Select Branding Solutions Ltd</td>
+                  <td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;">Account name</td>
+                  <td style="padding:7px 12px;font-size:12px;font-weight:600;color:#1e293b;">Select Branding Solutions Ltd</td>
                 </tr>
                 <tr style="background:#f8fafc;">
-                  <td style="padding:8px 14px;font-size:13px;color:#64748b;white-space:nowrap;">Sort code</td>
-                  <td style="padding:8px 14px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">04-06-05</td>
+                  <td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;">Sort code</td>
+                  <td style="padding:7px 12px;font-size:12px;font-weight:600;color:#1e293b;font-family:monospace;">04-06-05</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 14px;font-size:13px;color:#64748b;white-space:nowrap;">Account number</td>
-                  <td style="padding:8px 14px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">30422879</td>
+                  <td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;">Account number</td>
+                  <td style="padding:7px 12px;font-size:12px;font-weight:600;color:#1e293b;font-family:monospace;">30422879</td>
                 </tr>
               </table>
             </td></tr>
           </table>
+        </td></tr>
 
-          ${order.notes ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:14px 16px;margin-bottom:24px;"><p style="margin:0;font-size:13px;color:#92400e;"><strong>Order notes:</strong> ${order.notes}</p></div>` : ""}
+        <!-- Contact details -->
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dbeafe;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <tr><td style="background:#eff6ff;padding:12px 18px;border-bottom:1px solid #dbeafe;">
+              <p style="margin:0;font-size:13px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;">Need Help? We're Here For You</p>
+            </td></tr>
+            <tr><td style="padding:14px 18px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:5px 0;width:50%;vertical-align:top;">
+                    <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Email</p>
+                    <a href="mailto:info@selectbranding.co.uk" style="font-size:13px;color:#1d4ed8;text-decoration:none;font-weight:500;">info@selectbranding.co.uk</a>
+                  </td>
+                  <td style="padding:5px 0;width:50%;vertical-align:top;">
+                    <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Phone</p>
+                    <a href="${SBS_PHONE_HREF}" style="font-size:13px;color:#1e293b;text-decoration:none;font-weight:500;">${SBS_PHONE_DISPLAY}</a>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 0;vertical-align:top;">
+                    <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">WhatsApp</p>
+                    <a href="${SBS_WHATSAPP_URL}" style="font-size:13px;color:#16a34a;text-decoration:none;font-weight:500;">Message us on WhatsApp</a>
+                  </td>
+                  <td style="padding:5px 0;vertical-align:top;">
+                    <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Live Chat</p>
+                    <a href="${SBS_CHAT_URL}" style="font-size:13px;color:#1d4ed8;text-decoration:none;font-weight:500;">Chat on our website</a>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </td></tr>
 
-          <!-- Closing -->
-          <p style="font-size:15px;color:#374151;margin:0 0 12px;line-height:1.7;">
-            Our team will keep you updated as your order progresses — but please do reach out any time if you have questions. We're always here and happy to help.
-          </p>
-          <p style="font-size:15px;color:#374151;margin:0 0 20px;line-height:1.7;">
-            Here's to looking great together! 🎉
+        <!-- Closing -->
+        <tr><td style="padding:0 32px 28px;">
+          <p style="font-size:14px;color:#374151;margin:0 0 16px;line-height:1.7;">
+            Our team will keep you updated as your order progresses. Please don't hesitate to contact us any time — we're always happy to help.
           </p>
           <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">
             With warm regards,<br>
-            <strong style="color:#1e293b;">The Select Branding Solutions Team</strong><br>
-            <span style="color:#94a3b8;font-size:13px;">info@selectbranding.co.uk</span>
+            <strong style="color:#1e293b;font-size:15px;">The Select Branding Solutions Team</strong>
           </p>
         </td></tr>
 
         <!-- Footer -->
-        <tr><td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;">
-          <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;line-height:1.6;">
+        <tr><td style="background:#f8fafc;padding:14px 32px;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;line-height:1.8;">
             Select Branding Solutions Ltd &middot; Spence Mills, Mill Lane, Leeds, LS13 3HE<br>
             <a href="https://www.selectbranding.co.uk" style="color:#94a3b8;text-decoration:none;">www.selectbranding.co.uk</a>
+            &middot; <a href="mailto:info@selectbranding.co.uk" style="color:#94a3b8;text-decoration:none;">info@selectbranding.co.uk</a>
+            &middot; <a href="${SBS_PHONE_HREF}" style="color:#94a3b8;text-decoration:none;">${SBS_PHONE_DISPLAY}</a>
           </p>
         </td></tr>
       </table>
@@ -279,7 +324,10 @@ export function buildAcknowledgementEmail(order: {
         `  ${i.productName}${[i.colour, i.size].filter(Boolean).length ? ` (${[i.colour, i.size].filter(Boolean).join(", ")})` : ""}${i.recipientName ? ` — For: ${i.recipientName}` : ""} – Qty: ${i.quantity} @ £${i.unitPrice.toFixed(2)} = £${i.lineTotal.toFixed(2)}`
     ),
     ``,
-    `ORDER TOTAL (exc. VAT): £${total.toFixed(2)}`,
+    ``,
+    `Subtotal (exc. VAT): £${subtotal.toFixed(2)}`,
+    `VAT (20%):           £${vatAmount.toFixed(2)}`,
+    `Total (inc. VAT):    £${totalIncVat.toFixed(2)}`,
     ``,
     `PAYMENT OPTIONS:`,
     `  Pay by card online: ${stripeLink}`,
@@ -290,13 +338,17 @@ export function buildAcknowledgementEmail(order: {
     `    Account number: 30422879`,
     ``,
     order.notes ? `Order notes: ${order.notes}\n` : null,
-    `Our team will keep you updated as your order progresses. Please reach out any time — we're always happy to help.`,
+    `CONTACT US:`,
+    `  Email:     info@selectbranding.co.uk`,
+    `  Phone:     ${SBS_PHONE_DISPLAY}`,
+    `  WhatsApp:  ${SBS_WHATSAPP_URL}`,
+    `  Chat:      ${SBS_CHAT_URL}`,
     ``,
-    `Here's to looking great together!`,
+    `Our team will keep you updated as your order progresses. Please reach out any time — we're always happy to help.`,
     ``,
     `With warm regards,`,
     `The Select Branding Solutions Team`,
-    `info@selectbranding.co.uk`,
+    `info@selectbranding.co.uk | ${SBS_PHONE_DISPLAY}`,
   ]
     .filter((l) => l !== null)
     .join("\n");
@@ -335,7 +387,7 @@ export interface AckOrderData {
 
 export async function generateOrderAcknowledgementPdf(order: AckOrderData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 40, size: "A4" });
+    const doc = new PDFDocument({ margin: 32, size: "A4", autoFirstPage: true });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -343,62 +395,53 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
     const pageW = doc.page.width;
     const pageH = doc.page.height;
-    const margin = 40;
+    const margin = 32;
     const contentW = pageW - margin * 2;
 
     const fmtDate = (d: Date | string | null | undefined) =>
       d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
 
-    // ── Header: title + SBS name ────────────────────────────────────────────
-    const titleY = margin;
-    doc.font("Helvetica-Bold").fontSize(16).fillColor("#000000")
-      .text("Order Acknowledgement", margin, titleY);
-    doc.font("Helvetica-Bold").fontSize(11).fillColor("#000000")
-      .text("Select Branding Solutions Ltd", margin + contentW - 180, titleY, { width: 180, align: "right" });
+    // ── Header bar ───────────────────────────────────────────────────────────
+    doc.rect(margin, margin, contentW, 36).fill("#1e293b");
+    doc.font("Helvetica-Bold").fontSize(13).fillColor("#ffffff")
+      .text("Order Acknowledgement", margin + 10, margin + 10);
+    doc.font("Helvetica").fontSize(8).fillColor("#94a3b8")
+      .text("Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE", margin + 10, margin + 26, { width: contentW - 20 });
 
-    const addrY = titleY + 24;
-    doc.font("Helvetica").fontSize(8.5).fillColor("#444444")
-      .text("Spence Mills, Mill Lane", margin + contentW - 180, addrY, { width: 180, align: "right" });
-    doc.text("Leeds, West Yorkshire", margin + contentW - 180, addrY + 11, { width: 180, align: "right" });
-    doc.text("LS13 3HE", margin + contentW - 180, addrY + 22, { width: 180, align: "right" });
+    // ── Customer address + SBS contact (two columns) ──────────────────────
+    const addrY = margin + 44;
+    doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#111827").text(order.customerName ?? "", margin, addrY);
+    const addrLines = [order.customerAddress, order.customerCity, order.customerPostcode].filter(Boolean) as string[];
+    doc.font("Helvetica").fontSize(8).fillColor("#444444");
+    addrLines.forEach((line, i) => doc.text(line, margin, addrY + 11 + i * 10));
 
-    // ── Customer address block ───────────────────────────────────────────────
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#000000").text(order.customerName ?? "", margin, addrY);
-    const addrLines = [
-      order.customerAddress,
-      order.customerCity,
-      order.customerPostcode,
-      "United Kingdom",
-    ].filter(Boolean) as string[];
-    doc.font("Helvetica").fontSize(9).fillColor("#444444");
-    addrLines.forEach((line, i) => doc.text(line, margin, addrY + 11 + i * 11));
+    const sbsX = margin + contentW - 170;
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827").text("Select Branding Solutions Ltd", sbsX, addrY, { width: 170, align: "right" });
+    doc.font("Helvetica").fontSize(7.5).fillColor("#555555");
+    doc.text(`Tel: ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk`, sbsX, addrY + 11, { width: 170, align: "right" });
+    doc.text("www.selectbranding.co.uk", sbsX, addrY + 21, { width: 170, align: "right" });
 
-    // ── Divider line ─────────────────────────────────────────────────────────
-    const divY = addrY + 11 + Math.max(addrLines.length, 3) * 11 + 10;
-    doc.moveTo(margin, divY).lineTo(margin + contentW, divY).strokeColor("#cccccc").lineWidth(0.5).stroke();
+    // ── Divider ───────────────────────────────────────────────────────────────
+    const divY = addrY + 11 + Math.max(addrLines.length, 2) * 10 + 8;
+    doc.moveTo(margin, divY).lineTo(margin + contentW, divY).strokeColor("#d1d5db").lineWidth(0.5).stroke();
 
-    // ── Order info row ───────────────────────────────────────────────────────
-    const infoY = divY + 8;
+    // ── Order info strip ──────────────────────────────────────────────────────
+    const infoY = divY + 5;
     const infoCols = [
-      { label: "Order Date:", value: fmtDate(order.orderDate) },
-      { label: "Account No:", value: order.customerRef ?? "" },
-      { label: "Date Required:", value: fmtDate(order.requiredDate) },
-      { label: "Cust Ref:", value: order.poNumber ?? "" },
-      { label: "Order Ref:", value: order.orderNumber },
+      { label: "Order Date", value: fmtDate(order.orderDate) },
+      { label: "Account No", value: order.customerRef ?? "—" },
+      { label: "Required By", value: fmtDate(order.requiredDate) },
+      { label: "Cust PO Ref", value: order.poNumber ?? "—" },
+      { label: "Order Ref", value: order.orderNumber },
     ];
     const colW = contentW / infoCols.length;
     infoCols.forEach(({ label, value }, i) => {
       const x = margin + i * colW;
-      doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#555555").text(label, x, infoY, { width: colW - 4 });
-      doc.font("Helvetica").fontSize(8.5).fillColor("#000000").text(value, x, infoY + 10, { width: colW - 4 });
+      doc.font("Helvetica-Bold").fontSize(6.5).fillColor("#6b7280").text(label, x, infoY, { width: colW - 4 });
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827").text(value, x, infoY + 9, { width: colW - 4 });
     });
 
-    // ── Second divider ───────────────────────────────────────────────────────
-    const div2Y = infoY + 28;
-    doc.moveTo(margin, div2Y).lineTo(margin + contentW, div2Y).strokeColor("#cccccc").lineWidth(0.5).stroke();
-
-    // ── Items table ──────────────────────────────────────────────────────────
-    // Group items by product (name) and colour, building size matrix
+    // ── Items table ───────────────────────────────────────────────────────────
     type Group = {
       productName: string;
       sku: string | null;
@@ -416,15 +459,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       const gk = item.productName;
       if (!groups.has(gk)) {
         groupKeys.push(gk);
-        groups.set(gk, {
-          productName: item.productName,
-          sku: item.sku ?? null,
-          unitPrice: item.unitPrice,
-          colours: [],
-          sizes: [],
-          qty: new Map(),
-          lineTotal: 0,
-        });
+        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0 });
       }
       const g = groups.get(gk)!;
       const c = item.colour ?? "—";
@@ -437,34 +472,35 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       g.lineTotal += item.lineTotal;
     }
 
-    const tableHeaderY = div2Y + 8;
-    const rowH = 16;
+    const tableStartY = infoY + 26;
+    const rowH = 13;
+    const hdrH = 14;
 
-    // Column layout: Item | Colour | [sizes] | Qty | Unit | Total
-    const itemNameW = 130;
-    const colourW = 55;
-    const unitPriceW = 45;
-    const totalW = 50;
-    const qtyW = 30;
-    const sizemaxW = contentW - itemNameW - colourW - unitPriceW - totalW - qtyW;
-    const sizeColW = allSizes.length > 0 ? Math.min(35, Math.floor(sizemaxW / allSizes.length)) : 35;
-    const tableW = itemNameW + colourW + sizeColW * allSizes.length + qtyW + unitPriceW + totalW;
+    const itemNameW = 125;
+    const colourW   = 52;
+    const unitPriceW = 44;
+    const totalW    = 48;
+    const qtyW      = 28;
+    const sizemaxW  = contentW - itemNameW - colourW - unitPriceW - totalW - qtyW;
+    const sizeColW  = allSizes.length > 0 ? Math.min(32, Math.floor(sizemaxW / allSizes.length)) : 32;
+    const tableW    = itemNameW + colourW + sizeColW * allSizes.length + qtyW + unitPriceW + totalW;
 
-    // Table header
-    doc.rect(margin, tableHeaderY, tableW, rowH).fill("#1e293b");
-    doc.fillColor("#ffffff").fontSize(7.5).font("Helvetica-Bold");
-    let hx = margin;
-    doc.text("Item", hx + 3, tableHeaderY + 4, { width: itemNameW - 3 }); hx += itemNameW;
-    doc.text("Colour", hx + 3, tableHeaderY + 4, { width: colourW - 3 }); hx += colourW;
-    for (const sz of allSizes) {
-      doc.text(sz, hx + 2, tableHeaderY + 4, { width: sizeColW - 2, align: "center" });
-      hx += sizeColW;
-    }
-    doc.text("Qty", hx + 2, tableHeaderY + 4, { width: qtyW - 2, align: "center" }); hx += qtyW;
-    doc.text("Unit Price", hx + 2, tableHeaderY + 4, { width: unitPriceW - 2, align: "right" }); hx += unitPriceW;
-    doc.text("Total", hx + 2, tableHeaderY + 4, { width: totalW - 2, align: "right" });
+    const drawTableHeader = (ty: number) => {
+      doc.rect(margin, ty, tableW, hdrH).fill("#1e293b");
+      doc.fillColor("#94a3b8").fontSize(6.5).font("Helvetica-Bold");
+      let hx = margin;
+      doc.text("ITEM", hx + 3, ty + 4, { width: itemNameW - 3 }); hx += itemNameW;
+      doc.text("COLOUR", hx + 3, ty + 4, { width: colourW - 3 }); hx += colourW;
+      for (const sz of allSizes) {
+        doc.text(sz, hx + 2, ty + 4, { width: sizeColW - 2, align: "center" }); hx += sizeColW;
+      }
+      doc.text("QTY", hx + 2, ty + 4, { width: qtyW - 2, align: "center" }); hx += qtyW;
+      doc.text("UNIT", hx + 2, ty + 4, { width: unitPriceW - 2, align: "right" }); hx += unitPriceW;
+      doc.text("TOTAL", hx + 2, ty + 4, { width: totalW - 2, align: "right" });
+    };
 
-    let y = tableHeaderY + rowH;
+    drawTableHeader(tableStartY);
+    let y = tableStartY + hdrH;
     let rowAlt = false;
 
     for (const gk of groupKeys) {
@@ -472,84 +508,87 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
       // Product name row
       doc.rect(margin, y, tableW, rowH).fill("#f0f4f8");
-      doc.fillColor("#111827").fontSize(7.5).font("Helvetica-Bold");
+      doc.fillColor("#111827").fontSize(7).font("Helvetica-Bold");
       const productLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
-      doc.text(productLabel, margin + 3, y + 4, { width: tableW - totalW - 6 });
-      doc.text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 4, { width: totalW - 3, align: "right" });
+      doc.text(productLabel, margin + 3, y + 3, { width: tableW - totalW - 6 });
+      doc.text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 3, { width: totalW - 3, align: "right" });
       y += rowH;
 
       // Colour rows
       for (const colour of g.colours) {
         const rowTotal = allSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
         doc.rect(margin, y, tableW, rowH).fill(rowAlt ? "#f9fafb" : "#ffffff").stroke("#e5e7eb");
-        doc.fillColor("#374151").fontSize(7.5).font("Helvetica");
+        doc.fillColor("#374151").fontSize(7).font("Helvetica");
         let rx = margin;
-        doc.text("", rx + 3, y + 4, { width: itemNameW - 3 }); rx += itemNameW;
-        doc.text(colour, rx + 3, y + 4, { width: colourW - 3 }); rx += colourW;
+        doc.text("", rx + 3, y + 3, { width: itemNameW - 3 }); rx += itemNameW;
+        doc.text(colour, rx + 3, y + 3, { width: colourW - 3 }); rx += colourW;
         for (const sz of allSizes) {
           const q = g.qty.get(colour)?.get(sz) ?? 0;
-          doc.text(q > 0 ? String(q) : "", rx + 2, y + 4, { width: sizeColW - 2, align: "center" });
+          doc.text(q > 0 ? String(q) : "", rx + 2, y + 3, { width: sizeColW - 2, align: "center" });
           rx += sizeColW;
         }
-        doc.font("Helvetica-Bold").text(String(rowTotal), rx + 2, y + 4, { width: qtyW - 2, align: "center" }); rx += qtyW;
-        doc.font("Helvetica").text(`£${g.unitPrice.toFixed(2)}`, rx + 2, y + 4, { width: unitPriceW - 2, align: "right" }); rx += unitPriceW;
-        doc.text("", rx + 2, y + 4, { width: totalW - 3, align: "right" });
+        doc.font("Helvetica-Bold").text(String(rowTotal), rx + 2, y + 3, { width: qtyW - 2, align: "center" }); rx += qtyW;
+        doc.font("Helvetica").text(`£${g.unitPrice.toFixed(2)}`, rx + 2, y + 3, { width: unitPriceW - 2, align: "right" }); rx += unitPriceW;
+        doc.text("", rx + 2, y + 3, { width: totalW - 3, align: "right" });
         y += rowH;
         rowAlt = !rowAlt;
       }
 
-      if (y > pageH - 140) {
+      // Page break — re-draw header on new page
+      if (y > pageH - 120) {
         doc.addPage();
         y = margin;
+        drawTableHeader(y);
+        y += hdrH;
+        rowAlt = false;
       }
     }
 
-    // ── Totals ───────────────────────────────────────────────────────────────
-    const subtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
-    const shipping = order.shippingAmount ?? 0;
-    const vatRate = order.vatRate ?? 0.20;
-    const subtotalPlusShipping = subtotal + shipping;
-    const vatAmount = subtotalPlusShipping * vatRate;
-    const grandTotal = subtotalPlusShipping + vatAmount;
+    // ── Totals ────────────────────────────────────────────────────────────────
+    const pdfSubtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
+    const pdfShipping = order.shippingAmount ?? 0;
+    const pdfVatRate  = order.vatRate ?? 0.20;
+    const pdfVat      = (pdfSubtotal + pdfShipping) * pdfVatRate;
+    const pdfGrand    = pdfSubtotal + pdfShipping + pdfVat;
 
-    const totalsX = margin + tableW - 200;
-    const totalsW = 200;
-    y += 8;
+    const totalsX = margin + tableW - 195;
+    const totalsW = 195;
+    y += 6;
 
-    const totalsRows = [
-      { label: "Order Discount at 0%:", value: "£0.00" },
-      { label: "Total Discount:", value: "£0.00", bold: true },
-      { label: `Sub Total (inc discount):`, value: `£${subtotal.toFixed(2)}`, bold: true },
-      ...(shipping > 0 ? [{ label: "Shipping & Handling:", value: `£${shipping.toFixed(2)}` }] : [{ label: "Shipping & Handling:", value: `£${shipping.toFixed(2)}` }]),
-      { label: `Total VAT:`, value: `£${vatAmount.toFixed(2)}` },
-      { label: "TOTAL:", value: `£${grandTotal.toFixed(2)}`, bold: true, big: true },
+    const totalsRows: { label: string; value: string; bold?: boolean; big?: boolean }[] = [
+      { label: "Subtotal (exc. VAT):", value: `£${pdfSubtotal.toFixed(2)}` },
+      ...(pdfShipping > 0 ? [{ label: "Shipping & Handling:", value: `£${pdfShipping.toFixed(2)}` }] : []),
+      { label: `VAT (${Math.round(pdfVatRate * 100)}%):`, value: `£${pdfVat.toFixed(2)}` },
+      { label: "TOTAL (inc. VAT):", value: `£${pdfGrand.toFixed(2)}`, bold: true, big: true },
     ];
 
     doc.fontSize(7.5);
     for (const row of totalsRows) {
-      const rowBg = row.big ? "#1e293b" : row.bold ? "#f0f4f8" : "#ffffff";
-      const fg = row.big ? "#ffffff" : "#111827";
-      doc.rect(totalsX, y, totalsW, 14).fill(rowBg).stroke("#e5e7eb");
+      const rowBg = row.big ? "#1e293b" : "#f8fafc";
+      const fg    = row.big ? "#ffffff" : "#111827";
+      const rH    = row.big ? 16 : 13;
+      doc.rect(totalsX, y, totalsW, rH).fill(rowBg).stroke("#e5e7eb");
       doc.fillColor(fg).font(row.bold ? "Helvetica-Bold" : "Helvetica");
-      doc.text(row.label, totalsX + 4, y + 3, { width: 130 });
-      doc.font("Helvetica-Bold").text(row.value, totalsX + 134, y + 3, { width: totalsW - 138, align: "right" });
-      y += 14;
+      doc.text(row.label, totalsX + 4, y + (row.big ? 4 : 3), { width: 120 });
+      doc.font("Helvetica-Bold").text(row.value, totalsX + 124, y + (row.big ? 4 : 3), { width: totalsW - 128, align: "right" });
+      y += rH;
     }
 
-    // ── Delivery Address ─────────────────────────────────────────────────────
-    y += 16;
-    doc.fillColor("#555555").fontSize(8).font("Helvetica-Bold").text("Delivery Address (if applicable)", margin, y);
+    // ── Delivery Address ──────────────────────────────────────────────────────
     if (order.deliveryAddress) {
-      y += 11;
-      doc.font("Helvetica").fontSize(8).fillColor("#374151").text(order.deliveryAddress, margin, y, { width: 250 });
+      y += 10;
+      doc.fillColor("#555555").fontSize(7.5).font("Helvetica-Bold").text("Delivery Address:", margin, y);
+      y += 10;
+      doc.font("Helvetica").fontSize(7.5).fillColor("#374151").text(order.deliveryAddress, margin, y, { width: 220 });
     }
 
-    // ── Footer ───────────────────────────────────────────────────────────────
-    const footY = pageH - 30;
-    doc.fontSize(7).fillColor("#9ca3af").font("Helvetica")
-      .text("Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, West Yorkshire, LS13 3HE", margin, footY, { align: "center", width: contentW });
-    const pageNumY = footY + 10;
-    doc.text("1 of 1", margin, pageNumY, { align: "right", width: contentW });
+    // ── Footer (every page) ───────────────────────────────────────────────────
+    const footY = pageH - 26;
+    doc.fontSize(6.5).fillColor("#9ca3af").font("Helvetica")
+      .text(
+        `Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE  ·  ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk  ·  www.selectbranding.co.uk`,
+        margin, footY, { align: "center", width: contentW }
+      );
 
     doc.end();
   });
