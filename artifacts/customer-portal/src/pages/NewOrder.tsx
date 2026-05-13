@@ -948,9 +948,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                 const FALLBACK_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
                 const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
                 const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
-                const unitPrice = resolveUnitPrice(wi, state.qty);
-                const basePrice = parseFloat(wi.unit_price ?? "0");
-                const hasBreak = unitPrice !== basePrice && basePrice > 0;
+                const { garmentPrice, unitPrice } = resolveItemPricing(wi, state.qty);
+                const wooBase = parseFloat(wi.unit_price ?? "0");
+                const logoSurcharge = unitPrice - garmentPrice;
+                const qtyDiscount = wooBase > 0 && garmentPrice < wooBase;
 
                 return (
                   <Card key={key} className="overflow-hidden flex flex-col">
@@ -978,9 +979,16 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                           </p>
                         )}
                         {unitPrice > 0 && (
-                          <div className="flex items-baseline gap-1.5 mt-1">
-                            <span className="text-sm font-bold text-primary">{formatCurrency(unitPrice)}</span>
-                            {hasBreak && <span className="text-xs text-muted-foreground line-through">{formatCurrency(basePrice)}</span>}
+                          <div className="mt-1">
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-sm font-bold text-primary">{formatCurrency(unitPrice)}</span>
+                              {qtyDiscount && <span className="text-xs text-muted-foreground line-through">{formatCurrency(wooBase)}</span>}
+                            </div>
+                            {logoSurcharge > 0 && (
+                              <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                                {formatCurrency(garmentPrice)} garment · <span className="font-medium text-foreground/70">+{formatCurrency(logoSurcharge)} extra logo</span>
+                              </p>
+                            )}
                           </div>
                         )}
                       </div>
