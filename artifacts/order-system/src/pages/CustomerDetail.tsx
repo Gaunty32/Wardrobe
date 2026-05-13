@@ -583,7 +583,8 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   const newType = v === "none" ? "" : v;
                   setForm(f => ({ ...f, type: newType, processStockId: newType === "DTF" ? f.processStockId : "" }));
                   if (newType === "DTF" && !editing) {
-                    setDtfForm(blankDtf);
+                    const raptor = suppliers?.find((s: any) => s.name.toLowerCase().includes("raptor"));
+                    setDtfForm({ ...blankDtf, supplierId: raptor ? String(raptor.id) : "" });
                     fetchAndSetSku();
                   }
                 }}>
