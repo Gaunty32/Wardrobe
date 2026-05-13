@@ -158,32 +158,18 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
             <>
               {/* Payment link */}
               <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <CreditCard className="w-4 h-4 text-blue-600" />
-                    Stripe Payment Link
-                  </div>
-                  {paymentLinkUrl && (
-                    <button
-                      onClick={generatePaymentLink}
-                      disabled={paymentLinkLoading}
-                      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50 flex items-center gap-1"
-                    >
-                      {paymentLinkLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Regenerate"}
-                    </button>
-                  )}
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <CreditCard className="w-4 h-4 text-blue-600" />
+                  Stripe Payment Link
                 </div>
-                {paymentLinkError && (
-                  <p className="text-xs text-destructive flex items-center gap-1">
-                    <XCircle className="w-3 h-3" /> {paymentLinkError}
-                  </p>
-                )}
+
                 {paymentLinkLoading && !paymentLinkUrl && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Loader2 className="w-3 h-3 animate-spin" /> Creating payment link…
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin" /> Generating unique payment link…
                   </p>
                 )}
-                {paymentLinkUrl ? (
+
+                {paymentLinkUrl && (
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2">
                       <input
@@ -201,14 +187,31 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
                       >
                         {paymentLinkCopied ? <><Check className="w-3 h-3 text-green-600" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
                       </button>
+                      <button
+                        onClick={generatePaymentLink}
+                        disabled={paymentLinkLoading}
+                        className="shrink-0 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      >
+                        {paymentLinkLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Regenerate"}
+                      </button>
                     </div>
                     <p className="text-xs text-muted-foreground">Total inc. 20% VAT — included automatically in the email.</p>
                   </div>
-                ) : (!paymentLinkLoading && (
-                  <p className="text-xs text-muted-foreground">
-                    {paymentLinkError ? "Email will use a generic payment link." : "Generating payment link…"}
-                  </p>
-                ))}
+                )}
+
+                {!paymentLinkLoading && !paymentLinkUrl && (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-muted-foreground">
+                      {paymentLinkError
+                        ? "Couldn't generate a unique link — the email will use the standard payment page instead."
+                        : "No payment link yet."}
+                    </p>
+                    <Button size="sm" variant="outline" className="h-7 text-xs shrink-0 gap-1" onClick={generatePaymentLink} disabled={paymentLinkLoading}>
+                      <Loader2 className={`w-3 h-3 ${paymentLinkLoading ? "animate-spin" : "hidden"}`} />
+                      Retry
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Email address */}
