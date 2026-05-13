@@ -80,7 +80,7 @@ function WeeklyWorm({ data }: { data: WeeklyStat[] }) {
         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
         <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#888" }} axisLine={false} tickLine={false} />
         <YAxis
-          tickFormatter={(v) => v === 0 ? "" : `$${(v / 1000).toFixed(0)}k`}
+          tickFormatter={(v) => v === 0 ? "" : `£${(v / 1000).toFixed(0)}k`}
           tick={{ fontSize: 10, fill: "#888" }} axisLine={false} tickLine={false} width={36}
         />
         <Tooltip
