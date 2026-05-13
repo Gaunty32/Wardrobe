@@ -375,7 +375,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   };
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", type: "", placement: "", processStockId: "", imageUrl: "", notes: "" };
+  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", notes: "" };
   const [form, setForm] = useState(blank);
   const [dtfForm, setDtfForm] = useState(blankDtf);
   const [isSaving, setIsSaving] = useState(false);
@@ -405,6 +405,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
       name: p.name || "",
       type: p.type || "",
       placement: p.placement || "",
+      price: p.price != null ? String(p.price) : "",
       processStockId: p.processStockId != null ? String(p.processStockId) : "",
       imageUrl: p.imageUrl || "",
       notes: p.notes || "",
@@ -469,6 +470,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
         name: form.name,
         type: form.type || null,
         placement: form.placement || null,
+        price: form.price ? parseFloat(form.price) : null,
         processStockId: stockId,
         imageUrl: form.imageUrl || null,
         notes: form.notes || null,
@@ -515,6 +517,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
             <TableHead>Type</TableHead>
             <TableHead className="hidden md:table-cell">Placement</TableHead>
             <TableHead className="hidden lg:table-cell">Process Stock</TableHead>
+            <TableHead className="hidden md:table-cell w-24 text-right">Price</TableHead>
             <TableHead className="w-12">Image</TableHead>
             <TableHead className="w-20 text-right">Actions</TableHead>
           </TableRow></TableHeader>
@@ -539,6 +542,9 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                       <Boxes className="w-3 h-3" />{getStockName(p.processStockId) ?? `#${p.processStockId}`}
                     </span>
                   ) : <span className="text-muted-foreground text-sm">—</span>}
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-right text-sm font-medium">
+                  {p.price != null ? `£${parseFloat(p.price).toFixed(2)}` : <span className="text-muted-foreground/40">—</span>}
                 </TableCell>
                 <TableCell>
                   {p.imageUrl ? (
@@ -599,6 +605,21 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               </div>
               <div className="grid gap-2"><Label>Placement</Label>
                 <Input placeholder="e.g. Left Chest" value={form.placement} onChange={e => setForm({ ...form, placement: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Price per unit <span className="text-muted-foreground font-normal">(£, optional)</span></Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="pl-7"
+                  value={form.price}
+                  onChange={e => setForm({ ...form, price: e.target.value })}
+                />
+              </div>
             </div>
             {form.type === "DTF" && (
               <div className="rounded-md border border-amber-200 bg-amber-50/40 p-3 grid gap-3">
