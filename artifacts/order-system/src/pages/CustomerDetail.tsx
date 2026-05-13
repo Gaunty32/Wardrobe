@@ -33,6 +33,7 @@ function formatUKPhone(raw: string): string {
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { pdfToJpegBlob } from "@/lib/pdf-thumbnail";
 import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
 import { Link } from "wouter";
@@ -388,6 +389,25 @@ function ProcessesTab({ customerId }: { customerId: number }) {
     onError: () => toast({ title: "Upload failed", description: "Could not upload image", variant: "destructive" }),
   });
 
+  const handleProcessImageUpload = async (file: File) => {
+    if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+      try {
+        toast({ title: "Generating preview…", description: "Converting PDF to image" });
+        const jpegBlob = await pdfToJpegBlob(file);
+        const jpegFile = new File(
+          [jpegBlob],
+          file.name.replace(/\.pdf$/i, ".jpg"),
+          { type: "image/jpeg" }
+        );
+        await uploadFile(jpegFile);
+      } catch {
+        toast({ title: "PDF conversion failed", description: "Could not generate a thumbnail from this PDF", variant: "destructive" });
+      }
+    } else {
+      await uploadFile(file);
+    }
+  };
+
   const invStock = () => qc.invalidateQueries({ queryKey: ["process-stock", "customer", customerId] });
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "processes"] });
   const invPO = () => qc.invalidateQueries({ queryKey: ["purchase-orders"] });
@@ -710,14 +730,14 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   {isUploading ? (
                     <><Loader2 className="w-5 h-5 animate-spin text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Uploading…</span></>
                   ) : (
-                    <><Upload className="w-5 h-5 text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Click to upload image</span><span className="text-[10px] text-muted-foreground/60">JPG, PNG, GIF, WebP</span></>
+                    <><Upload className="w-5 h-5 text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Click to upload image or PDF</span><span className="text-[10px] text-muted-foreground/60">JPG, PNG, WebP · PDF (auto-preview)</span></>
                   )}
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,application/pdf,.pdf"
                     className="sr-only"
                     disabled={isUploading}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) handleProcessImageUpload(f); e.target.value = ""; }}
                   />
                 </label>
               )}
