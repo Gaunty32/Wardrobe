@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq, ilike, or, isNotNull, and, ne } from "drizzle-orm";
-import { db, customersTable, ordersTable } from "@workspace/db";
+import { eq, ilike, or, isNotNull, and, ne, sql } from "drizzle-orm";
+import { db, customersTable, ordersTable, customerEmployeesTable } from "@workspace/db";
 import { z } from "zod";
+import { randomBytes } from "crypto";
 import { pushCustomerToXero } from "../services/xero.js";
 import {
   CreateCustomerBody,
@@ -44,9 +45,46 @@ router.post("/customers", async (req, res): Promise<void> => {
   }
   const [customer] = await db.insert(customersTable).values(parsed.data).returning();
   res.status(201).json(customer);
+
   // Best-effort push to Xero — don't await so the response is immediate
   pushCustomerToXero(customer.id).catch(() => {});
+
+  // Auto-create default employee + portal user from primary contact details
+  const { contactFirstName, contactLastName, email, phone } = parsed.data;
+  if (contactFirstName?.trim()) {
+    autoCreateContactDefaults(customer.id, contactFirstName.trim(), contactLastName ?? null, email ?? null, phone ?? null).catch(() => {});
+  }
 });
+
+async function autoCreateContactDefaults(
+  customerId: number,
+  firstName: string,
+  lastName: string | null,
+  email: string | null,
+  phone: string | null,
+): Promise<void> {
+  const [employee] = await db.insert(customerEmployeesTable).values({
+    customerId,
+    firstName,
+    lastName: lastName || null,
+    email: email ? email.toLowerCase().trim() : null,
+    phone: phone || null,
+    isActive: true,
+  }).returning();
+
+  if (email && employee) {
+    const normalised = email.toLowerCase().trim();
+    const token = randomBytes(32).toString("hex");
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await db.execute(sql`
+      INSERT INTO customer_portal_users
+        (customer_id, email, invite_token, invite_expires_at, status, portal_role, linked_employee_id)
+      VALUES
+        (${customerId}, ${normalised}, ${token}, ${expires.toISOString()}, 'invited', 'manager', ${employee.id})
+      ON CONFLICT (email) DO NOTHING
+    `);
+  }
+}
 
 router.get("/customers/:id", async (req, res): Promise<void> => {
   const params = GetCustomerParams.safeParse(req.params);
