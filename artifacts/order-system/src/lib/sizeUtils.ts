@@ -1,10 +1,17 @@
 const SIZE_ORDER = [
-  "XXXS","XXS","3XS","2XS",
-  "XS","S","M","L","XL",
-  "2XL","XXL","3XL","XXXL","4XL","XXXXL","5XL","6XL","7XL","8XL",
-  "X-Small","X Small","XSmall","Small","Medium","Large",
-  "X-Large","X Large","XLarge","XX-Large","XX Large","XXLarge",
-  "4","6","8","10","12","14","16","18","20","22","24","26","28","30","32","34","36","38","40","42","44","46","48","50",
+  "XXXS", "XXS", "3XS", "2XS",
+  "XS",   "X-Small", "X Small", "XSmall", "Extra Small", "ExtraSmall",
+  "S",    "Small",
+  "M",    "Medium",
+  "L",    "Large",
+  "XL",   "X-Large", "X Large", "XLarge", "Extra Large", "ExtraLarge",
+  "2XL",  "XXL",  "XX-Large", "XX Large",  "XXLarge",
+  "3XL",  "XXXL", "XXX-Large", "XXX Large", "XXXLarge",
+  "4XL",  "XXXXL",
+  "5XL",
+  "6XL", "7XL", "8XL",
+  "4","6","8","10","12","14","16","18","20","22","24","26","28","30",
+  "32","34","36","38","40","42","44","46","48","50",
   "One Size","One-Size","Onesize","Free Size","Universal","N/A",
 ];
 
