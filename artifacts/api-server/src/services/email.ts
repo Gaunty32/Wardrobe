@@ -59,7 +59,7 @@ const smtpTransporter = isSmtpConfigured
 const SBS_PHONE_DISPLAY = "0113 246 0000"; // ← update with real number
 const SBS_PHONE_HREF    = "tel:+441132460000"; // ← update with real number
 const SBS_WHATSAPP_URL  = "https://wa.me/441132460000"; // ← update with real WhatsApp number
-const SBS_CHAT_URL      = "https://www.selectbranding.co.uk/contact";
+const SBS_CHAT_URL      = "https://www.selectbranding.co.uk";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SBS_FROM = "Select Branding Solutions <info@selectbranding.co.uk>";
@@ -533,14 +533,16 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     const rowH = 13;
     const tblHdrH = 14;
 
-    const itemNameW = 125;
-    const colourW   = 52;
+    const colourW    = 52;
     const unitPriceW = 44;
-    const totalW    = 48;
-    const qtyW      = 28;
-    const sizemaxW  = contentW - itemNameW - colourW - unitPriceW - totalW - qtyW;
-    const sizeColW  = allSizes.length > 0 ? Math.min(32, Math.floor(sizemaxW / allSizes.length)) : 32;
-    const tableW    = itemNameW + colourW + sizeColW * allSizes.length + qtyW + unitPriceW + totalW;
+    const totalW     = 48;
+    const qtyW       = 28;
+    // Size columns: cap at 36pt each so they don't get absurdly wide with few sizes
+    const sizeColW   = allSizes.length > 0 ? Math.min(36, Math.floor((contentW * 0.28) / allSizes.length)) : 36;
+    const sizeW      = sizeColW * Math.max(allSizes.length, 1);
+    // itemName absorbs all remaining space so the table always spans the full content width
+    const itemNameW  = contentW - colourW - sizeW - qtyW - unitPriceW - totalW;
+    const tableW     = contentW;
 
     const drawTableHeader = (ty: number) => {
       doc.rect(margin, ty, tableW, tblHdrH).fill("#1e293b");
