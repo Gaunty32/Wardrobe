@@ -548,8 +548,18 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                 </TableCell>
                 <TableCell>
                   {p.imageUrl ? (
-                    <a href={p.imageUrl} target="_blank" rel="noopener noreferrer" title="View process image">
-                      <UploadedImage src={p.imageUrl} alt={p.name} className="w-10 h-10 object-contain bg-white rounded border border-border hover:opacity-80 transition-opacity p-0.5" fallback={<span className="text-muted-foreground/30"><ImageIcon className="w-4 h-4" /></span>} />
+                    <a href={p.imageUrl} target="_blank" rel="noopener noreferrer" title="View file">
+                      <UploadedImage
+                        src={p.imageUrl}
+                        alt={p.name}
+                        className="w-10 h-10 object-contain bg-white rounded border border-border hover:opacity-80 transition-opacity p-0.5"
+                        fallback={
+                          <span className="flex flex-col items-center gap-0.5 text-amber-600 hover:text-amber-700 transition-colors" title="File stored – click to open">
+                            <FileText className="w-5 h-5" />
+                            <span className="text-[9px] font-medium">View</span>
+                          </span>
+                        }
+                      />
                     </a>
                   ) : (
                     <span className="text-muted-foreground/30"><ImageIcon className="w-4 h-4" /></span>
@@ -673,7 +683,18 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               <Label className="flex items-center gap-1"><ImageIcon className="w-3 h-3" /> Reference Image</Label>
               {form.imageUrl ? (
                 <div className="relative group w-full">
-                  <UploadedImage src={form.imageUrl} alt="Process reference" className="w-full h-36 object-contain rounded-md border border-border bg-muted/30" fallback={<div className="w-full h-36 rounded-md border border-border bg-muted/30 flex flex-col items-center justify-center gap-1 text-muted-foreground/50"><ImageIcon className="w-8 h-8" /><span className="text-xs">Image not previewable</span></div>} />
+                  <UploadedImage
+                    src={form.imageUrl}
+                    alt="Process reference"
+                    className="w-full h-36 object-contain rounded-md border border-border bg-muted/30"
+                    fallback={
+                      <div className="w-full h-36 rounded-md border border-amber-200 bg-amber-50/60 flex flex-col items-center justify-center gap-2 text-amber-700">
+                        <FileText className="w-10 h-10 text-amber-500" />
+                        <span className="text-xs font-medium">File stored – not an image</span>
+                        <a href={form.imageUrl} target="_blank" rel="noopener noreferrer" className="text-xs underline text-amber-600 hover:text-amber-800">Open file ↗</a>
+                      </div>
+                    }
+                  />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
                     <a href={form.imageUrl} target="_blank" rel="noopener noreferrer">
                       <Button type="button" size="sm" variant="secondary" className="h-7 gap-1 text-xs"><Eye className="w-3 h-3" /> View</Button>
@@ -3601,13 +3622,15 @@ function LogoPreview({ url }: { url: string }) {
 
   if (isNonImage || failed) {
     return (
-      <div className="h-28 w-40 rounded-xl border border-border/40 bg-muted/10 p-2 shadow-sm flex flex-col items-center justify-center gap-2">
-        <ImageIcon className="w-8 h-8 text-muted-foreground/40" />
-        <span className="text-[11px] text-muted-foreground text-center font-medium px-2 break-all line-clamp-2">
-          {url.split("/").pop()?.split("?")[0]}
-        </span>
-        <span className="text-[10px] text-muted-foreground/50">Stored · not previewable</span>
-      </div>
+      <a href={url} target="_blank" rel="noopener noreferrer" title="Click to open file">
+        <div className="h-28 w-40 rounded-xl border border-amber-200 bg-amber-50/60 p-2 shadow-sm flex flex-col items-center justify-center gap-2 hover:bg-amber-100/80 transition-colors cursor-pointer">
+          <FileText className="w-8 h-8 text-amber-500" />
+          <span className="text-[11px] text-amber-700 text-center font-medium px-2 break-all line-clamp-2">
+            {url.split("/").pop()?.split("?")[0]}
+          </span>
+          <span className="text-[10px] text-amber-600/80 underline">Stored · click to open</span>
+        </div>
+      </a>
     );
   }
 
