@@ -305,15 +305,17 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
       if (file) processFileRef.current(file);
     };
 
-    window.addEventListener("dragenter", onDragEnter);
-    window.addEventListener("dragover", onDragOver);
-    window.addEventListener("dragleave", onDragLeave);
-    window.addEventListener("drop", onDrop);
+    // capture: true — fires before Radix DismissableLayer's stopPropagation
+    const opts = { capture: true } as const;
+    document.addEventListener("dragenter", onDragEnter, opts);
+    document.addEventListener("dragover", onDragOver, opts);
+    document.addEventListener("dragleave", onDragLeave, opts);
+    document.addEventListener("drop", onDrop, opts);
     return () => {
-      window.removeEventListener("dragenter", onDragEnter);
-      window.removeEventListener("dragover", onDragOver);
-      window.removeEventListener("dragleave", onDragLeave);
-      window.removeEventListener("drop", onDrop);
+      document.removeEventListener("dragenter", onDragEnter, opts);
+      document.removeEventListener("dragover", onDragOver, opts);
+      document.removeEventListener("dragleave", onDragLeave, opts);
+      document.removeEventListener("drop", onDrop, opts);
       dragCounter = 0;
       setDragOver(false);
     };
