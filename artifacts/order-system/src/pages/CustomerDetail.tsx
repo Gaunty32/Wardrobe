@@ -1310,11 +1310,11 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     mutationFn: (emp: { email: string }) =>
       apiFetch("/portal/admin/invite", {
         method: "POST",
-        body: JSON.stringify({ customerId, email: emp.email, portalRole: "manager" }),
+        body: JSON.stringify({ customerId, email: emp.email, portalRole: "manager", skipEmail: true }),
       }),
     onSuccess: (_data, emp) => {
       qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
-      toast({ title: "Portal invite sent", description: `${emp.email} has been invited as a portal manager.` });
+      toast({ title: "Added to portal", description: `${emp.email} added as a portal manager — no invite email sent.` });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });

@@ -104,10 +104,11 @@ export async function portalAuth(req: Request, res: Response, next: NextFunction
 // ─── admin: send invite ──────────────────────────────────────────────────────
 
 router.post("/portal/admin/invite", async (req: Request, res: Response) => {
-  const { customerId, email, portalRole } = z.object({
+  const { customerId, email, portalRole, skipEmail } = z.object({
     customerId: z.number().int().positive(),
     email: z.string().email(),
     portalRole: z.enum(["manager", "dept_manager", "member"]).default("member"),
+    skipEmail: z.boolean().default(false),
   }).parse(req.body);
 
   const token = randomBytes(32).toString("hex");
@@ -130,7 +131,7 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   let emailSent = false;
   let emailError: string | undefined;
 
-  if (isEmailConfigured) {
+  if (isEmailConfigured && !skipEmail) {
     const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
     const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
     const absoluteInviteUrl = `${proto}://${host}${inviteUrl}`;
