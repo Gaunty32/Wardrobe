@@ -3308,6 +3308,34 @@ function BespokeProductsTab({ customerId }: { customerId: number }) {
   );
 }
 
+// ─── Logo Preview (handles non-image files gracefully) ───────────────────────
+
+function LogoPreview({ url }: { url: string }) {
+  const [failed, setFailed] = useState(false);
+  const isNonImage = /\.(pdf|eps|ai)(\?|$)/i.test(url);
+
+  if (isNonImage || failed) {
+    return (
+      <div className="h-28 w-40 rounded-xl border border-border/40 bg-muted/10 p-2 shadow-sm flex flex-col items-center justify-center gap-2">
+        <ImageIcon className="w-8 h-8 text-muted-foreground/40" />
+        <span className="text-[11px] text-muted-foreground text-center font-medium px-2 break-all line-clamp-2">
+          {url.split("/").pop()?.split("?")[0]}
+        </span>
+        <span className="text-[10px] text-muted-foreground/50">Stored · not previewable</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt="Logo"
+      className="h-28 w-auto max-w-[220px] object-contain rounded-xl border border-border/40 bg-muted/10 p-2 shadow-sm"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 // ─── Main CustomerDetail Page ─────────────────────────────────────────────────
 
 export default function CustomerDetail() {
@@ -3490,23 +3518,7 @@ export default function CustomerDetail() {
             {/* Right: large logo preview */}
             <div className="shrink-0 flex flex-col items-center gap-1.5">
               {logoUrl ? (
-                /\.(pdf|eps|ai)(\?|$)/i.test(logoUrl) ? (
-                  <div className="h-28 w-40 rounded-xl border border-border/40 bg-muted/10 p-2 shadow-sm flex flex-col items-center justify-center gap-2">
-                    <ImageIcon className="w-8 h-8 text-muted-foreground/40" />
-                    <span className="text-[11px] text-muted-foreground text-center font-medium px-2 break-all line-clamp-2">
-                      {logoUrl.split("/").pop()}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground/50">Stored · not previewable</span>
-                  </div>
-                ) : (
-                  <img
-                    src={logoUrl}
-                    alt="Logo preview"
-                    className="h-28 w-auto max-w-[220px] object-contain rounded-xl border border-border/40 bg-muted/10 p-2 shadow-sm"
-                    onError={e => { (e.target as HTMLImageElement).style.opacity = "0.2"; }}
-                    onLoad={e => { (e.target as HTMLImageElement).style.opacity = "1"; }}
-                  />
-                )
+                <LogoPreview url={logoUrl} />
               ) : (
                 <div className="h-28 w-40 rounded-xl border-2 border-dashed border-border/40 flex flex-col items-center justify-center gap-2 bg-muted/20">
                   <ImageIcon className="w-8 h-8 text-muted-foreground/25" />
