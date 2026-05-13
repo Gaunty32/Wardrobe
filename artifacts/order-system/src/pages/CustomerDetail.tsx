@@ -42,7 +42,6 @@ import { Link } from "wouter";
 
 const API_BASE = "/api";
 
-const DEFAULT_CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL", "6XL"];
 
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -2970,23 +2969,25 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   <SelectTrigger><SelectValue placeholder="Any size" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__none__">Any size</SelectItem>
-                    {(variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).map(s => (
+                    {variantSizes.map(s => (
                       <SelectItem key={s} value={s}>{s}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              ) : variantSizes.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Select a product to see available sizes</p>
               ) : (
                 /* Add mode — multi-select chips */
                 <div className="flex flex-wrap gap-1.5">
-                  {(variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).map(sz => (
+                  {variantSizes.map(sz => (
                     <button key={sz} type="button"
                       onClick={() => toggleSize(sz)}
                       className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", selectedSizes.includes(sz) ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
                     >{sz}</button>
                   ))}
-                  <button type="button" onClick={() => { const all = variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES; setSelectedSizes(selectedSizes.length === all.length ? [] : [...all]); }}
+                  <button type="button" onClick={() => setSelectedSizes(selectedSizes.length === variantSizes.length ? [] : [...variantSizes])}
                     className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/50 transition-colors">
-                    {selectedSizes.length === (variantSizes.length > 0 ? variantSizes : DEFAULT_CLOTHING_SIZES).length ? "None" : "All"}
+                    {selectedSizes.length === variantSizes.length ? "None" : "All"}
                   </button>
                 </div>
               )}
