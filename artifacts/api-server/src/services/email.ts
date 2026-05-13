@@ -59,7 +59,7 @@ const smtpTransporter = isSmtpConfigured
 const SBS_PHONE_DISPLAY = "0113 246 0000"; // ← update with real number
 const SBS_PHONE_HREF    = "tel:+441132460000"; // ← update with real number
 const SBS_WHATSAPP_URL  = "https://wa.me/441132460000"; // ← update with real WhatsApp number
-const SBS_CHAT_URL      = "https://www.selectbranding.co.uk";
+const SBS_CHAT_URL      = "https://wardrobe.selectbranding.co.uk/customer-portal";
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SBS_FROM = "Select Branding Solutions <info@selectbranding.co.uk>";
