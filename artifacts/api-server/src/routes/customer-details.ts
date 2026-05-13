@@ -629,6 +629,141 @@ router.delete("/customers/:customerId/employees/:id", async (req, res): Promise<
   res.sendStatus(204);
 });
 
+// ─── Batch Employee Import ────────────────────────────────────────────────────
+
+const importRowSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().optional().nullable(),
+  employeeNumber: z.string().optional().nullable(),
+  jobTitle: z.string().optional().nullable(),
+  email: z.string().optional().nullable(),
+  phone: z.string().optional().nullable(),
+  teamName: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  sizes: z.array(z.object({ label: z.string(), size: z.string() })).optional(),
+});
+
+const importBodySchema = z.object({
+  rows: z.array(importRowSchema),
+});
+
+router.post("/customers/:customerId/employees/import", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+
+  const body = importBodySchema.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const customerId = p.data.customerId;
+  const { rows } = body.data;
+
+  // Load existing employees and teams once upfront
+  const existingEmployees = await db.select().from(customerEmployeesTable)
+    .where(eq(customerEmployeesTable.customerId, customerId));
+
+  const existingTeams = await db.execute(
+    sql`SELECT id, name FROM customer_teams WHERE customer_id = ${customerId}`
+  );
+  const teamMap = new Map<string, number>();
+  for (const t of existingTeams.rows as any[]) {
+    teamMap.set((t.name as string).toLowerCase(), t.id as number);
+  }
+
+  let created = 0, updated = 0, skipped = 0;
+  const errors: { row: number; error: string }[] = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    try {
+      // ── Find or create team ─────────────────────────────────────────────────
+      let teamId: number | null = null;
+      if (row.teamName?.trim()) {
+        const key = row.teamName.trim().toLowerCase();
+        if (teamMap.has(key)) {
+          teamId = teamMap.get(key)!;
+        } else {
+          const newTeam = await db.execute(sql`
+            INSERT INTO customer_teams (customer_id, name)
+            VALUES (${customerId}, ${row.teamName.trim()})
+            RETURNING id
+          `);
+          teamId = (newTeam.rows[0] as any).id as number;
+          teamMap.set(key, teamId);
+        }
+      }
+
+      // ── Find or create employee ─────────────────────────────────────────────
+      const firstName = row.firstName.trim();
+      const lastName = row.lastName?.trim() || null;
+      const fullNameLower = [firstName, lastName].filter(Boolean).join(" ").toLowerCase();
+
+      const match = existingEmployees.find((e) =>
+        [e.firstName, e.lastName].filter(Boolean).join(" ").toLowerCase() === fullNameLower
+      );
+
+      let employeeId: number;
+
+      if (match) {
+        const updates: Record<string, any> = { updatedAt: new Date() };
+        if (teamId !== null) updates.teamId = teamId;
+        if (row.employeeNumber !== undefined) updates.employeeNumber = row.employeeNumber;
+        if (row.jobTitle !== undefined) updates.jobTitle = row.jobTitle;
+        if (row.email !== undefined) updates.email = row.email;
+        if (row.phone !== undefined) updates.phone = row.phone;
+        if (row.notes !== undefined) updates.notes = row.notes;
+        await db.update(customerEmployeesTable).set(updates).where(eq(customerEmployeesTable.id, match.id));
+        employeeId = match.id;
+        updated++;
+      } else {
+        const [newEmp] = await db.insert(customerEmployeesTable).values({
+          customerId,
+          firstName,
+          lastName,
+          teamId,
+          employeeNumber: row.employeeNumber || null,
+          jobTitle: row.jobTitle || null,
+          email: row.email || null,
+          phone: row.phone || null,
+          notes: row.notes || null,
+          isActive: true,
+        }).returning();
+        employeeId = newEmp.id;
+        existingEmployees.push(newEmp);
+        created++;
+      }
+
+      // ── Create or update sizes ──────────────────────────────────────────────
+      if (row.sizes?.length) {
+        for (const s of row.sizes) {
+          if (!s.label?.trim() || !s.size?.trim()) continue;
+          const existing = await db.select().from(customerEmployeeSizesTable)
+            .where(and(
+              eq(customerEmployeeSizesTable.employeeId, employeeId),
+              sql`lower(${customerEmployeeSizesTable.label}) = lower(${s.label.trim()})`
+            ));
+          if (existing.length > 0) {
+            await db.update(customerEmployeeSizesTable)
+              .set({ size: s.size.trim(), updatedAt: new Date() })
+              .where(eq(customerEmployeeSizesTable.id, existing[0].id));
+          } else {
+            await db.insert(customerEmployeeSizesTable).values({
+              employeeId,
+              label: s.label.trim(),
+              size: s.size.trim(),
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      errors.push({ row: i + 1, error: err.message ?? "Unknown error" });
+      skipped++;
+    }
+  }
+
+  res.json({ created, updated, skipped, errors });
+});
+
 // ─── Employee Sizes ───────────────────────────────────────────────────────────
 
 const sizeBody = z.object({

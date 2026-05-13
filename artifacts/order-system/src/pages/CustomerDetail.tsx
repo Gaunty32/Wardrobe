@@ -19,7 +19,8 @@ import { sortSizesWithOrder, sortBySizeWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet } from "lucide-react";
+import { ImportSpreadsheetDialog } from "@/components/ImportSpreadsheetDialog";
 
 function formatUKPhone(raw: string): string {
   const d = raw.replace(/\D/g, "");
@@ -1288,6 +1289,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [showInactive, setShowInactive] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const { data: roles } = useSubResource<any>(customerId, "roles");
   const { data: teams } = useSubResource<any>(customerId, "teams");
 
@@ -1446,6 +1448,9 @@ function EmployeesTab({ customerId }: { customerId: number }) {
             />
             <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
+          <Button size="sm" variant="outline" onClick={() => setShowImportDialog(true)} className="gap-1.5">
+            <FileSpreadsheet className="w-4 h-4" /> Import
+          </Button>
           <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Employee</Button>
         </div>
       </div>
@@ -1603,6 +1608,13 @@ function EmployeesTab({ customerId }: { customerId: number }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImportSpreadsheetDialog
+        customerId={customerId}
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
+        onImported={() => qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] })}
+      />
     </>
   );
 }
