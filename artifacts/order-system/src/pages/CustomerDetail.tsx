@@ -344,7 +344,7 @@ const PROCESS_TYPES = ["embroidery", "print", "DTF", "other"] as const;
 
 interface ProcessStockItem { id: number; name: string; sku: string | null; unitCost: number; supplierId: number | null; stockQuantity: number; }
 
-const blankDtf = { supplierId: "", unitCost: "", sku: "", orderQty: "0" };
+const blankDtf = { supplierId: "", sku: "", orderQty: "0", stockQty: "0" };
 
 function ProcessesTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
@@ -373,7 +373,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   };
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", notes: "" };
+  const blank = { name: "", type: "", placement: "", processStockId: "", imageUrl: "", notes: "" };
   const [form, setForm] = useState(blank);
   const [dtfForm, setDtfForm] = useState(blankDtf);
   const [isSaving, setIsSaving] = useState(false);
@@ -403,7 +403,6 @@ function ProcessesTab({ customerId }: { customerId: number }) {
       name: p.name || "",
       type: p.type || "",
       placement: p.placement || "",
-      price: p.price != null ? String(p.price) : "",
       processStockId: p.processStockId != null ? String(p.processStockId) : "",
       imageUrl: p.imageUrl || "",
       notes: p.notes || "",
@@ -412,9 +411,9 @@ function ProcessesTab({ customerId }: { customerId: number }) {
       const stockItem = allProcessStock.find((s: ProcessStockItem) => s.id === p.processStockId);
       setDtfForm(stockItem ? {
         supplierId: stockItem.supplierId != null ? String(stockItem.supplierId) : "",
-        unitCost: stockItem.unitCost != null ? String(stockItem.unitCost) : "",
         sku: stockItem.sku || "",
         orderQty: "0",
+        stockQty: String(stockItem.stockQuantity ?? 0),
       } : blankDtf);
     } else {
       setDtfForm(blankDtf);
@@ -434,13 +433,13 @@ function ProcessesTab({ customerId }: { customerId: number }) {
           name: form.name.trim(),
           sku: dtfForm.sku.trim() || null,
           supplierId: dtfForm.supplierId ? parseInt(dtfForm.supplierId, 10) : null,
-          unitCost: dtfForm.unitCost ? parseFloat(dtfForm.unitCost) : 0,
+          stockQuantity: parseInt(dtfForm.stockQty || "0", 10),
           customerId,
         };
         if (stockId) {
           await apiFetch(`/process-stock/${stockId}`, { method: "PATCH", body: JSON.stringify(stockPayload) });
         } else {
-          const newStock = await apiFetch("/process-stock", { method: "POST", body: JSON.stringify({ ...stockPayload, stockQuantity: 0 }) });
+          const newStock = await apiFetch("/process-stock", { method: "POST", body: JSON.stringify(stockPayload) });
           stockId = newStock.id;
         }
         const orderQty = parseInt(dtfForm.orderQty || "0", 10);
@@ -456,7 +455,6 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               items: [{
                 productName: form.name.trim(),
                 supplierCode: dtfForm.sku.trim() || null,
-                supplierPrice: dtfForm.unitCost ? parseFloat(dtfForm.unitCost) : null,
                 quantityOrdered: orderQty,
               }],
             }),
@@ -469,7 +467,6 @@ function ProcessesTab({ customerId }: { customerId: number }) {
         name: form.name,
         type: form.type || null,
         placement: form.placement || null,
-        price: form.price ? parseFloat(form.price) : null,
         processStockId: stockId,
         imageUrl: form.imageUrl || null,
         notes: form.notes || null,
@@ -515,7 +512,6 @@ function ProcessesTab({ customerId }: { customerId: number }) {
             <TableHead>Name</TableHead>
             <TableHead>Type</TableHead>
             <TableHead className="hidden md:table-cell">Placement</TableHead>
-            <TableHead className="text-right">Price</TableHead>
             <TableHead className="hidden lg:table-cell">Process Stock</TableHead>
             <TableHead className="w-12">Image</TableHead>
             <TableHead className="w-20 text-right">Actions</TableHead>
@@ -535,9 +531,6 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   {p.type && <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize ${typeColour[p.type] || typeColour.other}`}>{p.type}</span>}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.placement || '—'}</TableCell>
-                <TableCell className="text-right text-sm font-medium tabular-nums">
-                  {p.price != null ? formatCurrency(p.price) : <span className="text-muted-foreground">—</span>}
-                </TableCell>
                 <TableCell className="hidden lg:table-cell">
                   {p.processStockId ? (
                     <span className="inline-flex items-center gap-1 text-xs bg-muted px-2 py-0.5 rounded-full text-muted-foreground">
@@ -604,17 +597,6 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               <div className="grid gap-2"><Label>Placement</Label>
                 <Input placeholder="e.g. Left Chest" value={form.placement} onChange={e => setForm({ ...form, placement: e.target.value })} /></div>
             </div>
-            <div className="grid gap-2">
-              <Label className="flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Price (£)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={form.price}
-                onChange={e => setForm({ ...form, price: e.target.value })}
-              />
-            </div>
             {form.type === "DTF" && (
               <div className="rounded-md border border-amber-200 bg-amber-50/40 p-3 grid gap-3">
                 <div className="text-xs font-semibold text-amber-800 uppercase tracking-wide flex items-center gap-1.5">
@@ -640,13 +622,6 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                     </Select>
                   </div>
                   <div className="grid gap-1.5">
-                    <Label className="text-xs flex items-center gap-1"><PoundSterling className="w-3 h-3" /> Unit Cost</Label>
-                    <Input className="h-8 text-sm" type="number" min="0" step="0.01" placeholder="0.00"
-                      value={dtfForm.unitCost} onChange={e => setDtfForm(f => ({ ...f, unitCost: e.target.value }))} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="grid gap-1.5">
                     <Label className="text-xs">Product Code (SKU)</Label>
                     <div className="relative">
                       <Input className="h-8 text-sm font-mono" placeholder={isFetchingSku ? "Fetching…" : "e.g. PS0005"}
@@ -654,6 +629,13 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                         disabled={isFetchingSku} />
                       {isFetchingSku && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />}
                     </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs flex items-center gap-1"><Boxes className="w-3 h-3" /> Stock Available Qty</Label>
+                    <Input className="h-8 text-sm" type="number" min="0" step="1" placeholder="0"
+                      value={dtfForm.stockQty} onChange={e => setDtfForm(f => ({ ...f, stockQty: e.target.value }))} />
                   </div>
                   <div className="grid gap-1.5">
                     <Label className="text-xs flex items-center gap-1"><ShoppingBag className="w-3 h-3" /> Draft PO Qty <span className="font-normal text-muted-foreground">(0 = skip)</span></Label>
