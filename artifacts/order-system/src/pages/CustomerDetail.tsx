@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet } from "lucide-react";
 import { ImportSpreadsheetDialog } from "@/components/ImportSpreadsheetDialog";
+import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 
 function formatUKPhone(raw: string): string {
   const d = raw.replace(/\D/g, "");
@@ -774,23 +775,19 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   </div>
                 </div>
               ) : (
-                <label className={cn(
-                  "flex flex-col items-center justify-center h-24 rounded-md border-2 border-dashed border-border cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors",
-                  isUploading && "opacity-50 pointer-events-none"
-                )}>
-                  {isUploading ? (
-                    <><Loader2 className="w-5 h-5 animate-spin text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Uploading…</span></>
-                  ) : (
-                    <><Upload className="w-5 h-5 text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Click to upload image or PDF</span><span className="text-[10px] text-muted-foreground/60">JPG, PNG, WebP · PDF (auto-preview)</span></>
-                  )}
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf,.pdf"
-                    className="sr-only"
-                    disabled={isUploading}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleProcessImageUpload(f); e.target.value = ""; }}
+                <FileDropZone
+                  onFile={handleProcessImageUpload}
+                  accept="image/*,application/pdf,.pdf"
+                  disabled={isUploading}
+                  dialogOpen={open}
+                  className="h-24"
+                >
+                  <FileDropZoneContent
+                    uploading={isUploading}
+                    label="Click or drag to upload image or PDF"
+                    hint="JPG, PNG, WebP · PDF (auto-preview)"
                   />
-                </label>
+                </FileDropZone>
               )}
             </div>
 

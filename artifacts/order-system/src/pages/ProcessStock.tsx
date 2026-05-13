@@ -16,6 +16,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, Loader2, Boxes, AlertTriangle, Check, ChevronsUpDown, Paperclip, Download, X, Upload } from "lucide-react";
+import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 
 const API_BASE = "/api";
 
@@ -452,22 +453,23 @@ export default function ProcessStock() {
                     </button>
                   </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 px-3 py-2.5 rounded-md border border-dashed border-border hover:border-primary/50 hover:bg-muted/30 transition-colors text-sm text-muted-foreground w-full"
+                  <FileDropZone
+                    onFile={(file) => {
+                      const ext = file.name.split(".").pop()?.toLowerCase();
+                      if (ext !== "eps" && ext !== "pdf") {
+                        toast({ title: "Invalid file type", description: "Please upload an EPS or PDF file.", variant: "destructive" });
+                        return;
+                      }
+                      setPendingFile(file);
+                    }}
+                    accept=".eps,.pdf,application/postscript,application/pdf"
+                    dialogOpen={open}
+                    className="py-2.5 px-3 flex-row gap-2 justify-start"
                   >
-                    <Upload className="w-4 h-4 shrink-0" />
-                    <span>Click to upload EPS or PDF</span>
-                  </button>
+                    <Upload className="w-4 h-4 shrink-0 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Click or drag to upload EPS or PDF</span>
+                  </FileDropZone>
                 )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".eps,.pdf,application/postscript,application/pdf"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
               </div>
 
               <div className="grid gap-2">
