@@ -39,6 +39,7 @@ export const customerProcessesTable = pgTable("customer_processes", {
   price: numeric("price", { precision: 10, scale: 2 }),
   processStockId: integer("process_stock_id"),
   imageUrl: text("image_url"),
+  fileUrl: text("file_url"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

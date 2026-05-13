@@ -376,35 +376,39 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   };
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", notes: "" };
+  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", fileUrl: "", notes: "" };
   const [form, setForm] = useState(blank);
   const [dtfForm, setDtfForm] = useState(blankDtf);
   const [isSaving, setIsSaving] = useState(false);
 
-  const { uploadFile, isUploading } = useUpload({
-    onSuccess: (res) => {
-      setForm(f => ({ ...f, imageUrl: `/api/storage${res.objectPath}` }));
-      toast({ title: "Image uploaded" });
-    },
+  const { uploadFile: uploadThumbnail, isUploading: isUploadingThumb } = useUpload({
+    onSuccess: (res) => setForm(f => ({ ...f, imageUrl: `/api/storage${res.objectPath}` })),
     onError: () => toast({ title: "Upload failed", description: "Could not upload image", variant: "destructive" }),
   });
+  const { uploadFile: uploadOriginal, isUploading: isUploadingOriginal } = useUpload({
+    onSuccess: (res) => setForm(f => ({ ...f, fileUrl: `/api/storage${res.objectPath}` })),
+    onError: () => {},
+  });
+  const isUploading = isUploadingThumb || isUploadingOriginal;
 
   const handleProcessImageUpload = async (file: File) => {
     if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
       try {
         toast({ title: "Generating preview…", description: "Converting PDF to image" });
-        const jpegBlob = await pdfToJpegBlob(file);
-        const jpegFile = new File(
-          [jpegBlob],
-          file.name.replace(/\.pdf$/i, ".jpg"),
-          { type: "image/jpeg" }
-        );
-        await uploadFile(jpegFile);
+        const [jpegBlob] = await Promise.all([
+          pdfToJpegBlob(file),
+          uploadOriginal(file),
+        ]);
+        const jpegFile = new File([jpegBlob], file.name.replace(/\.pdf$/i, ".jpg"), { type: "image/jpeg" });
+        await uploadThumbnail(jpegFile);
+        toast({ title: "PDF uploaded with preview" });
       } catch {
-        toast({ title: "PDF conversion failed", description: "Could not generate a thumbnail from this PDF", variant: "destructive" });
+        toast({ title: "PDF upload failed", description: "Could not process this PDF", variant: "destructive" });
       }
     } else {
-      await uploadFile(file);
+      setForm(f => ({ ...f, fileUrl: "" }));
+      await uploadThumbnail(file);
+      toast({ title: "Image uploaded" });
     }
   };
 
@@ -428,6 +432,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
       price: p.price != null ? String(p.price) : "",
       processStockId: p.processStockId != null ? String(p.processStockId) : "",
       imageUrl: p.imageUrl || "",
+      fileUrl: p.fileUrl || "",
       notes: p.notes || "",
     });
     if (p.type === "DTF" && p.processStockId && allProcessStock) {
@@ -493,6 +498,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
         price: form.price ? parseFloat(form.price) : null,
         processStockId: stockId,
         imageUrl: form.imageUrl || null,
+        fileUrl: form.fileUrl || null,
         notes: form.notes || null,
       };
       await (editing
@@ -567,23 +573,33 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   {p.price != null ? `£${parseFloat(p.price).toFixed(2)}` : <span className="text-muted-foreground/40">—</span>}
                 </TableCell>
                 <TableCell>
-                  {p.imageUrl ? (
-                    <a href={p.imageUrl} target="_blank" rel="noopener noreferrer" title="View file">
-                      <UploadedImage
-                        src={p.imageUrl}
-                        alt={p.name}
-                        className="w-10 h-10 object-contain bg-white rounded border border-border hover:opacity-80 transition-opacity p-0.5"
-                        fallback={
-                          <span className="flex flex-col items-center gap-0.5 text-amber-600 hover:text-amber-700 transition-colors" title="File stored – click to open">
-                            <FileText className="w-5 h-5" />
-                            <span className="text-[9px] font-medium">View</span>
-                          </span>
-                        }
-                      />
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground/30"><ImageIcon className="w-4 h-4" /></span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {p.imageUrl ? (
+                      <a href={p.imageUrl} target="_blank" rel="noopener noreferrer" title="View preview">
+                        <UploadedImage
+                          src={p.imageUrl}
+                          alt={p.name}
+                          className="w-10 h-10 object-contain bg-white rounded border border-border hover:opacity-80 transition-opacity p-0.5"
+                          fallback={
+                            <span className="flex flex-col items-center gap-0.5 text-amber-600 hover:text-amber-700 transition-colors" title="File stored – click to open">
+                              <FileText className="w-5 h-5" />
+                              <span className="text-[9px] font-medium">View</span>
+                            </span>
+                          }
+                        />
+                      </a>
+                    ) : (
+                      <span className="text-muted-foreground/30"><ImageIcon className="w-4 h-4" /></span>
+                    )}
+                    {p.fileUrl && (
+                      <a href={p.fileUrl} target="_blank" rel="noopener noreferrer" title="Open original PDF">
+                        <span className="flex flex-col items-center gap-0.5 text-blue-500 hover:text-blue-700 transition-colors">
+                          <FileText className="w-4 h-4" />
+                          <span className="text-[9px] font-medium">PDF</span>
+                        </span>
+                      </a>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -715,11 +731,22 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                       </div>
                     }
                   />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
-                    <a href={form.imageUrl} target="_blank" rel="noopener noreferrer">
-                      <Button type="button" size="sm" variant="secondary" className="h-7 gap-1 text-xs"><Eye className="w-3 h-3" /> View</Button>
+                  {/* Original PDF download link — shown below the preview when available */}
+                  {form.fileUrl && (
+                    <a
+                      href={form.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute bottom-2 left-2 inline-flex items-center gap-1 bg-black/70 hover:bg-black/90 text-white rounded px-2 py-1 text-[10px] font-medium transition-colors"
+                    >
+                      <FileText className="w-3 h-3" /> Original PDF
                     </a>
-                    <Button type="button" size="sm" variant="destructive" className="h-7 gap-1 text-xs" onClick={() => setForm(f => ({ ...f, imageUrl: "" }))}><X className="w-3 h-3" /> Remove</Button>
+                  )}
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
+                    <a href={form.fileUrl || form.imageUrl} target="_blank" rel="noopener noreferrer">
+                      <Button type="button" size="sm" variant="secondary" className="h-7 gap-1 text-xs"><Eye className="w-3 h-3" /> {form.fileUrl ? "Open PDF" : "View"}</Button>
+                    </a>
+                    <Button type="button" size="sm" variant="destructive" className="h-7 gap-1 text-xs" onClick={() => setForm(f => ({ ...f, imageUrl: "", fileUrl: "" }))}><X className="w-3 h-3" /> Remove</Button>
                   </div>
                 </div>
               ) : (
