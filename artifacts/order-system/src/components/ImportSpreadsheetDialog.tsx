@@ -269,30 +269,56 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
   // The Radix Dialog overlay intercepts native drag events, so we attach
   // window-level listeners when the dialog is open and on the upload step.
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  // Keep processFile in a ref so the effect never needs to re-run due to it changing
+  const processFileRef = useRef(processFile);
+  processFileRef.current = processFile;
+
   useEffect(() => {
     if (!open || step !== "upload") return;
-    const onDragOver = (e: DragEvent) => { e.preventDefault(); setDragOver(true); };
+
+    let dragCounter = 0;
+
+    const isFiles = (e: DragEvent) =>
+      Array.from(e.dataTransfer?.types ?? []).some(t => t.toLowerCase() === "files");
+
+    const onDragEnter = (e: DragEvent) => {
+      e.preventDefault();
+      if (!isFiles(e)) return;
+      dragCounter++;
+      setDragOver(true);
+    };
+    const onDragOver = (e: DragEvent) => {
+      // Must always preventDefault to allow drop to fire
+      e.preventDefault();
+      if (isFiles(e)) setDragOver(true);
+    };
     const onDragLeave = (e: DragEvent) => {
-      // Only clear when leaving the drop zone element itself
-      if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
-        setDragOver(false);
-      }
+      if (!isFiles(e)) return;
+      dragCounter--;
+      if (dragCounter <= 0) { dragCounter = 0; setDragOver(false); }
     };
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
+      dragCounter = 0;
       setDragOver(false);
       const file = e.dataTransfer?.files[0];
-      if (file) processFile(file);
+      if (file) processFileRef.current(file);
     };
+
+    window.addEventListener("dragenter", onDragEnter);
     window.addEventListener("dragover", onDragOver);
     window.addEventListener("dragleave", onDragLeave);
     window.addEventListener("drop", onDrop);
     return () => {
+      window.removeEventListener("dragenter", onDragEnter);
       window.removeEventListener("dragover", onDragOver);
       window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onDrop);
+      dragCounter = 0;
+      setDragOver(false);
     };
-  }, [open, step, processFile]);
+  // Only re-run when open/step changes — processFile read via ref
+  }, [open, step]);
 
   // Data rows based on current settings
   const headers = sheet ? (sheet.rawRows[headerRowIndex] ?? []).map((c, i) => String(c).trim() || colLetter(i)) : [];
