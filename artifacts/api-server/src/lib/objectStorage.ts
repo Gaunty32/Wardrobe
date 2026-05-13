@@ -134,6 +134,15 @@ export class ObjectStorageService {
     return null;
   }
 
+  async getSignedDownloadUrl(file: File, ttlSec: number = 3600): Promise<string> {
+    return signObjectURL({
+      bucketName: file.bucket.name,
+      objectName: file.name,
+      method: "GET",
+      ttlSec,
+    });
+  }
+
   async downloadObject(file: File, cacheTtlSec: number = 3600): Promise<Response> {
     const [metadata] = await file.getMetadata();
     const aclPolicy = await getObjectAclPolicy(file);

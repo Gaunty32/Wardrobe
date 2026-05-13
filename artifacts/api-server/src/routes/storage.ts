@@ -85,17 +85,10 @@ router.get("/storage/objects/*path", async (req: Request, res: Response) => {
     const objectPath = `/objects/${wildcardPath}`;
     const objectFile = await objectStorageService.getObjectEntityFile(objectPath);
 
-    const response = await objectStorageService.downloadObject(objectFile);
-
-    res.status(response.status);
-    response.headers.forEach((value, key) => res.setHeader(key, value));
-
-    if (response.body) {
-      const nodeStream = Readable.fromWeb(response.body as ReadableStream<Uint8Array>);
-      nodeStream.pipe(res);
-    } else {
-      res.end();
-    }
+    // Redirect to a short-lived signed GCS URL so the browser fetches directly
+    // from GCS — avoids fragile Node→Web→Node stream conversion in the API layer.
+    const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
+    res.redirect(302, signedUrl);
   } catch (error) {
     if (error instanceof ObjectNotFoundError) {
       res.status(404).json({ error: "Object not found" });

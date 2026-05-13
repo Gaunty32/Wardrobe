@@ -1297,6 +1297,26 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     enabled: !!customerId,
   });
 
+  const { data: portalUsers } = useQuery<any[]>({
+    queryKey: ["portal-users", customerId],
+    queryFn: () => apiFetch(`/portal/admin/users/${customerId}`),
+    enabled: !!customerId,
+  });
+  const portalEmailSet = new Set((portalUsers ?? []).map((u: any) => (u.email ?? "").toLowerCase()));
+
+  const addToPortal = useMutation({
+    mutationFn: (emp: { email: string }) =>
+      apiFetch("/portal/admin/invite", {
+        method: "POST",
+        body: JSON.stringify({ customerId, email: emp.email, portalRole: "manager" }),
+      }),
+    onSuccess: (_data, emp) => {
+      qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
+      toast({ title: "Portal invite sent", description: `${emp.email} has been invited as a portal manager.` });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [sizes, setSizes] = useState<{ label: string; size: string }[]>([]);
@@ -1486,6 +1506,17 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {e.email && !portalEmailSet.has(e.email.toLowerCase()) && (
+                      <Button
+                        variant="ghost" size="icon"
+                        className="h-7 w-7 text-indigo-600 hover:bg-indigo-50"
+                        title="Add to portal"
+                        disabled={addToPortal.isPending}
+                        onClick={() => addToPortal.mutate({ email: e.email })}
+                      >
+                        <Globe className="w-3 h-3" />
+                      </Button>
+                    )}
                     {!e.isActive ? (
                       <Button variant="ghost" size="sm" className="h-7 text-xs text-green-600 hover:bg-green-50 px-2" onClick={() => setActive.mutate({ id: e.id, isActive: true })}>
                         Reactivate
