@@ -957,16 +957,21 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                         )}
                       </div>
 
-                      {/* Finish badges — shown on card when applicable */}
+                      {/* Finish name + process list */}
                       {hasFinish && (
-                        <div className="flex flex-wrap gap-1">
-                          {procs.map((p: any) => (
-                            <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
-                              {p.process_type && <ProcessBadgeInline type={p.process_type} />}
-                              {p.item_finish_name && <span className="text-[10px] text-foreground/70 font-medium">{p.item_finish_name}</span>}
-                              {p.placement && <span className="text-[10px] text-muted-foreground">· {p.placement}</span>}
-                            </div>
-                          ))}
+                        <div className="space-y-1.5">
+                          {group.finish_name && (
+                            <p className="text-xs font-bold text-foreground leading-snug">{group.finish_name}</p>
+                          )}
+                          <div className="flex flex-col gap-1">
+                            {procs.map((p: any) => (
+                              <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
+                                {p.process_type && <ProcessBadgeInline type={p.process_type} />}
+                                {p.item_finish_name && <span className="text-[10px] text-foreground/70 font-medium">{p.item_finish_name}</span>}
+                                {p.placement && <span className="text-[10px] text-muted-foreground">· {p.placement}</span>}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 
@@ -1062,6 +1067,35 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
         </div>
 
       </div>{/* end flex gap-6 */}
+
+      {/* Process explainer */}
+      <div className="mt-10 border-t border-border pt-8">
+        <h3 className="text-sm font-semibold text-foreground mb-4">Understanding your decoration processes</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border bg-cyan-100 text-cyan-700 border-cyan-200">DTF</span>
+              <span className="text-xs font-semibold text-foreground">Direct to Film</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">Your logo is printed onto a special transfer film using high-resolution digital printing, then heat-bonded directly onto the garment. DTF produces vivid, full-colour results and handles complex designs or gradients with ease.</p>
+          </div>
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border bg-blue-100 text-blue-700 border-blue-200">Print</span>
+              <span className="text-xs font-semibold text-foreground">Screen / Digital Print</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">Ink is applied directly onto the fabric surface using screen or digital printing techniques. Print is ideal for bold, flat designs and large coverage areas, delivering crisp, vibrant colours on t-shirts and other garments.</p>
+          </div>
+          <div className="rounded-xl border border-purple-200 bg-purple-50 p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border bg-purple-100 text-purple-700 border-purple-200">Embroidery</span>
+              <span className="text-xs font-semibold text-foreground">Thread Stitching</span>
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">Your logo is stitched directly into the fabric using coloured thread, creating a classic, premium finish. Embroidery is highly durable, wash-resistant, and gives workwear a professional, long-lasting look.</p>
+          </div>
+        </div>
+      </div>
+
     </div>
   );
 }
