@@ -8,7 +8,8 @@ import {
   purchaseOrdersTable, purchaseOrderItemsTable,
   customerProcessesTable, customerFinishProcessesTable,
 } from "@workspace/db";
-import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured, fetchLogoBuffer, fetchLogoDataUrl } from "../services/email";
+import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
+import { ObjectStorageService } from "../lib/objectStorage";
 import { logOrderAction, getActor } from "../services/orderLog";
 import { getUncachableStripeClient } from "../services/stripeClient.js";
 import {
@@ -38,6 +39,35 @@ const CreateOrderBodyFixed = z.object({
 });
 
 const router: IRouter = Router();
+const _objectStorageService = new ObjectStorageService();
+
+// Read a customer logo from wherever it's stored — handles relative object storage
+// paths like /api/storage/objects/... as well as absolute http(s) URLs.
+async function readLogoForSending(logoUrl: string): Promise<{ buffer: Buffer; contentType: string } | null> {
+  if (!logoUrl) return null;
+  try {
+    // Relative object-storage path: read directly from GCS without an HTTP round-trip
+    if (logoUrl.startsWith("/api/storage/objects/")) {
+      const objectPath = logoUrl.replace("/api/storage", ""); // /objects/uploads/<uuid>.ext
+      const file = await _objectStorageService.getObjectEntityFile(objectPath);
+      const [metadata] = await file.getMetadata();
+      const contentType = (metadata.contentType as string | undefined)?.trim() || "image/png";
+      const chunks: Buffer[] = [];
+      await new Promise<void>((resolve, reject) => {
+        file.createReadStream()
+          .on("data", (c: Buffer) => chunks.push(c))
+          .on("end", resolve)
+          .on("error", reject);
+      });
+      return { buffer: Buffer.concat(chunks), contentType };
+    }
+    // Absolute URL fallback
+    const resp = await fetch(logoUrl, { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) return null;
+    const ct = resp.headers.get("content-type") ?? "image/png";
+    return { buffer: Buffer.from(await resp.arrayBuffer()), contentType: ct };
+  } catch { return null; }
+}
 
 async function generateOrderNumber(): Promise<string> {
   const rows = await db.execute(sql`
@@ -719,12 +749,13 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   }
   if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
 
-  // Fetch customer logo server-side so it can be embedded (object storage URLs are not publicly accessible)
+  // Read customer logo directly from storage (URL is a relative object-storage path, not a public URL)
   if (customerLogoUrl) {
-    [customerLogoDataUrl, customerLogoBuffer] = await Promise.all([
-      fetchLogoDataUrl(customerLogoUrl),
-      fetchLogoBuffer(customerLogoUrl),
-    ]);
+    const logoResult = await readLogoForSending(customerLogoUrl);
+    if (logoResult) {
+      customerLogoBuffer = logoResult.buffer;
+      customerLogoDataUrl = `data:${logoResult.contentType};base64,${logoResult.buffer.toString("base64")}`;
+    }
   }
 
   // Resolve delivery address if linked
