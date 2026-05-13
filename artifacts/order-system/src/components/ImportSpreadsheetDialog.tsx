@@ -6,9 +6,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { apiFetch } from "@workspace/api-client-react";
-import { Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Check, AlertCircle, Loader2, X } from "lucide-react";
+import { Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Check, AlertCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+async function apiFetch(path: string, opts?: RequestInit) {
+  const res = await fetch(`/api${path}`, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...opts?.headers },
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    let message = `HTTP ${res.status}`;
+    try { const j = JSON.parse(text); if (j?.error) message = j.error; } catch {}
+    throw new Error(message);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
