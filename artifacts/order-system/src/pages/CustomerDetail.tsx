@@ -2274,13 +2274,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const openAdd = () => { setForm(blank); setEditing(null); setEditingGroup(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setSelectedColours([]); setSelectedSizes([]); setFreeTextColours([""]); setOpen(true); };
 
   const toggleColour = (col: string) => {
-    setSelectedColours(prev => {
-      const next = prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col];
-      if (next.length > 0 && selectedSizes.length === 0 && variantSizes.length > 0) {
-        setSelectedSizes(variantSizes);
-      }
-      return next;
-    });
+    setSelectedColours(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
   };
 
   const toggleSize = (sz: string) => {
@@ -2349,6 +2343,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const sizes = sortSizesWithOrder([...new Set([...attrSizes, ...variantSizes])], sizeOrder);
       setVariantColours(colours);
       setVariantSizes(sizes);
+      setSelectedColours(colours);
+      setSelectedSizes(sizes);
     }).catch(() => {});
   };
 
@@ -2798,7 +2794,6 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                           onChange={e => {
                             const next = freeTextColours.map((c, idx) => idx === i ? e.target.value : c);
                             setFreeTextColours(next);
-                            if (next.filter(Boolean).length > 0 && selectedSizes.length === 0 && variantSizes.length > 0) setSelectedSizes(variantSizes);
                           }}
                         />
                         {freeTextColours.length > 1 && (
