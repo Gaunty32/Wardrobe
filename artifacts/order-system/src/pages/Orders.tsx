@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -94,6 +94,56 @@ function WeeklyWorm({ data }: { data: WeeklyStat[] }) {
   );
 }
 
+function QuoteHoldingPanel() {
+  const [, setLocation] = useLocation();
+
+  const { data: quotes = [], isLoading } = useQuery<any[]>({
+    queryKey: ["quote-orders"],
+    queryFn: () => apiFetch("/orders?status=quote"),
+    refetchInterval: 30000,
+  });
+
+  if (isLoading || !quotes.length) return null;
+
+  return (
+    <Card className="border-violet-200 bg-violet-50/50 shadow-sm">
+      <CardHeader className="py-3 px-5 border-b border-violet-200/60 flex flex-row items-center gap-2">
+        <FileText className="w-4 h-4 text-violet-600" />
+        <span className="font-semibold text-violet-800 text-sm">Quotes &amp; Awaiting Payment</span>
+        <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-violet-600 text-white text-xs font-bold">{quotes.length}</span>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Order #</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Due Date</TableHead>
+              <TableHead className="text-right">Total</TableHead>
+              <TableHead></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {quotes.map((o: any) => (
+              <TableRow key={o.id} className="hover:bg-violet-50/80 cursor-pointer" onClick={() => setLocation(`/orders/${o.id}`)}>
+                <TableCell><span className="font-semibold text-violet-700">{o.orderNumber}</span></TableCell>
+                <TableCell className="font-medium">{toTitleCase(o.customerName ?? "")}</TableCell>
+                <TableCell className="text-muted-foreground text-sm">{o.requiredDate ? formatDate(o.requiredDate) : <span className="italic text-muted-foreground/50">—</span>}</TableCell>
+                <TableCell className="text-right font-semibold">{formatCurrency(parseFloat(o.totalAmount ?? "0"))}</TableCell>
+                <TableCell className="text-right">
+                  <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-violet-700 hover:bg-violet-100" onClick={e => { e.stopPropagation(); setLocation(`/orders/${o.id}`); }}>
+                    View <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
 function PortalPendingOrders() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -123,6 +173,7 @@ function PortalPendingOrders() {
 
   return (
     <Card className="border-amber-200 bg-amber-50/50 shadow-sm">
+
       <CardHeader className="py-3 px-5 border-b border-amber-200/60 flex flex-row items-center gap-2">
         <Globe className="w-4 h-4 text-amber-600" />
         <span className="font-semibold text-amber-800 text-sm">Portal Orders Awaiting Review</span>
@@ -239,6 +290,7 @@ export default function Orders() {
           </Button>
         </div>
 
+        <QuoteHoldingPanel />
         <PortalPendingOrders />
 
         <Card className="shadow-sm border-border/50">
@@ -251,6 +303,7 @@ export default function Orders() {
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="quote">Quote</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="shipped">Shipped</SelectItem>
                   <SelectItem value="delivered">Delivered</SelectItem>

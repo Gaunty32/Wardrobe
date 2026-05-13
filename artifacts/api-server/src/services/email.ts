@@ -84,6 +84,7 @@ export function buildAcknowledgementEmail(order: {
   orderNumber: string;
   customerName: string | null;
   contactFirstName?: string | null;
+  customerLogoUrl?: string | null;
   orderDate: Date | null;
   requiredDate?: Date | null;
   notes?: string | null;
@@ -99,125 +100,163 @@ export function buildAcknowledgementEmail(order: {
     recipientName?: string | null;
   }>;
 }): { subject: string; html: string; text: string } {
-  const subject = `Select Branding Solutions Ltd Order Acknowledgement - Ref : ${order.orderNumber}`;
+  const subject = `Order Acknowledged — Ref ${order.orderNumber} | Select Branding Solutions`;
 
   const stripeLink = order.stripePaymentLink ?? "https://buy.stripe.com/bIY16peJJ5j99Us144";
+  const firstName = toFirstName(order.contactFirstName ?? order.customerName);
 
   const itemRows = order.items
     .map(
       (i) =>
         `<tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${i.productName}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:center;">${i.quantity}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">£${i.unitPrice.toFixed(2)}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:600;">£${i.lineTotal.toFixed(2)}</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;">${i.productName}${i.recipientName ? `<br><span style="font-size:11px;color:#94a3b8;">For: ${i.recipientName}</span>` : ""}</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:13px;font-weight:600;color:#1e293b;">${i.quantity}</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;color:#64748b;">£${i.unitPrice.toFixed(2)}</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;font-weight:700;color:#1e293b;">£${i.lineTotal.toFixed(2)}</td>
         </tr>`
     )
     .join("\n");
 
   const total = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
 
+  const customerLogoBlock = order.customerLogoUrl
+    ? `<td style="vertical-align:middle;text-align:right;">
+        <p style="margin:0 0 6px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Prepared for</p>
+        <img src="${order.customerLogoUrl}" alt="${order.customerName ?? "Customer"}" height="38" style="display:block;height:38px;width:auto;max-width:130px;margin-left:auto;" />
+      </td>`
+    : `<td style="vertical-align:middle;text-align:right;">
+        <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Order Acknowledgement</p>
+        <p style="margin:4px 0 0;color:#fff;font-size:17px;font-weight:700;">Ref: ${order.orderNumber}</p>
+      </td>`;
+
+  const orderRefSubBar = order.customerLogoUrl
+    ? `<tr><td style="background:#0f172a;padding:10px 32px;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td><p style="margin:0;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Order Acknowledgement</p>
+          <p style="margin:2px 0 0;color:#fff;font-size:15px;font-weight:700;">Ref: ${order.orderNumber}</p></td>
+        </tr></table>
+      </td></tr>`
+    : "";
+
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><title>${subject}</title></head>
-<body style="margin:0;padding:0;background:#f9fafb;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0">
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
     <tr><td align="center" style="padding:32px 16px;">
-      <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08);">
 
         <!-- Header -->
-        <tr><td style="background:#1e293b;padding:20px 32px;">
+        <tr><td style="background:#1e293b;padding:22px 32px;">
           <table width="100%" cellpadding="0" cellspacing="0">
             <tr>
               <td style="vertical-align:middle;">
-                <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="52" style="display:block;height:52px;width:auto;" />
+                <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="50" style="display:block;height:50px;width:auto;" />
               </td>
-              <td style="vertical-align:middle;text-align:right;">
-                <p style="margin:0;color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Order Acknowledgement</p>
-                <p style="margin:4px 0 0;color:#fff;font-size:16px;font-weight:700;">Ref: ${order.orderNumber}</p>
-              </td>
+              ${customerLogoBlock}
             </tr>
           </table>
+        </td></tr>
+        ${orderRefSubBar}
+
+        <!-- Greeting band -->
+        <tr><td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);padding:28px 32px;">
+          <p style="margin:0;font-size:22px;font-weight:700;color:#fff;line-height:1.3;">Thank you, ${firstName}!</p>
+          <p style="margin:8px 0 0;font-size:14px;color:#bfdbfe;line-height:1.5;">We're delighted to have received your order and can't wait to get started.</p>
         </td></tr>
 
         <!-- Body -->
         <tr><td style="padding:32px;">
 
-          <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
-            Thank you for your order.<br><br>
-            Please find attached your order acknowledgement. Please check this meets your requirements. It is important you check the garments, colours, sizes and quantities as well as the finishes to be applied.
+          <p style="margin:0 0 8px;font-size:15px;color:#374151;line-height:1.7;">
+            We've put together the details below for your records. Please take a moment to check everything looks right — particularly the garments, colours, sizes and any finishes. If anything needs adjusting, just let us know and we'll sort it straight away.
+          </p>
+
+          <p style="margin:0 0 24px;font-size:15px;color:#374151;line-height:1.7;">
+            We see this as the beginning of a brilliant partnership, and our team is fully committed to delivering something you'll be genuinely proud of.
           </p>
 
           <!-- Items table -->
-          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:6px;margin-bottom:28px;border-collapse:collapse;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:28px;border-collapse:collapse;overflow:hidden;">
             <thead>
               <tr style="background:#f8fafc;">
-                <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Product</th>
-                <th style="padding:10px 12px;text-align:left;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Colour / Size</th>
-                <th style="padding:10px 12px;text-align:center;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Qty</th>
-                <th style="padding:10px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Unit</th>
-                <th style="padding:10px 12px;text-align:right;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">Total</th>
+                <th style="padding:11px 14px;text-align:left;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Product</th>
+                <th style="padding:11px 14px;text-align:left;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Colour / Size</th>
+                <th style="padding:11px 14px;text-align:center;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Qty</th>
+                <th style="padding:11px 14px;text-align:right;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Unit</th>
+                <th style="padding:11px 14px;text-align:right;font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e2e8f0;">Total</th>
               </tr>
             </thead>
             <tbody>${itemRows}</tbody>
             <tfoot>
               <tr style="background:#f8fafc;">
-                <td colspan="4" style="padding:12px;text-align:right;font-weight:600;font-size:14px;color:#1e293b;border-top:2px solid #e5e7eb;">Order Total (exc. VAT)</td>
-                <td style="padding:12px;text-align:right;font-weight:700;font-size:14px;color:#1e293b;border-top:2px solid #e5e7eb;">£${total.toFixed(2)}</td>
+                <td colspan="4" style="padding:13px 14px;text-align:right;font-weight:700;font-size:13px;color:#64748b;border-top:2px solid #e2e8f0;text-transform:uppercase;letter-spacing:0.3px;">Order Total (exc. VAT)</td>
+                <td style="padding:13px 14px;text-align:right;font-weight:800;font-size:15px;color:#1e293b;border-top:2px solid #e2e8f0;">£${total.toFixed(2)}</td>
               </tr>
             </tfoot>
           </table>
 
           <!-- Payment section -->
           <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-            <tr><td>
-              <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
-                You can make payment by BACS or by card using the details below. Our bank details have recently been updated.
+            <tr><td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:20px 24px;">
+              <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px;">Ready to pay?</p>
+              <p style="margin:0 0 16px;font-size:14px;color:#64748b;line-height:1.5;">
+                You can pay securely by card online or by BACS transfer using the details below.
               </p>
 
               <!-- Pay by card button -->
               <table cellpadding="0" cellspacing="0" style="margin-bottom:20px;">
-                <tr><td style="background:#1e293b;border-radius:6px;">
-                  <a href="${stripeLink}" style="display:inline-block;padding:12px 28px;color:#fff;font-size:14px;font-weight:600;text-decoration:none;letter-spacing:0.2px;">
-                    Pay by Card Online →
+                <tr><td style="background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);border-radius:8px;box-shadow:0 4px 12px rgba(37,99,235,.3);">
+                  <a href="${stripeLink}" style="display:inline-block;padding:13px 32px;color:#fff;font-size:14px;font-weight:700;text-decoration:none;letter-spacing:0.3px;">
+                    Pay by Card Online &rarr;
                   </a>
                 </td></tr>
               </table>
 
               <!-- BACS details -->
-              <table cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:6px;border-collapse:collapse;width:auto;min-width:280px;">
-                <tr style="background:#f8fafc;">
-                  <td colspan="2" style="padding:10px 16px;font-size:12px;font-weight:700;color:#6b7280;letter-spacing:0.5px;border-bottom:1px solid #e5e7eb;">BACS PAYMENT DETAILS</td>
+              <table cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:6px;border-collapse:collapse;width:auto;min-width:260px;">
+                <tr style="background:#f1f5f9;">
+                  <td colspan="2" style="padding:9px 14px;font-size:11px;font-weight:700;color:#64748b;letter-spacing:0.8px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;">BACS Payment Details</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 16px;font-size:13px;color:#6b7280;white-space:nowrap;">Account name</td>
-                  <td style="padding:8px 16px;font-size:13px;font-weight:600;color:#1e293b;">Select Branding Solutions Ltd</td>
+                  <td style="padding:8px 14px;font-size:13px;color:#64748b;white-space:nowrap;">Account name</td>
+                  <td style="padding:8px 14px;font-size:13px;font-weight:600;color:#1e293b;">Select Branding Solutions Ltd</td>
                 </tr>
                 <tr style="background:#f8fafc;">
-                  <td style="padding:8px 16px;font-size:13px;color:#6b7280;white-space:nowrap;">Sort code</td>
-                  <td style="padding:8px 16px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">04-06-05</td>
+                  <td style="padding:8px 14px;font-size:13px;color:#64748b;white-space:nowrap;">Sort code</td>
+                  <td style="padding:8px 14px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">04-06-05</td>
                 </tr>
                 <tr>
-                  <td style="padding:8px 16px;font-size:13px;color:#6b7280;white-space:nowrap;">Account number</td>
-                  <td style="padding:8px 16px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">30422879</td>
+                  <td style="padding:8px 14px;font-size:13px;color:#64748b;white-space:nowrap;">Account number</td>
+                  <td style="padding:8px 14px;font-size:13px;font-weight:600;color:#1e293b;font-family:monospace;">30422879</td>
                 </tr>
               </table>
             </td></tr>
           </table>
 
-          ${order.notes ? `<p style="font-size:14px;color:#374151;margin-bottom:20px;"><strong>Notes:</strong> ${order.notes}</p>` : ""}
+          ${order.notes ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:14px 16px;margin-bottom:24px;"><p style="margin:0;font-size:13px;color:#92400e;"><strong>Order notes:</strong> ${order.notes}</p></div>` : ""}
 
+          <!-- Closing -->
+          <p style="font-size:15px;color:#374151;margin:0 0 12px;line-height:1.7;">
+            Our team will keep you updated as your order progresses — but please do reach out any time if you have questions. We're always here and happy to help.
+          </p>
+          <p style="font-size:15px;color:#374151;margin:0 0 20px;line-height:1.7;">
+            Here's to looking great together! 🎉
+          </p>
           <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">
-            If you have any questions regarding your order, please don't hesitate to get in touch.<br><br>
-            Kind regards,<br>
-            <strong>Select Branding Solutions Ltd</strong>
+            With warm regards,<br>
+            <strong style="color:#1e293b;">The Select Branding Solutions Team</strong><br>
+            <span style="color:#94a3b8;font-size:13px;">info@selectbranding.co.uk</span>
           </p>
         </td></tr>
 
         <!-- Footer -->
-        <tr><td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;font-size:12px;color:#9ca3af;text-align:center;">Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, LS13 3HE</p>
+        <tr><td style="background:#f8fafc;padding:16px 32px;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;line-height:1.6;">
+            Select Branding Solutions Ltd &middot; Spence Mills, Mill Lane, Leeds, LS13 3HE<br>
+            <a href="https://www.selectbranding.co.uk" style="color:#94a3b8;text-decoration:none;">www.selectbranding.co.uk</a>
+          </p>
         </td></tr>
       </table>
     </td></tr>
@@ -226,34 +265,38 @@ export function buildAcknowledgementEmail(order: {
 </html>`;
 
   const text = [
-    `Select Branding Solutions Ltd Order Acknowledgement - Ref : ${order.orderNumber}`,
+    `Order Acknowledged — Ref ${order.orderNumber} | Select Branding Solutions`,
     ``,
-    `Thank you for your order.`,
+    `Hi ${firstName},`,
     ``,
-    `Please find attached your order acknowledgement. Please check this meets your requirements. It is important you check the garments, colours, sizes and quantities as well as the finishes to be applied.`,
+    `Thank you so much for your order — we're delighted to be working with you!`,
     ``,
-    `You can make payment by BACS or by card using the details below. Our bank details have recently been updated.`,
-    ``,
-    `Pay by card online: ${stripeLink}`,
-    ``,
-    `BACS Payment Details:`,
-    `  Account name:   Select Branding Solutions Ltd`,
-    `  Sort code:      04-06-05`,
-    `  Account number: 30422879`,
+    `Your order reference is ${order.orderNumber}. Please take a moment to check everything below looks right — garments, colours, sizes and finishes. If anything needs adjusting, just say the word.`,
     ``,
     `ITEMS:`,
     ...order.items.map(
       (i) =>
-        `  ${i.productName}${[i.colour, i.size].filter(Boolean).length ? ` (${[i.colour, i.size].filter(Boolean).join(", ")})` : ""} – Qty: ${i.quantity} @ £${i.unitPrice.toFixed(2)} = £${i.lineTotal.toFixed(2)}`
+        `  ${i.productName}${[i.colour, i.size].filter(Boolean).length ? ` (${[i.colour, i.size].filter(Boolean).join(", ")})` : ""}${i.recipientName ? ` — For: ${i.recipientName}` : ""} – Qty: ${i.quantity} @ £${i.unitPrice.toFixed(2)} = £${i.lineTotal.toFixed(2)}`
     ),
     ``,
     `ORDER TOTAL (exc. VAT): £${total.toFixed(2)}`,
     ``,
-    order.notes ? `Notes: ${order.notes}\n` : null,
-    `If you have any questions, please don't hesitate to get in touch.`,
+    `PAYMENT OPTIONS:`,
+    `  Pay by card online: ${stripeLink}`,
     ``,
-    `Kind regards,`,
-    `Select Branding Solutions Ltd`,
+    `  BACS Transfer:`,
+    `    Account name:   Select Branding Solutions Ltd`,
+    `    Sort code:      04-06-05`,
+    `    Account number: 30422879`,
+    ``,
+    order.notes ? `Order notes: ${order.notes}\n` : null,
+    `Our team will keep you updated as your order progresses. Please reach out any time — we're always happy to help.`,
+    ``,
+    `Here's to looking great together!`,
+    ``,
+    `With warm regards,`,
+    `The Select Branding Solutions Team`,
+    `info@selectbranding.co.uk`,
   ]
     .filter((l) => l !== null)
     .join("\n");

@@ -26,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
+import { SendAcknowledgementDialog } from "@/components/SendAcknowledgementDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
@@ -478,27 +479,7 @@ export default function OrderDetail() {
     win.print();
   };
 
-  const [ackLoading, setAckLoading] = useState(false);
-
-  async function handleSendAck() {
-    setAckLoading(true);
-    try {
-      // Download .vbs script — double-clicking it uses Windows COM automation
-      // to open a proper Outlook compose window with the PDF already attached
-      const url = `${API_BASE}/orders/${orderId}/acknowledgement.vbs`;
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `SendAck-${order.orderNumber}.vbs`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      toast({ title: "Acknowledgement ready", description: "Double-click the downloaded .vbs file to open the draft in Outlook." });
-    } catch (err: any) {
-      toast({ title: "Failed to generate acknowledgement", description: err.message, variant: "destructive" });
-    } finally {
-      setAckLoading(false);
-    }
-  }
+  const [sendAckOpen, setSendAckOpen] = useState(false);
 
   const sendToProductionMutation = useMutation({
     mutationFn: async (itemIds: number[]) => {
@@ -861,13 +842,10 @@ export default function OrderDetail() {
               variant="outline"
               size="sm"
               className="gap-1.5"
-              onClick={handleSendAck}
-              disabled={ackLoading}
+              onClick={() => setSendAckOpen(true)}
               title="Send order acknowledgement email to customer"
             >
-              {ackLoading
-                ? <Loader2 className="w-4 h-4 animate-spin" />
-                : <Mail className="w-4 h-4" />}
+              <Mail className="w-4 h-4" />
               Send Ack
             </Button>
             <Button
@@ -898,6 +876,7 @@ export default function OrderDetail() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="draft">Draft</SelectItem>
+                <SelectItem value="quote">Quote</SelectItem>
                 <SelectItem value="confirmed">Confirmed</SelectItem>
                 <SelectItem value="shipped">Shipped</SelectItem>
                 <SelectItem value="delivered">Delivered</SelectItem>
@@ -2221,6 +2200,21 @@ export default function OrderDetail() {
         }}
         onConfirmed={() => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+        }}
+      />
+
+      <SendAcknowledgementDialog
+        open={sendAckOpen}
+        onOpenChange={setSendAckOpen}
+        order={{
+          id: order.id,
+          orderNumber: order.orderNumber,
+          customerName: order.customerName ?? null,
+          totalAmount: order.totalAmount,
+          status: order.status,
+        }}
+        onSent={() => {
+          queryClient.invalidateQueries({ queryKey: ["order-email-logs", orderId] });
         }}
       />
 

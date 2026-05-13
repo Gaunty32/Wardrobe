@@ -637,6 +637,8 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   let customerCity: string | null = null;
   let customerPostcode: string | null = null;
 
+  let customerLogoUrl: string | null = null;
+
   if (order.customerId) {
     const [customer] = await db.select({
       email: customersTable.email,
@@ -644,12 +646,14 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       address: customersTable.address,
       city: customersTable.city,
       postcode: customersTable.postcode,
+      logoUrl: customersTable.logoUrl,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     if (!toEmail) toEmail = customer?.email ?? undefined;
     contactFirstName = customer?.contactFirstName ?? null;
     customerAddress = customer?.address ?? null;
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
+    customerLogoUrl = customer?.logoUrl ?? null;
   }
   if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
 
@@ -677,6 +681,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
     contactFirstName,
+    customerLogoUrl,
     orderDate: order.orderDate ?? null,
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
