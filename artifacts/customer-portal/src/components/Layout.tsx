@@ -184,11 +184,6 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           ) : (
             <img src={logo} alt="Select Branding Solutions" className="h-20 w-auto shrink-0" />
           )}
-          {user?.customer?.name && (
-            <span className="text-base font-medium text-muted-foreground truncate hidden sm:block">
-              {user.customer.name}
-            </span>
-          )}
         </div>
 
         {/* Desktop nav */}
