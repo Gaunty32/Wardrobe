@@ -126,6 +126,18 @@ export const customerEmployeeSizesTable = pgTable("customer_employee_sizes", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+// ─── References (internal notes & media) ─────────────────────────────────────
+
+export const customerReferencesTable = pgTable("customer_references", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
+  title: text("title"),
+  notes: text("notes"),
+  imageUrl: text("image_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 // ─── Finished Items (Wardrobe) ────────────────────────────────────────────────
 
 export const customerFinishedItemsTable = pgTable("customer_finished_items", {

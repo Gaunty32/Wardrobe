@@ -14,6 +14,7 @@ import {
   customerTeamsTable,
   customerEmployeesTable,
   customerEmployeeSizesTable,
+  customerReferencesTable,
   customersTable,
   ordersTable,
   productsTable,
@@ -953,6 +954,56 @@ router.delete("/customers/:customerId/bespoke-products/:productId/variants/:vari
   await db.delete(productVariantsTable)
     .where(and(eq(productVariantsTable.id, p.data.variantId), eq(productVariantsTable.productId, p.data.productId)));
 
+  res.sendStatus(204);
+});
+
+// ─── References ───────────────────────────────────────────────────────────────
+
+const referenceBody = z.object({
+  title: z.string().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  imageUrl: z.string().optional().nullable(),
+});
+
+router.get("/customers/:customerId/references", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const rows = await db.select().from(customerReferencesTable)
+    .where(eq(customerReferencesTable.customerId, p.data.customerId))
+    .orderBy(customerReferencesTable.createdAt);
+  res.json(rows);
+});
+
+router.post("/customers/:customerId/references", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const body = referenceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.insert(customerReferencesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
+  res.status(201).json(row);
+});
+
+router.patch("/customers/:customerId/references/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = referenceBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.update(customerReferencesTable)
+    .set({ ...body.data, updatedAt: new Date() })
+    .where(and(eq(customerReferencesTable.id, p.data.id), eq(customerReferencesTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Reference not found" }); return; }
+  res.json(row);
+});
+
+router.delete("/customers/:customerId/references/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const [row] = await db.delete(customerReferencesTable)
+    .where(and(eq(customerReferencesTable.id, p.data.id), eq(customerReferencesTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Reference not found" }); return; }
   res.sendStatus(204);
 });
 

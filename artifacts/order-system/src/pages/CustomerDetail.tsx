@@ -18,7 +18,7 @@ import { cn, toTitleCase } from "@/lib/utils";
 import { sortSizes, sortBySize } from "@/lib/sizeUtils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText } from "lucide-react";
 
 function formatUKPhone(raw: string): string {
   const d = raw.replace(/\D/g, "");
@@ -3311,6 +3311,246 @@ function BespokeProductsTab({ customerId }: { customerId: number }) {
 
 // ─── Logo Preview (handles non-image files gracefully) ───────────────────────
 
+// ─── References Tab ───────────────────────────────────────────────────────────
+
+type CustomerReference = {
+  id: number;
+  customerId: number;
+  title: string | null;
+  notes: string | null;
+  imageUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function ReferencesTab({ customerId }: { customerId: number }) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<CustomerReference | null>(null);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const blank = { title: "", notes: "", imageUrl: "" };
+  const [form, setForm] = useState(blank);
+
+  const { data: refs = [], isLoading } = useQuery<CustomerReference[]>({
+    queryKey: ["customer-references", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/references`).then(r => r.json()),
+  });
+
+  const { uploadFile, isUploading } = useUpload({
+    onSuccess: (res) => {
+      const url = `/api/storage${res.objectPath}`;
+      setForm(f => ({ ...f, imageUrl: url }));
+    },
+    onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
+  });
+
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof blank) => {
+      const url = editing
+        ? `/customers/${customerId}/references/${editing.id}`
+        : `/customers/${customerId}/references`;
+      const res = await apiFetch(url, {
+        method: editing ? "PATCH" : "POST",
+        body: JSON.stringify({ title: data.title || null, notes: data.notes || null, imageUrl: data.imageUrl || null }),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customer-references", customerId] });
+      setDialogOpen(false);
+      setEditing(null);
+      setForm(blank);
+      toast({ title: editing ? "Reference updated" : "Reference added" });
+    },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/references/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customer-references", customerId] });
+      toast({ title: "Reference deleted" });
+    },
+  });
+
+  function openAdd() {
+    setEditing(null);
+    setForm(blank);
+    setDialogOpen(true);
+  }
+
+  function openEdit(ref: CustomerReference) {
+    setEditing(ref);
+    setForm({ title: ref.title || "", notes: ref.notes || "", imageUrl: ref.imageUrl || "" });
+    setDialogOpen(true);
+  }
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) uploadFile(file);
+    e.target.value = "";
+  }
+
+  const hasContent = (r: CustomerReference) => r.title || r.notes || r.imageUrl;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-semibold text-foreground">References</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Internal notes and photos for your team's reference</p>
+        </div>
+        <Button size="sm" className="gap-1.5" onClick={openAdd}><Plus className="w-3.5 h-3.5" /> Add Reference</Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+      ) : refs.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-20" />
+          <p className="font-medium text-sm">No references yet</p>
+          <p className="text-xs mt-1">Add photos of finished garments, notes, or anything useful for future reference.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {refs.map(ref => (
+            <div key={ref.id} className="group border border-border/60 rounded-lg overflow-hidden bg-background shadow-sm hover:shadow-md transition-shadow">
+              {ref.imageUrl ? (
+                <button
+                  className="w-full block relative bg-muted aspect-video overflow-hidden"
+                  onClick={() => setLightboxUrl(ref.imageUrl!)}
+                  title="Click to enlarge"
+                >
+                  <UploadedImage
+                    src={ref.imageUrl}
+                    alt={ref.title || "Reference image"}
+                    className="w-full h-full object-cover"
+                    fallback={
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-muted-foreground/40">
+                        <ImageIcon className="w-8 h-8" />
+                        <span className="text-xs">Not previewable</span>
+                      </div>
+                    }
+                  />
+                  <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Eye className="w-6 h-6 text-white drop-shadow" />
+                  </div>
+                </button>
+              ) : (
+                <div className="w-full aspect-video bg-gradient-to-br from-muted/60 to-muted flex items-center justify-center">
+                  <FileText className="w-10 h-10 text-muted-foreground/20" />
+                </div>
+              )}
+              <div className="p-3">
+                {ref.title && <p className="font-medium text-sm text-foreground leading-tight mb-1">{ref.title}</p>}
+                {ref.notes && <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{ref.notes}</p>}
+                <div className="flex items-center justify-between mt-3 pt-2 border-t border-border/40">
+                  <span className="text-[11px] text-muted-foreground/60">{new Date(ref.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(ref)}><Edit2 className="w-3 h-3" /></Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => { if (confirm("Delete this reference?")) deleteMutation.mutate(ref.id); }}><Trash2 className="w-3 h-3" /></Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <img
+            src={lightboxUrl}
+            alt="Reference"
+            className="max-w-full max-h-full object-contain rounded shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            className="absolute top-4 right-4 text-white bg-black/40 rounded-full p-1.5 hover:bg-black/60 transition-colors"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
+      {/* Add / Edit dialog */}
+      <Dialog open={dialogOpen} onOpenChange={open => { setDialogOpen(open); if (!open) { setEditing(null); setForm(blank); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Reference" : "Add Reference"}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>Title <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Input placeholder="e.g. Finished left chest embroidery" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div className="grid gap-2">
+              <Label>Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <Textarea placeholder="Any details worth noting…" rows={4} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+            </div>
+            <div className="grid gap-2">
+              <Label className="flex items-center gap-1"><Camera className="w-3 h-3" /> Photo <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageChange} />
+              {form.imageUrl ? (
+                <div className="relative group w-full">
+                  <UploadedImage
+                    src={form.imageUrl}
+                    alt="Reference photo"
+                    className="w-full h-40 object-cover rounded-md border border-border"
+                    fallback={
+                      <div className="w-full h-40 rounded-md border border-border bg-muted/30 flex flex-col items-center justify-center gap-1 text-muted-foreground/50">
+                        <ImageIcon className="w-8 h-8" /><span className="text-xs">Not previewable</span>
+                      </div>
+                    }
+                  />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
+                    <Button type="button" size="sm" variant="secondary" className="h-7 gap-1 text-xs" onClick={() => imageInputRef.current?.click()} disabled={isUploading}>
+                      {isUploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />} Replace
+                    </Button>
+                    <Button type="button" size="sm" variant="destructive" className="h-7 gap-1 text-xs" onClick={() => setForm(f => ({ ...f, imageUrl: "" }))}>
+                      <X className="w-3 h-3" /> Remove
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <label
+                  className={cn("flex flex-col items-center justify-center h-32 rounded-md border-2 border-dashed border-border cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors", isUploading && "opacity-50 pointer-events-none")}
+                  onClick={() => imageInputRef.current?.click()}
+                >
+                  {isUploading ? (
+                    <><Loader2 className="w-6 h-6 animate-spin text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Uploading…</span></>
+                  ) : (
+                    <><Camera className="w-6 h-6 text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Click to upload a photo</span></>
+                  )}
+                </label>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDialogOpen(false); setEditing(null); setForm(blank); }}>Cancel</Button>
+            <Button
+              onClick={() => saveMutation.mutate(form)}
+              disabled={saveMutation.isPending || isUploading || (!form.title && !form.notes && !form.imageUrl)}
+            >
+              {saveMutation.isPending ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Saving…</> : editing ? "Save Changes" : "Add Reference"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Logo Preview ─────────────────────────────────────────────────────────────
+
 function LogoPreview({ url }: { url: string }) {
   const [failed, setFailed] = useState(false);
   const isNonImage = /\.(pdf|eps|ai)(\?|$)/i.test(url);
@@ -3625,6 +3865,7 @@ export default function CustomerDetail() {
             <TabsTrigger value="bespoke" className="flex items-center gap-1.5"><Package className="w-3.5 h-3.5" /> Bespoke Products</TabsTrigger>
             <TabsTrigger value="portal" className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Portal Access</TabsTrigger>
             <TabsTrigger value="payments" className="flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Payment Methods</TabsTrigger>
+            <TabsTrigger value="references" className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5" /> References</TabsTrigger>
           </TabsList>
 
           <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
@@ -3640,6 +3881,7 @@ export default function CustomerDetail() {
             <TabsContent value="bespoke" className="mt-0"><BespokeProductsTab customerId={customerId} /></TabsContent>
             <TabsContent value="portal" className="mt-0"><PortalAccessTab customerId={customerId} /></TabsContent>
             <TabsContent value="payments" className="mt-0"><PaymentMethodsTab customerId={customerId} /></TabsContent>
+            <TabsContent value="references" className="mt-0"><ReferencesTab customerId={customerId} /></TabsContent>
           </div>
         </Tabs>
       </div>

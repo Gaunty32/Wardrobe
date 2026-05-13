@@ -523,5 +523,18 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS department text;`);
   await db.execute(sql`ALTER TABLE customer_employees ADD COLUMN IF NOT EXISTS delivery_address_id integer REFERENCES customer_delivery_addresses(id) ON DELETE SET NULL;`);
 
+  // Customer references (internal notes & media store per customer)
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_references (
+      id serial PRIMARY KEY,
+      customer_id integer NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      title text,
+      notes text,
+      image_url text,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
