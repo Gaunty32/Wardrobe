@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useUpload } from "@workspace/object-storage-web";
 import Layout from "@/components/Layout";
+import { UploadedImage } from "@/components/UploadedImage";
 import {
   useListProducts,
   useListSuppliers,
@@ -515,10 +516,11 @@ export default function Products() {
               <Label>Product Image</Label>
               {formData.imageUrl ? (
                 <div className="flex items-start gap-3">
-                  <img
+                  <UploadedImage
                     src={formData.imageUrl}
                     alt="Product"
                     className="w-20 h-20 object-cover rounded-lg border border-border/50 flex-shrink-0"
+                    fallback={<div className="w-20 h-20 rounded-lg border border-border/50 bg-muted flex items-center justify-center flex-shrink-0"><ImageOff className="w-6 h-6 text-muted-foreground/40" /></div>}
                   />
                   <div className="flex flex-col gap-2 mt-1">
                     <button
@@ -658,7 +660,7 @@ function ProductTable({
             >
               <TableCell className="py-2 pl-4 pr-0">
                 {(product as any).imageUrl ? (
-                  <img src={(product as any).imageUrl} alt={product.name} className="w-9 h-9 rounded object-cover border border-border/50" />
+                  <UploadedImage src={(product as any).imageUrl} alt={product.name} className="w-9 h-9 rounded object-cover border border-border/50" fallback={<div className="w-9 h-9 rounded bg-muted border border-border/50 flex items-center justify-center"><Package className="w-4 h-4 text-muted-foreground/40" /></div>} />
                 ) : (
                   <div className="w-9 h-9 rounded bg-muted border border-border/50 flex items-center justify-center">
                     <Package className="w-4 h-4 text-muted-foreground/40" />

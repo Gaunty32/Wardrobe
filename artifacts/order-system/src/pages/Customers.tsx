@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
+import { UploadedImage } from "@/components/UploadedImage";
 import { useUpload } from "@workspace/object-storage-web";
 import { 
   useListCustomers, 
@@ -421,7 +422,7 @@ export default function Customers() {
                   title="Click to upload logo"
                 >
                   {formData.logoUrl ? (
-                    <img src={formData.logoUrl} alt="Logo" className="h-full w-full object-contain p-1" />
+                    <UploadedImage src={formData.logoUrl} alt="Logo" className="h-full w-full object-contain p-1" fallback={<Upload className="w-5 h-5 text-muted-foreground" />} />
                   ) : isUploading ? (
                     <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
                   ) : (

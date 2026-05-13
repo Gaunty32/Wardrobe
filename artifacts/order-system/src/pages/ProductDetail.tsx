@@ -3,6 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
 import Layout from "@/components/Layout";
+import { UploadedImage } from "@/components/UploadedImage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -223,7 +224,7 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
                 </div>
               ) : (variant.imageUrl || editImageUrl) ? (
                 <>
-                  <img src={variant.imageUrl || editImageUrl} alt={variant.colour ?? ""} className="w-full h-full object-cover" />
+                  <UploadedImage src={variant.imageUrl || editImageUrl} alt={variant.colour ?? ""} className="w-full h-full object-cover" fallback={<div className="w-full h-full bg-muted flex items-center justify-center"><Package className="w-3 h-3 text-muted-foreground/40" /></div>} />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
                     <Camera className="w-3 h-3 text-white" />
                   </div>
@@ -298,7 +299,7 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
               <Label>Variation Image</Label>
               {editImageUrl ? (
                 <div className="flex items-start gap-3">
-                  <img src={editImageUrl} alt="Variant" className="w-16 h-16 object-cover rounded-lg border border-border/50 flex-shrink-0" />
+                  <UploadedImage src={editImageUrl} alt="Variant" className="w-16 h-16 object-cover rounded-lg border border-border/50 flex-shrink-0" fallback={<div className="w-16 h-16 rounded-lg border border-border/50 bg-muted flex items-center justify-center flex-shrink-0"><Package className="w-5 h-5 text-muted-foreground/40" /></div>} />
                   <div className="flex flex-col gap-2 mt-1">
                     <button type="button" onClick={() => variantImageRef.current?.click()} disabled={isVariantImageUploading} className="text-xs text-primary hover:underline disabled:opacity-50">
                       {isVariantImageUploading ? "Uploading…" : "Replace image"}
@@ -668,7 +669,7 @@ export default function ProductDetail() {
               className="group relative w-16 h-16 rounded-lg border border-border/50 overflow-hidden flex-shrink-0 hover:border-primary/50 transition-colors disabled:opacity-60"
             >
               {(product as any).imageUrl ? (
-                <img src={(product as any).imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                <UploadedImage src={(product as any).imageUrl} alt={product.name} className="w-full h-full object-cover" fallback={<div className="w-full h-full bg-muted flex items-center justify-center"><Package className="w-7 h-7 text-muted-foreground/40" /></div>} />
               ) : (
                 <div className="w-full h-full bg-muted flex items-center justify-center">
                   <Package className="w-7 h-7 text-muted-foreground/40" />
