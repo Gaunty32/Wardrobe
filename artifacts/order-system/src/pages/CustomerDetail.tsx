@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -575,29 +576,52 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                 <TableCell>
                   <div className="flex items-center gap-1.5">
                     {p.imageUrl ? (
-                      <a href={p.imageUrl} target="_blank" rel="noopener noreferrer" title="View preview">
-                        <UploadedImage
-                          src={p.imageUrl}
-                          alt={p.name}
-                          className="w-10 h-10 object-contain bg-white rounded border border-border hover:opacity-80 transition-opacity p-0.5"
-                          fallback={
-                            <span className="flex flex-col items-center gap-0.5 text-amber-600 hover:text-amber-700 transition-colors" title="File stored – click to open">
-                              <FileText className="w-5 h-5" />
-                              <span className="text-[9px] font-medium">View</span>
-                            </span>
-                          }
-                        />
-                      </a>
+                      <HoverCard openDelay={200} closeDelay={100}>
+                        <HoverCardTrigger asChild>
+                          <a href={p.imageUrl} target="_blank" rel="noopener noreferrer">
+                            <UploadedImage
+                              src={p.imageUrl}
+                              alt={p.name}
+                              className="w-10 h-10 object-contain bg-white rounded border border-border hover:border-primary/50 transition-all p-0.5 cursor-zoom-in"
+                              fallback={
+                                <span className="flex flex-col items-center gap-0.5 text-amber-600 hover:text-amber-700 transition-colors">
+                                  <FileText className="w-5 h-5" />
+                                  <span className="text-[9px] font-medium">View</span>
+                                </span>
+                              }
+                            />
+                          </a>
+                        </HoverCardTrigger>
+                        <HoverCardContent side="right" align="start" className="w-auto p-2">
+                          <UploadedImage
+                            src={p.imageUrl}
+                            alt={p.name}
+                            className="max-w-[240px] max-h-[240px] object-contain rounded"
+                            fallback={<span className="text-xs text-muted-foreground">Preview unavailable</span>}
+                          />
+                        </HoverCardContent>
+                      </HoverCard>
                     ) : (
                       <span className="text-muted-foreground/30"><ImageIcon className="w-4 h-4" /></span>
                     )}
                     {p.fileUrl && (
-                      <a href={p.fileUrl} target="_blank" rel="noopener noreferrer" title="Open original PDF">
-                        <span className="flex flex-col items-center gap-0.5 text-blue-500 hover:text-blue-700 transition-colors">
-                          <FileText className="w-4 h-4" />
-                          <span className="text-[9px] font-medium">PDF</span>
-                        </span>
-                      </a>
+                      <HoverCard openDelay={200} closeDelay={100}>
+                        <HoverCardTrigger asChild>
+                          <a href={p.fileUrl} target="_blank" rel="noopener noreferrer">
+                            <span className="flex flex-col items-center gap-0.5 text-blue-500 hover:text-blue-700 transition-colors">
+                              <FileText className="w-4 h-4" />
+                              <span className="text-[9px] font-medium">PDF</span>
+                            </span>
+                          </a>
+                        </HoverCardTrigger>
+                        <HoverCardContent side="right" align="start" className="w-auto p-0 overflow-hidden">
+                          <iframe
+                            src={`${p.fileUrl}#toolbar=0&navpanes=0&view=FitH`}
+                            className="w-64 h-80 border-0 rounded"
+                            title={`${p.name} PDF preview`}
+                          />
+                        </HoverCardContent>
+                      </HoverCard>
                     )}
                   </div>
                 </TableCell>
