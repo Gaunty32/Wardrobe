@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import * as XLSX from "xlsx";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -266,6 +266,34 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
     e.target.value = "";
   }, [processFile]);
 
+  // The Radix Dialog overlay intercepts native drag events, so we attach
+  // window-level listeners when the dialog is open and on the upload step.
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open || step !== "upload") return;
+    const onDragOver = (e: DragEvent) => { e.preventDefault(); setDragOver(true); };
+    const onDragLeave = (e: DragEvent) => {
+      // Only clear when leaving the drop zone element itself
+      if (dropZoneRef.current && !dropZoneRef.current.contains(e.relatedTarget as Node)) {
+        setDragOver(false);
+      }
+    };
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const file = e.dataTransfer?.files[0];
+      if (file) processFile(file);
+    };
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [open, step, processFile]);
+
   // Data rows based on current settings
   const headers = sheet ? (sheet.rawRows[headerRowIndex] ?? []).map((c, i) => String(c).trim() || colLetter(i)) : [];
   const dataRows = sheet ? sheet.rawRows.slice(dataStartIndex).filter(r => r.some(c => String(c).trim())) : [];
@@ -335,13 +363,11 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
           {/* ── Step 1: Upload ── */}
           {step === "upload" && (
             <div
+              ref={dropZoneRef}
               className={cn(
                 "border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer",
                 dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50 hover:bg-muted/30"
               )}
-              onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleFileDrop}
               onClick={() => fileInputRef.current?.click()}
             >
               <input
