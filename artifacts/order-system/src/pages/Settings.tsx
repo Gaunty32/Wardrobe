@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
-  Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler
+  Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
+  UserPlus, Trash2, UserCheck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -169,6 +170,118 @@ function SizesTab() {
   );
 }
 
+interface StaffAccount { name: string; email: string; }
+
+function StaffAccountsCard() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [newName, setNewName]   = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [adding, setAdding]     = useState(false);
+
+  const { data, isLoading } = useQuery<{ accounts: StaffAccount[] }>({
+    queryKey: ["staff-accounts"],
+    queryFn: () => fetch(`${API_BASE}/auth/staff/accounts`).then(r => r.json()),
+  });
+  const accounts = data?.accounts ?? [];
+
+  const addMutation = useMutation({
+    mutationFn: () =>
+      fetch(`${API_BASE}/auth/staff/accounts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName, email: newEmail }),
+      }).then(async r => { if (!r.ok) throw new Error((await r.json()).error); return r.json(); }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-accounts"] });
+      setNewName(""); setNewEmail(""); setAdding(false);
+      toast({ title: "Staff account added" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (email: string) =>
+      fetch(`${API_BASE}/auth/staff/accounts/${encodeURIComponent(email)}`, { method: "DELETE" })
+        .then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-accounts"] });
+      toast({ title: "Account removed" });
+    },
+    onError: () => toast({ title: "Error", description: "Could not remove account", variant: "destructive" }),
+  });
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+      <div>
+        <h2 className="font-semibold text-base flex items-center gap-2">
+          <UserCheck className="w-4 h-4 text-muted-foreground" /> Staff Accounts
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Add each staff member's name and email address. They can then sign in using a one-time code sent to their email — no password needed.
+        </p>
+      </div>
+
+      {/* Accounts list */}
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+        </div>
+      ) : accounts.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border px-4 py-6 text-center">
+          <Users className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">No staff accounts yet. Add one below.</p>
+        </div>
+      ) : (
+        <div className="border rounded-lg divide-y overflow-hidden">
+          {accounts.map(a => (
+            <div key={a.email} className="flex items-center justify-between px-4 py-3 gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{a.name}</p>
+                <p className="text-xs text-muted-foreground truncate">{a.email}</p>
+              </div>
+              <button
+                onClick={() => removeMutation.mutate(a.email)}
+                disabled={removeMutation.isPending}
+                className="shrink-0 text-muted-foreground hover:text-destructive transition-colors p-1 rounded"
+                title="Remove"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add form */}
+      {adding ? (
+        <div className="space-y-3 pt-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Full name</Label>
+              <Input placeholder="James Smith" value={newName} onChange={e => setNewName(e.target.value)} autoFocus />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Email address</Label>
+              <Input type="email" placeholder="james@selectbranding.co.uk" value={newEmail} onChange={e => setNewEmail(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => addMutation.mutate()} disabled={addMutation.isPending || !newName || !newEmail} className="gap-1.5">
+              {addMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Adding…</> : <><CheckCircle className="w-3.5 h-3.5" />Add account</>}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setNewName(""); setNewEmail(""); }}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <Button variant="outline" size="sm" onClick={() => setAdding(true)} className="gap-2">
+          <UserPlus className="w-4 h-4" /> Add staff member
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function SecurityTab() {
   const [current, setCurrent]     = useState("");
   const [newPass, setNewPass]     = useState("");
@@ -205,6 +318,9 @@ function SecurityTab() {
 
   return (
     <div className="grid gap-6 max-w-2xl">
+
+      <StaffAccountsCard />
+
       <div className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div>
           <h2 className="font-semibold text-base">Change Staff Password</h2>
@@ -263,10 +379,8 @@ function SecurityTab() {
       <div className="rounded-xl border border-border bg-card p-5 space-y-2">
         <h2 className="font-semibold text-base">Forgotten your password?</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          If you're completely locked out, go to the login page and click <strong>"Forgot password?"</strong>.
-          You'll be asked for a recovery key — find it in the Replit Secrets panel under{" "}
-          <code className="text-xs bg-muted px-1.5 py-0.5 rounded">STAFF_RECOVERY_KEY</code>.
-          Entering it will clear the password so you can set a new one.
+          If you're completely locked out, go to the login page and click <strong>"Back"</strong> then use the email code option — or use the recovery key from Replit Secrets{" "}
+          (<code className="text-xs bg-muted px-1.5 py-0.5 rounded">STAFF_RECOVERY_KEY</code>) to clear the password and set a new one.
         </p>
       </div>
     </div>
