@@ -8,7 +8,7 @@ import {
   purchaseOrdersTable, purchaseOrderItemsTable,
   customerProcessesTable, customerFinishProcessesTable,
 } from "@workspace/db";
-import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
+import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured, fetchLogoBuffer, fetchLogoDataUrl } from "../services/email";
 import { logOrderAction, getActor } from "../services/orderLog";
 import { getUncachableStripeClient } from "../services/stripeClient.js";
 import {
@@ -612,6 +612,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       poNumber: ordersTable.poNumber,
       deliveryAddressId: ordersTable.deliveryAddressId,
       stripePaymentLinkUrl: ordersTable.stripePaymentLinkUrl,
+      shippingMethod: ordersTable.shippingMethod,
     })
     .from(ordersTable)
     .where(eq(ordersTable.id, params.data.id));
@@ -642,6 +643,8 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   let customerPostcode: string | null = null;
 
   let customerLogoUrl: string | null = null;
+  let customerLogoDataUrl: string | null = null;
+  let customerLogoBuffer: Buffer | null = null;
 
   if (order.customerId) {
     const [customer] = await db.select({
@@ -660,6 +663,14 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     customerLogoUrl = customer?.logoUrl ?? null;
   }
   if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
+
+  // Fetch customer logo server-side so it can be embedded (object storage URLs are not publicly accessible)
+  if (customerLogoUrl) {
+    [customerLogoDataUrl, customerLogoBuffer] = await Promise.all([
+      fetchLogoDataUrl(customerLogoUrl),
+      fetchLogoBuffer(customerLogoUrl),
+    ]);
+  }
 
   // Resolve delivery address if linked
   let deliveryAddressText: string | null = null;
@@ -685,7 +696,8 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
     contactFirstName,
-    customerLogoUrl,
+    customerLogoDataUrl,
+    shippingMethod: order.shippingMethod ?? null,
     orderDate: order.orderDate ?? null,
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
@@ -707,6 +719,8 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       customerCity,
       customerPostcode,
       deliveryAddress: deliveryAddressText,
+      shippingMethod: order.shippingMethod ?? null,
+      customerLogoBuffer,
       totalAmount: numericToFloat(order.totalAmount),
       items: mappedItems,
     });

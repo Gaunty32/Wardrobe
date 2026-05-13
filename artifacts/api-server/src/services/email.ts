@@ -5,6 +5,31 @@ import { eq } from "drizzle-orm";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
 import { getResendClient } from "./resend-client.js";
 
+// ── SBS logo buffer for PDFKit (extracted from data URL) ─────────────────────
+const SBS_LOGO_BUFFER: Buffer | null = (() => {
+  try { return Buffer.from(SBS_LOGO_DATA_URL.split(",")[1], "base64"); } catch { return null; }
+})();
+
+// ── Logo fetch helpers ────────────────────────────────────────────────────────
+export async function fetchLogoBuffer(url: string | null | undefined): Promise<Buffer | null> {
+  if (!url) return null;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) return null;
+    return Buffer.from(await resp.arrayBuffer());
+  } catch { return null; }
+}
+
+export async function fetchLogoDataUrl(url: string | null | undefined): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) return null;
+    const ct = resp.headers.get("content-type") ?? "image/png";
+    return `data:${ct};base64,${Buffer.from(await resp.arrayBuffer()).toString("base64")}`;
+  } catch { return null; }
+}
+
 function toFirstName(name: string | null | undefined): string {
   if (!name?.trim()) return "there";
   const first = name.trim().split(/\s+/)[0];
@@ -91,7 +116,8 @@ export function buildAcknowledgementEmail(order: {
   orderNumber: string;
   customerName: string | null;
   contactFirstName?: string | null;
-  customerLogoUrl?: string | null;
+  customerLogoDataUrl?: string | null;
+  shippingMethod?: string | null;
   orderDate: Date | null;
   requiredDate?: Date | null;
   notes?: string | null;
@@ -129,17 +155,17 @@ export function buildAcknowledgementEmail(order: {
   const vatAmount = subtotal * 0.2;
   const totalIncVat = subtotal + vatAmount;
 
-  const customerLogoBlock = order.customerLogoUrl
+  const customerLogoBlock = order.customerLogoDataUrl
     ? `<td style="vertical-align:middle;text-align:right;">
         <p style="margin:0 0 6px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Prepared for</p>
-        <img src="${order.customerLogoUrl}" alt="${order.customerName ?? "Customer"}" height="38" style="display:block;height:38px;width:auto;max-width:130px;margin-left:auto;" />
+        <img src="${order.customerLogoDataUrl}" alt="${order.customerName ?? "Customer"}" height="38" style="display:block;height:38px;width:auto;max-width:130px;margin-left:auto;" />
       </td>`
     : `<td style="vertical-align:middle;text-align:right;">
         <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Order Acknowledgement</p>
         <p style="margin:4px 0 0;color:#fff;font-size:17px;font-weight:700;">Ref: ${order.orderNumber}</p>
       </td>`;
 
-  const orderRefSubBar = order.customerLogoUrl
+  const orderRefSubBar = order.customerLogoDataUrl
     ? `<tr><td style="background:#0f172a;padding:10px 32px;">
         <table width="100%" cellpadding="0" cellspacing="0"><tr>
           <td><p style="margin:0;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Order Acknowledgement</p>
@@ -147,6 +173,12 @@ export function buildAcknowledgementEmail(order: {
         </tr></table>
       </td></tr>`
     : "";
+
+  const SHIPPING_LABELS: Record<string, string> = {
+    dpd: "DPD Courier", royal_mail: "Royal Mail", local_delivery: "Local Delivery",
+    office_collection: "Office Collection", warehouse_collection: "Collection from our warehouse", courier: "Courier",
+  };
+  const shippingLabel = order.shippingMethod ? (SHIPPING_LABELS[order.shippingMethod] ?? order.shippingMethod) : null;
 
   const html = `<!DOCTYPE html>
 <html>
@@ -249,6 +281,18 @@ export function buildAcknowledgementEmail(order: {
             </td></tr>
           </table>
         </td></tr>
+
+        <!-- Shipping method -->
+        ${shippingLabel ? `<tr><td style="padding:0 32px 12px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <tr><td style="background:#f8fafc;padding:10px 18px;border-bottom:1px solid #e2e8f0;">
+              <p style="margin:0;font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px;">Shipping &amp; Collection</p>
+            </td></tr>
+            <tr><td style="padding:10px 18px;">
+              <p style="margin:0;font-size:13px;color:#374151;">${shippingLabel}</p>
+            </td></tr>
+          </table>
+        </td></tr>` : ""}
 
         <!-- Contact details -->
         <tr><td style="padding:0 32px 24px;">
@@ -379,6 +423,8 @@ export interface AckOrderData {
   customerCity?: string | null;
   customerPostcode?: string | null;
   deliveryAddress?: string | null;
+  shippingMethod?: string | null;
+  customerLogoBuffer?: Buffer | null;
   totalAmount?: number | null;
   shippingAmount?: number | null;
   vatRate?: number;
@@ -401,15 +447,26 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     const fmtDate = (d: Date | string | null | undefined) =>
       d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
 
-    // ── Header bar ───────────────────────────────────────────────────────────
-    doc.rect(margin, margin, contentW, 36).fill("#1e293b");
-    doc.font("Helvetica-Bold").fontSize(13).fillColor("#ffffff")
-      .text("Order Acknowledgement", margin + 10, margin + 10);
-    doc.font("Helvetica").fontSize(8).fillColor("#94a3b8")
-      .text("Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE", margin + 10, margin + 26, { width: contentW - 20 });
+    // ── Header bar (with logos) ───────────────────────────────────────────────
+    const hdrH = 52;
+    doc.rect(margin, margin, contentW, hdrH).fill("#1e293b");
+
+    // SBS logo (left side of header)
+    if (SBS_LOGO_BUFFER) {
+      try { doc.image(SBS_LOGO_BUFFER, margin + 8, margin + 6, { fit: [110, 40], valign: "center" }); } catch {}
+    }
+
+    // "Order Acknowledgement" title centred in remaining space
+    doc.font("Helvetica-Bold").fontSize(12).fillColor("#ffffff")
+      .text("Order Acknowledgement", margin + 130, margin + 13, { width: contentW - 260, align: "center" });
+
+    // Customer logo (right side of header)
+    if (order.customerLogoBuffer) {
+      try { doc.image(order.customerLogoBuffer, margin + contentW - 100, margin + 6, { fit: [92, 40], align: "right", valign: "center" }); } catch {}
+    }
 
     // ── Customer address + SBS contact (two columns) ──────────────────────
-    const addrY = margin + 44;
+    const addrY = margin + hdrH + 8;
     doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#111827").text(order.customerName ?? "", margin, addrY);
     const addrLines = [order.customerAddress, order.customerCity, order.customerPostcode].filter(Boolean) as string[];
     doc.font("Helvetica").fontSize(8).fillColor("#444444");
@@ -474,7 +531,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
     const tableStartY = infoY + 26;
     const rowH = 13;
-    const hdrH = 14;
+    const tblHdrH = 14;
 
     const itemNameW = 125;
     const colourW   = 52;
@@ -486,7 +543,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     const tableW    = itemNameW + colourW + sizeColW * allSizes.length + qtyW + unitPriceW + totalW;
 
     const drawTableHeader = (ty: number) => {
-      doc.rect(margin, ty, tableW, hdrH).fill("#1e293b");
+      doc.rect(margin, ty, tableW, tblHdrH).fill("#1e293b");
       doc.fillColor("#94a3b8").fontSize(6.5).font("Helvetica-Bold");
       let hx = margin;
       doc.text("ITEM", hx + 3, ty + 4, { width: itemNameW - 3 }); hx += itemNameW;
@@ -500,7 +557,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     };
 
     drawTableHeader(tableStartY);
-    let y = tableStartY + hdrH;
+    let y = tableStartY + tblHdrH;
     let rowAlt = false;
 
     for (const gk of groupKeys) {
@@ -539,7 +596,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
         doc.addPage();
         y = margin;
         drawTableHeader(y);
-        y += hdrH;
+        y += tblHdrH;
         rowAlt = false;
       }
     }
@@ -574,20 +631,36 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       y += rH;
     }
 
-    // ── Delivery Address ──────────────────────────────────────────────────────
-    if (order.deliveryAddress) {
+    // ── Shipping / delivery section ───────────────────────────────────────────
+    const SHIP_LABELS: Record<string, string> = {
+      dpd: "DPD Courier", royal_mail: "Royal Mail", local_delivery: "Local Delivery",
+      office_collection: "Office Collection", warehouse_collection: "Collection from our warehouse", courier: "Courier",
+    };
+    const isCollection = order.shippingMethod
+      ? ["office_collection", "warehouse_collection"].includes(order.shippingMethod)
+      : false;
+    const shipLabel = order.shippingMethod ? (SHIP_LABELS[order.shippingMethod] ?? order.shippingMethod) : null;
+
+    if (shipLabel) {
       y += 10;
+      doc.fillColor("#555555").fontSize(7.5).font("Helvetica-Bold").text("Shipping / Collection:", margin, y);
+      y += 10;
+      doc.font("Helvetica").fontSize(7.5).fillColor("#374151").text(shipLabel, margin, y, { width: 250 });
+    }
+
+    if (order.deliveryAddress && !isCollection) {
+      y += (shipLabel ? 14 : 10);
       doc.fillColor("#555555").fontSize(7.5).font("Helvetica-Bold").text("Delivery Address:", margin, y);
       y += 10;
       doc.font("Helvetica").fontSize(7.5).fillColor("#374151").text(order.deliveryAddress, margin, y, { width: 220 });
     }
 
-    // ── Footer (every page) ───────────────────────────────────────────────────
-    const footY = pageH - 26;
+    // ── Footer (within printable area) ────────────────────────────────────────
+    const footY = pageH - margin - 16;
     doc.fontSize(6.5).fillColor("#9ca3af").font("Helvetica")
       .text(
         `Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE  ·  ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk  ·  www.selectbranding.co.uk`,
-        margin, footY, { align: "center", width: contentW }
+        margin, footY, { align: "center", width: contentW, lineBreak: false }
       );
 
     doc.end();
@@ -653,7 +726,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     const W = doc.page.width - MARGIN * 2;
     const PAGE_H = doc.page.height;
     const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    const logoBuffer = Buffer.from(SBS_LOGO_B64, "base64");
+    const logoBuffer = SBS_LOGO_BUFFER ?? Buffer.from(SBS_LOGO_DATA_URL.split(",")[1], "base64");
 
     // ── Header ────────────────────────────────────────────────────────────────
     const headerH = 88;
