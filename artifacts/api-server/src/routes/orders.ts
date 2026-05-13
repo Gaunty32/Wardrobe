@@ -280,6 +280,10 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
   if (req.body.shippingMethod !== undefined) {
     updateData.shippingMethod = req.body.shippingMethod ?? null;
   }
+  if (req.body.carriageAmount !== undefined && req.body.carriageAmount !== null) {
+    const v = parseFloat(req.body.carriageAmount);
+    if (!isNaN(v) && v >= 0) updateData.carriageAmount = v.toFixed(2);
+  }
   if (req.body.deliveryAddressId !== undefined) {
     updateData.deliveryAddressId = req.body.deliveryAddressId ?? null;
   }

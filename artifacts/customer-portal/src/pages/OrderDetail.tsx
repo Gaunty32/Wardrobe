@@ -75,7 +75,10 @@ export default function OrderDetailPage() {
   }
 
   const items: any[] = order.items ?? [];
-  const totalAmount = parseFloat(order.total_amount ?? "0");
+  const itemsSubtotal = items.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0);
+  const carriageAmount = parseFloat(order.carriage_amount ?? "0");
+  const vatAmount = (itemsSubtotal + carriageAmount) * 0.2;
+  const grandTotal = itemsSubtotal + carriageAmount + vatAmount;
 
   return (
     <PortalLayout>
@@ -165,8 +168,8 @@ export default function OrderDetailPage() {
         )}
         <Card>
           <CardContent className="py-4 px-5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total</p>
-            <p className="font-semibold text-lg">{formatCurrency(totalAmount)}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total (inc. VAT)</p>
+            <p className="font-semibold text-lg">{formatCurrency(grandTotal)}</p>
           </CardContent>
         </Card>
       </div>
@@ -250,10 +253,28 @@ export default function OrderDetailPage() {
               </TableBody>
             </Table>
           </div>
-          <div className="border-t px-5 py-3 flex justify-end">
-            <div className="text-right">
-              <span className="text-muted-foreground text-sm mr-4">Order total</span>
-              <span className="font-bold text-lg">{formatCurrency(totalAmount)}</span>
+          <div className="border-t">
+            <div className="px-5 py-2 flex justify-end">
+              <div className="text-right space-y-1 min-w-[220px]">
+                <div className="flex justify-between gap-8 text-sm text-muted-foreground">
+                  <span>Subtotal (exc. VAT)</span>
+                  <span>{formatCurrency(itemsSubtotal)}</span>
+                </div>
+                {carriageAmount > 0 && (
+                  <div className="flex justify-between gap-8 text-sm text-muted-foreground">
+                    <span>Carriage</span>
+                    <span>{formatCurrency(carriageAmount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between gap-8 text-sm text-muted-foreground">
+                  <span>VAT (20%)</span>
+                  <span>{formatCurrency(vatAmount)}</span>
+                </div>
+                <div className="flex justify-between gap-8 pt-1.5 border-t font-bold text-base">
+                  <span>Total (inc. VAT)</span>
+                  <span>{formatCurrency(grandTotal)}</span>
+                </div>
+              </div>
             </div>
           </div>
         </CardContent>

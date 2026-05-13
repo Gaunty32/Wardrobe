@@ -252,6 +252,11 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS portal_approved_at  timestamptz;
   `);
 
+  // Carriage / shipping cost
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS carriage_amount numeric(10,2) NOT NULL DEFAULT 0;
+  `);
+
   // Link portal users to their employee record (used to restrict member ordering to self)
   await db.execute(sql`
     ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS linked_employee_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;

@@ -416,6 +416,20 @@ export default function OrderDetail() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const [editingCarriage, setEditingCarriage] = useState(false);
+  const [carriageInput, setCarriageInput] = useState("");
+
+  const updateCarriageMutation = useMutation({
+    mutationFn: (amount: number) =>
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ carriageAmount: amount }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingCarriage(false);
+      toast({ title: "Carriage updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   interface PackItem { orderItemId: number; productName: string; colour: string | null; size: string | null; quantity: number; isComplete: boolean; worksheetNumber: string | null; }
   interface PackRecipient { recipientType: "stock" | "person"; recipientName: string | null; employeeId: number | null; jobTitle: string | null; department: string | null; allComplete: boolean; items: PackItem[]; }
   interface PackStatus { orderId: number; orderNumber: string; customerName: string | null; recipients: PackRecipient[]; }
@@ -1185,7 +1199,7 @@ export default function OrderDetail() {
               <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
                 <div className="flex items-center justify-between">
                   <CardTitle className="font-display text-lg flex items-center">
-                    <Truck className="w-4 h-4 mr-2 text-muted-foreground" /> Shipping Method
+                    <Truck className="w-4 h-4 mr-2 text-muted-foreground" /> Shipping
                   </CardTitle>
                   {!editingShippingMethod && (
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingShippingMethod(true)}>
@@ -1194,7 +1208,8 @@ export default function OrderDetail() {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="py-4">
+              <CardContent className="py-4 space-y-3">
+                {/* Shipping method */}
                 {editingShippingMethod ? (
                   <div className="space-y-2">
                     <Select
@@ -1223,6 +1238,51 @@ export default function OrderDetail() {
                     }
                   </p>
                 )}
+
+                {/* Carriage amount */}
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Carriage (exc. VAT)</p>
+                    {!editingCarriage && (
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setCarriageInput(parseFloat((order as any).carriageAmount ?? "0").toFixed(2)); setEditingCarriage(true); }}>
+                        <Pencil className="w-3 h-3 text-muted-foreground" />
+                      </Button>
+                    )}
+                  </div>
+                  {editingCarriage ? (
+                    <form
+                      className="flex items-center gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const v = parseFloat(carriageInput);
+                        if (!isNaN(v) && v >= 0) updateCarriageMutation.mutate(v);
+                      }}
+                    >
+                      <div className="relative flex-1">
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">£</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={carriageInput}
+                          onChange={(e) => setCarriageInput(e.target.value)}
+                          className="w-full h-8 pl-6 pr-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                          autoFocus
+                        />
+                      </div>
+                      <Button type="submit" size="icon" className="h-8 w-8" disabled={updateCarriageMutation.isPending}>
+                        <Check className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingCarriage(false)}>
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </form>
+                  ) : (
+                    <p className="text-sm font-medium">
+                      £{parseFloat((order as any).carriageAmount ?? "0").toFixed(2)}
+                    </p>
+                  )}
+                </div>
               </CardContent>
             </Card>
 
