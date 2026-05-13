@@ -278,30 +278,32 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
 
     let dragCounter = 0;
 
-    const isFiles = (e: DragEvent) =>
-      Array.from(e.dataTransfer?.types ?? []).some(t => t.toLowerCase() === "files");
-
     const onDragEnter = (e: DragEvent) => {
+      // Accept any drag for visual feedback — email attachments may not report
+      // "Files" in dataTransfer.types during the drag phase
       e.preventDefault();
-      if (!isFiles(e)) return;
       dragCounter++;
       setDragOver(true);
     };
     const onDragOver = (e: DragEvent) => {
-      // Must always preventDefault to allow drop to fire
-      e.preventDefault();
-      if (isFiles(e)) setDragOver(true);
+      e.preventDefault(); // required on every dragover to allow drop to fire
+      setDragOver(true);
     };
     const onDragLeave = (e: DragEvent) => {
-      if (!isFiles(e)) return;
-      dragCounter--;
-      if (dragCounter <= 0) { dragCounter = 0; setDragOver(false); }
+      dragCounter = Math.max(0, dragCounter - 1);
+      if (dragCounter === 0) setDragOver(false);
     };
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
       dragCounter = 0;
       setDragOver(false);
-      const file = e.dataTransfer?.files[0];
+      // Try dataTransfer.files first, then items (email attachments may use items)
+      let file: File | null = e.dataTransfer?.files?.[0] ?? null;
+      if (!file && e.dataTransfer?.items) {
+        for (const item of Array.from(e.dataTransfer.items)) {
+          if (item.kind === "file") { file = item.getAsFile(); break; }
+        }
+      }
       if (file) processFileRef.current(file);
     };
 
