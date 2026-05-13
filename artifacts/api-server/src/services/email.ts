@@ -142,7 +142,7 @@ export function buildAcknowledgementEmail(order: {
     .map(
       (i) =>
         `<tr>
-          <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;">${i.productName}${i.recipientName ? `<br><span style="font-size:11px;color:#94a3b8;">For: ${i.recipientName}</span>` : ""}</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;">${i.productName}${i.finishName ? `<br><span style="font-size:11px;color:#6366f1;font-weight:600;">Finish: ${i.finishName}</span>` : ""}${i.recipientName ? `<br><span style="font-size:11px;color:#94a3b8;">For: ${i.recipientName}</span>` : ""}</td>
           <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td>
           <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:13px;font-weight:600;color:#1e293b;">${i.quantity}</td>
           <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;color:#64748b;">£${i.unitPrice.toFixed(2)}</td>
@@ -502,6 +502,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     type Group = {
       productName: string;
       sku: string | null;
+      finishName: string | null;
       unitPrice: number;
       colours: string[];
       sizes: string[];
@@ -513,10 +514,10 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     const allSizes: string[] = [];
 
     for (const item of order.items) {
-      const gk = item.productName;
+      const gk = `${item.productName}||${item.finishName ?? ""}`;
       if (!groups.has(gk)) {
         groupKeys.push(gk);
-        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0 });
+        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0 });
       }
       const g = groups.get(gk)!;
       const c = item.colour ?? "—";
@@ -565,13 +566,18 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     for (const gk of groupKeys) {
       const g = groups.get(gk)!;
 
-      // Product name row
-      doc.rect(margin, y, tableW, rowH).fill("#f0f4f8");
+      // Product name row (taller when finish is present to fit two lines)
+      const productRowH = g.finishName ? rowH + 9 : rowH;
+      doc.rect(margin, y, tableW, productRowH).fill("#f0f4f8");
       doc.fillColor("#111827").fontSize(7).font("Helvetica-Bold");
       const productLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
       doc.text(productLabel, margin + 3, y + 3, { width: tableW - totalW - 6 });
       doc.text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 3, { width: totalW - 3, align: "right" });
-      y += rowH;
+      if (g.finishName) {
+        doc.fillColor("#4f46e5").fontSize(6.5).font("Helvetica-Oblique")
+          .text(`Finish: ${g.finishName}`, margin + 3, y + 12, { width: tableW - totalW - 6 });
+      }
+      y += productRowH;
 
       // Colour rows
       for (const colour of g.colours) {

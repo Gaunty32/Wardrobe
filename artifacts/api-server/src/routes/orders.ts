@@ -712,6 +712,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       size: orderItemsTable.size, quantity: orderItemsTable.quantity,
       unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
       recipientName: orderItemsTable.recipientName,
+      finishName: orderItemsTable.finishName,
     })
     .from(orderItemsTable)
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
@@ -776,6 +777,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     unitPrice: parseFloat(String(i.unitPrice ?? 0)),
     lineTotal: parseFloat(String(i.lineTotal ?? 0)),
     recipientName: i.recipientName ?? null,
+    finishName: i.finishName ?? null,
   }));
 
   const { subject, html, text } = buildAcknowledgementEmail({
