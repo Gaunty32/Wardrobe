@@ -29,6 +29,53 @@ export const objectStorageClient = new Storage({
   projectId: "",
 });
 
+const EXT_MIME_MAP: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  eps: "application/postscript",
+  ai: "application/postscript",
+  bmp: "image/bmp",
+  tiff: "image/tiff",
+  tif: "image/tiff",
+};
+
+function inferMimeFromName(name: string): string | null {
+  const ext = name.split(".").pop()?.toLowerCase();
+  return (ext && EXT_MIME_MAP[ext]) || null;
+}
+
+async function sniffMimeFromBytes(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      const chunks: Buffer[] = [];
+      let done = false;
+      const stream = file.createReadStream({ start: 0, end: 11 });
+      stream.on("data", (chunk: Buffer) => {
+        if (!done) chunks.push(chunk);
+      });
+      stream.on("end", () => {
+        done = true;
+        const b = Buffer.concat(chunks);
+        if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return resolve("image/jpeg");
+        if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return resolve("image/png");
+        if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38) return resolve("image/gif");
+        if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+            b.length > 11 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return resolve("image/webp");
+        if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return resolve("application/pdf");
+        resolve(null);
+      });
+      stream.on("error", () => resolve(null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 export class ObjectNotFoundError extends Error {
   constructor() {
     super("Object not found");
@@ -92,11 +139,17 @@ export class ObjectStorageService {
     const aclPolicy = await getObjectAclPolicy(file);
     const isPublic = aclPolicy?.visibility === "public";
 
+    let contentType = (metadata.contentType as string) || "";
+
+    if (!contentType || contentType === "application/octet-stream") {
+      contentType = inferMimeFromName(file.name) || await sniffMimeFromBytes(file) || "application/octet-stream";
+    }
+
     const nodeStream = file.createReadStream();
     const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
     const headers: Record<string, string> = {
-      "Content-Type": (metadata.contentType as string) || "application/octet-stream",
+      "Content-Type": contentType,
       "Cache-Control": `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`,
     };
     if (metadata.size) {
