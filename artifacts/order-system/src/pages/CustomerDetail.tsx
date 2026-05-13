@@ -2496,7 +2496,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const sizes = sortSizesWithOrder([...new Set([...attrSizes, ...variantSizes])], sizeOrder);
       setVariantColours(colours);
       setVariantSizes(sizes);
-      setSelectedColours(colours);
+      setSelectedColours([]);
       setSelectedSizes(sizes);
     }).catch(() => {});
   };
