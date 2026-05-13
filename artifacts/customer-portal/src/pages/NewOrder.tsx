@@ -2123,8 +2123,11 @@ export default function NewOrder() {
     if (basket.length > 0 || step > 0) return; // local session takes priority
     if (!serverBasket.items?.length) return;
     setBasket(serverBasket.items);
-    if (serverBasket.mode === "wardrobe" || serverBasket.mode === "catalogue") setMode(serverBasket.mode);
-    if (serverBasket.step > 0) setStep(serverBasket.step);
+    const validMode = serverBasket.mode === "wardrobe" || serverBasket.mode === "catalogue" ? serverBasket.mode : null;
+    if (validMode) {
+      setMode(validMode);
+      if (serverBasket.step > 0) setStep(serverBasket.step);
+    }
     toast({ title: "Previous basket restored", description: `${serverBasket.items.length} item${serverBasket.items.length !== 1 ? "s" : ""} loaded from your last visit.` });
   }, [serverBasket]);
 
@@ -2258,6 +2261,9 @@ export default function NewOrder() {
 
       <Steps current={step} steps={STEPS} />
 
+      {/* Safety net: step > 0 with no valid mode → reset to step 0 */}
+      {step > 0 && mode === null && <ModeStep onSelect={handleModeSelect} />}
+
       {step === 0 && <ModeStep onSelect={handleModeSelect} />}
 
       {step === 1 && mode === "wardrobe" && (
@@ -2316,6 +2322,9 @@ export default function NewOrder() {
           stripeCharge={confirmedOrder.stripeCharge}
         />
       )}
+
+      {/* Safety net: step === 3 but no confirmed order (e.g. stale session) → restart */}
+      {step === 3 && !confirmedOrder && <ModeStep onSelect={handleModeSelect} />}
     </PortalLayout>
   );
 }
