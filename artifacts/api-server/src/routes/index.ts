@@ -23,6 +23,7 @@ import stockRouter from "./stock";
 import stripePaymentsRouter from "./stripe-payments";
 import reportsRouter from "./reports";
 import staffAuthRouter from "./staff-auth";
+import messagesRouter from "./messages";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use(stockRouter);
 router.use(stripePaymentsRouter);
 router.use(reportsRouter);
 router.use(staffAuthRouter);
+router.use(messagesRouter);
 
 export default router;

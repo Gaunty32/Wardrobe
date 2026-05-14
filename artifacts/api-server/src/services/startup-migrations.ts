@@ -587,6 +587,27 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE name IS DISTINCT FROM initcap(name);
   `);
 
+  // Internal order messaging tables
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS order_messages (
+      id serial PRIMARY KEY,
+      order_id integer NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      order_number text NOT NULL,
+      author_name text NOT NULL,
+      body text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS order_message_reads (
+      id serial PRIMARY KEY,
+      message_id integer NOT NULL REFERENCES order_messages(id) ON DELETE CASCADE,
+      reader_name text NOT NULL,
+      read_at timestamptz NOT NULL DEFAULT now(),
+      UNIQUE(message_id, reader_name)
+    );
+  `);
+
   // Remove orphaned worksheets (pre_wip or wip) whose order has been deleted
   // (order_id IS NULL or references a non-existent order). These were left
   // behind before worksheet cleanup was added to the order delete/cancel flow.

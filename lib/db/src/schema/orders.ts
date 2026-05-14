@@ -151,6 +151,22 @@ export const orderEmailLogsTable = pgTable("order_email_logs", {
   error: text("error"),
 });
 
+export const orderMessagesTable = pgTable("order_messages", {
+  id: serial("id").primaryKey(),
+  orderId: integer("order_id").notNull().references(() => ordersTable.id, { onDelete: "cascade" }),
+  orderNumber: text("order_number").notNull(),
+  authorName: text("author_name").notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const orderMessageReadsTable = pgTable("order_message_reads", {
+  id: serial("id").primaryKey(),
+  messageId: integer("message_id").notNull().references(() => orderMessagesTable.id, { onDelete: "cascade" }),
+  readerName: text("reader_name").notNull(),
+  readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;

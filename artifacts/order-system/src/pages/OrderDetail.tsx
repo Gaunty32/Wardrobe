@@ -31,7 +31,8 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare } from "lucide-react";
+import { OrderMessages } from "@/components/OrderMessages";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -1123,6 +1124,20 @@ export default function OrderDetail() {
                 <span className="text-2xl font-bold font-display text-foreground">{formatCurrency(order.totalAmount)}</span>
               </div>
             )}
+          </Card>
+
+          {/* ── Messages ────────────────────────────────────────────────── */}
+          <Card className="lg:col-span-2 shadow-sm border-border/50">
+            <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+              <CardTitle className="font-display flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                Internal Messages
+              </CardTitle>
+              <CardDescription>Staff notes and discussion about this job — not visible to the customer</CardDescription>
+            </CardHeader>
+            <CardContent className="py-5">
+              <OrderMessages orderId={orderId} />
+            </CardContent>
           </Card>
 
           <div className="flex flex-col gap-6">
