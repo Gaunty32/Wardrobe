@@ -640,23 +640,37 @@ function POCard({
             <>
               <POMatrixView items={po.items} currency={po.supplierCurrency} />
 
-              {/* Individual lines with delete buttons — only for draft and ordered POs */}
-              {po.status !== "delivered" && (
-                <div className="space-y-1 pt-2">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Individual Lines</p>
-                  {po.items.map((line) => (
-                    <div key={line.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/10 px-3 py-2 text-sm">
-                      <div className="flex items-baseline gap-2 flex-wrap min-w-0">
-                        {line.supplierCode && <span className="font-mono font-bold text-primary text-xs">{line.supplierCode}</span>}
-                        <span className="font-medium truncate">{line.productName}</span>
-                        {(line.colour || line.size) && (
-                          <span className="text-xs text-muted-foreground">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
-                        )}
-                        <span className="text-xs font-semibold text-foreground">× {line.quantityOrdered}</span>
-                        {line.quantityDelivered > 0 && (
-                          <span className="text-xs text-green-600">{line.quantityDelivered} received</span>
-                        )}
-                      </div>
+              {/* Individual lines — always visible so quantity can be edited for stock ordering */}
+              <div className="space-y-1 pt-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Individual Lines</p>
+                {po.items.map((line) => (
+                  <div key={line.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/10 px-3 py-2 text-sm">
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      {line.supplierCode && <span className="font-mono font-bold text-primary text-xs">{line.supplierCode}</span>}
+                      <span className="font-medium truncate">{line.productName}</span>
+                      {(line.colour || line.size) && (
+                        <span className="text-xs text-muted-foreground">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
+                      )}
+                      <span className="text-xs text-muted-foreground">×</span>
+                      <input
+                        type="number"
+                        min={1}
+                        defaultValue={line.quantityOrdered}
+                        key={line.quantityOrdered}
+                        className="w-14 text-center text-xs font-semibold border border-border rounded px-1 py-0.5 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                        onBlur={(e) => {
+                          const val = parseInt(e.target.value);
+                          if (!isNaN(val) && val >= 1 && val !== line.quantityOrdered) {
+                            onLineUpdate(po.id, line.id, { quantityOrdered: val });
+                          }
+                        }}
+                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                      />
+                      {line.quantityDelivered > 0 && (
+                        <span className="text-xs text-green-600">{line.quantityDelivered} received</span>
+                      )}
+                    </div>
+                    {po.status !== "delivered" && (
                       <button
                         title="Remove this line"
                         className="flex-shrink-0 text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"
@@ -668,10 +682,10 @@ function POCard({
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+                    )}
+                  </div>
+                ))}
+              </div>
 
               {po.status === "ordered" && (
                 <div className="space-y-3 pt-3 border-t border-border">

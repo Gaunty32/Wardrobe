@@ -367,6 +367,7 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
   const bodySchema = z.object({
+    quantityOrdered: z.number().int().min(1).optional(),
     quantityDelivered: z.number().int().min(0).optional(),
     estimatedDueDate: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
@@ -382,6 +383,7 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
   if (!existing) { res.status(404).json({ error: "PO line not found" }); return; }
 
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.data.quantityOrdered !== undefined) updateData.quantityOrdered = parsed.data.quantityOrdered;
   if (parsed.data.quantityDelivered !== undefined) updateData.quantityDelivered = parsed.data.quantityDelivered;
   if (parsed.data.estimatedDueDate !== undefined) updateData.estimatedDueDate = parsed.data.estimatedDueDate ? new Date(parsed.data.estimatedDueDate) : null;
   if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
