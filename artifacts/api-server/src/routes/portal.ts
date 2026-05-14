@@ -1217,7 +1217,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
   // Get wardrobe items — deduplicate by (finish, product, colour, role) so each
   // combination shows as one card in the portal; sizes are served via sizesMap.
   const finishes = await db.execute(sql`
-    SELECT DISTINCT ON (COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, 0))
+    SELECT DISTINCT ON (COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, cf.role_id, 0))
       cf.id   AS finish_id,
       cf.name AS finish_name,
       cf.code AS finish_code,

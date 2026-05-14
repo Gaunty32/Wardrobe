@@ -868,7 +868,7 @@ function FinishesTab({ customerId }: { customerId: number }) {
   };
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (f: any) => { setForm({ name: f.name||"", notes: [f.description, f.notes].filter(Boolean).join("\n").trim(), roleId: f.role_id ?? null }); setEditing(f); setOpen(true); };
+  const openEdit = (f: any) => { setForm({ name: f.name||"", notes: [f.description, f.notes].filter(Boolean).join("\n").trim(), roleId: f.roleId ?? f.role_id ?? null }); setEditing(f); setOpen(true); };
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const toggle = (id: number) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -933,8 +933,8 @@ function FinishesTab({ customerId }: { customerId: number }) {
                   )}
                   <span className="font-medium text-foreground flex-1 truncate">{f.name}</span>
                   <div className="flex items-center gap-2 shrink-0">
-                    {f.role_id && (() => {
-                      const r = (roles || []).find((r: any) => r.id === f.role_id);
+                    {(f.roleId ?? f.role_id) && (() => {
+                      const r = (roles || []).find((r: any) => r.id === (f.roleId ?? f.role_id));
                       return r ? (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 shrink-0">{r.name}</span>
                       ) : null;
