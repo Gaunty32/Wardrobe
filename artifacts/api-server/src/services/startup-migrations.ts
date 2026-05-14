@@ -580,6 +580,13 @@ export async function runStartupMigrations(): Promise<void> {
       OR last_name IS DISTINCT FROM initcap(last_name);
   `);
 
+  // Normalise supplier names from ALL CAPS / CAPS to Title Case using initcap().
+  await db.execute(sql`
+    UPDATE suppliers
+    SET name = initcap(name)
+    WHERE name IS DISTINCT FROM initcap(name);
+  `);
+
   // Remove orphaned worksheets (pre_wip or wip) whose order has been deleted
   // (order_id IS NULL or references a non-existent order). These were left
   // behind before worksheet cleanup was added to the order delete/cancel flow.
