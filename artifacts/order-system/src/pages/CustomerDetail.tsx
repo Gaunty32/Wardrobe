@@ -812,11 +812,12 @@ function FinishesTab({ customerId }: { customerId: number }) {
   const { toast } = useToast();
   const { data: finishes, isLoading } = useSubResource<any>(customerId, "finishes");
   const { data: processes } = useSubResource<any>(customerId, "processes");
+  const { data: roles } = useSubResource<any>(customerId, "roles");
   const { data: allProducts } = useListProducts();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", notes: "" };
-  const [form, setForm] = useState(blank);
+  const blank = { name: "", notes: "", roleId: null as number | null };
+  const [form, setForm] = useState<{ name: string; notes: string; roleId: number | null }>(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finishes"] });
 
@@ -867,7 +868,7 @@ function FinishesTab({ customerId }: { customerId: number }) {
   };
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (f: any) => { setForm({ name: f.name||"", notes: [f.description, f.notes].filter(Boolean).join("\n").trim() }); setEditing(f); setOpen(true); };
+  const openEdit = (f: any) => { setForm({ name: f.name||"", notes: [f.description, f.notes].filter(Boolean).join("\n").trim(), roleId: f.role_id ?? null }); setEditing(f); setOpen(true); };
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const toggle = (id: number) => setExpanded(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
@@ -932,6 +933,12 @@ function FinishesTab({ customerId }: { customerId: number }) {
                   )}
                   <span className="font-medium text-foreground flex-1 truncate">{f.name}</span>
                   <div className="flex items-center gap-2 shrink-0">
+                    {f.role_id && (() => {
+                      const r = (roles || []).find((r: any) => r.id === f.role_id);
+                      return r ? (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 shrink-0">{r.name}</span>
+                      ) : null;
+                    })()}
                     {processCount > 0 && (
                       <span className="text-xs text-muted-foreground">{processCount} process{processCount !== 1 ? "es" : ""}</span>
                     )}
@@ -1106,6 +1113,18 @@ function FinishesTab({ customerId }: { customerId: number }) {
           <div className="grid gap-4 py-2">
             <div className="grid gap-2"><Label>Name *</Label>
               <Input placeholder="e.g. Full Company Branding Package" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="grid gap-2">
+              <Label>Role <span className="text-muted-foreground font-normal">(optional — restricts portal visibility)</span></Label>
+              <Select value={form.roleId != null ? String(form.roleId) : "__all__"} onValueChange={v => setForm({ ...form, roleId: v === "__all__" ? null : Number(v) })}>
+                <SelectTrigger className="h-9 text-sm"><SelectValue placeholder="All roles" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All roles (no restriction)</SelectItem>
+                  {(roles || []).map((r: any) => (
+                    <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid gap-2"><Label>Notes</Label>
               <Textarea rows={3} placeholder="Description, placement details, internal notes..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></div>
           </div>

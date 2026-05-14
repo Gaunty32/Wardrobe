@@ -233,6 +233,7 @@ const finishBody = z.object({
   name: z.string().min(1),
   description: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
+  roleId: z.number().int().positive().optional().nullable(),
 });
 
 router.get("/customers/:customerId/finishes", async (req, res): Promise<void> => {

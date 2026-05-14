@@ -365,7 +365,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   const roleFilteredItems = useMemo(() => {
     if (!selectedEmployee) return items;
     const empRoleId = selectedEmployee.role_id ?? null;
-    return items.filter((item: any) => item.role_id == null || item.role_id === empRoleId);
+    const effectiveRoleId = (item: any) => item.role_id ?? item.finish_role_id ?? item.effective_role_id ?? null;
+    return items.filter((item: any) => effectiveRoleId(item) == null || effectiveRoleId(item) === empRoleId);
   }, [items, selectedEmployee]);
 
   // Group items by finish

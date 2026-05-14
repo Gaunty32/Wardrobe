@@ -562,6 +562,12 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Add role_id to customer_finishes so each finish can be associated with a role.
+  // Items (customer_finished_items) inherit the finish's role when their own role_id is NULL.
+  await db.execute(sql`
+    ALTER TABLE customer_finishes ADD COLUMN IF NOT EXISTS role_id integer REFERENCES customer_roles(id) ON DELETE SET NULL;
+  `);
+
   // Normalise employee names from ALL CAPS to Title Case using initcap().
   // initcap() is idempotent — running on already-capitalised names is a no-op.
   await db.execute(sql`

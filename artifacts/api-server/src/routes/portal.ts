@@ -1205,9 +1205,14 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     memberRoleId = (roleRow.rows[0] as any)?.role_id ?? null;
   }
 
-  // For members: restrict to items matching their role, or items with no role set (universal items).
-  // Managers / dept_managers receive all items and do client-side filtering per selected employee.
-  const isMember = portalRole === "member";
+  // Members with a known role get server-side filtering — only their role's items (or
+  // unassigned items) are returned. Managers / dept_managers receive everything so they
+  // can do per-employee client-side filtering when ordering on behalf of someone.
+  // Effective role = item-level role_id overrides finish-level role_id.
+  // If member has a known role, only show items whose effective role matches or is unset.
+  const memberRoleFilter = (portalRole === "member" && memberRoleId != null)
+    ? sql`AND (COALESCE(cfi.role_id, cf.role_id) IS NULL OR COALESCE(cfi.role_id, cf.role_id) = ${memberRoleId})`
+    : sql``;
 
   // Get wardrobe items — deduplicate by (finish, product, colour, role) so each
   // combination shows as one card in the portal; sizes are served via sizesMap.
@@ -1228,6 +1233,8 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
       cfi.unit_price,
       cfi.special_price,
       cfi.role_id,
+      cf.role_id  AS finish_role_id,
+      COALESCE(cfi.role_id, cf.role_id) AS effective_role_id,
       cr.name AS role_name,
       (SELECT pv.image_url
          FROM product_variants pv
@@ -1239,14 +1246,10 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     FROM customer_finished_items cfi
     LEFT JOIN customer_finishes  cf  ON cf.id = cfi.finish_id
     LEFT JOIN products           p   ON p.id = cfi.product_id
-    LEFT JOIN customer_roles     cr  ON cr.id = cfi.role_id
+    LEFT JOIN customer_roles     cr  ON cr.id = COALESCE(cfi.role_id, cf.role_id)
     WHERE cfi.customer_id = ${customerId}
-      AND (
-        NOT ${isMember}
-        OR cfi.role_id IS NULL
-        OR cfi.role_id = ${memberRoleId}
-      )
-    ORDER BY COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, 0), cfi.id, cf.name NULLS LAST, cfi.name
+    ${memberRoleFilter}
+    ORDER BY COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, cf.role_id, 0), cfi.id, cf.name NULLS LAST, cfi.name
   `);
 
   // Get decoration processes linked to each finish
