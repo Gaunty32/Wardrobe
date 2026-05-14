@@ -748,23 +748,49 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     doc.fillColor("#cbd5e1").fontSize(9).font("Helvetica")
       .text(dateStr, rightX, 96, { width: 185, align: "right" });
 
-    // ── Supplier block ────────────────────────────────────────────────────────
+    // ── Supplier block (left) + Deliver To block (right) ─────────────────────
     let y = MARGIN + headerH + 16;
-    const supRow = (label: string, value: string) => {
+    const colW2 = (W - 16) / 2; // two equal columns with a gap
+    const rightColX = MARGIN + colW2 + 16;
+
+    const supRow = (label: string, value: string, col: "left" | "right" = "left") => {
+      const x = col === "left" ? MARGIN : rightColX;
+      const valueX = col === "left" ? MARGIN + 75 : rightColX + 75;
       doc.font("Helvetica-Bold").fontSize(9).fillColor("#374151")
-        .text(label, MARGIN, y, { width: 75 });
+        .text(label, x, y, { width: 70, lineBreak: false });
       doc.font("Helvetica").fontSize(9).fillColor("#111827")
-        .text(value, 130, y, { width: W - 80 });
+        .text(value, valueX, y, { width: colW2 - 80, lineBreak: false });
       y += 14;
     };
+
+    // Left column: supplier details
+    const leftStart = y;
     supRow("Supplier:", po.supplierName);
     if (po.supplierContactName) supRow("Attention:", po.supplierContactName);
     if (po.supplierAddress)     supRow("Address:",   po.supplierAddress);
     if (po.supplierPhone)       supRow("Phone:",     po.supplierPhone);
     if (po.supplierEmail)       supRow("Email:",     po.supplierEmail);
     if (po.notes)               supRow("Notes:",     po.notes);
+    const afterLeft = y;
 
-    y += 10;
+    // Right column: deliver to (SBS address)
+    y = leftStart;
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#374151")
+      .text("Deliver To:", rightColX, y, { width: colW2, lineBreak: false });
+    y += 14;
+    const deliverLines = [
+      "Select Branding Solutions Ltd",
+      "Spence Mills, Mill Lane",
+      "Leeds, LS13 3HE",
+      "United Kingdom",
+    ];
+    for (const line of deliverLines) {
+      doc.font("Helvetica").fontSize(9).fillColor("#111827")
+        .text(line, rightColX + 75, y, { width: colW2 - 80, lineBreak: false });
+      y += 14;
+    }
+
+    y = Math.max(afterLeft, y) + 10;
     doc.moveTo(MARGIN, y).lineTo(MARGIN + W, y).strokeColor("#e2e8f0").lineWidth(0.5).stroke();
     y += 14;
 
@@ -786,7 +812,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       const TOTAL_W  = 48;
       const SIZE_W   = Math.min(60, Math.max(36, Math.floor((W - COLOUR_W - TOTAL_W) / Math.max(numCols, 1))));
       const TABLE_W  = COLOUR_W + SIZE_W * numCols + TOTAL_W;
-      const tX       = MARGIN + (W - TABLE_W) / 2;
+      const tX       = MARGIN;
 
       // Estimate space needed: product header + col header + rows + totals row
       const sectionH = PROD_HDR_H + COL_HDR_H + (g.colours.length + 1) * ROW_H + 14;
@@ -897,7 +923,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
 
     // ── Footer ────────────────────────────────────────────────────────────────
     doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
-      .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 38, { align: "center", width: W });
+      .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 38, { align: "center", width: W, lineBreak: false });
 
     doc.end();
   });
