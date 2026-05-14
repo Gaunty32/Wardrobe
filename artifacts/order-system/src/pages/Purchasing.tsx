@@ -761,7 +761,7 @@ export default function Purchasing() {
     onSuccess: () => {
       invalidateAll();
       setCreatePoGroup(null); setCreatePoNotes("");
-      toast({ title: "Draft PO created", description: "Switch to Awaiting Delivery tab to manage it." });
+      toast({ title: "Draft PO created", description: "It appears in the Draft tab below the requirements." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -860,10 +860,8 @@ export default function Purchasing() {
   });
   const processShortfallCount = processStockReqs.filter(r => r.shortfall > 0).length;
 
-  const filteredPos = purchaseOrders.filter((po) => {
-    if (statusFilter === "all") return po.status === "draft" || po.status === "ordered";
-    return po.status === statusFilter;
-  });
+  const draftPos = purchaseOrders.filter((po) => po.status === "draft");
+  const filteredPos = purchaseOrders.filter((po) => po.status === "ordered");
   const draftCount = purchaseOrders.filter((p) => p.status === "draft").length;
   const orderedCount = purchaseOrders.filter((p) => p.status === "ordered").length;
   const deliveredCount = purchaseOrders.filter((p) => p.status === "delivered").length;
@@ -891,7 +889,7 @@ export default function Purchasing() {
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-2">
               <Truck className="w-4 h-4" /> Awaiting Delivery
-              {(draftCount + orderedCount) > 0 && <Badge variant="secondary" className="ml-1 text-xs">{draftCount + orderedCount}</Badge>}
+              {orderedCount > 0 && <Badge variant="secondary" className="ml-1 text-xs">{orderedCount}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="backorders" className="gap-2">
               <ClipboardList className="w-4 h-4" /> Backorders
@@ -1053,37 +1051,40 @@ export default function Purchasing() {
                   })}
                 </>
               )}
+
+              {/* Draft POs — created but not yet sent to supplier */}
+              {draftPos.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                    <FileText className="w-4 h-4" /> Draft Purchase Orders
+                  </div>
+                  {draftPos.map((po) => (
+                    <POCard
+                      key={po.id}
+                      po={po}
+                      onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
+                      onDelete={(id) => deleteMutation.mutate(id)}
+                      onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
+                      onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
+                      onRefresh={() => { refetchPos(); refetchReqs(); }}
+                      onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </TabsContent>
 
           {/* ── Purchase Orders Tab ── */}
           <TabsContent value="orders">
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["draft", "ordered"] as const).map((s) => {
-                      const count = purchaseOrders.filter((p) => p.status === s).length;
-                      const c = STATUS_CFG[s];
-                      const Icon = c.icon;
-                      return (
-                        <button key={s} onClick={() => setStatusFilter(statusFilter === s ? "all" : s)}
-                          className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all ${statusFilter === s ? `${c.color} shadow-sm` : "border-border text-muted-foreground hover:border-primary/40"}`}>
-                          <Icon className="w-3.5 h-3.5" />{c.label} <span className="font-bold">{count}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
               {posLoading ? (
                 <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
               ) : filteredPos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-                  <FileText className="w-12 h-12 text-muted-foreground/30" />
-                  <p className="text-lg font-medium">{statusFilter === "all" ? "No purchase orders yet" : `No ${STATUS_CFG[statusFilter as keyof typeof STATUS_CFG]?.label} orders`}</p>
-                  <p className="text-sm">Create a draft PO from the Requirements tab.</p>
+                  <Truck className="w-12 h-12 text-muted-foreground/30" />
+                  <p className="text-lg font-medium">No orders awaiting delivery</p>
+                  <p className="text-sm">Mark a draft PO as Ordered once you've sent it to the supplier.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
