@@ -3039,6 +3039,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   placeholder="0.00"
                   value={form.unitPrice}
                   onChange={e => setForm(f => ({ ...f, unitPrice: e.target.value }))}
+                  onWheel={e => (e.target as HTMLInputElement).blur()}
                 />
                 <p className="text-xs text-muted-foreground">WooCommerce price includes the first logo. Extra logos in the finish are added on top. Override manually if needed.</p>
               </div>
@@ -3052,6 +3053,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   placeholder="Optional override"
                   value={form.specialPrice}
                   onChange={e => setForm(f => ({ ...f, specialPrice: e.target.value }))}
+                  onWheel={e => (e.target as HTMLInputElement).blur()}
                 />
                 <p className="text-xs text-muted-foreground">Customer-specific price override.</p>
               </div>
@@ -3065,6 +3067,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                   placeholder="0"
                   value={form.stockQuantity}
                   onChange={e => setForm(f => ({ ...f, stockQuantity: e.target.value }))}
+                  onWheel={e => (e.target as HTMLInputElement).blur()}
                 />
                 <p className="text-xs text-muted-foreground">Finished (branded) units in stock.</p>
               </div>}
