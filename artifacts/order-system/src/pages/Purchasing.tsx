@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
-import { formatDate } from "@/lib/utils";
+import { formatDate, cn } from "@/lib/utils";
 
 const API_BASE = "/api";
 
@@ -850,23 +850,31 @@ export default function Purchasing() {
         </div>
 
         <Tabs defaultValue="requirements">
-          <TabsList className="mb-4">
-            <TabsTrigger value="requirements" className="gap-2">
-              <FileText className="w-4 h-4" /> Draft
-              {totalItems > 0 && <Badge variant="secondary" className="ml-1 text-xs">{totalItems}</Badge>}
-            </TabsTrigger>
-            <TabsTrigger value="orders" className="gap-2">
-              <Truck className="w-4 h-4" /> Awaiting Delivery
-              {(draftCount + orderedCount) > 0 && <Badge variant="secondary" className="ml-1 text-xs">{draftCount + orderedCount}</Badge>}
-            </TabsTrigger>
-            <TabsTrigger value="backorders" className="gap-2">
-              <ClipboardList className="w-4 h-4" /> Backorders
-              {backorders.length > 0 && <Badge className="ml-1 text-xs bg-amber-500 text-white">{backorders.length}</Badge>}
-            </TabsTrigger>
-            <TabsTrigger value="completed" className="gap-2">
-              <PackageCheck className="w-4 h-4" /> Completed
-              {deliveredCount > 0 && <Badge variant="secondary" className="ml-1 text-xs">{deliveredCount}</Badge>}
-            </TabsTrigger>
+          <TabsList className="mb-4 h-auto bg-transparent p-0 gap-2 flex flex-wrap">
+            {([
+              { value: "requirements", icon: FileText,    label: "Draft",            count: totalItems > 0 ? totalItems : null,              countCls: "bg-primary/15 text-primary" },
+              { value: "orders",       icon: Truck,       label: "Awaiting Delivery",count: (draftCount + orderedCount) > 0 ? draftCount + orderedCount : null, countCls: "bg-primary/15 text-primary" },
+              { value: "backorders",   icon: ClipboardList,label: "Backorders",      count: backorders.length > 0 ? backorders.length : null, countCls: "bg-amber-500 text-white" },
+              { value: "completed",    icon: PackageCheck, label: "Completed",       count: deliveredCount > 0 ? deliveredCount : null,       countCls: "bg-primary/15 text-primary" },
+            ] as const).map(({ value, icon: Icon, label, count, countCls }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-all duration-150",
+                  "data-[state=active]:bg-primary data-[state=active]:text-white data-[state=active]:border-primary data-[state=active]:shadow-md",
+                  "data-[state=inactive]:bg-background data-[state=inactive]:text-muted-foreground data-[state=inactive]:border-border data-[state=inactive]:hover:border-primary/40 data-[state=inactive]:hover:text-foreground"
+                )}
+              >
+                <Icon className="w-4 h-4 shrink-0" />
+                {label}
+                {count !== null && (
+                  <span className={cn("ml-0.5 min-w-[20px] h-5 flex items-center justify-center rounded-full text-[11px] font-bold px-1.5", countCls)}>
+                    {count}
+                  </span>
+                )}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           {/* ── Requirements Tab ── */}
