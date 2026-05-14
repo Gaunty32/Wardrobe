@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send, MessageSquare, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = "/api";
 
@@ -69,6 +70,7 @@ export function OrderMessages({ orderId }: { orderId: number }) {
   const [authorName, setAuthorName] = useState(actor || "");
   const bottomRef = useRef<HTMLDivElement>(null);
   const qc = useQueryClient();
+  const { toast } = useToast();
 
   const { data: messages = [], isLoading } = useQuery<OrderMessage[]>({
     queryKey: ["order-messages", orderId],
@@ -93,6 +95,7 @@ export function OrderMessages({ orderId }: { orderId: number }) {
       qc.invalidateQueries({ queryKey: ["order-messages", orderId] });
       qc.invalidateQueries({ queryKey: ["messages-inbox"] });
     },
+    onError: (e: Error) => toast({ title: "Failed to send message", description: e.message, variant: "destructive" }),
   });
 
   const handleSubmit = (e: React.FormEvent) => {

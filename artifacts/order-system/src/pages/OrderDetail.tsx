@@ -374,7 +374,10 @@ export default function OrderDetail() {
   const updateNotesMutation = useMutation({
     mutationFn: (notes: string | null) =>
       apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ notes: notes || null }) }),
-    onSuccess: () => {
+    onSuccess: (_data, notes) => {
+      queryClient.setQueryData(getGetOrderQueryKey(orderId), (old: any) =>
+        old ? { ...old, notes: notes ?? null } : old
+      );
       queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
       setEditingNotes(false);
       toast({ title: "Notes saved" });
