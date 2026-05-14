@@ -594,7 +594,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
         }
         doc.font("Helvetica-Bold").text(String(rowTotal), rx + 2, y + 3, { width: qtyW - 2, align: "center" }); rx += qtyW;
         doc.font("Helvetica").text(`£${g.unitPrice.toFixed(2)}`, rx + 2, y + 3, { width: unitPriceW - 2, align: "right" }); rx += unitPriceW;
-        doc.text("", rx + 2, y + 3, { width: totalW - 3, align: "right" });
+        doc.text(`£${(rowTotal * g.unitPrice).toFixed(2)}`, rx + 2, y + 3, { width: totalW - 3, align: "right" });
         y += rowH;
         rowAlt = !rowAlt;
       }
