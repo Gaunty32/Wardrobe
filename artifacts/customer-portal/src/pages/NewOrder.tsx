@@ -953,7 +953,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   return (
     <div>
       {/* Recipient banner */}
-      <div className="flex items-center gap-3 mb-6 p-3 rounded-xl border bg-muted/30">
+      <button
+        onClick={() => setSelectedRecipient(null)}
+        className="w-full flex items-center gap-3 mb-6 p-3 rounded-xl border bg-muted/30 hover:bg-muted/50 hover:border-muted-foreground/30 transition-colors text-left"
+      >
         <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0 font-bold text-primary text-sm">
           {selectedRecipient === "stock"
             ? <Package className="w-4 h-4" />
@@ -964,13 +967,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
           <p className="font-semibold text-sm">{recipientName}</p>
           {selectedEmployee?.role_name && <p className="text-[11px] text-muted-foreground">{selectedEmployee.role_name}</p>}
         </div>
-        <button
-          onClick={() => setSelectedRecipient(null)}
-          className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline shrink-0"
-        >
-          Change
-        </button>
-      </div>
+        <span className="text-xs text-muted-foreground shrink-0">Change</span>
+      </button>
 
       {/* Main layout: product sections + sticky sidebar */}
       <div className="flex gap-6 items-start">
