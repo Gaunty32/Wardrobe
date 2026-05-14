@@ -138,7 +138,7 @@ export function FileDropZone({
 /** Convenience inner content for the standard "upload" state */
 export function FileDropZoneContent({
   uploading,
-  label = "Click or drag to upload",
+  label = "Drag from desktop or click to upload",
   hint,
 }: {
   uploading?: boolean;

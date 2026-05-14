@@ -416,8 +416,8 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                 <div className="flex flex-col items-center gap-3 text-muted-foreground">
                   <Upload className="w-10 h-10 text-primary/50" />
                   <div>
-                    <p className="font-medium text-foreground">Drop your spreadsheet here</p>
-                    <p className="text-sm mt-0.5">or click to browse — .xlsx, .xls, .csv supported</p>
+                    <p className="font-medium text-foreground">Drag from desktop or click to browse</p>
+                    <p className="text-sm mt-0.5">.xlsx, .xls, .csv supported</p>
                   </div>
                 </div>
               )}
