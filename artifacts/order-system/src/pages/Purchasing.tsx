@@ -734,7 +734,7 @@ export default function Purchasing() {
     onSuccess: () => {
       invalidateAll();
       setCreatePoGroup(null); setCreatePoNotes("");
-      toast({ title: "Draft PO created", description: "Switch to Purchase Orders tab to manage it." });
+      toast({ title: "Draft PO created", description: "Switch to Awaiting Delivery tab to manage it." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -826,9 +826,13 @@ export default function Purchasing() {
     refetchInterval: 30000,
   });
 
-  const filteredPos = purchaseOrders.filter((po) => statusFilter === "all" || po.status === statusFilter);
+  const filteredPos = purchaseOrders.filter((po) => {
+    if (statusFilter === "all") return po.status === "draft" || po.status === "ordered";
+    return po.status === statusFilter;
+  });
   const draftCount = purchaseOrders.filter((p) => p.status === "draft").length;
   const orderedCount = purchaseOrders.filter((p) => p.status === "ordered").length;
+  const deliveredCount = purchaseOrders.filter((p) => p.status === "delivered").length;
 
   const getDraftPoForSupplier = (supplierId: number | null, supplierName: string) =>
     purchaseOrders.find((po) => po.status === "draft" && (supplierId ? po.supplierId === supplierId : po.supplierName === supplierName));
@@ -848,16 +852,20 @@ export default function Purchasing() {
         <Tabs defaultValue="requirements">
           <TabsList className="mb-4">
             <TabsTrigger value="requirements" className="gap-2">
-              <AlertTriangle className="w-4 h-4" /> Requirements
+              <FileText className="w-4 h-4" /> Draft
               {totalItems > 0 && <Badge variant="secondary" className="ml-1 text-xs">{totalItems}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-2">
-              <FileText className="w-4 h-4" /> Purchase Orders
+              <Truck className="w-4 h-4" /> Awaiting Delivery
               {(draftCount + orderedCount) > 0 && <Badge variant="secondary" className="ml-1 text-xs">{draftCount + orderedCount}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="backorders" className="gap-2">
               <ClipboardList className="w-4 h-4" /> Backorders
               {backorders.length > 0 && <Badge className="ml-1 text-xs bg-amber-500 text-white">{backorders.length}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="completed" className="gap-2">
+              <PackageCheck className="w-4 h-4" /> Completed
+              {deliveredCount > 0 && <Badge variant="secondary" className="ml-1 text-xs">{deliveredCount}</Badge>}
             </TabsTrigger>
           </TabsList>
 
@@ -1012,8 +1020,8 @@ export default function Purchasing() {
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["draft", "ordered", "delivered"] as const).map((s) => {
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["draft", "ordered"] as const).map((s) => {
                       const count = purchaseOrders.filter((p) => p.status === s).length;
                       const c = STATUS_CFG[s];
                       const Icon = c.icon;
@@ -1053,6 +1061,34 @@ export default function Purchasing() {
                 </div>
               )}
             </div>
+          </TabsContent>
+
+          {/* ── Completed Tab ── */}
+          <TabsContent value="completed">
+            {posLoading ? (
+              <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
+            ) : deliveredCount === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <PackageCheck className="w-12 h-12 text-muted-foreground/30" />
+                <p className="text-lg font-medium">No completed deliveries yet</p>
+                <p className="text-sm">Deliveries booked in will appear here once marked as delivered.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {purchaseOrders.filter((po) => po.status === "delivered").map((po) => (
+                  <POCard
+                    key={po.id}
+                    po={po}
+                    onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
+                    onDelete={(id) => deleteMutation.mutate(id)}
+                    onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
+                    onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
+                    onRefresh={() => { refetchPos(); refetchReqs(); }}
+                    onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                  />
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* ── Backorders Tab ── */}
