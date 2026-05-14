@@ -90,6 +90,8 @@ function autoDetectType(header: string): ColumnType {
   const h = header.toLowerCase().replace(/[^a-z0-9]/g, "");
   if (h.includes("firstname") || h === "first") return "first_name";
   if (h.includes("lastname") || h === "last" || h === "surname") return "last_name";
+  // "Team Member", "Name", "Full Name", "Member" etc. → full name
+  if (h === "member" || h === "teammember" || h.includes("fullname")) return "full_name";
   if (h.includes("name") && !h.includes("team") && !h.includes("company")) return "full_name";
   if (h.includes("empno") || h.includes("employeeno") || h.includes("empnum") || h === "ref") return "employee_number";
   if (h.includes("jobtitle") || h.includes("title") || h.includes("position") || h.includes("role")) return "job_title";
@@ -97,6 +99,8 @@ function autoDetectType(header: string): ColumnType {
   if (h.includes("phone") || h.includes("tel") || h.includes("mobile")) return "phone";
   if (h.includes("team") || h.includes("dept") || h.includes("department") || h.includes("group")) return "team";
   if (h.includes("note") || h.includes("comment")) return "notes";
+  // Columns ending in "size" or containing "size" (e.g. "Polo Size", "Jacket Size") → size
+  if (h.includes("size")) return "size";
   return "skip";
 }
 
