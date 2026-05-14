@@ -352,6 +352,7 @@ router.get("/production/daily-plan", async (req, res): Promise<void> => {
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
     WHERE oi.stock_status = 'allocated' AND oi.finish_id IS NOT NULL
+      AND o.status NOT IN ('cancelled', 'archived')
     ORDER BY o.required_date ASC NULLS LAST
   `);
 
@@ -379,6 +380,7 @@ router.get("/production/daily-plan", async (req, res): Promise<void> => {
     JOIN worksheets w ON w.id = wi.worksheet_id
     LEFT JOIN orders o ON o.id = w.order_id
     WHERE w.status IN ('pre_wip', 'wip')
+      AND (o.id IS NULL OR o.status NOT IN ('cancelled', 'archived'))
     ORDER BY o.required_date ASC NULLS LAST
   `);
 

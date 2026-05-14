@@ -590,6 +590,21 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     });
     return;
   }
+  // ── Worksheet cleanup on cancellation / archiving ─────────────────────────
+  if (parsed.data.status === "cancelled" || parsed.data.status === "archived") {
+    const linkedWorksheets = await db
+      .select({ id: worksheetsTable.id, status: worksheetsTable.status })
+      .from(worksheetsTable)
+      .where(eq(worksheetsTable.orderId, order.id));
+
+    const wsToDelete = linkedWorksheets
+      .filter(ws => ws.status !== "complete")
+      .map(ws => ws.id);
+
+    if (wsToDelete.length > 0) {
+      await db.delete(worksheetsTable).where(inArray(worksheetsTable.id, wsToDelete));
+    }
+  }
   // ──────────────────────────────────────────────────────────────────────────
 
   res.json({ ...order, totalAmount: numericToFloat(order.totalAmount) });
