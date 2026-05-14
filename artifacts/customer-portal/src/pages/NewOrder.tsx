@@ -231,6 +231,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   const sizeOrder = useSizeOrder();
   const [, setLocation] = useLocation();
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
+  const [expandedProcs, setExpandedProcs] = useState<Set<string>>(new Set());
+  const toggleProcs = (key: string) => setExpandedProcs(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
   // Members are pre-locked to their own employee record; others choose freely
   const [selectedRecipient, setSelectedRecipient] = useState<string | null>(
     portalRole === "member" && myEmployeeId ? String(myEmployeeId) : null
@@ -1044,15 +1046,30 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                           {group.finish_name && (
                             <p className="text-xs font-bold text-foreground leading-snug">{group.finish_name}</p>
                           )}
-                          <div className="flex flex-col gap-1">
-                            {procs.map((p: any) => (
-                              <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
-                                {p.process_type && <ProcessBadgeInline type={p.process_type} />}
-                                {p.item_finish_name && <span className="text-[10px] text-foreground/70 font-medium">{p.item_finish_name}</span>}
-                                {p.placement && <span className="text-[10px] text-muted-foreground">· {p.placement}</span>}
+                          {(() => {
+                            const isExpanded = expandedProcs.has(key);
+                            const visible = isExpanded ? procs : procs.slice(0, 2);
+                            const hidden = procs.length - 2;
+                            return (
+                              <div className="flex flex-col gap-1">
+                                {visible.map((p: any) => (
+                                  <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
+                                    {p.process_type && <ProcessBadgeInline type={p.process_type} />}
+                                    {p.item_finish_name && <span className="text-[10px] text-foreground/70 font-medium">{p.item_finish_name}</span>}
+                                    {p.placement && <span className="text-[10px] text-muted-foreground">· {p.placement}</span>}
+                                  </div>
+                                ))}
+                                {procs.length > 2 && (
+                                  <button
+                                    onClick={() => toggleProcs(key)}
+                                    className="text-[10px] text-primary hover:underline text-left mt-0.5"
+                                  >
+                                    {isExpanded ? "Show less" : `+${hidden} more process${hidden !== 1 ? "es" : ""}…`}
+                                  </button>
+                                )}
                               </div>
-                            ))}
-                          </div>
+                            );
+                          })()}
                         </div>
                       )}
 
