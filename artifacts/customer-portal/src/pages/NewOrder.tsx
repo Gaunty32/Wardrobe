@@ -658,6 +658,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
             </Button>
           )}
         </div>
+        <div className="flex gap-6 items-start">
+        <div className="flex-1 min-w-0">
         {/* Search row */}
         <div className="flex gap-2 mb-4">
           <div className="relative flex-1">
@@ -889,29 +891,17 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
           </DialogContent>
         </Dialog>
 
-        {basket.length > 0 && (
-          <div className="rounded-xl border bg-card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <p className="font-semibold text-sm">{basket.length} item{basket.length !== 1 ? "s" : ""} in order</p>
-                {summaryTotal > 0 && <p className="text-xs text-muted-foreground">{formatCurrency(summaryTotal)} estimated</p>}
-              </div>
-              <Button onClick={onNext} size="sm">
-                Review order <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-              </Button>
-            </div>
-            <div className="flex flex-col gap-1">
-              {Object.entries(summaryGroups).map(([recipKey, grpItems]) => (
-                <div key={recipKey} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                  {recipKey === "__stock__" ? <Package className="w-3 h-3 shrink-0 mt-0.5" /> : <User className="w-3 h-3 shrink-0 mt-0.5" />}
-                  <span><span className="font-medium text-foreground">{recipKey === "__stock__" ? "Bulk Stock" : recipKey}:</span>{" "}
-                    {(grpItems as OrderItem[]).map(it => `${it.productName} (${it.size})`).join(", ")}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Mobile: inline summary */}
+        <div className="lg:hidden mt-4">
+          <SummarySidebar />
+        </div>
+        </div>{/* end flex-1 left column */}
+
+        {/* Desktop: sticky order summary sidebar */}
+        <div className="hidden lg:block w-72 shrink-0 sticky top-4 self-start">
+          <SummarySidebar />
+        </div>
+        </div>{/* end flex gap-6 */}
       </div>
     );
   }
