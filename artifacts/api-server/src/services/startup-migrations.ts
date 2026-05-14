@@ -608,6 +608,9 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Add attachments JSONB column for portal-submitted file uploads
+  await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS attachments jsonb;`);
+
   // Remove orphaned worksheets (pre_wip or wip) whose order has been deleted
   // (order_id IS NULL or references a non-existent order). These were left
   // behind before worksheet cleanup was added to the order delete/cancel flow.

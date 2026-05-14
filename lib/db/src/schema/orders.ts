@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, numeric, integer, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, numeric, integer, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { customersTable } from "./customers";
@@ -38,6 +38,7 @@ export const ordersTable = pgTable("orders", {
   portalApprovedByName: text("portal_approved_by_name"),
   stripePaymentLinkUrl: text("stripe_payment_link_url"),
   stripePaymentLinkId: text("stripe_payment_link_id"),
+  attachments: jsonb("attachments").$type<Array<{ name: string; objectPath: string }>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

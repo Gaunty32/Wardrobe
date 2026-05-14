@@ -23,7 +23,7 @@ import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search,
   User, Package, History, Tag, Sparkles, Heart, X, Mail, UserPlus,
-  CreditCard, FileText, AlertCircle, Printer, MapPin, Boxes, TrendingUp,
+  CreditCard, FileText, AlertCircle, Printer, MapPin, Boxes, TrendingUp, Paperclip,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -1584,11 +1584,12 @@ const SHIPPING_OPTIONS = [
 function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
-  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null }) => void;
+  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }> }) => void;
   submitting: boolean;
   portalRole: string;
   onAddMore?: () => void;
 }) {
+  const { toast } = useToast();
   const [requiredDate, setRequiredDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 7);
@@ -1599,6 +1600,34 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const [shippingId, setShippingId] = useState<string>("");
   const [paymentChoice, setPaymentChoice] = useState<"card" | "invoice">("invoice");
   const [selectedPmId, setSelectedPmId] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<Array<{ name: string; objectPath: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      for (const file of files) {
+        const meta = await apiFetch<{ uploadURL: string; objectPath: string }>("/storage/uploads/request-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
+        });
+        await fetch(meta.uploadURL, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+        });
+        setAttachments(prev => [...prev, { name: file.name, objectPath: meta.objectPath }]);
+      }
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload file. Please try again.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const { data: pmData, isLoading: pmLoading } = useQuery<{ paymentMethods: any[] }>({
     queryKey: ["portal-payment-methods"],
@@ -1800,6 +1829,39 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
           <Label htmlFor="notes">Notes for our team (optional)</Label>
           <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any special instructions, delivery notes, etc." rows={3} />
         </div>
+
+        {/* ── Attachments ─────────────────────────────────────────────────── */}
+        <div className="space-y-2 sm:col-span-2">
+          <Label>Attachments <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+          {attachments.length > 0 && (
+            <ul className="space-y-1.5">
+              {attachments.map((att, i) => (
+                <li key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                  <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-sm flex-1 min-w-0 truncate">{att.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
+                    className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                    aria-label="Remove attachment"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <label className={cn(
+            "inline-flex items-center gap-2 cursor-pointer rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors select-none",
+            uploading && "opacity-60 pointer-events-none"
+          )}>
+            {uploading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Paperclip className="w-3.5 h-3.5" />}
+            {uploading ? "Uploading…" : "Attach a file"}
+            <input type="file" multiple className="hidden" disabled={uploading} onChange={handleFileUpload} />
+          </label>
+        </div>
       </div>
 
       {/* ── Payment choice (managers only) ──────────────────────────────── */}
@@ -1882,6 +1944,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             shippingCost,
             poNumber,
             paymentMethodId: portalRole === "manager" && paymentChoice === "card" ? selectedPmId : null,
+            attachments,
           })}
           disabled={submitting || basket.length === 0 || !shippingId}
           className="w-full sm:w-auto"
@@ -2185,7 +2248,7 @@ export default function NewOrder() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null }) =>
+    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }> }) =>
       apiFetch("/portal/orders", {
         method: "POST",
         body: JSON.stringify({
@@ -2195,6 +2258,7 @@ export default function NewOrder() {
           shippingOption: data.shippingOption || undefined,
           shippingCost: data.shippingCost,
           paymentMethodId: data.paymentMethodId ?? null,
+          attachments: data.attachments.length ? data.attachments : undefined,
           items: basket.map(i => ({
             productId: i.productId,
             productName: i.productName,

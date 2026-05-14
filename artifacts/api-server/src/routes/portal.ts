@@ -773,6 +773,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     shippingOption: z.string().optional(),
     shippingCost: z.number().nonnegative().optional(),
     paymentMethodId: z.string().nullable().optional(),
+    attachments: z.array(z.object({ name: z.string(), objectPath: z.string() })).optional(),
     items: z.array(z.object({
       productId: z.number().nullable().optional(),
       productName: z.string().min(1),
@@ -963,7 +964,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
 
   // Insert with a unique temp order number; update to P{id} after getting auto-generated id
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments)
     VALUES (
       'P-' || gen_random_uuid()::text,
       ${customerId},
@@ -983,7 +984,8 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${submitterEmail},
       ${submitterName},
       ${submitterEmployeeId},
-      now()
+      now(),
+      ${body.attachments?.length ? JSON.stringify(body.attachments) : null}
     )
     RETURNING id
   `);

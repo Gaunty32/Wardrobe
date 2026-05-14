@@ -914,6 +914,22 @@ export default function OrderDetail() {
                 {(order as any).portalNotes && (
                   <p className="text-amber-800 text-xs mt-1.5 italic">Customer note: "{(order as any).portalNotes}"</p>
                 )}
+                {Array.isArray((order as any).attachments) && (order as any).attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(order as any).attachments.map((att: { name: string; objectPath: string }, i: number) => (
+                      <a
+                        key={i}
+                        href={`${API_BASE}/storage${att.objectPath}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-50 transition-colors"
+                      >
+                        <Download className="w-3 h-3 shrink-0" />
+                        {att.name}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex gap-2 shrink-0">
