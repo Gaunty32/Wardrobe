@@ -383,6 +383,17 @@ export default function OrderDetail() {
   });
 
   const [uploading, setUploading] = useState(false);
+  const [editingItemPrice, setEditingItemPrice] = useState<{ id: number; value: string } | null>(null);
+
+  const updateItemPriceMutation = useMutation({
+    mutationFn: ({ itemId, unitPrice }: { itemId: number; unitPrice: number }) =>
+      apiFetch(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ unitPrice }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingItemPrice(null);
+    },
+    onError: (e: Error) => toast({ title: "Failed to update price", description: e.message, variant: "destructive" }),
+  });
 
   const updateAttachmentsMutation = useMutation({
     mutationFn: (attachments: Array<{ name: string; objectPath: string }>) =>
@@ -1149,7 +1160,58 @@ export default function OrderDetail() {
                               </Badge>
                             )}
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">{formatCurrency(orderItem.unitPrice)}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {editingItemPrice?.id === orderItem.id ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <span className="text-muted-foreground text-xs">£</span>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={editingItemPrice.value}
+                                  onChange={e => setEditingItemPrice(p => p && ({ ...p, value: e.target.value }))}
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter") {
+                                      const v = parseFloat(editingItemPrice.value);
+                                      if (!isNaN(v) && v >= 0) updateItemPriceMutation.mutate({ itemId: orderItem.id, unitPrice: v });
+                                    }
+                                    if (e.key === "Escape") setEditingItemPrice(null);
+                                  }}
+                                  className="h-7 w-24 text-right text-sm px-2"
+                                  autoFocus
+                                />
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-green-600 hover:bg-green-50"
+                                  disabled={updateItemPriceMutation.isPending}
+                                  onClick={() => {
+                                    const v = parseFloat(editingItemPrice.value);
+                                    if (!isNaN(v) && v >= 0) updateItemPriceMutation.mutate({ itemId: orderItem.id, unitPrice: v });
+                                  }}
+                                >
+                                  {updateItemPriceMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-muted-foreground hover:bg-muted"
+                                  onClick={() => setEditingItemPrice(null)}
+                                >
+                                  <XCircle className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <button
+                                className="group inline-flex items-center gap-1.5 hover:text-primary transition-colors"
+                                onClick={() => setEditingItemPrice({ id: orderItem.id, value: String(orderItem.unitPrice) })}
+                                title="Click to override price"
+                              >
+                                {formatCurrency(orderItem.unitPrice)}
+                                <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+                              </button>
+                            )}
+                          </TableCell>
                           <TableCell className="text-center font-semibold">{orderItem.quantity}</TableCell>
                           <TableCell className="text-right font-bold text-primary tabular-nums">{formatCurrency(orderItem.lineTotal)}</TableCell>
                           <TableCell className="text-right">
