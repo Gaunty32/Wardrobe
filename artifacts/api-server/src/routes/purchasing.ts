@@ -231,6 +231,7 @@ router.post("/purchasing/purchase-orders/for-process-stock", async (req, res): P
     supplierEmail: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     items: z.array(z.object({
+      processStockId: z.number().int().positive().optional().nullable(),
       productName: z.string().min(1),
       supplierCode: z.string().optional().nullable(),
       supplierPrice: z.number().optional().nullable(),
@@ -253,6 +254,7 @@ router.post("/purchasing/purchase-orders/for-process-stock", async (req, res): P
 
   const poItems = parsed.data.items.map(item => ({
     poId: po.id,
+    processStockId: item.processStockId ?? null,
     productName: item.productName,
     supplierCode: item.supplierCode ?? null,
     supplierPrice: item.supplierPrice != null ? String(item.supplierPrice) : null,

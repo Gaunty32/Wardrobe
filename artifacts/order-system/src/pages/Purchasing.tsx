@@ -732,6 +732,8 @@ export default function Purchasing() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
   const [createPoNotes, setCreatePoNotes] = useState("");
+  const [createProcessPoItem, setCreateProcessPoItem] = useState<ProcessStockRequirement | null>(null);
+  const [createProcessPoNotes, setCreateProcessPoNotes] = useState("");
 
   const { data: groups = [], isLoading: reqLoading, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
@@ -762,6 +764,17 @@ export default function Purchasing() {
       invalidateAll();
       setCreatePoGroup(null); setCreatePoNotes("");
       toast({ title: "Draft PO created", description: "It appears in the Draft tab below the requirements." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const createProcessPoMutation = useMutation({
+    mutationFn: (body: Record<string, unknown>) => apiFetch("/purchasing/purchase-orders/for-process-stock", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] });
+      setCreateProcessPoItem(null); setCreateProcessPoNotes("");
+      toast({ title: "Draft PO created", description: "Process material PO added to the Draft tab." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -1255,6 +1268,17 @@ export default function Purchasing() {
                           </div>
                         </div>
                       </div>
+                      {req.shortfall > 0 && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50 flex-shrink-0"
+                          onClick={() => { setCreateProcessPoItem(req); setCreateProcessPoNotes(""); }}
+                        >
+                          <FileText className="w-4 h-4" />
+                          Create PO
+                        </Button>
+                      )}
                     </div>
 
                     {/* Order breakdown */}
@@ -1287,6 +1311,78 @@ export default function Purchasing() {
             <ProcessStockTab />
           </TabsContent>
         </Tabs>
+
+        {/* ── Create Process Material PO dialog ── */}
+        {createProcessPoItem && (
+          <Dialog open={!!createProcessPoItem} onOpenChange={() => setCreateProcessPoItem(null)}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-primary" />
+                  Create Draft PO — {createProcessPoItem.supplierName ?? "Process Materials"}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="rounded-lg border border-blue-200 bg-blue-50/40 divide-y text-sm">
+                  <div className="flex justify-between px-3 py-2.5">
+                    <div>
+                      <span className="font-medium">{createProcessPoItem.name}</span>
+                      {createProcessPoItem.sku && (
+                        <span className="ml-2 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{createProcessPoItem.sku}</span>
+                      )}
+                    </div>
+                    <span className="font-semibold text-blue-700">× {createProcessPoItem.shortfall}</span>
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground space-y-1 px-0.5">
+                  <div className="flex justify-between">
+                    <span>Currently in stock</span>
+                    <span className="font-medium">{createProcessPoItem.stockQuantity}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Total required by orders</span>
+                    <span className="font-medium">{createProcessPoItem.totalNeeded}</span>
+                  </div>
+                  <div className="flex justify-between text-blue-700 font-semibold">
+                    <span>Shortfall to order</span>
+                    <span>{createProcessPoItem.shortfall}</span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
+                  <Textarea
+                    placeholder="Any notes for this purchase order..."
+                    value={createProcessPoNotes}
+                    onChange={(e) => setCreateProcessPoNotes(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCreateProcessPoItem(null)}>Cancel</Button>
+                <Button
+                  onClick={() => createProcessPoMutation.mutate({
+                    supplierId: createProcessPoItem.supplierId ?? null,
+                    supplierName: createProcessPoItem.supplierName ?? "Process Materials Supplier",
+                    notes: createProcessPoNotes || null,
+                    items: [{
+                      processStockId: createProcessPoItem.processStockId,
+                      productName: createProcessPoItem.name,
+                      supplierCode: createProcessPoItem.sku ?? null,
+                      quantityOrdered: createProcessPoItem.shortfall,
+                    }],
+                  })}
+                  disabled={createProcessPoMutation.isPending}
+                  className="gap-1.5"
+                >
+                  {createProcessPoMutation.isPending
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />Creating...</>
+                    : <><FileText className="w-4 h-4" />Create Draft PO</>}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* ── Create PO dialog ── */}
         {createPoGroup && (
