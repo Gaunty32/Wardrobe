@@ -567,6 +567,7 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .where(and(
+      eq(purchaseOrdersTable.status, "ordered"),
       lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
     ))
     .orderBy(purchaseOrderItemsTable.estimatedDueDate);
