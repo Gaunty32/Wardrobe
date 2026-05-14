@@ -424,19 +424,30 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
   // Computes the garment base price (with quantity breaks) and decoration process lines.
   // The WooCommerce price already includes the cheapest/first logo; extra logos are additive.
+  // When a special_price is set it is the ALL-IN total price for this customer — no extra
+  // logo surcharges are added on top; all process lines are shown as included.
   // Returns { garmentPrice, processLines, unitPrice }.
   const resolveItemPricing = (wi: any, qty: number): { garmentPrice: number; processLines: ProcessLine[]; unitPrice: number } => {
-    let garmentPrice: number;
+    const finishProcs = processes.filter((p: any) => p.finish_id === wi.finish_id);
+
+    // Special price → total all-in price, all processes included
     if (wi.special_price != null && wi.special_price !== "") {
-      garmentPrice = parseFloat(wi.special_price);
-    } else {
-      const wooBase = parseFloat(wi.woo_price ?? wi.unit_price ?? "0");
-      const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
-      const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
-      garmentPrice = breaks.length > 0 ? (sorted.find(pb => qty >= pb.qty)?.price ?? wooBase) : wooBase;
+      const totalPrice = parseFloat(wi.special_price);
+      const processLines: ProcessLine[] = finishProcs.map((p: any) => ({
+        name: p.item_finish_name ?? p.process_type ?? "",
+        type: p.process_type ?? null,
+        price: parseFloat(p.price ?? "0") || 0,
+        included: true,
+      }));
+      return { garmentPrice: totalPrice, processLines, unitPrice: totalPrice };
     }
 
-    const finishProcs = processes.filter((p: any) => p.finish_id === wi.finish_id);
+    // Standard pricing: WooCommerce base + extra logos
+    const wooBase = parseFloat(wi.woo_price ?? wi.unit_price ?? "0");
+    const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
+    const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
+    const garmentPrice = breaks.length > 0 ? (sorted.find(pb => qty >= pb.qty)?.price ?? wooBase) : wooBase;
+
     const processLines: ProcessLine[] = [];
     let totalExtra = 0;
 
