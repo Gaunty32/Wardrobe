@@ -59,9 +59,16 @@ interface ShortfallGroup {
   existingDraftPos: Array<{ id: number; poNumber: string }>;
 }
 
+interface ProcessShortfallGroup {
+  supplierName: string;
+  supplierId: number | null;
+  items: Array<{ name: string; sku: string | null; shortfall: number }>;
+}
+
 interface AllocationResult {
   allocation: { allocated: number; purchaseRequired: number };
   shortfallGroups: ShortfallGroup[];
+  processShortfallGroups: ProcessShortfallGroup[];
   unlinkedItems: number;
   emailConfigured: boolean;
   stripeCharge?: { success: boolean; paymentIntentId?: string; cardLast4?: string; error?: string } | null;
@@ -402,7 +409,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                 </div>
               )}
 
-              {/* Supplier groups */}
+              {/* Garment supplier groups */}
               <div className="space-y-3">
                 {result.shortfallGroups.map((group) => (
                   <div key={group.supplierName} className="rounded-lg border border-amber-200 bg-amber-50/40 p-3 space-y-2">
@@ -455,6 +462,36 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                   </div>
                 ))}
               </div>
+
+              {/* Process stock shortfalls */}
+              {(result.processShortfallGroups ?? []).length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-blue-700">
+                    <Package className="w-4 h-4" />
+                    Process materials to order
+                  </div>
+                  {result.processShortfallGroups.map((group) => (
+                    <div key={group.supplierName} className="rounded-lg border border-blue-200 bg-blue-50/40 p-3 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-sm">{group.supplierName}</span>
+                        <Badge variant="outline" className="text-xs border-blue-300 text-blue-700">
+                          {group.items.length} material{group.items.length !== 1 ? "s" : ""}
+                        </Badge>
+                      </div>
+                      <ul className="text-xs text-muted-foreground space-y-0.5 pl-1">
+                        {group.items.map((item) => (
+                          <li key={item.name} className="flex gap-1">
+                            <span className="font-medium text-foreground">{item.name}</span>
+                            {item.sku && <span className="text-muted-foreground font-mono">({item.sku})</span>}
+                            <span className="ml-auto text-blue-700 font-semibold">×{item.shortfall}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="text-xs text-blue-600/80 pt-0.5">Order these separately via the Process Stock page.</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setStep("email")} disabled={isCreatingPos}>

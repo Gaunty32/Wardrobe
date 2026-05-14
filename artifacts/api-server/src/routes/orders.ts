@@ -6,7 +6,7 @@ import {
   worksheetsTable, worksheetItemsTable, customerEmployeesTable,
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
-  customerProcessesTable, customerFinishProcessesTable,
+  customerProcessesTable, customerFinishProcessesTable, processStockTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
 import { ObjectStorageService } from "../lib/objectStorage";
@@ -341,6 +341,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         unitPrice: orderItemsTable.unitPrice,
         lineTotal: orderItemsTable.lineTotal,
         recipientName: orderItemsTable.recipientName,
+        finishId: orderItemsTable.finishId,
       })
       .from(orderItemsTable)
       .where(eq(orderItemsTable.orderId, params.data.id));
@@ -417,6 +418,95 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         }
       }
     }
+
+    // ── Process stock shortfall calculation ───────────────────────────────────
+    // For each order item that has a finish, walk: finish → processes → processStockId
+    // and check whether enough consumable stock (e.g. DTF sheets) is available.
+    const processShortfallMap = new Map<number, {
+      processStockId: number; name: string; sku: string | null;
+      shortfall: number; supplierId: number | null; supplierName: string | null;
+    }>();
+
+    const finishIds = [...new Set(items.map(i => i.finishId).filter(Boolean))] as number[];
+    if (finishIds.length > 0) {
+      const finishProcessLinks = await db
+        .select({ finishId: customerFinishProcessesTable.finishId, processId: customerFinishProcessesTable.processId })
+        .from(customerFinishProcessesTable)
+        .where(inArray(customerFinishProcessesTable.finishId, finishIds));
+
+      const processIds = [...new Set(finishProcessLinks.map(fp => fp.processId))];
+      if (processIds.length > 0) {
+        const processes = await db
+          .select({ id: customerProcessesTable.id, processStockId: customerProcessesTable.processStockId })
+          .from(customerProcessesTable)
+          .where(inArray(customerProcessesTable.id, processIds));
+
+        const psIds = [...new Set(processes.map(p => p.processStockId).filter(Boolean))] as number[];
+        if (psIds.length > 0) {
+          const psRows = await db
+            .select({
+              id: processStockTable.id, name: processStockTable.name, sku: processStockTable.sku,
+              stockQuantity: processStockTable.stockQuantity,
+              supplierId: processStockTable.supplierId, supplierName: suppliersTable.name,
+            })
+            .from(processStockTable)
+            .leftJoin(suppliersTable, eq(processStockTable.supplierId, suppliersTable.id))
+            .where(inArray(processStockTable.id, psIds));
+
+          const psMap = new Map(psRows.map(ps => [ps.id, ps]));
+          const remainingPs = new Map(psRows.map(ps => [ps.id, ps.stockQuantity ?? 0]));
+          const processToPs = new Map(processes.filter(p => p.processStockId).map(p => [p.id, p.processStockId!]));
+          const finishToProcesses = new Map<number, number[]>();
+          for (const fp of finishProcessLinks) {
+            if (!finishToProcesses.has(fp.finishId)) finishToProcesses.set(fp.finishId, []);
+            finishToProcesses.get(fp.finishId)!.push(fp.processId);
+          }
+
+          for (const item of items) {
+            if (!item.finishId) continue;
+            const qty = item.quantity ?? 0;
+            for (const pid of (finishToProcesses.get(item.finishId) ?? [])) {
+              const psId = processToPs.get(pid);
+              if (!psId) continue;
+              const available = remainingPs.get(psId) ?? 0;
+              const used = Math.min(available, qty);
+              const shortfall = qty - used;
+              remainingPs.set(psId, available - used);
+              if (shortfall > 0) {
+                const existing = processShortfallMap.get(psId);
+                processShortfallMap.set(psId, {
+                  processStockId: psId,
+                  name: psMap.get(psId)?.name ?? "Unknown",
+                  sku: psMap.get(psId)?.sku ?? null,
+                  shortfall: (existing?.shortfall ?? 0) + shortfall,
+                  supplierId: psMap.get(psId)?.supplierId ?? null,
+                  supplierName: psMap.get(psId)?.supplierName ?? null,
+                });
+              }
+            }
+          }
+
+          // Deduct used process stock
+          for (const [psId, remaining] of remainingPs.entries()) {
+            const original = psMap.get(psId);
+            if (!original) continue;
+            if ((original.stockQuantity ?? 0) - remaining > 0) {
+              await db.update(processStockTable).set({ stockQuantity: remaining }).where(eq(processStockTable.id, psId));
+            }
+          }
+        }
+      }
+    }
+
+    // Group process shortfalls by supplier
+    const psGroupMap = new Map<string, { supplierName: string; supplierId: number | null; items: Array<{ name: string; sku: string | null; shortfall: number }> }>();
+    for (const s of processShortfallMap.values()) {
+      const key = s.supplierName ?? "Unknown Supplier";
+      if (!psGroupMap.has(key)) psGroupMap.set(key, { supplierName: key, supplierId: s.supplierId, items: [] });
+      psGroupMap.get(key)!.items.push({ name: s.name, sku: s.sku, shortfall: s.shortfall });
+    }
+    const processShortfallGroups = [...psGroupMap.values()];
+    // ─────────────────────────────────────────────────────────────────────────
 
     // Build shortfall groups with existing draft POs per supplier
     const supplierIds = [...new Set(shortfallDetails.map(i => i.supplierId).filter(Boolean))] as number[];
@@ -584,6 +674,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       ...order, totalAmount: numericToFloat(order.totalAmount),
       allocation: { allocated: allocatedLines, purchaseRequired: purchaseLines },
       shortfallGroups,
+      processShortfallGroups,
       unlinkedItems,
       emailConfigured: isEmailConfigured,
       stripeCharge,
