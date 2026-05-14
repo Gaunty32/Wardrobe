@@ -31,7 +31,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download } from "lucide-react";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -1514,21 +1514,35 @@ export default function OrderDetail() {
         )}
 
         {/* ── Email Log ────────────────────────────────────────────────────── */}
-        {emailLogs.length > 0 && (
-          <Card className="shadow-sm border-border/50">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
-              <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-primary" />
-                <div>
-                  <CardTitle className="font-display text-lg">Email Log</CardTitle>
-                  <CardDescription>Customer emails sent for this order</CardDescription>
-                </div>
+        <Card className="shadow-sm border-border/50">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
+            <div className="flex items-center gap-2">
+              <Mail className="w-5 h-5 text-primary" />
+              <div>
+                <CardTitle className="font-display text-lg">Order Acknowledgement</CardTitle>
+                <CardDescription>
+                  {emailLogs.length === 0
+                    ? "No acknowledgement has been sent yet"
+                    : `${emailLogs.length} email${emailLogs.length !== 1 ? "s" : ""} sent`}
+                </CardDescription>
               </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetchEmailLogs()} title="Refresh">
-                <Mail className="w-4 h-4 text-muted-foreground" />
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 h-8 text-xs"
+              onClick={() => setSendAckOpen(true)}
+            >
+              <Mail className="w-3.5 h-3.5" />
+              {emailLogs.length === 0 ? "Send Acknowledgement" : "Resend"}
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            {emailLogs.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-muted-foreground">
+                Use the button above to send the order acknowledgement to the customer.
+              </p>
+            ) : (
               <ul className="divide-y divide-border/40">
                 {emailLogs.map((log) => (
                   <li key={log.id} className="flex items-start gap-3 px-5 py-3">
@@ -1543,21 +1557,29 @@ export default function OrderDetail() {
                         <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(log.sentAt).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                       </div>
                       {log.subject && <p className="text-xs text-muted-foreground mt-0.5 truncate">{log.subject}</p>}
-                      <div className="flex items-center gap-3 mt-0.5">
+                      <div className="flex items-center gap-3 mt-1">
                         {log.sentBy && log.sentBy !== "System" && (
                           <span className="text-xs text-muted-foreground/70">by {log.sentBy}</span>
                         )}
                         {!log.success && log.error && (
                           <span className="text-xs text-red-500">{log.error}</span>
                         )}
+                        <a
+                          href={`/api/orders/${orderId}/acknowledgement.eml`}
+                          download
+                          className="text-xs text-primary hover:underline flex items-center gap-1"
+                          title="Download as .eml to open in email client"
+                        >
+                          <Download className="w-3 h-3" /> Download .eml
+                        </a>
                       </div>
                     </div>
                   </li>
                 ))}
               </ul>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
 
         {/* ── Activity Log ─────────────────────────────────────────────────── */}
         <Card className="shadow-sm border-border/50">

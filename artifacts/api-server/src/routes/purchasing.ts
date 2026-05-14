@@ -44,6 +44,8 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
     .leftJoin(productSupplier, eq(productsTable.supplierId, productSupplier.id))
     .where(and(
       eq(orderItemsTable.purchaseRequired, true),
+      // Exclude items belonging to cancelled or archived orders
+      sql`COALESCE(${ordersTable.status}, '') NOT IN ('cancelled', 'archived')`,
       sql`${orderItemsTable.id} NOT IN (
         SELECT poi.order_item_id
         FROM purchase_order_items poi
