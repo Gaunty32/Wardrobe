@@ -794,6 +794,14 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     doc.moveTo(MARGIN, y).lineTo(MARGIN + W, y).strokeColor("#e2e8f0").lineWidth(0.5).stroke();
     y += 14;
 
+    // ── Instruction notice ────────────────────────────────────────────────────
+    const noticeText = "Please process and despatch at your earliest convenience. Should any items be out of stock please advise your estimated due date prior to despatch.";
+    const noticeH = 22;
+    doc.rect(MARGIN, y, W, noticeH).fill("#fefce8").stroke("#fde68a");
+    doc.fillColor("#92400e").fontSize(8.5).font("Helvetica-Bold")
+      .text(noticeText, MARGIN + 10, y + 7, { width: W - 20, align: "center", lineBreak: false });
+    y += noticeH + 12;
+
     // ── Per-product style sections ────────────────────────────────────────────
     const { groupKeys, groups } = buildMatrix(po.items);
     const ROW_H = 20;
