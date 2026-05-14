@@ -2103,17 +2103,17 @@ const SESSION_KEY = "portal-new-order";
 
 function readSession() {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
 
 function writeSession(data: object) {
-  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {}
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(data)); } catch {}
 }
 
 function clearSession() {
-  try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+  try { localStorage.removeItem(SESSION_KEY); } catch {}
 }
 
 export default function NewOrder() {

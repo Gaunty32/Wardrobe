@@ -163,7 +163,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {isPreview && (
         <div className="bg-amber-400 text-amber-950 text-xs font-semibold flex items-center justify-center gap-2 px-4 py-1.5 sticky top-0 z-50">
           <Eye className="w-3.5 h-3.5 shrink-0" />
-          Staff preview{previewEmployeeName ? <> — viewing as <strong>{previewEmployeeName}</strong></> : " — no specific employee selected"}. Orders placed here will be real.
+          Staff preview{previewEmployeeName ? <> — viewing as <strong>{previewEmployeeName}</strong></> : " — no specific employee selected"}. Basket is saved in this browser only — not to the server.
           <button
             onClick={logout}
             className="ml-3 underline underline-offset-2 hover:no-underline font-medium"
