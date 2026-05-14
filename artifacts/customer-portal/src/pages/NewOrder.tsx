@@ -353,9 +353,22 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     doSelectRecipient(recipientId);
   };
 
+  // Derive selected employee early so role filtering can be applied to items
+  const selectedEmployee = selectedRecipient !== null && selectedRecipient !== "stock"
+    ? employees.find((e: any) => String(e.id) === selectedRecipient) ?? null
+    : null;
+
+  // Filter items to only those matching the selected employee's role (or unassigned items).
+  // Stock orders and unselected state show everything.
+  const roleFilteredItems = useMemo(() => {
+    if (!selectedEmployee) return items;
+    const empRoleId = selectedEmployee.role_id ?? null;
+    return items.filter((item: any) => item.role_id == null || item.role_id === empRoleId);
+  }, [items, selectedEmployee]);
+
   // Group items by finish
   const finishGroups = Object.values(
-    items.reduce((acc: any, item: any) => {
+    roleFilteredItems.reduce((acc: any, item: any) => {
       const fid = item.finish_id ?? 0;
       if (!acc[fid]) acc[fid] = {
         finish_id: fid,
@@ -901,9 +914,6 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   }
 
   // ── Product tile grid (recipient selected) ─────────────────────────────────
-  const selectedEmployee = selectedRecipient !== "stock"
-    ? employees.find((e: any) => String(e.id) === selectedRecipient)
-    : null;
   const recipientName = selectedEmployee
     ? `${selectedEmployee.first_name} ${selectedEmployee.last_name}`
     : "Bulk Stock";
