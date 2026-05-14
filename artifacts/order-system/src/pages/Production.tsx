@@ -1655,7 +1655,7 @@ function TaskGroupCard({
   );
 }
 
-function DailyPlanTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
+function DailyPlanTab({ onNavigate, pendingCount, readyCount }: { onNavigate: (tab: string) => void; pendingCount: number; readyCount: number }) {
   const { data: plan, isLoading } = useQuery<DailyPlan>({
     queryKey: ["daily-plan"],
     queryFn: () => apiFetch("/production/daily-plan"),
@@ -1671,13 +1671,32 @@ function DailyPlanTab({ onNavigate }: { onNavigate: (tab: string) => void }) {
   }
 
   if (!plan || plan.taskGroups.length === 0) {
+    const totalWaiting = pendingCount + readyCount;
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-muted-foreground gap-3">
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-4">
         <CheckCircle2 className="w-14 h-14 text-green-300" />
         <p className="text-lg font-medium">No active production work</p>
-        <p className="text-sm text-center max-w-sm text-muted-foreground">
-          All clear! When orders are confirmed and items are allocated to stock, your daily work plan will appear here.
-        </p>
+        {totalWaiting > 0 ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-4 max-w-md text-center space-y-2">
+            <p className="text-sm font-medium text-amber-800">
+              {readyCount > 0 && pendingCount > 0
+                ? `${readyCount} order${readyCount !== 1 ? "s" : ""} ready for production · ${pendingCount} awaiting stock`
+                : readyCount > 0
+                  ? `${readyCount} confirmed order${readyCount !== 1 ? "s" : ""} ready to send to production`
+                  : `${pendingCount} confirmed order${pendingCount !== 1 ? "s" : ""} waiting for stock to arrive`}
+            </p>
+            <button
+              onClick={() => onNavigate("pre_wip")}
+              className="text-sm font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-900"
+            >
+              View in Pre-WIP →
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm text-center max-w-sm">
+            All clear! When orders are confirmed and items are allocated to stock, your daily work plan will appear here.
+          </p>
+        )}
       </div>
     );
   }
@@ -1973,7 +1992,7 @@ export default function Production() {
 
           {/* ── Today's Plan Tab ── */}
           <TabsContent value="plan">
-            <DailyPlanTab onNavigate={setActiveTab} />
+            <DailyPlanTab onNavigate={setActiveTab} pendingCount={pendingOrders.length} readyCount={readyForProduction.length} />
           </TabsContent>
 
           {/* ── Pre-WIP Tab ── */}
