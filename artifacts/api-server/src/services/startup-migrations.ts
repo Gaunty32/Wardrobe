@@ -562,5 +562,17 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Normalise employee names from ALL CAPS to Title Case using initcap().
+  // initcap() is idempotent — running on already-capitalised names is a no-op.
+  await db.execute(sql`
+    UPDATE customer_employees
+    SET
+      first_name = initcap(first_name),
+      last_name  = initcap(last_name)
+    WHERE
+      first_name IS DISTINCT FROM initcap(first_name)
+      OR last_name IS DISTINCT FROM initcap(last_name);
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
