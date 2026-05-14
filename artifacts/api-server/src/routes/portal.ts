@@ -1174,6 +1174,40 @@ router.get("/portal/products/:id/variants", portalAuth, async (req: Request, res
 
 router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
+  const portalUserId = (req as any).portalUserId ?? null;
+  const portalRole = (req as any).portalRole ?? "member";
+  const isPreviewWardrobe = (req as any).portalIsPreview ?? false;
+
+  // Resolve linked employee + their role BEFORE the items query so we can filter server-side.
+  // Managers and dept_managers see all items (they order for any employee).
+  // Members are locked to their own role — only their role's items are returned.
+  let myEmployeeId: number | null = null;
+  let memberRoleId: number | null = null;
+
+  if (isPreviewWardrobe && (req as any).portalLinkedEmployeeId) {
+    myEmployeeId = (req as any).portalLinkedEmployeeId;
+  }
+  if (portalUserId && !myEmployeeId) {
+    const linkRows = await db.execute(sql`
+      SELECT cpu.linked_employee_id, ce.role_id
+      FROM customer_portal_users cpu
+      LEFT JOIN customer_employees ce ON ce.id = cpu.linked_employee_id
+      WHERE cpu.id = ${portalUserId}
+      LIMIT 1
+    `);
+    myEmployeeId = (linkRows.rows[0] as any)?.linked_employee_id ?? null;
+    memberRoleId = (linkRows.rows[0] as any)?.role_id ?? null;
+  } else if (myEmployeeId) {
+    // Preview path — look up the role from the employee record
+    const roleRow = await db.execute(sql`
+      SELECT role_id FROM customer_employees WHERE id = ${myEmployeeId} LIMIT 1
+    `);
+    memberRoleId = (roleRow.rows[0] as any)?.role_id ?? null;
+  }
+
+  // For members: restrict to items matching their role, or items with no role set (universal items).
+  // Managers / dept_managers receive all items and do client-side filtering per selected employee.
+  const isMember = portalRole === "member";
 
   // Get wardrobe items — deduplicate by (finish, product, colour, role) so each
   // combination shows as one card in the portal; sizes are served via sizesMap.
@@ -1207,6 +1241,11 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     LEFT JOIN products           p   ON p.id = cfi.product_id
     LEFT JOIN customer_roles     cr  ON cr.id = cfi.role_id
     WHERE cfi.customer_id = ${customerId}
+      AND (
+        NOT ${isMember}
+        OR cfi.role_id IS NULL
+        OR cfi.role_id = ${memberRoleId}
+      )
     ORDER BY COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, 0), cfi.id, cf.name NULLS LAST, cfi.name
   `);
 
@@ -1330,19 +1369,6 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     const eid = String(row.employee_id);
     if (!savedSizes[eid]) savedSizes[eid] = [];
     savedSizes[eid].push({ label: row.label, size: row.size });
-  }
-
-  // Resolve which employee the logged-in user is linked to (used to restrict member ordering)
-  const portalUserId = (req as any).portalUserId ?? null;
-  const isPreviewWardrobe = (req as any).portalIsPreview ?? false;
-  let myEmployeeId: number | null = null;
-  if (isPreviewWardrobe && (req as any).portalLinkedEmployeeId) {
-    myEmployeeId = (req as any).portalLinkedEmployeeId;
-  } else if (portalUserId) {
-    const linkRows = await db.execute(sql`
-      SELECT linked_employee_id FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1
-    `);
-    myEmployeeId = (linkRows.rows[0] as any)?.linked_employee_id ?? null;
   }
 
   res.json({
