@@ -779,10 +779,10 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       .text("Deliver To:", rightColX, y, { width: colW2, lineBreak: false });
     y += 14;
     const deliverLines = [
-      "Select Branding Solutions Ltd",
+      "Select Branding Solutions",
       "Spence Mills, Mill Lane",
       "Leeds, LS13 3HE",
-      "United Kingdom",
+      "info@selectbranding.co.uk",
     ];
     for (const line of deliverLines) {
       doc.font("Helvetica").fontSize(9).fillColor("#111827")
