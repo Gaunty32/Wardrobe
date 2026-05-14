@@ -8,6 +8,34 @@ import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 
+const BASKET_LS_KEY = "portal-new-order";
+
+function useBasketCount(isPreview: boolean) {
+  const [lsCount, setLsCount] = useState<number>(() => {
+    try { const r = localStorage.getItem(BASKET_LS_KEY); return r ? (JSON.parse(r)?.basket?.length ?? 0) : 0; } catch { return 0; }
+  });
+
+  useEffect(() => {
+    const read = () => {
+      try { const r = localStorage.getItem(BASKET_LS_KEY); setLsCount(r ? (JSON.parse(r)?.basket?.length ?? 0) : 0); } catch { setLsCount(0); }
+    };
+    window.addEventListener("storage", read);
+    window.addEventListener("focus", read);
+    const t = setInterval(read, 3000);
+    return () => { window.removeEventListener("storage", read); window.removeEventListener("focus", read); clearInterval(t); };
+  }, []);
+
+  const { data: serverBasket } = useQuery<{ itemCount?: number }>({
+    queryKey: ["portal-basket-count"],
+    queryFn: () => apiFetch("/portal/basket"),
+    enabled: !isPreview,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+  });
+
+  return isPreview ? lsCount : Math.max(lsCount, serverBasket?.itemCount ?? 0);
+}
+
 interface PortalNotification {
   id: number;
   title: string;
@@ -144,10 +172,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { user, logout, isPreview, isManager, isDeptManager, previewEmployeeName } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const basketCount = useBasketCount(isPreview);
 
   const nav = [
     { label: "My Orders", icon: LayoutDashboard, href: "/orders" },
-    { label: "New Order", icon: ShoppingBag, href: "/orders/new" },
+    { label: "New Order", icon: ShoppingBag, href: "/orders/new", basketCount },
     { label: "Wardrobe", icon: Shirt, href: "/wardrobe" },
     { label: "Products", icon: Package, href: "/products" },
     { label: "Invoices", icon: Receipt, href: "/invoices" },
@@ -188,12 +217,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
         {/* Desktop nav */}
         <nav className="hidden sm:flex items-center gap-1">
-          {nav.map(({ label, icon: Icon, href }) => (
+          {nav.map(({ label, icon: Icon, href, basketCount: bc }) => (
             <button
               key={href}
               onClick={() => setLocation(href)}
               className={cn(
-                "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                "relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
                 location === href
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -201,6 +230,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
             >
               <Icon className="w-4 h-4" />
               {label}
+              {bc != null && bc > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">
+                  {bc > 99 ? "99+" : bc}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -227,18 +261,23 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {/* Mobile nav */}
       {mobileOpen && (
         <div className="sm:hidden border-b bg-card px-4 py-3 flex flex-col gap-1">
-          {nav.map(({ label, icon: Icon, href }) => (
+          {nav.map(({ label, icon: Icon, href, basketCount: bc }) => (
             <button
               key={href}
               onClick={() => { setLocation(href); setMobileOpen(false); }}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors text-left",
+                "relative flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors text-left",
                 location === href
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
             >
               <Icon className="w-4 h-4" /> {label}
+              {bc != null && bc > 0 && (
+                <span className="ml-auto min-w-[20px] h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1.5">
+                  {bc > 99 ? "99+" : bc}
+                </span>
+              )}
             </button>
           ))}
           <div className="border-t mt-2 pt-2 flex items-center justify-between">
