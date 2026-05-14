@@ -1597,8 +1597,9 @@ function EmployeesTab({ customerId }: { customerId: number }) {
         : <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
             <TableHead>Name</TableHead>
-            <TableHead className="hidden sm:table-cell">Team Manager</TableHead>
-            <TableHead className="hidden md:table-cell">Email</TableHead>
+            <TableHead className="hidden sm:table-cell">Role</TableHead>
+            <TableHead className="hidden md:table-cell">Team Manager</TableHead>
+            <TableHead className="hidden lg:table-cell">Email</TableHead>
             <TableHead className="text-right w-28">Actions</TableHead>
           </TableRow></TableHeader>
           <TableBody>
@@ -1612,12 +1613,17 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                     </div>
                   </div>
                 </TableCell>
-                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                <TableCell className="hidden sm:table-cell text-sm">
+                  {e.roleName
+                    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">{e.roleName}</span>
+                    : <span className="text-muted-foreground/40">—</span>}
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                   {e.managerName
                     ? <span className="inline-flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />{e.managerName}</span>
                     : <span className="text-muted-foreground/40">—</span>}
                 </TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
+                <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {e.email && !portalEmailSet.has(e.email.toLowerCase()) && (
