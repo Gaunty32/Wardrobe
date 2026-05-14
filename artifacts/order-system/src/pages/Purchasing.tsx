@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
-  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList,
+  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -64,6 +64,18 @@ function currencySymbol(currency?: string | null): string {
   if (currency === "USD") return "$";
   if (currency === "EUR") return "€";
   return "£";
+}
+
+interface ProcessStockRequirement {
+  processStockId: number;
+  name: string;
+  sku: string | null;
+  stockQuantity: number;
+  supplierId: number | null;
+  supplierName: string | null;
+  totalNeeded: number;
+  shortfall: number;
+  orders: Array<{ orderId: number; orderNumber: string; customerName: string | null; requiredDate: string | null; qty: number }>;
 }
 
 interface BackorderLine {
@@ -826,6 +838,13 @@ export default function Purchasing() {
     refetchInterval: 30000,
   });
 
+  const { data: processStockReqs = [] } = useQuery<ProcessStockRequirement[]>({
+    queryKey: ["process-stock-requirements"],
+    queryFn: () => apiFetch("/purchasing/process-stock-requirements"),
+    refetchInterval: 60000,
+  });
+  const processShortfallCount = processStockReqs.filter(r => r.shortfall > 0).length;
+
   const filteredPos = purchaseOrders.filter((po) => {
     if (statusFilter === "all") return po.status === "draft" || po.status === "ordered";
     return po.status === statusFilter;
@@ -866,6 +885,10 @@ export default function Purchasing() {
             <TabsTrigger value="completed" className="gap-2">
               <PackageCheck className="w-4 h-4" /> Completed
               {deliveredCount > 0 && <Badge variant="secondary" className="ml-1 text-xs">{deliveredCount}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="process_materials" className="gap-2">
+              <Layers className="w-4 h-4" /> Process Materials
+              {processShortfallCount > 0 && <Badge className="ml-1 text-xs bg-blue-500 text-white">{processShortfallCount}</Badge>}
             </TabsTrigger>
           </TabsList>
 
@@ -1155,6 +1178,84 @@ export default function Purchasing() {
                             Order req. {new Date(b.requiredDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
                           </span>
                         )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ── Process Materials Tab ── */}
+          <TabsContent value="process_materials">
+            {processStockReqs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <Layers className="w-12 h-12 text-blue-200" />
+                <p className="text-lg font-medium">No process materials required</p>
+                <p className="text-sm text-center max-w-sm">
+                  When confirmed orders require consumable process stock (e.g. DTF transfer sheets), the requirements will appear here.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <AlertTriangle className="w-4 h-4 text-blue-500" />
+                  <span>
+                    {processShortfallCount > 0
+                      ? `${processShortfallCount} material${processShortfallCount !== 1 ? "s" : ""} need ordering across all confirmed orders`
+                      : "All process materials are sufficiently stocked for confirmed orders"}
+                  </span>
+                </div>
+
+                {processStockReqs.map((req) => (
+                  <div
+                    key={req.processStockId}
+                    className={`rounded-xl border bg-card shadow-sm overflow-hidden ${req.shortfall > 0 ? "border-blue-200" : "border-border"}`}
+                  >
+                    {/* Header */}
+                    <div className={`flex items-center justify-between px-5 py-4 ${req.shortfall > 0 ? "bg-blue-50/50" : ""}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <Layers className={`w-5 h-5 flex-shrink-0 ${req.shortfall > 0 ? "text-blue-600" : "text-muted-foreground"}`} />
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-foreground">{req.name}</span>
+                            {req.sku && <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{req.sku}</span>}
+                            {req.shortfall > 0 ? (
+                              <Badge className="text-xs bg-blue-100 text-blue-800 border-blue-300">Shortfall: {req.shortfall}</Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs text-green-700 border-green-300">In stock</Badge>
+                            )}
+                          </div>
+                          <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-3 flex-wrap">
+                            {req.supplierName && <span>{req.supplierName}</span>}
+                            <span>In stock: <strong>{req.stockQuantity}</strong></span>
+                            <span>Total needed: <strong>{req.totalNeeded}</strong></span>
+                            {req.shortfall > 0 && (
+                              <span className="text-blue-700 font-semibold">Order: {req.shortfall}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Order breakdown */}
+                    <div className="border-t border-border px-5 py-3">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Required by</p>
+                      <div className="space-y-1">
+                        {req.orders.map((o) => (
+                          <div key={o.orderId} className="flex items-center gap-3 text-sm">
+                            <a href={`/orders/${o.orderId}`} className="font-mono font-bold text-primary hover:underline text-xs">
+                              {o.orderNumber}
+                            </a>
+                            {o.customerName && <span className="text-muted-foreground">{o.customerName}</span>}
+                            {o.requiredDate && (
+                              <span className="text-muted-foreground text-xs">
+                                · Due {new Date(o.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                              </span>
+                            )}
+                            <span className="ml-auto font-semibold text-xs">×{o.qty}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>

@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
-import { eq, ilike, or, and, sql } from "drizzle-orm";
-import { db, processStockTable, suppliersTable, customersTable } from "@workspace/db";
+import { eq, ilike, or, and, sql, inArray } from "drizzle-orm";
+import {
+  db, processStockTable, suppliersTable, customersTable,
+  ordersTable, orderItemsTable, customerFinishProcessesTable, customerProcessesTable,
+} from "@workspace/db";
 import { z } from "zod";
 
 async function generateNextPsSku(): Promise<string> {
@@ -138,6 +141,121 @@ router.delete("/process-stock/:id", async (req, res): Promise<void> => {
   const [row] = await db.delete(processStockTable).where(eq(processStockTable.id, parsed.data.id)).returning();
   if (!row) { res.status(404).json({ error: "Process stock item not found" }); return; }
   res.sendStatus(204);
+});
+
+// ── Process stock requirements for all confirmed orders ───────────────────────
+// Walks: confirmed order items → finish → processes → process stock
+// and returns total needed vs. available, grouped by process stock item.
+router.get("/purchasing/process-stock-requirements", async (_req, res): Promise<void> => {
+  // 1. All confirmed order items that have a finish
+  const confirmedItems = await db
+    .select({
+      orderId: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      requiredDate: ordersTable.requiredDate,
+      itemId: orderItemsTable.id,
+      quantity: orderItemsTable.quantity,
+      finishId: orderItemsTable.finishId,
+    })
+    .from(orderItemsTable)
+    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .where(eq(ordersTable.status, "confirmed"));
+
+  const itemsWithFinish = confirmedItems.filter(i => i.finishId != null);
+  if (itemsWithFinish.length === 0) { res.json([]); return; }
+
+  // 2. Finish → process links
+  const finishIds = [...new Set(itemsWithFinish.map(i => i.finishId!))] as number[];
+  const finishProcessLinks = await db
+    .select({ finishId: customerFinishProcessesTable.finishId, processId: customerFinishProcessesTable.processId })
+    .from(customerFinishProcessesTable)
+    .where(inArray(customerFinishProcessesTable.finishId, finishIds));
+
+  // 3. Processes that have a process stock item
+  const processIds = [...new Set(finishProcessLinks.map(fp => fp.processId))];
+  if (processIds.length === 0) { res.json([]); return; }
+
+  const processes = await db
+    .select({ id: customerProcessesTable.id, processStockId: customerProcessesTable.processStockId })
+    .from(customerProcessesTable)
+    .where(inArray(customerProcessesTable.id, processIds));
+
+  const processToPs = new Map(
+    processes.filter(p => p.processStockId).map(p => [p.id, p.processStockId!])
+  );
+  if (processToPs.size === 0) { res.json([]); return; }
+
+  // 4. Process stock items with supplier
+  const psIds = [...new Set([...processToPs.values()])];
+  const psRows = await db
+    .select({
+      id: processStockTable.id,
+      name: processStockTable.name,
+      sku: processStockTable.sku,
+      stockQuantity: processStockTable.stockQuantity,
+      supplierId: processStockTable.supplierId,
+      supplierName: suppliersTable.name,
+    })
+    .from(processStockTable)
+    .leftJoin(suppliersTable, eq(processStockTable.supplierId, suppliersTable.id))
+    .where(inArray(processStockTable.id, psIds));
+
+  const psMap = new Map(psRows.map(ps => [ps.id, ps]));
+
+  // 5. Build finish → processStockIds lookup
+  const finishToPs = new Map<number, number[]>();
+  for (const fp of finishProcessLinks) {
+    const psId = processToPs.get(fp.processId);
+    if (!psId) continue;
+    if (!finishToPs.has(fp.finishId)) finishToPs.set(fp.finishId, []);
+    finishToPs.get(fp.finishId)!.push(psId);
+  }
+
+  // 6. Aggregate required quantities per process stock item, with per-order breakdown
+  type OrderLine = { orderId: number; orderNumber: string; customerName: string | null; requiredDate: Date | null; qty: number };
+  const requireMap = new Map<number, { totalNeeded: number; orders: Map<number, OrderLine> }>();
+
+  for (const item of itemsWithFinish) {
+    const psIds = finishToPs.get(item.finishId!) ?? [];
+    const qty = item.quantity ?? 0;
+    for (const psId of psIds) {
+      if (!requireMap.has(psId)) requireMap.set(psId, { totalNeeded: 0, orders: new Map() });
+      const entry = requireMap.get(psId)!;
+      entry.totalNeeded += qty;
+      const existing = entry.orders.get(item.orderId);
+      if (existing) {
+        existing.qty += qty;
+      } else {
+        entry.orders.set(item.orderId, {
+          orderId: item.orderId, orderNumber: item.orderNumber,
+          customerName: item.customerName, requiredDate: item.requiredDate, qty,
+        });
+      }
+    }
+  }
+
+  // 7. Build response, sorted by shortfall severity
+  const result = [...requireMap.entries()].map(([psId, { totalNeeded, orders }]) => {
+    const ps = psMap.get(psId)!;
+    const stockQuantity = ps.stockQuantity ?? 0;
+    const shortfall = Math.max(0, totalNeeded - stockQuantity);
+    return {
+      processStockId: psId,
+      name: ps.name,
+      sku: ps.sku,
+      stockQuantity,
+      supplierId: ps.supplierId,
+      supplierName: ps.supplierName,
+      totalNeeded,
+      shortfall,
+      orders: [...orders.values()].sort((a, b) =>
+        (a.requiredDate?.getTime() ?? Infinity) - (b.requiredDate?.getTime() ?? Infinity)
+      ),
+    };
+  }).sort((a, b) => b.shortfall - a.shortfall);
+
+  res.json(result);
 });
 
 export default router;
