@@ -147,6 +147,10 @@ function parseFile(file: File): Promise<ParsedSheet> {
   });
 }
 
+function toTitleCase(s: string): string {
+  return s.replace(/\S+/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
 function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow | null {
   let firstName = "";
   let lastName: string | undefined;
@@ -164,13 +168,13 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
     const m = mappings[i];
     switch (m.type) {
       case "full_name": {
-        const parts = val.split(/\s+/);
+        const parts = toTitleCase(val).split(/\s+/);
         firstName = parts[0] ?? "";
         lastName = parts.slice(1).join(" ") || undefined;
         break;
       }
-      case "first_name": firstName = val; break;
-      case "last_name": lastName = val; break;
+      case "first_name": firstName = toTitleCase(val); break;
+      case "last_name": lastName = toTitleCase(val); break;
       case "employee_number": employeeNumber = val; break;
       case "job_title": jobTitle = val; break;
       case "email": email = val; break;
