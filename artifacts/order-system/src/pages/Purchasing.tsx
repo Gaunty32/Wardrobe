@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback } from "react";
+import { ProcessStockTab } from "@/pages/ProcessStock";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
-  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers,
+  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -890,6 +891,9 @@ export default function Purchasing() {
               <Layers className="w-4 h-4" /> Process Materials
               {processShortfallCount > 0 && <Badge className="ml-1 text-xs bg-blue-500 text-white">{processShortfallCount}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="process_stock" className="gap-2">
+              <Boxes className="w-4 h-4" /> Process Stock
+            </TabsTrigger>
           </TabsList>
 
           {/* ── Requirements Tab ── */}
@@ -1262,6 +1266,10 @@ export default function Purchasing() {
                 ))}
               </div>
             )}
+          </TabsContent>
+          {/* ── Process Stock Tab ── */}
+          <TabsContent value="process_stock">
+            <ProcessStockTab />
           </TabsContent>
         </Tabs>
 

@@ -487,7 +487,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                           </li>
                         ))}
                       </ul>
-                      <p className="text-xs text-blue-600/80 pt-0.5">Order these separately via the Process Stock page.</p>
+                      <p className="text-xs text-blue-600/80 pt-0.5">Order these separately via Purchasing → Process Stock.</p>
                     </div>
                   ))}
                 </div>

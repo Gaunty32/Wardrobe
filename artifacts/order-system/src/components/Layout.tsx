@@ -221,7 +221,6 @@ export default function Layout({ children }: LayoutProps) {
       label: "Operations",
       items: [
         { name: "Stock", href: "/stock", icon: Warehouse },
-        { name: "Process Stock", href: "/process-stock", icon: Boxes },
         { name: "Production", href: "/production", icon: ClipboardList },
         { name: "Purchasing", href: "/purchasing", icon: ShoppingBag },
         { name: "Dispatch", href: "/dispatch", icon: Send },

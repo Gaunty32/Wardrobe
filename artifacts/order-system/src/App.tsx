@@ -12,7 +12,6 @@ import Customers from "@/pages/Customers";
 import CustomerDetail from "@/pages/CustomerDetail";
 import Products from "@/pages/Products";
 import ProductDetail from "@/pages/ProductDetail";
-import ProcessStock from "@/pages/ProcessStock";
 import Stock from "@/pages/Stock";
 import Purchasing from "@/pages/Purchasing";
 import Production from "@/pages/Production";
@@ -94,7 +93,6 @@ function Router() {
       <Route path="/products" component={Products} />
       <Route path="/products/:id" component={ProductDetail} />
       <Route path="/stock" component={Stock} />
-      <Route path="/process-stock" component={ProcessStock} />
       <Route path="/purchasing" component={Purchasing} />
       <Route path="/production" component={Production} />
       <Route path="/suppliers" component={Suppliers} />

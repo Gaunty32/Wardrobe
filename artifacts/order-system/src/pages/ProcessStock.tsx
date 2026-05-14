@@ -58,7 +58,7 @@ const BLANK_FORM = {
   fileUrl: null as string | null,
 };
 
-export default function ProcessStock() {
+export function ProcessStockTab() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
@@ -206,17 +206,13 @@ export default function ProcessStock() {
   };
 
   return (
-    <Layout>
-      <div className="flex flex-col space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Process Stock</h1>
-            <p className="text-muted-foreground mt-1">Physical materials used in decoration processes — print, embroidery, etc.</p>
-          </div>
-          <Button onClick={openCreate} className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
-            <Plus className="w-4 h-4 mr-2" /> Add Stock Item
-          </Button>
-        </div>
+    <div className="flex flex-col space-y-4">
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-muted-foreground">Physical materials used in decoration processes — print, embroidery, etc.</p>
+        <Button onClick={openCreate} className="shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-all">
+          <Plus className="w-4 h-4 mr-2" /> Add Stock Item
+        </Button>
+      </div>
 
         <Card className="shadow-sm border-border/50">
           <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
@@ -494,6 +490,19 @@ export default function ProcessStock() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+    </div>
+  );
+}
+
+export default function ProcessStock() {
+  return (
+    <Layout>
+      <div className="flex flex-col space-y-6">
+        <div>
+          <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Process Stock</h1>
+          <p className="text-muted-foreground mt-1">Physical materials used in decoration processes — print, embroidery, etc.</p>
+        </div>
+        <ProcessStockTab />
       </div>
     </Layout>
   );
