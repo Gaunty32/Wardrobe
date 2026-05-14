@@ -580,5 +580,17 @@ export async function runStartupMigrations(): Promise<void> {
       OR last_name IS DISTINCT FROM initcap(last_name);
   `);
 
+  // Remove orphaned worksheets (pre_wip or wip) whose order has been deleted
+  // (order_id IS NULL or references a non-existent order). These were left
+  // behind before worksheet cleanup was added to the order delete/cancel flow.
+  await db.execute(sql`
+    DELETE FROM worksheets
+    WHERE status IN ('pre_wip', 'wip')
+      AND (
+        order_id IS NULL
+        OR NOT EXISTS (SELECT 1 FROM orders WHERE orders.id = worksheets.order_id)
+      );
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
