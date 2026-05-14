@@ -1520,7 +1520,7 @@ router.post("/portal/manager/orders/:id/reject", portalAuth, async (req: Request
 router.get("/portal/admin/pending-orders", async (req: Request, res: Response) => {
   const rows = await db.execute(sql`
     SELECT o.id, o.order_number, o.customer_id, o.customer_name, o.status, o.portal_status,
-           o.portal_notes, o.total_amount, o.order_date, o.required_date, o.notes,
+           o.portal_notes, o.total_amount, o.order_date, o.required_date, o.notes, o.po_number,
            (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = o.id) as item_count
     FROM orders o
     WHERE o.status = 'portal_pending'

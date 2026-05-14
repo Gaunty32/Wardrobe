@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Layout from "@/components/Layout";
 import { Link, useLocation } from "wouter";
 import {
@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText, Pencil } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -144,6 +144,54 @@ function QuoteHoldingPanel() {
   );
 }
 
+function PoPendingInline({ orderId, current, onSaved }: { orderId: number; current: string | null; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(current ?? "");
+  const { toast } = useToast();
+
+  useEffect(() => { setValue(current ?? ""); }, [current]);
+
+  const save = async () => {
+    setEditing(false);
+    if (value === (current ?? "")) return;
+    try {
+      await apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ poNumber: value || null }) });
+      onSaved();
+    } catch {
+      toast({ title: "Could not save PO number", variant: "destructive" });
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        className="text-xs border rounded px-1.5 py-0.5 font-mono w-32 outline-none focus:ring-1 focus:ring-primary/40"
+        placeholder="e.g. PO-2026-001"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+        onClick={e => e.stopPropagation()}
+      />
+    );
+  }
+
+  return (
+    <button
+      className="flex items-center gap-1 group"
+      onClick={e => { e.stopPropagation(); setEditing(true); }}
+      title="Click to edit PO number"
+    >
+      {current
+        ? <span className="text-xs font-mono text-muted-foreground group-hover:text-foreground transition-colors">{current}</span>
+        : <span className="text-xs text-muted-foreground/40 group-hover:text-muted-foreground transition-colors italic">Add PO#</span>
+      }
+      <Pencil className="w-3 h-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
+    </button>
+  );
+}
+
 function PortalPendingOrders() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -186,6 +234,7 @@ function PortalPendingOrders() {
               <TableHead>Order #</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>PO #</TableHead>
               <TableHead className="text-right">Items</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -197,6 +246,13 @@ function PortalPendingOrders() {
                 <TableCell><span className="font-semibold text-amber-700">{o.order_number}</span></TableCell>
                 <TableCell className="font-medium">{toTitleCase(o.customer_name)}</TableCell>
                 <TableCell className="text-muted-foreground text-sm">{formatDate(o.order_date)}</TableCell>
+                <TableCell onClick={e => e.stopPropagation()}>
+                  <PoPendingInline
+                    orderId={o.id}
+                    current={o.po_number ?? null}
+                    onSaved={() => qc.invalidateQueries({ queryKey: ["portal-pending-orders"] })}
+                  />
+                </TableCell>
                 <TableCell className="text-right text-sm">{o.item_count}</TableCell>
                 <TableCell className="text-right font-semibold">{formatCurrency(parseFloat(o.total_amount ?? "0"))}</TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
