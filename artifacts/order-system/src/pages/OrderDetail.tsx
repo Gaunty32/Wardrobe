@@ -31,7 +31,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -381,6 +381,50 @@ export default function OrderDetail() {
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
+
+  const [uploading, setUploading] = useState(false);
+
+  const updateAttachmentsMutation = useMutation({
+    mutationFn: (attachments: Array<{ name: string; objectPath: string }>) =>
+      apiFetch(`/orders/${orderId}/attachments`, { method: "PATCH", body: JSON.stringify({ attachments }) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }),
+    onError: (e: Error) => toast({ title: "Error saving attachments", description: e.message, variant: "destructive" }),
+  });
+
+  const currentAttachments: Array<{ name: string; objectPath: string }> =
+    Array.isArray((order as any)?.attachments) ? (order as any).attachments : [];
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const added: Array<{ name: string; objectPath: string }> = [];
+      for (const file of files) {
+        const meta = await apiFetch<{ uploadURL: string; objectPath: string }>("/storage/uploads/request-url", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
+        });
+        await fetch(meta.uploadURL, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type || "application/octet-stream" },
+        });
+        added.push({ name: file.name, objectPath: meta.objectPath });
+      }
+      await updateAttachmentsMutation.mutateAsync([...currentAttachments, ...added]);
+    } catch {
+      toast({ title: "Upload failed", description: "Could not upload file. Please try again.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeAttachment = (idx: number) => {
+    updateAttachmentsMutation.mutate(currentAttachments.filter((_, i) => i !== idx));
+  };
 
   const [editingRequiredDate, setEditingRequiredDate] = useState(false);
   const [requiredDateValue, setRequiredDateValue] = useState("");
@@ -1433,7 +1477,13 @@ export default function OrderDetail() {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="py-4">
+              <CardContent className="py-4 space-y-3">
+                {(order as any).portalNotes && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5">
+                    <p className="text-xs font-medium text-amber-700 mb-1">Customer note (via portal)</p>
+                    <p className="text-sm text-amber-900 whitespace-pre-wrap">{(order as any).portalNotes}</p>
+                  </div>
+                )}
                 {editingNotes ? (
                   <div className="space-y-2">
                     <textarea
@@ -1460,6 +1510,60 @@ export default function OrderDetail() {
                     }
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                <CardTitle className="font-display text-lg flex items-center">
+                  <Paperclip className="w-4 h-4 mr-2 text-muted-foreground" /> Attachments
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="py-4 space-y-2">
+                {currentAttachments.length > 0 && (
+                  <ul className="space-y-1.5">
+                    {currentAttachments.map((att, i) => (
+                      <li key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                        <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <a
+                          href={`${API_BASE}/storage${att.objectPath}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm flex-1 min-w-0 truncate hover:underline text-foreground"
+                        >
+                          {att.name}
+                        </a>
+                        <a
+                          href={`${API_BASE}/storage${att.objectPath}`}
+                          download={att.name}
+                          className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                          aria-label="Download"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(i)}
+                          disabled={updateAttachmentsMutation.isPending}
+                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                          aria-label="Remove attachment"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <label className={cn(
+                  "inline-flex items-center gap-2 cursor-pointer rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors select-none",
+                  (uploading || updateAttachmentsMutation.isPending) && "opacity-60 pointer-events-none"
+                )}>
+                  {uploading
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Paperclip className="w-3.5 h-3.5" />}
+                  {uploading ? "Uploading…" : "Attach a file"}
+                  <input type="file" multiple className="hidden" disabled={uploading} onChange={handleFileUpload} />
+                </label>
               </CardContent>
             </Card>
           </div>

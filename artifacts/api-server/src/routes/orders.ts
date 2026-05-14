@@ -701,6 +701,26 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
   res.json({ ...order, totalAmount: numericToFloat(order.totalAmount) });
 });
 
+// ── Update order attachments ───────────────────────────────────────────────
+router.patch("/orders/:id/attachments", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const parsed = z.object({
+    attachments: z.array(z.object({ name: z.string(), objectPath: z.string() })),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [order] = await db
+    .update(ordersTable)
+    .set({ attachments: parsed.data.attachments, updatedAt: new Date() })
+    .where(eq(ordersTable.id, id))
+    .returning({ id: ordersTable.id, attachments: ordersTable.attachments });
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  res.json(order);
+});
+
 router.delete("/orders/:id", async (req, res): Promise<void> => {
   const params = DeleteOrderParams.safeParse(req.params);
   if (!params.success) {
