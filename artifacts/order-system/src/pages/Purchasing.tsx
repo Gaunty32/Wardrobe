@@ -657,7 +657,7 @@ function POCard({
             <>
               <POMatrixView items={po.items} currency={po.supplierCurrency} />
 
-              {/* Individual lines — always visible so quantity can be edited for stock ordering */}
+              {/* Individual lines — quantity editable on draft POs */}
               <div className="space-y-1 pt-2">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Individual Lines</p>
                 {po.items.map((line) => (
@@ -669,20 +669,24 @@ function POCard({
                         <span className="text-xs text-muted-foreground">{[line.colour, line.size].filter(Boolean).join(" / ")}</span>
                       )}
                       <span className="text-xs text-muted-foreground">×</span>
-                      <input
-                        type="number"
-                        min={1}
-                        defaultValue={line.quantityOrdered}
-                        key={line.quantityOrdered}
-                        className="w-14 text-center text-xs font-semibold border border-border rounded px-1 py-0.5 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                        onBlur={(e) => {
-                          const val = parseInt(e.target.value);
-                          if (!isNaN(val) && val >= 1 && val !== line.quantityOrdered) {
-                            onLineUpdate(po.id, line.id, { quantityOrdered: val });
-                          }
-                        }}
-                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                      />
+                      {po.status === "draft" ? (
+                        <input
+                          type="number"
+                          min={1}
+                          defaultValue={line.quantityOrdered}
+                          key={line.quantityOrdered}
+                          className="w-14 text-center text-xs font-semibold border border-border rounded px-1 py-0.5 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!isNaN(val) && val >= 1 && val !== line.quantityOrdered) {
+                              onLineUpdate(po.id, line.id, { quantityOrdered: val });
+                            }
+                          }}
+                          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                        />
+                      ) : (
+                        <span className="text-xs font-semibold">{line.quantityOrdered}</span>
+                      )}
                       {line.quantityDelivered > 0 && (
                         <span className="text-xs text-green-600">{line.quantityDelivered} received</span>
                       )}
@@ -865,6 +869,15 @@ export default function Purchasing() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const reqQtyMutation = useMutation({
+    mutationFn: ({ orderId, itemId, purchaseQuantity }: { orderId: number; itemId: number; purchaseQuantity: number }) =>
+      apiFetch(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ purchaseQuantity }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+    },
+    onError: (e: Error) => toast({ title: "Error updating quantity", description: e.message, variant: "destructive" }),
+  });
+
   const clearBackorderMutation = useMutation({
     mutationFn: ({ poId, itemId, quantityOrdered }: { poId: number; itemId: number; quantityOrdered: number }) =>
       apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ quantityDelivered: quantityOrdered }) }),
@@ -1018,8 +1031,36 @@ export default function Purchasing() {
                         </div>
 
                         {isExpanded && (
-                          <div className="border-t border-border px-5 py-4">
+                          <div className="border-t border-border px-5 py-4 space-y-4">
                             <MatrixTable items={group.items} />
+                            <div className="space-y-1">
+                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Individual Lines — edit qty to order</p>
+                              {group.items.map((item) => (
+                                <div key={item.itemId} className="flex items-center gap-3 rounded-lg border border-border bg-muted/10 px-3 py-2 text-sm flex-wrap">
+                                  <span className="text-xs text-muted-foreground font-mono">{item.orderNumber}</span>
+                                  {item.supplierCode && <span className="font-mono font-bold text-primary text-xs">{item.supplierCode}</span>}
+                                  <span className="font-medium flex-1 min-w-0 truncate">{item.canonicalProductName ?? item.productName}</span>
+                                  {(item.colour || item.size) && (
+                                    <span className="text-xs text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
+                                  )}
+                                  <span className="text-xs text-muted-foreground">×</span>
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    defaultValue={item.purchaseQuantity ?? 1}
+                                    key={item.purchaseQuantity}
+                                    className="w-14 text-center text-xs font-semibold border border-border rounded px-1 py-0.5 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                    onBlur={(e) => {
+                                      const val = parseInt(e.target.value);
+                                      if (!isNaN(val) && val >= 1 && val !== item.purchaseQuantity) {
+                                        reqQtyMutation.mutate({ orderId: item.orderId, itemId: item.itemId, purchaseQuantity: val });
+                                      }
+                                    }}
+                                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
