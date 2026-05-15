@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText, Pencil } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText, Pencil, Paperclip, StickyNote } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -126,7 +126,13 @@ function QuoteHoldingPanel() {
           <TableBody>
             {quotes.map((o: any) => (
               <TableRow key={o.id} className="hover:bg-violet-50/80 cursor-pointer" onClick={() => setLocation(`/orders/${o.id}`)}>
-                <TableCell><span className="font-semibold text-violet-700">{o.orderNumber}</span></TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-semibold text-violet-700">{o.orderNumber}</span>
+                    {o.notes && <StickyNote className="w-3 h-3 text-amber-400 shrink-0" title="Has internal note" />}
+                    {o.attachments?.length > 0 && <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" title="Has attachments" />}
+                  </div>
+                </TableCell>
                 <TableCell className="font-medium">{toTitleCase(o.customerName ?? "")}</TableCell>
                 <TableCell className="text-muted-foreground text-sm">{o.requiredDate ? formatDate(o.requiredDate) : <span className="italic text-muted-foreground/50">—</span>}</TableCell>
                 <TableCell className="text-right font-semibold">{formatCurrency(parseFloat(o.totalAmount ?? "0"))}</TableCell>
@@ -445,6 +451,12 @@ export default function Orders() {
                             <div className="flex items-center gap-1.5">
                               {isPortalPending && <Globe className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
                               <span className={cn("font-bold text-base tracking-wide", isPortalPending ? "text-amber-700" : "text-primary")}>{order.orderNumber}</span>
+                              {(order as any).notes && (
+                                <StickyNote className="w-3 h-3 text-amber-400 shrink-0" title="Has internal note" />
+                              )}
+                              {(order as any).attachments?.length > 0 && (
+                                <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" title="Has attachments" />
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>
