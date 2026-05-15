@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -727,7 +726,6 @@ export default function Purchasing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
-  const [selectedItems, setSelectedItems] = useState<Record<number, boolean>>({});
   const [emailGroup, setEmailGroup] = useState<SupplierGroup | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
@@ -747,11 +745,6 @@ export default function Purchasing() {
     refetchInterval: 30000,
   });
 
-  const fulfillMutation = useMutation({
-    mutationFn: (itemIds: number[]) => apiFetch("/purchasing/mark-fulfilled", { method: "POST", body: JSON.stringify({ itemIds }) }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] }); setSelectedItems({}); toast({ title: "Marked as fulfilled" }); },
-    onError: () => toast({ title: "Error", variant: "destructive" }),
-  });
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
@@ -865,16 +858,6 @@ export default function Purchasing() {
   });
 
   const toggleGroup = (name: string) => setExpandedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
-  const toggleItem = (id: number) => setSelectedItems((prev) => ({ ...prev, [id]: !prev[id] }));
-  const toggleGroupItems = (group: SupplierGroup) => {
-    const allSel = group.items.every((i) => selectedItems[i.itemId]);
-    const upd = { ...selectedItems };
-    group.items.forEach((i) => { upd[i.itemId] = !allSel; });
-    setSelectedItems(upd);
-  };
-
-  const selectedCount = Object.values(selectedItems).filter(Boolean).length;
-  const selectedIds = Object.entries(selectedItems).filter(([, v]) => v).map(([k]) => parseInt(k));
   const totalItems = groups.reduce((s, g) => s + g.items.length, 0);
 
   const { data: backorders = [] } = useQuery<BackorderLine[]>({
@@ -957,15 +940,6 @@ export default function Purchasing() {
           {/* ── Requirements Tab ── */}
           <TabsContent value="requirements">
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {selectedCount > 0 && (
-                    <Button variant="outline" onClick={() => fulfillMutation.mutate(selectedIds)} disabled={fulfillMutation.isPending} className="gap-2 border-green-500 text-green-700 hover:bg-green-50">
-                      <CheckCircle className="w-4 h-4" /> Mark {selectedCount} Fulfilled
-                    </Button>
-                  )}
-                </div>
-              </div>
 
               {reqLoading ? (
                 <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
@@ -984,8 +958,6 @@ export default function Purchasing() {
 
                   {groups.map((group) => {
                     const isExpanded = expandedGroups[group.supplierName] !== false;
-                    const allGroupSelected = group.items.every((i) => selectedItems[i.itemId]);
-                    const someGroupSelected = group.items.some((i) => selectedItems[i.itemId]);
                     const totalQty = group.items.reduce((s, i) => s + (i.purchaseQuantity ?? 0), 0);
                     const existingDraft = getDraftPoForSupplier(group.supplierId, group.supplierName);
 
@@ -993,9 +965,6 @@ export default function Purchasing() {
                       <div key={group.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                         <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => toggleGroup(group.supplierName)}>
                           <div className="flex items-center gap-3 flex-wrap">
-                            <div onClick={(e) => { e.stopPropagation(); toggleGroupItems(group); }}>
-                              <Checkbox checked={allGroupSelected} className={someGroupSelected && !allGroupSelected ? "data-[state=unchecked]:bg-primary/20" : ""} />
-                            </div>
                             <div>
                               <div className="font-semibold text-base flex items-center gap-2">
                                 {group.supplierName}
@@ -1030,66 +999,8 @@ export default function Purchasing() {
                         </div>
 
                         {isExpanded && (
-                          <div className="border-t border-border px-5 py-4 space-y-5">
-                            <div>
-                              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Purchase Matrix</h4>
-                              <MatrixTable items={group.items} />
-                            </div>
-                            <div>
-                              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">Line Details</h4>
-                              <div className="space-y-2">
-                                {(() => {
-                                  // Consolidate items with same product + colour + size
-                                  const consolidated = new Map<string, { items: PurchaseRequirement[]; totalQty: number }>();
-                                  for (const item of group.items) {
-                                    const key = `${productDisplayName(item)}||${item.colour ?? ""}||${item.size ?? ""}`;
-                                    if (!consolidated.has(key)) consolidated.set(key, { items: [], totalQty: 0 });
-                                    const entry = consolidated.get(key)!;
-                                    entry.items.push(item);
-                                    entry.totalQty += item.purchaseQuantity ?? 0;
-                                  }
-                                  return [...consolidated.values()].map(({ items: grpItems, totalQty }) => {
-                                    const rep = grpItems[0];
-                                    const allSelected = grpItems.every((i) => selectedItems[i.itemId]);
-                                    const someSelected = grpItems.some((i) => selectedItems[i.itemId]);
-                                    const toggleAll = () => {
-                                      const upd = { ...selectedItems };
-                                      grpItems.forEach((i) => { upd[i.itemId] = !allSelected; });
-                                      setSelectedItems(upd);
-                                    };
-                                    // Deduplicate orders (same order may have multiple items)
-                                    const ordersSeen = new Set<number>();
-                                    const orders = grpItems.filter((i) => { if (ordersSeen.has(i.orderId)) return false; ordersSeen.add(i.orderId); return true; });
-                                    return (
-                                      <div key={grpItems.map((i) => i.itemId).join("-")} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
-                                        <Checkbox
-                                          checked={allSelected}
-                                          className={someSelected && !allSelected ? "data-[state=unchecked]:bg-primary/20" : ""}
-                                          onCheckedChange={toggleAll}
-                                        />
-                                        <Package className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                        <div className="flex-1 min-w-0">
-                                          <div className="font-medium text-sm">{productDisplayName(rep)}</div>
-                                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                            {rep.supplierCode && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">Supplier Code: {rep.supplierCode}</span>}
-                                            {rep.productSku && !rep.supplierCode && <span className="text-xs font-mono text-muted-foreground">SKU: {rep.productSku}</span>}
-                                            {rep.colour && <Badge variant="outline" className="text-xs py-0">{rep.colour}</Badge>}
-                                            {rep.size && <Badge variant="outline" className="text-xs py-0">{rep.size}</Badge>}
-                                            <span className="text-xs text-muted-foreground">
-                                              {orders.length === 1
-                                                ? <>Order: <a href={`/orders/${orders[0].orderId}`} className="text-primary hover:underline">{orders[0].orderNumber}</a>{orders[0].customerName && ` · ${orders[0].customerName}`}</>
-                                                : <>Orders: {orders.map((o, idx) => (<span key={o.orderId}>{idx > 0 && ", "}<a href={`/orders/${o.orderId}`} className="text-primary hover:underline">{o.orderNumber}</a></span>))}{orders[0].customerName && ` · ${orders[0].customerName}`}</>
-                                              }
-                                            </span>
-                                          </div>
-                                        </div>
-                                        <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-sm font-semibold">× {totalQty}</Badge>
-                                      </div>
-                                    );
-                                  });
-                                })()}
-                              </div>
-                            </div>
+                          <div className="border-t border-border px-5 py-4">
+                            <MatrixTable items={group.items} />
                           </div>
                         )}
                       </div>
