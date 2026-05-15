@@ -427,15 +427,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     if (!sizesMap || !wi.product_id) return [];
     const byColour = sizesMap[String(wi.product_id)];
     if (!byColour) return [];
-    const colour = wi.colour?.trim();
-    // Try exact colour match, then case-insensitive, then all sizes for product
-    const exactMatch = colour ? byColour[colour] : null;
-    if (exactMatch?.length) return sortSizesWithOrder(exactMatch, sizeOrder);
-    if (colour) {
-      const ciMatch = Object.entries(byColour).find(([k]) => k.toLowerCase() === colour.toLowerCase());
-      if (ciMatch?.[1]?.length) return sortSizesWithOrder(ciMatch[1], sizeOrder);
-    }
-    // fallback: all sizes for this product
+    // Always return all sizes across all colours — the colour on the wardrobe item
+    // is fixed for display but shouldn't restrict which sizes can be ordered.
     const all = [...new Set(Object.values(byColour).flat())];
     return sortSizesWithOrder(all, sizeOrder);
   };
