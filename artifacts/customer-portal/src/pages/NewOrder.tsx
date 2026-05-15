@@ -1083,13 +1083,13 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                           type="button"
                           onClick={() => setBulkModes(m => ({ ...m, [key]: !m[key] }))}
                           className={cn(
-                            "self-end text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors",
+                            "w-full py-1.5 rounded-md text-xs font-semibold transition-colors border",
                             bulkModes[key]
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                              ? "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                              : "bg-[hsl(218,45%,19%)] text-white border-[hsl(218,45%,19%)] hover:bg-[hsl(218,45%,24%)]"
                           )}
                         >
-                          {bulkModes[key] ? "Single" : "Bulk"}
+                          {bulkModes[key] ? "← Single item" : "Bulk Order"}
                         </button>
                       )}
 
