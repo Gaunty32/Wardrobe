@@ -912,13 +912,23 @@ export default function Purchasing() {
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <ShoppingBag className="w-7 h-7 text-primary" /> Purchasing
             </h1>
             <p className="text-muted-foreground mt-1">Manage purchase requirements and supplier orders.</p>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={() => { refetchReqs(); refetchPos(); }}
+            disabled={reqLoading || posLoading}
+          >
+            <RefreshCw className={`w-4 h-4 ${reqLoading || posLoading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
         </div>
 
         <Tabs defaultValue="requirements">
