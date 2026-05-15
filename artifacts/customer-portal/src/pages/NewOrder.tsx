@@ -454,8 +454,24 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
       return { garmentPrice: totalPrice, processLines, unitPrice: totalPrice };
     }
 
-    // Standard pricing: WooCommerce base + extra logos
     const wooBase = parseFloat(wi.woo_price ?? wi.unit_price ?? "0");
+    const wooRegular = wi.woo_regular_price ? parseFloat(wi.woo_regular_price) : null;
+
+    // WooCommerce sale price is all-in: product is marked on_sale, OR its current price
+    // is lower than the stored regular price — meaning the decoration is bundled into
+    // the sale deal. No extra logo surcharges are added in this case.
+    const isWooSale = wi.woo_on_sale === true || (wooRegular != null && wooRegular > 0 && wooBase < wooRegular);
+    if (isWooSale) {
+      const processLines: ProcessLine[] = finishProcs.map((p: any) => ({
+        name: p.item_finish_name ?? p.process_type ?? "",
+        type: p.process_type ?? null,
+        price: parseFloat(p.price ?? "0") || 0,
+        included: true,
+      }));
+      return { garmentPrice: wooBase, processLines, unitPrice: wooBase };
+    }
+
+    // Standard pricing: WooCommerce base + extra logos
     const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
     const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
     const garmentPrice = breaks.length > 0 ? (sorted.find(pb => qty >= pb.qty)?.price ?? wooBase) : wooBase;

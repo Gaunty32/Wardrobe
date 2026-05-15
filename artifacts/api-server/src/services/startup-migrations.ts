@@ -657,5 +657,11 @@ export async function runStartupMigrations(): Promise<void> {
       );
   `);
 
+  // Add sale pricing columns to products table
+  await db.execute(sql`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS regular_price text;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS on_sale boolean NOT NULL DEFAULT false;
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }

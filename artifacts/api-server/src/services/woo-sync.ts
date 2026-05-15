@@ -16,6 +16,8 @@ interface WooProduct {
   sku: string;
   price: string;
   regular_price: string;
+  sale_price: string;
+  on_sale: boolean;
   description: string;
   short_description: string;
   stock_quantity: number | null;
@@ -231,8 +233,14 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
       try {
         const wooId = wooProduct.id;
         const category = pickBestCategory(wooProduct.categories ?? [], allCategories);
-        const priceStr = wooProduct.regular_price || wooProduct.price || "0";
+        // Use the current active price (sale_price when on sale, otherwise price).
+        // Fall back to regular_price last — it's the non-discounted price.
+        const priceStr = (wooProduct.on_sale && wooProduct.sale_price)
+          ? wooProduct.sale_price
+          : (wooProduct.price || wooProduct.regular_price || "0");
         const price = parseFloat(priceStr) || 0;
+        const regularPrice = wooProduct.regular_price ? String(parseFloat(wooProduct.regular_price) || 0) : null;
+        const onSale = wooProduct.on_sale ?? false;
         const stockQty = wooProduct.manage_stock ? (wooProduct.stock_quantity ?? null) : null;
         const imageUrl = wooProduct.images?.[0]?.src ?? null;
         // Build a gallery map: alt-text (lowercased) → image src, for colour fallback
@@ -253,17 +261,21 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
 
         if (existing.length > 0) {
           productId = existing[0].id;
-          await db.update(productsTable).set({
-            name: wooProduct.name,
-            sku: wooProduct.sku || null,
-            category,
-            imageUrl,
-            description: stripHtml(wooProduct.short_description || wooProduct.description),
-            unitPrice: String(price),
-            stockQuantity: stockQty,
-            taxStatus,
-            taxClass,
-          }).where(eq(productsTable.id, productId));
+          await db.execute(sql`
+            UPDATE products SET
+              name         = ${wooProduct.name},
+              sku          = ${wooProduct.sku || null},
+              category     = ${category},
+              image_url    = ${imageUrl},
+              description  = ${stripHtml(wooProduct.short_description || wooProduct.description)},
+              unit_price   = ${String(price)},
+              regular_price = ${regularPrice},
+              on_sale      = ${onSale},
+              stock_quantity = ${stockQty},
+              tax_status   = ${taxStatus},
+              tax_class    = ${taxClass}
+            WHERE id = ${productId}
+          `);
           updated++;
         } else {
           const [inserted] = await db.insert(productsTable).values({
