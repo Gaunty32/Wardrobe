@@ -732,6 +732,7 @@ export default function Purchasing() {
   const [createPoNotes, setCreatePoNotes] = useState("");
   const [createProcessPoGroup, setCreateProcessPoGroup] = useState<{ supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] } | null>(null);
   const [createProcessPoNotes, setCreateProcessPoNotes] = useState("");
+  const [processPoQtys, setProcessPoQtys] = useState<Record<number, number>>({});
 
   const { data: groups = [], isLoading: reqLoading, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
@@ -766,7 +767,7 @@ export default function Purchasing() {
     onSuccess: () => {
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] });
-      setCreateProcessPoGroup(null); setCreateProcessPoNotes("");
+      setCreateProcessPoGroup(null); setCreateProcessPoNotes(""); setProcessPoQtys({});
       toast({ title: "Draft PO created", description: "Process material PO added to the Draft tab." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1050,7 +1051,14 @@ export default function Purchasing() {
                               <Button
                                 size="sm"
                                 className="gap-1.5 text-xs bg-primary hover:bg-primary/90"
-                                onClick={(e) => { e.stopPropagation(); setCreateProcessPoGroup(psGroup); setCreateProcessPoNotes(""); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCreateProcessPoGroup(psGroup);
+                                  setCreateProcessPoNotes("");
+                                  const init: Record<number, number> = {};
+                                  for (const r of psGroup.items) init[r.processStockId] = r.shortfall;
+                                  setProcessPoQtys(init);
+                                }}
                               >
                                 <FileText className="w-3.5 h-3.5" /> Create Draft PO
                               </Button>
@@ -1261,15 +1269,40 @@ export default function Purchasing() {
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="rounded-lg border border-blue-200 bg-blue-50/40 divide-y text-sm">
-                  {createProcessPoGroup.items.map((req) => (
-                    <div key={req.processStockId} className="flex justify-between px-3 py-2.5">
-                      <div>
-                        <span className="font-medium">{req.name}</span>
-                        {req.sku && <span className="ml-2 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{req.sku}</span>}
+                  {createProcessPoGroup.items.map((req) => {
+                    const qty = processPoQtys[req.processStockId] ?? req.shortfall;
+                    const excess = qty - req.shortfall;
+                    return (
+                      <div key={req.processStockId} className="px-3 py-2.5 space-y-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="font-medium">{req.name}</span>
+                            {req.sku && <span className="ml-2 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{req.sku}</span>}
+                            <span className="ml-2 text-xs text-muted-foreground">Need: {req.shortfall}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-muted-foreground text-xs">Qty:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              value={qty}
+                              onChange={(e) => {
+                                const v = Math.max(1, parseInt(e.target.value) || 1);
+                                setProcessPoQtys(prev => ({ ...prev, [req.processStockId]: v }));
+                              }}
+                              className="w-20 rounded border border-input bg-background px-2 py-1 text-right text-sm font-semibold text-blue-700 focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                          </div>
+                        </div>
+                        {excess > 0 && (
+                          <p className="text-xs text-emerald-600">+{excess} extra → will be added to process stock on delivery</p>
+                        )}
+                        {excess < 0 && (
+                          <p className="text-xs text-amber-600">{Math.abs(excess)} short → remaining shortfall stays as a requirement</p>
+                        )}
                       </div>
-                      <span className="font-semibold text-blue-700">× {req.shortfall}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
@@ -1292,7 +1325,7 @@ export default function Purchasing() {
                       processStockId: req.processStockId,
                       productName: req.name,
                       supplierCode: req.sku ?? null,
-                      quantityOrdered: req.shortfall,
+                      quantityOrdered: processPoQtys[req.processStockId] ?? req.shortfall,
                     })),
                   })}
                   disabled={createProcessPoMutation.isPending}

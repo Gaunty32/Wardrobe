@@ -4,7 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   db, orderItemsTable, ordersTable, productsTable, suppliersTable,
-  purchaseOrdersTable, purchaseOrderItemsTable,
+  purchaseOrdersTable, purchaseOrderItemsTable, processStockTable,
 } from "@workspace/db";
 import { sendEmail, generatePOPdf, buildPOEmail, isEmailConfigured } from "../services/email.js";
 import { allocatePODelivery } from "../services/allocation.js";
@@ -336,6 +336,20 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
         .set({ purchaseRequired: false, purchaseQuantity: null })
         .where(inArray(orderItemsTable.id, linkedOrderItemIds));
     }
+
+    // For process stock PO items: increment process_stock.stock_quantity on delivery
+    const processStockItems = poItems.filter(i => i.processStockId != null);
+    for (const item of processStockItems) {
+      const qtyReceived = (item.quantityDelivered != null && item.quantityDelivered > 0)
+        ? item.quantityDelivered
+        : item.quantityOrdered;
+      await db.execute(sql`
+        UPDATE process_stock
+        SET stock_quantity = stock_quantity + ${qtyReceived}, updated_at = now()
+        WHERE id = ${item.processStockId}
+      `);
+    }
+
     const allocation = await allocatePODelivery(po.id);
     const result = await getPoWithItems(po.id);
     res.json({ ...result, allocation });
