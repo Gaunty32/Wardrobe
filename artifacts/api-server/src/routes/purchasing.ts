@@ -364,6 +364,40 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
   res.json(result);
 });
 
+router.post("/purchasing/purchase-orders/:id/process-stock-items", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const parsed = z.object({
+    items: z.array(z.object({
+      processStockId: z.number().int().positive().optional().nullable(),
+      productName: z.string().min(1),
+      supplierCode: z.string().optional().nullable(),
+      supplierPrice: z.number().optional().nullable(),
+      quantityOrdered: z.number().int().min(1),
+    })).min(1),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, params.data.id));
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (po.status !== "draft") { res.status(400).json({ error: "Can only add items to a draft PO" }); return; }
+
+  const poItems = parsed.data.items.map(item => ({
+    poId: po.id,
+    processStockId: item.processStockId ?? null,
+    productName: item.productName,
+    supplierCode: item.supplierCode ?? null,
+    supplierPrice: item.supplierPrice != null ? String(item.supplierPrice) : null,
+    quantityOrdered: item.quantityOrdered,
+    quantityDelivered: 0,
+  }));
+  await db.insert(purchaseOrderItemsTable).values(poItems);
+
+  const result = await getPoWithItems(po.id);
+  res.json(result);
+});
+
 router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): Promise<void> => {
   const params = z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }

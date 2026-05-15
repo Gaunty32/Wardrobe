@@ -732,7 +732,7 @@ export default function Purchasing() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
   const [createPoNotes, setCreatePoNotes] = useState("");
-  const [createProcessPoItem, setCreateProcessPoItem] = useState<ProcessStockRequirement | null>(null);
+  const [createProcessPoGroup, setCreateProcessPoGroup] = useState<{ supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] } | null>(null);
   const [createProcessPoNotes, setCreateProcessPoNotes] = useState("");
 
   const { data: groups = [], isLoading: reqLoading, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
@@ -773,9 +773,26 @@ export default function Purchasing() {
     onSuccess: () => {
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] });
-      setCreateProcessPoItem(null); setCreateProcessPoNotes("");
+      setCreateProcessPoGroup(null); setCreateProcessPoNotes("");
       toast({ title: "Draft PO created", description: "Process material PO added to the Draft tab." });
     },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addProcessStockToPoMutation = useMutation({
+    mutationFn: ({ poId, items }: { poId: number; items: ProcessStockRequirement[] }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/process-stock-items`, {
+        method: "POST",
+        body: JSON.stringify({
+          items: items.map(r => ({
+            processStockId: r.processStockId,
+            productName: r.name,
+            supplierCode: r.sku ?? null,
+            quantityOrdered: r.shortfall,
+          })),
+        }),
+      }),
+    onSuccess: () => { invalidateAll(); queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] }); toast({ title: "Added to draft PO" }); },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
@@ -872,6 +889,16 @@ export default function Purchasing() {
     refetchInterval: 60000,
   });
   const processShortfallCount = processStockReqs.filter(r => r.shortfall > 0).length;
+  const processReqsBySupplier = Object.values(
+    processStockReqs
+      .filter(r => r.shortfall > 0)
+      .reduce((acc, req) => {
+        const key = String(req.supplierId ?? req.supplierName ?? "unknown");
+        if (!acc[key]) acc[key] = { supplierId: req.supplierId, supplierName: req.supplierName ?? "Unknown Supplier", items: [] };
+        acc[key].items.push(req);
+        return acc;
+      }, {} as Record<string, { supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] }>)
+  );
 
   const draftPos = purchaseOrders.filter((po) => po.status === "draft");
   const filteredPos = purchaseOrders.filter((po) => po.status === "ordered");
@@ -898,7 +925,7 @@ export default function Purchasing() {
           <TabsList className="mb-4">
             <TabsTrigger value="requirements" className="gap-2">
               <FileText className="w-4 h-4" /> Draft
-              {totalItems > 0 && <Badge variant="secondary" className="ml-1 text-xs">{totalItems}</Badge>}
+              {(totalItems + processShortfallCount) > 0 && <Badge variant="secondary" className="ml-1 text-xs">{totalItems + processShortfallCount}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-2">
               <Truck className="w-4 h-4" /> Awaiting Delivery
@@ -911,10 +938,6 @@ export default function Purchasing() {
             <TabsTrigger value="completed" className="gap-2">
               <PackageCheck className="w-4 h-4" /> Completed
               {deliveredCount > 0 && <Badge variant="secondary" className="ml-1 text-xs">{deliveredCount}</Badge>}
-            </TabsTrigger>
-            <TabsTrigger value="process_materials" className="gap-2">
-              <Layers className="w-4 h-4" /> Process Materials
-              {processShortfallCount > 0 && <Badge className="ml-1 text-xs bg-blue-500 text-white">{processShortfallCount}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="process_stock" className="gap-2">
               <Boxes className="w-4 h-4" /> Process Stock
@@ -936,7 +959,7 @@ export default function Purchasing() {
 
               {reqLoading ? (
                 <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
-              ) : groups.length === 0 ? (
+              ) : groups.length === 0 && processReqsBySupplier.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                   <CheckCircle className="w-12 h-12 text-green-400" />
                   <p className="text-lg font-medium">No purchasing required</p>
@@ -1057,6 +1080,87 @@ export default function Purchasing() {
                                 })()}
                               </div>
                             </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+
+              {/* Process Materials Requirements — merged into Draft tab */}
+              {processReqsBySupplier.length > 0 && (
+                <>
+                  {groups.length > 0 && (
+                    <div className="flex items-center gap-2 pt-2 pb-1">
+                      <div className="flex-1 border-t border-border" />
+                      <span className="text-xs text-muted-foreground uppercase tracking-wide font-semibold px-2">Process Materials</span>
+                      <div className="flex-1 border-t border-border" />
+                    </div>
+                  )}
+                  {processReqsBySupplier.map((psGroup) => {
+                    const totalPsQty = psGroup.items.reduce((s, r) => s + r.shortfall, 0);
+                    const existingDraft = getDraftPoForSupplier(psGroup.supplierId, psGroup.supplierName);
+                    const isExpanded = expandedGroups[`ps_${psGroup.supplierName}`] !== false;
+                    return (
+                      <div key={psGroup.supplierName} className="rounded-xl border border-blue-200 bg-card shadow-sm overflow-hidden">
+                        <div
+                          className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                          onClick={() => toggleGroup(`ps_${psGroup.supplierName}`)}
+                        >
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <Layers className="w-5 h-5 text-blue-500 flex-shrink-0" />
+                            <span className="font-semibold text-base">{psGroup.supplierName}</span>
+                            <Badge variant="secondary">{psGroup.items.length} line{psGroup.items.length !== 1 ? "s" : ""}</Badge>
+                            <Badge className="bg-blue-100 text-blue-800 border-blue-200">{totalPsQty} units needed</Badge>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {existingDraft ? (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
+                                onClick={(e) => { e.stopPropagation(); addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: psGroup.items }); }}
+                                disabled={addProcessStockToPoMutation.isPending}
+                              >
+                                <Plus className="w-3.5 h-3.5" /> Add to {existingDraft.poNumber}
+                              </Button>
+                            ) : (
+                              <Button
+                                size="sm"
+                                className="gap-1.5 text-xs bg-primary hover:bg-primary/90"
+                                onClick={(e) => { e.stopPropagation(); setCreateProcessPoGroup(psGroup); setCreateProcessPoNotes(""); }}
+                              >
+                                <FileText className="w-3.5 h-3.5" /> Create Draft PO
+                              </Button>
+                            )}
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-border px-5 py-4 space-y-2">
+                            {psGroup.items.map((req) => (
+                              <div key={req.processStockId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
+                                <Layers className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-sm">{req.name}</div>
+                                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                    {req.sku && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">{req.sku}</span>}
+                                    <span className="text-xs text-muted-foreground">In stock: {req.stockQuantity} · Needed: {req.totalNeeded}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                    {req.orders.map(o => (
+                                      <span key={o.orderId} className="text-xs text-muted-foreground">
+                                        <a href={`/orders/${o.orderId}`} className="text-primary hover:underline font-mono font-semibold">{o.orderNumber}</a>
+                                        {o.customerName && ` · ${o.customerName}`}
+                                        {` ×${o.qty}`}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-sm font-semibold flex-shrink-0">× {req.shortfall}</Badge>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -1218,94 +1322,6 @@ export default function Purchasing() {
             )}
           </TabsContent>
 
-          {/* ── Process Materials Tab ── */}
-          <TabsContent value="process_materials">
-            {processStockReqs.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-                <Layers className="w-12 h-12 text-blue-200" />
-                <p className="text-lg font-medium">No process materials required</p>
-                <p className="text-sm text-center max-w-sm">
-                  When confirmed orders require consumable process stock (e.g. DTF transfer sheets), the requirements will appear here.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <AlertTriangle className="w-4 h-4 text-blue-500" />
-                  <span>
-                    {processShortfallCount > 0
-                      ? `${processShortfallCount} material${processShortfallCount !== 1 ? "s" : ""} need ordering across all confirmed orders`
-                      : "All process materials are sufficiently stocked for confirmed orders"}
-                  </span>
-                </div>
-
-                {processStockReqs.map((req) => (
-                  <div
-                    key={req.processStockId}
-                    className={`rounded-xl border bg-card shadow-sm overflow-hidden ${req.shortfall > 0 ? "border-blue-200" : "border-border"}`}
-                  >
-                    {/* Header */}
-                    <div className={`flex items-center justify-between px-5 py-4 ${req.shortfall > 0 ? "bg-blue-50/50" : ""}`}>
-                      <div className="flex items-center gap-3 min-w-0">
-                        <Layers className={`w-5 h-5 flex-shrink-0 ${req.shortfall > 0 ? "text-blue-600" : "text-muted-foreground"}`} />
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-semibold text-foreground">{req.name}</span>
-                            {req.sku && <span className="font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{req.sku}</span>}
-                            {req.shortfall > 0 ? (
-                              <Badge className="text-xs bg-blue-100 text-blue-800 border-blue-300">Shortfall: {req.shortfall}</Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs text-green-700 border-green-300">In stock</Badge>
-                            )}
-                          </div>
-                          <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-3 flex-wrap">
-                            {req.supplierName && <span>{req.supplierName}</span>}
-                            <span>In stock: <strong>{req.stockQuantity}</strong></span>
-                            <span>Total needed: <strong>{req.totalNeeded}</strong></span>
-                            {req.shortfall > 0 && (
-                              <span className="text-blue-700 font-semibold">Order: {req.shortfall}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      {req.shortfall > 0 && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50 flex-shrink-0"
-                          onClick={() => { setCreateProcessPoItem(req); setCreateProcessPoNotes(""); }}
-                        >
-                          <FileText className="w-4 h-4" />
-                          Create PO
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Order breakdown */}
-                    <div className="border-t border-border px-5 py-3">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Required by</p>
-                      <div className="space-y-1">
-                        {req.orders.map((o) => (
-                          <div key={o.orderId} className="flex items-center gap-3 text-sm">
-                            <a href={`/orders/${o.orderId}`} className="font-mono font-bold text-primary hover:underline text-xs">
-                              {o.orderNumber}
-                            </a>
-                            {o.customerName && <span className="text-muted-foreground">{o.customerName}</span>}
-                            {o.requiredDate && (
-                              <span className="text-muted-foreground text-xs">
-                                · Due {new Date(o.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                              </span>
-                            )}
-                            <span className="ml-auto font-semibold text-xs">×{o.qty}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
           {/* ── Process Stock Tab ── */}
           <TabsContent value="process_stock">
             <ProcessStockTab />
@@ -1313,40 +1329,26 @@ export default function Purchasing() {
         </Tabs>
 
         {/* ── Create Process Material PO dialog ── */}
-        {createProcessPoItem && (
-          <Dialog open={!!createProcessPoItem} onOpenChange={() => setCreateProcessPoItem(null)}>
+        {createProcessPoGroup && (
+          <Dialog open={!!createProcessPoGroup} onOpenChange={() => setCreateProcessPoGroup(null)}>
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <FileText className="w-5 h-5 text-primary" />
-                  Create Draft PO — {createProcessPoItem.supplierName ?? "Process Materials"}
+                  Create Draft PO — {createProcessPoGroup.supplierName}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <div className="rounded-lg border border-blue-200 bg-blue-50/40 divide-y text-sm">
-                  <div className="flex justify-between px-3 py-2.5">
-                    <div>
-                      <span className="font-medium">{createProcessPoItem.name}</span>
-                      {createProcessPoItem.sku && (
-                        <span className="ml-2 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{createProcessPoItem.sku}</span>
-                      )}
+                  {createProcessPoGroup.items.map((req) => (
+                    <div key={req.processStockId} className="flex justify-between px-3 py-2.5">
+                      <div>
+                        <span className="font-medium">{req.name}</span>
+                        {req.sku && <span className="ml-2 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{req.sku}</span>}
+                      </div>
+                      <span className="font-semibold text-blue-700">× {req.shortfall}</span>
                     </div>
-                    <span className="font-semibold text-blue-700">× {createProcessPoItem.shortfall}</span>
-                  </div>
-                </div>
-                <div className="text-xs text-muted-foreground space-y-1 px-0.5">
-                  <div className="flex justify-between">
-                    <span>Currently in stock</span>
-                    <span className="font-medium">{createProcessPoItem.stockQuantity}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Total required by orders</span>
-                    <span className="font-medium">{createProcessPoItem.totalNeeded}</span>
-                  </div>
-                  <div className="flex justify-between text-blue-700 font-semibold">
-                    <span>Shortfall to order</span>
-                    <span>{createProcessPoItem.shortfall}</span>
-                  </div>
+                  ))}
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
@@ -1359,18 +1361,18 @@ export default function Purchasing() {
                 </div>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setCreateProcessPoItem(null)}>Cancel</Button>
+                <Button variant="outline" onClick={() => setCreateProcessPoGroup(null)}>Cancel</Button>
                 <Button
                   onClick={() => createProcessPoMutation.mutate({
-                    supplierId: createProcessPoItem.supplierId ?? null,
-                    supplierName: createProcessPoItem.supplierName ?? "Process Materials Supplier",
+                    supplierId: createProcessPoGroup.supplierId,
+                    supplierName: createProcessPoGroup.supplierName,
                     notes: createProcessPoNotes || null,
-                    items: [{
-                      processStockId: createProcessPoItem.processStockId,
-                      productName: createProcessPoItem.name,
-                      supplierCode: createProcessPoItem.sku ?? null,
-                      quantityOrdered: createProcessPoItem.shortfall,
-                    }],
+                    items: createProcessPoGroup.items.map(req => ({
+                      processStockId: req.processStockId,
+                      productName: req.name,
+                      supplierCode: req.sku ?? null,
+                      quantityOrdered: req.shortfall,
+                    })),
                   })}
                   disabled={createProcessPoMutation.isPending}
                   className="gap-1.5"
