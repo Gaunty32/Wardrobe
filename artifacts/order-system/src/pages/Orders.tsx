@@ -203,10 +203,26 @@ function PortalPendingOrders() {
     refetchInterval: 30000,
   });
 
+  const [confirmingAll, setConfirmingAll] = useState(false);
+
   const confirm = useMutation({
     mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/confirm`, { method: "POST" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-pending-orders"] }); qc.invalidateQueries({ queryKey: getListOrdersQueryKey() }); toast({ title: "Order confirmed", description: "Moved to draft orders." }); },
   });
+
+  async function confirmAll() {
+    setConfirmingAll(true);
+    try {
+      await Promise.all(pending.map((o: any) => apiFetch(`/portal/admin/orders/${o.id}/confirm`, { method: "POST" })));
+      qc.invalidateQueries({ queryKey: ["portal-pending-orders"] });
+      qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: `${pending.length} orders confirmed`, description: "All portal orders moved to draft." });
+    } catch {
+      toast({ title: "Error", description: "Some orders could not be confirmed.", variant: "destructive" });
+    } finally {
+      setConfirmingAll(false);
+    }
+  }
 
   const reject = useMutation({
     mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "" }) }),
@@ -226,6 +242,17 @@ function PortalPendingOrders() {
         <Globe className="w-4 h-4 text-amber-600" />
         <span className="font-semibold text-amber-800 text-sm">Portal Orders Awaiting Review</span>
         <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-amber-600 text-white text-xs font-bold">{pending.length}</span>
+        <div className="ml-auto">
+          <Button
+            size="sm"
+            className="h-7 text-xs gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+            disabled={confirmingAll || confirm.isPending}
+            onClick={confirmAll}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {confirmingAll ? "Confirming…" : `Confirm All (${pending.length})`}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="p-0">
         <Table>
