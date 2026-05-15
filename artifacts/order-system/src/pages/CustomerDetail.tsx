@@ -2931,15 +2931,20 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             <div className="grid gap-2">
               <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
               {editing ? (
-                /* Edit mode — single value */
+                /* Edit mode — single-select pills matching Add mode */
                 variantColours.length > 0 ? (
-                  <Select value={form.colour || "__none__"} onValueChange={v => setForm(f => ({ ...f, colour: v === "__none__" ? "" : v }))}>
-                    <SelectTrigger><SelectValue placeholder="Any colour" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">Any colour</SelectItem>
-                      {variantColours.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, colour: "" }))}
+                      className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", !form.colour ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                    >Any colour</button>
+                    {variantColours.map(col => (
+                      <button key={col} type="button"
+                        onClick={() => setForm(f => ({ ...f, colour: f.colour === col ? "" : col }))}
+                        className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", form.colour === col ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                      >{col}</button>
+                    ))}
+                  </div>
                 ) : (
                   <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" placeholder="e.g. Navy Blue (optional)" value={form.colour} onChange={e => setForm(f => ({ ...f, colour: e.target.value }))} />
                 )
