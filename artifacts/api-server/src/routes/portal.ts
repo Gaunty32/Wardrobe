@@ -1854,6 +1854,74 @@ router.post("/portal/admin/orders/:id/reject", async (req: Request, res: Respons
   res.json({ ok: true });
 });
 
+// ─── admin: unconfirm portal order (revert to portal_pending) ────────────────
+
+router.post("/portal/admin/orders/:id/unconfirm", async (req: Request, res: Response) => {
+  const orderId = parseInt(req.params.id, 10);
+
+  const orderRows = await db.execute(sql`
+    SELECT id, status FROM orders WHERE id = ${orderId} AND source = 'portal'
+  `);
+  const ord = orderRows.rows[0] as any;
+  if (!ord) { res.status(404).json({ error: "Order not found" }); return; }
+  if (ord.status !== "confirmed") { res.status(400).json({ error: "Order is not in confirmed status" }); return; }
+
+  // ── Restore stock allocations ─────────────────────────────────────────────
+  const itemRows = await db.execute(sql`
+    SELECT id, product_id, quantity, purchase_required, purchase_quantity
+    FROM order_items WHERE order_id = ${orderId} AND product_id IS NOT NULL
+  `);
+  const items = itemRows.rows as any[];
+
+  // Calculate how much stock was decremented per product during confirmation
+  const stockRestore = new Map<number, number>();
+  for (const item of items) {
+    if (!item.product_id) continue;
+    const qty = Number(item.quantity ?? 0);
+    const purchaseQty = Number(item.purchase_quantity ?? 0);
+    // Stock decremented = quantity - purchase_quantity (items fulfilled from stock)
+    const allocated = item.purchase_required ? qty - purchaseQty : qty;
+    if (allocated > 0) {
+      stockRestore.set(item.product_id, (stockRestore.get(item.product_id) ?? 0) + allocated);
+    }
+  }
+
+  for (const [productId, restoreQty] of stockRestore.entries()) {
+    await db.execute(sql`
+      UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${restoreQty}
+      WHERE id = ${productId}
+    `);
+  }
+
+  // ── Reset purchase requirement flags on all items ─────────────────────────
+  await db.execute(sql`
+    UPDATE order_items
+    SET purchase_required = NULL, purchase_quantity = NULL,
+        supplier_id = NULL, supplier_name = NULL
+    WHERE order_id = ${orderId}
+  `);
+
+  // ── Delete auto-created worksheet if not yet started ─────────────────────
+  await db.execute(sql`
+    DELETE FROM worksheet_items
+    WHERE worksheet_id IN (
+      SELECT id FROM worksheets WHERE order_id = ${orderId} AND status = 'pre_wip'
+    )
+  `);
+  await db.execute(sql`
+    DELETE FROM worksheets WHERE order_id = ${orderId} AND status = 'pre_wip'
+  `);
+
+  // ── Revert order status to portal_pending ─────────────────────────────────
+  await db.execute(sql`
+    UPDATE orders SET status = 'portal_pending', portal_status = 'pending',
+      updated_at = now()
+    WHERE id = ${orderId}
+  `);
+
+  res.json({ ok: true });
+});
+
 // ─── portal: list invoices ────────────────────────────────────────────────────
 
 router.get("/portal/invoices", portalAuth, async (req: Request, res: Response) => {

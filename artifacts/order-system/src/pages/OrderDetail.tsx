@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -31,7 +32,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -611,6 +612,16 @@ export default function OrderDetail() {
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const unconfirmPortalOrderMutation = useMutation({
+    mutationFn: () => apiFetch(`/portal/admin/orders/${order.id}/unconfirm`, { method: "POST" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey({ id: order.id }) });
+      queryClient.invalidateQueries({ queryKey: ["portal-pending-orders"] });
+      toast({ title: "Order unconfirmed", description: "Order returned to portal pending — ready to review again." });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
   const { data: productAttributes } = useProductAttributes(item.productId);
   const { data: productVariants } = useProductVariants(item.productId);
 
@@ -1023,6 +1034,48 @@ export default function OrderDetail() {
                 Confirm Order
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* ── Unconfirm banner (confirmed portal orders not yet in production) */}
+        {(order as any).source === "portal" && order.status === "confirmed" && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50/60 px-5 py-3.5 flex items-center gap-3">
+            <RotateCcw className="w-4 h-4 text-blue-500 shrink-0" />
+            <p className="text-sm text-blue-800 flex-1">
+              This order was confirmed from the customer portal.
+              If you confirmed it by mistake, you can send it back for review.
+            </p>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
+                  disabled={unconfirmPortalOrderMutation.isPending}
+                >
+                  {unconfirmPortalOrderMutation.isPending
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <RotateCcw className="w-3.5 h-3.5" />}
+                  Unconfirm
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Unconfirm this order?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will move the order back to "Portal Pending", restore any stock that was allocated,
+                    and remove the auto-generated worksheet (if it hasn't been started).
+                    The customer will not be notified.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => unconfirmPortalOrderMutation.mutate()}>
+                    Yes, unconfirm
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         )}
 
