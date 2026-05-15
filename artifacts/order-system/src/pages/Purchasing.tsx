@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
-  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes,
+  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +57,7 @@ interface PurchaseOrder {
   supplierCurrency: string;
   status: "draft" | "ordered" | "delivered"; notes: string | null; sentAt: string | null;
   estimatedDeliveryDate: string | null;
+  attachments: Array<{ name: string; objectPath: string }> | null;
   createdAt: string; updatedAt: string; items: POItem[];
 }
 
@@ -73,6 +74,7 @@ interface ProcessStockRequirement {
   stockQuantity: number;
   supplierId: number | null;
   supplierName: string | null;
+  fileUrl: string | null;
   totalNeeded: number;
   shortfall: number;
   orders: Array<{ orderId: number; orderNumber: string; customerName: string | null; requiredDate: string | null; qty: number }>;
@@ -633,6 +635,22 @@ function POCard({
       {expanded && (
         <div className="border-t border-border px-5 py-4 space-y-4">
           {po.notes && <div className="text-sm text-muted-foreground italic border-l-2 border-muted pl-3">{po.notes}</div>}
+          {po.attachments && po.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {po.attachments.map((att, i) => (
+                <a
+                  key={i}
+                  href={`${API_BASE}/storage${att.objectPath}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-muted transition-colors"
+                >
+                  <Paperclip className="w-3 h-3 text-muted-foreground" />
+                  {att.name}
+                </a>
+              ))}
+            </div>
+          )}
           {po.items.length === 0 ? (
             <div className="text-sm text-muted-foreground py-4 text-center">No lines on this PO yet.</div>
           ) : (

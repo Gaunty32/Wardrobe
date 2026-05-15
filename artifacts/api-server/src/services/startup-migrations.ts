@@ -614,6 +614,9 @@ export async function runStartupMigrations(): Promise<void> {
   // Link purchase_order_items to process_stock for process material POs
   await db.execute(sql`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS process_stock_id integer;`);
 
+  // Add attachments JSONB column to purchase_orders for process stock PDF files
+  await db.execute(sql`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS attachments jsonb;`);
+
   // Remove orphaned worksheets (pre_wip or wip) whose order has been deleted
   // (order_id IS NULL or references a non-existent order). These were left
   // behind before worksheet cleanup was added to the order delete/cancel flow.

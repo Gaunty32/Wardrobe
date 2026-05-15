@@ -196,6 +196,7 @@ router.get("/purchasing/process-stock-requirements", async (_req, res): Promise<
       stockQuantity: processStockTable.stockQuantity,
       supplierId: processStockTable.supplierId,
       supplierName: suppliersTable.name,
+      fileUrl: processStockTable.fileUrl,
     })
     .from(processStockTable)
     .leftJoin(suppliersTable, eq(processStockTable.supplierId, suppliersTable.id))
@@ -247,6 +248,7 @@ router.get("/purchasing/process-stock-requirements", async (_req, res): Promise<
       stockQuantity,
       supplierId: ps.supplierId,
       supplierName: ps.supplierName,
+      fileUrl: ps.fileUrl ?? null,
       totalNeeded,
       shortfall,
       orders: [...orders.values()].sort((a, b) =>

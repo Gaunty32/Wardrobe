@@ -263,6 +263,25 @@ router.post("/purchasing/purchase-orders/for-process-stock", async (req, res): P
   }));
   await db.insert(purchaseOrderItemsTable).values(poItems);
 
+  // Collect PDF print files from linked process stock items and attach to PO
+  const psIds = parsed.data.items
+    .map(i => i.processStockId)
+    .filter((id): id is number => id != null);
+  if (psIds.length > 0) {
+    const psRows = await db
+      .select({ id: processStockTable.id, name: processStockTable.name, fileUrl: processStockTable.fileUrl })
+      .from(processStockTable)
+      .where(inArray(processStockTable.id, psIds));
+    const attachments = psRows
+      .filter(ps => ps.fileUrl)
+      .map(ps => ({ name: `${ps.name} - Print File`, objectPath: ps.fileUrl! }));
+    if (attachments.length > 0) {
+      await db.update(purchaseOrdersTable)
+        .set({ attachments })
+        .where(eq(purchaseOrdersTable.id, po.id));
+    }
+  }
+
   const result = await getPoWithItems(po.id);
   res.status(201).json(result);
 });

@@ -75,6 +75,7 @@ export const purchaseOrdersTable = pgTable("purchase_orders", {
   supplierEmail: text("supplier_email"),
   status: text("status").notNull().default("draft"),
   notes: text("notes"),
+  attachments: jsonb("attachments").$type<Array<{ name: string; objectPath: string }>>(),
   sentAt: timestamp("sent_at", { withTimezone: true }),
   estimatedDeliveryDate: timestamp("estimated_delivery_date", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
