@@ -205,7 +205,7 @@ function ProcessBadgeInline({ type }: { type: string }) {
   const cls = colours[type?.toLowerCase()] ?? "bg-muted text-muted-foreground border-border";
   return (
     <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${cls}`}>
-      {type?.replace(/_/g, " ")}
+      {type?.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase())}
     </span>
   );
 }
