@@ -517,7 +517,13 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     const groups = new Map<string, Group>();
     const allSizes: string[] = [];
 
-    for (const item of order.items) {
+    const sortedItems = [...order.items].sort((a, b) => {
+      const skuA = (a.sku ?? a.productName ?? "").toLowerCase();
+      const skuB = (b.sku ?? b.productName ?? "").toLowerCase();
+      return skuA.localeCompare(skuB);
+    });
+
+    for (const item of sortedItems) {
       const gk = `${item.productName}||${item.finishName ?? ""}`;
       if (!groups.has(gk)) {
         groupKeys.push(gk);
