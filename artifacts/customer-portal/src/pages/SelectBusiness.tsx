@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, AlertCircle, Building2, ChevronRight } from "lucide-react";
+import { Loader2, AlertCircle, Building2 } from "lucide-react";
 import logo from "@/assets/logo.png";
 
 interface Business {
@@ -96,34 +96,24 @@ export default function SelectBusiness() {
           </div>
         )}
 
-        <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-4">
           {businesses.map((b) => {
             const isLoading = selecting === b.portalUserId;
-            const roleLabel = b.portalRole === "manager" ? "Manager" : b.portalRole === "dept_manager" ? "Dept. Manager" : "Member";
             return (
               <button
                 key={b.portalUserId}
                 onClick={() => select(b)}
                 disabled={selecting !== null}
-                className="w-full group"
+                className="group"
               >
-                <Card className="shadow-sm hover:shadow-md transition-shadow cursor-pointer border-2 border-transparent group-hover:border-primary/30 disabled:opacity-60">
-                  <CardContent className="flex items-center gap-4 p-4">
-                    <div className="w-14 h-14 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                      {b.logoUrl ? (
-                        <img src={b.logoUrl} alt={b.customerName} className="w-full h-full object-contain p-1" />
-                      ) : (
-                        <Building2 className="w-7 h-7 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="font-semibold text-foreground truncate">{b.customerName}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{roleLabel}</p>
-                    </div>
+                <Card className="shadow-sm hover:shadow-md transition-all cursor-pointer border-2 border-transparent group-hover:border-primary/40 disabled:opacity-60">
+                  <CardContent className="flex items-center justify-center p-8">
                     {isLoading ? (
-                      <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
+                      <Loader2 className="w-12 h-12 animate-spin text-primary" />
+                    ) : b.logoUrl ? (
+                      <img src={b.logoUrl} alt={b.customerName} className="max-h-28 max-w-full object-contain" />
                     ) : (
-                      <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+                      <Building2 className="w-20 h-20 text-muted-foreground/40" />
                     )}
                   </CardContent>
                 </Card>
