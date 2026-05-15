@@ -34,6 +34,7 @@ import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
+import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 
@@ -421,9 +422,7 @@ export default function OrderDetail() {
   const currentAttachments: Array<{ name: string; objectPath: string }> =
     Array.isArray((order as any)?.attachments) ? (order as any).attachments : [];
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
+  const uploadFiles = async (files: File[]) => {
     if (!files.length) return;
     setUploading(true);
     try {
@@ -447,6 +446,12 @@ export default function OrderDetail() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    uploadFiles(files);
   };
 
   const removeAttachment = (idx: number) => {
@@ -1706,16 +1711,16 @@ export default function OrderDetail() {
                     ))}
                   </ul>
                 )}
-                <label className={cn(
-                  "inline-flex items-center gap-2 cursor-pointer rounded-lg border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors select-none",
-                  (uploading || updateAttachmentsMutation.isPending) && "opacity-60 pointer-events-none"
-                )}>
-                  {uploading
-                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    : <Paperclip className="w-3.5 h-3.5" />}
-                  {uploading ? "Uploading…" : "Attach a file"}
-                  <input type="file" multiple className="hidden" disabled={uploading} onChange={handleFileUpload} />
-                </label>
+                <FileDropZone
+                  onFile={(file) => uploadFiles([file])}
+                  disabled={uploading || updateAttachmentsMutation.isPending}
+                  className="py-5 px-4"
+                >
+                  <FileDropZoneContent
+                    uploading={uploading}
+                    label="Drag a file here, or click to browse"
+                  />
+                </FileDropZone>
               </CardContent>
             </Card>
           </div>
