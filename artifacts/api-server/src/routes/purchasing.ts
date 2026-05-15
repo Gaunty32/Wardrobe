@@ -75,7 +75,14 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
     grouped[key].items.push(row);
   }
 
-  res.json(Object.values(grouped));
+  const sortedGroups = Object.values(grouped).sort((a, b) => {
+    const aUnknown = a.supplierId === null;
+    const bUnknown = b.supplierId === null;
+    if (aUnknown && !bUnknown) return -1;
+    if (!aUnknown && bUnknown) return 1;
+    return a.supplierName.localeCompare(b.supplierName);
+  });
+  res.json(sortedGroups);
 });
 
 router.post("/purchasing/mark-fulfilled", async (req, res): Promise<void> => {
