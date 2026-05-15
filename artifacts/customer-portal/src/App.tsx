@@ -8,6 +8,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 
 import Login from "@/pages/Login";
 import AcceptInvite from "@/pages/AcceptInvite";
+import SelectBusiness from "@/pages/SelectBusiness";
 import PreviewLogin from "@/pages/PreviewLogin";
 import Dashboard from "@/pages/Dashboard";
 import OrderDetailPage from "@/pages/OrderDetail";
@@ -59,6 +60,7 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/accept-invite" component={AcceptInvite} />
+      <Route path="/select-business" component={SelectBusiness} />
       <Route path="/preview-login" component={PreviewLogin} />
       <Route path="/orders/new" component={() => <ProtectedRoute component={NewOrder} />} />
       <Route path="/orders/:id" component={() => <ProtectedRoute component={OrderDetailPage} />} />

@@ -27,13 +27,23 @@ export default function AcceptInvite() {
       body: JSON.stringify({ token }),
     })
       .then((data) => {
-        localStorage.setItem("portal_token", data.token);
-        localStorage.setItem("portal_customer_id", String(data.customerId));
-        localStorage.setItem("portal_customer_name", data.customerName ?? "");
-        localStorage.setItem("portal_email", data.email ?? "");
-        localStorage.setItem("portal_role", data.portalRole ?? "member");
-        setStatus("success");
-        setTimeout(() => setLocation("/orders"), 1200);
+        if (data.multipleBusinesses) {
+          sessionStorage.setItem("portal_selection_token", data.selectionToken);
+          sessionStorage.setItem("portal_selection_email", data.email);
+          sessionStorage.setItem("portal_selection_businesses", JSON.stringify(data.businesses));
+          localStorage.setItem("portal_businesses", JSON.stringify(data.businesses));
+          localStorage.setItem("portal_email", data.email ?? "");
+          setStatus("success");
+          setTimeout(() => setLocation("/select-business"), 800);
+        } else {
+          localStorage.setItem("portal_token", data.token);
+          localStorage.setItem("portal_customer_id", String(data.customerId));
+          localStorage.setItem("portal_customer_name", data.customerName ?? "");
+          localStorage.setItem("portal_email", data.email ?? "");
+          localStorage.setItem("portal_role", data.portalRole ?? "member");
+          setStatus("success");
+          setTimeout(() => setLocation("/orders"), 1200);
+        }
       })
       .catch((err) => {
         setStatus("error");
@@ -62,7 +72,7 @@ export default function AcceptInvite() {
               <div className="space-y-3">
                 <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
                 <p className="font-semibold text-foreground">You're in!</p>
-                <p className="text-sm text-muted-foreground">Redirecting to your orders…</p>
+                <p className="text-sm text-muted-foreground">Redirecting…</p>
               </div>
             )}
 

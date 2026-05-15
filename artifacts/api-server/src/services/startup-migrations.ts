@@ -617,6 +617,34 @@ export async function runStartupMigrations(): Promise<void> {
   // Add attachments JSONB column to purchase_orders for process stock PDF files
   await db.execute(sql`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS attachments jsonb;`);
 
+  // Multi-business portal support:
+  // 1. Drop the old UNIQUE constraint on email (was one email = one customer)
+  // 2. Add a per-(email, customer) unique constraint instead
+  // 3. Add selection_token columns for the business-picker handshake
+  await db.execute(sql`ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS selection_token text;`);
+  await db.execute(sql`ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS selection_expires_at timestamptz;`);
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      -- Drop old single-email unique constraint if it exists
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'customer_portal_users_email_key'
+          AND conrelid = 'customer_portal_users'::regclass
+      ) THEN
+        ALTER TABLE customer_portal_users DROP CONSTRAINT customer_portal_users_email_key;
+      END IF;
+      -- Add (email, customer_id) unique if not already present
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'customer_portal_users_email_customer_unique'
+          AND conrelid = 'customer_portal_users'::regclass
+      ) THEN
+        ALTER TABLE customer_portal_users ADD CONSTRAINT customer_portal_users_email_customer_unique UNIQUE (email, customer_id);
+      END IF;
+    END $$;
+  `);
+
   // Remove orphaned worksheets (pre_wip or wip) whose order has been deleted
   // (order_id IS NULL or references a non-existent order). These were left
   // behind before worksheet cleanup was added to the order delete/cancel flow.

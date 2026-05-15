@@ -114,11 +114,11 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   const token = randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400 * 1000);
 
-  // upsert: update if email already exists for this customer
+  // upsert: update if (email, customer_id) already exists
   await db.execute(sql`
     INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
     VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${portalRole})
-    ON CONFLICT (email) DO UPDATE
+    ON CONFLICT (email, customer_id) DO UPDATE
       SET invite_token = ${token},
           invite_expires_at = ${expires.toISOString()},
           status = 'invited',
@@ -170,7 +170,7 @@ router.post("/portal/admin/create-user", async (req: Request, res: Response) => 
   await db.execute(sql`
     INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
     VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${portalRole})
-    ON CONFLICT (email) DO UPDATE
+    ON CONFLICT (email, customer_id) DO UPDATE
       SET invite_token = ${token},
           invite_expires_at = ${expires.toISOString()},
           status = 'invited',
@@ -255,34 +255,145 @@ router.delete("/portal/admin/users/:userId", async (req: Request, res: Response)
 // Accepts either a user-requested magic link or an admin-generated invite link.
 // No password required — the token is the credential.
 
+const SELECTION_TTL_MINUTES = 10;
+
 router.post("/portal/auth/accept-invite", async (req: Request, res: Response) => {
   const { token } = z.object({ token: z.string().min(1) }).parse(req.body);
 
+  // Find all portal users that share this invite token (could be multiple businesses)
   const rows = await db.execute(sql`
-    SELECT * FROM customer_portal_users
-    WHERE invite_token = ${token}
-      AND invite_expires_at > now()
+    SELECT u.*, c.name AS customer_name, c.logo_url AS customer_logo
+    FROM customer_portal_users u
+    JOIN customers c ON c.id = u.customer_id
+    WHERE u.invite_token = ${token}
+      AND u.invite_expires_at > now()
+    ORDER BY c.name
   `);
-  const user = rows.rows[0] as any;
-  if (!user) {
+  const users = rows.rows as any[];
+
+  if (users.length === 0) {
     res.status(400).json({ error: "This link has expired or already been used. Please request a new one." });
     return;
   }
 
+  // Clear the invite token from all rows for this email (token is now consumed)
   await db.execute(sql`
     UPDATE customer_portal_users
     SET invite_token = NULL,
         invite_expires_at = NULL,
         status = 'active',
-        last_login_at = now(),
         updated_at = now()
-    WHERE id = ${user.id}
+    WHERE lower(email) = lower(${users[0].email})
+  `);
+
+  // Single business — go straight in
+  if (users.length === 1) {
+    const user = users[0];
+    await db.execute(sql`UPDATE customer_portal_users SET last_login_at = now(), updated_at = now() WHERE id = ${user.id}`);
+    const jwtToken = signToken(user.id, user.customer_id, user.portal_role ?? "member");
+    res.json({ token: jwtToken, customerId: user.customer_id, customerName: user.customer_name, email: user.email, portalRole: user.portal_role ?? "member", multipleBusinesses: false });
+    return;
+  }
+
+  // Multiple businesses — issue a short-lived selection token and return business list
+  const selToken = randomBytes(32).toString("hex");
+  const selExpires = new Date(Date.now() + SELECTION_TTL_MINUTES * 60 * 1000);
+
+  await db.execute(sql`
+    UPDATE customer_portal_users
+    SET selection_token = ${selToken}, selection_expires_at = ${selExpires.toISOString()}, updated_at = now()
+    WHERE lower(email) = lower(${users[0].email})
+  `);
+
+  res.json({
+    multipleBusinesses: true,
+    selectionToken: selToken,
+    email: users[0].email,
+    businesses: users.map(u => ({
+      portalUserId: u.id,
+      customerId: u.customer_id,
+      customerName: u.customer_name,
+      logoUrl: u.customer_logo ?? null,
+      portalRole: u.portal_role ?? "member",
+    })),
+  });
+});
+
+// ─── select business (multi-business picker) ─────────────────────────────────
+
+router.post("/portal/auth/select-business", async (req: Request, res: Response) => {
+  const parsed = z.object({
+    selectionToken: z.string().min(1),
+    portalUserId: z.number().int().positive(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+
+  const { selectionToken, portalUserId } = parsed.data;
+
+  // Verify selection token is valid for this user
+  const rows = await db.execute(sql`
+    SELECT u.*, c.name AS customer_name
+    FROM customer_portal_users u
+    JOIN customers c ON c.id = u.customer_id
+    WHERE u.id = ${portalUserId}
+      AND u.selection_token = ${selectionToken}
+      AND u.selection_expires_at > now()
+  `);
+  const user = rows.rows[0] as any;
+  if (!user) { res.status(400).json({ error: "Selection expired. Please sign in again." }); return; }
+
+  // Clear selection token for all users sharing this email
+  await db.execute(sql`
+    UPDATE customer_portal_users
+    SET selection_token = NULL, selection_expires_at = NULL, last_login_at = now(), updated_at = now()
+    WHERE lower(email) = lower(${user.email})
   `);
 
   const jwtToken = signToken(user.id, user.customer_id, user.portal_role ?? "member");
-  const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${user.customer_id}`);
-  const customerName = (custRows.rows[0] as any)?.name ?? "";
-  res.json({ token: jwtToken, customerId: user.customer_id, customerName, email: user.email, portalRole: user.portal_role ?? "member" });
+  res.json({ token: jwtToken, customerId: user.customer_id, customerName: user.customer_name, email: user.email, portalRole: user.portal_role ?? "member" });
+});
+
+// ─── switch business (authenticated) ─────────────────────────────────────────
+// Called when a logged-in user with multiple businesses wants to switch.
+// Looks up all businesses for their email and returns a new selection token.
+
+router.post("/portal/auth/switch-business", portalAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).portalUserId;
+  const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${userId}`);
+  const email = (userRows.rows[0] as any)?.email;
+  if (!email) { res.status(404).json({ error: "User not found" }); return; }
+
+  const rows = await db.execute(sql`
+    SELECT u.id, u.customer_id, u.portal_role, c.name AS customer_name, c.logo_url AS customer_logo
+    FROM customer_portal_users u
+    JOIN customers c ON c.id = u.customer_id
+    WHERE lower(u.email) = lower(${email})
+    ORDER BY c.name
+  `);
+  const users = rows.rows as any[];
+
+  if (users.length <= 1) { res.status(400).json({ error: "Only one business linked to this email" }); return; }
+
+  const selToken = randomBytes(32).toString("hex");
+  const selExpires = new Date(Date.now() + SELECTION_TTL_MINUTES * 60 * 1000);
+
+  await db.execute(sql`
+    UPDATE customer_portal_users
+    SET selection_token = ${selToken}, selection_expires_at = ${selExpires.toISOString()}, updated_at = now()
+    WHERE lower(email) = lower(${email})
+  `);
+
+  res.json({
+    selectionToken: selToken,
+    email,
+    businesses: users.map(u => ({
+      portalUserId: u.id,
+      customerId: u.customer_id,
+      customerName: u.customer_name,
+      logoUrl: u.customer_logo ?? null,
+      portalRole: u.portal_role ?? "member",
+    })),
+  });
 });
 
 // ─── request magic link (login) ──────────────────────────────────────────────
@@ -297,12 +408,15 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
   const { email } = parsed.data;
 
   const rows = await db.execute(sql`
-    SELECT * FROM customer_portal_users WHERE lower(email) = lower(${email})
+    SELECT u.*, c.name AS customer_name, c.logo_url AS customer_logo
+    FROM customer_portal_users u
+    JOIN customers c ON c.id = u.customer_id
+    WHERE lower(u.email) = lower(${email})
+    ORDER BY c.name
   `);
-  const user = rows.rows[0] as any;
+  const users = rows.rows as any[];
 
-  // Always respond generically so we don't reveal whether the email exists
-  if (!user) {
+  if (users.length === 0) {
     res.json({ ok: true, emailSent: false, noAccount: true });
     return;
   }
@@ -310,13 +424,13 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
   const token = randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + MAGIC_TTL_MINUTES * 60 * 1000);
 
+  // Write the magic token to ALL rows for this email (any will work for the link)
   await db.execute(sql`
     UPDATE customer_portal_users
     SET invite_token = ${token}, invite_expires_at = ${expires.toISOString()}, updated_at = now()
-    WHERE id = ${user.id}
+    WHERE lower(email) = lower(${email})
   `);
 
-  // Build absolute URL from proxy headers
   const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
   const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
   const magicUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
@@ -339,7 +453,6 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
     }
   }
 
-  // In dev (no email configured) return the URL directly so staff can test
   res.json({ ok: true, emailSent, ...(!emailSent ? { magicUrl, emailError } : {}) });
 });
 
@@ -2433,7 +2546,7 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
     await db.execute(sql`
       INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
       VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${role})
-      ON CONFLICT (email) DO UPDATE SET
+      ON CONFLICT (email, customer_id) DO UPDATE SET
         invite_token = ${token},
         invite_expires_at = ${expires.toISOString()},
         status = 'invited',

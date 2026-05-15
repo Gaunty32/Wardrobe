@@ -1,7 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard, Bell, CheckCheck, Truck, ThumbsUp, AlertCircle, Info, Boxes, History } from "lucide-react";
+import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard, Bell, CheckCheck, Truck, ThumbsUp, AlertCircle, Info, Boxes, History, ArrowLeftRight } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -172,7 +172,32 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
   const { user, logout, isPreview, isManager, isDeptManager, previewEmployeeName } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [switchingBusiness, setSwitchingBusiness] = useState(false);
   const basketCount = useBasketCount(isPreview);
+
+  const hasMultipleBusinesses = (() => {
+    try {
+      const stored = localStorage.getItem("portal_businesses");
+      return stored ? (JSON.parse(stored) as any[]).length > 1 : false;
+    } catch { return false; }
+  })();
+
+  const switchBusiness = async () => {
+    setSwitchingBusiness(true);
+    try {
+      const data = await apiFetch("/portal/auth/switch-business", { method: "POST" });
+      localStorage.removeItem("portal_token");
+      sessionStorage.setItem("portal_selection_token", data.selectionToken);
+      sessionStorage.setItem("portal_selection_email", data.email);
+      sessionStorage.setItem("portal_selection_businesses", JSON.stringify(data.businesses));
+      localStorage.setItem("portal_businesses", JSON.stringify(data.businesses));
+      setLocation("/select-business");
+    } catch {
+      logout();
+    } finally {
+      setSwitchingBusiness(false);
+    }
+  };
 
   const nav = [
     { label: "My Orders", icon: LayoutDashboard, href: "/orders" },
@@ -244,6 +269,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           {user && (
             <span className="text-xs text-muted-foreground truncate max-w-[160px]">{user.user?.email}</span>
           )}
+          {!isPreview && hasMultipleBusinesses && (
+            <Button variant="ghost" size="sm" onClick={switchBusiness} disabled={switchingBusiness} className="gap-1.5 text-muted-foreground">
+              <ArrowLeftRight className="w-4 h-4" /> Switch business
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={logout} className="gap-1.5 text-muted-foreground">
             <LogOut className="w-4 h-4" /> Sign out
           </Button>
@@ -280,9 +310,16 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
               )}
             </button>
           ))}
-          <div className="border-t mt-2 pt-2 flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">{user?.user?.email}</span>
-            <Button variant="ghost" size="sm" onClick={logout}>Sign out</Button>
+          <div className="border-t mt-2 pt-2 flex flex-col gap-1">
+            <span className="text-xs text-muted-foreground px-1">{user?.user?.email}</span>
+            {!isPreview && hasMultipleBusinesses && (
+              <Button variant="ghost" size="sm" onClick={switchBusiness} disabled={switchingBusiness} className="justify-start gap-1.5 text-muted-foreground">
+                <ArrowLeftRight className="w-4 h-4" /> Switch business
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={logout} className="justify-start gap-1.5 text-muted-foreground">
+              <LogOut className="w-4 h-4" /> Sign out
+            </Button>
           </div>
         </div>
       )}
