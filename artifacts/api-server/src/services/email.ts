@@ -175,10 +175,13 @@ export function buildAcknowledgementEmail(order: {
     : "";
 
   const SHIPPING_LABELS: Record<string, string> = {
+    free_local: "Free Local Delivery",
     dpd: "DPD Courier", royal_mail: "Royal Mail", local_delivery: "Local Delivery",
     office_collection: "Office Collection", warehouse_collection: "Collection from our warehouse", courier: "Courier",
+    dpd_next_day: "Next Day DPD",
   };
   const shippingLabel = order.shippingMethod ? (SHIPPING_LABELS[order.shippingMethod] ?? order.shippingMethod) : null;
+  const isFreeLocal = order.shippingMethod === "free_local";
 
   const html = `<!DOCTYPE html>
 <html>
@@ -289,7 +292,8 @@ export function buildAcknowledgementEmail(order: {
               <p style="margin:0;font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px;">Shipping &amp; Collection</p>
             </td></tr>
             <tr><td style="padding:10px 18px;">
-              <p style="margin:0;font-size:13px;color:#374151;">${shippingLabel}</p>
+              <p style="margin:0;font-size:13px;font-weight:600;color:#374151;">${shippingLabel}</p>
+              ${isFreeLocal ? `<p style="margin:6px 0 0;font-size:12px;color:#4b5563;line-height:1.6;">As you are local to us we offer free delivery to your postcode on a <strong>Tuesday</strong> and a <strong>Friday</strong>. We will let you know on the morning of your delivery and you can expect to see Tim with your order before lunchtime!</p>` : ""}
             </td></tr>
           </table>
         </td></tr>` : ""}
@@ -641,8 +645,10 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
     // ── Shipping / delivery section ───────────────────────────────────────────
     const SHIP_LABELS: Record<string, string> = {
+      free_local: "Free Local Delivery",
       dpd: "DPD Courier", royal_mail: "Royal Mail", local_delivery: "Local Delivery",
       office_collection: "Office Collection", warehouse_collection: "Collection from our warehouse", courier: "Courier",
+      dpd_next_day: "Next Day DPD",
     };
     const isCollection = order.shippingMethod
       ? ["office_collection", "warehouse_collection"].includes(order.shippingMethod)
@@ -654,6 +660,13 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       doc.fillColor("#555555").fontSize(7.5).font("Helvetica-Bold").text("Shipping / Collection:", margin, y);
       y += 10;
       doc.font("Helvetica").fontSize(7.5).fillColor("#374151").text(shipLabel, margin, y, { width: 250 });
+      if (order.shippingMethod === "free_local") {
+        y += 11;
+        doc.font("Helvetica").fontSize(7).fillColor("#4b5563").text(
+          "As you are local to us we offer free delivery to your postcode on a Tuesday and a Friday. We will let you know on the morning of your delivery and you can expect to see Tim with your order before lunchtime!",
+          margin, y, { width: 280 }
+        );
+      }
     }
 
     if (order.deliveryAddress && !isCollection) {
