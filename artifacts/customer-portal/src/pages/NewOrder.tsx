@@ -916,12 +916,13 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     ? [selectedEmployee.first_name?.[0], selectedEmployee.last_name?.[0]].filter(Boolean).join("").toUpperCase()
     : "";
 
-  const handleAdd = (wi: any, key: string) => {
+  const handleAdd = (wi: any, key: string, forcedSize?: string) => {
     const state = getItemState(key);
-    if (!state.size) return;
+    const size = forcedSize ?? state.size;
+    if (!size) return;
     const isStock = selectedRecipient === "stock";
     const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === selectedRecipient);
-    setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", state.size, state.qty, emp)]);
+    setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", size, state.qty, emp)]);
     setItemState(key, { size: "", qty: 1 });
   };
 
@@ -999,8 +1000,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                 const key = `${group.finish_id}-${i}`;
                 const state = getItemState(key);
                 const availSizes = getAvailableSizes(wi);
-                const FALLBACK_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
-                const sizeOptions = availSizes.length > 0 ? availSizes : FALLBACK_SIZES;
+                const oneSize = availSizes.length === 0;
+                const sizeOptions = availSizes;
                 const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
                 const { garmentPrice, unitPrice } = resolveItemPricing(wi, state.qty);
                 const logoSurcharge = unitPrice - garmentPrice;
@@ -1077,8 +1078,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                         </div>
                       )}
 
-                      {/* Bulk / single toggle */}
-                      {sizeOptions.length > 1 && (
+                      {/* Bulk / single toggle — only for multi-size products */}
+                      {!oneSize && sizeOptions.length > 1 && (
                         <button
                           type="button"
                           onClick={() => setBulkModes(m => ({ ...m, [key]: !m[key] }))}
@@ -1093,7 +1094,17 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                         </button>
                       )}
 
-                      {bulkModes[key] ? (
+                      {oneSize ? (
+                        /* ── No WooCommerce sizes — one size fits all ── */
+                        <div className="flex items-center gap-1.5 mt-auto">
+                          <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
+                            <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}><Minus className="w-3.5 h-3.5" /></button>
+                            <input type="number" min={1} value={state.qty} onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 1) setItemState(key, { qty: v }); }} className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                            <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: state.qty + 1 })}><Plus className="w-3.5 h-3.5" /></button>
+                          </div>
+                          <Button size="sm" className="flex-1 h-8 text-sm" onClick={() => handleAdd(wi, key, "One Size")}>Add</Button>
+                        </div>
+                      ) : bulkModes[key] ? (
                         /* ── Bulk entry grid ── */
                         (() => {
                           const qtys = bulkQtys[key] ?? {};
@@ -1119,12 +1130,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                                   </div>
                                 ))}
                               </div>
-                              <Button
-                                size="sm"
-                                className="w-full h-8 text-sm"
-                                disabled={total === 0}
-                                onClick={() => handleBulkAdd(wi, key, sizeOptions)}
-                              >
+                              <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0} onClick={() => handleBulkAdd(wi, key, sizeOptions)}>
                                 Add {total > 0 ? `${total} ` : ""}to basket
                               </Button>
                             </div>
@@ -1138,7 +1144,6 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                               {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
                             </p>
                           )}
-
                           <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
                             <SelectTrigger className="h-8 text-sm w-full">
                               <SelectValue placeholder="Select size" />
@@ -1148,51 +1153,20 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                                 <SelectItem key={s} value={s}>
                                   <span className="flex items-center gap-2">
                                     {s}
-                                    {suggestion?.size === s && suggestion.source === "history" && (
-                                      <span className="text-[10px] text-emerald-600 font-semibold">last</span>
-                                    )}
-                                    {suggestion?.size === s && suggestion.source === "saved" && (
-                                      <span className="text-[10px] text-blue-500 font-semibold">saved</span>
-                                    )}
+                                    {suggestion?.size === s && suggestion.source === "history" && <span className="text-[10px] text-emerald-600 font-semibold">last</span>}
+                                    {suggestion?.size === s && suggestion.source === "saved" && <span className="text-[10px] text-blue-500 font-semibold">saved</span>}
                                   </span>
                                 </SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
-
                           <div className="flex items-center gap-1.5 mt-auto">
                             <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
-                              <button
-                                className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                                onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
-                              >
-                                <Minus className="w-3.5 h-3.5" />
-                              </button>
-                              <input
-                                type="number"
-                                min={1}
-                                value={state.qty}
-                                onChange={e => {
-                                  const v = parseInt(e.target.value, 10);
-                                  if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
-                                }}
-                                className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                              />
-                              <button
-                                className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                                onClick={() => setItemState(key, { qty: state.qty + 1 })}
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </button>
+                              <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}><Minus className="w-3.5 h-3.5" /></button>
+                              <input type="number" min={1} value={state.qty} onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 1) setItemState(key, { qty: v }); }} className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+                              <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: state.qty + 1 })}><Plus className="w-3.5 h-3.5" /></button>
                             </div>
-                            <Button
-                              size="sm"
-                              className="flex-1 h-8 text-sm"
-                              disabled={!state.size.trim()}
-                              onClick={() => handleAdd(wi, key)}
-                            >
-                              Add
-                            </Button>
+                            <Button size="sm" className="flex-1 h-8 text-sm" disabled={!state.size.trim()} onClick={() => handleAdd(wi, key)}>Add</Button>
                           </div>
                         </>
                       )}
