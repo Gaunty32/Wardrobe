@@ -31,7 +31,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { Link } from "wouter";
 import { cn } from "@/lib/utils";
@@ -387,6 +387,18 @@ export default function OrderDetail() {
 
   const [uploading, setUploading] = useState(false);
   const [editingItemPrice, setEditingItemPrice] = useState<{ id: number; value: string } | null>(null);
+  const [lineFilter, setLineFilter] = useState("");
+  const filteredItems = (() => {
+    const allItems: any[] = (order as any)?.items ?? [];
+    const q = lineFilter.toLowerCase().trim();
+    if (!q) return allItems;
+    return allItems.filter((oi: any) =>
+      oi.productName?.toLowerCase().includes(q) ||
+      oi.recipientName?.toLowerCase().includes(q) ||
+      oi.colour?.toLowerCase().includes(q) ||
+      oi.size?.toLowerCase().includes(q)
+    );
+  })();
 
   const updateItemPriceMutation = useMutation({
     mutationFn: ({ itemId, unitPrice }: { itemId: number; unitPrice: number }) =>
@@ -1063,12 +1075,29 @@ export default function OrderDetail() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <Card className="lg:col-span-2 shadow-sm border-border/50 flex flex-col">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
-              <div>
-                <CardTitle className="font-display">Line Items</CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10 gap-3 flex-wrap">
+              <div className="min-w-0">
+                <CardTitle className="font-display">
+                  Line Items
+                  {lineFilter.trim() && (
+                    <span className="ml-2 text-sm font-normal text-muted-foreground">
+                      ({filteredItems.length} of {(order.items ?? []).length})
+                    </span>
+                  )}
+                </CardTitle>
                 <CardDescription>Products included in this order</CardDescription>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                  <input
+                    type="text"
+                    placeholder="Filter by name or recipient…"
+                    value={lineFilter}
+                    onChange={e => setLineFilter(e.target.value)}
+                    className="pl-8 pr-3 py-1 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring w-52"
+                  />
+                </div>
                 {order.status !== "portal_pending" && order.items && order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length > 0 && (
                   <Button size="sm" variant="outline" className="gap-1.5 border-green-400 text-green-700 hover:bg-green-50" onClick={() => setIsSendToProductionOpen(true)}>
                     <ClipboardList className="w-4 h-4" />
@@ -1126,7 +1155,7 @@ export default function OrderDetail() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {order.items.map((orderItem) => (
+                      {filteredItems.map((orderItem) => (
                         <TableRow key={orderItem.id}>
                           <TableCell>
                             <p className="font-medium text-foreground">{orderItem.productName}</p>
@@ -1244,7 +1273,12 @@ export default function OrderDetail() {
               )}
             </CardContent>
             {order.items && order.items.length > 0 && (
-              <div className="p-4 bg-muted/20 border-t border-border/40 flex justify-end items-center gap-4">
+              <div className="p-4 bg-muted/20 border-t border-border/40 flex justify-end items-center gap-4 flex-wrap">
+                {lineFilter.trim() && filteredItems.length !== order.items.length && (
+                  <span className="text-sm text-muted-foreground">
+                    Filtered: <span className="font-semibold text-foreground">{formatCurrency(filteredItems.reduce((s, oi) => s + (parseFloat(String(oi.lineTotal)) || 0), 0))}</span>
+                  </span>
+                )}
                 <span className="text-muted-foreground font-medium">Order Total:</span>
                 <span className="text-2xl font-bold font-display text-foreground">{formatCurrency(order.totalAmount)}</span>
               </div>

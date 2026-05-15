@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, AlertCircle, Hash, Pencil, Check, X } from "lucide-react";
+import { ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, AlertCircle, Hash, Pencil, Check, X, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function PortalStatusBadge({ status, portalStatus }: { status: string; portalStatus?: string }) {
@@ -35,6 +35,7 @@ export default function OrderDetailPage() {
 
   const [editingPo, setEditingPo] = useState(false);
   const [poInput, setPoInput] = useState("");
+  const [lineFilter, setLineFilter] = useState("");
 
   const { data: order, isLoading, error } = useQuery<any>({
     queryKey: ["portal-order", id],
@@ -75,7 +76,15 @@ export default function OrderDetailPage() {
   }
 
   const items: any[] = order.items ?? [];
+  const q = lineFilter.toLowerCase().trim();
+  const filteredItems: any[] = !q ? items : items.filter((item: any) =>
+    item.product_name?.toLowerCase().includes(q) ||
+    item.recipient_name?.toLowerCase().includes(q) ||
+    item.colour?.toLowerCase().includes(q) ||
+    item.size?.toLowerCase().includes(q)
+  );
   const itemsSubtotal = items.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0);
+  const filteredSubtotal = filteredItems.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0);
   const carriageAmount = parseFloat(order.carriage_amount ?? "0");
   const vatAmount = (itemsSubtotal + carriageAmount) * 0.2;
   const grandTotal = itemsSubtotal + carriageAmount + vatAmount;
@@ -218,7 +227,24 @@ export default function OrderDetailPage() {
 
       <Card>
         <CardHeader className="py-3 px-5 border-b">
-          <CardTitle className="text-base">Order items</CardTitle>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="text-base">
+              Order items
+              {lineFilter.trim() && filteredItems.length !== items.length && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">({filteredItems.length} of {items.length})</span>
+              )}
+            </CardTitle>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filter by name or product…"
+                value={lineFilter}
+                onChange={e => setLineFilter(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring w-52"
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -235,7 +261,7 @@ export default function OrderDetailPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item: any, i: number) => (
+                {filteredItems.map((item: any, i: number) => (
                   <TableRow key={i}>
                     <TableCell className="font-medium">{item.product_name}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -256,6 +282,12 @@ export default function OrderDetailPage() {
           <div className="border-t">
             <div className="px-5 py-2 flex justify-end">
               <div className="text-right space-y-1 min-w-[220px]">
+                {lineFilter.trim() && filteredItems.length !== items.length && (
+                  <div className="flex justify-between gap-8 text-sm font-medium">
+                    <span>Filtered subtotal</span>
+                    <span>{formatCurrency(filteredSubtotal)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between gap-8 text-sm text-muted-foreground">
                   <span>Subtotal (exc. VAT)</span>
                   <span>{formatCurrency(itemsSubtotal)}</span>
