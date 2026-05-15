@@ -231,6 +231,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   const sizeOrder = useSizeOrder();
   const [, setLocation] = useLocation();
   const [itemStates, setItemStates] = useState<Record<string, ItemState>>({});
+  const [bulkModes, setBulkModes] = useState<Record<string, boolean>>({});
+  const [bulkQtys, setBulkQtys] = useState<Record<string, Record<string, number>>>({});
   const [expandedProcs, setExpandedProcs] = useState<Set<string>>(new Set());
   const toggleProcs = (key: string) => setExpandedProcs(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
   // Members are pre-locked to their own employee record; others choose freely
@@ -923,6 +925,19 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     setItemState(key, { size: "", qty: 1 });
   };
 
+  const handleBulkAdd = (wi: any, key: string, sizeOptions: string[]) => {
+    const qtys = bulkQtys[key] ?? {};
+    const isStock = selectedRecipient === "stock";
+    const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === selectedRecipient);
+    const newItems: OrderItem[] = sizeOptions
+      .filter(s => (qtys[s] ?? 0) > 0)
+      .map(s => makeItem(wi, isStock ? "stock" : "person", s, qtys[s], emp));
+    if (newItems.length === 0) return;
+    setBasket(b => [...b, ...newItems]);
+    setBulkQtys(q => ({ ...q, [key]: {} }));
+    toast({ title: `${newItems.length} size${newItems.length !== 1 ? "s" : ""} added to basket` });
+  };
+
   const handleAddAll = () => {
     const newItems: OrderItem[] = [];
     const keysToReset: string[] = [];
@@ -1062,70 +1077,125 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                         </div>
                       )}
 
-                      {/* Size hint */}
-                      {suggestion && !state.size && (
-                        <p className={`text-[11px] ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
-                          {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
-                        </p>
+                      {/* Bulk / single toggle */}
+                      {sizeOptions.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setBulkModes(m => ({ ...m, [key]: !m[key] }))}
+                          className={cn(
+                            "self-end text-[10px] font-medium px-2 py-0.5 rounded-full border transition-colors",
+                            bulkModes[key]
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                          )}
+                        >
+                          {bulkModes[key] ? "Single" : "Bulk"}
+                        </button>
                       )}
 
-                      {/* Size selector */}
-                      <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
-                        <SelectTrigger className="h-8 text-sm w-full">
-                          <SelectValue placeholder="Select size" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sizeOptions.map(s => (
-                            <SelectItem key={s} value={s}>
-                              <span className="flex items-center gap-2">
-                                {s}
-                                {suggestion?.size === s && suggestion.source === "history" && (
-                                  <span className="text-[10px] text-emerald-600 font-semibold">last</span>
-                                )}
-                                {suggestion?.size === s && suggestion.source === "saved" && (
-                                  <span className="text-[10px] text-blue-500 font-semibold">saved</span>
-                                )}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      {bulkModes[key] ? (
+                        /* ── Bulk entry grid ── */
+                        (() => {
+                          const qtys = bulkQtys[key] ?? {};
+                          const total = sizeOptions.reduce((s, sz) => s + (qtys[sz] ?? 0), 0);
+                          return (
+                            <div className="space-y-2">
+                              <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(sizeOptions.length, 4)}, 1fr)` }}>
+                                {sizeOptions.map((sz, si) => (
+                                  <div key={sz} className="flex flex-col items-center gap-0.5">
+                                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{sz}</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={qtys[sz] || ""}
+                                      placeholder="0"
+                                      autoFocus={si === 0}
+                                      onChange={e => {
+                                        const v = parseInt(e.target.value, 10);
+                                        setBulkQtys(q => ({ ...q, [key]: { ...(q[key] ?? {}), [sz]: isNaN(v) || v < 0 ? 0 : v } }));
+                                      }}
+                                      className="w-full h-8 text-center text-sm font-semibold rounded-md border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                              <Button
+                                size="sm"
+                                className="w-full h-8 text-sm"
+                                disabled={total === 0}
+                                onClick={() => handleBulkAdd(wi, key, sizeOptions)}
+                              >
+                                Add {total > 0 ? `${total} ` : ""}to basket
+                              </Button>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        /* ── Single entry ── */
+                        <>
+                          {suggestion && !state.size && (
+                            <p className={`text-[11px] ${suggestion.source === "saved" ? "text-blue-500" : "text-emerald-600"}`}>
+                              {suggestion.source === "saved" ? "Saved" : "Last"}: <strong>{suggestion.size}</strong>
+                            </p>
+                          )}
 
-                      {/* Qty stepper + Add */}
-                      <div className="flex items-center gap-1.5 mt-auto">
-                        <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
-                          <button
-                            className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                            onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
-                          >
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <input
-                            type="number"
-                            min={1}
-                            value={state.qty}
-                            onChange={e => {
-                              const v = parseInt(e.target.value, 10);
-                              if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
-                            }}
-                            className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                          />
-                          <button
-                            className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                            onClick={() => setItemState(key, { qty: state.qty + 1 })}
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                        <Button
-                          size="sm"
-                          className="flex-1 h-8 text-sm"
-                          disabled={!state.size.trim()}
-                          onClick={() => handleAdd(wi, key)}
-                        >
-                          Add
-                        </Button>
-                      </div>
+                          <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
+                            <SelectTrigger className="h-8 text-sm w-full">
+                              <SelectValue placeholder="Select size" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sizeOptions.map(s => (
+                                <SelectItem key={s} value={s}>
+                                  <span className="flex items-center gap-2">
+                                    {s}
+                                    {suggestion?.size === s && suggestion.source === "history" && (
+                                      <span className="text-[10px] text-emerald-600 font-semibold">last</span>
+                                    )}
+                                    {suggestion?.size === s && suggestion.source === "saved" && (
+                                      <span className="text-[10px] text-blue-500 font-semibold">saved</span>
+                                    )}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          <div className="flex items-center gap-1.5 mt-auto">
+                            <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
+                              <button
+                                className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                                onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <input
+                                type="number"
+                                min={1}
+                                value={state.qty}
+                                onChange={e => {
+                                  const v = parseInt(e.target.value, 10);
+                                  if (!isNaN(v) && v >= 1) setItemState(key, { qty: v });
+                                }}
+                                className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              />
+                              <button
+                                className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                                onClick={() => setItemState(key, { qty: state.qty + 1 })}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <Button
+                              size="sm"
+                              className="flex-1 h-8 text-sm"
+                              disabled={!state.size.trim()}
+                              onClick={() => handleAdd(wi, key)}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </Card>
                 );
