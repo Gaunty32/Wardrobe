@@ -423,19 +423,14 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     return null;
   };
 
-  const FALLBACK_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
-
   const getAvailableSizes = (wi: any): string[] => {
-    if (!sizesMap || !wi.product_id) return FALLBACK_SIZES;
+    if (!sizesMap || !wi.product_id) return [];
     const byColour = sizesMap[String(wi.product_id)];
-    // No WooCommerce data for this product — use standard size range
-    if (!byColour) return FALLBACK_SIZES;
-    // Return all sizes across all colour variants (colour is fixed on the item,
-    // it shouldn't restrict which sizes can be ordered)
+    // No WooCommerce size data at all — treat as one-size item (e.g. caps, bags)
+    if (!byColour) return [];
+    // Return all sizes across all colour variants — the colour on the wardrobe item
+    // is fixed for display but shouldn't restrict which sizes can be ordered
     const all = [...new Set(Object.values(byColour).flat())];
-    // If WooCommerce only returned very few sizes (likely incomplete sync),
-    // fall back to the standard range so the customer isn't blocked
-    if (all.length <= 1) return FALLBACK_SIZES;
     return sortSizesWithOrder(all, sizeOrder);
   };
 
