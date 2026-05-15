@@ -132,9 +132,11 @@ const DUE_DATE_SORT = [sql`${ordersTable.requiredDate} ASC NULLS LAST`, desc(ord
 
 router.get("/orders", async (req, res): Promise<void> => {
   const query = ListOrdersQueryParams.safeParse(req.query);
-  // Exclude portal-rejected orders, portal_draft orders (awaiting customer manager approval),
-  // and portal_pending orders (awaiting SBS confirmation — shown in the dedicated panel instead)
-  const baseCondition = sql`(${ordersTable.portalStatus} IS DISTINCT FROM 'rejected' AND ${ordersTable.status} IS DISTINCT FROM 'portal_draft' AND ${ordersTable.status} IS DISTINCT FROM 'portal_pending')`;
+  // Exclude portal_draft orders (awaiting customer manager approval)
+  // and portal_pending orders (awaiting SBS confirmation — shown in the dedicated panel instead).
+  // Do NOT filter by portal_status='rejected' here — orders that went through the portal flow
+  // can end up confirmed/cancelled with that flag set, and should still appear in the list.
+  const baseCondition = sql`(${ordersTable.status} IS DISTINCT FROM 'portal_draft' AND ${ordersTable.status} IS DISTINCT FROM 'portal_pending')`;
   let orders;
   if (query.success) {
     const conditions = [baseCondition];
