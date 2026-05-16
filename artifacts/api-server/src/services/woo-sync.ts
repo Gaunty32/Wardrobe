@@ -1,4 +1,4 @@
-import { eq, inArray, isNotNull, and } from "drizzle-orm";
+import { eq, inArray, isNotNull, and, sql } from "drizzle-orm";
 import { db, productsTable, productAttributesTable, productVariantsTable, settingsTable, syncLogsTable, productCategoriesTable } from "@workspace/db";
 
 interface WooCategory {
@@ -22,13 +22,14 @@ interface WooProduct {
   short_description: string;
   stock_quantity: number | null;
   manage_stock: boolean;
-  type: "simple" | "variable" | string;
+  type: "simple" | "variable" | "yith_bundle" | string;
   tax_status: "taxable" | "shipping" | "none" | string;
   tax_class: string;
   categories: { id: number; name: string; slug: string }[];
   images: { id: number; src: string; alt: string; position: number }[];
   attributes: { id: number; name: string; options: string[]; variation: boolean }[];
   variations: number[];
+  meta_data: { key: string; value: unknown }[];
 }
 
 interface WooVariation {
@@ -69,6 +70,77 @@ async function fetchAllProducts(baseUrl: string, ck: string, cs: string, since?:
     page++;
   }
   return all;
+}
+
+/** Fetch only yith_bundle products (small set) with meta_data to extract price breaks */
+async function fetchBundleProducts(baseUrl: string, ck: string, cs: string): Promise<WooProduct[]> {
+  const all: WooProduct[] = [];
+  let page = 1;
+  while (true) {
+    const batch = await wooFetch<WooProduct[]>(
+      baseUrl,
+      `/products?per_page=100&page=${page}&status=publish&type=yith_bundle`,
+      ck, cs
+    );
+    all.push(...batch);
+    if (batch.length < 100) break;
+    page++;
+  }
+  return all;
+}
+
+/**
+ * Parse YITH bundle products and return price breaks to apply to their parent products.
+ * A bundle like "24 x Baseball Cap @ £144 sale" → priceBreak { qty: 24, price: 6.00 }
+ */
+function extractBundlePriceBreaks(products: WooProduct[]): Map<number, { qty: number; price: number }[]> {
+  // wooCommerceId → array of price breaks
+  const result = new Map<number, { qty: number; price: number }[]>();
+
+  for (const p of products) {
+    if (p.type !== "yith_bundle") continue;
+
+    const bundleDataMeta = p.meta_data?.find(m => m.key === "_yith_wcpb_bundle_data");
+    if (!bundleDataMeta) continue;
+
+    const bundleData = bundleDataMeta.value as Record<string, {
+      product_id?: string;
+      bp_min_qty?: string;
+      bp_max_qty?: string;
+      bp_discount?: string;
+    }> | null;
+    if (!bundleData || typeof bundleData !== "object") continue;
+
+    // Bundle price: prefer sale_price when on_sale, else price
+    const bundlePrice = parseFloat(
+      (p.on_sale && p.sale_price) ? p.sale_price : (p.price || p.regular_price || "0")
+    );
+    if (!bundlePrice || bundlePrice <= 0) continue;
+
+    for (const item of Object.values(bundleData)) {
+      const wooProductId = item.product_id ? parseInt(item.product_id, 10) : null;
+      const minQty = item.bp_min_qty ? parseInt(item.bp_min_qty, 10) : null;
+
+      if (!wooProductId || !minQty || minQty <= 1) continue;
+
+      // Compute effective per-unit price from the bundle total
+      const perUnitPrice = Math.round((bundlePrice / minQty) * 100) / 100;
+
+      const existing = result.get(wooProductId) ?? [];
+      // Avoid duplicate qty entries
+      if (!existing.some(b => b.qty === minQty)) {
+        existing.push({ qty: minQty, price: perUnitPrice });
+      }
+      result.set(wooProductId, existing);
+    }
+  }
+
+  // Sort each product's breaks by qty ascending
+  for (const [id, breaks] of result) {
+    result.set(id, breaks.sort((a, b) => a.qty - b.qty));
+  }
+
+  return result;
 }
 
 async function fetchAllCategories(baseUrl: string, ck: string, cs: string): Promise<Map<number, WooCategory>> {
@@ -382,6 +454,20 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
       }
 
       await reportProgress(index + 1, products.length);
+    }
+
+    // Apply price breaks derived from YITH bundle products (fetched separately — small set)
+    const bundleProducts = await fetchBundleProducts(baseUrl, ck, cs);
+    const bundlePriceBreaks = extractBundlePriceBreaks(bundleProducts);
+    for (const [wooProductId, breaks] of bundlePriceBreaks) {
+      try {
+        await db.execute(sql`
+          UPDATE products SET price_breaks = ${JSON.stringify(breaks)}::jsonb
+          WHERE woo_commerce_id = ${wooProductId}
+        `);
+      } catch (err) {
+        errors.push(`Price breaks for woo_id=${wooProductId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     // Save sync start time so next incremental sync can use it as its cutoff
