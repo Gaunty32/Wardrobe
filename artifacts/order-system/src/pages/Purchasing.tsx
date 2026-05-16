@@ -1117,7 +1117,18 @@ export default function Purchasing() {
 
                         {isExpanded && (
                           <div className="border-t border-border px-5 py-4">
-                            <RequirementsLineTable items={group.items} />
+                            <POMatrixView
+                              items={group.items.map((r) => ({
+                                id: r.itemId,
+                                productName: r.canonicalProductName ?? r.productName,
+                                colour: r.colour ?? null,
+                                size: r.size ?? null,
+                                supplierCode: r.supplierCode ?? null,
+                                quantityOrdered: r.purchaseQuantity ?? 1,
+                                quantityDelivered: 0,
+                                supplierPrice: null,
+                              }))}
+                            />
                           </div>
                         )}
                       </div>

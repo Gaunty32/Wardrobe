@@ -957,71 +957,11 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
 }
 
 export function buildPOEmail(po: POData, extraNotes: string): { subject: string; html: string; text: string } {
-  const { groupKeys, groups } = buildMatrix(po.items);
   const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const subject = `Purchase Order ${po.poNumber} — Select Branding Solutions`;
   const supplierFirstName = toFirstName(po.supplierContactName ?? po.supplierName);
   const totalUnits = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
-  const totalValue = po.items.reduce((s, i) => s + (i.supplierPrice != null ? i.supplierPrice * i.quantityOrdered : 0), 0);
   const allNotes = [po.notes, extraNotes].filter(Boolean).join(" — ");
-
-  // ── Per-product matrix sections ───────────────────────────────────────────
-  const productSectionsHtml = groupKeys.map((gk) => {
-    const g = groups.get(gk)!;
-    const code = g.code ?? g.sbsCode ?? null;
-    const productSizes = g.sizes;
-    const sizeHeaders = productSizes.map((s) =>
-      `<th style="padding:8px 10px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;border-left:1px solid #334155;">${s}</th>`
-    ).join("");
-
-    let groupTotal = 0;
-    const sizeTotals = new Map<string, number>();
-
-    const dataRows = g.colours.map((colour, ci) => {
-      const rowTotal = productSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
-      groupTotal += rowTotal;
-      const bg = ci % 2 === 0 ? "#ffffff" : "#f8fafc";
-      const sizeCells = productSizes.map((sz) => {
-        const qty = g.qty.get(colour)?.get(sz) ?? 0;
-        if (qty > 0) sizeTotals.set(sz, (sizeTotals.get(sz) ?? 0) + qty);
-        return `<td style="padding:8px 10px;text-align:center;border-left:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-size:13px;${qty > 0 ? "font-weight:700;color:#1e293b;" : "color:#cbd5e1;"}">${qty > 0 ? qty : "—"}</td>`;
-      }).join("");
-      return `<tr style="background:${bg};">
-        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#374151;">${colour}</td>
-        ${sizeCells}
-        <td style="padding:8px 10px;text-align:center;border-left:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:700;color:#1e293b;">${rowTotal}</td>
-      </tr>`;
-    }).join("");
-
-    const totalCells = productSizes.map((sz) => {
-      const t = sizeTotals.get(sz) ?? 0;
-      return `<td style="padding:8px 10px;text-align:center;border-left:1px solid #e2e8f0;font-size:13px;font-weight:700;color:#ffffff;background:#1e293b;">${t > 0 ? t : "—"}</td>`;
-    }).join("");
-
-    const codeHtml = code
-      ? `<span style="font-family:monospace;color:#fbbf24;font-size:12px;font-weight:700;margin-right:8px;">${code}</span>`
-      : "";
-
-    return `
-      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;margin-bottom:20px;">
-        <tr>
-          <td colspan="${1 + productSizes.length + 1}" style="background:#1e293b;padding:10px 14px;">
-            ${codeHtml}<span style="color:#f1f5f9;font-size:13px;font-weight:700;">${g.productName}</span>
-          </td>
-        </tr>
-        <tr style="background:#0f172a;">
-          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Colour / Style</th>
-          ${sizeHeaders}
-          <th style="padding:8px 10px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;border-left:1px solid #334155;">Total</th>
-        </tr>
-        ${dataRows}
-        <tr style="background:#1e293b;">
-          <td style="padding:8px 12px;font-size:12px;font-weight:700;color:#ffffff;">TOTAL</td>
-          ${totalCells}
-          <td style="padding:8px 10px;text-align:center;border-left:1px solid #334155;font-size:14px;font-weight:800;color:#ffffff;">${groupTotal}</td>
-        </tr>
-      </table>`;
-  }).join("");
 
   const html = `<!DOCTYPE html>
 <html>
@@ -1029,9 +969,9 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
     <tr><td align="center" style="padding:32px 16px;">
-      <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.10);">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.10);">
 
-        <!-- Header: dark bar with SBS logo + PO reference -->
+        <!-- Header -->
         <tr><td style="background:#1e293b;padding:22px 32px;">
           <table width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:middle;">
@@ -1048,37 +988,24 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
         <!-- Greeting band -->
         <tr><td style="background:#1e3a5f;padding:24px 32px;">
           <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Dear ${supplierFirstName},</p>
-          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">Please find our purchase order below. The PDF attached contains the same information for your records.</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">Please find purchase order <strong style="color:#ffffff;">${po.poNumber}</strong> attached — ${totalUnits} unit${totalUnits !== 1 ? "s" : ""} in total.</p>
         </td></tr>
 
         <!-- Body -->
-        <tr><td style="padding:28px 32px 0;">
+        <tr><td style="padding:28px 32px;">
           <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.7;">
-            Could you please supply the following items for purchase order <strong>${po.poNumber}</strong> and confirm receipt at your earliest convenience? If you have any questions about this order, don't hesitate to get in touch.
+            All order details are in the PDF attached. Could you please confirm receipt at your earliest convenience? If you have any questions, don't hesitate to get in touch.
+          </p>
+
+          ${allNotes ? `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 16px;margin-bottom:20px;">
+            <p style="margin:0;font-size:13px;color:#92400e;"><strong>Notes:</strong> ${allNotes}</p>
+          </div>` : ""}
+
+          <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">
+            Kind regards,<br>
+            <strong style="color:#1e293b;font-size:15px;">The Select Branding Solutions Team</strong>
           </p>
         </td></tr>
-
-        <!-- Product matrices -->
-        <tr><td style="padding:0 32px 8px;">
-          ${productSectionsHtml}
-        </td></tr>
-
-        <!-- Order total summary bar -->
-        <tr><td style="padding:0 32px 24px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
-            <tr style="background:#1e293b;">
-              <td style="padding:12px 16px;color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Total order</td>
-              <td style="padding:12px 16px;color:#ffffff;font-size:15px;font-weight:800;text-align:right;">${totalUnits} units${totalValue > 0 ? `&nbsp;&nbsp;·&nbsp;&nbsp;£${totalValue.toFixed(2)}` : ""}</td>
-            </tr>
-          </table>
-        </td></tr>
-
-        ${allNotes ? `<!-- Notes -->
-        <tr><td style="padding:0 32px 24px;">
-          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 16px;">
-            <p style="margin:0;font-size:13px;color:#92400e;"><strong>Notes:</strong> ${allNotes}</p>
-          </div>
-        </td></tr>` : ""}
 
         <!-- Contact details -->
         <tr><td style="padding:0 32px 24px;">
@@ -1103,14 +1030,6 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
           </table>
         </td></tr>
 
-        <!-- Closing -->
-        <tr><td style="padding:0 32px 28px;">
-          <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">
-            Kind regards,<br>
-            <strong style="color:#1e293b;font-size:15px;">The Select Branding Solutions Team</strong>
-          </p>
-        </td></tr>
-
         <!-- Footer -->
         <tr><td style="background:#f8fafc;padding:14px 32px;border-top:1px solid #e2e8f0;">
           <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;line-height:1.8;">
@@ -1127,44 +1046,24 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
 </body>
 </html>`;
 
-  // ── Plain-text fallback ───────────────────────────────────────────────────
-  const lines = [
+  const text = [
     `Purchase Order ${po.poNumber} — Select Branding Solutions`,
     ``,
     `Dear ${supplierFirstName},`,
     ``,
-    `Please supply the following items for purchase order ${po.poNumber} (${dateStr}).`,
-    `The PDF attached contains the same information for your records.`,
+    `Please find purchase order ${po.poNumber} attached — ${totalUnits} unit${totalUnits !== 1 ? "s" : ""} in total.`,
     ``,
-  ];
-  for (const gk of groupKeys) {
-    const g = groups.get(gk)!;
-    const code = g.code ?? g.sbsCode;
-    lines.push(`${code ? `[${code}] ` : ""}${g.productName}`);
-    lines.push("-".repeat(48));
-    const hdr = ["Colour".padEnd(22), ...g.sizes.map((s) => s.padStart(6)), "Total".padStart(7)].join("  ");
-    lines.push(hdr);
-    for (const colour of g.colours) {
-      const rowTotal = g.sizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
-      const cells = g.sizes.map((sz) => { const q = g.qty.get(colour)?.get(sz) ?? 0; return (q > 0 ? String(q) : "—").padStart(6); });
-      lines.push([colour.padEnd(22), ...cells, String(rowTotal).padStart(7)].join("  "));
-    }
-    lines.push(``);
-  }
-  lines.push(`Total: ${totalUnits} units${totalValue > 0 ? `  ·  £${totalValue.toFixed(2)}` : ""}`);
-  if (allNotes) lines.push(``, `Notes: ${allNotes}`);
-  lines.push(
-    ``,
-    `Please confirm receipt of this order at your earliest convenience.`,
+    `All order details are in the PDF attached. Could you please confirm receipt at your earliest convenience?`,
+    allNotes ? `\nNotes: ${allNotes}` : null,
     ``,
     `Questions? Email us at info@selectbranding.co.uk or call ${SBS_PHONE_DISPLAY}.`,
     ``,
     `Kind regards,`,
     `The Select Branding Solutions Team`,
     `Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, LS13 3HE`,
-  );
+  ].filter((l) => l !== null).join("\n");
 
-  return { subject, html, text: lines.join("\n") };
+  return { subject, html, text };
 }
 
 // ─── DB-backed SMTP config (for invoice emails) ───────────────────────────────
