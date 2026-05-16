@@ -661,7 +661,7 @@ export default function OrderDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pack-status", orderId] });
       queryClient.invalidateQueries({ queryKey: ["order-logs", orderId] });
-      toast({ title: "Sent to Production", description: "Worksheet created in Pre-WIP." });
+      toast({ title: "Sent to Production", description: "Worksheet created in Pre-Production." });
       setIsSendToProductionOpen(false);
       setProductionNotes("");
     },
@@ -2640,7 +2640,7 @@ export default function OrderDetail() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              This will create a production worksheet for all stock-confirmed items (no purchase required). The worksheet will appear in <strong>Pre-WIP</strong> until goods arrive.
+              This will create a production worksheet for all items that don't need purchasing. It will appear in <strong>Pre-Production</strong> until the garments arrive, then move to Work in Progress when decoration begins.
             </p>
             {order.items && (
               <div className="rounded-lg border border-green-200 bg-green-50 divide-y divide-green-100 text-sm">

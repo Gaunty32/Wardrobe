@@ -447,7 +447,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                   "bg-slate-100 text-slate-700 border-slate-300"
                 }`}>
                   {ws.status === "complete" ? <CheckCircle className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                  {ws.worksheetNumber} — {ws.status === "pre_wip" ? "Pre-WIP" : ws.status === "wip" ? "WIP" : "Complete"}
+                  {ws.worksheetNumber} — {ws.status === "pre_wip" ? "Pre-Production" : ws.status === "wip" ? "WIP" : "Complete"}
                 </Badge>
               ))}
             </div>

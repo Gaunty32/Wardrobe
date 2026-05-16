@@ -129,7 +129,7 @@ interface PickingOrder {
 }
 
 const STATUS_CONFIG = {
-  pre_wip: { label: "Pre-WIP", color: "bg-blue-100 text-blue-800 border-blue-200", icon: Clock },
+  pre_wip: { label: "Pre-Production", color: "bg-blue-100 text-blue-800 border-blue-200", icon: Clock },
   wip: { label: "Work in Progress", color: "bg-amber-100 text-amber-800 border-amber-200", icon: ClipboardList },
   complete: { label: "Complete", color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle2 },
 };
@@ -1527,7 +1527,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 const TASK_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   picking: { label: "Picking List", color: "text-purple-600" },
-  pre_wip: { label: "Pre-WIP",      color: "text-blue-600" },
+  pre_wip: { label: "Pre-Production", color: "text-blue-600" },
   wip:     { label: "In Progress",  color: "text-amber-600" },
 };
 
@@ -1553,7 +1553,7 @@ function TaskGroupCard({
   const actionLabel =
     group.overallStatus === "pick_first" ? "Go to Picking List" :
     group.overallStatus === "in_progress" ? "View in WIP" :
-    "View in Pre-WIP";
+    "View in Pre-Production";
 
   const actionTab =
     group.overallStatus === "pick_first" ? "picking_list" :
@@ -1689,7 +1689,7 @@ function DailyPlanTab({ onNavigate, pendingCount, readyCount }: { onNavigate: (t
               onClick={() => onNavigate("pre_wip")}
               className="text-sm font-semibold text-amber-700 underline underline-offset-2 hover:text-amber-900"
             >
-              View in Pre-WIP →
+              View in Pre-Production →
             </button>
           </div>
         ) : (
@@ -1927,7 +1927,7 @@ export default function Production() {
   const TAB_COUNTS = [
     { key: "plan",         label: "Today's Plan",      count: urgentPlanCount,                                  icon: Zap,         color: "text-primary" },
     { key: "picking_list", label: "Picking List",       count: pickingCount,                                     icon: ListChecks,  color: "text-purple-600" },
-    { key: "pre_wip",      label: "Pre-WIP",            count: hasFilters ? preWipTotal : rawPreWip,             icon: Clock,       color: "text-blue-600" },
+    { key: "pre_wip",      label: "Pre-Production",      count: hasFilters ? preWipTotal : rawPreWip,             icon: Clock,       color: "text-blue-600" },
     { key: "wip",          label: "Work in Progress",   count: hasFilters ? wip.length : rawWip,                 icon: ClipboardList, color: "text-amber-600" },
     { key: "complete",     label: "Complete",           count: hasFilters ? complete.length : rawComplete,       icon: CheckCircle2, color: "text-green-600" },
   ];
@@ -1995,7 +1995,7 @@ export default function Production() {
             <DailyPlanTab onNavigate={setActiveTab} pendingCount={pendingOrders.length} readyCount={readyForProduction.length} />
           </TabsContent>
 
-          {/* ── Pre-WIP Tab ── */}
+          {/* ── Pre-Production Tab ── */}
           <TabsContent value="pre_wip">
             {isLoading ? (
               <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -2004,9 +2004,9 @@ export default function Production() {
             ) : preWipTotal === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                 <Clock className="w-12 h-12 text-blue-300" />
-                <p className="text-lg font-medium">Nothing in pre-production</p>
+                <p className="text-lg font-medium">Nothing in Pre-Production</p>
                 <p className="text-sm text-center max-w-xs">
-                  Confirmed orders awaiting stock will appear here. Use 'Send to Production' on order line items to create worksheets.
+                  Confirmed orders where garments haven't arrived yet appear here. Use 'Send to Production' on an order to create worksheets.
                 </p>
               </div>
             ) : (
@@ -2097,7 +2097,7 @@ export default function Production() {
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                 <ClipboardList className="w-12 h-12 text-amber-300" />
                 <p className="text-lg font-medium">No active worksheets</p>
-                <p className="text-sm text-center max-w-xs">Move pre-WIP items here when goods arrive and decoration begins.</p>
+                <p className="text-sm text-center max-w-xs">Move items here from Pre-Production when the garments have arrived and decoration can begin.</p>
               </div>
             ) : (
               <div className="space-y-3">
