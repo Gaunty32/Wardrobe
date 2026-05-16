@@ -382,14 +382,16 @@ function RequirementsRow({
   );
 }
 
-/** Flat editable table — one row per purchase requirement line */
-function RequirementsLineTable({
-  items,
-  onQtyChange,
-}: {
-  items: PurchaseRequirement[];
-  onQtyChange: (item: PurchaseRequirement, qty: number) => void;
-}) {
+/** Grouped table — one row per unique SKU (product+colour+size), orders combined */
+function RequirementsLineTable({ items }: { items: PurchaseRequirement[] }) {
+  // Group by SKU key so the table matches what the resulting PO will look like
+  const groupKeys: string[] = [];
+  const groups = new Map<string, PurchaseRequirement[]>();
+  for (const item of items) {
+    const key = [item.productName, item.colour ?? "", item.size ?? "", item.supplierCode ?? ""].join("|");
+    if (!groups.has(key)) { groupKeys.push(key); groups.set(key, []); }
+    groups.get(key)!.push(item);
+  }
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table>
@@ -397,14 +399,41 @@ function RequirementsLineTable({
           <TableRow className="bg-muted/40">
             <TableHead className="font-semibold min-w-[200px]">Product</TableHead>
             <TableHead className="font-semibold min-w-[130px]">Colour / Size</TableHead>
-            <TableHead className="font-semibold text-xs min-w-[80px]">Order</TableHead>
-            <TableHead className="text-center font-semibold min-w-[130px]">Qty to order</TableHead>
+            <TableHead className="font-semibold text-xs min-w-[120px]">Orders</TableHead>
+            <TableHead className="text-center font-semibold min-w-[80px]">Qty</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((item) => (
-            <RequirementsRow key={item.itemId} item={item} onQtyChange={onQtyChange} />
-          ))}
+          {groupKeys.map((key) => {
+            const groupItems = groups.get(key)!;
+            const first = groupItems[0];
+            const totalQty = groupItems.reduce((s, i) => s + (i.purchaseQuantity ?? 1), 0);
+            const orderNums = [...new Set(groupItems.map((i) => i.orderNumber).filter(Boolean))];
+            return (
+              <TableRow key={key}>
+                <TableCell>
+                  <div className="font-medium text-sm">{first.canonicalProductName ?? first.productName}</div>
+                  {(first.supplierCode || first.productSku) && (
+                    <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                      {first.supplierCode && <span className="mr-2">Supplier: {first.supplierCode}</span>}
+                      {first.productSku && <span>SKU: {first.productSku}</span>}
+                    </div>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {[first.colour, first.size].filter(Boolean).join(" / ") || "—"}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {orderNums.map((on) => (
+                      <span key={on} className="text-xs font-mono font-semibold text-primary bg-primary/8 rounded px-1 py-0.5">{on}</span>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell className="text-center font-bold text-sm">{totalQty}</TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -1139,10 +1168,7 @@ export default function Purchasing() {
 
                         {isExpanded && (
                           <div className="border-t border-border px-5 py-4">
-                            <RequirementsLineTable
-                              items={group.items}
-                              onQtyChange={(item, qty) => reqQtyMutation.mutate({ orderId: item.orderId, itemId: item.itemId, purchaseQuantity: qty })}
-                            />
+                            <RequirementsLineTable items={group.items} />
                           </div>
                         )}
                       </div>
