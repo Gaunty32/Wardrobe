@@ -1298,7 +1298,7 @@ export default function OrderDetail() {
                                 title="Click to override price"
                               >
                                 {formatCurrency(orderItem.unitPrice)}
-                                <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity" />
+                                <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </button>
                             )}
                           </TableCell>
