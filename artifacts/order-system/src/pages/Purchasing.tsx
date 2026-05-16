@@ -116,7 +116,7 @@ function buildPOMatrix(items: POItem[]) {
     if (!g.colours.includes(c)) g.colours.push(c);
     if (!g.sizes.includes(s)) g.sizes.push(s);
     if (!g.qty.has(c)) g.qty.set(c, new Map());
-    g.qty.get(c)!.set(s, item.quantityOrdered);
+    g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantityOrdered);
     if (item.supplierPrice != null && g.price == null) g.price = item.supplierPrice;
   }
   const allSizes: string[] = [];
