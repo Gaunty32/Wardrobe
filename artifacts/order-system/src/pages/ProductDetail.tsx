@@ -118,9 +118,10 @@ function SupplierSelect({ value, onChange, suppliers, placeholder = "Select supp
 }
 
 // ── Variant row ─────────────────────────────────────────────────────────────
-function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpload }: {
+function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpload, productSupplierId, productSecondaryId }: {
   variant: any; suppliers: any[]; productId: number; onRefresh: () => void;
   onColourImageUpload: (colour: string | null, imageUrl: string) => void;
+  productSupplierId?: number | null; productSecondaryId?: number | null;
 }) {
   const { toast } = useToast();
   const [editOpen, setEditOpen] = useState(false);
@@ -199,8 +200,10 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
     setEditOpen(true);
   };
 
-  const primarySupplier = suppliers.find(s => s.id === variant.primarySupplierId);
-  const secondarySupplier = suppliers.find(s => s.id === variant.secondarySupplierId);
+  const primarySupplier = suppliers.find(s => s.id === (variant.primarySupplierId ?? productSupplierId));
+  const secondarySupplier = suppliers.find(s => s.id === (variant.secondarySupplierId ?? productSecondaryId));
+  const primaryIsInherited = !variant.primarySupplierId && !!productSupplierId;
+  const secondaryIsInherited = !variant.secondarySupplierId && !!productSecondaryId;
   const isLowStock = variant.stockQuantity <= 5;
 
   return (
@@ -263,12 +266,12 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
         </TableCell>
         <TableCell className="text-sm text-muted-foreground">
           {primarySupplier
-            ? <span className="font-medium text-foreground">{primarySupplier.name}</span>
+            ? <span className={primaryIsInherited ? "text-muted-foreground italic" : "font-medium text-foreground"}>{primarySupplier.name}</span>
             : <span className="italic">—</span>}
         </TableCell>
         <TableCell className="text-sm text-muted-foreground">
           {secondarySupplier
-            ? <span>{secondarySupplier.name}</span>
+            ? <span className={secondaryIsInherited ? "italic" : ""}>{secondarySupplier.name}</span>
             : <span className="italic">—</span>}
         </TableCell>
         <TableCell className="text-right">
@@ -986,6 +989,8 @@ export default function ProductDetail() {
                               productId={productId}
                               onRefresh={refetchVariants}
                               onColourImageUpload={handleColourImageUpload}
+                              productSupplierId={defaultPrimaryId}
+                              productSecondaryId={defaultSecondaryId}
                             />
                           ))}
                         </TableBody>
