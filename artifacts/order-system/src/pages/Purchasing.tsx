@@ -306,69 +306,96 @@ function productLabel(item: PurchaseRequirement): string {
   return code ? `${code} — ${name}` : name;
 }
 
-function MatrixTable({ items, onQtyChange }: { items: PurchaseRequirement[]; onQtyChange?: (item: PurchaseRequirement, newQty: number) => void }) {
-  const productKeys = [...new Map(items.map((i) => [productDisplayName(i), i])).values()];
-  const sizeKeys = [...new Set(items.map((i) => [i.colour, i.size].filter(Boolean).join(" / ") || "N/A"))];
-  if (productKeys.length === 0) return null;
+/** Single editable row in the requirements table */
+function RequirementsRow({
+  item,
+  onQtyChange,
+}: {
+  item: PurchaseRequirement;
+  onQtyChange: (item: PurchaseRequirement, qty: number) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const baseQty = item.purchaseQuantity ?? 1;
+
+  const commit = (value: number) => {
+    if (value >= 1 && value !== baseQty) onQtyChange(item, value);
+  };
+
+  const changeBy = (delta: number) => {
+    if (!inputRef.current) return;
+    const next = Math.max(1, (parseInt(inputRef.current.value) || baseQty) + delta);
+    inputRef.current.value = String(next);
+    commit(next);
+  };
+
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="font-medium text-sm">{item.canonicalProductName ?? item.productName}</div>
+        {(item.supplierCode || item.productSku) && (
+          <div className="text-xs text-muted-foreground font-mono mt-0.5">
+            {item.supplierCode && <span className="mr-2">Supplier: {item.supplierCode}</span>}
+            {item.productSku && <span>SKU: {item.productSku}</span>}
+          </div>
+        )}
+      </TableCell>
+      <TableCell className="text-sm text-muted-foreground">
+        {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
+      </TableCell>
+      <TableCell className="text-xs font-mono text-muted-foreground">
+        {item.orderNumber ?? "—"}
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center justify-center gap-1">
+          <button
+            type="button"
+            className="w-6 h-6 rounded border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center text-base leading-none"
+            onClick={() => changeBy(-1)}
+          >−</button>
+          <input
+            ref={inputRef}
+            type="number"
+            min={1}
+            defaultValue={baseQty}
+            key={baseQty}
+            className="w-12 text-center text-sm font-semibold border border-transparent hover:border-input focus:border-input rounded px-1 py-0.5 bg-transparent focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+            onBlur={(e) => commit(parseInt(e.target.value) || baseQty)}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          />
+          <button
+            type="button"
+            className="w-6 h-6 rounded border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center text-base leading-none"
+            onClick={() => changeBy(1)}
+          >+</button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** Flat editable table — one row per purchase requirement line */
+function RequirementsLineTable({
+  items,
+  onQtyChange,
+}: {
+  items: PurchaseRequirement[];
+  onQtyChange: (item: PurchaseRequirement, qty: number) => void;
+}) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/40">
             <TableHead className="font-semibold min-w-[200px]">Product</TableHead>
-            {sizeKeys.map((s) => <TableHead key={s} className="text-center font-semibold min-w-[80px]">{s}</TableHead>)}
-            <TableHead className="text-center font-semibold">Total</TableHead>
+            <TableHead className="font-semibold min-w-[130px]">Colour / Size</TableHead>
+            <TableHead className="font-semibold text-xs min-w-[80px]">Order</TableHead>
+            <TableHead className="text-center font-semibold min-w-[130px]">Qty to order</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {productKeys.map((rep) => {
-            const pName = productDisplayName(rep);
-            const productItems = items.filter((i) => productDisplayName(i) === pName);
-            const totalQty = productItems.reduce((sum, i) => sum + (i.purchaseQuantity ?? 0), 0);
-            return (
-              <TableRow key={pName}>
-                <TableCell>
-                  <div className="font-medium text-sm">{pName}</div>
-                  {(rep.supplierCode || rep.productSku) && (
-                    <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                      {rep.supplierCode && <span className="mr-2">Supplier Code: {rep.supplierCode}</span>}
-                      {rep.productSku && <span>SKU: {rep.productSku}</span>}
-                    </div>
-                  )}
-                </TableCell>
-                {sizeKeys.map((sizeKey) => {
-                  const matchingItems = productItems.filter((i) => ([i.colour, i.size].filter(Boolean).join(" / ") || "N/A") === sizeKey);
-                  const qty = matchingItems.reduce((sum, i) => sum + (i.purchaseQuantity ?? 0), 0);
-                  if (matchingItems.length === 0) {
-                    return <TableCell key={sizeKey} className="text-center"><span className="text-muted-foreground">—</span></TableCell>;
-                  }
-                  if (matchingItems.length === 1 && onQtyChange) {
-                    const item = matchingItems[0];
-                    return (
-                      <TableCell key={sizeKey} className="text-center p-1">
-                        <input
-                          type="number"
-                          min={1}
-                          defaultValue={qty || 1}
-                          key={item.purchaseQuantity}
-                          className="w-14 text-center text-xs font-semibold border border-transparent hover:border-input rounded px-1 py-0.5 bg-transparent hover:bg-background focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary text-primary"
-                          onBlur={(e) => {
-                            const val = parseInt(e.target.value);
-                            if (!isNaN(val) && val >= 1 && val !== (item.purchaseQuantity ?? 0)) {
-                              onQtyChange(item, val);
-                            }
-                          }}
-                          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                        />
-                      </TableCell>
-                    );
-                  }
-                  return <TableCell key={sizeKey} className="text-center"><span className="font-semibold text-primary">{qty}</span></TableCell>;
-                })}
-                <TableCell className="text-center font-bold">{totalQty}</TableCell>
-              </TableRow>
-            );
-          })}
+          {items.map((item) => (
+            <RequirementsRow key={item.itemId} item={item} onQtyChange={onQtyChange} />
+          ))}
         </TableBody>
       </Table>
     </div>
@@ -975,7 +1002,9 @@ export default function Purchasing() {
           <TabsList className="mb-4">
             <TabsTrigger value="requirements" className="gap-2">
               <FileText className="w-4 h-4" /> Draft
-              {(totalItems + processShortfallCount) > 0 && <Badge variant="secondary" className="ml-1 text-xs">{totalItems + processShortfallCount}</Badge>}
+              {(totalItems + processShortfallCount + draftPos.length) > 0 && (
+                <Badge variant="secondary" className="ml-1 text-xs">{totalItems + processShortfallCount + draftPos.length}</Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger value="orders" className="gap-2">
               <Truck className="w-4 h-4" /> Awaiting Delivery
@@ -998,7 +1027,7 @@ export default function Purchasing() {
           <TabsContent value="requirements">
             <div className="space-y-4">
 
-              {reqLoading ? (
+              {reqFetching && groups.length === 0 ? (
                 <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
               ) : groups.length === 0 && processReqsBySupplier.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
@@ -1056,39 +1085,11 @@ export default function Purchasing() {
                         </div>
 
                         {isExpanded && (
-                          <div className="border-t border-border px-5 py-4 space-y-4">
-                            <MatrixTable
+                          <div className="border-t border-border px-5 py-4">
+                            <RequirementsLineTable
                               items={group.items}
-                              onQtyChange={(item, newQty) => reqQtyMutation.mutate({ orderId: item.orderId, itemId: item.itemId, purchaseQuantity: newQty })}
+                              onQtyChange={(item, qty) => reqQtyMutation.mutate({ orderId: item.orderId, itemId: item.itemId, purchaseQuantity: qty })}
                             />
-                            <div className="space-y-1">
-                              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Individual Lines — edit qty to order</p>
-                              {group.items.map((item) => (
-                                <div key={item.itemId} className="flex items-center gap-3 rounded-lg border border-border bg-muted/10 px-3 py-2 text-sm flex-wrap">
-                                  <span className="text-xs text-muted-foreground font-mono">{item.orderNumber}</span>
-                                  {item.supplierCode && <span className="font-mono font-bold text-primary text-xs">{item.supplierCode}</span>}
-                                  <span className="font-medium flex-1 min-w-0 truncate">{item.canonicalProductName ?? item.productName}</span>
-                                  {(item.colour || item.size) && (
-                                    <span className="text-xs text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
-                                  )}
-                                  <span className="text-xs text-muted-foreground">×</span>
-                                  <input
-                                    type="number"
-                                    min={1}
-                                    defaultValue={item.purchaseQuantity ?? 1}
-                                    key={item.purchaseQuantity}
-                                    className="w-14 text-center text-xs font-semibold border border-border rounded px-1 py-0.5 bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                                    onBlur={(e) => {
-                                      const val = parseInt(e.target.value);
-                                      if (!isNaN(val) && val >= 1 && val !== item.purchaseQuantity) {
-                                        reqQtyMutation.mutate({ orderId: item.orderId, itemId: item.itemId, purchaseQuantity: val });
-                                      }
-                                    }}
-                                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                                  />
-                                </div>
-                              ))}
-                            </div>
                           </div>
                         )}
                       </div>
@@ -1188,9 +1189,18 @@ export default function Purchasing() {
               {/* Draft POs — created but not yet sent to supplier */}
               {draftPos.length > 0 && (
                 <div className="space-y-3 pt-2">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                    <FileText className="w-4 h-4" /> Draft Purchase Orders
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 border-t-2 border-border" />
+                    <div className="flex items-center gap-2 shrink-0">
+                      <FileText className="w-4 h-4 text-primary" />
+                      <span className="text-sm font-semibold text-foreground">Draft Purchase Orders</span>
+                      <Badge variant="secondary" className="text-xs">{draftPos.length}</Badge>
+                    </div>
+                    <div className="flex-1 border-t-2 border-border" />
                   </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Review quantities on each PO, then click <strong>Mark Ordered</strong> once sent to the supplier.
+                  </p>
                   {draftPos.map((po) => (
                     <POCard
                       key={po.id}
@@ -1211,7 +1221,7 @@ export default function Purchasing() {
           {/* ── Purchase Orders Tab ── */}
           <TabsContent value="orders">
             <div className="space-y-4">
-              {posLoading ? (
+              {posFetching && purchaseOrders.length === 0 ? (
                 <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
               ) : filteredPos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
@@ -1240,7 +1250,7 @@ export default function Purchasing() {
 
           {/* ── Completed Tab ── */}
           <TabsContent value="completed">
-            {posLoading ? (
+            {posFetching && purchaseOrders.length === 0 ? (
               <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
             ) : deliveredCount === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
