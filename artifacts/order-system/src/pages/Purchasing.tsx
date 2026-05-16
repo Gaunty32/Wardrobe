@@ -708,12 +708,10 @@ function POCard({
               })() : (
                 <span>{totalOrdered} unit{totalOrdered !== 1 ? "s" : ""}</span>
               )}
-              {hasValue && (
-                <>
-                  <span className="mx-1">·</span>
-                  <span className="font-semibold text-foreground">{currencySymbol(po.supplierCurrency)}{totalValue.toFixed(2)}</span>
-                </>
-              )}
+              <span className="mx-1">·</span>
+              <span className="font-semibold text-foreground">
+                {hasValue ? `${currencySymbol(po.supplierCurrency)}${totalValue.toFixed(2)}` : "—"}
+              </span>
               <span className="mx-1">·</span>
               <span>{formatDate(po.createdAt)}</span>
             </div>
