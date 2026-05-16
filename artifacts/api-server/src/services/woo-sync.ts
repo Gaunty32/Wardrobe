@@ -303,6 +303,14 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
 
     for (const [index, wooProduct] of products.entries()) {
       try {
+        // Bundle products (yith_bundle) are used only for extracting price breaks —
+        // they are not orderable products in their own right and must not appear in
+        // the catalogue. Price break data is applied separately below.
+        if (wooProduct.type === "yith_bundle") {
+          await reportProgress(index + 1, products.length);
+          continue;
+        }
+
         const wooId = wooProduct.id;
         const category = pickBestCategory(wooProduct.categories ?? [], allCategories);
         // Use the current active price (sale_price when on sale, otherwise price).
