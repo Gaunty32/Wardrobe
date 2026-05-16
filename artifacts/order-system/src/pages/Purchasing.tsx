@@ -306,7 +306,7 @@ function productLabel(item: PurchaseRequirement): string {
   return code ? `${code} — ${name}` : name;
 }
 
-function MatrixTable({ items }: { items: PurchaseRequirement[] }) {
+function MatrixTable({ items, onQtyChange }: { items: PurchaseRequirement[]; onQtyChange?: (item: PurchaseRequirement, newQty: number) => void }) {
   const productKeys = [...new Map(items.map((i) => [productDisplayName(i), i])).values()];
   const sizeKeys = [...new Set(items.map((i) => [i.colour, i.size].filter(Boolean).join(" / ") || "N/A"))];
   if (productKeys.length === 0) return null;
@@ -337,8 +337,33 @@ function MatrixTable({ items }: { items: PurchaseRequirement[] }) {
                   )}
                 </TableCell>
                 {sizeKeys.map((sizeKey) => {
-                  const qty = productItems.filter((i) => ([i.colour, i.size].filter(Boolean).join(" / ") || "N/A") === sizeKey).reduce((sum, i) => sum + (i.purchaseQuantity ?? 0), 0);
-                  return <TableCell key={sizeKey} className="text-center">{qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground">—</span>}</TableCell>;
+                  const matchingItems = productItems.filter((i) => ([i.colour, i.size].filter(Boolean).join(" / ") || "N/A") === sizeKey);
+                  const qty = matchingItems.reduce((sum, i) => sum + (i.purchaseQuantity ?? 0), 0);
+                  if (matchingItems.length === 0) {
+                    return <TableCell key={sizeKey} className="text-center"><span className="text-muted-foreground">—</span></TableCell>;
+                  }
+                  if (matchingItems.length === 1 && onQtyChange) {
+                    const item = matchingItems[0];
+                    return (
+                      <TableCell key={sizeKey} className="text-center p-1">
+                        <input
+                          type="number"
+                          min={1}
+                          defaultValue={qty || 1}
+                          key={item.purchaseQuantity}
+                          className="w-14 text-center text-xs font-semibold border border-transparent hover:border-input rounded px-1 py-0.5 bg-transparent hover:bg-background focus:bg-background focus:outline-none focus:ring-1 focus:ring-primary text-primary"
+                          onBlur={(e) => {
+                            const val = parseInt(e.target.value);
+                            if (!isNaN(val) && val >= 1 && val !== (item.purchaseQuantity ?? 0)) {
+                              onQtyChange(item, val);
+                            }
+                          }}
+                          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                        />
+                      </TableCell>
+                    );
+                  }
+                  return <TableCell key={sizeKey} className="text-center"><span className="font-semibold text-primary">{qty}</span></TableCell>;
                 })}
                 <TableCell className="text-center font-bold">{totalQty}</TableCell>
               </TableRow>
@@ -756,13 +781,13 @@ export default function Purchasing() {
   const [createProcessPoNotes, setCreateProcessPoNotes] = useState("");
   const [processPoQtys, setProcessPoQtys] = useState<Record<number, number>>({});
 
-  const { data: groups = [], isLoading: reqLoading, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
+  const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
     queryFn: () => apiFetch("/purchasing/requirements"),
     refetchInterval: 30000,
   });
 
-  const { data: purchaseOrders = [], isLoading: posLoading, refetch: refetchPos } = useQuery<PurchaseOrder[]>({
+  const { data: purchaseOrders = [], isFetching: posFetching, refetch: refetchPos } = useQuery<PurchaseOrder[]>({
     queryKey: ["purchase-orders"],
     queryFn: () => apiFetch("/purchasing/purchase-orders"),
     refetchInterval: 30000,
@@ -939,9 +964,9 @@ export default function Purchasing() {
             size="sm"
             className="gap-1.5 shrink-0"
             onClick={() => { refetchReqs(); refetchPos(); }}
-            disabled={reqLoading || posLoading}
+            disabled={reqFetching || posFetching}
           >
-            <RefreshCw className={`w-4 h-4 ${reqLoading || posLoading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${reqFetching || posFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>
@@ -1032,7 +1057,10 @@ export default function Purchasing() {
 
                         {isExpanded && (
                           <div className="border-t border-border px-5 py-4 space-y-4">
-                            <MatrixTable items={group.items} />
+                            <MatrixTable
+                              items={group.items}
+                              onQtyChange={(item, newQty) => reqQtyMutation.mutate({ orderId: item.orderId, itemId: item.itemId, purchaseQuantity: newQty })}
+                            />
                             <div className="space-y-1">
                               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Individual Lines — edit qty to order</p>
                               {group.items.map((item) => (
