@@ -1074,13 +1074,12 @@ export default function Purchasing() {
                   </div>
 
                   {groups.map((group) => {
-                    const isExpanded = expandedGroups[group.supplierName] !== false;
                     const totalQty = group.items.reduce((s, i) => s + (i.purchaseQuantity ?? 0), 0);
                     const existingDraft = getDraftPoForSupplier(group.supplierId, group.supplierName);
 
                     return (
-                      <div key={group.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                        <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => toggleGroup(group.supplierName)}>
+                      <div key={group.supplierName} className="rounded-xl border border-border bg-card shadow-sm">
+                        <div className="flex items-center justify-between px-5 py-4">
                           <div className="flex items-center gap-3 flex-wrap">
                             <div>
                               <div className="font-semibold text-base flex items-center gap-2">
@@ -1096,7 +1095,7 @@ export default function Purchasing() {
                             <Badge variant="secondary">{group.items.length} line{group.items.length !== 1 ? "s" : ""}</Badge>
                             <Badge className="bg-amber-100 text-amber-800 border-amber-200">{totalQty} units needed</Badge>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
                                 onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.map((i) => i.itemId) })}
@@ -1111,26 +1110,8 @@ export default function Purchasing() {
                             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEmailGroup(group)}>
                               <Mail className="w-3.5 h-3.5" /> Email
                             </Button>
-                            {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
                           </div>
                         </div>
-
-                        {isExpanded && (
-                          <div className="border-t border-border px-5 py-4">
-                            <POMatrixView
-                              items={group.items.map((r) => ({
-                                id: r.itemId,
-                                productName: r.canonicalProductName ?? r.productName,
-                                colour: r.colour ?? null,
-                                size: r.size ?? null,
-                                supplierCode: r.supplierCode ?? null,
-                                quantityOrdered: r.purchaseQuantity ?? 1,
-                                quantityDelivered: 0,
-                                supplierPrice: null,
-                              }))}
-                            />
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -1150,18 +1131,15 @@ export default function Purchasing() {
                   {processReqsBySupplier.map((psGroup) => {
                     const totalPsQty = psGroup.items.reduce((s, r) => s + r.shortfall, 0);
                     const existingDraft = getDraftPoForSupplier(psGroup.supplierId, psGroup.supplierName);
-                    const isExpanded = expandedGroups[`ps_${psGroup.supplierName}`] !== false;
                     return (
-                      <div key={psGroup.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                        <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => toggleGroup(`ps_${psGroup.supplierName}`)}>
+                      <div key={psGroup.supplierName} className="rounded-xl border border-border bg-card shadow-sm">
+                        <div className="flex items-center justify-between px-5 py-4">
                           <div className="flex items-center gap-3 flex-wrap">
-                            <div>
-                              <div className="font-semibold text-base">{psGroup.supplierName ?? "Unknown Supplier"}</div>
-                            </div>
+                            <div className="font-semibold text-base">{psGroup.supplierName ?? "Unknown Supplier"}</div>
                             <Badge variant="secondary">{psGroup.items.length} line{psGroup.items.length !== 1 ? "s" : ""}</Badge>
                             <Badge className="bg-amber-100 text-amber-800 border-amber-200">{totalPsQty} units needed</Badge>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
                                 onClick={() => addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: psGroup.items })}
@@ -1174,14 +1152,8 @@ export default function Purchasing() {
                                 <FileText className="w-3.5 h-3.5" /> Create Draft PO
                               </Button>
                             )}
-                            {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronRight className="w-4 h-4 text-muted-foreground" />}
                           </div>
                         </div>
-                        {isExpanded && (
-                          <div className="border-t border-border px-5 py-4">
-                            <ProcessMaterialsLineTable items={psGroup.items} />
-                          </div>
-                        )}
                       </div>
                     );
                   })}
