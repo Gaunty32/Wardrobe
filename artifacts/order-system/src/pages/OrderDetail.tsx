@@ -390,16 +390,45 @@ export default function OrderDetail() {
   const [uploading, setUploading] = useState(false);
   const [editingItemPrice, setEditingItemPrice] = useState<{ id: number; value: string } | null>(null);
   const [lineFilter, setLineFilter] = useState("");
+  const [lineSort, setLineSort] = useState<{ col: "product" | "finish" | "recipient" | "price" | "qty" | "total"; dir: "asc" | "desc" } | null>(null);
+
+  function toggleSort(col: typeof lineSort extends null ? never : (typeof lineSort)["col"]) {
+    setLineSort(prev =>
+      prev?.col === col
+        ? prev.dir === "asc" ? { col, dir: "desc" } : null
+        : { col, dir: "asc" }
+    );
+  }
+
   const filteredItems = (() => {
     const allItems: any[] = (order as any)?.items ?? [];
     const q = lineFilter.toLowerCase().trim();
-    if (!q) return allItems;
-    return allItems.filter((oi: any) =>
-      oi.productName?.toLowerCase().includes(q) ||
-      oi.recipientName?.toLowerCase().includes(q) ||
-      oi.colour?.toLowerCase().includes(q) ||
-      oi.size?.toLowerCase().includes(q)
-    );
+    let result = q
+      ? allItems.filter((oi: any) =>
+          oi.productName?.toLowerCase().includes(q) ||
+          oi.recipientName?.toLowerCase().includes(q) ||
+          oi.colour?.toLowerCase().includes(q) ||
+          oi.size?.toLowerCase().includes(q)
+        )
+      : allItems;
+
+    if (lineSort) {
+      result = [...result].sort((a, b) => {
+        let av: any, bv: any;
+        switch (lineSort.col) {
+          case "product":  av = (a.productName ?? "").toLowerCase(); bv = (b.productName ?? "").toLowerCase(); break;
+          case "finish":   av = (a.finishName ?? "").toLowerCase(); bv = (b.finishName ?? "").toLowerCase(); break;
+          case "recipient":av = (a.recipientName ?? "").toLowerCase(); bv = (b.recipientName ?? "").toLowerCase(); break;
+          case "price":    av = a.unitPrice ?? 0; bv = b.unitPrice ?? 0; break;
+          case "qty":      av = a.quantity ?? 0; bv = b.quantity ?? 0; break;
+          case "total":    av = a.lineTotal ?? 0; bv = b.lineTotal ?? 0; break;
+        }
+        if (av < bv) return lineSort.dir === "asc" ? -1 : 1;
+        if (av > bv) return lineSort.dir === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+    return result;
   })();
 
   const updateItemPriceMutation = useMutation({
@@ -1203,12 +1232,32 @@ export default function OrderDetail() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead>Finish</TableHead>
-                        <TableHead>Recipient</TableHead>
-                        <TableHead className="text-right">Price</TableHead>
-                        <TableHead className="text-center">Qty</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
+                        {(["product", "finish", "recipient"] as const).map(col => (
+                          <TableHead key={col}>
+                            <button
+                              className="inline-flex items-center gap-1 hover:text-foreground transition-colors select-none capitalize"
+                              onClick={() => toggleSort(col)}
+                            >
+                              {col}
+                              <span className="text-muted-foreground/60 text-[10px] w-3 text-center">
+                                {lineSort?.col === col ? (lineSort.dir === "asc" ? "↑" : "↓") : "↕"}
+                              </span>
+                            </button>
+                          </TableHead>
+                        ))}
+                        {(["price", "qty", "total"] as const).map((col, i) => (
+                          <TableHead key={col} className={i === 1 ? "text-center" : "text-right"}>
+                            <button
+                              className="inline-flex items-center gap-1 hover:text-foreground transition-colors select-none capitalize ml-auto"
+                              onClick={() => toggleSort(col)}
+                            >
+                              {col}
+                              <span className="text-muted-foreground/60 text-[10px] w-3 text-center">
+                                {lineSort?.col === col ? (lineSort.dir === "asc" ? "↑" : "↓") : "↕"}
+                              </span>
+                            </button>
+                          </TableHead>
+                        ))}
                         <TableHead className="w-[50px]"></TableHead>
                       </TableRow>
                     </TableHeader>
