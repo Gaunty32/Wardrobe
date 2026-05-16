@@ -402,6 +402,51 @@ function RequirementsLineTable({
   );
 }
 
+function ProcessMaterialsLineTable({ items }: { items: ProcessStockRequirement[] }) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/40">
+            <TableHead className="font-semibold min-w-[200px]">Material</TableHead>
+            <TableHead className="font-semibold min-w-[110px]">SKU</TableHead>
+            <TableHead className="font-semibold text-xs min-w-[140px]">Orders</TableHead>
+            <TableHead className="text-center font-semibold min-w-[110px]">Qty to order</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.map((req) => (
+            <TableRow key={req.processStockId}>
+              <TableCell>
+                <div className="font-medium text-sm">{req.name}</div>
+                <div className="text-xs text-muted-foreground">In stock: {req.stockQuantity} · Need: {req.totalNeeded}</div>
+              </TableCell>
+              <TableCell>
+                {req.sku
+                  ? <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">{req.sku}</span>
+                  : <span className="text-xs text-muted-foreground">—</span>}
+              </TableCell>
+              <TableCell>
+                <div className="flex flex-col gap-0.5">
+                  {req.orders.map((o) => (
+                    <span key={o.orderId} className="text-xs">
+                      <a href={`/orders/${o.orderId}`} className="text-primary hover:underline font-mono font-semibold">{o.orderNumber}</a>
+                      {` ×${o.qty}`}
+                    </span>
+                  ))}
+                </div>
+              </TableCell>
+              <TableCell className="text-center">
+                <span className="font-bold text-sm">{req.shortfall}</span>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function EmailDialog({ group, open, onClose, onSent }: { group: SupplierGroup; open: boolean; onClose: () => void; onSent: (ids: number[]) => void }) {
   const [notes, setNotes] = useState("");
   const emailBody = buildEmailBody(group, notes);
@@ -806,7 +851,6 @@ export default function Purchasing() {
   const [createPoNotes, setCreatePoNotes] = useState("");
   const [createProcessPoGroup, setCreateProcessPoGroup] = useState<{ supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] } | null>(null);
   const [createProcessPoNotes, setCreateProcessPoNotes] = useState("");
-  const [processPoQtys, setProcessPoQtys] = useState<Record<number, number>>({});
 
   const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
@@ -1113,41 +1157,25 @@ export default function Purchasing() {
                     const existingDraft = getDraftPoForSupplier(psGroup.supplierId, psGroup.supplierName);
                     const isExpanded = expandedGroups[`ps_${psGroup.supplierName}`] !== false;
                     return (
-                      <div key={psGroup.supplierName} className="rounded-xl border border-blue-200 bg-card shadow-sm overflow-hidden">
-                        <div
-                          className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors"
-                          onClick={() => toggleGroup(`ps_${psGroup.supplierName}`)}
-                        >
+                      <div key={psGroup.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => toggleGroup(`ps_${psGroup.supplierName}`)}>
                           <div className="flex items-center gap-3 flex-wrap">
-                            <Layers className="w-5 h-5 text-blue-500 flex-shrink-0" />
-                            <span className="font-semibold text-base">{psGroup.supplierName}</span>
+                            <div>
+                              <div className="font-semibold text-base">{psGroup.supplierName ?? "Unknown Supplier"}</div>
+                            </div>
                             <Badge variant="secondary">{psGroup.items.length} line{psGroup.items.length !== 1 ? "s" : ""}</Badge>
-                            <Badge className="bg-blue-100 text-blue-800 border-blue-200">{totalPsQty} units needed</Badge>
+                            <Badge className="bg-amber-100 text-amber-800 border-amber-200">{totalPsQty} units needed</Badge>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                             {existingDraft ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
-                                onClick={(e) => { e.stopPropagation(); addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: psGroup.items }); }}
-                                disabled={addProcessStockToPoMutation.isPending}
-                              >
-                                <Plus className="w-3.5 h-3.5" /> Add to {existingDraft.poNumber}
+                              <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
+                                onClick={() => addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: psGroup.items })}
+                                disabled={addProcessStockToPoMutation.isPending}>
+                                <Plus className="w-3.5 h-3.5" /> Add to Draft PO ({existingDraft.poNumber})
                               </Button>
                             ) : (
-                              <Button
-                                size="sm"
-                                className="gap-1.5 text-xs bg-primary hover:bg-primary/90"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setCreateProcessPoGroup(psGroup);
-                                  setCreateProcessPoNotes("");
-                                  const init: Record<number, number> = {};
-                                  for (const r of psGroup.items) init[r.processStockId] = r.shortfall;
-                                  setProcessPoQtys(init);
-                                }}
-                              >
+                              <Button size="sm" className="gap-1.5 text-xs bg-primary hover:bg-primary/90"
+                                onClick={() => { setCreateProcessPoGroup(psGroup); setCreateProcessPoNotes(""); }}>
                                 <FileText className="w-3.5 h-3.5" /> Create Draft PO
                               </Button>
                             )}
@@ -1155,29 +1183,8 @@ export default function Purchasing() {
                           </div>
                         </div>
                         {isExpanded && (
-                          <div className="border-t border-border px-5 py-4 space-y-2">
-                            {psGroup.items.map((req) => (
-                              <div key={req.processStockId} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30">
-                                <Layers className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-sm">{req.name}</div>
-                                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                    {req.sku && <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">{req.sku}</span>}
-                                    <span className="text-xs text-muted-foreground">In stock: {req.stockQuantity} · Needed: {req.totalNeeded}</span>
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                    {req.orders.map(o => (
-                                      <span key={o.orderId} className="text-xs text-muted-foreground">
-                                        <a href={`/orders/${o.orderId}`} className="text-primary hover:underline font-mono font-semibold">{o.orderNumber}</a>
-                                        {o.customerName && ` · ${o.customerName}`}
-                                        {` ×${o.qty}`}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                                <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-sm font-semibold flex-shrink-0">× {req.shortfall}</Badge>
-                              </div>
-                            ))}
+                          <div className="border-t border-border px-5 py-4">
+                            <ProcessMaterialsLineTable items={psGroup.items} />
                           </div>
                         )}
                       </div>
@@ -1359,56 +1366,29 @@ export default function Purchasing() {
           <Dialog open={!!createProcessPoGroup} onOpenChange={() => setCreateProcessPoGroup(null)}>
             <DialogContent className="max-w-md">
               <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-primary" />
-                  Create Draft PO — {createProcessPoGroup.supplierName}
-                </DialogTitle>
+                <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-primary" />Create Draft PO — {createProcessPoGroup.supplierName}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
-                <div className="rounded-lg border border-blue-200 bg-blue-50/40 divide-y text-sm">
-                  {createProcessPoGroup.items.map((req) => {
-                    const qty = processPoQtys[req.processStockId] ?? req.shortfall;
-                    const excess = qty - req.shortfall;
-                    return (
-                      <div key={req.processStockId} className="px-3 py-2.5 space-y-1.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <span className="font-medium">{req.name}</span>
-                            {req.sku && <span className="ml-2 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{req.sku}</span>}
-                            <span className="ml-2 text-xs text-muted-foreground">Need: {req.shortfall}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-muted-foreground text-xs">Qty:</span>
-                            <input
-                              type="number"
-                              min={1}
-                              value={qty}
-                              onChange={(e) => {
-                                const v = Math.max(1, parseInt(e.target.value) || 1);
-                                setProcessPoQtys(prev => ({ ...prev, [req.processStockId]: v }));
-                              }}
-                              className="w-20 rounded border border-input bg-background px-2 py-1 text-right text-sm font-semibold text-blue-700 focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                          </div>
-                        </div>
-                        {excess > 0 && (
-                          <p className="text-xs text-emerald-600">+{excess} extra → will be added to process stock on delivery</p>
-                        )}
-                        {excess < 0 && (
-                          <p className="text-xs text-amber-600">{Math.abs(excess)} short → remaining shortfall stays as a requirement</p>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="rounded-lg border border-border divide-y text-sm">
+                  {createProcessPoGroup.items.map((req) => (
+                    <div key={req.processStockId} className="flex justify-between px-3 py-2">
+                      <span className="font-medium">{req.name}</span>
+                      <span className="text-muted-foreground">
+                        {req.sku && <span className="font-mono mr-2 text-xs">{req.sku}</span>}
+                        <strong>× {req.shortfall}</strong>
+                      </span>
+                    </div>
+                  ))}
                 </div>
+                {createProcessPoGroup.items.some((r) => r.fileUrl) && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5" />
+                    Print file(s) will be attached to this PO automatically.
+                  </p>
+                )}
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
-                  <Textarea
-                    placeholder="Any notes for this purchase order..."
-                    value={createProcessPoNotes}
-                    onChange={(e) => setCreateProcessPoNotes(e.target.value)}
-                    rows={2}
-                  />
+                  <Textarea placeholder="Any notes for this purchase order..." value={createProcessPoNotes} onChange={(e) => setCreateProcessPoNotes(e.target.value)} rows={2} />
                 </div>
               </div>
               <DialogFooter>
@@ -1418,19 +1398,17 @@ export default function Purchasing() {
                     supplierId: createProcessPoGroup.supplierId,
                     supplierName: createProcessPoGroup.supplierName,
                     notes: createProcessPoNotes || null,
-                    items: createProcessPoGroup.items.map(req => ({
+                    items: createProcessPoGroup.items.map((req) => ({
                       processStockId: req.processStockId,
                       productName: req.name,
                       supplierCode: req.sku ?? null,
-                      quantityOrdered: processPoQtys[req.processStockId] ?? req.shortfall,
+                      quantityOrdered: req.shortfall,
                     })),
                   })}
                   disabled={createProcessPoMutation.isPending}
                   className="gap-1.5"
                 >
-                  {createProcessPoMutation.isPending
-                    ? <><Loader2 className="w-4 h-4 animate-spin" />Creating...</>
-                    : <><FileText className="w-4 h-4" />Create Draft PO</>}
+                  {createProcessPoMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Creating...</> : <><FileText className="w-4 h-4" />Create Draft PO</>}
                 </Button>
               </DialogFooter>
             </DialogContent>
