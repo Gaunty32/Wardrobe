@@ -960,14 +960,18 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
   const { groupKeys, groups } = buildMatrix(po.items);
   const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const subject = `Purchase Order ${po.poNumber} — Select Branding Solutions`;
+  const supplierFirstName = toFirstName(po.supplierContactName ?? po.supplierName);
+  const totalUnits = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
+  const totalValue = po.items.reduce((s, i) => s + (i.supplierPrice != null ? i.supplierPrice * i.quantityOrdered : 0), 0);
+  const allNotes = [po.notes, extraNotes].filter(Boolean).join(" — ");
 
-  // Per-product section HTML
+  // ── Per-product matrix sections ───────────────────────────────────────────
   const productSectionsHtml = groupKeys.map((gk) => {
     const g = groups.get(gk)!;
     const code = g.code ?? g.sbsCode ?? null;
     const productSizes = g.sizes;
     const sizeHeaders = productSizes.map((s) =>
-      `<th style="padding:7px 8px;text-align:center;font-size:11px;font-weight:700;color:#e2e8f0;background:#334155;border-left:1px solid #475569;">${s}</th>`
+      `<th style="padding:8px 10px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;border-left:1px solid #334155;">${s}</th>`
     ).join("");
 
     let groupTotal = 0;
@@ -980,106 +984,185 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
       const sizeCells = productSizes.map((sz) => {
         const qty = g.qty.get(colour)?.get(sz) ?? 0;
         if (qty > 0) sizeTotals.set(sz, (sizeTotals.get(sz) ?? 0) + qty);
-        return `<td style="padding:7px 8px;text-align:center;border-left:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;font-size:13px;${qty > 0 ? "font-weight:700;color:#111827;" : "color:#d1d5db;"}">${qty > 0 ? qty : "—"}</td>`;
+        return `<td style="padding:8px 10px;text-align:center;border-left:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-size:13px;${qty > 0 ? "font-weight:700;color:#1e293b;" : "color:#cbd5e1;"}">${qty > 0 ? qty : "—"}</td>`;
       }).join("");
       return `<tr style="background:${bg};">
-        <td style="padding:7px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;color:#111827;">${colour}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#374151;">${colour}</td>
         ${sizeCells}
-        <td style="padding:7px 8px;text-align:center;border-left:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:700;color:#1e293b;">${rowTotal}</td>
+        <td style="padding:8px 10px;text-align:center;border-left:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-size:13px;font-weight:700;color:#1e293b;">${rowTotal}</td>
       </tr>`;
     }).join("");
 
     const totalCells = productSizes.map((sz) => {
       const t = sizeTotals.get(sz) ?? 0;
-      return `<td style="padding:7px 8px;text-align:center;border-left:1px solid #c8d0da;font-size:13px;font-weight:700;color:#1e293b;background:#dde3ea;">${t > 0 ? t : "—"}</td>`;
+      return `<td style="padding:8px 10px;text-align:center;border-left:1px solid #e2e8f0;font-size:13px;font-weight:700;color:#ffffff;background:#1e293b;">${t > 0 ? t : "—"}</td>`;
     }).join("");
 
-    const headingBg = "#0f172a";
     const codeHtml = code
-      ? `<span style="font-family:monospace;color:#fbbf24;font-size:12px;font-weight:700;">${code}</span>&nbsp;&nbsp;`
+      ? `<span style="font-family:monospace;color:#fbbf24;font-size:12px;font-weight:700;margin-right:8px;">${code}</span>`
       : "";
 
     return `
-      <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:6px;overflow:hidden;margin-bottom:18px;border:1px solid #e2e8f0;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;margin-bottom:20px;">
         <tr>
-          <td colspan="${1 + productSizes.length + 1}" style="background:${headingBg};padding:9px 12px;">
+          <td colspan="${1 + productSizes.length + 1}" style="background:#1e293b;padding:10px 14px;">
             ${codeHtml}<span style="color:#f1f5f9;font-size:13px;font-weight:700;">${g.productName}</span>
           </td>
         </tr>
-        <tr style="background:#334155;">
-          <th style="padding:7px 10px;text-align:left;font-size:11px;font-weight:700;color:#e2e8f0;">Colour / Style</th>
+        <tr style="background:#0f172a;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;">Colour / Style</th>
           ${sizeHeaders}
-          <th style="padding:7px 8px;text-align:center;font-size:11px;font-weight:700;color:#e2e8f0;border-left:1px solid #475569;">Total</th>
+          <th style="padding:8px 10px;text-align:center;font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;border-left:1px solid #334155;">Total</th>
         </tr>
         ${dataRows}
-        <tr style="background:#dde3ea;">
-          <td style="padding:7px 10px;font-size:12px;font-weight:700;color:#1e293b;">TOTAL</td>
+        <tr style="background:#1e293b;">
+          <td style="padding:8px 12px;font-size:12px;font-weight:700;color:#ffffff;">TOTAL</td>
           ${totalCells}
-          <td style="padding:7px 8px;text-align:center;border-left:1px solid #c8d0da;font-size:13px;font-weight:700;color:#1e293b;">${groupTotal}</td>
+          <td style="padding:8px 10px;text-align:center;border-left:1px solid #334155;font-size:14px;font-weight:800;color:#ffffff;">${groupTotal}</td>
         </tr>
       </table>`;
   }).join("");
 
-  const totalUnits = po.items.reduce((s, i) => s + i.quantityOrdered, 0);
-  const totalValue = po.items.reduce((s, i) => s + (i.supplierPrice != null ? i.supplierPrice * i.quantityOrdered : 0), 0);
-
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#f9fafb;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0">
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
     <tr><td align="center" style="padding:32px 16px;">
-      <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
-        <tr><td style="background:#1e293b;padding:20px 32px;">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.10);">
+
+        <!-- Header: dark bar with SBS logo + PO reference -->
+        <tr><td style="background:#1e293b;padding:22px 32px;">
           <table width="100%" cellpadding="0" cellspacing="0"><tr>
             <td style="vertical-align:middle;">
               <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="48" style="display:block;height:48px;width:auto;" />
             </td>
             <td style="vertical-align:middle;text-align:right;">
-              <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Purchase Order</p>
-              <p style="margin:3px 0 0;color:#fff;font-size:15px;font-weight:700;">${po.poNumber}</p>
-              <p style="margin:2px 0 0;color:#cbd5e1;font-size:11px;">${dateStr}</p>
+              <p style="margin:0;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Purchase Order</p>
+              <p style="margin:4px 0 0;color:#fff;font-size:17px;font-weight:700;">${po.poNumber}</p>
+              <p style="margin:3px 0 0;color:#cbd5e1;font-size:11px;">${dateStr}</p>
             </td>
           </tr></table>
         </td></tr>
-        <tr><td style="padding:28px 32px;">
-          <p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.6;">Dear ${po.supplierContactName ?? po.supplierName},<br><br>Please supply the following items for purchase order <strong>${po.poNumber}</strong> dated ${dateStr}. The PDF attached contains the same information for your records.</p>
+
+        <!-- Greeting band -->
+        <tr><td style="background:#1e3a5f;padding:24px 32px;">
+          <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Dear ${supplierFirstName},</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">Please find our purchase order below. The PDF attached contains the same information for your records.</p>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="padding:28px 32px 0;">
+          <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.7;">
+            Could you please supply the following items for purchase order <strong>${po.poNumber}</strong> and confirm receipt at your earliest convenience? If you have any questions about this order, don't hesitate to get in touch.
+          </p>
+        </td></tr>
+
+        <!-- Product matrices -->
+        <tr><td style="padding:0 32px 8px;">
           ${productSectionsHtml}
-          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:4px;margin-bottom:24px;">
+        </td></tr>
+
+        <!-- Order total summary bar -->
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
             <tr style="background:#1e293b;">
-              <td style="padding:10px 16px;color:#94a3b8;font-size:12px;font-weight:600;text-transform:uppercase;">Total order</td>
-              <td style="padding:10px 16px;color:#ffffff;font-size:15px;font-weight:700;text-align:right;">${totalUnits} units${totalValue > 0 ? `  ·  £${totalValue.toFixed(2)}` : ""}</td>
+              <td style="padding:12px 16px;color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Total order</td>
+              <td style="padding:12px 16px;color:#ffffff;font-size:15px;font-weight:800;text-align:right;">${totalUnits} units${totalValue > 0 ? `&nbsp;&nbsp;·&nbsp;&nbsp;£${totalValue.toFixed(2)}` : ""}</td>
             </tr>
           </table>
-          ${po.notes || extraNotes ? `<p style="font-size:14px;color:#374151;margin-bottom:20px;padding:10px 14px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:0 4px 4px 0;"><strong>Notes:</strong> ${[po.notes, extraNotes].filter(Boolean).join(" — ")}</p>` : ""}
-          <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">Please confirm receipt of this order at your earliest convenience.<br><br>Kind regards,<br><strong>Select Branding Solutions</strong></p>
         </td></tr>
-        <tr><td style="background:#f8fafc;padding:14px 32px;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;font-size:11px;color:#9ca3af;text-align:center;">Select Branding Solutions · Effortless uniform management from order to delivery.</p>
+
+        ${allNotes ? `<!-- Notes -->
+        <tr><td style="padding:0 32px 24px;">
+          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 16px;">
+            <p style="margin:0;font-size:13px;color:#92400e;"><strong>Notes:</strong> ${allNotes}</p>
+          </div>
+        </td></tr>` : ""}
+
+        <!-- Contact details -->
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dbeafe;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <tr><td style="background:#eff6ff;padding:12px 18px;border-bottom:1px solid #dbeafe;">
+              <p style="margin:0;font-size:13px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;">Questions? We're Here For You</p>
+            </td></tr>
+            <tr><td style="padding:14px 18px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:5px 0;width:50%;vertical-align:top;">
+                    <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Email</p>
+                    <a href="mailto:info@selectbranding.co.uk" style="font-size:13px;color:#1d4ed8;text-decoration:none;font-weight:500;">info@selectbranding.co.uk</a>
+                  </td>
+                  <td style="padding:5px 0;width:50%;vertical-align:top;">
+                    <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Phone</p>
+                    <a href="${SBS_PHONE_HREF}" style="font-size:13px;color:#1e293b;text-decoration:none;font-weight:500;">${SBS_PHONE_DISPLAY}</a>
+                  </td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
         </td></tr>
+
+        <!-- Closing -->
+        <tr><td style="padding:0 32px 28px;">
+          <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">
+            Kind regards,<br>
+            <strong style="color:#1e293b;font-size:15px;">The Select Branding Solutions Team</strong>
+          </p>
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#f8fafc;padding:14px 32px;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;line-height:1.8;">
+            Select Branding Solutions Ltd &middot; Spence Mills, Mill Lane, Leeds, LS13 3HE<br>
+            <a href="https://www.selectbranding.co.uk" style="color:#94a3b8;text-decoration:none;">www.selectbranding.co.uk</a>
+            &middot; <a href="mailto:info@selectbranding.co.uk" style="color:#94a3b8;text-decoration:none;">info@selectbranding.co.uk</a>
+            &middot; <a href="${SBS_PHONE_HREF}" style="color:#94a3b8;text-decoration:none;">${SBS_PHONE_DISPLAY}</a>
+          </p>
+        </td></tr>
+
       </table>
     </td></tr>
   </table>
-</body></html>`;
+</body>
+</html>`;
 
-  // Plain-text fallback
-  const lines = [`Dear ${po.supplierName},`, ``, `Please supply the following items for PO ${po.poNumber} (${dateStr}):`, ``];
+  // ── Plain-text fallback ───────────────────────────────────────────────────
+  const lines = [
+    `Purchase Order ${po.poNumber} — Select Branding Solutions`,
+    ``,
+    `Dear ${supplierFirstName},`,
+    ``,
+    `Please supply the following items for purchase order ${po.poNumber} (${dateStr}).`,
+    `The PDF attached contains the same information for your records.`,
+    ``,
+  ];
   for (const gk of groupKeys) {
     const g = groups.get(gk)!;
     const code = g.code ?? g.sbsCode;
     lines.push(`${code ? `[${code}] ` : ""}${g.productName}`);
-    lines.push("-".repeat(40));
-    // Header
-    const hdr = ["Colour".padEnd(20), ...g.sizes.map((s) => s.padStart(6)), "Total".padStart(7)].join("  ");
+    lines.push("-".repeat(48));
+    const hdr = ["Colour".padEnd(22), ...g.sizes.map((s) => s.padStart(6)), "Total".padStart(7)].join("  ");
     lines.push(hdr);
     for (const colour of g.colours) {
       const rowTotal = g.sizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
       const cells = g.sizes.map((sz) => { const q = g.qty.get(colour)?.get(sz) ?? 0; return (q > 0 ? String(q) : "—").padStart(6); });
-      lines.push([colour.padEnd(20), ...cells, String(rowTotal).padStart(7)].join("  "));
+      lines.push([colour.padEnd(22), ...cells, String(rowTotal).padStart(7)].join("  "));
     }
     lines.push(``);
   }
-  lines.push(`Total: ${totalUnits} units`);
-  if (po.notes || extraNotes) lines.push(``, `Notes: ${[po.notes, extraNotes].filter(Boolean).join(" — ")}`);
-  lines.push(``, `Kind regards,`, `Select Branding Solutions`);
+  lines.push(`Total: ${totalUnits} units${totalValue > 0 ? `  ·  £${totalValue.toFixed(2)}` : ""}`);
+  if (allNotes) lines.push(``, `Notes: ${allNotes}`);
+  lines.push(
+    ``,
+    `Please confirm receipt of this order at your earliest convenience.`,
+    ``,
+    `Questions? Email us at info@selectbranding.co.uk or call ${SBS_PHONE_DISPLAY}.`,
+    ``,
+    `Kind regards,`,
+    `The Select Branding Solutions Team`,
+    `Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, LS13 3HE`,
+  );
 
   return { subject, html, text: lines.join("\n") };
 }
