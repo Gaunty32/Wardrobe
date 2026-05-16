@@ -1399,16 +1399,16 @@ export default function Purchasing() {
         {/* ── Create Process Material PO dialog ── */}
         {createProcessPoGroup && (
           <Dialog open={!!createProcessPoGroup} onOpenChange={() => setCreateProcessPoGroup(null)}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
+            <DialogContent className="max-w-md flex flex-col max-h-[90vh]">
+              <DialogHeader className="shrink-0">
                 <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-primary" />Create Draft PO — {createProcessPoGroup.supplierName}</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 py-2">
+              <div className="flex flex-col gap-4 py-2 min-h-0 overflow-y-auto flex-1">
                 <div className="rounded-lg border border-border divide-y text-sm">
                   {createProcessPoGroup.items.map((req) => (
                     <div key={req.processStockId} className="flex justify-between px-3 py-2">
                       <span className="font-medium">{req.name}</span>
-                      <span className="text-muted-foreground">
+                      <span className="text-muted-foreground whitespace-nowrap pl-4">
                         {req.sku && <span className="font-mono mr-2 text-xs">{req.sku}</span>}
                         <strong>× {req.shortfall}</strong>
                       </span>
@@ -1416,17 +1416,17 @@ export default function Purchasing() {
                   ))}
                 </div>
                 {createProcessPoGroup.items.some((r) => r.fileUrl) && (
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 shrink-0">
                     <Paperclip className="w-3.5 h-3.5" />
                     Print file(s) will be attached to this PO automatically.
                   </p>
                 )}
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 shrink-0">
                   <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
                   <Textarea placeholder="Any notes for this purchase order..." value={createProcessPoNotes} onChange={(e) => setCreateProcessPoNotes(e.target.value)} rows={2} />
                 </div>
               </div>
-              <DialogFooter>
+              <DialogFooter className="shrink-0">
                 <Button variant="outline" onClick={() => setCreateProcessPoGroup(null)}>Cancel</Button>
                 <Button
                   onClick={() => createProcessPoMutation.mutate({
@@ -1453,25 +1453,42 @@ export default function Purchasing() {
         {/* ── Create PO dialog ── */}
         {createPoGroup && (
           <Dialog open={!!createPoGroup} onOpenChange={() => setCreatePoGroup(null)}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
+            <DialogContent className="max-w-md flex flex-col max-h-[90vh]">
+              <DialogHeader className="shrink-0">
                 <DialogTitle className="flex items-center gap-2"><FileText className="w-5 h-5 text-primary" />Create Draft PO — {createPoGroup.supplierName}</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4 py-2">
+              <div className="flex flex-col gap-4 py-2 min-h-0 overflow-y-auto flex-1">
                 <div className="rounded-lg border border-border divide-y text-sm">
-                  {createPoGroup.items.map((item) => (
-                    <div key={item.itemId} className="flex justify-between px-3 py-2">
-                      <span className="font-medium">{productDisplayName(item)}</span>
-                      <span className="text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ")} <strong>× {item.purchaseQuantity}</strong></span>
-                    </div>
-                  ))}
+                  {(() => {
+                    // Group by SKU so the preview matches the consolidated PO lines
+                    const keys: string[] = [];
+                    const grps = new Map<string, typeof createPoGroup.items>();
+                    for (const item of createPoGroup.items) {
+                      const k = [item.productName, item.colour ?? "", item.size ?? "", item.supplierCode ?? ""].join("|");
+                      if (!grps.has(k)) { keys.push(k); grps.set(k, []); }
+                      grps.get(k)!.push(item);
+                    }
+                    return keys.map((k) => {
+                      const g = grps.get(k)!;
+                      const first = g[0];
+                      const qty = g.reduce((s, i) => s + (i.purchaseQuantity ?? 1), 0);
+                      return (
+                        <div key={k} className="flex justify-between px-3 py-2">
+                          <span className="font-medium">{productDisplayName(first)}</span>
+                          <span className="text-muted-foreground whitespace-nowrap pl-4">
+                            {[first.colour, first.size].filter(Boolean).join(" / ")} <strong>× {qty}</strong>
+                          </span>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 shrink-0">
                   <Label className="text-xs text-muted-foreground">Notes (optional)</Label>
                   <Textarea placeholder="Any notes for this purchase order..." value={createPoNotes} onChange={(e) => setCreatePoNotes(e.target.value)} rows={2} />
                 </div>
               </div>
-              <DialogFooter>
+              <DialogFooter className="shrink-0">
                 <Button variant="outline" onClick={() => setCreatePoGroup(null)}>Cancel</Button>
                 <Button
                   onClick={() => createPoMutation.mutate({
