@@ -119,8 +119,17 @@ function buildPOMatrix(items: POItem[]) {
     g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantityOrdered);
     if (item.supplierPrice != null && g.price == null) g.price = item.supplierPrice;
   }
-  const allSizes: string[] = [];
-  for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) if (!allSizes.includes(s)) allSizes.push(s);
+  const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+  const allSizesSet = new Set<string>();
+  for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) allSizesSet.add(s);
+  const allSizes = [...allSizesSet].sort((a, b) => {
+    const ai = SIZE_ORDER.indexOf(a);
+    const bi = SIZE_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
   return { groupKeys, groups, allSizes };
 }
 
