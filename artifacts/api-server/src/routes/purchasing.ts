@@ -52,6 +52,13 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
         INNER JOIN purchase_orders po ON poi.po_id = po.id
         WHERE po.status IN ('draft', 'ordered')
         AND poi.order_item_id IS NOT NULL
+        UNION
+        SELECT (elem.value)::integer
+        FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON poi.po_id = po.id,
+        jsonb_array_elements_text(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) AS elem(value)
+        WHERE po.status IN ('draft', 'ordered')
+        AND jsonb_array_length(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) > 0
       )`,
     ))
     .orderBy(
@@ -174,19 +181,42 @@ async function buildPoItems(orderItemIds: number[], poId: number) {
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(inArray(orderItemsTable.id, orderItemIds));
 
-  return orderItems.map((row) => ({
-    poId,
-    orderItemId: row.item.id,
-    orderId: row.item.orderId,
-    orderNumber: row.orderNumber ?? null,
-    productName: row.item.productName,
-    colour: row.item.colour ?? null,
-    size: row.item.size ?? null,
-    supplierCode: row.supplierCode ?? null,
-    supplierPrice: row.supplierPrice ?? null,
-    quantityOrdered: row.item.purchaseQuantity ?? 1,
-    quantityDelivered: 0,
-  }));
+  // Consolidate lines by SKU: same product + colour + size + supplierCode → one PO line.
+  // The supplier only needs to know total qty per SKU, not which internal order each unit came from.
+  const groups = new Map<string, typeof orderItems>();
+  for (const row of orderItems) {
+    const key = [
+      row.item.productName,
+      row.item.colour ?? "",
+      row.item.size ?? "",
+      row.supplierCode ?? "",
+    ].join("|");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(row);
+  }
+
+  return [...groups.values()].map((rows) => {
+    const first = rows[0];
+    const sourceIds = rows.map((r) => r.item.id);
+    const totalQty = rows.reduce((sum, r) => sum + (r.item.purchaseQuantity ?? 1), 0);
+    // Summarise contributing order numbers (e.g. "P23, P26, P29")
+    const orderNums = [...new Set(rows.map((r) => r.orderNumber).filter(Boolean))];
+    return {
+      poId,
+      // orderItemId: null for multi-order lines; single-order lines keep the FK for legacy allocation
+      orderItemId: sourceIds.length === 1 ? sourceIds[0] : null,
+      sourceOrderItemIds: sourceIds,
+      orderId: sourceIds.length === 1 ? first.item.orderId : null,
+      orderNumber: orderNums.length === 1 ? orderNums[0] : orderNums.length > 1 ? orderNums.join(", ") : null,
+      productName: first.item.productName,
+      colour: first.item.colour ?? null,
+      size: first.item.size ?? null,
+      supplierCode: first.supplierCode ?? null,
+      supplierPrice: first.supplierPrice ?? null,
+      quantityOrdered: totalQty,
+      quantityDelivered: 0,
+    };
+  });
 }
 
 router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
@@ -356,7 +386,14 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
   // When a PO is marked delivered, mark all linked order items as fulfilled and run allocation
   if (parsed.data.status === "delivered") {
     const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, po.id));
-    const linkedOrderItemIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
+    // Collect order item IDs from both the legacy orderItemId column and the
+    // consolidated sourceOrderItemIds array — whichever the PO line uses.
+    const linkedOrderItemIds = [
+      ...new Set([
+        ...poItems.map((i) => i.orderItemId).filter((id): id is number => id != null),
+        ...poItems.flatMap((i) => (i.sourceOrderItemIds as number[] | null) ?? []),
+      ]),
+    ];
     if (linkedOrderItemIds.length > 0) {
       await db.update(orderItemsTable)
         .set({ purchaseRequired: false, purchaseQuantity: null })

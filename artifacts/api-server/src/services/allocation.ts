@@ -39,20 +39,32 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
     .from(purchaseOrderItemsTable)
     .where(eq(purchaseOrderItemsTable.poId, poId));
 
-  const linkedOrderItemIds = poItems
-    .map((i) => i.orderItemId)
-    .filter((id): id is number => id != null);
+  // Collect all order item IDs from both the legacy orderItemId column and
+  // the consolidated sourceOrderItemIds array (new consolidated PO lines).
+  const linkedOrderItemIds = [
+    ...new Set([
+      ...poItems.map((i) => i.orderItemId).filter((id): id is number => id != null),
+      ...poItems.flatMap((i) => (i.sourceOrderItemIds as number[] | null) ?? []),
+    ]),
+  ];
 
   if (linkedOrderItemIds.length === 0) {
     return { ordersAffected: 0, worksheetsCreated: 0, worksheetsUpdated: 0, pickingItems: 0, summary: [] };
   }
 
-  // Build a map of quantityDelivered by orderItemId
-  const poItemByOrderItemId = new Map(
-    poItems
-      .filter((i) => i.orderItemId != null)
-      .map((i) => [i.orderItemId!, i])
-  );
+  // Build a map of quantityDelivered by orderItemId.
+  // For consolidated lines (sourceOrderItemIds), map every source ID to the PO item
+  // so the delivery-fraction check has data for each individual order item.
+  const poItemByOrderItemId = new Map<number, typeof poItems[0]>();
+  for (const poi of poItems) {
+    const allIds: number[] = [
+      ...((poi.sourceOrderItemIds as number[] | null) ?? []),
+      ...(poi.orderItemId != null ? [poi.orderItemId] : []),
+    ];
+    for (const id of allIds) {
+      if (!poItemByOrderItemId.has(id)) poItemByOrderItemId.set(id, poi);
+    }
+  }
 
   // Fetch the linked order items and their orders
   const rows = await db

@@ -94,6 +94,8 @@ export const purchaseOrderItemsTable = pgTable("purchase_order_items", {
   supplierCode: text("supplier_code"),
   supplierPrice: numeric("supplier_price", { precision: 10, scale: 2 }),
   processStockId: integer("process_stock_id"),
+  /** All order item IDs consolidated into this PO line (superset of orderItemId). */
+  sourceOrderItemIds: jsonb("source_order_item_ids").$type<number[]>().notNull().default([]),
   quantityOrdered: integer("quantity_ordered").notNull().default(1),
   quantityDelivered: integer("quantity_delivered").notNull().default(0),
   estimatedDueDate: timestamp("estimated_due_date", { withTimezone: true }),

@@ -663,5 +663,12 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS on_sale boolean NOT NULL DEFAULT false;
   `);
 
+  // Consolidated PO lines: store all contributing order item IDs so that a
+  // single PO line can represent multiple order items for the same SKU.
+  await db.execute(sql`
+    ALTER TABLE purchase_order_items
+      ADD COLUMN IF NOT EXISTS source_order_item_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
