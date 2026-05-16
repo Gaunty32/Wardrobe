@@ -212,6 +212,47 @@ function ProcessBadgeInline({ type }: { type: string }) {
 
 type ItemState = { size: string; qty: number };
 
+/** Returns a friendly price-break suggestion toast payload, or null if none applies. */
+function getPriceBreakSuggestion(
+  productName: string,
+  totalQty: number,
+  priorQty: number,
+  priceBreaks: { qty: number; price: number }[],
+  basePrice: number,
+): { title: string; description: string } | null {
+  if (!priceBreaks.length) return null;
+  const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+
+  // Celebrate crossing into a new tier
+  const justUnlocked = sorted.filter(pb => pb.qty <= totalQty && pb.qty > priorQty);
+  if (justUnlocked.length > 0) {
+    const best = justUnlocked[justUnlocked.length - 1];
+    return {
+      title: "Bulk rate unlocked!",
+      description: `${productName} are now £${best.price.toFixed(2)} each at this quantity.`,
+    };
+  }
+
+  // Suggest next reachable tier
+  const nextTier = sorted.find(pb => pb.qty > totalQty);
+  if (!nextTier) return null;
+  const saving = basePrice - nextTier.price;
+  if (saving < 0.01) return null;
+
+  const needed = nextTier.qty - totalQty;
+  const isClose = needed <= Math.ceil(nextTier.qty * 0.35);
+  if (isClose) {
+    return {
+      title: "Almost there!",
+      description: `Add just ${needed} more ${productName} to unlock £${nextTier.price.toFixed(2)} each — saving £${saving.toFixed(2)} per item.`,
+    };
+  }
+  return {
+    title: "Bulk discount tip",
+    description: `Did you know? Order ${nextTier.qty}+ ${productName} and the price drops to £${nextTier.price.toFixed(2)} each — saving £${saving.toFixed(2)} per item.`,
+  };
+}
+
 function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole }: {
   items: any[];
   employees: any[];
@@ -932,7 +973,22 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     if (!size) return;
     const isStock = selectedRecipient === "stock";
     const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === selectedRecipient);
-    setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", size, state.qty, emp)]);
+    const addedQty = state.qty;
+    const productName = wi.product_name ?? wi.name ?? "item";
+
+    // Price-break suggestion (compute before updating basket)
+    const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
+    if (breaks.length > 0) {
+      const existingQty = basket
+        .filter((x: OrderItem) => x.productId === (wi.product_id ?? null))
+        .reduce((s: number, x: OrderItem) => s + x.quantity, 0);
+      const totalQty = existingQty + addedQty;
+      const basePrice = parseFloat(wi.unit_price ?? "0") || 0;
+      const suggestion = getPriceBreakSuggestion(productName, totalQty, existingQty, breaks, basePrice);
+      if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 400);
+    }
+
+    setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", size, addedQty, emp)]);
     setItemState(key, { size: "", qty: 1 });
   };
 
@@ -944,6 +1000,21 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
       .filter(s => (qtys[s] ?? 0) > 0)
       .map(s => makeItem(wi, isStock ? "stock" : "person", s, qtys[s], emp));
     if (newItems.length === 0) return;
+
+    // Price-break suggestion (compute before updating basket)
+    const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
+    if (breaks.length > 0) {
+      const addedQty = newItems.reduce((s, x) => s + x.quantity, 0);
+      const existingQty = basket
+        .filter((x: OrderItem) => x.productId === (wi.product_id ?? null))
+        .reduce((s: number, x: OrderItem) => s + x.quantity, 0);
+      const totalQty = existingQty + addedQty;
+      const basePrice = parseFloat(wi.unit_price ?? "0") || 0;
+      const productName = wi.product_name ?? wi.name ?? "item";
+      const suggestion = getPriceBreakSuggestion(productName, totalQty, existingQty, breaks, basePrice);
+      if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 400);
+    }
+
     setBasket(b => [...b, ...newItems]);
     setBulkQtys(q => ({ ...q, [key]: {} }));
     toast({ title: `${newItems.length} size${newItems.length !== 1 ? "s" : ""} added to basket` });

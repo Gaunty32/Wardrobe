@@ -32,7 +32,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 import { Link } from "wouter";
@@ -249,6 +249,49 @@ function getBreakPrice(
     if (totalQty >= tier.qty) result = tier.price;
   }
   return result;
+}
+
+/** Returns a friendly price-break suggestion toast payload, or null if none applies.
+ *  totalQty = existing order qty + qty just added.
+ *  priorQty = existing order qty before this add (used to detect newly crossed tiers). */
+function getPriceBreakSuggestion(
+  productName: string,
+  totalQty: number,
+  priorQty: number,
+  priceBreaks: { qty: number; price: number }[],
+  unitPrice: number,
+): { title: string; description: string } | null {
+  if (!priceBreaks.length) return null;
+  const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+
+  // Celebrate if they just crossed into a new tier
+  const justUnlocked = sorted.filter(pb => pb.qty <= totalQty && pb.qty > priorQty);
+  if (justUnlocked.length > 0) {
+    const best = justUnlocked[justUnlocked.length - 1];
+    return {
+      title: "Bulk rate unlocked!",
+      description: `${productName} are now £${best.price.toFixed(2)} each at this quantity.`,
+    };
+  }
+
+  // Suggest the next reachable tier
+  const nextTier = sorted.find(pb => pb.qty > totalQty);
+  if (!nextTier) return null;
+  const saving = unitPrice - nextTier.price;
+  if (saving < 0.01) return null;
+
+  const needed = nextTier.qty - totalQty;
+  const isClose = needed <= Math.ceil(nextTier.qty * 0.35);
+  if (isClose) {
+    return {
+      title: "Almost there!",
+      description: `Add just ${needed} more ${productName} to unlock £${nextTier.price.toFixed(2)} each — saving £${saving.toFixed(2)} per item.`,
+    };
+  }
+  return {
+    title: "Bulk discount tip",
+    description: `Did you know? Order ${nextTier.qty}+ ${productName} and the price drops to £${nextTier.price.toFixed(2)} each — saving £${saving.toFixed(2)} per item.`,
+  };
 }
 
 const EMPTY_ITEM = {
@@ -788,6 +831,7 @@ export default function OrderDetail() {
     if (!item.productId || !item.productName) return;
     const price = parseFloat(item.unitPrice);
     if (isNaN(price)) return;
+    const addedQty = (overrides.quantity as number) ?? item.quantity;
 
     addItemMutation.mutate(
       {
@@ -812,6 +856,20 @@ export default function OrderDetail() {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
           refetchEmployees();
           toast({ title: "Item Added", description: `${item.productName} added to order.` });
+
+          // Price-break suggestion
+          const prod = products?.find(p => p.id === item.productId);
+          const breaks: { qty: number; price: number }[] = Array.isArray((prod as any)?.priceBreaks)
+            ? (prod as any).priceBreaks : [];
+          if (breaks.length > 0) {
+            const existingQty = (order?.items ?? [])
+              .filter((oi: any) => oi.productId === item.productId)
+              .reduce((s: number, oi: any) => s + (Number(oi.quantity) || 0), 0);
+            const totalQty = existingQty + addedQty;
+            const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
+            if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+          }
+
           resetDialog();
           setStockPrompt(null);
           setPendingItemData(null);
@@ -868,6 +926,21 @@ export default function OrderDetail() {
         queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
         refetchEmployees();
         toast({ title: "Items Added", description: `${sizeRows.length} size lines added to order.` });
+
+        // Price-break suggestion for multi-size
+        const prod = products?.find(p => p.id === item.productId);
+        const breaks: { qty: number; price: number }[] = Array.isArray((prod as any)?.priceBreaks)
+          ? (prod as any).priceBreaks : [];
+        if (breaks.length > 0) {
+          const existingQty = (order?.items ?? [])
+            .filter((oi: any) => oi.productId === item.productId)
+            .reduce((s: number, oi: any) => s + (Number(oi.quantity) || 0), 0);
+          const addedQty = sizeRows.reduce((s, r) => s + (r.qty || 0), 0);
+          const totalQty = existingQty + addedQty;
+          const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
+          if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+        }
+
         resetDialog();
       } catch (err: any) {
         toast({ title: "Error", description: err.message, variant: "destructive" });
