@@ -4,7 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   db, orderItemsTable, ordersTable, productsTable, suppliersTable,
-  purchaseOrdersTable, purchaseOrderItemsTable, processStockTable,
+  purchaseOrdersTable, purchaseOrderItemsTable, processStockTable, customerProcessesTable,
 } from "@workspace/db";
 import { sendEmail, generatePOPdf, buildPOEmail, isEmailConfigured } from "../services/email.js";
 import { allocatePODelivery } from "../services/allocation.js";
@@ -213,7 +213,13 @@ async function getPoWithItems(poId: number) {
       item: purchaseOrderItemsTable,
       productSku: productsTable.sku,
       canonicalProductName: productsTable.name,
-      processStockFileUrl: processStockTable.fileUrl,
+      processStockFileUrl: sql<string | null>`COALESCE(
+        ${processStockTable.fileUrl},
+        (SELECT cp.file_url FROM customer_processes cp
+         WHERE cp.process_stock_id = ${purchaseOrderItemsTable.processStockId}
+         AND cp.file_url IS NOT NULL
+         LIMIT 1)
+      )`,
     })
     .from(purchaseOrderItemsTable)
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
@@ -302,7 +308,13 @@ router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
           item: purchaseOrderItemsTable,
           productSku: productsTable.sku,
           canonicalProductName: productsTable.name,
-          processStockFileUrl: processStockTable.fileUrl,
+          processStockFileUrl: sql<string | null>`COALESCE(
+            ${processStockTable.fileUrl},
+            (SELECT cp.file_url FROM customer_processes cp
+             WHERE cp.process_stock_id = ${purchaseOrderItemsTable.processStockId}
+             AND cp.file_url IS NOT NULL
+             LIMIT 1)
+          )`,
         })
         .from(purchaseOrderItemsTable)
         .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
@@ -705,12 +717,18 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
   const attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
   if (pdfBuffer) attachments.push({ filename: `${po.poNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" });
 
+  // Normalise storage paths — customer_processes stores "/api/storage/objects/..." prefix,
+  // process_stock stores just "/objects/..." — strip the prefix before fetching.
+  const normaliseObjectPath = (url: string) =>
+    url.startsWith("/api/storage") ? url.slice("/api/storage".length) : url;
+
   const seenFileUrls = new Set<string>();
   for (const item of po.items) {
     if (item.processStockFileUrl && !seenFileUrls.has(item.processStockFileUrl)) {
       seenFileUrls.add(item.processStockFileUrl);
       try {
-        const file = await objectStorageService.getObjectEntityFile(item.processStockFileUrl);
+        const objectPath = normaliseObjectPath(item.processStockFileUrl);
+        const file = await objectStorageService.getObjectEntityFile(objectPath);
         const [content] = await file.download();
         const safeName = (item.supplierCode ?? item.productName).replace(/[^a-zA-Z0-9_\-]/g, "_");
         attachments.push({ filename: `${safeName}.pdf`, content: Buffer.from(content), contentType: "application/pdf" });
