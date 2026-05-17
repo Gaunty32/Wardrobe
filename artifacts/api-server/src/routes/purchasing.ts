@@ -8,6 +8,9 @@ import {
 } from "@workspace/db";
 import { sendEmail, generatePOPdf, buildPOEmail, isEmailConfigured } from "../services/email.js";
 import { allocatePODelivery } from "../services/allocation.js";
+import { ObjectStorageService } from "../lib/objectStorage.js";
+
+const objectStorageService = new ObjectStorageService();
 
 const router: IRouter = Router();
 
@@ -150,10 +153,12 @@ async function getPoWithItems(poId: number) {
       item: purchaseOrderItemsTable,
       productSku: productsTable.sku,
       canonicalProductName: productsTable.name,
+      processStockFileUrl: processStockTable.fileUrl,
     })
     .from(purchaseOrderItemsTable)
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .leftJoin(processStockTable, eq(purchaseOrderItemsTable.processStockId, processStockTable.id))
     .where(eq(purchaseOrderItemsTable.poId, poId));
   return {
     ...poRow.po,
@@ -164,6 +169,7 @@ async function getPoWithItems(poId: number) {
       ...parsePOItem(r.item as Record<string, unknown>),
       productSku: r.productSku ?? null,
       canonicalProductName: r.canonicalProductName ?? null,
+      processStockFileUrl: r.processStockFileUrl ?? null,
     })),
   };
 }
@@ -568,14 +574,14 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
   const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
-  const body = z.object({ notes: z.string().optional().default(""), recipientEmail: z.string().email().optional() }).safeParse(req.body);
+  const body = z.object({ notes: z.string().optional().default("") }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   const po = await getPoWithItems(params.data.id);
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
-  const toEmail = body.data.recipientEmail ?? po.supplierEmail;
-  if (!toEmail) { res.status(400).json({ error: "No supplier email address on record. Please enter one." }); return; }
+  const toEmail = po.supplierEmail;
+  if (!toEmail) { res.status(400).json({ error: "No email address on record for this supplier." }); return; }
 
   const poData = {
     poNumber: po.poNumber,
@@ -603,12 +609,31 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
     res.status(500).json({ error: `PDF generation failed: ${e.message}` }); return;
   }
 
+  // Collect unique process stock print file attachments
+  const attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
+  if (pdfBuffer) attachments.push({ filename: `${po.poNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" });
+
+  const seenFileUrls = new Set<string>();
+  for (const item of po.items) {
+    if (item.processStockFileUrl && !seenFileUrls.has(item.processStockFileUrl)) {
+      seenFileUrls.add(item.processStockFileUrl);
+      try {
+        const file = await objectStorageService.getObjectEntityFile(item.processStockFileUrl);
+        const [content] = await file.download();
+        const safeName = (item.supplierCode ?? item.productName).replace(/[^a-zA-Z0-9_\-]/g, "_");
+        attachments.push({ filename: `${safeName}.pdf`, content: Buffer.from(content), contentType: "application/pdf" });
+      } catch {
+        // Skip files that can't be fetched — they'll show as warnings in the UI
+      }
+    }
+  }
+
   const result = await sendEmail({
     to: toEmail,
     subject,
     html,
     text,
-    attachments: pdfBuffer ? [{ filename: `${po.poNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" }] : [],
+    attachments,
   });
 
   if (!result.sent) {

@@ -49,6 +49,7 @@ interface POItem {
   productName: string; colour: string | null; size: string | null;
   supplierCode: string | null; supplierPrice: number | null;
   productSku: string | null; canonicalProductName: string | null;
+  processStockId: number | null; processStockFileUrl: string | null;
   quantityOrdered: number; quantityDelivered: number; estimatedDueDate: string | null; notes: string | null;
 }
 
@@ -351,48 +352,77 @@ function buildPOMailtoBody(po: PurchaseOrder, notes: string): string {
 }
 
 function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open: boolean; onClose: () => void; onSent: () => void }) {
+  const { toast } = useToast();
   const [notes, setNotes] = useState("");
-  const [recipientEmail, setRecipientEmail] = useState(po.supplierEmail ?? "");
+  const [sending, setSending] = useState(false);
 
-  const handleOpen = () => {
-    const subject = encodeURIComponent(`Purchase Order ${po.poNumber} — Select Branding Solutions`);
-    const body = encodeURIComponent(buildPOMailtoBody(po, notes));
-    const mailto = `mailto:${recipientEmail}?subject=${subject}&body=${body}`;
-    // Download the PDF so they can attach it
-    const a = document.createElement("a");
-    a.href = `/api/purchasing/purchase-orders/${po.id}/pdf`;
-    a.download = `${po.poNumber}.pdf`;
-    a.click();
-    // Small delay so the download starts before the email client opens
-    setTimeout(() => window.open(mailto, "_blank"), 300);
-    onClose();
-    onSent();
+  const processStockItems = po.items.filter((i) => i.processStockId != null);
+  const missingFiles = processStockItems.filter((i) => !i.processStockFileUrl);
+
+  const handleSend = async () => {
+    setSending(true);
+    try {
+      await apiFetch(`/purchasing/purchase-orders/${po.id}/send-email`, {
+        method: "POST",
+        body: JSON.stringify({ notes }),
+      });
+      toast({ title: "Email sent", description: `PO sent to ${po.supplierEmail}` });
+      onSent();
+      onClose();
+    } catch (e: any) {
+      toast({ title: "Failed to send", description: e.message, variant: "destructive" });
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-primary" />Email PO — {po.poNumber}</DialogTitle></DialogHeader>
+      <DialogContent className="max-w-md">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-primary" />Send PO — {po.poNumber}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
-          <div className="space-y-1.5">
-            <Label>Recipient email</Label>
-            <Input value={recipientEmail} onChange={(e) => setRecipientEmail(e.target.value)} placeholder="supplier@example.com" type="email" />
+          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm flex items-center gap-2">
+            <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+            {po.supplierEmail
+              ? <span>{po.supplierEmail}</span>
+              : <span className="text-destructive">No email address on file for this supplier</span>}
           </div>
+
+          {processStockItems.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Print files to attach</div>
+              <div className="rounded-lg border border-border divide-y text-sm">
+                {processStockItems.map((i) => (
+                  <div key={i.id} className="flex items-center gap-2 px-3 py-2">
+                    {i.processStockFileUrl
+                      ? <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                      : <TriangleAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                    <span className="font-mono text-xs font-semibold text-indigo-700 shrink-0">{i.supplierCode ?? "—"}</span>
+                    <span className="truncate">{i.productName}</span>
+                    {!i.processStockFileUrl && <span className="ml-auto text-xs text-amber-600 whitespace-nowrap">no file</span>}
+                  </div>
+                ))}
+              </div>
+              {missingFiles.length > 0 && (
+                <p className="text-xs text-amber-700">
+                  {missingFiles.length} item{missingFiles.length !== 1 ? "s" : ""} without a print file — upload them in Process Stock before sending.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <Label>Additional notes (optional)</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={3} />
-          </div>
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-            The PDF will download automatically — attach it to the email that opens in your email client.
+            <Label className="text-xs text-muted-foreground">Additional notes (optional)</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={2} />
           </div>
         </div>
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button variant="outline" className="gap-2 sm:mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" className="gap-2 mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
             <FileText className="w-4 h-4" /> Preview PDF
           </Button>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleOpen} disabled={!recipientEmail} className="gap-2">
-            <Mail className="w-4 h-4" /> Open in Email Client
+          <Button onClick={handleSend} disabled={sending || !po.supplierEmail} className="gap-2">
+            {sending ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</> : <><Send className="w-4 h-4" />Send Email</>}
           </Button>
         </DialogFooter>
       </DialogContent>
