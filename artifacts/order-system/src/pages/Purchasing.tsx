@@ -996,6 +996,7 @@ export default function Purchasing() {
   const [createPoNotes, setCreatePoNotes] = useState("");
   const [createProcessPoGroup, setCreateProcessPoGroup] = useState<{ supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] } | null>(null);
   const [createProcessPoNotes, setCreateProcessPoNotes] = useState("");
+  const [processPoQtys, setProcessPoQtys] = useState<Record<number, number>>({});
 
   const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
