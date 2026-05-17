@@ -133,6 +133,124 @@ function buildPOMatrix(items: POItem[]) {
   return { groupKeys, groups, allSizes };
 }
 
+function buildReqMatrix(items: PurchaseRequirement[]) {
+  const groupKeys: string[] = [];
+  const groups = new Map<string, {
+    code: string | null; productName: string; colours: string[]; sizes: string[];
+    qty: Map<string, Map<string, { total: number; cellKey: string }>>;
+  }>();
+  for (const item of items) {
+    const gk = item.supplierCode ?? item.canonicalProductName ?? item.productName;
+    if (!groups.has(gk)) groupKeys.push(gk);
+    if (!groups.has(gk)) groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, colours: [], sizes: [], qty: new Map() });
+    const g = groups.get(gk)!;
+    const c = item.colour ?? "—"; const s = item.size ?? "—";
+    const cellKey = [item.productName, item.colour ?? "", item.size ?? "", item.supplierCode ?? ""].join("|");
+    if (!g.colours.includes(c)) g.colours.push(c);
+    if (!g.sizes.includes(s)) g.sizes.push(s);
+    if (!g.qty.has(c)) g.qty.set(c, new Map());
+    const existing = g.qty.get(c)!.get(s);
+    g.qty.get(c)!.set(s, { total: (existing?.total ?? 0) + (item.purchaseQuantity ?? 1), cellKey });
+  }
+  const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+  const allSizesSet = new Set<string>();
+  for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) allSizesSet.add(s);
+  const allSizes = [...allSizesSet].sort((a, b) => {
+    const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1; if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+  return { groupKeys, groups, allSizes };
+}
+
+function ReqMatrixView({ items, overrides, onQtyChange }: {
+  items: PurchaseRequirement[];
+  overrides: Record<string, number>;
+  onQtyChange: (cellKey: string, qty: number) => void;
+}) {
+  const { groupKeys, groups, allSizes } = buildReqMatrix(items);
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-800 text-white">
+            <TableHead className="font-semibold text-white">Code</TableHead>
+            <TableHead className="font-semibold text-white">Colour</TableHead>
+            {allSizes.map((s) => <TableHead key={s} className="text-center font-semibold text-white">{s}</TableHead>)}
+            <TableHead className="text-center font-semibold text-white">Total</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groupKeys.map((gk) => {
+            const g = groups.get(gk)!;
+            const groupTotal = g.colours.reduce((sum, c) => sum + allSizes.reduce((s2, sz) => {
+              const cell = g.qty.get(c)?.get(sz);
+              return s2 + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+            }, 0), 0);
+            return g.colours.map((colour, ci) => {
+              const rowTotal = allSizes.reduce((s, sz) => {
+                const cell = g.qty.get(colour)?.get(sz);
+                return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+              }, 0);
+              return (
+                <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
+                  {ci === 0 ? (
+                    <TableCell className="font-mono font-bold text-sm text-indigo-700 align-top pt-3">
+                      <div>{g.code ?? "—"}</div>
+                      <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
+                    </TableCell>
+                  ) : <TableCell />}
+                  <TableCell className="font-medium text-sm">{colour}</TableCell>
+                  {allSizes.map((sz) => {
+                    const cell = g.qty.get(colour)?.get(sz);
+                    if (!cell) return <TableCell key={sz} className="text-center p-1"><span className="text-muted-foreground text-xs">—</span></TableCell>;
+                    const val = overrides[cell.cellKey] ?? cell.total;
+                    return (
+                      <TableCell key={sz} className="text-center p-1">
+                        <Input
+                          type="number" min={0} value={val}
+                          onChange={(e) => onQtyChange(cell.cellKey, Math.max(0, parseInt(e.target.value) || 0))}
+                          className="w-14 h-7 text-center text-sm px-1 font-semibold text-primary"
+                        />
+                      </TableCell>
+                    );
+                  })}
+                  <TableCell className="text-center font-bold text-sm">{rowTotal}</TableCell>
+                </TableRow>
+              );
+            });
+          })}
+          {groupKeys.length > 1 && (
+            <TableRow className="bg-slate-800">
+              <TableCell className="text-white font-bold text-sm" colSpan={2}>TOTAL</TableCell>
+              {allSizes.map((sz) => {
+                const t = groupKeys.reduce((sum, gk) => {
+                  const g = groups.get(gk)!;
+                  return sum + g.colours.reduce((s, c) => {
+                    const cell = g.qty.get(c)?.get(sz);
+                    return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+                  }, 0);
+                }, 0);
+                return <TableCell key={sz} className="text-center font-bold text-white">{t > 0 ? t : "—"}</TableCell>;
+              })}
+              <TableCell className="text-center font-bold text-white">
+                {groupKeys.reduce((sum, gk) => {
+                  const g = groups.get(gk)!;
+                  return sum + g.colours.reduce((cs, c) => cs + allSizes.reduce((s, sz) => {
+                    const cell = g.qty.get(c)?.get(sz);
+                    return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+                  }, 0), 0);
+                }, 0)}
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
 function POMatrixView({ items, currency }: { items: POItem[]; currency?: string }) {
   const { groupKeys, groups, allSizes } = buildPOMatrix(items);
 
@@ -830,6 +948,8 @@ export default function Purchasing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [expandedReqGroups, setExpandedReqGroups] = useState<Record<string, boolean>>({});
+  const [reqQtyOverrides, setReqQtyOverrides] = useState<Record<string, Record<string, number>>>({});
   const [emailGroup, setEmailGroup] = useState<SupplierGroup | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
@@ -1072,13 +1192,22 @@ export default function Purchasing() {
                   </div>
 
                   {groups.map((group) => {
-                    const totalQty = group.items.reduce((s, i) => s + (i.purchaseQuantity ?? 0), 0);
+                    const overrides = reqQtyOverrides[group.supplierName] ?? {};
+                    const totalQty = group.items.reduce((s, i) => {
+                      const cellKey = [i.productName, i.colour ?? "", i.size ?? "", i.supplierCode ?? ""].join("|");
+                      return s + (overrides[cellKey] ?? i.purchaseQuantity ?? 0);
+                    }, 0);
                     const existingDraft = getDraftPoForSupplier(group.supplierId, group.supplierName);
+                    const isExpanded = !!expandedReqGroups[group.supplierName];
 
                     return (
-                      <div key={group.supplierName} className="rounded-xl border border-border bg-card shadow-sm">
-                        <div className="flex items-center justify-between px-5 py-4">
+                      <div key={group.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                        <div
+                          className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
+                          onClick={() => setExpandedReqGroups((prev) => ({ ...prev, [group.supplierName]: !prev[group.supplierName] }))}
+                        >
                           <div className="flex items-center gap-3 flex-wrap">
+                            {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                             <div>
                               <div className="font-semibold text-base flex items-center gap-2">
                                 {group.supplierName}
@@ -1093,7 +1222,7 @@ export default function Purchasing() {
                             <Badge variant="secondary">{group.items.length} line{group.items.length !== 1 ? "s" : ""}</Badge>
                             <Badge className="bg-amber-100 text-amber-800 border-amber-200">{totalQty} units needed</Badge>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
                                 onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.map((i) => i.itemId) })}
@@ -1110,6 +1239,20 @@ export default function Purchasing() {
                             </Button>
                           </div>
                         </div>
+                        {isExpanded && (
+                          <div className="border-t border-border px-5 py-4">
+                            <ReqMatrixView
+                              items={group.items}
+                              overrides={overrides}
+                              onQtyChange={(cellKey, qty) =>
+                                setReqQtyOverrides((prev) => ({
+                                  ...prev,
+                                  [group.supplierName]: { ...(prev[group.supplierName] ?? {}), [cellKey]: qty },
+                                }))
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1390,7 +1533,7 @@ export default function Purchasing() {
               <div className="flex flex-col gap-4 py-2 min-h-0 overflow-y-auto flex-1">
                 <div className="rounded-lg border border-border divide-y text-sm">
                   {(() => {
-                    // Group by SKU so the preview matches the consolidated PO lines
+                    const overrides = reqQtyOverrides[createPoGroup.supplierName] ?? {};
                     const keys: string[] = [];
                     const grps = new Map<string, typeof createPoGroup.items>();
                     for (const item of createPoGroup.items) {
@@ -1401,12 +1544,16 @@ export default function Purchasing() {
                     return keys.map((k) => {
                       const g = grps.get(k)!;
                       const first = g[0];
-                      const qty = g.reduce((s, i) => s + (i.purchaseQuantity ?? 1), 0);
+                      const baseQty = g.reduce((s, i) => s + (i.purchaseQuantity ?? 1), 0);
+                      const qty = overrides[k] ?? baseQty;
                       return (
                         <div key={k} className="flex justify-between px-3 py-2">
                           <span className="font-medium">{productDisplayName(first)}</span>
                           <span className="text-muted-foreground whitespace-nowrap pl-4">
                             {[first.colour, first.size].filter(Boolean).join(" / ")} <strong>× {qty}</strong>
+                            {overrides[k] !== undefined && overrides[k] !== baseQty && (
+                              <span className="ml-1 text-xs text-amber-600">(edited)</span>
+                            )}
                           </span>
                         </div>
                       );
@@ -1427,6 +1574,7 @@ export default function Purchasing() {
                     supplierEmail: createPoGroup.supplierEmail,
                     notes: createPoNotes || null,
                     itemIds: createPoGroup.items.map((i) => i.itemId),
+                    qtyOverrides: reqQtyOverrides[createPoGroup.supplierName] ?? {},
                   })}
                   disabled={createPoMutation.isPending}
                   className="gap-1.5"

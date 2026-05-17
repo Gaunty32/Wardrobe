@@ -168,7 +168,7 @@ async function getPoWithItems(poId: number) {
   };
 }
 
-async function buildPoItems(orderItemIds: number[], poId: number) {
+async function buildPoItems(orderItemIds: number[], poId: number, qtyOverrides?: Record<string, number>) {
   const orderItems = await db
     .select({
       item: orderItemsTable,
@@ -198,7 +198,10 @@ async function buildPoItems(orderItemIds: number[], poId: number) {
   return [...groups.values()].map((rows) => {
     const first = rows[0];
     const sourceIds = rows.map((r) => r.item.id);
-    const totalQty = rows.reduce((sum, r) => sum + (r.item.purchaseQuantity ?? 1), 0);
+    const cellKey = [first.item.productName, first.item.colour ?? "", first.item.size ?? "", first.supplierCode ?? ""].join("|");
+    const totalQty = (qtyOverrides && cellKey in qtyOverrides)
+      ? qtyOverrides[cellKey]
+      : rows.reduce((sum, r) => sum + (r.item.purchaseQuantity ?? 1), 0);
     // Summarise contributing order numbers (e.g. "P23, P26, P29")
     const orderNums = [...new Set(rows.map((r) => r.orderNumber).filter(Boolean))];
     return {
@@ -330,6 +333,7 @@ router.post("/purchasing/purchase-orders", async (req, res): Promise<void> => {
     supplierEmail: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     itemIds: z.array(z.number().int().positive()),
+    qtyOverrides: z.record(z.string(), z.number().int().nonnegative()).optional(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -346,7 +350,7 @@ router.post("/purchasing/purchase-orders", async (req, res): Promise<void> => {
   }).returning();
 
   if (parsed.data.itemIds.length > 0) {
-    const poItems = await buildPoItems(parsed.data.itemIds, po.id);
+    const poItems = await buildPoItems(parsed.data.itemIds, po.id, parsed.data.qtyOverrides);
     await db.insert(purchaseOrderItemsTable).values(poItems);
     // Remove items from requirements now that they are on a PO
     await db.update(orderItemsTable)
