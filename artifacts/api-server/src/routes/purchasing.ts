@@ -507,8 +507,24 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
   if (po.status !== "draft") { res.status(400).json({ error: "Can only add items to a draft PO" }); return; }
 
-  const poItems = await buildPoItems(parsed.data.itemIds, po.id);
-  await db.insert(purchaseOrderItemsTable).values(poItems);
+  // Collect order item IDs already covered by this PO (via direct FK or sourceOrderItemIds JSON array)
+  const existingLines = await db
+    .select({ orderItemId: purchaseOrderItemsTable.orderItemId, sourceOrderItemIds: purchaseOrderItemsTable.sourceOrderItemIds })
+    .from(purchaseOrderItemsTable)
+    .where(eq(purchaseOrderItemsTable.poId, po.id));
+
+  const alreadyCovered = new Set<number>();
+  for (const line of existingLines) {
+    if (line.orderItemId) alreadyCovered.add(line.orderItemId);
+    const sourceIds = (line.sourceOrderItemIds as number[] | null) ?? [];
+    for (const id of sourceIds) alreadyCovered.add(id);
+  }
+
+  const newItemIds = parsed.data.itemIds.filter((id) => !alreadyCovered.has(id));
+  if (newItemIds.length > 0) {
+    const poItems = await buildPoItems(newItemIds, po.id);
+    if (poItems.length > 0) await db.insert(purchaseOrderItemsTable).values(poItems);
+  }
 
   const result = await getPoWithItems(po.id);
   res.json(result);
@@ -533,16 +549,29 @@ router.post("/purchasing/purchase-orders/:id/process-stock-items", async (req, r
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
   if (po.status !== "draft") { res.status(400).json({ error: "Can only add items to a draft PO" }); return; }
 
-  const poItems = parsed.data.items.map(item => ({
-    poId: po.id,
-    processStockId: item.processStockId ?? null,
-    productName: item.productName,
-    supplierCode: item.supplierCode ?? null,
-    supplierPrice: item.supplierPrice != null ? String(item.supplierPrice) : null,
-    quantityOrdered: item.quantityOrdered,
-    quantityDelivered: 0,
-  }));
-  await db.insert(purchaseOrderItemsTable).values(poItems);
+  // Skip process stock items already on this PO (prevent duplicate lines on repeated clicks)
+  const existingPsLines = await db
+    .select({ processStockId: purchaseOrderItemsTable.processStockId })
+    .from(purchaseOrderItemsTable)
+    .where(eq(purchaseOrderItemsTable.poId, po.id));
+  const alreadyPresentPsIds = new Set(existingPsLines.map((l) => l.processStockId).filter(Boolean));
+
+  const newItems = parsed.data.items.filter(
+    (item) => !item.processStockId || !alreadyPresentPsIds.has(item.processStockId),
+  );
+
+  if (newItems.length > 0) {
+    const poItems = newItems.map(item => ({
+      poId: po.id,
+      processStockId: item.processStockId ?? null,
+      productName: item.productName,
+      supplierCode: item.supplierCode ?? null,
+      supplierPrice: item.supplierPrice != null ? String(item.supplierPrice) : null,
+      quantityOrdered: item.quantityOrdered,
+      quantityDelivered: 0,
+    }));
+    await db.insert(purchaseOrderItemsTable).values(poItems);
+  }
 
   const result = await getPoWithItems(po.id);
   res.json(result);
