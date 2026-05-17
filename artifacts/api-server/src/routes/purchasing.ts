@@ -104,6 +104,66 @@ router.post("/purchasing/mark-fulfilled", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+router.delete("/purchasing/requirements", async (req, res): Promise<void> => {
+  const parsed = z.object({ itemIds: z.array(z.number().int().positive()) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const itemIds = parsed.data.itemIds;
+  const rows = await db
+    .select({
+      id: orderItemsTable.id,
+      productId: orderItemsTable.productId,
+      purchaseQuantity: orderItemsTable.purchaseQuantity,
+      stockQuantity: productsTable.stockQuantity,
+    })
+    .from(orderItemsTable)
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(inArray(orderItemsTable.id, itemIds));
+
+  // Group stock deductions by product so we handle multiple items per product correctly
+  const productDeductions = new Map<number, number>();
+  for (const row of rows) {
+    if (row.productId) {
+      productDeductions.set(row.productId, (productDeductions.get(row.productId) ?? 0) + (row.purchaseQuantity ?? 0));
+    }
+  }
+
+  // Fetch current stock for each affected product
+  const productIds = [...productDeductions.keys()];
+  const productStockMap = new Map<number, number>();
+  if (productIds.length > 0) {
+    const stocks = await db
+      .select({ id: productsTable.id, stockQuantity: productsTable.stockQuantity })
+      .from(productsTable)
+      .where(inArray(productsTable.id, productIds));
+    for (const s of stocks) productStockMap.set(s.id, s.stockQuantity ?? 0);
+  }
+
+  for (const row of rows) {
+    const needed = row.purchaseQuantity ?? 0;
+    const stock = row.productId ? (productStockMap.get(row.productId) ?? 0) : 0;
+
+    if (stock >= needed && row.productId && needed > 0) {
+      // Stock covers it — allocate and clear
+      const newStock = stock - needed;
+      await db.update(productsTable).set({ stockQuantity: newStock }).where(eq(productsTable.id, row.productId));
+      productStockMap.set(row.productId, newStock);
+      await db.update(orderItemsTable).set({ purchaseRequired: false, purchaseQuantity: null }).where(eq(orderItemsTable.id, row.id));
+    } else if (stock > 0 && row.productId) {
+      // Partial stock — allocate what's available, re-queue remainder
+      const shortfall = needed - stock;
+      await db.update(productsTable).set({ stockQuantity: 0 }).where(eq(productsTable.id, row.productId));
+      productStockMap.set(row.productId, 0);
+      await db.update(orderItemsTable).set({ purchaseRequired: true, purchaseQuantity: shortfall }).where(eq(orderItemsTable.id, row.id));
+    } else {
+      // No stock — user explicitly chose to remove; clear the requirement
+      await db.update(orderItemsTable).set({ purchaseRequired: false, purchaseQuantity: null }).where(eq(orderItemsTable.id, row.id));
+    }
+  }
+
+  res.json({ ok: true });
+});
+
 router.get("/purchasing/stock-check", async (req, res): Promise<void> => {
   const parsed = z.object({
     productId: z.coerce.number().int().positive(),

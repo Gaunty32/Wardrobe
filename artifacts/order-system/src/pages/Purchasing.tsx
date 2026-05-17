@@ -139,11 +139,12 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
   const groups = new Map<string, {
     code: string | null; productName: string; colours: string[]; sizes: string[];
     qty: Map<string, Map<string, { total: number; cellKey: string }>>;
+    rowItemIds: Map<string, number[]>;
   }>();
   for (const item of items) {
     const gk = item.supplierCode ?? item.canonicalProductName ?? item.productName;
     if (!groups.has(gk)) groupKeys.push(gk);
-    if (!groups.has(gk)) groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, colours: [], sizes: [], qty: new Map() });
+    if (!groups.has(gk)) groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() });
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = item.size ?? "—";
     const cellKey = [item.productName, item.colour ?? "", item.size ?? "", item.supplierCode ?? ""].join("|");
@@ -152,6 +153,8 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
     if (!g.qty.has(c)) g.qty.set(c, new Map());
     const existing = g.qty.get(c)!.get(s);
     g.qty.get(c)!.set(s, { total: (existing?.total ?? 0) + (item.purchaseQuantity ?? 1), cellKey });
+    if (!g.rowItemIds.has(c)) g.rowItemIds.set(c, []);
+    g.rowItemIds.get(c)!.push(item.itemId);
   }
   const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
   const allSizesSet = new Set<string>();
@@ -165,10 +168,11 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
   return { groupKeys, groups, allSizes };
 }
 
-function ReqMatrixView({ items, overrides, onQtyChange }: {
+function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
   items: PurchaseRequirement[];
   overrides: Record<string, number>;
   onQtyChange: (cellKey: string, qty: number) => void;
+  onDeleteRow: (itemIds: number[]) => void;
 }) {
   const { groupKeys, groups, allSizes } = buildReqMatrix(items);
   return (
@@ -176,32 +180,28 @@ function ReqMatrixView({ items, overrides, onQtyChange }: {
       <Table>
         <TableHeader>
           <TableRow className="bg-slate-800 text-white">
-            <TableHead className="font-semibold text-white">Code</TableHead>
+            <TableHead className="font-semibold text-white w-24">Code</TableHead>
             <TableHead className="font-semibold text-white">Colour</TableHead>
             {allSizes.map((s) => <TableHead key={s} className="text-center font-semibold text-white">{s}</TableHead>)}
             <TableHead className="text-center font-semibold text-white">Total</TableHead>
+            <TableHead className="w-8" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {groupKeys.map((gk) => {
             const g = groups.get(gk)!;
-            const groupTotal = g.colours.reduce((sum, c) => sum + allSizes.reduce((s2, sz) => {
-              const cell = g.qty.get(c)?.get(sz);
-              return s2 + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
-            }, 0), 0);
             return g.colours.map((colour, ci) => {
+              const rowItemIds = g.rowItemIds.get(colour) ?? [];
               const rowTotal = allSizes.reduce((s, sz) => {
                 const cell = g.qty.get(colour)?.get(sz);
                 return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
               }, 0);
               return (
                 <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
-                  {ci === 0 ? (
-                    <TableCell className="font-mono font-bold text-sm text-indigo-700 align-top pt-3">
-                      <div>{g.code ?? "—"}</div>
-                      <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
-                    </TableCell>
-                  ) : <TableCell />}
+                  <TableCell className="font-mono font-bold text-xs text-indigo-700">
+                    <div>{g.code ?? "—"}</div>
+                    {ci === 0 && <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>}
+                  </TableCell>
                   <TableCell className="font-medium text-sm">{colour}</TableCell>
                   {allSizes.map((sz) => {
                     const cell = g.qty.get(colour)?.get(sz);
@@ -218,6 +218,15 @@ function ReqMatrixView({ items, overrides, onQtyChange }: {
                     );
                   })}
                   <TableCell className="text-center font-bold text-sm">{rowTotal}</TableCell>
+                  <TableCell className="text-center p-1">
+                    <Button
+                      size="sm" variant="ghost"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => onDeleteRow(rowItemIds)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </TableCell>
                 </TableRow>
               );
             });
@@ -244,6 +253,7 @@ function ReqMatrixView({ items, overrides, onQtyChange }: {
                   }, 0), 0);
                 }, 0)}
               </TableCell>
+              <TableCell />
             </TableRow>
           )}
         </TableBody>
@@ -1089,6 +1099,16 @@ export default function Purchasing() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const deleteRequirementMutation = useMutation({
+    mutationFn: (itemIds: number[]) =>
+      apiFetch(`/purchasing/requirements`, { method: "DELETE", body: JSON.stringify({ itemIds }) }),
+    onSuccess: () => {
+      invalidateAll();
+      toast({ title: "Requirement removed", description: "Stock checked and requirement cleared." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const lineUpdateMutation = useMutation({
     mutationFn: ({ poId, itemId, data }: { poId: number; itemId: number; data: Record<string, unknown> }) =>
       apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -1280,6 +1300,7 @@ export default function Purchasing() {
                                   [group.supplierName]: { ...(prev[group.supplierName] ?? {}), [cellKey]: qty },
                                 }))
                               }
+                              onDeleteRow={(itemIds) => deleteRequirementMutation.mutate(itemIds)}
                             />
                           </div>
                         )}
