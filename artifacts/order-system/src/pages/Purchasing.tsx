@@ -388,9 +388,9 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-primary" />Send PO — {po.poNumber}</DialogTitle></DialogHeader>
-        <div className="space-y-4 py-2">
+      <DialogContent className="max-w-md flex flex-col max-h-[90vh]">
+        <DialogHeader className="shrink-0"><DialogTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-primary" />Send PO — {po.poNumber}</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm flex items-center gap-2">
             <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
             {po.supplierEmail
@@ -399,9 +399,12 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
           </div>
 
           {processStockItems.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Print files to attach</div>
-              <div className="rounded-lg border border-border divide-y text-sm">
+            <div className="space-y-1.5 min-h-0">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Print files to attach</div>
+                <div className="text-xs text-muted-foreground">{processStockItems.length - missingFiles.length}/{processStockItems.length} ready</div>
+              </div>
+              <div className="rounded-lg border border-border divide-y text-sm overflow-y-auto max-h-52">
                 {processStockItems.map((i) => (
                   <div key={i.id} className="flex items-center gap-2 px-3 py-2">
                     {i.processStockFileUrl
@@ -426,7 +429,7 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={2} />
           </div>
         </div>
-        <DialogFooter className="gap-2">
+        <DialogFooter className="gap-2 shrink-0">
           <Button variant="outline" className="gap-2 mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
             <FileText className="w-4 h-4" /> Preview PDF
           </Button>
