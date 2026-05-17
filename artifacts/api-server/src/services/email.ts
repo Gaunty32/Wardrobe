@@ -755,11 +755,18 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     const PAGE_H = 841.89;
     const W = PAGE_W - MARGIN * 2;
 
+    let drawingFooter = false;
     const drawFooter = () => {
-      doc.save();
-      doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
-        .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 32, { align: "center", width: W });
-      doc.restore();
+      if (drawingFooter) return;
+      drawingFooter = true;
+      try {
+        doc.save();
+        doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
+          .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 32, { align: "center", width: W });
+        doc.restore();
+      } finally {
+        drawingFooter = false;
+      }
     };
 
     doc.on("pageAdded", () => drawFooter());

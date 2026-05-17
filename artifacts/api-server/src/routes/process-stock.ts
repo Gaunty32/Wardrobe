@@ -218,7 +218,9 @@ router.get("/purchasing/process-stock-requirements", async (_req, res): Promise<
   const requireMap = new Map<number, { totalNeeded: number; orders: Map<number, OrderLine> }>();
 
   for (const item of itemsWithFinish) {
-    const psIds = finishToPs.get(item.finishId!) ?? [];
+    // Deduplicate: a finish can link to multiple processes that share the same
+    // process stock item — without this, the qty would be counted once per process.
+    const psIds = [...new Set(finishToPs.get(item.finishId!) ?? [])];
     const qty = item.quantity ?? 0;
     for (const psId of psIds) {
       if (!requireMap.has(psId)) requireMap.set(psId, { totalNeeded: 0, orders: new Map() });

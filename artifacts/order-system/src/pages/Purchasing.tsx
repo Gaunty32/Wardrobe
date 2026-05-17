@@ -108,10 +108,10 @@ const STATUS_CFG = {
 
 function buildPOMatrix(items: POItem[]) {
   const groupKeys: string[] = [];
-  const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>> }>();
+  const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>>; rowItemIds: Map<string, number[]> }>();
   for (const item of items) {
     const gk = item.supplierCode ?? item.productName;
-    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map() }); }
+    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() }); }
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = item.size ?? "—";
     if (!g.colours.includes(c)) g.colours.push(c);
@@ -119,6 +119,8 @@ function buildPOMatrix(items: POItem[]) {
     if (!g.qty.has(c)) g.qty.set(c, new Map());
     g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantityOrdered);
     if (item.supplierPrice != null && g.price == null) g.price = item.supplierPrice;
+    if (!g.rowItemIds.has(c)) g.rowItemIds.set(c, []);
+    g.rowItemIds.get(c)!.push(item.id);
   }
   const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
   const allSizesSet = new Set<string>();
@@ -262,7 +264,7 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
   );
 }
 
-function POMatrixView({ items, currency }: { items: POItem[]; currency?: string }) {
+function POMatrixView({ items, currency, onDeleteLine }: { items: POItem[]; currency?: string; onDeleteLine?: (itemId: number) => void }) {
   const { groupKeys, groups, allSizes } = buildPOMatrix(items);
 
   return (
@@ -274,6 +276,7 @@ function POMatrixView({ items, currency }: { items: POItem[]; currency?: string 
             <TableHead className="font-semibold text-white">Colour</TableHead>
             {allSizes.map((s) => <TableHead key={s} className="text-center font-semibold text-white">{s}</TableHead>)}
             <TableHead className="text-center font-semibold text-white">Total</TableHead>
+            {onDeleteLine && <TableHead className="w-8" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -284,6 +287,7 @@ function POMatrixView({ items, currency }: { items: POItem[]; currency?: string 
               <>
                 {g.colours.map((colour, ci) => {
                   const rowTotal = allSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+                  const rowIds = g.rowItemIds.get(colour) ?? [];
                   return (
                     <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
                       {ci === 0 ? (
@@ -301,6 +305,18 @@ function POMatrixView({ items, currency }: { items: POItem[]; currency?: string 
                         return <TableCell key={sz} className="text-center">{qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>;
                       })}
                       <TableCell className="text-center font-bold">{rowTotal}</TableCell>
+                      {onDeleteLine && (
+                        <TableCell className="text-center p-1">
+                          {rowIds.map((id) => (
+                            <button key={id}
+                              onClick={() => { if (confirm("Remove this line from the PO?")) onDeleteLine(id); }}
+                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="Remove line">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ))}
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}
@@ -313,6 +329,7 @@ function POMatrixView({ items, currency }: { items: POItem[]; currency?: string 
                       return <TableCell key={sz} className="text-center font-semibold text-sm">{colTotal > 0 ? colTotal : <span className="text-muted-foreground text-xs">—</span>}</TableCell>;
                     })}
                     <TableCell className="text-center font-bold">{groupTotal}</TableCell>
+                    {onDeleteLine && <TableCell />}
                   </TableRow>
                 )}
               </>
@@ -326,6 +343,7 @@ function POMatrixView({ items, currency }: { items: POItem[]; currency?: string 
                 return <TableCell key={sz} className="text-center font-bold text-white">{t > 0 ? t : "—"}</TableCell>;
               })}
               <TableCell className="text-center font-bold text-white">{items.reduce((s, i) => s + i.quantityOrdered, 0)}</TableCell>
+              {onDeleteLine && <TableCell />}
             </TableRow>
           )}
         </TableBody>
@@ -949,7 +967,11 @@ function POCard({
             <div className="text-sm text-muted-foreground py-4 text-center">No lines on this PO yet.</div>
           ) : (
             <>
-              <POMatrixView items={po.items} currency={po.supplierCurrency} />
+              <POMatrixView
+                items={po.items}
+                currency={po.supplierCurrency}
+                onDeleteLine={po.status === "draft" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
+              />
 
               {po.status === "ordered" && (
                 <div className="space-y-3 pt-3 border-t border-border">
