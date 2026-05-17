@@ -743,15 +743,27 @@ function buildMatrix(items: POItemData[]) {
 
 export async function generatePOPdf(po: POData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const doc = new PDFDocument({ margin: 50, size: "A4", autoFirstPage: false });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
     const MARGIN = 50;
-    const W = doc.page.width - MARGIN * 2;
-    const PAGE_H = doc.page.height;
+    // Add first page manually so we can set up pageAdded handler first
+    const PAGE_W = 595.28; // A4 points
+    const PAGE_H = 841.89;
+    const W = PAGE_W - MARGIN * 2;
+
+    const drawFooter = () => {
+      doc.save();
+      doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
+        .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 32, { align: "center", width: W });
+      doc.restore();
+    };
+
+    doc.on("pageAdded", () => drawFooter());
+    doc.addPage();
     const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     const logoBuffer = SBS_LOGO_BUFFER ?? Buffer.from(SBS_LOGO_DATA_URL.split(",")[1], "base64");
 
@@ -947,10 +959,6 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     doc.fillColor("#ffffff").fontSize(11).font("Helvetica-Bold")
       .text(gtText, MARGIN + 8, y + 8, { width: W - 16, align: "right", lineBreak: false });
     y += 38;
-
-    // ── Footer ────────────────────────────────────────────────────────────────
-    doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
-      .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 38, { align: "center", width: W, lineBreak: false });
 
     doc.end();
   });

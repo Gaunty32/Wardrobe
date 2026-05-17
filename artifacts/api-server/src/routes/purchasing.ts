@@ -302,10 +302,12 @@ router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
           item: purchaseOrderItemsTable,
           productSku: productsTable.sku,
           canonicalProductName: productsTable.name,
+          processStockFileUrl: processStockTable.fileUrl,
         })
         .from(purchaseOrderItemsTable)
         .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
         .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+        .leftJoin(processStockTable, eq(purchaseOrderItemsTable.processStockId, processStockTable.id))
         .where(inArray(purchaseOrderItemsTable.poId, poIds))
     : [];
   const result = posRaw.map(({ po, supplierCurrency }) => ({
@@ -317,6 +319,7 @@ router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
         ...parsePOItem(r.item as Record<string, unknown>),
         productSku: r.productSku ?? null,
         canonicalProductName: r.canonicalProductName ?? null,
+        processStockFileUrl: r.processStockFileUrl ?? null,
       })),
   }));
   res.json(result);
