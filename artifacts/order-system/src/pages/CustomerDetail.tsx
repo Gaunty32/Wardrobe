@@ -1790,17 +1790,22 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                 </div>
               ) : (
                 <Select
-                  key={teams ? `team-select-${form.teamId ?? "none"}` : "team-select-loading"}
-                  value={form.teamId ? form.teamId.toString() : "none"}
+                  value={form.teamId != null ? String(form.teamId) : "none"}
                   onValueChange={v => {
                     if (v === "__add_new__") { setTeamAddMode(true); setNewTeamName(""); }
                     else setForm({ ...form, teamId: v === "none" ? null : Number(v) });
                   }}
                 >
-                  <SelectTrigger><SelectValue placeholder="No team" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="No team">
+                      {form.teamId != null
+                        ? ((teams as any[])?.find((t: any) => String(t.id) === String(form.teamId))?.name ?? editing?.teamName ?? "")
+                        : "No team"}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No team</SelectItem>
-                    {(teams as any[])?.map((t: any) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                    {(teams as any[])?.map((t: any) => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
                     <SelectItem value="__add_new__" className="text-primary font-medium">+ Add new team…</SelectItem>
                   </SelectContent>
                 </Select>
