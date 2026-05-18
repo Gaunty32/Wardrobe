@@ -670,5 +670,13 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS source_order_item_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
   `);
 
+  // Unique employee number per customer (partial — only when non-empty).
+  // Allows bulk import and manual entry to safely upsert by employee number.
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS customer_employees_emp_num_unique
+    ON customer_employees(customer_id, employee_number)
+    WHERE employee_number IS NOT NULL AND employee_number <> '';
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }

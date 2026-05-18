@@ -1454,6 +1454,19 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [empRoleFilter, setEmpRoleFilter] = useState<number | null | "all">("all");
   const [empManagerFilter, setEmpManagerFilter] = useState<number | null | "all">("all");
   const [dupWarning, setDupWarning] = useState<string | null>(null);
+  const [teamAddMode, setTeamAddMode] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+
+  const addTeamInline = useMutation({
+    mutationFn: (name: string) => apiFetch(`/customers/${customerId}/teams`, { method: "POST", body: JSON.stringify({ name }) }),
+    onSuccess: (newTeam: any) => {
+      qc.invalidateQueries({ queryKey: ["customer", customerId, "teams"] });
+      setForm(f => ({ ...f, teamId: newTeam.id }));
+      setTeamAddMode(false);
+      setNewTeamName("");
+    },
+    onError: (err: any) => toast({ title: "Could not create team", description: err?.message, variant: "destructive" }),
+  });
 
   const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, teamId: null as number | null, managerId: null as number | null, email: "", phone: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
@@ -1500,7 +1513,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     onSuccess: () => { inv(); toast({ title: "Deleted" }); },
   });
 
-  const openAdd = () => { setForm(blank); setSizes([]); setEditing(null); setOpen(true); };
+  const openAdd = () => { setForm(blank); setSizes([]); setEditing(null); setTeamAddMode(false); setNewTeamName(""); setOpen(true); };
   const openEdit = (e: any) => {
     setForm({
       firstName: e.firstName || "", lastName: e.lastName || "",
@@ -1511,6 +1524,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     });
     setSizes((e.sizes || []).map((s: any) => ({ label: s.label, size: s.size })));
     setEditing(e);
+    setTeamAddMode(false);
+    setNewTeamName("");
     setOpen(true);
   };
 
@@ -1616,8 +1631,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
         : <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
             <TableHead>Name</TableHead>
-            <TableHead className="hidden sm:table-cell">Role</TableHead>
-            <TableHead className="hidden md:table-cell">Team Manager</TableHead>
+            <TableHead className="hidden sm:table-cell">Team</TableHead>
+            <TableHead className="hidden md:table-cell">Role</TableHead>
             <TableHead className="hidden lg:table-cell">Email</TableHead>
             <TableHead className="text-right w-28">Actions</TableHead>
           </TableRow></TableHeader>
@@ -1633,13 +1648,13 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                   </div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell text-sm">
-                  {e.roleName
-                    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">{e.roleName}</span>
+                  {e.teamName
+                    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">{e.teamName}</span>
                     : <span className="text-muted-foreground/40">—</span>}
                 </TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                  {e.managerName
-                    ? <span className="inline-flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5 text-indigo-500 shrink-0" />{e.managerName}</span>
+                <TableCell className="hidden md:table-cell text-sm">
+                  {e.roleName
+                    ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary border border-primary/20">{e.roleName}</span>
                     : <span className="text-muted-foreground/40">—</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
@@ -1697,7 +1712,42 @@ function EmployeesTab({ customerId }: { customerId: number }) {
               </div>
             </div>
             <div className="grid gap-2">
-              <Label>Team Manager</Label>
+              <Label>Team</Label>
+              {teamAddMode ? (
+                <div className="flex gap-2">
+                  <Input
+                    autoFocus
+                    placeholder="New team name"
+                    value={newTeamName}
+                    onChange={e => setNewTeamName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") { e.preventDefault(); if (newTeamName.trim()) addTeamInline.mutate(newTeamName.trim()); }
+                      if (e.key === "Escape") { setTeamAddMode(false); setNewTeamName(""); }
+                    }}
+                  />
+                  <Button type="button" size="sm" onClick={() => { if (newTeamName.trim()) addTeamInline.mutate(newTeamName.trim()); }} disabled={!newTeamName.trim() || addTeamInline.isPending}>
+                    {addTeamInline.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Add"}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setTeamAddMode(false); setNewTeamName(""); }}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <Select value={form.teamId ? form.teamId.toString() : "none"} onValueChange={v => {
+                  if (v === "__add_new__") { setTeamAddMode(true); setNewTeamName(""); }
+                  else setForm({ ...form, teamId: v === "none" ? null : Number(v) });
+                }}>
+                  <SelectTrigger><SelectValue placeholder="No team" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No team</SelectItem>
+                    {(teams as any[])?.map((t: any) => <SelectItem key={t.id} value={t.id.toString()}>{t.name}</SelectItem>)}
+                    <SelectItem value="__add_new__" className="text-primary font-medium">+ Add new team…</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="grid gap-2">
+              <Label>Manager</Label>
               <ManagerCombobox
                 employees={(employees as any[])?.filter((e: any) => e.id !== editing?.id && e.isActive !== false) ?? []}
                 value={form.managerId}

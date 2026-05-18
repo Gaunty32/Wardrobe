@@ -700,9 +700,14 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
       const lastName = row.lastName?.trim() || null;
       const fullNameLower = [firstName, lastName].filter(Boolean).join(" ").toLowerCase();
 
-      const match = existingEmployees.find((e) =>
-        [e.firstName, e.lastName].filter(Boolean).join(" ").toLowerCase() === fullNameLower
-      );
+      // Employee Number is the canonical unique key — match on it first.
+      // Fall back to full-name matching only when no number is supplied.
+      const empNum = row.employeeNumber?.trim() || null;
+      const match = empNum
+        ? existingEmployees.find((e) => e.employeeNumber === empNum)
+        : existingEmployees.find((e) =>
+            [e.firstName, e.lastName].filter(Boolean).join(" ").toLowerCase() === fullNameLower
+          );
 
       let employeeId: number;
 
