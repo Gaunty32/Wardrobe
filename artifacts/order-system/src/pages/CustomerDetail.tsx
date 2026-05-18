@@ -1789,10 +1789,14 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                   </Button>
                 </div>
               ) : (
-                <Select value={form.teamId ? form.teamId.toString() : "none"} onValueChange={v => {
-                  if (v === "__add_new__") { setTeamAddMode(true); setNewTeamName(""); }
-                  else setForm({ ...form, teamId: v === "none" ? null : Number(v) });
-                }}>
+                <Select
+                  key={teams ? `team-select-${form.teamId ?? "none"}` : "team-select-loading"}
+                  value={form.teamId ? form.teamId.toString() : "none"}
+                  onValueChange={v => {
+                    if (v === "__add_new__") { setTeamAddMode(true); setNewTeamName(""); }
+                    else setForm({ ...form, teamId: v === "none" ? null : Number(v) });
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder="No team" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">No team</SelectItem>
@@ -1853,7 +1857,10 @@ function EmployeesTab({ customerId }: { customerId: number }) {
         customerId={customerId}
         open={showImportDialog}
         onOpenChange={setShowImportDialog}
-        onImported={() => qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] })}
+        onImported={() => {
+          qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] });
+          qc.invalidateQueries({ queryKey: ["customer", customerId, "teams"] });
+        }}
       />
     </>
   );
