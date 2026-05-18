@@ -2308,17 +2308,20 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   {u.last_login_at ? formatDate(u.last_login_at) : <span className="text-muted-foreground/50">Never</span>}
                 </TableCell>
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-primary hover:bg-primary/10"
+                  <div className="flex justify-end gap-1">
+                    <Button
+                      variant={!u.last_login_at ? "outline" : "ghost"}
+                      size="sm"
+                      className={!u.last_login_at ? "h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10" : "h-7 text-xs gap-1 text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"}
                       onClick={() => { setInviteEmail(u.email); setInviteRole(u.portal_role ?? "member"); setInviteResult(null); setInviteOpen(true); }}>
-                      <LogIn className="w-3 h-3" /> Send link
+                      <LogIn className="w-3 h-3" />{!u.last_login_at ? "Send Invite" : "Send link"}
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted"
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
                       title="Edit email address"
                       onClick={() => { setEditEmailUser(u); setEditEmailValue(u.email ?? ""); }}>
                       <Edit2 className="w-3 h-3" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50"
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => confirm(`Revoke portal access for ${u.email}?`) && revokeUser.mutate(u.id)}>
                       <UserX className="w-3 h-3" />
                     </Button>
