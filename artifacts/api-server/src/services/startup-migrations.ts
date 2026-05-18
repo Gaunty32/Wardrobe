@@ -678,5 +678,52 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE employee_number IS NOT NULL AND employee_number <> '';
   `);
 
+  // Restore purchase requirements for order items that fell out of sync —
+  // typically because PO lines were deleted without the flag being restored,
+  // or because the purchaseQuantity was cleared and never reinstated.
+  //
+  // Rule: any order item on a confirmed/active order that is NOT currently
+  // on any non-cancelled PO (directly via order_item_id or indirectly via
+  // source_order_item_ids), that has purchase_required=false and
+  // purchase_quantity IS NULL, is an orphan that the system should surface
+  // again so staff can action it.  We use the order item's own quantity as
+  // the restored purchase quantity — a safe default that staff can adjust.
+  //
+  // Items excluded: cancelled/archived/draft orders; items still on active or
+  // delivered (non-cancelled) POs; items with no linked product (custom text
+  // lines that were never meant to be purchased via the requirements flow).
+  const { rowCount } = await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required = true,
+        purchase_quantity  = oi.quantity
+    FROM orders o
+    WHERE oi.order_id  = o.id
+      AND o.status NOT IN ('cancelled', 'archived', 'draft')
+      AND oi.purchase_required  = false
+      AND oi.purchase_quantity  IS NULL
+      AND oi.product_id         IS NOT NULL
+      AND oi.id NOT IN (
+        -- Items directly linked to any non-cancelled PO
+        SELECT poi.order_item_id
+        FROM   purchase_order_items poi
+        JOIN   purchase_orders      po  ON po.id = poi.po_id
+        WHERE  poi.order_item_id IS NOT NULL
+          AND  po.status <> 'cancelled'
+
+        UNION
+
+        -- Items referenced via the consolidated source_order_item_ids array
+        SELECT (elem.value)::integer
+        FROM   purchase_order_items poi
+        JOIN   purchase_orders      po  ON po.id = poi.po_id,
+        jsonb_array_elements_text(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) AS elem(value)
+        WHERE  jsonb_array_length(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) > 0
+          AND  po.status <> 'cancelled'
+      )
+  `);
+  if ((rowCount ?? 0) > 0) {
+    console.log(`[startup] Restored ${rowCount} orphaned purchase requirement(s)`);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 }

@@ -871,18 +871,25 @@ router.delete("/purchasing/purchase-orders/:poId/items/:itemId", async (req, res
     .where(and(eq(purchaseOrderItemsTable.id, itemId), eq(purchaseOrderItemsTable.poId, poId)));
   if (!poItem) { res.status(404).json({ error: "PO line not found" }); return; }
 
-  // Restore purchaseRequired on ALL linked order items so they reappear in Requirements.
-  // This covers both directly-linked lines (orderItemId) and consolidated lines that
-  // were merged using sourceOrderItemIds (e.g. multiple same-product/colour lines).
+  // Restore purchaseRequired AND purchaseQuantity on ALL linked order items so they
+  // reappear in Requirements with the correct quantity.  We use the order item's own
+  // quantity as the restored purchase quantity — the system re-derives the shortfall
+  // from the live order data rather than requiring staff to manually re-flag each item.
   const linkedOrderItemIds = [
     ...(poItem.orderItemId != null ? [poItem.orderItemId] : []),
     ...((poItem.sourceOrderItemIds as number[] | null) ?? []),
   ];
   const uniqueLinkedIds = [...new Set(linkedOrderItemIds)];
   if (uniqueLinkedIds.length > 0) {
-    await db.update(orderItemsTable)
-      .set({ purchaseRequired: true })
+    const linkedItems = await db
+      .select({ id: orderItemsTable.id, quantity: orderItemsTable.quantity })
+      .from(orderItemsTable)
       .where(inArray(orderItemsTable.id, uniqueLinkedIds));
+    for (const li of linkedItems) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: true, purchaseQuantity: li.quantity ?? null })
+        .where(eq(orderItemsTable.id, li.id));
+    }
   }
 
   await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.id, itemId));
