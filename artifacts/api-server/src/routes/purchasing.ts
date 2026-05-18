@@ -871,11 +871,18 @@ router.delete("/purchasing/purchase-orders/:poId/items/:itemId", async (req, res
     .where(and(eq(purchaseOrderItemsTable.id, itemId), eq(purchaseOrderItemsTable.poId, poId)));
   if (!poItem) { res.status(404).json({ error: "PO line not found" }); return; }
 
-  // Restore purchaseRequired on the linked order item so it reappears in Requirements
-  if (poItem.orderItemId) {
+  // Restore purchaseRequired on ALL linked order items so they reappear in Requirements.
+  // This covers both directly-linked lines (orderItemId) and consolidated lines that
+  // were merged using sourceOrderItemIds (e.g. multiple same-product/colour lines).
+  const linkedOrderItemIds = [
+    ...(poItem.orderItemId != null ? [poItem.orderItemId] : []),
+    ...((poItem.sourceOrderItemIds as number[] | null) ?? []),
+  ];
+  const uniqueLinkedIds = [...new Set(linkedOrderItemIds)];
+  if (uniqueLinkedIds.length > 0) {
     await db.update(orderItemsTable)
       .set({ purchaseRequired: true })
-      .where(eq(orderItemsTable.id, poItem.orderItemId));
+      .where(inArray(orderItemsTable.id, uniqueLinkedIds));
   }
 
   await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.id, itemId));

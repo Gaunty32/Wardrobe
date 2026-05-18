@@ -3,6 +3,7 @@ import { eq, ilike, or, and, sql, inArray } from "drizzle-orm";
 import {
   db, processStockTable, suppliersTable, customersTable,
   ordersTable, orderItemsTable, customerFinishProcessesTable, customerProcessesTable,
+  purchaseOrderItemsTable, purchaseOrdersTable,
 } from "@workspace/db";
 import { z } from "zod";
 
@@ -238,16 +239,40 @@ router.get("/purchasing/process-stock-requirements", async (_req, res): Promise<
     }
   }
 
-  // 7. Build response, sorted by shortfall severity
+  // 7. Check how much of each process stock item is already on a draft or ordered PO,
+  //    so we don't show requirements that are already covered.
+  const poRows = await db
+    .select({
+      processStockId: purchaseOrderItemsTable.processStockId,
+      quantityOnPo: sql<number>`SUM(${purchaseOrderItemsTable.quantityOrdered})`,
+    })
+    .from(purchaseOrderItemsTable)
+    .innerJoin(purchaseOrdersTable, eq(purchaseOrderItemsTable.poId, purchaseOrdersTable.id))
+    .where(
+      and(
+        inArray(purchaseOrderItemsTable.processStockId, psIds),
+        inArray(purchaseOrdersTable.status, ["draft", "ordered"]),
+      )
+    )
+    .groupBy(purchaseOrderItemsTable.processStockId);
+
+  const onPoMap = new Map<number, number>();
+  for (const row of poRows) {
+    if (row.processStockId != null) onPoMap.set(row.processStockId, Number(row.quantityOnPo));
+  }
+
+  // 8. Build response, sorted by shortfall severity
   const result = [...requireMap.entries()].map(([psId, { totalNeeded, orders }]) => {
     const ps = psMap.get(psId)!;
     const stockQuantity = ps.stockQuantity ?? 0;
-    const shortfall = Math.max(0, totalNeeded - stockQuantity);
+    const onPo = onPoMap.get(psId) ?? 0;
+    const shortfall = Math.max(0, totalNeeded - stockQuantity - onPo);
     return {
       processStockId: psId,
       name: ps.name,
       sku: ps.sku,
       stockQuantity,
+      onPo,
       supplierId: ps.supplierId,
       supplierName: ps.supplierName,
       fileUrl: ps.fileUrl ?? null,
