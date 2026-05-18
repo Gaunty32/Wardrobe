@@ -565,49 +565,46 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                 </p>
                 <p className="text-xs text-muted-foreground">{totalDataRows - validMappedRows > 0 && `${totalDataRows - validMappedRows} row(s) skipped (no name)`}</p>
               </div>
-              <div className="border border-border rounded-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="bg-muted/40 border-b border-border">
-                      <tr>
-                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Name</th>
-                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Team</th>
-                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Email</th>
-                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Sizes</th>
-                        <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Other</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {mappedPreview.map((row, i) => (
-                        <tr key={i} className="hover:bg-muted/20">
-                          <td className="px-3 py-2 font-medium">
-                            {[row.firstName, row.lastName].filter(Boolean).join(" ")}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">{row.teamName || <span className="text-muted-foreground/40">—</span>}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{row.email || <span className="text-muted-foreground/40">—</span>}</td>
-                          <td className="px-3 py-2">
-                            {row.sizes.length > 0
-                              ? <div className="flex flex-wrap gap-1">
-                                  {row.sizes.map((s, si) => (
-                                    <span key={si} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
-                                      {s.label}: <strong>{s.size}</strong>
-                                    </span>
-                                  ))}
-                                </div>
-                              : <span className="text-muted-foreground/40">—</span>
-                            }
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground text-[11px]">
-                            {[row.jobTitle, row.employeeNumber && `#${row.employeeNumber}`, row.notes].filter(Boolean).join(" · ") || <span className="text-muted-foreground/40">—</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+              {(() => {
+                const hasEmpNum = mappedPreview.some(r => r.employeeNumber);
+                const hasTeam = mappedPreview.some(r => r.teamName);
+                const hasManager = mappedPreview.some(r => r.managerName);
+                const hasJobTitle = mappedPreview.some(r => r.jobTitle);
+                const hasEmail = mappedPreview.some(r => r.email);
+                const dash = <span className="text-muted-foreground/40">—</span>;
+                return (
+                  <div className="border border-border rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-muted/40 border-b border-border">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Name</th>
+                            {hasEmpNum && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Emp No.</th>}
+                            {hasTeam && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Team</th>}
+                            {hasManager && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Manager</th>}
+                            {hasJobTitle && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Job Title</th>}
+                            {hasEmail && <th className="text-left px-3 py-2 font-semibold text-muted-foreground">Email</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {mappedPreview.map((row, i) => (
+                            <tr key={i} className="hover:bg-muted/20">
+                              <td className="px-3 py-2 font-medium">{[row.firstName, row.lastName].filter(Boolean).join(" ")}</td>
+                              {hasEmpNum && <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">{row.employeeNumber || dash}</td>}
+                              {hasTeam && <td className="px-3 py-2 text-muted-foreground">{row.teamName || dash}</td>}
+                              {hasManager && <td className="px-3 py-2 text-muted-foreground">{row.managerName || dash}</td>}
+                              {hasJobTitle && <td className="px-3 py-2 text-muted-foreground">{row.jobTitle || dash}</td>}
+                              {hasEmail && <td className="px-3 py-2 text-muted-foreground">{row.email || dash}</td>}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 text-xs text-blue-700">
-                Existing employees matched by name will be <strong>updated</strong>. New names will be <strong>created</strong>. Teams not yet in the system will be created automatically.
+                Employees matched by <strong>Employee No.</strong> will be <strong>updated</strong>. Unmatched rows will be <strong>created</strong>. Teams and managers not yet in the system will be linked automatically.
               </div>
             </div>
           )}
