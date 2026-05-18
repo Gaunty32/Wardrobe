@@ -36,6 +36,7 @@ type ColumnType =
   | "email"
   | "phone"
   | "team"
+  | "manager_name"
   | "size"
   | "notes";
 
@@ -57,6 +58,7 @@ interface MappedRow {
   email?: string;
   phone?: string;
   teamName?: string;
+  managerName?: string;
   notes?: string;
   sizes: { label: string; size: string }[];
 }
@@ -72,6 +74,12 @@ type Step = "upload" | "map" | "preview" | "done";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Only types shown in the "Map to Field" dropdown — size/notes intentionally excluded
+const MAPPABLE_COLUMN_TYPES: ColumnType[] = [
+  "skip", "full_name", "first_name", "last_name", "employee_number",
+  "job_title", "email", "phone", "team", "manager_name",
+];
+
 const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
   skip: "(Skip)",
   full_name: "Full Name",
@@ -82,6 +90,7 @@ const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
   email: "Email",
   phone: "Phone",
   team: "Team",
+  manager_name: "Team Manager",
   size: "Size (specify label →)",
   notes: "Notes",
 };
@@ -92,15 +101,14 @@ function autoDetectType(header: string): ColumnType {
   if (h.includes("lastname") || h === "last" || h === "surname") return "last_name";
   // "Team Member", "Name", "Full Name", "Member" etc. → full name
   if (h === "member" || h === "teammember" || h.includes("fullname")) return "full_name";
-  if (h.includes("name") && !h.includes("team") && !h.includes("company")) return "full_name";
-  if (h.includes("empno") || h.includes("employeeno") || h.includes("empnum") || h === "ref") return "employee_number";
+  if (h.includes("name") && !h.includes("team") && !h.includes("company") && !h.includes("manager")) return "full_name";
+  if (h.includes("empno") || h.includes("employeeno") || h.includes("empnum") || h.includes("employeeid") || h === "ref") return "employee_number";
   if (h.includes("jobtitle") || h.includes("title") || h.includes("position") || h.includes("role")) return "job_title";
   if (h.includes("email") || h.includes("mail")) return "email";
   if (h.includes("phone") || h.includes("tel") || h.includes("mobile")) return "phone";
+  if (h.includes("manager") || h.includes("linemanager") || h.includes("reportsto") || h.includes("supervisor")) return "manager_name";
   if (h.includes("team") || h.includes("dept") || h.includes("department") || h.includes("group")) return "team";
-  if (h.includes("note") || h.includes("comment")) return "notes";
-  // Columns ending in "size" or containing "size" (e.g. "Polo Size", "Jacket Size") → size
-  if (h.includes("size")) return "size";
+  // Size and Notes are intentionally not auto-detected (not shown in dropdown)
   return "skip";
 }
 
@@ -159,6 +167,7 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
   let email: string | undefined;
   let phone: string | undefined;
   let teamName: string | undefined;
+  let managerName: string | undefined;
   let notes: string | undefined;
   const sizes: { label: string; size: string }[] = [];
 
@@ -180,6 +189,7 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
       case "email": email = val; break;
       case "phone": phone = val; break;
       case "team": teamName = val; break;
+      case "manager_name": managerName = val; break;
       case "notes": notes = val; break;
       case "size": {
         const label = m.sizeLabel?.trim() || `Size ${i + 1}`;
@@ -190,7 +200,7 @@ function buildMappedRow(rawRow: string[], mappings: ColumnMapping[]): MappedRow 
   }
 
   if (!firstName) return null;
-  return { firstName, lastName, employeeNumber, jobTitle, email, phone, teamName, notes, sizes };
+  return { firstName, lastName, employeeNumber, jobTitle, email, phone, teamName, managerName, notes, sizes };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -513,8 +523,8 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {(Object.entries(COLUMN_TYPE_LABELS) as [ColumnType, string][]).map(([t, label]) => (
-                            <SelectItem key={t} value={t}>{label}</SelectItem>
+                          {MAPPABLE_COLUMN_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>{COLUMN_TYPE_LABELS[t]}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

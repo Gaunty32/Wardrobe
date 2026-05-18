@@ -1456,6 +1456,23 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [dupWarning, setDupWarning] = useState<string | null>(null);
   const [teamAddMode, setTeamAddMode] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkRoleId, setBulkRoleId] = useState<number | "none">("none");
+
+  const bulkUpdateRole = useMutation({
+    mutationFn: ({ employeeIds, roleId }: { employeeIds: number[]; roleId: number | null }) =>
+      apiFetch(`/customers/${customerId}/employees/bulk-role`, {
+        method: "POST",
+        body: JSON.stringify({ employeeIds, roleId }),
+      }),
+    onSuccess: (_data, vars) => {
+      inv();
+      setSelectedIds(new Set());
+      setBulkRoleId("none");
+      toast({ title: `Role updated on ${vars.employeeIds.length} employee${vars.employeeIds.length === 1 ? "" : "s"}` });
+    },
+    onError: (err: any) => toast({ title: "Bulk update failed", description: err?.message, variant: "destructive" }),
+  });
 
   const addTeamInline = useMutation({
     mutationFn: (name: string) => apiFetch(`/customers/${customerId}/teams`, { method: "POST", body: JSON.stringify({ name }) }),
@@ -1628,8 +1645,36 @@ function EmployeesTab({ customerId }: { customerId: number }) {
         : filteredEmployees.length === 0 ? (
           <div className="text-center py-8 text-sm text-muted-foreground">No employees match your search.</div>
         )
-        : <SubTable>
+        : <>
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-3 mb-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20 text-sm">
+              <span className="font-medium text-primary shrink-0">{selectedIds.size} selected</span>
+              <span className="text-muted-foreground shrink-0">Set role:</span>
+              <Select value={bulkRoleId === "none" ? "none" : String(bulkRoleId)} onValueChange={v => setBulkRoleId(v === "none" ? "none" : Number(v))}>
+                <SelectTrigger className="h-7 w-44 text-xs"><SelectValue placeholder="Choose role…" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No role</SelectItem>
+                  {(roles as any[])?.map((r: any) => <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button size="sm" className="h-7 text-xs px-3" disabled={bulkUpdateRole.isPending}
+                onClick={() => bulkUpdateRole.mutate({ employeeIds: [...selectedIds], roleId: bulkRoleId === "none" ? null : bulkRoleId as number })}>
+                {bulkUpdateRole.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Apply"}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs px-2 ml-auto" onClick={() => setSelectedIds(new Set())}>Clear</Button>
+            </div>
+          )}
+          <SubTable>
           <TableHeader><TableRow className="hover:bg-transparent">
+            <TableHead className="w-8 pr-0">
+              <input type="checkbox" className="rounded border-border cursor-pointer"
+                checked={filteredEmployees.length > 0 && filteredEmployees.every((e: any) => selectedIds.has(e.id))}
+                onChange={e => {
+                  if (e.target.checked) setSelectedIds(new Set(filteredEmployees.map((e: any) => e.id)));
+                  else setSelectedIds(new Set());
+                }}
+              />
+            </TableHead>
             <TableHead>Name</TableHead>
             <TableHead className="hidden sm:table-cell">Team</TableHead>
             <TableHead className="hidden md:table-cell">Role</TableHead>
@@ -1638,7 +1683,17 @@ function EmployeesTab({ customerId }: { customerId: number }) {
           </TableRow></TableHeader>
           <TableBody>
             {filteredEmployees.map((e: any) => (
-              <TableRow key={e.id} className={cn("group hover:bg-muted/30", !e.isActive && "opacity-50")}>
+              <TableRow key={e.id} className={cn("group hover:bg-muted/30", !e.isActive && "opacity-50", selectedIds.has(e.id) && "bg-primary/5")}>
+                <TableCell className="pr-0">
+                  <input type="checkbox" className="rounded border-border cursor-pointer"
+                    checked={selectedIds.has(e.id)}
+                    onChange={ev => {
+                      const next = new Set(selectedIds);
+                      if (ev.target.checked) next.add(e.id); else next.delete(e.id);
+                      setSelectedIds(next);
+                    }}
+                  />
+                </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <div>

@@ -641,6 +641,7 @@ const importRowSchema = z.object({
   email: z.string().optional().nullable(),
   phone: z.string().optional().nullable(),
   teamName: z.string().optional().nullable(),
+  managerName: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   sizes: z.array(z.object({ label: z.string(), size: z.string() })).optional(),
 });
@@ -674,6 +675,7 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
 
   let created = 0, updated = 0, skipped = 0;
   const errors: { row: number; error: string }[] = [];
+  const managerResolutions: { employeeId: number; managerName: string }[] = [];
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -762,13 +764,57 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
           }
         }
       }
+
+      // Track manager name for second pass
+      if (row.managerName?.trim()) {
+        managerResolutions.push({ employeeId, managerName: row.managerName.trim() });
+      }
     } catch (err: any) {
       errors.push({ row: i + 1, error: err.message ?? "Unknown error" });
       skipped++;
     }
   }
 
+  // ── Second pass: resolve manager names → IDs ─────────────────────────────
+  // All employees (including newly created ones) are now in existingEmployees.
+  for (const { employeeId, managerName } of managerResolutions) {
+    const nameLower = managerName.toLowerCase();
+    const manager = existingEmployees.find(
+      (e) => [e.firstName, e.lastName].filter(Boolean).join(" ").toLowerCase() === nameLower
+        && e.id !== employeeId
+    );
+    if (manager) {
+      await db.update(customerEmployeesTable)
+        .set({ managerId: manager.id, updatedAt: new Date() })
+        .where(eq(customerEmployeesTable.id, employeeId));
+    }
+  }
+
   res.json({ created, updated, skipped, errors });
+});
+
+// ─── Bulk Role Assignment ─────────────────────────────────────────────────────
+
+const bulkRoleBody = z.object({
+  employeeIds: z.array(z.number().int().positive()).min(1),
+  roleId: z.number().int().positive().optional().nullable(),
+});
+
+router.post("/customers/:customerId/employees/bulk-role", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = bulkRoleBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { employeeIds, roleId } = body.data;
+  await db.update(customerEmployeesTable)
+    .set({ roleId: roleId ?? null, updatedAt: new Date() })
+    .where(and(
+      eq(customerEmployeesTable.customerId, p.data.customerId),
+      sql`${customerEmployeesTable.id} = ANY(${sql`ARRAY[${sql.join(employeeIds.map(id => sql`${id}`), sql`, `)}]::int[]`})`
+    ));
+
+  res.json({ updated: employeeIds.length });
 });
 
 // ─── Employee Sizes ───────────────────────────────────────────────────────────
