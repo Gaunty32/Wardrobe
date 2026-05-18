@@ -1742,7 +1742,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
               </TableRow>
             ))}
           </TableBody>
-        </SubTable>}
+        </SubTable>
+        </>}
 
       <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); setDupWarning(null); } }}>
         <DialogContent className="sm:max-w-[520px] max-h-[90vh] overflow-y-auto">
