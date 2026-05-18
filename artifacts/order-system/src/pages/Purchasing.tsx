@@ -307,14 +307,15 @@ function POMatrixView({ items, currency, onDeleteLine }: { items: POItem[]; curr
                       <TableCell className="text-center font-bold">{rowTotal}</TableCell>
                       {onDeleteLine && (
                         <TableCell className="text-center p-1">
-                          {rowIds.map((id) => (
-                            <button key={id}
-                              onClick={() => { if (confirm("Remove this line from the PO?")) onDeleteLine(id); }}
-                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                              title="Remove line">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          ))}
+                          <button
+                            onClick={() => {
+                              if (confirm(`Remove ${colour} row (${rowTotal} units) from the PO?`))
+                                rowIds.forEach(id => onDeleteLine(id));
+                            }}
+                            className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title="Remove this colour row from PO">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </TableCell>
                       )}
                     </TableRow>
