@@ -1409,8 +1409,13 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     sizesMap[pid][col].push(row.size);
   }
 
-  // Fallback: for products with no variant-level sizes, check product_attributes (type='size')
-  // These are synced from WooCommerce product-level size attributes (colour-only variable products)
+  // Always merge product_attributes (type='size') into sizesMap under the "__any__" key.
+  // This covers colour-only variable products whose WooCommerce variations don't carry a
+  // size attribute (sizes live only at the product level), AND guards against the sync
+  // inadvertently writing a single dummy size (e.g. "2XL") into product_variants for
+  // what is really a colour-only product — without this merge the fallback would never
+  // fire and only that one size would be presented.  The frontend deduplicates with
+  // Set so adding sizes that are already present from product_variants is harmless.
   try {
     const attrSizeRows = await db.execute(sql`
       SELECT DISTINCT pa.product_id, pa.value AS size
@@ -1426,12 +1431,9 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     `);
     for (const row of attrSizeRows.rows as any[]) {
       const pid = String(row.product_id);
-      // Only use attribute sizes for products that have no variant-level sizes
-      if (!sizesMap[pid] || Object.values(sizesMap[pid]).every(arr => arr.length === 0)) {
-        if (!sizesMap[pid]) sizesMap[pid] = {};
-        if (!sizesMap[pid]["__any__"]) sizesMap[pid]["__any__"] = [];
-        sizesMap[pid]["__any__"].push(row.size);
-      }
+      if (!sizesMap[pid]) sizesMap[pid] = {};
+      if (!sizesMap[pid]["__any__"]) sizesMap[pid]["__any__"] = [];
+      sizesMap[pid]["__any__"].push(row.size);
     }
   } catch {
     // product_attributes may not have size data — not fatal, sizesMap remains from variants
