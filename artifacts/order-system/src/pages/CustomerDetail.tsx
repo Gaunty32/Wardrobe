@@ -1453,6 +1453,9 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [nameSearch, setNameSearch] = useState("");
   const [empRoleFilter, setEmpRoleFilter] = useState<number | null | "all">("all");
   const [empManagerFilter, setEmpManagerFilter] = useState<number | null | "all">("all");
+  const [empTeamFilter, setEmpTeamFilter] = useState<number | null | "all">("all");
+  const [empNumSearch, setEmpNumSearch] = useState("");
+  const [empEmailSearch, setEmpEmailSearch] = useState("");
   const [dupWarning, setDupWarning] = useState<string | null>(null);
   const [teamAddMode, setTeamAddMode] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
@@ -1576,7 +1579,10 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     const matchesName = !nameSearch.trim() || fullName.includes(nameSearch.toLowerCase().trim());
     const matchesRole = empRoleFilter === "all" || e.roleId === empRoleFilter;
     const matchesManager = empManagerFilter === "all" || e.managerId === empManagerFilter;
-    return matchesName && matchesRole && matchesManager;
+    const matchesTeam = empTeamFilter === "all" || e.teamId === empTeamFilter;
+    const matchesEmpNum = !empNumSearch.trim() || (e.employeeNumber ?? "").toLowerCase().includes(empNumSearch.toLowerCase().trim());
+    const matchesEmail = !empEmailSearch.trim() || (e.email ?? "").toLowerCase().includes(empEmailSearch.toLowerCase().trim());
+    return matchesName && matchesRole && matchesManager && matchesTeam && matchesEmpNum && matchesEmail;
   });
 
   return (
@@ -1599,15 +1605,6 @@ function EmployeesTab({ customerId }: { customerId: number }) {
           </button>
         </div>
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <input
-              className="h-8 w-48 rounded-md border border-input bg-transparent pl-7 pr-3 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              placeholder="Search by name..."
-              value={nameSearch}
-              onChange={e => setNameSearch(e.target.value)}
-            />
-            <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          </div>
           <Button size="sm" variant="outline" onClick={() => setShowImportDialog(true)} className="gap-1.5">
             <FileSpreadsheet className="w-4 h-4" /> Import
           </Button>
@@ -1615,30 +1612,6 @@ function EmployeesTab({ customerId }: { customerId: number }) {
         </div>
       </div>
 
-      {(roles as any[])?.length > 0 && (
-        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-          <span className="text-xs text-muted-foreground shrink-0">Role:</span>
-          <button onClick={() => setEmpRoleFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === "all" ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All</button>
-          <button onClick={() => setEmpRoleFilter(null)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === null ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>No role</button>
-          {(roles as any[]).map((r: any) => (
-            <button key={r.id} onClick={() => setEmpRoleFilter(r.id)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empRoleFilter === r.id ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{r.name}</button>
-          ))}
-        </div>
-      )}
-      {(employees as any[])?.some((e: any) => e.managerId) && (
-        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-          <span className="text-xs text-muted-foreground shrink-0">Manager:</span>
-          <button onClick={() => setEmpManagerFilter("all")} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empManagerFilter === "all" ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>All</button>
-          <button onClick={() => setEmpManagerFilter(null)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empManagerFilter === null ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>No manager</button>
-          {(employees as any[])?.filter((e: any, i: number, arr: any[]) => e.managerId && arr.findIndex((m: any) => m.id === e.managerId) >= 0).reduce((acc: any[], e: any) => {
-            const mgr = (employees as any[]).find((m: any) => m.id === e.managerId);
-            if (mgr && !acc.find((a: any) => a.id === mgr.id)) acc.push(mgr);
-            return acc;
-          }, []).map((mgr: any) => (
-            <button key={mgr.id} onClick={() => setEmpManagerFilter(mgr.id)} className={cn("px-2.5 py-1 rounded-full text-xs font-medium transition-colors", empManagerFilter === mgr.id ? "bg-indigo-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80")}>{[mgr.firstName, mgr.lastName].filter(Boolean).join(" ")}</button>
-          ))}
-        </div>
-      )}
 
       {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
         : !employees?.length ? <EmptyState icon={UserCheck} label="employees" onAdd={openAdd} />
@@ -1665,22 +1638,81 @@ function EmployeesTab({ customerId }: { customerId: number }) {
             </div>
           )}
           <SubTable>
-          <TableHeader><TableRow className="hover:bg-transparent">
-            <TableHead className="w-8 pr-0">
-              <input type="checkbox" className="rounded border-border cursor-pointer"
-                checked={filteredEmployees.length > 0 && filteredEmployees.every((e: any) => selectedIds.has(e.id))}
-                onChange={e => {
-                  if (e.target.checked) setSelectedIds(new Set(filteredEmployees.map((e: any) => e.id)));
-                  else setSelectedIds(new Set());
-                }}
-              />
-            </TableHead>
-            <TableHead>Name</TableHead>
-            <TableHead className="hidden sm:table-cell">Team</TableHead>
-            <TableHead className="hidden md:table-cell">Role</TableHead>
-            <TableHead className="hidden lg:table-cell">Email</TableHead>
-            <TableHead className="text-right w-28">Actions</TableHead>
-          </TableRow></TableHeader>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-8 pr-0">
+                <input type="checkbox" className="rounded border-border cursor-pointer"
+                  checked={filteredEmployees.length > 0 && filteredEmployees.every((e: any) => selectedIds.has(e.id))}
+                  onChange={e => {
+                    if (e.target.checked) setSelectedIds(new Set(filteredEmployees.map((e: any) => e.id)));
+                    else setSelectedIds(new Set());
+                  }}
+                />
+              </TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead className="hidden xs:table-cell w-28">Emp No.</TableHead>
+              <TableHead className="hidden sm:table-cell">Team</TableHead>
+              <TableHead className="hidden md:table-cell">Role</TableHead>
+              <TableHead className="hidden lg:table-cell">Email</TableHead>
+              <TableHead className="text-right w-28">Actions</TableHead>
+            </TableRow>
+            <TableRow className="hover:bg-transparent border-b border-border/50">
+              <TableHead className="py-1 pr-0 w-8" />
+              <TableHead className="py-1">
+                <input
+                  className="h-6 w-full rounded border border-input bg-background px-2 text-xs placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="Filter name…"
+                  value={nameSearch}
+                  onChange={e => setNameSearch(e.target.value)}
+                />
+              </TableHead>
+              <TableHead className="hidden xs:table-cell py-1 w-28">
+                <input
+                  className="h-6 w-full rounded border border-input bg-background px-2 text-xs placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="Filter…"
+                  value={empNumSearch}
+                  onChange={e => setEmpNumSearch(e.target.value)}
+                />
+              </TableHead>
+              <TableHead className="hidden sm:table-cell py-1">
+                <select
+                  className="h-6 w-full rounded border border-input bg-background px-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={empTeamFilter === "all" ? "__all__" : empTeamFilter === null ? "__none__" : String(empTeamFilter)}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setEmpTeamFilter(v === "__all__" ? "all" : v === "__none__" ? null : Number(v));
+                  }}
+                >
+                  <option value="__all__">All teams</option>
+                  <option value="__none__">No team</option>
+                  {(teams as any[])?.map((t: any) => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+                </select>
+              </TableHead>
+              <TableHead className="hidden md:table-cell py-1">
+                <select
+                  className="h-6 w-full rounded border border-input bg-background px-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={empRoleFilter === "all" ? "__all__" : empRoleFilter === null ? "__none__" : String(empRoleFilter)}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setEmpRoleFilter(v === "__all__" ? "all" : v === "__none__" ? null : Number(v));
+                  }}
+                >
+                  <option value="__all__">All roles</option>
+                  <option value="__none__">No role</option>
+                  {(roles as any[])?.map((r: any) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
+                </select>
+              </TableHead>
+              <TableHead className="hidden lg:table-cell py-1">
+                <input
+                  className="h-6 w-full rounded border border-input bg-background px-2 text-xs placeholder:text-muted-foreground/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder="Filter email…"
+                  value={empEmailSearch}
+                  onChange={e => setEmpEmailSearch(e.target.value)}
+                />
+              </TableHead>
+              <TableHead className="py-1 w-28" />
+            </TableRow>
+          </TableHeader>
           <TableBody>
             {filteredEmployees.map((e: any) => (
               <TableRow key={e.id} className={cn("group hover:bg-muted/30", !e.isActive && "opacity-50", selectedIds.has(e.id) && "bg-primary/5")}>
@@ -1695,12 +1727,11 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                   />
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center gap-2">
-                    <div>
-                      <p className="font-medium">{[e.firstName, e.lastName].filter(Boolean).join(' ')}{e.employeeNumber && <span className="ml-2 text-[10px] font-mono text-muted-foreground">{e.employeeNumber}</span>}</p>
-                      {!e.isActive && <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-100 rounded px-1">Inactive</span>}
-                    </div>
-                  </div>
+                  <p className="font-medium">{[e.firstName, e.lastName].filter(Boolean).join(' ')}</p>
+                  {!e.isActive && <span className="text-[10px] font-medium text-amber-600 bg-amber-50 border border-amber-100 rounded px-1">Inactive</span>}
+                </TableCell>
+                <TableCell className="hidden xs:table-cell text-sm font-mono text-muted-foreground w-28">
+                  {e.employeeNumber || <span className="text-muted-foreground/30">—</span>}
                 </TableCell>
                 <TableCell className="hidden sm:table-cell text-sm">
                   {e.teamName
