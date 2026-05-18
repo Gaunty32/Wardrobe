@@ -449,12 +449,24 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           await db.insert(productVariantsTable).values(variantRows);
         }
 
-        // Update product_attributes colour/size palette from synced data
-        await db.delete(productAttributesTable).where(eq(productAttributesTable.productId, productId));
+        // Update product_attributes colour/size palette from synced data.
+        // Only replace a type when WooCommerce actually provided values for it — this
+        // preserves manually-added sizes for colour-only variable products where
+        // WooCommerce has no Size attribute defined (e.g. polo shirts, t-shirts).
         const attrValues: { productId: number; type: string; value: string; imageUrl: string | null; sortOrder: number }[] = [];
         let i = 0;
-        for (const c of colours) attrValues.push({ productId, type: "colour", value: c, imageUrl: colourImages.get(c) ?? null, sortOrder: i++ });
-        for (const s of sizes) attrValues.push({ productId, type: "size", value: s, imageUrl: null, sortOrder: i++ });
+        if (colours.size > 0) {
+          await db.delete(productAttributesTable).where(
+            and(eq(productAttributesTable.productId, productId), eq(productAttributesTable.type, "colour"))
+          );
+          for (const c of colours) attrValues.push({ productId, type: "colour", value: c, imageUrl: colourImages.get(c) ?? null, sortOrder: i++ });
+        }
+        if (sizes.size > 0) {
+          await db.delete(productAttributesTable).where(
+            and(eq(productAttributesTable.productId, productId), eq(productAttributesTable.type, "size"))
+          );
+          for (const s of sizes) attrValues.push({ productId, type: "size", value: s, imageUrl: null, sortOrder: i++ });
+        }
         if (attrValues.length > 0) await db.insert(productAttributesTable).values(attrValues);
 
       } catch (err) {
