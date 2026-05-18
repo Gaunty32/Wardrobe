@@ -86,6 +86,7 @@ interface BackorderLine {
   poId: number;
   poNumber: string;
   supplierName: string;
+  sentAt: string | null;
   productName: string;
   colour: string | null;
   size: string | null;
@@ -94,6 +95,7 @@ interface BackorderLine {
   quantityDelivered: number;
   remaining: number;
   estimatedDueDate: string | null;
+  daysOverdue: number | null;
   orderId: number | null;
   orderNumber: string | null;
   customerName: string | null;
@@ -1475,13 +1477,13 @@ export default function Purchasing() {
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                 <CheckCircle className="w-12 h-12 text-green-400" />
                 <p className="text-lg font-medium">No backorders</p>
-                <p className="text-sm">Lines with a backorder date set will appear here until the stock arrives.</p>
+                <p className="text-sm">PO lines with outstanding quantities after 5 days will appear here.</p>
               </div>
             ) : (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground flex items-center gap-2">
                   <ClipboardList className="w-4 h-4 text-amber-500" />
-                  {backorders.length} line{backorders.length !== 1 ? "s" : ""} on backorder
+                  {backorders.length} line{backorders.length !== 1 ? "s" : ""} overdue — ordered more than 5 days ago with quantity still outstanding
                 </p>
                 {backorders.map((b) => (
                   <div key={b.id} className="rounded-xl border border-amber-200 bg-amber-50/40 px-4 py-3 space-y-1.5">
@@ -1505,6 +1507,11 @@ export default function Purchasing() {
                       </div>
                       <div className="flex flex-col items-end gap-1 text-right flex-shrink-0">
                         <div className="flex items-center gap-2">
+                          {b.daysOverdue != null && b.daysOverdue > 0 && (
+                            <Badge className="bg-red-100 text-red-800 border border-red-300 text-xs font-semibold">
+                              {b.daysOverdue} day{b.daysOverdue !== 1 ? "s" : ""} overdue
+                            </Badge>
+                          )}
                           <Badge className="bg-amber-100 text-amber-800 border border-amber-300 text-xs font-semibold">
                             {b.remaining} still pending
                           </Badge>

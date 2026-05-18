@@ -796,7 +796,9 @@ router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Pro
   res.json({ ...result, allocation });
 });
 
-// ── Backorders: PO lines with pending qty and an expected delivery date ────────
+// ── Backorders: PO lines that are more than 5 days overdue (sent > 5 days ago,
+//    still with outstanding quantity).  Items on POs sent within the last 5 days
+//    are normal "awaiting delivery" — they only become backorders once overdue.
 router.get("/purchasing/backorders", async (req, res): Promise<void> => {
   const rows = await db
     .select({
@@ -804,6 +806,7 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
       poId: purchaseOrderItemsTable.poId,
       poNumber: purchaseOrdersTable.poNumber,
       supplierName: purchaseOrdersTable.supplierName,
+      sentAt: purchaseOrdersTable.sentAt,
       productName: purchaseOrderItemsTable.productName,
       colour: purchaseOrderItemsTable.colour,
       size: purchaseOrderItemsTable.size,
@@ -823,12 +826,17 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
     .where(and(
       eq(purchaseOrdersTable.status, "ordered"),
       lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
+      // Only flag as backorder once the PO has been outstanding for more than 5 days
+      sql`${purchaseOrdersTable.sentAt} < NOW() - INTERVAL '5 days'`,
     ))
-    .orderBy(purchaseOrderItemsTable.estimatedDueDate);
+    .orderBy(purchaseOrdersTable.sentAt, purchaseOrderItemsTable.estimatedDueDate);
 
   res.json(rows.map((r) => ({
     ...r,
     remaining: r.quantityOrdered - r.quantityDelivered,
+    daysOverdue: r.sentAt
+      ? Math.floor((Date.now() - new Date(r.sentAt).getTime()) / 86_400_000) - 5
+      : null,
   })));
 });
 
