@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useUpload } from "@workspace/object-storage-web";
 import { ProcessStockTab } from "@/pages/ProcessStock";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -872,35 +872,43 @@ function toDateInputValue(iso: string | null): string {
 
 function DeliveryRow({ line, onSave }: {
   line: POItem;
-  onSave: (itemId: number, data: { quantityDelivered?: number; estimatedDueDate?: string | null }) => void;
+  onSave: (itemId: number, data: { quantityDelivered?: number; quantityOrdered?: number; estimatedDueDate?: string | null }) => void;
 }) {
   const [qtyDel, setQtyDel] = useState(String(line.quantityDelivered));
+  const [qtyOrd, setQtyOrd] = useState(String(line.quantityOrdered));
   const [dueDate, setDueDate] = useState(toDateInputValue(line.estimatedDueDate));
   const [saved, setSaved] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const qtyRef = useRef(qtyDel);
+  const qtyOrdRef = useRef(qtyOrd);
   const dateRef = useRef(dueDate);
   qtyRef.current = qtyDel;
+  qtyOrdRef.current = qtyOrd;
   dateRef.current = dueDate;
+
+  useEffect(() => { setQtyOrd(String(line.quantityOrdered)); }, [line.quantityOrdered]);
 
   const triggerSave = useCallback(() => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       const parsed = parseInt(qtyRef.current);
+      const parsedOrd = parseInt(qtyOrdRef.current);
       onSave(line.id, {
         quantityDelivered: isNaN(parsed) ? 0 : Math.max(0, parsed),
+        quantityOrdered: isNaN(parsedOrd) ? line.quantityOrdered : Math.max(1, parsedOrd),
         estimatedDueDate: dateRef.current || null,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     }, 120);
-  }, [line.id, onSave]);
+  }, [line.id, line.quantityOrdered, onSave]);
 
+  const ordQty = parseInt(qtyOrd) || line.quantityOrdered;
   const qty = parseInt(qtyDel) || 0;
-  const fullyDelivered = qty >= line.quantityOrdered;
-  const overDelivered = qty > line.quantityOrdered;
-  const remaining = line.quantityOrdered - qty;
-  const surplus = qty - line.quantityOrdered;
+  const fullyDelivered = qty >= ordQty;
+  const overDelivered = qty > ordQty;
+  const remaining = ordQty - qty;
+  const surplus = qty - ordQty;
 
   return (
     <div className={`rounded-lg border px-3 py-2.5 transition-colors ${
@@ -924,6 +932,17 @@ function DeliveryRow({ line, onSave }: {
           )}
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
+          {/* Ordered qty — editable */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Ord:</span>
+            <Input
+              type="number" min={1} value={qtyOrd}
+              onChange={(e) => setQtyOrd(e.target.value)}
+              onBlur={triggerSave}
+              className="h-7 w-14 text-sm text-center px-1"
+              title="Order quantity"
+            />
+          </div>
           {/* Received qty — no max cap, allows over-delivery */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Rcvd:</span>
@@ -933,7 +952,6 @@ function DeliveryRow({ line, onSave }: {
               onBlur={triggerSave}
               className={`h-7 w-14 text-sm text-center px-1 ${overDelivered ? "border-orange-400 text-orange-700" : ""}`}
             />
-            <span className="text-xs text-muted-foreground">/ {line.quantityOrdered}</span>
           </div>
           {/* Backorder due date — always visible so users can set it */}
           <div className="flex items-center gap-1.5">
@@ -961,6 +979,58 @@ function DeliveryRow({ line, onSave }: {
             <span className="text-xs text-blue-600 font-medium">backorder set</span>
           ) : null}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function DraftItemRow({ line, poId, onUpdate }: {
+  line: POItem;
+  poId: number;
+  onUpdate: (poId: number, itemId: number, data: Record<string, unknown>) => void;
+}) {
+  const [qty, setQty] = useState(String(line.quantityOrdered));
+  const [saved, setSaved] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const qtyRef = useRef(qty);
+  qtyRef.current = qty;
+
+  useEffect(() => { setQty(String(line.quantityOrdered)); }, [line.quantityOrdered]);
+
+  const triggerSave = useCallback(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const parsed = parseInt(qtyRef.current);
+      if (!isNaN(parsed) && parsed >= 1) {
+        onUpdate(poId, line.id, { quantityOrdered: parsed });
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    }, 300);
+  }, [poId, line.id, onUpdate]);
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 bg-card">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          {line.supplierCode && (
+            <span className="font-mono text-xs font-bold text-primary">{line.supplierCode}</span>
+          )}
+          <span className="text-sm">{line.canonicalProductName ?? line.productName}</span>
+        </div>
+        {(line.colour || line.size) && (
+          <div className="text-xs text-muted-foreground">{[line.colour, line.size].filter(Boolean).join(" / ")}</div>
+        )}
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <span className="text-xs text-muted-foreground">Qty:</span>
+        <Input
+          type="number" min={1} value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          onBlur={triggerSave}
+          className="h-7 w-16 text-sm text-center px-1"
+        />
+        {saved && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
       </div>
     </div>
   );
@@ -1151,6 +1221,20 @@ function POCard({
                 currency={po.supplierCurrency}
                 onDeleteLine={po.status === "draft" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
               />
+
+              {po.status === "draft" && (
+                <div className="space-y-2 pt-3 border-t border-border">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Package className="w-3.5 h-3.5" /> Order Quantities
+                  </h4>
+                  <div className="space-y-1.5">
+                    {po.items.map((line) => (
+                      <DraftItemRow key={line.id} line={line} poId={po.id} onUpdate={onLineUpdate} />
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Quantities save automatically when you click away.</p>
+                </div>
+              )}
 
               {po.status === "ordered" && (
                 <div className="space-y-3 pt-3 border-t border-border">
