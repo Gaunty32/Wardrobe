@@ -1214,6 +1214,7 @@ export default function Purchasing() {
     onSuccess: () => {
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] });
       toast({ title: "Line removed", description: "Item returned to purchasing requirements." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
