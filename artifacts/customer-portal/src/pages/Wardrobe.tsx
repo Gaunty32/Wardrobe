@@ -117,11 +117,19 @@ export default function Wardrobe() {
                         const firstItem = items[0];
                         const colours = [...new Set(items.map((i: any) => i.colour).filter(Boolean))];
                         const price = firstItem.special_price ?? firstItem.unit_price;
+                        const thumbUrl = firstItem.variant_image_url ?? firstItem.product_image_url ?? null;
                         return (
                           <div
                             key={productName}
                             className="flex items-start justify-between gap-3 rounded-lg border px-3 py-2.5 bg-background"
                           >
+                            {thumbUrl && (
+                              <img
+                                src={thumbUrl}
+                                alt={productName}
+                                className="w-12 h-12 object-contain rounded shrink-0 bg-muted/30"
+                              />
+                            )}
                             <div className="flex-1 min-w-0">
                               <p className="font-medium text-sm truncate">{productName}</p>
                               {firstItem.product_sku && (
