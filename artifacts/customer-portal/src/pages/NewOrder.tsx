@@ -1831,6 +1831,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const shippingCost = selectedShipping?.cost ?? 0;
 
   const itemsTotal = basket.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+  const totalQty = basket.reduce((s, i) => s + i.quantity, 0);
   const orderTotal = itemsTotal + shippingCost;
 
   const updateQty = (idx: number, delta: number) => {
@@ -1935,6 +1936,10 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             </Table>
           </div>
           <div className="border-t px-5 py-3 space-y-1.5">
+            <div className="flex justify-end gap-6">
+              <span className="text-muted-foreground text-sm">Total quantity</span>
+              <span className="text-sm font-medium w-20 text-right">{totalQty} item{totalQty !== 1 ? "s" : ""}</span>
+            </div>
             <div className="flex justify-end gap-6">
               <span className="text-muted-foreground text-sm">Items subtotal</span>
               <span className="text-sm font-medium w-20 text-right">{formatCurrency(itemsTotal)}</span>
