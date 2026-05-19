@@ -1,10 +1,11 @@
 import { useState, useRef, useCallback } from "react";
+import { useUpload } from "@workspace/object-storage-web";
 import { ProcessStockTab } from "@/pages/ProcessStock";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
-  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip,
+  CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip, Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -382,13 +383,61 @@ function buildPOMailtoBody(po: PurchaseOrder, notes: string): string {
   return lines.join("\n");
 }
 
-function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open: boolean; onClose: () => void; onSent: () => void }) {
+function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
+  po: PurchaseOrder; open: boolean; onClose: () => void; onSent: () => void; onFileUploaded?: () => void;
+}) {
   const { toast } = useToast();
   const [notes, setNotes] = useState("");
   const [sending, setSending] = useState(false);
+  const [uploadingId, setUploadingId] = useState<number | null>(null);
+  // Optimistic map: processStockId → newly uploaded objectPath (so check appears immediately)
+  const [localFileUrls, setLocalFileUrls] = useState<Record<number, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingPsIdRef = useRef<number | null>(null);
+
+  const { uploadFile } = useUpload({
+    onError: (err) => toast({ title: "Upload failed", description: err.message, variant: "destructive" }),
+  });
 
   const processStockItems = po.items.filter((i) => i.processStockId != null);
-  const missingFiles = processStockItems.filter((i) => !i.processStockFileUrl);
+  const missingFiles = processStockItems.filter(
+    (i) => !localFileUrls[i.processStockId!] && !i.processStockFileUrl
+  );
+
+  const handleRowClick = (psId: number) => {
+    pendingPsIdRef.current = psId;
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const psId = pendingPsIdRef.current;
+    e.target.value = "";
+    if (!file || !psId) return;
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext !== "eps" && ext !== "pdf") {
+      toast({ title: "Invalid file type", description: "Please upload an EPS or PDF file.", variant: "destructive" });
+      return;
+    }
+
+    setUploadingId(psId);
+    try {
+      const result = await uploadFile(file);
+      await apiFetch(`/process-stock/${psId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ fileUrl: result.objectPath }),
+      });
+      setLocalFileUrls((s) => ({ ...s, [psId]: result.objectPath }));
+      toast({ title: "File attached", description: `${file.name} uploaded successfully.` });
+      onFileUploaded?.();
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setUploadingId(null);
+      pendingPsIdRef.current = null;
+    }
+  };
 
   const handleSend = async () => {
     setSending(true);
@@ -409,8 +458,22 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
+      {/* Hidden file input shared across all rows */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".eps,.pdf,application/postscript,application/pdf"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
       <DialogContent className="max-w-md flex flex-col max-h-[90vh]">
-        <DialogHeader className="shrink-0"><DialogTitle className="flex items-center gap-2"><Mail className="w-5 h-5 text-primary" />Send PO — {po.poNumber}</DialogTitle></DialogHeader>
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="flex items-center gap-2">
+            <Mail className="w-5 h-5 text-primary" />Send PO — {po.poNumber}
+          </DialogTitle>
+        </DialogHeader>
+
         <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
           <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm flex items-center gap-2">
             <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -423,23 +486,50 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
             <div className="space-y-1.5 min-h-0">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Print files to attach</div>
-                <div className="text-xs text-muted-foreground">{processStockItems.length - missingFiles.length}/{processStockItems.length} ready</div>
+                <div className="text-xs text-muted-foreground">
+                  {processStockItems.length - missingFiles.length}/{processStockItems.length} ready
+                </div>
               </div>
               <div className="rounded-lg border border-border divide-y text-sm overflow-y-auto max-h-52">
-                {processStockItems.map((i) => (
-                  <div key={i.id} className="flex items-center gap-2 px-3 py-2">
-                    {i.processStockFileUrl
-                      ? <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                      : <TriangleAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
-                    <span className="font-mono text-xs font-semibold text-indigo-700 shrink-0">{i.supplierCode ?? "—"}</span>
-                    <span className="truncate">{i.productName}</span>
-                    {!i.processStockFileUrl && <span className="ml-auto text-xs text-amber-600 whitespace-nowrap">no file</span>}
-                  </div>
-                ))}
+                {processStockItems.map((i) => {
+                  const hasFile = !!(localFileUrls[i.processStockId!] ?? i.processStockFileUrl);
+                  const isUploading = uploadingId === i.processStockId;
+                  return (
+                    <div
+                      key={i.id}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-2 transition-colors",
+                        !hasFile && !isUploading
+                          ? "cursor-pointer hover:bg-amber-50 group"
+                          : ""
+                      )}
+                      onClick={() => !hasFile && !isUploading && i.processStockId && handleRowClick(i.processStockId)}
+                      title={!hasFile ? "Click to upload print file (EPS or PDF)" : undefined}
+                    >
+                      {isUploading ? (
+                        <Loader2 className="w-3.5 h-3.5 text-primary shrink-0 animate-spin" />
+                      ) : hasFile ? (
+                        <CheckCircle className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                      ) : (
+                        <TriangleAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      )}
+                      <span className="font-mono text-xs font-semibold text-indigo-700 shrink-0">{i.supplierCode ?? "—"}</span>
+                      <span className="truncate flex-1">{i.productName}</span>
+                      {isUploading && (
+                        <span className="ml-auto text-xs text-primary whitespace-nowrap">Uploading…</span>
+                      )}
+                      {!hasFile && !isUploading && (
+                        <span className="ml-auto flex items-center gap-1 text-xs text-amber-600 whitespace-nowrap group-hover:text-primary transition-colors">
+                          <Upload className="w-3 h-3" /> Upload
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               {missingFiles.length > 0 && (
                 <p className="text-xs text-amber-700">
-                  {missingFiles.length} item{missingFiles.length !== 1 ? "s" : ""} without a print file — upload them in Process Stock before sending.
+                  {missingFiles.length} item{missingFiles.length !== 1 ? "s" : ""} without a print file — click a row above to upload.
                 </p>
               )}
             </div>
@@ -450,6 +540,7 @@ function POEmailDialog({ po, open, onClose, onSent }: { po: PurchaseOrder; open:
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={2} />
           </div>
         </div>
+
         <DialogFooter className="gap-2 shrink-0">
           <Button variant="outline" className="gap-2 mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
             <FileText className="w-4 h-4" /> Preview PDF
@@ -998,7 +1089,7 @@ function POCard({
       )}
 
       {emailOpen && (
-        <POEmailDialog po={po} open={emailOpen} onClose={() => setEmailOpen(false)} onSent={onRefresh} />
+        <POEmailDialog po={po} open={emailOpen} onClose={() => setEmailOpen(false)} onSent={onRefresh} onFileUploaded={onRefresh} />
       )}
       {markOrderedOpen && (
         <MarkOrderedDialog
