@@ -216,7 +216,7 @@ async function getPoWithItems(poId: number) {
         ${productsTable.sku},
         (SELECT p2.sku FROM order_items oi2
          JOIN products p2 ON oi2.product_id = p2.id
-         WHERE oi2.id = ANY((${purchaseOrderItemsTable.sourceOrderItemIds})::int[])
+         WHERE (${purchaseOrderItemsTable.sourceOrderItemIds}) @> to_jsonb(oi2.id)
          AND p2.sku IS NOT NULL
          LIMIT 1)
       )`,
@@ -224,7 +224,7 @@ async function getPoWithItems(poId: number) {
         ${productsTable.name},
         (SELECT p2.name FROM order_items oi2
          JOIN products p2 ON oi2.product_id = p2.id
-         WHERE oi2.id = ANY((${purchaseOrderItemsTable.sourceOrderItemIds})::int[])
+         WHERE (${purchaseOrderItemsTable.sourceOrderItemIds}) @> to_jsonb(oi2.id)
          LIMIT 1)
       )`,
       processStockFileUrl: sql<string | null>`COALESCE(
