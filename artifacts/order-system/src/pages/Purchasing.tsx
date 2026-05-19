@@ -1311,7 +1311,7 @@ export default function Purchasing() {
   const supplierLogoMap = useMemo(() => {
     const map = new Map<string, string | null>();
     for (const s of allSuppliers) {
-      map.set(s.name, (s as any).logoUrl ?? null);
+      map.set(s.name.toLowerCase(), (s as any).logoUrl ?? null);
     }
     return map;
   }, [allSuppliers]);
@@ -1591,7 +1591,7 @@ export default function Purchasing() {
               ) : selectedDraftSupplier === null ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                   {draftTilesBySupplier.map((tile) => {
-                    const logoUrl = supplierLogoMap.get(tile.name);
+                    const logoUrl = supplierLogoMap.get(tile.name.toLowerCase());
                     return (
                       <button
                         key={tile.name}
@@ -1756,7 +1756,7 @@ export default function Purchasing() {
               ) : selectedOrdersSupplier === null ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                   {orderedBySupplier.map(({ name, pos }) => {
-                    const logoUrl = supplierLogoMap.get(name);
+                    const logoUrl = supplierLogoMap.get(name.toLowerCase());
                     const overdueCount = pos.filter((po) => {
                       if (!po.estimatedDeliveryDate) return false;
                       return new Date(po.estimatedDeliveryDate) < new Date();
@@ -1826,7 +1826,7 @@ export default function Purchasing() {
             ) : selectedCompletedSupplier === null ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {deliveredBySupplier.map(({ name, pos }) => {
-                  const logoUrl = supplierLogoMap.get(name);
+                  const logoUrl = supplierLogoMap.get(name.toLowerCase());
                   return (
                     <button
                       key={name}
@@ -1884,7 +1884,7 @@ export default function Purchasing() {
             ) : selectedBackordersSupplier === null ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {backordersBySupplier.map(({ name, lines }) => {
-                  const logoUrl = supplierLogoMap.get(name);
+                  const logoUrl = supplierLogoMap.get(name.toLowerCase());
                   const maxOverdue = Math.max(...lines.map(l => l.daysOverdue ?? 0));
                   return (
                     <button
