@@ -749,8 +749,23 @@ const SIZE_NORMALIZE: Record<string, string> = {
   "xxxl": "3XL", "xxx-large": "3XL", "3x-large": "3XL",
   "xxxxl": "4XL", "xxxx-large": "4XL", "4x-large": "4XL",
   "xxxxxl": "5XL", "5x-large": "5XL",
+  // Youth / children sizes — normalise to short labels that fit a 36pt PDF column
+  "extra small youth": "XS Yth", "xs youth": "XS Yth", "youth xs": "XS Yth", "xsmall youth": "XS Yth",
+  "small youth": "S Youth", "s youth": "S Youth", "youth s": "S Youth",
+  "medium youth": "M Youth", "m youth": "M Youth", "youth m": "M Youth",
+  "large youth": "L Youth", "l youth": "L Youth", "youth l": "L Youth",
+  "extra large youth": "XL Youth", "xl youth": "XL Youth", "youth xl": "XL Youth",
+  "xlarge youth": "XL Youth", "x-large youth": "XL Youth", "extra-large youth": "XL Youth",
+  "xxl youth": "2XL Yth", "youth xxl": "2XL Yth", "youth 2xl": "2XL Yth",
+  // Common child/youth shorthand
+  "xs yth": "XS Yth", "s yth": "S Youth", "m yth": "M Youth",
+  "l yth": "L Youth", "xl yth": "XL Youth", "2xl yth": "2XL Yth",
 };
-const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+const SIZE_ORDER = [
+  "One Size",
+  "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL",
+  "XS Yth", "S Youth", "M Youth", "L Youth", "XL Youth", "2XL Yth",
+];
 function normalizeSize(s: string): string { return SIZE_NORMALIZE[s.toLowerCase().trim()] ?? s; }
 function sortSizes(sizes: string[]): string[] {
   return [...sizes].sort((a, b) => {
