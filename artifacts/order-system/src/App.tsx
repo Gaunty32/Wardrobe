@@ -13,6 +13,7 @@ import CustomerDetail from "@/pages/CustomerDetail";
 import Products from "@/pages/Products";
 import ProductDetail from "@/pages/ProductDetail";
 import Stock from "@/pages/Stock";
+import ProcessStock from "@/pages/ProcessStock";
 import Purchasing from "@/pages/Purchasing";
 import Production from "@/pages/Production";
 import Suppliers from "@/pages/Suppliers";
@@ -93,6 +94,7 @@ function Router() {
       <Route path="/products" component={Products} />
       <Route path="/products/:id" component={ProductDetail} />
       <Route path="/stock" component={Stock} />
+      <Route path="/process-stock" component={ProcessStock} />
       <Route path="/purchasing" component={Purchasing} />
       <Route path="/production" component={Production} />
       <Route path="/suppliers" component={Suppliers} />
