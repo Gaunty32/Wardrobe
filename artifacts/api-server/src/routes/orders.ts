@@ -827,6 +827,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       deliveryAddressId: ordersTable.deliveryAddressId,
       stripePaymentLinkUrl: ordersTable.stripePaymentLinkUrl,
       shippingMethod: ordersTable.shippingMethod,
+      portalSubmittedByName: ordersTable.portalSubmittedByName,
     })
     .from(ordersTable)
     .where(eq(ordersTable.id, params.data.id));
