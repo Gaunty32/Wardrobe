@@ -1596,7 +1596,7 @@ export default function Purchasing() {
                       <button
                         key={tile.name}
                         onClick={() => setSelectedDraftSupplier(tile.name)}
-                        className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all group cursor-pointer"
+                        className="flex flex-col items-center gap-3 rounded-xl border border-border bg-white p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all group cursor-pointer"
                       >
                         <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
                           {logoUrl ? (
@@ -1765,7 +1765,7 @@ export default function Purchasing() {
                       <button
                         key={name}
                         onClick={() => setSelectedOrdersSupplier(name)}
-                        className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
+                        className="flex flex-col items-center gap-3 rounded-xl border border-border bg-white p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
                       >
                         <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
                           {logoUrl ? (
@@ -1831,7 +1831,7 @@ export default function Purchasing() {
                     <button
                       key={name}
                       onClick={() => setSelectedCompletedSupplier(name)}
-                      className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
+                      className="flex flex-col items-center gap-3 rounded-xl border border-border bg-white p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
                     >
                       <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
                         {logoUrl ? (
@@ -1890,7 +1890,7 @@ export default function Purchasing() {
                     <button
                       key={name}
                       onClick={() => setSelectedBackordersSupplier(name)}
-                      className="flex flex-col items-center gap-3 rounded-xl border border-amber-200 bg-card p-5 shadow-sm hover:shadow-md hover:border-amber-400 transition-all group cursor-pointer"
+                      className="flex flex-col items-center gap-3 rounded-xl border border-amber-200 bg-white p-5 shadow-sm hover:shadow-md hover:border-amber-400 transition-all group cursor-pointer"
                     >
                       <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
                         {logoUrl ? (
