@@ -531,7 +531,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       }
       const g = groups.get(gk)!;
       const c = item.colour ?? "—";
-      const s = item.size ?? "One Size";
+      const s = normalizeSize(item.size ?? "One Size");
       if (!g.colours.includes(c)) g.colours.push(c);
       if (!g.sizes.includes(s)) g.sizes.push(s);
       if (!allSizes.includes(s)) allSizes.push(s);
@@ -539,6 +539,12 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantity);
       g.lineTotal += item.lineTotal;
     }
+    allSizes.sort((a, b) => {
+      const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1; if (bi !== -1) return 1;
+      return a.localeCompare(b);
+    });
 
     const tableStartY = infoY + 26;
     const rowH = 13;
@@ -718,6 +724,29 @@ interface POData {
   items: POItemData[];
 }
 
+const SIZE_NORMALIZE: Record<string, string> = {
+  "one size": "One Size", "os": "One Size", "o/s": "One Size", "onesize": "One Size",
+  "x-small": "XS", "xsmall": "XS", "extra small": "XS",
+  "small": "S",
+  "medium": "M",
+  "large": "L",
+  "x-large": "XL", "xlarge": "XL", "extra large": "XL", "extra-large": "XL",
+  "xxl": "2XL", "xx-large": "2XL", "2x-large": "2XL",
+  "xxxl": "3XL", "xxx-large": "3XL", "3x-large": "3XL",
+  "xxxxl": "4XL", "xxxx-large": "4XL", "4x-large": "4XL",
+  "xxxxxl": "5XL", "5x-large": "5XL",
+};
+const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+function normalizeSize(s: string): string { return SIZE_NORMALIZE[s.toLowerCase().trim()] ?? s; }
+function sortSizes(sizes: string[]): string[] {
+  return [...sizes].sort((a, b) => {
+    const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1; if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+
 /** Build a matrix: groups by (supplierCode|productName), rows = colours, cols = sizes */
 function buildMatrix(items: POItemData[]) {
   const groupKeys: string[] = [];
@@ -731,13 +760,15 @@ function buildMatrix(items: POItemData[]) {
     }
     const g = groups.get(gk)!;
     const c = item.colour ?? "—";
-    const s = item.size ?? "—";
+    const s = normalizeSize(item.size ?? "—");
     if (!g.colours.includes(c)) g.colours.push(c);
     if (!g.sizes.includes(s)) g.sizes.push(s);
     if (!g.qty.has(c)) g.qty.set(c, new Map());
     g.qty.get(c)!.set(s, item.quantityOrdered);
     if (item.supplierPrice != null && g.price == null) g.price = item.supplierPrice;
   }
+  // Sort sizes within each group
+  for (const g of groups.values()) g.sizes = sortSizes(g.sizes);
   return { groupKeys, groups };
 }
 

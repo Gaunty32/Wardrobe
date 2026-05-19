@@ -109,6 +109,29 @@ const STATUS_CFG = {
   delivered: { label: "Delivered", color: "bg-green-100 text-green-800 border-green-300", icon: PackageCheck },
 };
 
+const SIZE_NORMALIZE: Record<string, string> = {
+  "one size": "One Size", "os": "One Size", "o/s": "One Size", "onesize": "One Size",
+  "x-small": "XS", "xsmall": "XS", "extra small": "XS",
+  "small": "S",
+  "medium": "M",
+  "large": "L",
+  "x-large": "XL", "xlarge": "XL", "extra large": "XL", "extra-large": "XL",
+  "xxl": "2XL", "xx-large": "2XL", "2x-large": "2XL",
+  "xxxl": "3XL", "xxx-large": "3XL", "3x-large": "3XL",
+  "xxxxl": "4XL", "xxxx-large": "4XL", "4x-large": "4XL",
+  "xxxxxl": "5XL", "5x-large": "5XL",
+};
+const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+function normalizeSize(s: string): string { return SIZE_NORMALIZE[s.toLowerCase().trim()] ?? s; }
+function sortSizes(sizes: string[]): string[] {
+  return [...sizes].sort((a, b) => {
+    const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1; if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+
 function buildPOMatrix(items: POItem[]) {
   const groupKeys: string[] = [];
   const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>>; rowItemIds: Map<string, number[]>; cellItemId: Map<string, Map<string, number>> }>();
@@ -116,7 +139,7 @@ function buildPOMatrix(items: POItem[]) {
     const gk = item.supplierCode ?? item.productName;
     if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map() }); }
     const g = groups.get(gk)!;
-    const c = item.colour ?? "—"; const s = item.size ?? "—";
+    const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
     if (!g.colours.includes(c)) g.colours.push(c);
     if (!g.sizes.includes(s)) g.sizes.push(s);
     if (!g.qty.has(c)) g.qty.set(c, new Map());
@@ -127,17 +150,9 @@ function buildPOMatrix(items: POItem[]) {
     if (!g.cellItemId.has(c)) g.cellItemId.set(c, new Map());
     g.cellItemId.get(c)!.set(s, item.id);
   }
-  const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
   const allSizesSet = new Set<string>();
   for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) allSizesSet.add(s);
-  const allSizes = [...allSizesSet].sort((a, b) => {
-    const ai = SIZE_ORDER.indexOf(a);
-    const bi = SIZE_ORDER.indexOf(b);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1;
-    if (bi !== -1) return 1;
-    return a.localeCompare(b);
-  });
+  const allSizes = sortSizes([...allSizesSet]);
   return { groupKeys, groups, allSizes };
 }
 
@@ -154,7 +169,7 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
     if (!groups.has(gk)) groupKeys.push(gk);
     if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() });
     const g = groups.get(gk)!;
-    const c = item.colour ?? "—"; const s = item.size ?? "—";
+    const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
     const cellKey = [item.productName, item.colour ?? "", item.size ?? "", effectiveCode ?? ""].join("|");
     if (!g.colours.includes(c)) g.colours.push(c);
     if (!g.sizes.includes(s)) g.sizes.push(s);
@@ -164,15 +179,9 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
     if (!g.rowItemIds.has(c)) g.rowItemIds.set(c, []);
     g.rowItemIds.get(c)!.push(item.itemId);
   }
-  const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
   const allSizesSet = new Set<string>();
   for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) allSizesSet.add(s);
-  const allSizes = [...allSizesSet].sort((a, b) => {
-    const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b);
-    if (ai !== -1 && bi !== -1) return ai - bi;
-    if (ai !== -1) return -1; if (bi !== -1) return 1;
-    return a.localeCompare(b);
-  });
+  const allSizes = sortSizes([...allSizesSet]);
   return { groupKeys, groups, allSizes };
 }
 
