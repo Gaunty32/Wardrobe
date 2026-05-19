@@ -264,6 +264,16 @@ export default function Products() {
     }
   };
 
+  const autoFillFccSku = async () => {
+    try {
+      const res = await fetch(`${BASE}/api/products/next-fcc-sku`);
+      const data = await res.json();
+      setFormData((f) => ({ ...f, sku: data.sku }));
+    } catch {
+      toast({ title: "Could not generate SKU", variant: "destructive" });
+    }
+  };
+
   const isSearching = search.trim().length > 0;
   const showTopGrid = !isSearching && !selectedTopCat && websiteFilter === "all";
   const showSubGrid = !isSearching && !!selectedTopCat && currentSubs.length > 0 && !selectedSubCat && websiteFilter === "all";
@@ -469,7 +479,12 @@ export default function Products() {
               <div className="grid gap-2">
                 <Label htmlFor="sku">SKU</Label>
                 <div className="flex gap-2">
-                  <Input id="sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g. POL-001" className="flex-1" />
+                  <Input id="sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g. FCC5129" className="flex-1" />
+                  {formData.customerId === "none" && (
+                    <Button type="button" variant="outline" size="sm" onClick={autoFillFccSku} className="gap-1.5 text-xs whitespace-nowrap text-blue-700 border-blue-200 hover:bg-blue-50">
+                      <Wand2 className="w-3.5 h-3.5" /> Suggest FCC
+                    </Button>
+                  )}
                   {formData.customerId !== "none" && (
                     <Button type="button" variant="outline" size="sm" onClick={autoFillBspSku} className="gap-1.5 text-xs whitespace-nowrap text-purple-700 border-purple-200 hover:bg-purple-50">
                       <Wand2 className="w-3.5 h-3.5" /> Auto BSP

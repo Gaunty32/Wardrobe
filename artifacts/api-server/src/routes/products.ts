@@ -170,8 +170,23 @@ async function nextBspSku(): Promise<string> {
   return `BSP${String(Number(maxNum) + 1).padStart(3, "0")}`;
 }
 
+async function nextFccSku(): Promise<string> {
+  const result = await db.execute(sql`
+    SELECT COALESCE(MAX(CAST(SUBSTRING(sku FROM 4) AS INTEGER)), 0) AS max_num
+    FROM products WHERE sku ~ '^FCC[0-9]+$'
+  `);
+  const maxNum = (result.rows[0] as any)?.max_num ?? 0;
+  // Never suggest below FCC5151 — FCC5150 is the last known assigned number
+  const next = Math.max(Number(maxNum) + 1, 5151);
+  return `FCC${String(next).padStart(4, "0")}`;
+}
+
 router.get("/products/next-bsp-sku", async (_req, res): Promise<void> => {
   res.json({ sku: await nextBspSku() });
+});
+
+router.get("/products/next-fcc-sku", async (_req, res): Promise<void> => {
+  res.json({ sku: await nextFccSku() });
 });
 
 router.get("/products/category-names", async (_req, res): Promise<void> => {
