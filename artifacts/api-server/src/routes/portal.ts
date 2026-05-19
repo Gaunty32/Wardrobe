@@ -6,9 +6,9 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import {
   db, customersTable, orderItemsTable, productsTable, suppliersTable,
   worksheetsTable, worksheetItemsTable, customerProcessesTable, customerFinishProcessesTable,
-  purchaseOrdersTable,
+  purchaseOrdersTable, ordersTable, orderLogsTable, orderEmailLogsTable,
 } from "@workspace/db";
-import { sql, eq, inArray } from "drizzle-orm";
+import { sql, eq, inArray, asc } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
@@ -1641,22 +1641,27 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
 
   const { orderIds } = body.data;
 
-  const rows = await db.execute(sql`
-    SELECT id, order_number, customer_id, status, source, total_amount
-    FROM orders
-    WHERE id = ANY(${orderIds}::int[])
-    ORDER BY id ASC
-  `);
-  const orders = rows.rows as any[];
+  const orders = await db
+    .select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerId: ordersTable.customerId,
+      status: ordersTable.status,
+      source: ordersTable.source,
+      totalAmount: ordersTable.totalAmount,
+    })
+    .from(ordersTable)
+    .where(inArray(ordersTable.id, orderIds))
+    .orderBy(asc(ordersTable.id));
 
   if (orders.length !== orderIds.length) {
     res.status(404).json({ error: "One or more orders not found" }); return;
   }
   const notPending = orders.filter(o => o.status !== "portal_pending");
   if (notPending.length > 0) {
-    res.status(400).json({ error: `Orders ${notPending.map(o => o.order_number).join(", ")} are not portal_pending` }); return;
+    res.status(400).json({ error: `Orders ${notPending.map(o => o.orderNumber).join(", ")} are not portal_pending` }); return;
   }
-  const customerIds = [...new Set(orders.map(o => o.customer_id))];
+  const customerIds = [...new Set(orders.map(o => o.customerId))];
   if (customerIds.length > 1) {
     res.status(400).json({ error: "Cannot merge orders from different customers" }); return;
   }
@@ -1664,23 +1669,20 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
   // Primary = lowest id (earliest); the rest are absorbed into it
   const [primary, ...secondary] = orders;
   const secondaryIds = secondary.map(o => o.id);
-  const secondaryNumbers = secondary.map(o => o.order_number).join(", ");
+  const secondaryNumbers = secondary.map(o => o.orderNumber).join(", ");
 
   // Move all items from secondary orders to primary
-  await db.execute(sql`
-    UPDATE order_items SET order_id = ${primary.id}
-    WHERE order_id = ANY(${secondaryIds}::int[])
-  `);
+  await db.update(orderItemsTable)
+    .set({ orderId: primary.id })
+    .where(inArray(orderItemsTable.orderId, secondaryIds));
 
   // Move logs from secondary orders to primary
-  await db.execute(sql`
-    UPDATE order_logs SET order_id = ${primary.id}
-    WHERE order_id = ANY(${secondaryIds}::int[])
-  `);
-  await db.execute(sql`
-    UPDATE order_email_logs SET order_id = ${primary.id}
-    WHERE order_id = ANY(${secondaryIds}::int[])
-  `);
+  await db.update(orderLogsTable)
+    .set({ orderId: primary.id })
+    .where(inArray(orderLogsTable.orderId, secondaryIds));
+  await db.update(orderEmailLogsTable)
+    .set({ orderId: primary.id })
+    .where(inArray(orderEmailLogsTable.orderId, secondaryIds));
 
   // Recalculate primary order total
   await db.execute(sql`
@@ -1692,13 +1694,15 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
   `);
 
   // Delete secondary orders
-  await db.execute(sql`DELETE FROM orders WHERE id = ANY(${secondaryIds}::int[])`);
+  await db.delete(ordersTable).where(inArray(ordersTable.id, secondaryIds));
 
   // Log the merge on the primary
-  await db.execute(sql`
-    INSERT INTO order_logs (order_id, action, actor, details, created_at)
-    VALUES (${primary.id}, 'Orders merged', 'System', ${`Absorbed orders ${secondaryNumbers} into ${primary.order_number}`}, now())
-  `);
+  await db.insert(orderLogsTable).values({
+    orderId: primary.id,
+    action: "Orders merged",
+    actor: "System",
+    details: `Absorbed orders ${secondaryNumbers} into ${primary.orderNumber}`,
+  });
 
   const updatedRows = await db.execute(sql`SELECT * FROM orders WHERE id = ${primary.id}`);
   res.json({ ok: true, primary: updatedRows.rows[0] });
