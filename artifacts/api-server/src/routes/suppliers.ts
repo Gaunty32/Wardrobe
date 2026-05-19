@@ -21,6 +21,7 @@ const supplierBody = z.object({
   notes: z.string().optional().nullable(),
   currency: z.enum(["GBP", "USD", "EUR"]).optional().default("GBP"),
   defaultPriceBreaks: z.array(priceBreakItem).nullable().optional(),
+  logoUrl: z.string().optional().nullable(),
 });
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useUpload } from "@workspace/object-storage-web";
 import { ProcessStockTab } from "@/pages/ProcessStock";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -25,6 +25,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate, cn } from "@/lib/utils";
+import { useListSuppliers } from "@workspace/api-client-react";
+import { UploadedImage } from "@/components/UploadedImage";
 
 const API_BASE = "/api";
 
@@ -1288,6 +1290,8 @@ export default function Purchasing() {
   const [createProcessPoGroup, setCreateProcessPoGroup] = useState<{ supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] } | null>(null);
   const [createProcessPoNotes, setCreateProcessPoNotes] = useState("");
   const [processPoQtys, setProcessPoQtys] = useState<Record<number, number>>({});
+  const [selectedOrdersSupplier, setSelectedOrdersSupplier] = useState<string | null>(null);
+  const [selectedCompletedSupplier, setSelectedCompletedSupplier] = useState<string | null>(null);
 
   const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
@@ -1301,6 +1305,14 @@ export default function Purchasing() {
     refetchInterval: 30000,
   });
 
+  const { data: allSuppliers = [] } = useListSuppliers();
+  const supplierLogoMap = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const s of allSuppliers) {
+      map.set(s.name, (s as any).logoUrl ?? null);
+    }
+    return map;
+  }, [allSuppliers]);
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
@@ -1464,6 +1476,25 @@ export default function Purchasing() {
   const draftCount = purchaseOrders.filter((p) => p.status === "draft").length;
   const orderedCount = purchaseOrders.filter((p) => p.status === "ordered").length;
   const deliveredCount = purchaseOrders.filter((p) => p.status === "delivered").length;
+
+  const orderedBySupplier = useMemo(() => {
+    const map = new Map<string, PurchaseOrder[]>();
+    for (const po of filteredPos) {
+      if (!map.has(po.supplierName)) map.set(po.supplierName, []);
+      map.get(po.supplierName)!.push(po);
+    }
+    return [...map.entries()].map(([name, pos]) => ({ name, pos }));
+  }, [filteredPos]);
+
+  const deliveredBySupplier = useMemo(() => {
+    const delivered = purchaseOrders.filter((p) => p.status === "delivered");
+    const map = new Map<string, PurchaseOrder[]>();
+    for (const po of delivered) {
+      if (!map.has(po.supplierName)) map.set(po.supplierName, []);
+      map.get(po.supplierName)!.push(po);
+    }
+    return [...map.entries()].map(([name, pos]) => ({ name, pos }));
+  }, [purchaseOrders]);
 
   const getDraftPoForSupplier = (supplierId: number | null, supplierName: string) =>
     purchaseOrders.find((po) => po.status === "draft" && (supplierId ? po.supplierId === supplierId : po.supplierName === supplierName));
@@ -1709,9 +1740,50 @@ export default function Purchasing() {
                   <p className="text-lg font-medium">No orders awaiting delivery</p>
                   <p className="text-sm">Mark a draft PO as Ordered once you've sent it to the supplier.</p>
                 </div>
+              ) : selectedOrdersSupplier === null ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {orderedBySupplier.map(({ name, pos }) => {
+                    const logoUrl = supplierLogoMap.get(name);
+                    const overdueCount = pos.filter((po) => {
+                      if (!po.estimatedDeliveryDate) return false;
+                      return new Date(po.estimatedDeliveryDate) < new Date();
+                    }).length;
+                    return (
+                      <button
+                        key={name}
+                        onClick={() => setSelectedOrdersSupplier(name)}
+                        className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
+                      >
+                        <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {logoUrl ? (
+                            <UploadedImage src={logoUrl} alt={name} className="h-full w-full object-contain p-1.5" fallback={<Truck className="w-7 h-7 text-muted-foreground/40" />} />
+                          ) : (
+                            <Truck className="w-7 h-7 text-muted-foreground/40" />
+                          )}
+                        </div>
+                        <div className="text-center space-y-1 w-full">
+                          <p className="font-semibold text-sm text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors">{name}</p>
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                            <Badge variant="secondary" className="text-xs">{pos.length} PO{pos.length !== 1 ? "s" : ""}</Badge>
+                            {overdueCount > 0 && (
+                              <Badge className="text-xs bg-red-100 text-red-700 border-red-200">{overdueCount} overdue</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {filteredPos.map((po) => (
+                  <div className="flex items-center gap-3">
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSelectedOrdersSupplier(null)}>
+                      <ChevronRight className="w-4 h-4 rotate-180" /> All Suppliers
+                    </Button>
+                    <span className="text-muted-foreground text-sm">/</span>
+                    <span className="font-semibold text-sm">{selectedOrdersSupplier}</span>
+                  </div>
+                  {filteredPos.filter((po) => po.supplierName === selectedOrdersSupplier).map((po) => (
                     <POCard
                       key={po.id}
                       po={po}
@@ -1738,9 +1810,41 @@ export default function Purchasing() {
                 <p className="text-lg font-medium">No completed deliveries yet</p>
                 <p className="text-sm">Deliveries booked in will appear here once marked as delivered.</p>
               </div>
+            ) : selectedCompletedSupplier === null ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {deliveredBySupplier.map(({ name, pos }) => {
+                  const logoUrl = supplierLogoMap.get(name);
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => setSelectedCompletedSupplier(name)}
+                      className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
+                    >
+                      <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {logoUrl ? (
+                          <UploadedImage src={logoUrl} alt={name} className="h-full w-full object-contain p-1.5" fallback={<PackageCheck className="w-7 h-7 text-muted-foreground/40" />} />
+                        ) : (
+                          <PackageCheck className="w-7 h-7 text-muted-foreground/40" />
+                        )}
+                      </div>
+                      <div className="text-center space-y-1 w-full">
+                        <p className="font-semibold text-sm text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors">{name}</p>
+                        <Badge variant="secondary" className="text-xs">{pos.length} PO{pos.length !== 1 ? "s" : ""}</Badge>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
               <div className="space-y-3">
-                {purchaseOrders.filter((po) => po.status === "delivered").map((po) => (
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSelectedCompletedSupplier(null)}>
+                    <ChevronRight className="w-4 h-4 rotate-180" /> All Suppliers
+                  </Button>
+                  <span className="text-muted-foreground text-sm">/</span>
+                  <span className="font-semibold text-sm">{selectedCompletedSupplier}</span>
+                </div>
+                {purchaseOrders.filter((po) => po.status === "delivered" && po.supplierName === selectedCompletedSupplier).map((po) => (
                   <POCard
                     key={po.id}
                     po={po}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Layout from "@/components/Layout";
 import {
   useListSuppliers,
@@ -9,6 +9,8 @@ import {
   Supplier
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useUpload } from "@workspace/object-storage-web";
+import { UploadedImage } from "@/components/UploadedImage";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -19,7 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Truck, Loader2, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Truck, Loader2, X, Upload } from "lucide-react";
 
 const CURRENCY_LABELS: Record<string, string> = { GBP: "£ GBP", USD: "$ USD", EUR: "€ EUR" };
 const CURRENCY_BADGE: Record<string, string> = { USD: "bg-green-100 text-green-800 border-green-200", EUR: "bg-blue-100 text-blue-800 border-blue-200", GBP: "" };
@@ -29,8 +31,13 @@ export default function Suppliers() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 
-  const blank = { name: "", contactName: "", email: "", phone: "", address: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "", currency: "GBP", defaultPriceBreaks: [] as { qty: number; price: number }[] };
+  const blank = { name: "", contactName: "", email: "", phone: "", address: "", city: "", county: "", postcode: "", country: "United Kingdom", notes: "", currency: "GBP", defaultPriceBreaks: [] as { qty: number; price: number }[], logoUrl: "" };
   const [form, setForm] = useState(blank);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile: uploadLogo, isUploading: isLogoUploading } = useUpload({
+    onSuccess: (res) => setForm((f) => ({ ...f, logoUrl: `/api/storage/objects${res.objectPath.replace(/^\/objects/, "")}` })),
+    onError: () => toast({ title: "Logo upload failed", variant: "destructive" }),
+  });
 
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -55,6 +62,7 @@ export default function Suppliers() {
       notes: s.notes || "",
       currency: (s as unknown as { currency: string }).currency || "GBP",
       defaultPriceBreaks: Array.isArray((s as any).defaultPriceBreaks) ? (s as any).defaultPriceBreaks : [],
+      logoUrl: (s as any).logoUrl || "",
     });
     setEditingSupplier(s);
   };
@@ -246,6 +254,30 @@ export default function Suppliers() {
               <div className="grid gap-2">
                 <Label>Notes</Label>
                 <Textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Supplier Logo</Label>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-lg border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {form.logoUrl ? (
+                      <UploadedImage src={form.logoUrl} alt="Logo" className="h-full w-full object-contain p-1" fallback={<Upload className="w-5 h-5 text-muted-foreground" />} />
+                    ) : (
+                      <Truck className="w-7 h-7 text-muted-foreground/40" />
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadLogo(f); e.target.value = ""; }} />
+                    <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={isLogoUploading} onClick={() => logoInputRef.current?.click()}>
+                      {isLogoUploading ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Uploading…</> : <><Upload className="w-3 h-3 mr-1.5" />{form.logoUrl ? "Replace Logo" : "Upload Logo"}</>}
+                    </Button>
+                    {form.logoUrl && (
+                      <Button type="button" variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-destructive" onClick={() => setForm(f => ({ ...f, logoUrl: "" }))}>
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="grid gap-2 pt-2">
