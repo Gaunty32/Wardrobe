@@ -851,7 +851,15 @@ function RequirementsLineTable({ items }: { items: PurchaseRequirement[] }) {
   );
 }
 
-function ProcessMaterialsLineTable({ items }: { items: ProcessStockRequirement[] }) {
+function ProcessMaterialsLineTable({
+  items,
+  overrides,
+  onQtyChange,
+}: {
+  items: ProcessStockRequirement[];
+  overrides?: Record<number, number>;
+  onQtyChange?: (processStockId: number, qty: number) => void;
+}) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table>
@@ -864,32 +872,48 @@ function ProcessMaterialsLineTable({ items }: { items: ProcessStockRequirement[]
           </TableRow>
         </TableHeader>
         <TableBody>
-          {items.map((req) => (
-            <TableRow key={req.processStockId}>
-              <TableCell>
-                <div className="font-medium text-sm">{req.name}</div>
-                <div className="text-xs text-muted-foreground">In stock: {req.stockQuantity} · Need: {req.totalNeeded}</div>
-              </TableCell>
-              <TableCell>
-                {req.sku
-                  ? <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">{req.sku}</span>
-                  : <span className="text-xs text-muted-foreground">—</span>}
-              </TableCell>
-              <TableCell>
-                <div className="flex flex-col gap-0.5">
-                  {req.orders.map((o) => (
-                    <span key={o.orderId} className="text-xs">
-                      <a href={`/orders/${o.orderId}`} className="text-primary hover:underline font-mono font-semibold">{o.orderNumber}</a>
-                      {` ×${o.qty}`}
-                    </span>
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell className="text-center">
-                <span className="font-bold text-sm">{req.shortfall}</span>
-              </TableCell>
-            </TableRow>
-          ))}
+          {items.map((req) => {
+            const qty = overrides?.[req.processStockId] ?? req.shortfall;
+            return (
+              <TableRow key={req.processStockId}>
+                <TableCell>
+                  <div className="font-medium text-sm">{req.name}</div>
+                  <div className="text-xs text-muted-foreground">In stock: {req.stockQuantity} · Need: {req.totalNeeded}</div>
+                </TableCell>
+                <TableCell>
+                  {req.sku
+                    ? <span className="text-xs font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0">{req.sku}</span>
+                    : <span className="text-xs text-muted-foreground">—</span>}
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-col gap-0.5">
+                    {req.orders.map((o) => (
+                      <span key={o.orderId} className="text-xs">
+                        <a href={`/orders/${o.orderId}`} className="text-primary hover:underline font-mono font-semibold">{o.orderNumber}</a>
+                        {` ×${o.qty}`}
+                      </span>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell className="text-center">
+                  {onQtyChange ? (
+                    <input
+                      type="number"
+                      min={0}
+                      value={qty}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value, 10);
+                        if (!isNaN(v) && v >= 0) onQtyChange(req.processStockId, v);
+                      }}
+                      className="w-20 text-center border border-border rounded px-2 py-1 text-sm font-bold focus:outline-none focus:ring-1 focus:ring-primary tabular-nums"
+                    />
+                  ) : (
+                    <span className="font-bold text-sm">{qty}</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -1266,7 +1290,9 @@ export default function Purchasing() {
   const queryClient = useQueryClient();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [expandedReqGroups, setExpandedReqGroups] = useState<Record<string, boolean>>({});
+  const [expandedPsGroups, setExpandedPsGroups] = useState<Record<string, boolean>>({});
   const [reqQtyOverrides, setReqQtyOverrides] = useState<Record<string, Record<string, number>>>({});
+  const [psQtyOverrides, setPsQtyOverrides] = useState<Record<string, Record<number, number>>>({});
   const [emailGroup, setEmailGroup] = useState<SupplierGroup | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
@@ -1600,31 +1626,52 @@ export default function Purchasing() {
                     </div>
                   )}
                   {processReqsBySupplier.map((psGroup) => {
-                    const totalPsQty = psGroup.items.reduce((s, r) => s + r.shortfall, 0);
+                    const psOverrides = psQtyOverrides[psGroup.supplierName] ?? {};
+                    const totalPsQty = psGroup.items.reduce((s, r) => s + (psOverrides[r.processStockId] ?? r.shortfall), 0);
                     const existingDraft = getDraftPoForSupplier(psGroup.supplierId, psGroup.supplierName);
+                    const isPsExpanded = !!expandedPsGroups[psGroup.supplierName];
+                    const itemsWithOverrides = psGroup.items.map(r => ({ ...r, shortfall: psOverrides[r.processStockId] ?? r.shortfall }));
                     return (
-                      <div key={psGroup.supplierName} className="rounded-xl border border-border bg-card shadow-sm">
-                        <div className="flex items-center justify-between px-5 py-4">
+                      <div key={psGroup.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                        <div
+                          className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
+                          onClick={() => setExpandedPsGroups((prev) => ({ ...prev, [psGroup.supplierName]: !prev[psGroup.supplierName] }))}
+                        >
                           <div className="flex items-center gap-3 flex-wrap">
+                            {isPsExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                             <div className="font-semibold text-base">{psGroup.supplierName ?? "Unknown Supplier"}</div>
                             <Badge variant="secondary">{psGroup.items.length} line{psGroup.items.length !== 1 ? "s" : ""}</Badge>
                             <Badge className="bg-amber-100 text-amber-800 border-amber-200">{totalPsQty} units needed</Badge>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
-                                onClick={() => addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: psGroup.items })}
+                                onClick={() => addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: itemsWithOverrides })}
                                 disabled={addProcessStockToPoMutation.isPending}>
                                 <Plus className="w-3.5 h-3.5" /> Add to Draft PO ({existingDraft.poNumber})
                               </Button>
                             ) : (
                               <Button size="sm" className="gap-1.5 text-xs bg-primary hover:bg-primary/90"
-                                onClick={() => { setCreateProcessPoGroup(psGroup); setCreateProcessPoNotes(""); }}>
+                                onClick={() => { setCreateProcessPoGroup({ ...psGroup, items: itemsWithOverrides }); setCreateProcessPoNotes(""); }}>
                                 <FileText className="w-3.5 h-3.5" /> Create Draft PO
                               </Button>
                             )}
                           </div>
                         </div>
+                        {isPsExpanded && (
+                          <div className="border-t border-border px-5 py-4">
+                            <ProcessMaterialsLineTable
+                              items={psGroup.items}
+                              overrides={psOverrides}
+                              onQtyChange={(processStockId, qty) =>
+                                setPsQtyOverrides((prev) => ({
+                                  ...prev,
+                                  [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: qty },
+                                }))
+                              }
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
