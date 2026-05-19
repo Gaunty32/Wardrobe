@@ -85,7 +85,7 @@ router.post("/auth/staff/request-otp", async (req, res): Promise<void> => {
 
   const firstName = accounts.find(a => a.email === normEmail)?.name.split(" ")[0] ?? "there";
 
-  await sendEmail({
+  const emailResult = await sendEmail({
     to: normEmail,
     subject: "Your SBS login code",
     html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
@@ -116,6 +116,13 @@ router.post("/auth/staff/request-otp", async (req, res): Promise<void> => {
     text: `Hi ${firstName},\n\nYour SBS Order System login code is: ${code}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this, you can safely ignore this email.`,
   });
 
+  if (!emailResult.sent) {
+    console.error(`[auth] OTP email failed for ${normEmail}:`, emailResult.error ?? "unknown error");
+    res.status(500).json({ error: "Failed to send login code email. Please contact your administrator." });
+    return;
+  }
+
+  console.log(`[auth] OTP email sent to ${normEmail}`);
   res.json({ ok: true });
 });
 
