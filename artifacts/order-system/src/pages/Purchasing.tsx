@@ -393,6 +393,7 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
   const [estimatedDueDate, setEstimatedDueDate] = useState("");
   const [sending, setSending] = useState(false);
   const [markingOrdered, setMarkingOrdered] = useState(false);
+  const [previewingPdf, setPreviewingPdf] = useState(false);
   const [uploadingId, setUploadingId] = useState<number | null>(null);
   const [localFileUrls, setLocalFileUrls] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -480,6 +481,27 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
       toast({ title: "Failed", description: e.message, variant: "destructive" });
     } finally {
       setMarkingOrdered(false);
+    }
+  };
+
+  const handlePreviewPdf = async () => {
+    setPreviewingPdf(true);
+    try {
+      const res = await fetch(`${API_BASE}/purchasing/purchase-orders/${po.id}/pdf`);
+      if (!res.ok) throw new Error(await res.text());
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank");
+      if (win) {
+        win.addEventListener("load", () => URL.revokeObjectURL(url), { once: true });
+      } else {
+        URL.revokeObjectURL(url);
+        toast({ title: "Popup blocked", description: "Please allow popups for this site and try again.", variant: "destructive" });
+      }
+    } catch (e: any) {
+      toast({ title: "Could not load PDF", description: e.message, variant: "destructive" });
+    } finally {
+      setPreviewingPdf(false);
     }
   };
 
@@ -596,8 +618,9 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
         </div>
 
         <DialogFooter className="gap-2 shrink-0 flex-wrap">
-          <Button variant="outline" className="gap-2 mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
-            <FileText className="w-4 h-4" /> Preview PDF
+          <Button variant="outline" className="gap-2 mr-auto" onClick={handlePreviewPdf} disabled={previewingPdf}>
+            {previewingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+            {previewingPdf ? "Loading…" : "Preview PDF"}
           </Button>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
