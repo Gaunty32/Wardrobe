@@ -56,9 +56,9 @@ const smtpTransporter = isSmtpConfigured
   : null;
 
 // ── SBS contact details ──────────────────────────────────────────────────────
-const SBS_PHONE_DISPLAY = "0113 246 0000"; // ← update with real number
-const SBS_PHONE_HREF    = "tel:+441132460000"; // ← update with real number
-const SBS_WHATSAPP_URL  = "https://wa.me/441132460000"; // ← update with real WhatsApp number
+const SBS_PHONE_DISPLAY = "0113 255 2694";
+const SBS_PHONE_HREF    = "tel:+441132552694";
+const SBS_WHATSAPP_URL  = "https://wa.me/441132552694";
 const SBS_CHAT_URL      = "https://wardrobe.selectbranding.co.uk/customer-portal";
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1168,7 +1168,7 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
                 <tr>
                   <td style="padding:5px 0;width:50%;vertical-align:top;">
                     <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Email</p>
-                    <a href="mailto:info@selectbranding.co.uk" style="font-size:13px;color:#1d4ed8;text-decoration:none;font-weight:500;">info@selectbranding.co.uk</a>
+                    <a href="mailto:accounts@selectbranding.co.uk" style="font-size:13px;color:#1d4ed8;text-decoration:none;font-weight:500;">accounts@selectbranding.co.uk</a>
                   </td>
                   <td style="padding:5px 0;width:50%;vertical-align:top;">
                     <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Phone</p>
@@ -1206,7 +1206,7 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
     `All order details are in the PDF attached. Could you please confirm receipt at your earliest convenience?`,
     allNotes ? `\nNotes: ${allNotes}` : null,
     ``,
-    `Questions? Email us at info@selectbranding.co.uk or call ${SBS_PHONE_DISPLAY}.`,
+    `Questions? Email us at accounts@selectbranding.co.uk or call ${SBS_PHONE_DISPLAY}.`,
     ``,
     `Kind regards,`,
     `The Select Branding Solutions Team`,
