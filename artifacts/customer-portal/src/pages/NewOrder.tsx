@@ -733,134 +733,183 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">Who is this for?</p>
 
-        {/* My Team section */}
-        {isDeptManager && <p className="text-xs font-semibold text-muted-foreground mb-2">My Team</p>}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
-          {!search && (
-            <button
-              onClick={() => handleSelectRecipient("stock")}
-              className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
-            >
-              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/80 transition-colors">
-                <Package className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <p className="font-semibold text-sm">Bulk Stock</p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
-            </button>
-          )}
-          {myTeamEmployees.map((emp: any) => {
-            const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
-            const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
-            return (
-              <button
-                key={emp.id}
-                onClick={() => handleSelectRecipient(String(emp.id))}
-                className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group relative"
-              >
-                {empItems.length > 0 && (
-                  <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {empItems.length}
-                  </span>
-                )}
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm mb-3 group-hover:bg-primary/15 transition-colors">
-                  {initials || <User className="w-4 h-4" />}
+        {/* When searching as dept_manager: flat unified grid across all teams */}
+        {isDeptManager && search ? (
+          <div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
+              {[...myTeamEmployees, ...otherEmployees].map((emp: any) => {
+                const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
+                const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
+                const isOtherTeam = otherEmployees.includes(emp);
+                return (
+                  <button
+                    key={emp.id}
+                    onClick={() => handleSelectRecipient(String(emp.id))}
+                    className={cn(
+                      "rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group relative",
+                      isOtherTeam && "border-dashed"
+                    )}
+                  >
+                    {empItems.length > 0 && (
+                      <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                        {empItems.length}
+                      </span>
+                    )}
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm mb-3 transition-colors",
+                      isOtherTeam
+                        ? "bg-muted/60 text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+                        : "bg-primary/10 text-primary group-hover:bg-primary/15"
+                    )}>
+                      {initials || <User className="w-4 h-4" />}
+                    </div>
+                    <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                    {isOtherTeam && emp.manager_name
+                      ? <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.manager_name}'s team</p>
+                      : emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>
+                    }
+                  </button>
+                );
+              })}
+              {myTeamEmployees.length === 0 && otherEmployees.length === 0 && (
+                <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
+                  No employees match "{search}" across all teams
                 </div>
-                <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
-                {emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>}
-                {(() => {
-                  const spend = parseFloat(emp.spend_12m ?? "0");
-                  const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
-                  const topup = parseFloat(emp.allowance_topup ?? "0");
-                  const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
-                  if (totalBudget != null && totalBudget > 0) {
-                    const pct = Math.min(100, (spend / totalBudget) * 100);
-                    const over = spend > totalBudget;
-                    return (
-                      <div className="mt-1.5 w-full">
-                        <div className="flex justify-between text-[10px] mb-0.5">
-                          <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
-                            £{spend.toFixed(0)} of £{totalBudget.toFixed(0)}
-                          </span>
-                          {over
-                            ? <span className="text-destructive font-medium">Over budget</span>
-                            : <span className="text-muted-foreground">£{(totalBudget - spend).toFixed(0)} left</span>
-                          }
-                        </div>
-                        <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  }
-                  if (spend > 0) {
-                    return (
-                      <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-0.5">
-                        <TrendingUp className="w-2.5 h-2.5 shrink-0" />
-                        £{spend.toFixed(0)} this year
-                      </p>
-                    );
-                  }
-                  return null;
-                })()}
-              </button>
-            );
-          })}
-          {myTeamEmployees.length === 0 && !search && !isDeptManager && (
-            <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
-              No employees found
+              )}
             </div>
-          )}
-          {myTeamEmployees.length === 0 && search && (
-            <div className="col-span-full py-4 text-center text-muted-foreground text-sm">
-              No employees match your search
-            </div>
-          )}
-        </div>
-
-        {/* Other Teams section — dept_manager only */}
-        {isDeptManager && otherEmployees.length > 0 && (
-          <div className="mb-8">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2 hover:text-foreground transition-colors"
-              onClick={() => setShowOtherTeams(v => !v)}
-            >
-              <span className={cn("inline-block transition-transform", showOtherTeams ? "rotate-90" : "rotate-0")}>▶</span>
-              Other teams ({otherEmployees.length})
-            </button>
-            {showOtherTeams && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                {otherEmployees.map((emp: any) => {
-                  const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
-                  const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
-                  return (
-                    <button
-                      key={emp.id}
-                      onClick={() => handleSelectRecipient(String(emp.id))}
-                      className="rounded-xl border border-dashed bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group relative"
-                    >
-                      {empItems.length > 0 && (
-                        <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                          {empItems.length}
-                        </span>
-                      )}
-                      <div className="w-10 h-10 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground font-bold text-sm mb-3 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                        {initials || <User className="w-4 h-4" />}
-                      </div>
-                      <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
-                      {emp.manager_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.manager_name}'s team</p>}
-                    </button>
-                  );
-                })}
-              </div>
+            {(myTeamEmployees.length > 0 || otherEmployees.length > 0) && (
+              <p className="text-xs text-muted-foreground mb-4">
+                {myTeamEmployees.length + otherEmployees.length} result{myTeamEmployees.length + otherEmployees.length !== 1 ? "s" : ""} across all teams
+              </p>
             )}
           </div>
-        )}
-        {isDeptManager && otherEmployees.length === 0 && myTeamEmployees.length === 0 && (
-          <div className="py-8 text-center text-muted-foreground text-sm mb-8">No employees found</div>
+        ) : (
+          <>
+            {/* My Team section (no search, or non-dept-manager) */}
+            {isDeptManager && <p className="text-xs font-semibold text-muted-foreground mb-2">My Team</p>}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-4">
+              {!search && (
+                <button
+                  onClick={() => handleSelectRecipient("stock")}
+                  className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/80 transition-colors">
+                    <Package className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <p className="font-semibold text-sm">Bulk Stock</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Order without assigning to a person</p>
+                </button>
+              )}
+              {myTeamEmployees.map((emp: any) => {
+                const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
+                const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
+                return (
+                  <button
+                    key={emp.id}
+                    onClick={() => handleSelectRecipient(String(emp.id))}
+                    className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group relative"
+                  >
+                    {empItems.length > 0 && (
+                      <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                        {empItems.length}
+                      </span>
+                    )}
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm mb-3 group-hover:bg-primary/15 transition-colors">
+                      {initials || <User className="w-4 h-4" />}
+                    </div>
+                    <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                    {emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>}
+                    {(() => {
+                      const spend = parseFloat(emp.spend_12m ?? "0");
+                      const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
+                      const topup = parseFloat(emp.allowance_topup ?? "0");
+                      const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+                      if (totalBudget != null && totalBudget > 0) {
+                        const pct = Math.min(100, (spend / totalBudget) * 100);
+                        const over = spend > totalBudget;
+                        return (
+                          <div className="mt-1.5 w-full">
+                            <div className="flex justify-between text-[10px] mb-0.5">
+                              <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
+                                £{spend.toFixed(0)} of £{totalBudget.toFixed(0)}
+                              </span>
+                              {over
+                                ? <span className="text-destructive font-medium">Over budget</span>
+                                : <span className="text-muted-foreground">£{(totalBudget - spend).toFixed(0)} left</span>
+                              }
+                            </div>
+                            <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      }
+                      if (spend > 0) {
+                        return (
+                          <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-0.5">
+                            <TrendingUp className="w-2.5 h-2.5 shrink-0" />
+                            £{spend.toFixed(0)} this year
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </button>
+                );
+              })}
+              {myTeamEmployees.length === 0 && !isDeptManager && (
+                <div className="col-span-full py-8 text-center text-muted-foreground text-sm">
+                  No employees found
+                </div>
+              )}
+            </div>
+
+            {/* Other Teams section — dept_manager only, no search active */}
+            {isDeptManager && (
+              <div className="mb-8">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground mb-2 hover:text-foreground transition-colors"
+                  onClick={() => setShowOtherTeams(v => !v)}
+                >
+                  <span className={cn("inline-block transition-transform", showOtherTeams ? "rotate-90" : "rotate-0")}>▶</span>
+                  Other teams ({otherEmployees.length})
+                </button>
+                {showOtherTeams && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {otherEmployees.map((emp: any) => {
+                      const initials = [emp.first_name?.[0], emp.last_name?.[0]].filter(Boolean).join("").toUpperCase();
+                      const empItems = basket.filter(b => b.recipientEmployeeId === emp.id);
+                      return (
+                        <button
+                          key={emp.id}
+                          onClick={() => handleSelectRecipient(String(emp.id))}
+                          className="rounded-xl border border-dashed bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group relative"
+                        >
+                          {empItems.length > 0 && (
+                            <span className="absolute top-2 right-2 bg-primary text-primary-foreground text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                              {empItems.length}
+                            </span>
+                          )}
+                          <div className="w-10 h-10 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground font-bold text-sm mb-3 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                            {initials || <User className="w-4 h-4" />}
+                          </div>
+                          <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                          {emp.manager_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.manager_name}'s team</p>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {myTeamEmployees.length === 0 && otherEmployees.length === 0 && (
+                  <div className="py-8 text-center text-muted-foreground text-sm">No employees found</div>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {/* Transfer dialog */}
