@@ -428,8 +428,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   ) as Array<{ finish_id: number; finish_name: string | null; finish_code: string | null; items: any[] }>;
 
   // Attach processes to each group
-  const groupProcesses = (finishId: number) =>
-    processes.filter(p => p.finish_id === finishId);
+  // Use Number() coercion on both sides — raw SQL rows can return integers as
+  // strings, causing strict === to silently fail even when the IDs match.
+  const groupProcesses = (finishId: number | null) =>
+    processes.filter(p => Number(p.finish_id) === Number(finishId));
 
   const getLastSize = (wi: any, employeeId: number): string | null => {
     const empSizes = lastSizes[String(employeeId)];
@@ -1125,7 +1127,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3">
             {finishGroups.flatMap((group) => {
               const procs = groupProcesses(group.finish_id);
-              const hasFinish = procs.length > 0;
+              const hasFinish = procs.length > 0 || !!group.finish_name;
 
               return group.items.map((wi: any, i: number) => {
                 const key = `${group.finish_id}-${i}`;
