@@ -1933,59 +1933,6 @@ export default function OrderDetail() {
               </CardContent>
             </Card>
 
-            <Card className="shadow-sm border-border/50">
-              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
-                <CardTitle className="font-display text-lg flex items-center">
-                  <Paperclip className="w-4 h-4 mr-2 text-muted-foreground" /> Attachments
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="py-4 space-y-2">
-                {currentAttachments.length > 0 && (
-                  <ul className="space-y-1.5">
-                    {currentAttachments.map((att, i) => (
-                      <li key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-                        <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        <a
-                          href={`${API_BASE}/storage${att.objectPath}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm flex-1 min-w-0 truncate hover:underline text-foreground"
-                        >
-                          {att.name}
-                        </a>
-                        <a
-                          href={`${API_BASE}/storage${att.objectPath}`}
-                          download={att.name}
-                          className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                          aria-label="Download"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                        </a>
-                        <button
-                          type="button"
-                          onClick={() => removeAttachment(i)}
-                          disabled={updateAttachmentsMutation.isPending}
-                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
-                          aria-label="Remove attachment"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <FileDropZone
-                  onFile={(file) => uploadFiles([file])}
-                  disabled={uploading || updateAttachmentsMutation.isPending}
-                  className="py-5 px-4"
-                >
-                  <FileDropZoneContent
-                    uploading={uploading}
-                    label="Drag a file here, or click to browse"
-                  />
-                </FileDropZone>
-              </CardContent>
-            </Card>
           </div>
         </div>
 
