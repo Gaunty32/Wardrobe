@@ -998,6 +998,104 @@ router.get("/orders/:id/email-logs", async (req, res): Promise<void> => {
   res.json(logs);
 });
 
+// ─── GET acknowledgement as PDF ──────────────────────────────────────────────
+
+router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const [order] = await db
+    .select({
+      id: ordersTable.id, orderNumber: ordersTable.orderNumber,
+      customerId: ordersTable.customerId, customerName: ordersTable.customerName,
+      orderDate: ordersTable.orderDate, requiredDate: ordersTable.requiredDate,
+      notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
+      poNumber: ordersTable.poNumber,
+      deliveryAddressId: ordersTable.deliveryAddressId,
+      shippingMethod: ordersTable.shippingMethod,
+    })
+    .from(ordersTable)
+    .where(eq(ordersTable.id, params.data.id));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const itemRows = await db
+    .select({
+      productName: orderItemsTable.productName,
+      catalogueProductName: productsTable.name,
+      sku: productsTable.sku,
+      colour: orderItemsTable.colour,
+      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
+      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
+      recipientName: orderItemsTable.recipientName,
+      finishName: orderItemsTable.finishName,
+    })
+    .from(orderItemsTable)
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .where(eq(orderItemsTable.orderId, params.data.id));
+
+  const items = itemRows.map(r => ({
+    productName: r.catalogueProductName ?? r.productName,
+    sku: r.sku ?? null,
+    colour: r.colour ?? null,
+    size: r.size ?? null,
+    quantity: r.quantity ?? 1,
+    unitPrice: parseFloat(String(r.unitPrice ?? 0)),
+    lineTotal: parseFloat(String(r.lineTotal ?? 0)),
+    recipientName: r.recipientName ?? null,
+    finishName: r.finishName ?? null,
+  }));
+
+  let customerAddress: string | null = null;
+  let customerCity: string | null = null;
+  let customerPostcode: string | null = null;
+  let customerLogoBuffer: Buffer | null = null;
+
+  if (order.customerId) {
+    const [customer] = await db.select({
+      address: customersTable.address,
+      city: customersTable.city,
+      postcode: customersTable.postcode,
+      logoUrl: customersTable.logoUrl,
+    }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    customerAddress = customer?.address ?? null;
+    customerCity = customer?.city ?? null;
+    customerPostcode = customer?.postcode ?? null;
+    if (customer?.logoUrl) {
+      const logoResult = await readLogoForSending(customer.logoUrl);
+      if (logoResult) customerLogoBuffer = logoResult.buffer;
+    }
+  }
+
+  let deliveryAddressText: string | null = null;
+  if (order.deliveryAddressId) {
+    const [da] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    if (da) deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
+  }
+
+  try {
+    const pdf = await generateOrderAcknowledgementPdf({
+      orderNumber: order.orderNumber,
+      orderDate: order.orderDate ?? null,
+      requiredDate: order.requiredDate ?? null,
+      poNumber: order.poNumber ?? null,
+      customerName: order.customerName ?? null,
+      customerAddress,
+      customerCity,
+      customerPostcode,
+      deliveryAddress: deliveryAddressText,
+      shippingMethod: order.shippingMethod ?? null,
+      customerLogoBuffer,
+      totalAmount: numericToFloat(order.totalAmount),
+      items,
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="Order-Acknowledgement-${order.orderNumber}.pdf"`);
+    res.send(pdf);
+  } catch (e: any) {
+    res.status(500).json({ error: `PDF generation failed: ${e.message}` });
+  }
+});
+
 // ─── GET acknowledgement as .eml (opens Outlook directly) ────────────────────
 
 router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> => {

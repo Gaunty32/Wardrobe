@@ -3,7 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, Mail, Copy, Check, CreditCard, XCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, Mail, Copy, Check, CreditCard, XCircle, CheckCircle2, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = "/api";
@@ -46,6 +46,7 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
   const [emailText, setEmailText] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [emailConfigured, setEmailConfigured] = useState(true);
+  const [previewingPdf, setPreviewingPdf] = useState(false);
 
   const reset = () => {
     setEmailTo("");
@@ -59,6 +60,7 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
     setEmailText("");
     setEmailSubject("");
     setEmailConfigured(true);
+    setPreviewingPdf(false);
   };
 
   const handleClose = (v: boolean) => {
@@ -84,13 +86,31 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
     try {
       const data = await apiFetch<{ text: string; subject: string; html: string; to: string; emailConfigured: boolean }>(
         `/orders/${order.id}/send-acknowledgement`,
-        { method: "POST", body: JSON.stringify({ toEmail: "preview@example.com", previewOnly: true }) }
+        { method: "POST", body: JSON.stringify({ previewOnly: true }) }
       );
       setEmailText(data.text);
       setEmailSubject(data.subject);
       setEmailConfigured(data.emailConfigured ?? true);
-      if (data.to && data.to !== "preview@example.com") setEmailTo(data.to);
+      if (data.to) setEmailTo(data.to);
     } catch {}
+  };
+
+  const handlePreviewPdf = async () => {
+    setPreviewingPdf(true);
+    try {
+      const res = await fetch(`${API_BASE}/orders/${order.id}/acknowledgement-pdf`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+    } catch (err: any) {
+      toast({ title: "PDF preview failed", description: err.message, variant: "destructive" });
+    } finally {
+      setPreviewingPdf(false);
+    }
   };
 
   useEffect(() => {
@@ -242,6 +262,11 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
           </Button>
           {!sent && (
             <>
+              <Button variant="outline" onClick={handlePreviewPdf} disabled={previewingPdf} className="gap-1.5">
+                {previewingPdf
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
+                  : <><FileText className="w-4 h-4" /> Preview PDF</>}
+              </Button>
               {emailText && (
                 <Button variant="outline" onClick={handleCopyEmail} className="gap-1.5">
                   {emailCopied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Email</>}
