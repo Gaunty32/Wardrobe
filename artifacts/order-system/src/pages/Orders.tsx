@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText, Pencil, Paperclip, StickyNote } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText, Pencil, Paperclip, StickyNote, GitMerge } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
@@ -210,18 +210,28 @@ function PortalPendingOrders() {
   });
 
   const [confirmingAll, setConfirmingAll] = useState(false);
+  const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["portal-pending-orders"] });
+    qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+  };
 
   const confirm = useMutation({
     mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/confirm`, { method: "POST" }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-pending-orders"] }); qc.invalidateQueries({ queryKey: getListOrdersQueryKey() }); toast({ title: "Order confirmed", description: "Moved to draft orders." }); },
+    onSuccess: () => { invalidate(); toast({ title: "Order confirmed", description: "Moved to draft orders." }); },
+  });
+
+  const reject = useMutation({
+    mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "" }) }),
+    onSuccess: () => { invalidate(); toast({ title: "Order rejected", description: "The portal order has been declined." }); },
   });
 
   async function confirmAll() {
     setConfirmingAll(true);
     try {
       await Promise.all(pending.map((o: any) => apiFetch(`/portal/admin/orders/${o.id}/confirm`, { method: "POST" })));
-      qc.invalidateQueries({ queryKey: ["portal-pending-orders"] });
-      qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      invalidate();
       toast({ title: `${pending.length} orders confirmed`, description: "All portal orders moved to draft." });
     } catch {
       toast({ title: "Error", description: "Some orders could not be confirmed.", variant: "destructive" });
@@ -230,20 +240,77 @@ function PortalPendingOrders() {
     }
   }
 
-  const reject = useMutation({
-    mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/reject`, { method: "POST", body: JSON.stringify({ reason: "" }) }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["portal-pending-orders"] });
-      qc.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-      toast({ title: "Order rejected", description: "The portal order has been declined and removed from the list." });
-    },
-  });
+  async function mergeGroup(orderIds: number[], groupKey: string) {
+    setMergingIds(s => new Set([...s, groupKey]));
+    try {
+      await apiFetch("/portal/admin/orders/merge", { method: "POST", body: JSON.stringify({ orderIds }) });
+      invalidate();
+      toast({ title: "Orders merged", description: `${orderIds.length} orders combined into one.` });
+    } catch (e: any) {
+      toast({ title: "Could not merge", description: e.message, variant: "destructive" });
+    } finally {
+      setMergingIds(s => { const n = new Set(s); n.delete(groupKey); return n; });
+    }
+  }
+
+  // Group orders: those with a PO# shared by multiple orders are grouped, rest are ungrouped
+  const { groups, ungrouped } = useMemo(() => {
+    const poMap = new Map<string, any[]>();
+    for (const o of pending) {
+      if (o.po_number) {
+        const key = `${o.customer_id}::${o.po_number}`;
+        if (!poMap.has(key)) poMap.set(key, []);
+        poMap.get(key)!.push(o);
+      }
+    }
+    const groups: Array<{ key: string; po: string; customer: string; orders: any[] }> = [];
+    for (const [key, orders] of poMap.entries()) {
+      if (orders.length > 1) {
+        groups.push({ key, po: orders[0].po_number, customer: orders[0].customer_name, orders });
+      }
+    }
+    const groupedIds = new Set(groups.flatMap(g => g.orders.map((o: any) => o.id)));
+    const ungrouped = pending.filter((o: any) => !groupedIds.has(o.id));
+    return { groups, ungrouped };
+  }, [pending]);
 
   if (isLoading || !pending.length) return null;
 
+  const renderRow = (o: any, inGroup = false) => (
+    <TableRow
+      key={o.id}
+      className={cn("cursor-pointer", inGroup ? "hover:bg-blue-50/60" : "hover:bg-amber-50/80")}
+      onClick={() => setLocation(`/orders/${o.id}`)}
+    >
+      <TableCell>
+        <span className={cn("font-semibold", inGroup ? "text-blue-700" : "text-amber-700")}>{o.order_number}</span>
+      </TableCell>
+      <TableCell className="font-medium">{toTitleCase(o.customer_name)}</TableCell>
+      <TableCell className="text-muted-foreground text-sm">{formatDate(o.order_date)}</TableCell>
+      <TableCell onClick={e => e.stopPropagation()}>
+        <PoPendingInline
+          orderId={o.id}
+          current={o.po_number ?? null}
+          onSaved={() => qc.invalidateQueries({ queryKey: ["portal-pending-orders"] })}
+        />
+      </TableCell>
+      <TableCell className="text-right text-sm">{o.item_count}</TableCell>
+      <TableCell className="text-right font-semibold">{formatCurrency(parseFloat(o.total_amount ?? "0"))}</TableCell>
+      <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-red-600 border-red-200 hover:bg-red-50" disabled={reject.isPending} onClick={() => reject.mutate(o.id)}>
+            <XCircle className="w-3.5 h-3.5" />Reject
+          </Button>
+          <Button size="sm" className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700 text-white" disabled={confirm.isPending} onClick={() => confirm.mutate(o.id)}>
+            <CheckCircle2 className="w-3.5 h-3.5" />Confirm
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+
   return (
     <Card className="border-amber-200 bg-amber-50/50 shadow-sm">
-
       <CardHeader className="py-3 px-5 border-b border-amber-200/60 flex flex-row items-center gap-2">
         <Globe className="w-4 h-4 text-amber-600" />
         <span className="font-semibold text-amber-800 text-sm">Portal Orders Awaiting Review</span>
@@ -260,48 +327,73 @@ function PortalPendingOrders() {
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              <TableHead>Order #</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>PO #</TableHead>
-              <TableHead className="text-right">Items</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pending.map((o: any) => (
-              <TableRow key={o.id} className="hover:bg-amber-50/80 cursor-pointer" onClick={() => setLocation(`/orders/${o.id}`)}>
-                <TableCell><span className="font-semibold text-amber-700">{o.order_number}</span></TableCell>
-                <TableCell className="font-medium">{toTitleCase(o.customer_name)}</TableCell>
-                <TableCell className="text-muted-foreground text-sm">{formatDate(o.order_date)}</TableCell>
-                <TableCell onClick={e => e.stopPropagation()}>
-                  <PoPendingInline
-                    orderId={o.id}
-                    current={o.po_number ?? null}
-                    onSaved={() => qc.invalidateQueries({ queryKey: ["portal-pending-orders"] })}
-                  />
-                </TableCell>
-                <TableCell className="text-right text-sm">{o.item_count}</TableCell>
-                <TableCell className="text-right font-semibold">{formatCurrency(parseFloat(o.total_amount ?? "0"))}</TableCell>
-                <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex justify-end gap-2">
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 text-red-600 border-red-200 hover:bg-red-50" disabled={reject.isPending} onClick={() => reject.mutate(o.id)}>
-                      <XCircle className="w-3.5 h-3.5" />Reject
-                    </Button>
-                    <Button size="sm" className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700 text-white" disabled={confirm.isPending} onClick={() => confirm.mutate(o.id)}>
-                      <CheckCircle2 className="w-3.5 h-3.5" />Confirm
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+      <CardContent className="p-0 divide-y divide-border">
+
+        {/* Grouped orders sharing the same PO# */}
+        {groups.map(g => {
+          const isMerging = mergingIds.has(g.key);
+          const totalItems = g.orders.reduce((s: number, o: any) => s + Number(o.item_count ?? 0), 0);
+          const totalValue = g.orders.reduce((s: number, o: any) => s + parseFloat(o.total_amount ?? "0"), 0);
+          return (
+            <div key={g.key} className="bg-blue-50/40 border-l-4 border-blue-400">
+              {/* Group header bar */}
+              <div className="flex items-center gap-3 px-4 py-2 bg-blue-100/60 border-b border-blue-200/60">
+                <GitMerge className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="text-xs font-semibold text-blue-800">
+                  {g.orders.length} orders share PO# <span className="font-mono">{g.po}</span> — {totalItems} items, {formatCurrency(totalValue)} total
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-auto h-6 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 bg-white"
+                  disabled={isMerging}
+                  onClick={() => mergeGroup(g.orders.map((o: any) => o.id), g.key)}
+                >
+                  {isMerging ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitMerge className="w-3 h-3" />}
+                  {isMerging ? "Merging…" : "Merge into one order"}
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Order #</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>PO #</TableHead>
+                    <TableHead className="text-right">Items</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {g.orders.map((o: any) => renderRow(o, true))}
+                </TableBody>
+              </Table>
+            </div>
+          );
+        })}
+
+        {/* Ungrouped orders (no shared PO#) */}
+        {ungrouped.length > 0 && (
+          <Table>
+            {groups.length === 0 && (
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Order #</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>PO #</TableHead>
+                  <TableHead className="text-right">Items</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+            )}
+            <TableBody>
+              {ungrouped.map((o: any) => renderRow(o, false))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   );

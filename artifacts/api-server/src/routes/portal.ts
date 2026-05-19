@@ -1633,6 +1633,77 @@ router.post("/portal/manager/orders/:id/reject", portalAuth, async (req: Request
   res.json({ ok: true });
 });
 
+// ─── admin: merge portal-pending orders with the same PO# ────────────────────
+
+router.post("/portal/admin/orders/merge", async (req: Request, res: Response) => {
+  const body = z.object({ orderIds: z.array(z.number().int().positive()).min(2) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { orderIds } = body.data;
+
+  const rows = await db.execute(sql`
+    SELECT id, order_number, customer_id, status, source, total_amount
+    FROM orders
+    WHERE id = ANY(${orderIds}::int[])
+    ORDER BY id ASC
+  `);
+  const orders = rows.rows as any[];
+
+  if (orders.length !== orderIds.length) {
+    res.status(404).json({ error: "One or more orders not found" }); return;
+  }
+  const notPending = orders.filter(o => o.status !== "portal_pending");
+  if (notPending.length > 0) {
+    res.status(400).json({ error: `Orders ${notPending.map(o => o.order_number).join(", ")} are not portal_pending` }); return;
+  }
+  const customerIds = [...new Set(orders.map(o => o.customer_id))];
+  if (customerIds.length > 1) {
+    res.status(400).json({ error: "Cannot merge orders from different customers" }); return;
+  }
+
+  // Primary = lowest id (earliest); the rest are absorbed into it
+  const [primary, ...secondary] = orders;
+  const secondaryIds = secondary.map(o => o.id);
+  const secondaryNumbers = secondary.map(o => o.order_number).join(", ");
+
+  // Move all items from secondary orders to primary
+  await db.execute(sql`
+    UPDATE order_items SET order_id = ${primary.id}
+    WHERE order_id = ANY(${secondaryIds}::int[])
+  `);
+
+  // Move logs from secondary orders to primary
+  await db.execute(sql`
+    UPDATE order_logs SET order_id = ${primary.id}
+    WHERE order_id = ANY(${secondaryIds}::int[])
+  `);
+  await db.execute(sql`
+    UPDATE order_email_logs SET order_id = ${primary.id}
+    WHERE order_id = ANY(${secondaryIds}::int[])
+  `);
+
+  // Recalculate primary order total
+  await db.execute(sql`
+    UPDATE orders
+    SET total_amount = (
+      SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = ${primary.id}
+    ), updated_at = now()
+    WHERE id = ${primary.id}
+  `);
+
+  // Delete secondary orders
+  await db.execute(sql`DELETE FROM orders WHERE id = ANY(${secondaryIds}::int[])`);
+
+  // Log the merge on the primary
+  await db.execute(sql`
+    INSERT INTO order_logs (order_id, action, actor, details, created_at)
+    VALUES (${primary.id}, 'Orders merged', 'System', ${`Absorbed orders ${secondaryNumbers} into ${primary.order_number}`}, now())
+  `);
+
+  const updatedRows = await db.execute(sql`SELECT * FROM orders WHERE id = ${primary.id}`);
+  res.json({ ok: true, primary: updatedRows.rows[0] });
+});
+
 // ─── admin: list portal-pending orders ───────────────────────────────────────
 
 router.get("/portal/admin/pending-orders", async (req: Request, res: Response) => {
