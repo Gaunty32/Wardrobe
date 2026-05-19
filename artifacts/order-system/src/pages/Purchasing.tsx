@@ -389,7 +389,7 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
 }) {
   const { toast } = useToast();
   const [notes, setNotes] = useState("");
-  const [manualEmail, setManualEmail] = useState("");
+  const [manualEmail, setManualEmail] = useState(po.supplierEmail ?? "");
   const [estimatedDueDate, setEstimatedDueDate] = useState("");
   const [sending, setSending] = useState(false);
   const [markingOrdered, setMarkingOrdered] = useState(false);
@@ -443,17 +443,19 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
     }
   };
 
-  const effectiveEmail = po.supplierEmail ?? manualEmail.trim();
+  const effectiveEmail = manualEmail.trim();
+
+  useEffect(() => { setManualEmail(po.supplierEmail ?? ""); }, [po.id]);
 
   const handleSend = async () => {
     setSending(true);
     try {
-      const recipient = po.supplierEmail ?? manualEmail.trim();
+      const recipient = manualEmail.trim();
       await apiFetch(`/purchasing/purchase-orders/${po.id}/send-email`, {
         method: "POST",
         body: JSON.stringify({
           notes,
-          overrideEmail: po.supplierEmail ? undefined : (manualEmail.trim() || undefined),
+          overrideEmail: manualEmail.trim() || undefined,
           estimatedDueDate: estimatedDueDate || undefined,
         }),
       });
@@ -524,26 +526,21 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
         </DialogHeader>
 
         <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
-          {po.supplierEmail ? (
-            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm flex items-center gap-2">
-              <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-              <span>{po.supplierEmail}</span>
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                <Mail className="w-3.5 h-3.5" /> Recipient email
-              </Label>
-              <Input
-                type="email"
-                placeholder="supplier@example.com"
-                value={manualEmail}
-                onChange={(e) => setManualEmail(e.target.value)}
-                className="text-sm"
-              />
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <Mail className="w-3.5 h-3.5" /> Recipient email
+            </Label>
+            <Input
+              type="email"
+              placeholder="supplier@example.com"
+              value={manualEmail}
+              onChange={(e) => setManualEmail(e.target.value)}
+              className="text-sm"
+            />
+            {!po.supplierEmail && (
               <p className="text-xs text-amber-700">No email on file — enter one above or use "Mark as Ordered" instead.</p>
-            </div>
-          )}
+            )}
+          </div>
 
           {processStockItems.length > 0 && (
             <div className="space-y-1.5 min-h-0">
