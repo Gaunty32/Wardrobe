@@ -743,7 +743,7 @@ function buildMatrix(items: POItemData[]) {
 
 export async function generatePOPdf(po: POData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 50, size: "A4", autoFirstPage: false });
+    const doc = new PDFDocument({ margins: { top: 0, left: 0, right: 0, bottom: 0 }, size: "A4", autoFirstPage: false });
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
