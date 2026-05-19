@@ -23,7 +23,7 @@ import {
   ArrowLeft, ArrowRight, Plus, Minus, Trash2, Loader2,
   Shirt, ShoppingBag, CheckCircle2, Search,
   User, Package, History, Tag, Sparkles, Heart, X, Mail, UserPlus,
-  CreditCard, FileText, AlertCircle, Printer, MapPin, Boxes, TrendingUp, Paperclip,
+  CreditCard, FileText, AlertCircle, Printer, MapPin, Boxes, TrendingUp, Paperclip, Gift,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -1768,7 +1768,7 @@ const SHIPPING_OPTIONS = [
 function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
-  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }> }) => void;
+  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) => void;
   submitting: boolean;
   portalRole: string;
   onAddMore?: () => void;
@@ -1786,6 +1786,16 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const [selectedPmId, setSelectedPmId] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Array<{ name: string; objectPath: string }>>([]);
   const [uploading, setUploading] = useState(false);
+  const [wantsSelectExtra, setWantsSelectExtra] = useState(true);
+
+  const { data: selectExtraData } = useQuery<{
+    offer: { id: number; productName: string; description: string | null; productUrl: string | null; quantity: number; minSpend: number; title: string } | null;
+    claimed: boolean;
+  }>({
+    queryKey: ["portal-select-extra"],
+    queryFn: () => apiFetch("/portal/select-extra/current"),
+    staleTime: 60_000,
+  });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -1833,6 +1843,10 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const itemsTotal = basket.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
   const totalQty = basket.reduce((s, i) => s + i.quantity, 0);
   const orderTotal = itemsTotal + shippingCost;
+
+  const selectExtraOffer = selectExtraData?.offer ?? null;
+  const alreadyClaimed = selectExtraData?.claimed ?? false;
+  const qualifiesForExtra = selectExtraOffer !== null && !alreadyClaimed && itemsTotal >= selectExtraOffer.minSpend;
 
   const updateQty = (idx: number, delta: number) => {
     setBasket(b => b.map((item, i) => i === idx ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item));
@@ -2124,6 +2138,55 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
         </div>
       )}
 
+      {/* ── Select Extra offer card ──────────────────────────────────────── */}
+      {selectExtraOffer && !alreadyClaimed && (
+        <div className={`mt-6 rounded-xl border px-5 py-4 ${qualifiesForExtra ? "bg-gradient-to-r from-amber-50 via-orange-50 to-transparent border-amber-200" : "bg-muted/40 border-border"}`}>
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${qualifiesForExtra ? "bg-amber-100" : "bg-muted"}`}>
+              <Gift className={`w-4 h-4 ${qualifiesForExtra ? "text-amber-600" : "text-muted-foreground"}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                <span className={`text-xs font-bold uppercase tracking-wide ${qualifiesForExtra ? "text-amber-600" : "text-muted-foreground"}`}>Select Extra</span>
+                <span className="text-xs text-muted-foreground">— {selectExtraOffer.title}</span>
+              </div>
+              {qualifiesForExtra ? (
+                <>
+                  <p className="text-sm font-semibold text-amber-900">
+                    You qualify for a free {selectExtraOffer.productName}!
+                  </p>
+                  <p className="text-xs text-amber-800 mt-0.5">{selectExtraOffer.description ?? `${selectExtraOffer.quantity}× included free with this order.`}</p>
+                  <label className="flex items-center gap-2 mt-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={wantsSelectExtra}
+                      onChange={e => setWantsSelectExtra(e.target.checked)}
+                      className="w-4 h-4 accent-amber-600 rounded"
+                    />
+                    <span className="text-sm text-amber-900 font-medium">Add free gift to this order</span>
+                  </label>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Add{" "}
+                  <span className="font-medium">£{selectExtraOffer.minSpend.toFixed(0)}</span>
+                  {" "}or more (excl. VAT) to this order to claim {selectExtraOffer.productName} free.
+                  {itemsTotal > 0 && (
+                    <span className="ml-1 text-xs">(Current: £{itemsTotal.toFixed(2)} — need £{Math.max(0, selectExtraOffer.minSpend - itemsTotal).toFixed(2)} more)</span>
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {selectExtraOffer && alreadyClaimed && (
+        <div className="mt-6 rounded-xl border border-green-200 bg-green-50 px-5 py-3 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+          <p className="text-sm text-green-800">You've already claimed your Select Extra gift this month.</p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1 mt-6">
         <Button
           onClick={() => onSubmit({
@@ -2134,6 +2197,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             poNumber,
             paymentMethodId: portalRole === "manager" && paymentChoice === "card" ? selectedPmId : null,
             attachments,
+            claimSelectExtra: qualifiesForExtra && wantsSelectExtra,
           })}
           disabled={submitting || basket.length === 0 || !shippingId}
           className="w-full sm:w-auto"
@@ -2235,12 +2299,13 @@ function printPickingNote(note: PickingNote) {
   setTimeout(() => win.print(), 300);
 }
 
-function ConfirmStep({ orderNumber, allFromStock, pickingNote, onViewOrder, stripeCharge }: {
+function ConfirmStep({ orderNumber, allFromStock, pickingNote, onViewOrder, stripeCharge, selectExtraClaimed }: {
   orderNumber?: string;
   allFromStock?: boolean;
   pickingNote?: PickingNote | null;
   onViewOrder?: () => void;
   stripeCharge?: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null;
+  selectExtraClaimed?: boolean;
 }) {
   return (
     <div className="py-10 max-w-lg mx-auto">
@@ -2263,6 +2328,15 @@ function ConfirmStep({ orderNumber, allFromStock, pickingNote, onViewOrder, stri
           </>
         )}
       </div>
+
+      {selectExtraClaimed && (
+        <div className="flex items-center gap-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg px-4 py-3 text-sm mb-4">
+          <Gift className="w-4 h-4 shrink-0 text-amber-600" />
+          <span>
+            <strong>Select Extra gift claimed!</strong> Your free water bottles will be included with this order.
+          </span>
+        </div>
+      )}
 
       {stripeCharge?.success && (
         <div className="flex items-center gap-2 bg-green-50 text-green-800 border border-green-200 rounded-lg px-4 py-2.5 text-sm mb-4">
@@ -2374,6 +2448,7 @@ export default function NewOrder() {
     allFromStock?: boolean;
     stripeCharge?: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null;
     pickingNote?: PickingNote | null;
+    selectExtraClaimed?: boolean;
   } | null>(null);
   const [confirmedEnquiry, setConfirmedEnquiry] = useState<{ enquiryRef: string } | null>(null);
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2437,7 +2512,7 @@ export default function NewOrder() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }> }) =>
+    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) =>
       apiFetch("/portal/orders", {
         method: "POST",
         body: JSON.stringify({
@@ -2447,6 +2522,7 @@ export default function NewOrder() {
           shippingOption: data.shippingOption || undefined,
           shippingCost: data.shippingCost,
           paymentMethodId: data.paymentMethodId ?? null,
+          claimSelectExtra: data.claimSelectExtra ?? false,
           attachments: data.attachments.length ? data.attachments : undefined,
           items: basket.map(i => ({
             productId: i.productId,
@@ -2472,6 +2548,7 @@ export default function NewOrder() {
         allFromStock: data.allFromStock ?? false,
         stripeCharge: data.stripeCharge ?? null,
         pickingNote: data.pickingNote ?? null,
+        selectExtraClaimed: data.selectExtraClaimed ?? false,
       });
       setStep(3);
     },
@@ -2597,6 +2674,7 @@ export default function NewOrder() {
           pickingNote={confirmedOrder.pickingNote}
           onViewOrder={confirmedOrder.id ? () => setLocation(`/orders/${confirmedOrder.id}`) : undefined}
           stripeCharge={confirmedOrder.stripeCharge}
+          selectExtraClaimed={confirmedOrder.selectExtraClaimed}
         />
       )}
 

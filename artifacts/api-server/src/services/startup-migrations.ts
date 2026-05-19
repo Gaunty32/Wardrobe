@@ -735,6 +735,52 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE status = 'invited' AND last_login_at IS NULL
   `);
 
+  // ── Select Extra: monthly gift offer tables ──────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS select_extra_offers (
+      id SERIAL PRIMARY KEY,
+      year INTEGER NOT NULL,
+      month INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      description TEXT,
+      image_url TEXT,
+      product_url TEXT,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      min_spend NUMERIC(10,2) NOT NULL DEFAULT 250.00,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (year, month)
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS select_extra_claims (
+      id SERIAL PRIMARY KEY,
+      offer_id INTEGER NOT NULL REFERENCES select_extra_offers(id) ON DELETE CASCADE,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      order_number TEXT,
+      customer_name TEXT,
+      claimed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (offer_id, customer_id)
+    )
+  `);
+
+  // Seed May 2026 offer if it doesn't exist
+  await db.execute(sql`
+    INSERT INTO select_extra_offers (year, month, title, product_name, description, product_url, quantity, min_spend)
+    VALUES (
+      2026, 5,
+      'Select Extra — May 2026',
+      '12× Handled Aluminium Water Bottle',
+      'Spend £250 or more (before VAT) on any order this month and we''ll include 12 free handled aluminium water bottles with your delivery. One claim per customer.',
+      'https://www.selectuniforms.co.uk/shop/accessories/additions/12xhandled-aluminium-water-bottle/',
+      12, 250.00
+    )
+    ON CONFLICT (year, month) DO NOTHING
+  `);
+
   // ── Auto-register staff email accounts from STAFF_EMAILS env var ──────────
   // Format: comma-separated emails, e.g. "chris@example.com,alice@example.com"
   // On each startup any listed addresses are merged into the staff_accounts

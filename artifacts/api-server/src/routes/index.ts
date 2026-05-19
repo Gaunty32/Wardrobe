@@ -24,6 +24,7 @@ import stripePaymentsRouter from "./stripe-payments";
 import reportsRouter from "./reports";
 import staffAuthRouter from "./staff-auth";
 import messagesRouter from "./messages";
+import selectExtraRouter from "./select-extra";
 
 const router: IRouter = Router();
 
@@ -52,5 +53,6 @@ router.use(stripePaymentsRouter);
 router.use(reportsRouter);
 router.use(staffAuthRouter);
 router.use(messagesRouter);
+router.use(selectExtraRouter);
 
 export default router;

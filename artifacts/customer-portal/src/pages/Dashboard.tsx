@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Plus, Loader2, ShoppingBag, ArrowRight, Clock, CheckCircle2, XCircle, Package, AlertCircle, User,
-  Hash, Pencil, Check, X, Tags,
+  Hash, Pencil, Check, X, Tags, Gift, Star,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -571,6 +571,16 @@ export default function Dashboard() {
     queryFn: () => apiFetch("/portal/orders"),
   });
 
+  const { data: selectExtraData } = useQuery<{
+    offer: { id: number; productName: string; description: string | null; productUrl: string | null; quantity: number; minSpend: number; title: string } | null;
+    claimed: boolean;
+    claimOrderNumber: string | null;
+  }>({
+    queryKey: ["portal-select-extra"],
+    queryFn: () => apiFetch("/portal/select-extra/current"),
+    staleTime: 60_000,
+  });
+
   // ── Batch PO assignment mode (managers only) ────────────────────────────────
   const [poMode, setPoMode] = useState(false);
   const [poSelected, setPoSelected] = useState<Set<number>>(new Set());
@@ -616,6 +626,62 @@ export default function Dashboard() {
               <p className="text-muted-foreground text-sm mt-1 max-w-2xl leading-relaxed">
                 {welcome.body}
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Select Extra — monthly free gift offer */}
+      {selectExtraData?.offer && (
+        <div className={`rounded-xl border px-5 py-4 mb-6 ${selectExtraData.claimed ? "bg-green-50 border-green-200" : "bg-gradient-to-r from-amber-50 via-orange-50 to-transparent border-amber-200"}`}>
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${selectExtraData.claimed ? "bg-green-100" : "bg-amber-100"}`}>
+              {selectExtraData.claimed
+                ? <CheckCircle2 className="w-5 h-5 text-green-600" />
+                : <Gift className="w-5 h-5 text-amber-600" />
+              }
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs font-bold uppercase tracking-wide ${selectExtraData.claimed ? "text-green-600" : "text-amber-600"}`}>
+                  Select Extra
+                </span>
+                <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
+                <span className="text-xs text-muted-foreground">May 2026</span>
+              </div>
+              {selectExtraData.claimed ? (
+                <div>
+                  <p className="text-sm font-semibold text-green-800 mt-0.5">You've claimed your free gift!</p>
+                  <p className="text-xs text-green-700 mt-0.5">
+                    {selectExtraData.offer.productName} will be included with your{" "}
+                    {selectExtraData.claimOrderNumber ? <span>order <strong>{selectExtraData.claimOrderNumber}</strong></span> : "order"}.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-sm font-semibold text-amber-900 mt-0.5">
+                    Free gift with your next order — spend £{selectExtraData.offer.minSpend.toFixed(0)}+ (excl. VAT)
+                  </p>
+                  <p className="text-xs text-amber-800 mt-0.5 max-w-xl">
+                    {selectExtraData.offer.description ?? `Add ${selectExtraData.offer.productName} to your next qualifying order, free of charge.`}
+                  </p>
+                  <div className="mt-2 flex items-center gap-2 flex-wrap">
+                    <Button size="sm" variant="default" className="h-7 text-xs px-3 bg-amber-600 hover:bg-amber-700" onClick={() => setLocation("/orders/new")}>
+                      Place an order <ArrowRight className="w-3 h-3 ml-1" />
+                    </Button>
+                    {selectExtraData.offer.productUrl && (
+                      <a
+                        href={selectExtraData.offer.productUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-amber-700 underline underline-offset-2 hover:text-amber-900"
+                      >
+                        View product
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -885,6 +885,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     shippingOption: z.string().optional(),
     shippingCost: z.number().nonnegative().optional(),
     paymentMethodId: z.string().nullable().optional(),
+    claimSelectExtra: z.boolean().optional(),
     attachments: z.array(z.object({ name: z.string(), objectPath: z.string() })).optional(),
     items: z.array(z.object({
       productId: z.number().nullable().optional(),
@@ -1191,10 +1192,41 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     }
   }
 
+  // ── Select Extra: record claim if customer opted in ──────────────────────────
+  let selectExtraClaimed = false;
+  if (body.claimSelectExtra) {
+    try {
+      const seNow = new Date();
+      const seYear = seNow.getFullYear();
+      const seMonth = seNow.getMonth() + 1;
+      const offerRows = await db.execute(sql`
+        SELECT id, min_spend FROM select_extra_offers
+        WHERE year = ${seYear} AND month = ${seMonth} AND is_active = true
+        LIMIT 1
+      `);
+      if (offerRows.rows.length > 0) {
+        const offer = offerRows.rows[0] as any;
+        const minSpend = parseFloat(offer.min_spend);
+        const itemsTotalExVat = sbsItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+        if (itemsTotalExVat >= minSpend) {
+          await db.execute(sql`
+            INSERT INTO select_extra_claims (offer_id, customer_id, order_id, order_number, customer_name)
+            VALUES (${offer.id}, ${customerId}, ${order.id}, ${order.order_number}, ${customerName})
+            ON CONFLICT (offer_id, customer_id) DO NOTHING
+          `);
+          selectExtraClaimed = true;
+        }
+      }
+    } catch (seErr: any) {
+      console.error("Select Extra claim error:", seErr);
+    }
+  }
+
   res.status(201).json({
     id: order.id,
     orderNumber: order.order_number,
     stripeCharge,
+    selectExtraClaimed,
     pickingNote: pickingNoteRef ? { ref: pickingNoteRef, items: pickingNoteItems } : null,
   });
   } catch (err: any) {

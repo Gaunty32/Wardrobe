@@ -22,6 +22,7 @@ import Settings from "@/pages/Settings";
 import Tasks from "@/pages/Tasks";
 import Invoices from "@/pages/Invoices";
 import Reports from "@/pages/Reports";
+import SelectExtra from "@/pages/SelectExtra";
 import NotFound from "@/pages/not-found";
 import DemoGate from "@/pages/DemoGate";
 import DemoDashboard from "@/pages/DemoDashboard";
@@ -103,6 +104,7 @@ function Router() {
       <Route path="/invoices" component={Invoices} />
       <Route path="/settings" component={Settings} />
       <Route path="/reports" component={Reports} />
+      <Route path="/select-extra" component={SelectExtra} />
       <Route component={NotFound} />
     </Switch>
   );
