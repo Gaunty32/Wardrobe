@@ -107,11 +107,16 @@ export default function StaffLogin() {
     setError(null);
     setLoading(true);
     try {
-      await fetch(`${API_BASE}/auth/staff/request-otp`, {
+      const res = await fetch(`${API_BASE}/auth/staff/request-otp`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Failed to send login code. Please try again.");
+        return;
+      }
       setCodeSent(true);
       setCode("");
       setMode("verify-code");
