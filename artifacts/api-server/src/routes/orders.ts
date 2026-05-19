@@ -840,6 +840,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       colour: orderItemsTable.colour,
       size: orderItemsTable.size, quantity: orderItemsTable.quantity,
       unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
+      vatRate: orderItemsTable.vatRate,
       recipientName: orderItemsTable.recipientName,
       finishName: orderItemsTable.finishName,
     })
@@ -913,6 +914,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   const { subject, html, text } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
+    portalSubmittedByName: order.portalSubmittedByName ?? null,
     contactFirstName,
     customerLogoDataUrl,
     shippingMethod: order.shippingMethod ?? null,
@@ -1188,6 +1190,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
   const { subject, html, text } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
+    portalSubmittedByName: order.portalSubmittedByName ?? null,
     contactFirstName,
     orderDate: order.orderDate ?? null,
     requiredDate: order.requiredDate ?? null,
@@ -1350,6 +1353,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
   const { subject, html } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
+    portalSubmittedByName: order.portalSubmittedByName ?? null,
     contactFirstName,
     orderDate: order.orderDate ?? null,
     requiredDate: order.requiredDate ?? null,

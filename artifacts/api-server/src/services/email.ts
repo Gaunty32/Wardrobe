@@ -115,6 +115,8 @@ export async function sendEmail(opts: {
 export function buildAcknowledgementEmail(order: {
   orderNumber: string;
   customerName: string | null;
+  /** Name of the person who placed the order (e.g. portal submitter) — highest priority for greeting */
+  portalSubmittedByName?: string | null;
   contactFirstName?: string | null;
   customerLogoDataUrl?: string | null;
   shippingMethod?: string | null;
@@ -136,7 +138,7 @@ export function buildAcknowledgementEmail(order: {
   const subject = `Order Acknowledged — Ref ${order.orderNumber} | Select Branding Solutions`;
 
   const stripeLink = order.stripePaymentLink ?? "https://buy.stripe.com/bIY16peJJ5j99Us144";
-  const firstName = toFirstName(order.contactFirstName ?? order.customerName);
+  const firstName = toFirstName(order.portalSubmittedByName ?? order.contactFirstName ?? order.customerName);
 
   const itemRows = order.items
     .map(
