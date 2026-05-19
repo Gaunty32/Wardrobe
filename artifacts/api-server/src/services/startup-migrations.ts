@@ -769,16 +769,18 @@ export async function runStartupMigrations(): Promise<void> {
 
   // Seed May 2026 offer if it doesn't exist
   await db.execute(sql`
-    INSERT INTO select_extra_offers (year, month, title, product_name, description, product_url, quantity, min_spend)
+    INSERT INTO select_extra_offers (year, month, title, product_name, description, image_url, product_url, quantity, min_spend)
     VALUES (
       2026, 5,
       'Select Extra — May 2026',
       '12× Handled Aluminium Water Bottle',
       'Spend £250 or more (before VAT) on any order this month and we''ll include 12 free handled aluminium water bottles with your delivery. One claim per customer.',
+      'https://www.selectuniforms.co.uk/wp-content/uploads/FCC4009-100x100.png',
       'https://www.selectuniforms.co.uk/shop/accessories/additions/12xhandled-aluminium-water-bottle/',
       12, 250.00
     )
-    ON CONFLICT (year, month) DO NOTHING
+    ON CONFLICT (year, month) DO UPDATE SET
+      image_url = COALESCE(select_extra_offers.image_url, EXCLUDED.image_url)
   `);
 
   // ── Auto-register staff email accounts from STAFF_EMAILS env var ──────────

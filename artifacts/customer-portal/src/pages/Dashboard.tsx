@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import selectExtraLogo from "@assets/image_1779217290966.png";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import PortalLayout from "@/components/Layout";
@@ -572,7 +573,7 @@ export default function Dashboard() {
   });
 
   const { data: selectExtraData } = useQuery<{
-    offer: { id: number; productName: string; description: string | null; productUrl: string | null; quantity: number; minSpend: number; title: string } | null;
+    offer: { id: number; productName: string; description: string | null; imageUrl: string | null; productUrl: string | null; quantity: number; minSpend: number; title: string } | null;
     claimed: boolean;
     claimOrderNumber: string | null;
   }>({
@@ -633,41 +634,64 @@ export default function Dashboard() {
 
       {/* Select Extra — monthly free gift offer */}
       {selectExtraData?.offer && (
-        <div className={`rounded-xl border px-5 py-4 mb-6 ${selectExtraData.claimed ? "bg-green-50 border-green-200" : "bg-gradient-to-r from-amber-50 via-orange-50 to-transparent border-amber-200"}`}>
-          <div className="flex items-start gap-3">
-            <div className={`mt-0.5 w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${selectExtraData.claimed ? "bg-green-100" : "bg-amber-100"}`}>
-              {selectExtraData.claimed
-                ? <CheckCircle2 className="w-5 h-5 text-green-600" />
-                : <Gift className="w-5 h-5 text-amber-600" />
-              }
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={`text-xs font-bold uppercase tracking-wide ${selectExtraData.claimed ? "text-green-600" : "text-amber-600"}`}>
+        <div className={`rounded-xl border mb-6 overflow-hidden ${selectExtraData.claimed ? "bg-green-50 border-green-200" : "bg-gradient-to-r from-amber-50 via-orange-50/60 to-transparent border-amber-200"}`}>
+          <div className="flex items-stretch">
+
+            {/* Left: product thumbnail */}
+            {selectExtraData.offer.imageUrl ? (
+              <div className="shrink-0 w-24 sm:w-28 bg-white border-r border-amber-100 flex items-center justify-center p-2">
+                <img
+                  src={selectExtraData.offer.imageUrl}
+                  alt={selectExtraData.offer.productName}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className={`shrink-0 w-16 flex items-center justify-center border-r ${selectExtraData.claimed ? "bg-green-100 border-green-200" : "bg-amber-100 border-amber-200"}`}>
+                {selectExtraData.claimed
+                  ? <CheckCircle2 className="w-6 h-6 text-green-600" />
+                  : <Gift className="w-6 h-6 text-amber-600" />}
+              </div>
+            )}
+
+            {/* Centre: content */}
+            <div className="flex-1 min-w-0 px-4 py-3.5">
+              {/* Label row */}
+              <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                <span className={`text-[11px] font-bold uppercase tracking-widest ${selectExtraData.claimed ? "text-green-600" : "text-amber-600"}`}>
                   Select Extra
                 </span>
-                <Star className="w-3 h-3 text-amber-400 fill-amber-400 shrink-0" />
-                <span className="text-xs text-muted-foreground">May 2026</span>
+                <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400 shrink-0" />
+                <span className="text-[11px] text-muted-foreground">{selectExtraData.offer.title.replace("Select Extra — ", "")}</span>
               </div>
+
               {selectExtraData.claimed ? (
-                <div>
-                  <p className="text-sm font-semibold text-green-800 mt-0.5">You've claimed your free gift!</p>
+                <>
+                  <p className="text-sm font-semibold text-green-800">You've claimed your free gift!</p>
                   <p className="text-xs text-green-700 mt-0.5">
                     {selectExtraData.offer.productName} will be included with your{" "}
-                    {selectExtraData.claimOrderNumber ? <span>order <strong>{selectExtraData.claimOrderNumber}</strong></span> : "order"}.
+                    {selectExtraData.claimOrderNumber
+                      ? <span>order <strong>{selectExtraData.claimOrderNumber}</strong></span>
+                      : "order"}.
                   </p>
-                </div>
+                  <p className="text-xs text-green-600/80 mt-1">
+                    Select Extra is our gift to our loyal customers. One per customer per month with a qualifying order.
+                  </p>
+                </>
               ) : (
-                <div>
-                  <p className="text-sm font-semibold text-amber-900 mt-0.5">
+                <>
+                  <p className="text-sm font-semibold text-amber-900">
                     Free gift with your next order — spend £{selectExtraData.offer.minSpend.toFixed(0)}+ (excl. VAT)
                   </p>
-                  <p className="text-xs text-amber-800 mt-0.5 max-w-xl">
+                  <p className="text-xs text-amber-800/90 mt-0.5 max-w-lg leading-relaxed">
                     {selectExtraData.offer.description ?? `Add ${selectExtraData.offer.productName} to your next qualifying order, free of charge.`}
                   </p>
-                  <div className="mt-2 flex items-center gap-2 flex-wrap">
-                    <Button size="sm" variant="default" className="h-7 text-xs px-3 bg-amber-600 hover:bg-amber-700" onClick={() => setLocation("/orders/new")}>
-                      Place an order <ArrowRight className="w-3 h-3 ml-1" />
+                  <p className="text-xs text-amber-700/80 mt-1">
+                    Select Extra is our gift to our loyal customers. Limited to one per customer per month with a qualifying order value.
+                  </p>
+                  <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                    <Button size="sm" className="h-7 text-xs px-3 bg-amber-600 hover:bg-amber-700 gap-1" onClick={() => setLocation("/orders/new")}>
+                      Place an order <ArrowRight className="w-3 h-3" />
                     </Button>
                     {selectExtraData.offer.productUrl && (
                       <a
@@ -680,9 +704,19 @@ export default function Dashboard() {
                       </a>
                     )}
                   </div>
-                </div>
+                </>
               )}
             </div>
+
+            {/* Right: Select Uniforms Extra logo */}
+            <div className="shrink-0 hidden sm:flex items-center justify-center px-4 py-3 border-l border-amber-100/60">
+              <img
+                src={selectExtraLogo}
+                alt="Select Extra"
+                className="h-14 w-auto object-contain opacity-90"
+              />
+            </div>
+
           </div>
         </div>
       )}
