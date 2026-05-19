@@ -111,10 +111,10 @@ const STATUS_CFG = {
 
 function buildPOMatrix(items: POItem[]) {
   const groupKeys: string[] = [];
-  const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>>; rowItemIds: Map<string, number[]> }>();
+  const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>>; rowItemIds: Map<string, number[]>; cellItemId: Map<string, Map<string, number>> }>();
   for (const item of items) {
     const gk = item.supplierCode ?? item.productName;
-    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() }); }
+    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map() }); }
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = item.size ?? "—";
     if (!g.colours.includes(c)) g.colours.push(c);
@@ -124,6 +124,8 @@ function buildPOMatrix(items: POItem[]) {
     if (item.supplierPrice != null && g.price == null) g.price = item.supplierPrice;
     if (!g.rowItemIds.has(c)) g.rowItemIds.set(c, []);
     g.rowItemIds.get(c)!.push(item.id);
+    if (!g.cellItemId.has(c)) g.cellItemId.set(c, new Map());
+    g.cellItemId.get(c)!.set(s, item.id);
   }
   const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
   const allSizesSet = new Set<string>();
@@ -268,7 +270,37 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
   );
 }
 
-function POMatrixView({ items, currency, onDeleteLine }: { items: POItem[]; currency?: string; onDeleteLine?: (itemId: number) => void }) {
+function MatrixQtyInput({ itemId, initialQty, onSave }: { itemId: number; initialQty: number; onSave: (itemId: number, qty: number) => void }) {
+  const [val, setVal] = useState(String(initialQty));
+  const valRef = useRef(val);
+  valRef.current = val;
+
+  useEffect(() => { setVal(String(initialQty)); }, [initialQty]);
+
+  const handleBlur = () => {
+    const parsed = parseInt(valRef.current);
+    if (!isNaN(parsed) && parsed >= 1 && parsed !== initialQty) {
+      onSave(itemId, parsed);
+    }
+  };
+
+  return (
+    <input
+      type="number" min={1} value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onBlur={handleBlur}
+      onClick={(e) => e.stopPropagation()}
+      className="w-14 h-7 text-center text-sm font-semibold text-primary border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring px-1"
+    />
+  );
+}
+
+function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
+  items: POItem[];
+  currency?: string;
+  onDeleteLine?: (itemId: number) => void;
+  onLineUpdate?: (itemId: number, qty: number) => void;
+}) {
   const { groupKeys, groups, allSizes } = buildPOMatrix(items);
 
   return (
@@ -306,7 +338,19 @@ function POMatrixView({ items, currency, onDeleteLine }: { items: POItem[]; curr
                       <TableCell className="font-medium">{colour}</TableCell>
                       {allSizes.map((sz) => {
                         const qty = g.qty.get(colour)?.get(sz) ?? 0;
-                        return <TableCell key={sz} className="text-center">{qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>;
+                        const cellItemId = g.cellItemId.get(colour)?.get(sz);
+                        if (onLineUpdate && cellItemId && qty > 0) {
+                          return (
+                            <TableCell key={sz} className="text-center p-1">
+                              <MatrixQtyInput itemId={cellItemId} initialQty={qty} onSave={onLineUpdate} />
+                            </TableCell>
+                          );
+                        }
+                        return (
+                          <TableCell key={sz} className="text-center">
+                            {qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground text-xs">—</span>}
+                          </TableCell>
+                        );
                       })}
                       <TableCell className="text-center font-bold">{rowTotal}</TableCell>
                       {onDeleteLine && (
@@ -984,57 +1028,6 @@ function DeliveryRow({ line, onSave }: {
   );
 }
 
-function DraftItemRow({ line, poId, onUpdate }: {
-  line: POItem;
-  poId: number;
-  onUpdate: (poId: number, itemId: number, data: Record<string, unknown>) => void;
-}) {
-  const [qty, setQty] = useState(String(line.quantityOrdered));
-  const [saved, setSaved] = useState(false);
-  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
-  const qtyRef = useRef(qty);
-  qtyRef.current = qty;
-
-  useEffect(() => { setQty(String(line.quantityOrdered)); }, [line.quantityOrdered]);
-
-  const triggerSave = useCallback(() => {
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      const parsed = parseInt(qtyRef.current);
-      if (!isNaN(parsed) && parsed >= 1) {
-        onUpdate(poId, line.id, { quantityOrdered: parsed });
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
-      }
-    }, 300);
-  }, [poId, line.id, onUpdate]);
-
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 bg-card">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2 flex-wrap">
-          {line.supplierCode && (
-            <span className="font-mono text-xs font-bold text-primary">{line.supplierCode}</span>
-          )}
-          <span className="text-sm">{line.canonicalProductName ?? line.productName}</span>
-        </div>
-        {(line.colour || line.size) && (
-          <div className="text-xs text-muted-foreground">{[line.colour, line.size].filter(Boolean).join(" / ")}</div>
-        )}
-      </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <span className="text-xs text-muted-foreground">Qty:</span>
-        <Input
-          type="number" min={1} value={qty}
-          onChange={(e) => setQty(e.target.value)}
-          onBlur={triggerSave}
-          className="h-7 w-16 text-sm text-center px-1"
-        />
-        {saved && <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />}
-      </div>
-    </div>
-  );
-}
 
 function MarkOrderedDialog({ po, open, onClose, onConfirm }: {
   po: PurchaseOrder;
@@ -1220,21 +1213,8 @@ function POCard({
                 items={po.items}
                 currency={po.supplierCurrency}
                 onDeleteLine={po.status === "draft" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
+                onLineUpdate={po.status === "draft" ? (itemId, qty) => onLineUpdate(po.id, itemId, { quantityOrdered: qty }) : undefined}
               />
-
-              {po.status === "draft" && (
-                <div className="space-y-2 pt-3 border-t border-border">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                    <Package className="w-3.5 h-3.5" /> Order Quantities
-                  </h4>
-                  <div className="space-y-1.5">
-                    {po.items.map((line) => (
-                      <DraftItemRow key={line.id} line={line} poId={po.id} onUpdate={onLineUpdate} />
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Quantities save automatically when you click away.</p>
-                </div>
-              )}
 
               {po.status === "ordered" && (
                 <div className="space-y-3 pt-3 border-t border-border">
