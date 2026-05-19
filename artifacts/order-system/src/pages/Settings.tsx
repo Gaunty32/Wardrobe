@@ -87,6 +87,7 @@ function SizesTab() {
 
   const [order, setOrder] = useState<string[]>(DEFAULT_SIZE_ORDER);
   const [dirty, setDirty] = useState(false);
+  const [newSize, setNewSize] = useState("");
   const dragIdx = useRef<number | null>(null);
 
   useEffect(() => {
@@ -126,12 +127,25 @@ function SizesTab() {
   };
   const handleDragEnd = () => { dragIdx.current = null; };
 
+  const addSize = () => {
+    const trimmed = newSize.trim();
+    if (!trimmed || order.includes(trimmed)) { setNewSize(""); return; }
+    setOrder(prev => [...prev, trimmed]);
+    setNewSize("");
+    setDirty(true);
+  };
+
+  const removeSize = (size: string) => {
+    setOrder(prev => prev.filter(s => s !== size));
+    setDirty(true);
+  };
+
   return (
     <div className="grid gap-6 max-w-xl">
       <div>
         <h3 className="text-sm font-semibold mb-1">Size Display Order</h3>
         <p className="text-sm text-muted-foreground mb-4">
-          Drag to reorder. This order is used everywhere sizes appear — wardrobe items, order forms, stock tables, and the customer portal.
+          Drag to reorder, or add/remove sizes. This order is used everywhere sizes appear — wardrobe items, order forms, stock tables, and the customer portal.
         </p>
         <div className="border rounded-lg divide-y overflow-hidden">
           {order.map((size, idx) => (
@@ -141,12 +155,29 @@ function SizesTab() {
               onDragStart={() => handleDragStart(idx)}
               onDragOver={(e) => handleDragOver(e, idx)}
               onDragEnd={handleDragEnd}
-              className="flex items-center gap-3 px-4 py-2.5 cursor-grab active:cursor-grabbing hover:bg-muted/50 select-none transition-colors"
+              className="flex items-center gap-3 px-4 py-2.5 cursor-grab active:cursor-grabbing hover:bg-muted/50 select-none transition-colors group"
             >
               <GripVertical className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
-              <span className="text-sm font-medium">{size}</span>
+              <span className="text-sm font-medium flex-1">{size}</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); removeSize(size); }}
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                title="Remove size"
+              >
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
             </div>
           ))}
+        </div>
+        <div className="flex gap-2 mt-3">
+          <Input
+            value={newSize}
+            onChange={(e) => setNewSize(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addSize(); }}
+            placeholder="Add a size (e.g. Extra Small Youth)"
+            className="flex-1"
+          />
+          <Button variant="outline" onClick={addSize} disabled={!newSize.trim()}>Add</Button>
         </div>
       </div>
       <div className="flex items-center gap-3">

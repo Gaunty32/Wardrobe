@@ -6,7 +6,7 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import {
   db, customersTable, orderItemsTable, productsTable, suppliersTable,
   worksheetsTable, worksheetItemsTable, customerProcessesTable, customerFinishProcessesTable,
-  purchaseOrdersTable, ordersTable, orderLogsTable, orderEmailLogsTable,
+  purchaseOrdersTable, ordersTable, orderLogsTable, orderEmailLogsTable, settingsTable,
 } from "@workspace/db";
 import { sql, eq, inArray, asc } from "drizzle-orm";
 import jwt from "jsonwebtoken";
@@ -1436,6 +1436,29 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     }
   } catch {
     // product_attributes may not have size data — not fatal, sizesMap remains from variants
+  }
+
+  // Sort sizes in sizesMap using the saved size_order setting (unknown sizes go at end alphabetically)
+  try {
+    const [sizeOrderRow] = await db.select().from(settingsTable).where(eq(settingsTable.key, "size_order"));
+    if (sizeOrderRow?.value) {
+      const sizeOrder: string[] = JSON.parse(sizeOrderRow.value);
+      const sortFn = (a: string, b: string) => {
+        const ai = sizeOrder.indexOf(a);
+        const bi = sizeOrder.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.localeCompare(b);
+      };
+      for (const pid of Object.keys(sizesMap)) {
+        for (const col of Object.keys(sizesMap[pid])) {
+          sizesMap[pid][col] = [...new Set(sizesMap[pid][col])].sort(sortFn);
+        }
+      }
+    }
+  } catch {
+    // size ordering is best-effort
   }
 
   // Get employees for this customer
