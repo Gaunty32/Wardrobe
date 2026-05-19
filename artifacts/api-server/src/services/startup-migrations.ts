@@ -734,5 +734,37 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE status = 'invited' AND last_login_at IS NULL
   `);
 
+  // ── Auto-register staff email accounts from STAFF_EMAILS env var ──────────
+  // Format: comma-separated emails, e.g. "chris@example.com,alice@example.com"
+  // On each startup any listed addresses are merged into the staff_accounts
+  // setting so OTP email login always works after a fresh deploy.
+  const staffEmailsEnv = process.env.STAFF_EMAILS?.trim();
+  if (staffEmailsEnv) {
+    const rawRows = await db.execute(sql`
+      SELECT value FROM settings WHERE key = 'staff_accounts' LIMIT 1
+    `);
+    let existing: Array<{ name: string; email: string }> = [];
+    try { existing = JSON.parse((rawRows.rows[0] as any)?.value ?? "[]"); } catch { existing = []; }
+
+    const envEmails = staffEmailsEnv.split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+    let changed = false;
+    for (const email of envEmails) {
+      if (!existing.some(a => a.email === email)) {
+        const namePart = email.split("@")[0].replace(/[._-]/g, " ");
+        const name = namePart.split(" ").map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+        existing.push({ name, email });
+        changed = true;
+        console.log(`[startup] Registered staff account: ${email}`);
+      }
+    }
+    if (changed) {
+      const value = JSON.stringify(existing);
+      await db.execute(sql`
+        INSERT INTO settings (key, value) VALUES ('staff_accounts', ${value})
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+      `);
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 }
