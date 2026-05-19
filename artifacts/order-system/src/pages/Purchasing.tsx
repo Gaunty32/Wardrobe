@@ -39,7 +39,7 @@ interface PurchaseRequirement {
   itemId: number; orderId: number; orderNumber: string | null; customerName: string | null;
   productId: number | null; productName: string; colour: string | null; size: string | null;
   purchaseQuantity: number | null; supplierId: number | null; supplierName: string; supplierEmail: string | null;
-  supplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
+  supplierCode: string | null; secondarySupplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
 }
 interface SupplierGroup {
   supplierId: number | null; supplierName: string; supplierEmail: string | null; supplierCurrency: string; items: PurchaseRequirement[];
@@ -147,12 +147,13 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
     rowItemIds: Map<string, number[]>;
   }>();
   for (const item of items) {
-    const gk = item.supplierCode ?? item.canonicalProductName ?? item.productName;
+    const effectiveCode = item.supplierCode ?? item.secondarySupplierCode ?? null;
+    const gk = effectiveCode ?? item.canonicalProductName ?? item.productName;
     if (!groups.has(gk)) groupKeys.push(gk);
-    if (!groups.has(gk)) groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() });
+    if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() });
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = item.size ?? "—";
-    const cellKey = [item.productName, item.colour ?? "", item.size ?? "", item.supplierCode ?? ""].join("|");
+    const cellKey = [item.productName, item.colour ?? "", item.size ?? "", effectiveCode ?? ""].join("|");
     if (!g.colours.includes(c)) g.colours.push(c);
     if (!g.sizes.includes(s)) g.sizes.push(s);
     if (!g.qty.has(c)) g.qty.set(c, new Map());
@@ -645,7 +646,7 @@ function productDisplayName(item: PurchaseRequirement): string {
 
 function productLabel(item: PurchaseRequirement): string {
   const name = productDisplayName(item);
-  const code = item.supplierCode ?? item.productSku;
+  const code = item.supplierCode ?? item.secondarySupplierCode ?? item.productSku;
   return code ? `${code} — ${name}` : name;
 }
 
@@ -675,9 +676,10 @@ function RequirementsRow({
     <TableRow>
       <TableCell>
         <div className="font-medium text-sm">{item.canonicalProductName ?? item.productName}</div>
-        {(item.supplierCode || item.productSku) && (
+        {(item.supplierCode || item.secondarySupplierCode || item.productSku) && (
           <div className="text-xs text-muted-foreground font-mono mt-0.5">
             {item.supplierCode && <span className="mr-2">Supplier: {item.supplierCode}</span>}
+            {!item.supplierCode && item.secondarySupplierCode && <span className="mr-2">FCC: {item.secondarySupplierCode}</span>}
             {item.productSku && <span>SKU: {item.productSku}</span>}
           </div>
         )}
@@ -722,7 +724,8 @@ function RequirementsLineTable({ items }: { items: PurchaseRequirement[] }) {
   const groupKeys: string[] = [];
   const groups = new Map<string, PurchaseRequirement[]>();
   for (const item of items) {
-    const key = [item.productName, item.colour ?? "", item.size ?? "", item.supplierCode ?? ""].join("|");
+    const ec = item.supplierCode ?? item.secondarySupplierCode ?? "";
+    const key = [item.productName, item.colour ?? "", item.size ?? "", ec].join("|");
     if (!groups.has(key)) { groupKeys.push(key); groups.set(key, []); }
     groups.get(key)!.push(item);
   }
@@ -747,9 +750,10 @@ function RequirementsLineTable({ items }: { items: PurchaseRequirement[] }) {
               <TableRow key={key}>
                 <TableCell>
                   <div className="font-medium text-sm">{first.canonicalProductName ?? first.productName}</div>
-                  {(first.supplierCode || first.productSku) && (
+                  {(first.supplierCode || first.secondarySupplierCode || first.productSku) && (
                     <div className="text-xs text-muted-foreground font-mono mt-0.5">
                       {first.supplierCode && <span className="mr-2">Supplier: {first.supplierCode}</span>}
+                      {!first.supplierCode && first.secondarySupplierCode && <span className="mr-2">FCC: {first.secondarySupplierCode}</span>}
                       {first.productSku && <span>SKU: {first.productSku}</span>}
                     </div>
                   )}
