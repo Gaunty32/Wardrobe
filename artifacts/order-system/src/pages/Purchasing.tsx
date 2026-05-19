@@ -388,9 +388,11 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
 }) {
   const { toast } = useToast();
   const [notes, setNotes] = useState("");
+  const [manualEmail, setManualEmail] = useState("");
+  const [estimatedDueDate, setEstimatedDueDate] = useState("");
   const [sending, setSending] = useState(false);
+  const [markingOrdered, setMarkingOrdered] = useState(false);
   const [uploadingId, setUploadingId] = useState<number | null>(null);
-  // Optimistic map: processStockId → newly uploaded objectPath (so check appears immediately)
   const [localFileUrls, setLocalFileUrls] = useState<Record<number, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPsIdRef = useRef<number | null>(null);
@@ -439,20 +441,44 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
     }
   };
 
+  const effectiveEmail = po.supplierEmail ?? manualEmail.trim();
+
   const handleSend = async () => {
     setSending(true);
     try {
+      const recipient = po.supplierEmail ?? manualEmail.trim();
       await apiFetch(`/purchasing/purchase-orders/${po.id}/send-email`, {
         method: "POST",
-        body: JSON.stringify({ notes }),
+        body: JSON.stringify({
+          notes,
+          overrideEmail: po.supplierEmail ? undefined : (manualEmail.trim() || undefined),
+          estimatedDueDate: estimatedDueDate || undefined,
+        }),
       });
-      toast({ title: "Email sent", description: `PO sent to ${po.supplierEmail}` });
+      toast({ title: "Email sent", description: `PO sent to ${recipient}` });
       onSent();
       onClose();
     } catch (e: any) {
       toast({ title: "Failed to send", description: e.message, variant: "destructive" });
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleMarkOrdered = async () => {
+    setMarkingOrdered(true);
+    try {
+      await apiFetch(`/purchasing/purchase-orders/${po.id}/mark-ordered`, {
+        method: "POST",
+        body: JSON.stringify({ estimatedDueDate: estimatedDueDate || undefined }),
+      });
+      toast({ title: "Marked as ordered", description: "PO status updated without sending an email." });
+      onSent();
+      onClose();
+    } catch (e: any) {
+      toast({ title: "Failed", description: e.message, variant: "destructive" });
+    } finally {
+      setMarkingOrdered(false);
     }
   };
 
@@ -475,12 +501,26 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
         </DialogHeader>
 
         <div className="space-y-4 py-2 overflow-y-auto flex-1 min-h-0">
-          <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm flex items-center gap-2">
-            <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
-            {po.supplierEmail
-              ? <span>{po.supplierEmail}</span>
-              : <span className="text-destructive">No email address on file for this supplier</span>}
-          </div>
+          {po.supplierEmail ? (
+            <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm flex items-center gap-2">
+              <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
+              <span>{po.supplierEmail}</span>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <Mail className="w-3.5 h-3.5" /> Recipient email
+              </Label>
+              <Input
+                type="email"
+                placeholder="supplier@example.com"
+                value={manualEmail}
+                onChange={(e) => setManualEmail(e.target.value)}
+                className="text-sm"
+              />
+              <p className="text-xs text-amber-700">No email on file — enter one above or use "Mark as Ordered" instead.</p>
+            </div>
+          )}
 
           {processStockItems.length > 0 && (
             <div className="space-y-1.5 min-h-0">
@@ -535,18 +575,39 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
             </div>
           )}
 
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Additional notes (optional)</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={2} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5 col-span-2">
+              <Label className="text-xs text-muted-foreground">Additional notes (optional)</Label>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Any extra instructions for this supplier..." rows={2} />
+            </div>
+            <div className="space-y-1.5 col-span-2">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <CalendarDays className="w-3.5 h-3.5" /> Estimated delivery date (optional)
+              </Label>
+              <Input
+                type="date"
+                value={estimatedDueDate}
+                onChange={(e) => setEstimatedDueDate(e.target.value)}
+                className="text-sm"
+              />
+            </div>
           </div>
         </div>
 
-        <DialogFooter className="gap-2 shrink-0">
+        <DialogFooter className="gap-2 shrink-0 flex-wrap">
           <Button variant="outline" className="gap-2 mr-auto" onClick={() => window.open(`/api/purchasing/purchase-orders/${po.id}/pdf`, "_blank")}>
             <FileText className="w-4 h-4" /> Preview PDF
           </Button>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSend} disabled={sending || !po.supplierEmail} className="gap-2">
+          <Button
+            variant="outline"
+            onClick={handleMarkOrdered}
+            disabled={markingOrdered || sending}
+            className="gap-2 border-amber-300 text-amber-700 hover:bg-amber-50"
+          >
+            {markingOrdered ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : <><PackageCheck className="w-4 h-4" />Mark as Ordered</>}
+          </Button>
+          <Button onClick={handleSend} disabled={sending || markingOrdered || (!po.supplierEmail && !manualEmail.trim())} className="gap-2">
             {sending ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</> : <><Send className="w-4 h-4" />Send Email</>}
           </Button>
         </DialogFooter>

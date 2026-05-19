@@ -678,14 +678,18 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
   const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
-  const body = z.object({ notes: z.string().optional().default("") }).safeParse(req.body);
+  const body = z.object({
+    notes: z.string().optional().default(""),
+    overrideEmail: z.string().email().optional().nullable(),
+    estimatedDueDate: z.string().optional().nullable(),
+  }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   const po = await getPoWithItems(params.data.id);
   if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
 
-  const toEmail = po.supplierEmail;
-  if (!toEmail) { res.status(400).json({ error: "No email address on record for this supplier." }); return; }
+  const toEmail = body.data.overrideEmail ?? po.supplierEmail;
+  if (!toEmail) { res.status(400).json({ error: "No email address on record for this supplier. Provide an email address to continue." }); return; }
 
   const poData = {
     poNumber: po.poNumber,
@@ -755,7 +759,40 @@ router.post("/purchasing/purchase-orders/:id/send-email", async (req, res): Prom
     await db.update(purchaseOrdersTable).set({ status: "ordered", sentAt: new Date(), updatedAt: new Date() }).where(eq(purchaseOrdersTable.id, po.id));
   }
 
+  // Apply estimated due date to all items if provided
+  if (body.data.estimatedDueDate) {
+    await db.update(purchaseOrderItemsTable)
+      .set({ estimatedDueDate: new Date(body.data.estimatedDueDate), updatedAt: new Date() })
+      .where(eq(purchaseOrderItemsTable.poId, po.id));
+  }
+
   res.json({ ok: true, to: toEmail });
+});
+
+router.post("/purchasing/purchase-orders/:id/mark-ordered", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const body = z.object({
+    estimatedDueDate: z.string().optional().nullable(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, params.data.id));
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (po.status === "delivered") { res.status(400).json({ error: "Cannot change a delivered PO." }); return; }
+
+  await db.update(purchaseOrdersTable)
+    .set({ status: "ordered", sentAt: new Date(), updatedAt: new Date() })
+    .where(eq(purchaseOrdersTable.id, params.data.id));
+
+  if (body.data.estimatedDueDate) {
+    await db.update(purchaseOrderItemsTable)
+      .set({ estimatedDueDate: new Date(body.data.estimatedDueDate), updatedAt: new Date() })
+      .where(eq(purchaseOrderItemsTable.poId, params.data.id));
+  }
+
+  res.json({ ok: true });
 });
 
 router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Promise<void> => {

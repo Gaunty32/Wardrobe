@@ -750,27 +750,27 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
     doc.on("error", reject);
 
     const MARGIN = 50;
-    // Add first page manually so we can set up pageAdded handler first
     const PAGE_W = 595.28; // A4 points
     const PAGE_H = 841.89;
     const W = PAGE_W - MARGIN * 2;
+    const CONTENT_BOTTOM = PAGE_H - 60; // content must stay above this
 
-    let drawingFooter = false;
+    // Draw the footer on the CURRENT page using absolute coordinates
     const drawFooter = () => {
-      if (drawingFooter) return;
-      drawingFooter = true;
-      try {
-        doc.save();
-        doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
-          .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 32, { align: "center", width: W });
-        doc.restore();
-      } finally {
-        drawingFooter = false;
-      }
+      doc.save();
+      doc.fillColor("#9ca3af").fontSize(8).font("Helvetica")
+        .text("Select Branding Solutions · Effortless uniform management from order to delivery.", MARGIN, PAGE_H - 32, { align: "center", width: W });
+      doc.restore();
     };
 
-    doc.on("pageAdded", () => drawFooter());
-    doc.addPage();
+    // Add a new page: draw the footer on the outgoing page first, then add the new page
+    const newPage = (outY: number): number => {
+      drawFooter();
+      doc.addPage();
+      return MARGIN;
+    };
+
+    doc.addPage(); // first page — no footer on outgoing page needed
     const dateStr = new Date(po.createdAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
     const logoBuffer = SBS_LOGO_BUFFER ?? Buffer.from(SBS_LOGO_DATA_URL.split(",")[1], "base64");
 
@@ -834,139 +834,190 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
 
     // ── Instruction notice ────────────────────────────────────────────────────
     const noticeText = "Please process and despatch at your earliest convenience. Should any items be out of stock please advise your estimated due date prior to despatch.";
-    const noticeH = 22;
+    // Measure the notice text to get the correct height
+    const noticeTextH = doc.heightOfString(noticeText, { width: W - 20, font: "Helvetica-Bold", size: 8.5 });
+    const noticeH = noticeTextH + 14;
     doc.rect(MARGIN, y, W, noticeH).fill("#fefce8").stroke("#fde68a");
     doc.fillColor("#92400e").fontSize(8.5).font("Helvetica-Bold")
-      .text(noticeText, MARGIN + 10, y + 7, { width: W - 20, align: "center", lineBreak: false });
+      .text(noticeText, MARGIN + 10, y + 7, { width: W - 20, align: "center" });
     y += noticeH + 12;
 
-    // ── Per-product style sections ────────────────────────────────────────────
-    const { groupKeys, groups } = buildMatrix(po.items);
-    const ROW_H = 20;
-    const PROD_HDR_H = 24;
-    const COL_HDR_H = 18;
-    let grandTotal = 0;
-    let grandValue = 0;
+    // ── Split items into "matrix" (have colour/size) and "simple" (process-stock, no colour/size) ──
+    const matrixItems = po.items.filter(i => i.colour != null || i.size != null);
+    const simpleItems = po.items.filter(i => i.colour == null && i.size == null);
 
-    for (const gk of groupKeys) {
-      const g = groups.get(gk)!;
-      const productSizes = g.sizes;
-      const numCols = productSizes.length;
+    // ── Simple items section (process stock artworks) ─────────────────────────
+    if (simpleItems.length > 0) {
+      const LIST_ROW_H = 22;
+      const HDR_H = 24;
 
-      // Column layout: Colour | size… | Total
-      const COLOUR_W = 115;
-      const TOTAL_W  = 48;
-      const SIZE_W   = Math.min(60, Math.max(36, Math.floor((W - COLOUR_W - TOTAL_W) / Math.max(numCols, 1))));
-      const TABLE_W  = COLOUR_W + SIZE_W * numCols + TOTAL_W;
-      const tX       = MARGIN;
+      // Section header
+      if (y + HDR_H + LIST_ROW_H > CONTENT_BOTTOM) y = newPage(y);
+      doc.rect(MARGIN, y, W, HDR_H).fill("#0f172a");
+      doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
+        .text("Print Files / Artworks", MARGIN + 8, y + 7, { width: W - 100, lineBreak: false });
+      doc.fillColor("#94a3b8").fontSize(8).font("Helvetica")
+        .text("Qty", MARGIN + W - 60, y + 8, { width: 55, align: "right", lineBreak: false });
+      y += HDR_H;
 
-      // Estimate space needed: product header + col header + rows + totals row
-      const sectionH = PROD_HDR_H + COL_HDR_H + (g.colours.length + 1) * ROW_H + 14;
-      if (y + sectionH > PAGE_H - 60) {
-        doc.addPage();
-        y = MARGIN;
-      }
+      let simpleGrandTotal = 0;
+      let rowAltS = false;
+      for (const item of simpleItems) {
+        if (y + LIST_ROW_H > CONTENT_BOTTOM) y = newPage(y);
+        const rowBg = rowAltS ? "#f8fafc" : "#ffffff";
+        doc.rect(MARGIN, y, W, LIST_ROW_H).fill(rowBg).stroke("#e2e8f0");
 
-      // ── Product heading band ──
-      const code        = g.code ?? g.sbsCode ?? null;
-      const sbsCodeNote = g.sbsCode && g.code && g.sbsCode !== g.code ? `  (SBS: ${g.sbsCode})` : "";
-      doc.rect(MARGIN, y, W, PROD_HDR_H).fill("#0f172a");
-      // Code on the left in monospace amber
-      if (code) {
-        doc.fillColor("#fbbf24").fontSize(10).font("Helvetica-Bold")
-          .text(code, MARGIN + 8, y + 7, { width: 120, lineBreak: false });
-        doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
-          .text(`  ${g.productName}${sbsCodeNote}`, MARGIN + 10 + 120, y + 7, { width: W - 148, lineBreak: false });
-      } else {
-        doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
-          .text(g.productName, MARGIN + 8, y + 7, { width: W - 16, lineBreak: false });
-      }
-      y += PROD_HDR_H;
-
-      // ── Column header row ──
-      doc.rect(tX, y, TABLE_W, COL_HDR_H).fill("#334155");
-      doc.fillColor("#e2e8f0").fontSize(8).font("Helvetica-Bold");
-      doc.text("Colour / Style", tX + 6, y + 5, { width: COLOUR_W - 6, lineBreak: false });
-      let sx = tX + COLOUR_W;
-      for (const sz of productSizes) {
-        doc.text(sz, sx, y + 5, { width: SIZE_W, align: "center", lineBreak: false });
-        sx += SIZE_W;
-      }
-      doc.text("Total", sx, y + 5, { width: TOTAL_W, align: "center", lineBreak: false });
-      y += COL_HDR_H;
-
-      // ── Colour rows ──
-      let rowAlt = false;
-      const sizeTotals = new Map<string, number>();
-      let groupTotal = 0;
-
-      for (const colour of g.colours) {
-        if (y + ROW_H > PAGE_H - 60) { doc.addPage(); y = MARGIN; }
-        const rowTotal = productSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
-        groupTotal += rowTotal;
-
-        doc.rect(tX, y, TABLE_W, ROW_H)
-          .fill(rowAlt ? "#f1f5f9" : "#ffffff")
-          .stroke("#e2e8f0");
-
-        // Colour label
-        doc.fillColor("#111827").fontSize(9).font("Helvetica")
-          .text(colour, tX + 6, y + 6, { width: COLOUR_W - 6, lineBreak: false });
-
-        // Size quantities
-        sx = tX + COLOUR_W;
-        for (const sz of productSizes) {
-          const qty = g.qty.get(colour)?.get(sz) ?? 0;
-          if (qty > 0) sizeTotals.set(sz, (sizeTotals.get(sz) ?? 0) + qty);
-          if (qty > 0) {
-            doc.fillColor("#111827").fontSize(9).font("Helvetica-Bold")
-              .text(String(qty), sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
-          } else {
-            doc.fillColor("#cbd5e1").fontSize(9).font("Helvetica")
-              .text("—", sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
-          }
-          sx += SIZE_W;
+        // Supplier code
+        const code = item.supplierCode ?? null;
+        let nameX = MARGIN + 8;
+        if (code) {
+          doc.fillColor("#4f46e5").fontSize(8.5).font("Helvetica-Bold")
+            .text(code, MARGIN + 8, y + 6, { width: 55, lineBreak: false });
+          nameX = MARGIN + 68;
         }
-
-        // Row total
+        doc.fillColor("#111827").fontSize(9).font("Helvetica")
+          .text(item.productName, nameX, y + 6, { width: W - (nameX - MARGIN) - 65, lineBreak: false });
         doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
-          .text(String(rowTotal), sx, y + 6, { width: TOTAL_W, align: "center", lineBreak: false });
+          .text(String(item.quantityOrdered), MARGIN + W - 60, y + 6, { width: 55, align: "right", lineBreak: false });
 
-        y += ROW_H;
-        rowAlt = !rowAlt;
+        simpleGrandTotal += item.quantityOrdered;
+        y += LIST_ROW_H;
+        rowAltS = !rowAltS;
       }
 
-      // ── Size-totals row ──
-      if (y + ROW_H > PAGE_H - 60) { doc.addPage(); y = MARGIN; }
-      doc.rect(tX, y, TABLE_W, ROW_H).fill("#dde3ea").stroke("#c8d0da");
+      // Simple totals row
+      if (y + LIST_ROW_H > CONTENT_BOTTOM) y = newPage(y);
+      doc.rect(MARGIN, y, W, LIST_ROW_H).fill("#dde3ea").stroke("#c8d0da");
       doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold")
-        .text("TOTAL", tX + 6, y + 6, { width: COLOUR_W - 6, lineBreak: false });
-      sx = tX + COLOUR_W;
-      for (const sz of productSizes) {
-        const t = sizeTotals.get(sz) ?? 0;
-        doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
-          .text(t > 0 ? String(t) : "—", sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
-        sx += SIZE_W;
-      }
+        .text("TOTAL", MARGIN + 8, y + 7, { width: W - 65, lineBreak: false });
       doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
-        .text(String(groupTotal), sx, y + 6, { width: TOTAL_W, align: "center", lineBreak: false });
-      y += ROW_H;
-
-      grandTotal += groupTotal;
-      if (g.price != null) grandValue += groupTotal * g.price;
-      y += 16; // gap between product sections
+        .text(String(simpleGrandTotal), MARGIN + W - 60, y + 7, { width: 55, align: "right", lineBreak: false });
+      y += LIST_ROW_H + 16;
     }
 
-    // ── Grand total bar ───────────────────────────────────────────────────────
-    if (y + 26 > PAGE_H - 50) { doc.addPage(); y = MARGIN; }
-    doc.rect(MARGIN, y, W, 26).fill("#1e293b");
-    const gtText = grandValue > 0
-      ? `Total order: ${grandTotal} units  ·  Est. value: £${grandValue.toFixed(2)}`
-      : `Total order: ${grandTotal} units`;
-    doc.fillColor("#ffffff").fontSize(11).font("Helvetica-Bold")
-      .text(gtText, MARGIN + 8, y + 8, { width: W - 16, align: "right", lineBreak: false });
-    y += 38;
+    // ── Matrix sections (products with colour/size) ────────────────────────────
+    if (matrixItems.length > 0) {
+      const { groupKeys, groups } = buildMatrix(matrixItems);
+      const ROW_H = 20;
+      const PROD_HDR_H = 24;
+      const COL_HDR_H = 18;
+      let grandTotal = 0;
+      let grandValue = 0;
 
+      for (const gk of groupKeys) {
+        const g = groups.get(gk)!;
+        const productSizes = g.sizes;
+        const numCols = productSizes.length;
+
+        // Column layout: Colour | size… | Total
+        const COLOUR_W = 115;
+        const TOTAL_W  = 48;
+        const SIZE_W   = Math.min(60, Math.max(36, Math.floor((W - COLOUR_W - TOTAL_W) / Math.max(numCols, 1))));
+        const TABLE_W  = COLOUR_W + SIZE_W * numCols + TOTAL_W;
+        const tX       = MARGIN;
+
+        // Estimate space needed: product header + col header + rows + totals row
+        const sectionH = PROD_HDR_H + COL_HDR_H + (g.colours.length + 1) * ROW_H + 14;
+        if (y + sectionH > CONTENT_BOTTOM) y = newPage(y);
+
+        // ── Product heading band ──
+        const code        = g.code ?? g.sbsCode ?? null;
+        const sbsCodeNote = g.sbsCode && g.code && g.sbsCode !== g.code ? `  (SBS: ${g.sbsCode})` : "";
+        doc.rect(MARGIN, y, W, PROD_HDR_H).fill("#0f172a");
+        if (code) {
+          doc.fillColor("#fbbf24").fontSize(10).font("Helvetica-Bold")
+            .text(code, MARGIN + 8, y + 7, { width: 120, lineBreak: false });
+          doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
+            .text(`  ${g.productName}${sbsCodeNote}`, MARGIN + 10 + 120, y + 7, { width: W - 148, lineBreak: false });
+        } else {
+          doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
+            .text(g.productName, MARGIN + 8, y + 7, { width: W - 16, lineBreak: false });
+        }
+        y += PROD_HDR_H;
+
+        // ── Column header row ──
+        doc.rect(tX, y, TABLE_W, COL_HDR_H).fill("#334155");
+        doc.fillColor("#e2e8f0").fontSize(8).font("Helvetica-Bold");
+        doc.text("Colour / Style", tX + 6, y + 5, { width: COLOUR_W - 6, lineBreak: false });
+        let sx = tX + COLOUR_W;
+        for (const sz of productSizes) {
+          doc.text(sz, sx, y + 5, { width: SIZE_W, align: "center", lineBreak: false });
+          sx += SIZE_W;
+        }
+        doc.text("Total", sx, y + 5, { width: TOTAL_W, align: "center", lineBreak: false });
+        y += COL_HDR_H;
+
+        // ── Colour rows ──
+        let rowAlt = false;
+        const sizeTotals = new Map<string, number>();
+        let groupTotal = 0;
+
+        for (const colour of g.colours) {
+          if (y + ROW_H > CONTENT_BOTTOM) y = newPage(y);
+          const rowTotal = productSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+          groupTotal += rowTotal;
+
+          doc.rect(tX, y, TABLE_W, ROW_H)
+            .fill(rowAlt ? "#f1f5f9" : "#ffffff")
+            .stroke("#e2e8f0");
+
+          doc.fillColor("#111827").fontSize(9).font("Helvetica")
+            .text(colour, tX + 6, y + 6, { width: COLOUR_W - 6, lineBreak: false });
+
+          sx = tX + COLOUR_W;
+          for (const sz of productSizes) {
+            const qty = g.qty.get(colour)?.get(sz) ?? 0;
+            if (qty > 0) sizeTotals.set(sz, (sizeTotals.get(sz) ?? 0) + qty);
+            if (qty > 0) {
+              doc.fillColor("#111827").fontSize(9).font("Helvetica-Bold")
+                .text(String(qty), sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
+            } else {
+              doc.fillColor("#cbd5e1").fontSize(9).font("Helvetica")
+                .text("—", sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
+            }
+            sx += SIZE_W;
+          }
+
+          doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
+            .text(String(rowTotal), sx, y + 6, { width: TOTAL_W, align: "center", lineBreak: false });
+
+          y += ROW_H;
+          rowAlt = !rowAlt;
+        }
+
+        // ── Size-totals row ──
+        if (y + ROW_H > CONTENT_BOTTOM) y = newPage(y);
+        doc.rect(tX, y, TABLE_W, ROW_H).fill("#dde3ea").stroke("#c8d0da");
+        doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold")
+          .text("TOTAL", tX + 6, y + 6, { width: COLOUR_W - 6, lineBreak: false });
+        sx = tX + COLOUR_W;
+        for (const sz of productSizes) {
+          const t = sizeTotals.get(sz) ?? 0;
+          doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
+            .text(t > 0 ? String(t) : "—", sx, y + 6, { width: SIZE_W, align: "center", lineBreak: false });
+          sx += SIZE_W;
+        }
+        doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
+          .text(String(groupTotal), sx, y + 6, { width: TOTAL_W, align: "center", lineBreak: false });
+        y += ROW_H;
+
+        grandTotal += groupTotal;
+        if (g.price != null) grandValue += groupTotal * g.price;
+        y += 16;
+      }
+
+      // ── Grand total bar ───────────────────────────────────────────────────────
+      if (y + 26 > CONTENT_BOTTOM) y = newPage(y);
+      doc.rect(MARGIN, y, W, 26).fill("#1e293b");
+      const gtText = grandValue > 0
+        ? `Total order: ${grandTotal} units  ·  Est. value: £${grandValue.toFixed(2)}`
+        : `Total order: ${grandTotal} units`;
+      doc.fillColor("#ffffff").fontSize(11).font("Helvetica-Bold")
+        .text(gtText, MARGIN + 8, y + 8, { width: W - 16, align: "right", lineBreak: false });
+      y += 38;
+    }
+
+    drawFooter(); // draw footer on final page
     doc.end();
   });
 }
