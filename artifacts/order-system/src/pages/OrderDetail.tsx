@@ -308,6 +308,7 @@ const EMPTY_ITEM = {
   quantity: 1,
   unitPrice: "",
   baseUnitPrice: "",
+  vatRate: 0.20,
   fromWardrobe: false,
 };
 
@@ -490,6 +491,13 @@ export default function OrderDetail() {
       setEditingItemPrice(null);
     },
     onError: (e: Error) => toast({ title: "Failed to update price", description: e.message, variant: "destructive" }),
+  });
+
+  const updateItemVatRateMutation = useMutation({
+    mutationFn: ({ itemId, vatRate }: { itemId: number; vatRate: number }) =>
+      apiFetch(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ vatRate }) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }),
+    onError: (e: Error) => toast({ title: "Failed to update VAT rate", description: e.message, variant: "destructive" }),
   });
 
   const updateAttachmentsMutation = useMutation({
@@ -773,7 +781,8 @@ export default function OrderDetail() {
     const initialPrice = (priceBreaks && priceBreaks.length > 0)
       ? (getBreakPrice(priceBreaks, 1) ?? prod.unitPrice).toString()
       : prod.unitPrice.toString();
-    setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: initialPrice, baseUnitPrice: initialPrice });
+    const prodVatRate = typeof (prod as any).vatRate === "number" ? (prod as any).vatRate : parseFloat(String((prod as any).vatRate ?? 0.20));
+    setItem({ ...EMPTY_ITEM, productId: prod.id, productName: prod.name, unitPrice: initialPrice, baseUnitPrice: initialPrice, vatRate: isNaN(prodVatRate) ? 0.20 : prodVatRate });
     setSizeRows([{ size: "", qty: 1 }]);
     setProductSearchOpen(false);
   };
@@ -923,6 +932,7 @@ export default function OrderDetail() {
           recipientEmployeeId: item.recipientType === "person" ? (item.recipientEmployeeId ?? null) : null,
           quantity: item.quantity,
           unitPrice: price,
+          vatRate: item.vatRate,
           ...overrides,
         } as Parameters<typeof addItemMutation.mutate>[0]["data"]
       },
@@ -1502,13 +1512,29 @@ export default function OrderDetail() {
                           <TableCell className="text-center font-semibold">{orderItem.quantity}</TableCell>
                           <TableCell className="text-right font-bold text-primary tabular-nums">{formatCurrency(orderItem.lineTotal)}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-center justify-end gap-1 flex-wrap">
                               {(orderItem as { purchaseRequired?: boolean }).purchaseRequired && (
                                 <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1 font-normal">
                                   <ShoppingBag className="w-3 h-3" />
                                   Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
                                 </Badge>
                               )}
+                              {(() => {
+                                const vr = (orderItem as any).vatRate ?? 0.20;
+                                const pct = Math.round(vr * 100);
+                                return (
+                                  <select
+                                    value={String(vr)}
+                                    onChange={e => updateItemVatRateMutation.mutate({ itemId: orderItem.id, vatRate: parseFloat(e.target.value) })}
+                                    className="text-xs rounded px-1 py-0.5 border border-border/50 bg-transparent text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none"
+                                    title="VAT rate"
+                                  >
+                                    <option value="0.2">20% VAT</option>
+                                    <option value="0.05">5% VAT</option>
+                                    <option value="0">0% VAT</option>
+                                  </select>
+                                );
+                              })()}
                               <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteItem(orderItem.id)}>
                                 <Trash2 className="w-4 h-4" />
                               </Button>
@@ -2493,6 +2519,29 @@ export default function OrderDetail() {
                       <Label htmlFor="price">Unit Price (£)</Label>
                       <Input id="price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
                     </div>
+                  </div>
+
+                  {/* VAT Rate */}
+                  <div className="grid gap-2">
+                    <Label className="text-sm">VAT Rate</Label>
+                    <RadioGroup
+                      value={String(item.vatRate)}
+                      onValueChange={(v) => setItem(i => ({ ...i, vatRate: parseFloat(v) }))}
+                      className="flex gap-4"
+                    >
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="0.2" id="vat-20" />
+                        <Label htmlFor="vat-20" className="font-normal cursor-pointer">20% (standard)</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="0.05" id="vat-5" />
+                        <Label htmlFor="vat-5" className="font-normal cursor-pointer">5% (reduced)</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="0" id="vat-0" />
+                        <Label htmlFor="vat-0" className="font-normal cursor-pointer">0% (zero-rated)</Label>
+                      </div>
+                    </RadioGroup>
                   </div>
 
                   {/* Price break info for products with tiered pricing */}

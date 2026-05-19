@@ -26,6 +26,8 @@ export const productsTable = pgTable("products", {
   wooCommerceId: integer("woo_commerce_id"),
   taxStatus: text("tax_status"),
   taxClass: text("tax_class"),
+  /** VAT rate as a decimal, e.g. 0.20 = standard 20%, 0 = zero-rated (children's clothing etc.) */
+  vatRate: numeric("vat_rate", { precision: 5, scale: 4 }).notNull().default("0.2000"),
   /** If set, this is a bespoke product belonging exclusively to this customer */
   customerId: integer("customer_id"),
   /** Bespoke products are hidden from WooCommerce sync */

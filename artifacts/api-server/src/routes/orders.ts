@@ -273,6 +273,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       productName: catalogueProductName ?? item.productName,
       unitPrice: numericToFloat(item.unitPrice),
       lineTotal: numericToFloat(item.lineTotal),
+      vatRate: parseFloat(String(item.vatRate ?? 0.20)),
       purchaseRequired: item.purchaseRequired,
       purchaseQuantity: item.purchaseQuantity,
       supplierId: item.supplierId,
@@ -904,6 +905,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     quantity: i.quantity ?? 1,
     unitPrice: parseFloat(String(i.unitPrice ?? 0)),
     lineTotal: parseFloat(String(i.lineTotal ?? 0)),
+    vatRate: parseFloat(String(i.vatRate ?? 0.20)),
     recipientName: i.recipientName ?? null,
     finishName: i.finishName ?? null,
   }));
@@ -1041,6 +1043,7 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
     quantity: r.quantity ?? 1,
     unitPrice: parseFloat(String(r.unitPrice ?? 0)),
     lineTotal: parseFloat(String(r.lineTotal ?? 0)),
+    vatRate: parseFloat(String(r.vatRate ?? 0.20)),
     recipientName: r.recipientName ?? null,
     finishName: r.finishName ?? null,
   }));
@@ -1169,6 +1172,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     quantity: i.quantity ?? 1,
     unitPrice: parseFloat(String(i.unitPrice ?? 0)),
     lineTotal: parseFloat(String(i.lineTotal ?? 0)),
+    vatRate: parseFloat(String(i.vatRate ?? 0.20)),
     recipientName: i.recipientName ?? null,
   }));
 
@@ -1330,6 +1334,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
     quantity: i.quantity ?? 1,
     unitPrice: parseFloat(String(i.unitPrice ?? 0)),
     lineTotal: parseFloat(String(i.lineTotal ?? 0)),
+    vatRate: parseFloat(String(i.vatRate ?? 0.20)),
     recipientName: i.recipientName ?? null,
   }));
 
@@ -1515,6 +1520,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     recipientEmployeeId: z.number().int().positive().optional().nullable(),
     quantity: z.number().int().positive(),
     unitPrice: z.number().min(0),
+    vatRate: z.number().min(0).max(1).optional().default(0.20),
     purchaseRequired: z.boolean().optional().default(false),
     purchaseQuantity: z.number().int().min(0).optional().nullable(),
     supplierId: z.number().int().positive().optional().nullable(),
@@ -1544,6 +1550,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       quantity: parsed.data.quantity,
       unitPrice: String(parsed.data.unitPrice),
       lineTotal: String(lineTotal),
+      vatRate: String(parsed.data.vatRate ?? 0.20),
       purchaseRequired: parsed.data.purchaseRequired ?? false,
       purchaseQuantity: parsed.data.purchaseQuantity ?? null,
       supplierId: parsed.data.supplierId ?? null,
@@ -1575,12 +1582,14 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     ...item,
     unitPrice: numericToFloat(item.unitPrice),
     lineTotal: numericToFloat(item.lineTotal),
+    vatRate: parseFloat(String(item.vatRate ?? 0.20)),
   });
 });
 
 const UpdateOrderItemBodyExtended = z.object({
   quantity: z.number().int().positive().optional(),
   unitPrice: z.number().min(0).optional(),
+  vatRate: z.number().min(0).max(1).optional(),
   purchaseRequired: z.boolean().optional(),
   purchaseQuantity: z.number().int().min(0).nullable().optional(),
   supplierId: z.number().int().positive().nullable().optional(),
@@ -1616,6 +1625,7 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
     lineTotal: String(lineTotal),
   };
 
+  if (parsed.data.vatRate !== undefined) updateData.vatRate = String(parsed.data.vatRate);
   if (parsed.data.purchaseRequired !== undefined) updateData.purchaseRequired = parsed.data.purchaseRequired;
   if (parsed.data.purchaseQuantity !== undefined) updateData.purchaseQuantity = parsed.data.purchaseQuantity;
   if (parsed.data.supplierId !== undefined) updateData.supplierId = parsed.data.supplierId;
@@ -1633,6 +1643,7 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
     ...item,
     unitPrice: numericToFloat(item.unitPrice),
     lineTotal: numericToFloat(item.lineTotal),
+    vatRate: parseFloat(String(item.vatRate ?? 0.20)),
   });
 });
 

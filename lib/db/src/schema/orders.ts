@@ -65,6 +65,8 @@ export const orderItemsTable = pgTable("order_items", {
   // Stock allocation tracking: null=pending, allocated=plain stock picked, in_production=worksheet created, complete=done
   stockStatus: text("stock_status"),
   stockAllocatedAt: timestamp("stock_allocated_at", { withTimezone: true }),
+  /** VAT rate as a decimal, e.g. 0.20 = 20%, 0 = zero-rated (children's clothing etc.) */
+  vatRate: numeric("vat_rate", { precision: 5, scale: 4 }).notNull().default("0.2000"),
 });
 
 export const purchaseOrdersTable = pgTable("purchase_orders", {

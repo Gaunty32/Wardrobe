@@ -766,5 +766,11 @@ export async function runStartupMigrations(): Promise<void> {
     }
   }
 
+  // Add per-item and per-product VAT rate columns (UK zero-rated items e.g. children's clothing)
+  await db.execute(sql`
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5,4) NOT NULL DEFAULT 0.2000;
+    ALTER TABLE products    ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5,4) NOT NULL DEFAULT 0.2000;
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }

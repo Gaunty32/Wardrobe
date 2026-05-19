@@ -152,8 +152,12 @@ export function buildAcknowledgementEmail(order: {
     .join("\n");
 
   const subtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
-  const vatAmount = subtotal * 0.2;
+  const vatAmount = order.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.20), 0);
   const totalIncVat = subtotal + vatAmount;
+  const uniqueVatRates = [...new Set(order.items.map(i => i.vatRate ?? 0.20))];
+  const vatLabel = uniqueVatRates.length === 1
+    ? `VAT (${Math.round(uniqueVatRates[0] * 100)}%)`
+    : "VAT";
 
   const customerLogoBlock = order.customerLogoDataUrl
     ? `<td style="vertical-align:middle;text-align:right;">
@@ -234,7 +238,7 @@ export function buildAcknowledgementEmail(order: {
                 <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;border-top:1px solid #e2e8f0;">£${subtotal.toFixed(2)}</td>
               </tr>
               <tr style="background:#f8fafc;">
-                <td colspan="4" style="padding:6px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">VAT (20%)</td>
+                <td colspan="4" style="padding:6px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">${vatLabel}</td>
                 <td style="padding:6px 12px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${vatAmount.toFixed(2)}</td>
               </tr>
               <tr style="background:#1e293b;">
@@ -414,6 +418,8 @@ export interface AckOrderItem {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  /** VAT rate as a decimal. 0.20 = 20%, 0 = zero-rated. Defaults to 0.20 if omitted. */
+  vatRate?: number;
 }
 
 export interface AckOrderData {
@@ -628,9 +634,15 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     // ── Totals ────────────────────────────────────────────────────────────────
     const pdfSubtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
     const pdfShipping = order.shippingAmount ?? 0;
-    const pdfVatRate  = order.vatRate ?? 0.20;
-    const pdfVat      = (pdfSubtotal + pdfShipping) * pdfVatRate;
+    // Calculate VAT per item using each item's own rate; shipping assumed standard 20%
+    const pdfItemVat  = order.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.20), 0);
+    const pdfVat      = pdfItemVat + pdfShipping * 0.20;
     const pdfGrand    = pdfSubtotal + pdfShipping + pdfVat;
+
+    const pdfUniqueRates = [...new Set(order.items.map(i => i.vatRate ?? 0.20))];
+    const pdfVatLabel = pdfUniqueRates.length === 1 && pdfShipping === 0
+      ? `VAT (${Math.round(pdfUniqueRates[0] * 100)}%):`
+      : "VAT:";
 
     const totalsX = margin + tableW - 195;
     const totalsW = 195;
@@ -639,7 +651,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     const totalsRows: { label: string; value: string; bold?: boolean; big?: boolean }[] = [
       { label: "Subtotal (exc. VAT):", value: `£${pdfSubtotal.toFixed(2)}` },
       ...(pdfShipping > 0 ? [{ label: "Shipping & Handling:", value: `£${pdfShipping.toFixed(2)}` }] : []),
-      { label: `VAT (${Math.round(pdfVatRate * 100)}%):`, value: `£${pdfVat.toFixed(2)}` },
+      { label: pdfVatLabel, value: `£${pdfVat.toFixed(2)}` },
       { label: "TOTAL (inc. VAT):", value: `£${pdfGrand.toFixed(2)}`, bold: true, big: true },
     ];
 
