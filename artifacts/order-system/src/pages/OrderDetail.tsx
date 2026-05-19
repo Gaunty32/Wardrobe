@@ -1416,7 +1416,7 @@ export default function OrderDetail() {
                             </button>
                           </TableHead>
                         ))}
-                        <TableHead className="w-[50px]"></TableHead>
+                        <TableHead className="w-[90px]"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1433,6 +1433,12 @@ export default function OrderDetail() {
                               {orderItem.size && (
                                 <Badge variant="outline" className="text-xs gap-1 font-normal">
                                   <Ruler className="w-3 h-3" />{orderItem.size}
+                                </Badge>
+                              )}
+                              {(orderItem as { purchaseRequired?: boolean }).purchaseRequired && (
+                                <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1 font-normal">
+                                  <ShoppingBag className="w-3 h-3" />
+                                  Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
                                 </Badge>
                               )}
                             </div>
@@ -1512,13 +1518,7 @@ export default function OrderDetail() {
                           <TableCell className="text-center font-semibold">{orderItem.quantity}</TableCell>
                           <TableCell className="text-right font-bold text-primary tabular-nums">{formatCurrency(orderItem.lineTotal)}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1 flex-wrap">
-                              {(orderItem as { purchaseRequired?: boolean }).purchaseRequired && (
-                                <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1 font-normal">
-                                  <ShoppingBag className="w-3 h-3" />
-                                  Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
-                                </Badge>
-                              )}
+                            <div className="flex items-center justify-end gap-1">
                               {(() => {
                                 const vr = (orderItem as any).vatRate ?? 0.20;
                                 const pct = Math.round(vr * 100);
