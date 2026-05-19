@@ -281,6 +281,13 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     portalRole === "member" && myEmployeeId ? String(myEmployeeId) : null
   );
 
+  // Auto-scroll the order summary to the bottom when items are added
+  const summaryScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = summaryScrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [basket.length]);
+
   // Search / filter state
   const [search, setSearch] = useState("");
   const [showOtherTeams, setShowOtherTeams] = useState(false);
@@ -630,7 +637,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
           No items added yet
         </div>
       ) : (
-        <div className="divide-y max-h-[60vh] overflow-y-auto">
+        <div ref={summaryScrollRef} className="divide-y max-h-[60vh] overflow-y-auto">
           {Object.entries(summaryGroups).map(([recipKey, grpItems]) => {
             const label = recipKey === "__stock__" ? "Bulk Stock" : recipKey;
             const isStockGrp = recipKey === "__stock__";
