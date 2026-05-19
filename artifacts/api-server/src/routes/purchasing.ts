@@ -212,8 +212,21 @@ async function getPoWithItems(poId: number) {
   const rows = await db
     .select({
       item: purchaseOrderItemsTable,
-      productSku: productsTable.sku,
-      canonicalProductName: productsTable.name,
+      productSku: sql<string | null>`COALESCE(
+        ${productsTable.sku},
+        (SELECT p2.sku FROM order_items oi2
+         JOIN products p2 ON oi2.product_id = p2.id
+         WHERE oi2.id = ANY((${purchaseOrderItemsTable.sourceOrderItemIds})::int[])
+         AND p2.sku IS NOT NULL
+         LIMIT 1)
+      )`,
+      canonicalProductName: sql<string | null>`COALESCE(
+        ${productsTable.name},
+        (SELECT p2.name FROM order_items oi2
+         JOIN products p2 ON oi2.product_id = p2.id
+         WHERE oi2.id = ANY((${purchaseOrderItemsTable.sourceOrderItemIds})::int[])
+         LIMIT 1)
+      )`,
       processStockFileUrl: sql<string | null>`COALESCE(
         ${processStockTable.fileUrl},
         (SELECT cp.file_url FROM customer_processes cp
