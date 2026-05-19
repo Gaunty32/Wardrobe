@@ -1492,9 +1492,8 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => {
+    qc.refetchQueries({ queryKey: ["customer", customerId, "employees"], type: "active" });
     qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] });
-    qc.invalidateQueries({ queryKey: ["customer", customerId, "employees", true] });
-    qc.invalidateQueries({ queryKey: ["customer", customerId, "employees", false] });
   };
 
   const save = useMutation({
