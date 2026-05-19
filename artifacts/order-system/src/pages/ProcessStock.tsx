@@ -58,6 +58,62 @@ const BLANK_FORM = {
   fileUrl: null as string | null,
 };
 
+function InlineQty({ id, value, onSaved }: { id: number; value: number; onSaved: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const inputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const commit = async () => {
+    const num = parseInt(draft, 10);
+    if (!isNaN(num) && num >= 0 && num !== value) {
+      try {
+        await apiFetch(`/process-stock/${id}`, { method: "PATCH", body: JSON.stringify({ stockQuantity: num }) });
+        onSaved();
+      } catch (e) {
+        toast({ title: "Failed to update", description: (e as Error).message, variant: "destructive" });
+        setDraft(String(value));
+      }
+    } else {
+      setDraft(String(value));
+    }
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        type="number"
+        min={0}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") { setDraft(String(value)); setEditing(false); } }}
+        className="w-16 text-right border border-primary rounded px-1 py-0.5 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-primary tabular-nums"
+        autoFocus
+      />
+    );
+  }
+
+  const low = value <= 5;
+  return (
+    <button
+      onClick={() => { setDraft(String(value)); setEditing(true); setTimeout(() => inputRef.current?.select(), 10); }}
+      title="Click to edit quantity"
+      className="cursor-pointer"
+    >
+      {low ? (
+        <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 gap-1 font-semibold hover:bg-amber-100 transition-colors">
+          <AlertTriangle className="w-3 h-3" />{value}
+        </Badge>
+      ) : (
+        <span className="font-semibold tabular-nums hover:text-primary hover:underline transition-colors">{value}</span>
+      )}
+    </button>
+  );
+}
+
 export function ProcessStockTab() {
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState(false);
@@ -267,14 +323,8 @@ export function ProcessStockTab() {
                           ) : <span className="text-muted-foreground text-sm">—</span>}
                         </TableCell>
                         <TableCell className="text-right font-medium tabular-nums">{formatCurrency(item.unitCost)}</TableCell>
-                        <TableCell className="text-right">
-                          {lowStock(item.stockQuantity) ? (
-                            <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 gap-1 font-semibold">
-                              <AlertTriangle className="w-3 h-3" />{item.stockQuantity}
-                            </Badge>
-                          ) : (
-                            <span className="font-semibold tabular-nums">{item.stockQuantity}</span>
-                          )}
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <InlineQty id={item.id} value={item.stockQuantity} onSaved={inv} />
                         </TableCell>
                         <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                           <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
