@@ -1090,6 +1090,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
       keysToReset.forEach(key => { next[key] = { size: "", qty: 1 }; });
       return next;
     });
+    setSelectedRecipient(null);
   };
 
   const configuredCount = finishGroups.reduce((count, group) =>
