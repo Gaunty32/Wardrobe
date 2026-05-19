@@ -32,7 +32,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent } from "lucide-react";
+import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 import { Link } from "wouter";
@@ -360,6 +360,14 @@ export default function OrderDetail() {
     byProductId: Record<string, { size: string; colour: string | null; productName: string }>;
     byProductName: Record<string, { size: string; colour: string | null; productId: number | null }>;
   }>({ byProductId: {}, byProductName: {} });
+
+  // ── Wardrobe tab: person-first picker state ────────────────────────────────
+  // null = no person selected yet (show person picker)
+  // "stock" = ordering as bulk stock
+  // CustomerEmployee = ordering for a specific person
+  const [wardrobeRecipient, setWardrobeRecipient] = useState<null | "stock" | CustomerEmployee>(null);
+  const [wardrobeItemSizes, setWardrobeItemSizes] = useState<Record<number, string>>({});
+  const [wardrobeItemQtys, setWardrobeItemQtys] = useState<Record<number, number>>({});
 
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
@@ -807,6 +815,73 @@ export default function OrderDetail() {
     setIsNewPerson(false);
     setIsAddItemOpen(false);
     setDialogTab("wardrobe");
+    setWardrobeRecipient(null);
+    setWardrobeItemSizes({});
+    setWardrobeItemQtys({});
+  };
+
+  // Select a person (or stock) in the wardrobe tab — fetches last sizes and pre-fills
+  const handleWardrobePersonSelect = async (recipient: "stock" | CustomerEmployee) => {
+    setWardrobeRecipient(recipient);
+    setWardrobeItemSizes({});
+    setWardrobeItemQtys({});
+    if (recipient === "stock" || !customerId || typeof recipient === "string") return;
+    try {
+      const lastSizes = await apiFetch<{
+        byProductId: Record<string, { size: string; colour: string | null }>;
+        byProductName: Record<string, { size: string; colour: string | null }>;
+      }>(`/customers/${customerId}/employees/${recipient.id}/last-sizes`);
+
+      const newSizes: Record<number, string> = {};
+      for (const fi of (customerFinishedItems ?? [])) {
+        const byId = fi.productId ? lastSizes.byProductId[String(fi.productId)]?.size : null;
+        const byName = lastSizes.byProductName[fi.productName ?? fi.name]?.size;
+        const saved = recipient.sizes?.find(s => s.label === (fi.productName ?? fi.name))?.size;
+        const pre = byId ?? byName ?? saved ?? fi.size ?? "";
+        if (pre) newSizes[fi.id] = pre;
+      }
+      setWardrobeItemSizes(newSizes);
+    } catch { /* size pre-fill is best-effort */ }
+  };
+
+  // Add a single wardrobe item directly (without closing the dialog so staff can add more)
+  const handleWardrobeItemAdd = (fi: CustomerFinishedItem) => {
+    const size = wardrobeItemSizes[fi.id] ?? "";
+    const qty = wardrobeItemQtys[fi.id] ?? 1;
+    const effectivePrice = fi.specialPrice ?? fi.unitPrice;
+    const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
+    const recipientName = isPersonRecipient
+      ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
+      : "";
+    const recipientEmployeeId = isPersonRecipient ? (wardrobeRecipient as CustomerEmployee).id : null;
+
+    addItemMutation.mutate(
+      {
+        id: orderId,
+        data: {
+          productId: fi.productId,
+          productName: fi.productName ?? fi.name,
+          colour: fi.colour ?? null,
+          size: size || null,
+          finishId: fi.finishId ?? null,
+          finishName: fi.finishName ?? null,
+          recipientType: isPersonRecipient ? "person" : "stock",
+          recipientName: isPersonRecipient ? recipientName : null,
+          recipientEmployeeId: isPersonRecipient ? recipientEmployeeId : null,
+          quantity: qty,
+          unitPrice: effectivePrice,
+        } as Parameters<typeof addItemMutation.mutate>[0]["data"],
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          toast({ title: "Item Added", description: `${fi.productName ?? fi.name} added to the order.` });
+          // Reset qty for this item only; keep size so same person's next line is fast
+          setWardrobeItemQtys(s => { const n = { ...s }; delete n[fi.id]; return n; });
+        },
+        onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
   };
 
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
@@ -2070,7 +2145,7 @@ export default function OrderDetail() {
         </Card>
 
         <Dialog open={isAddItemOpen} onOpenChange={(open) => { if (!open) resetDialog(); else setIsAddItemOpen(true); }}>
-          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogContent className={cn("max-h-[90vh] flex flex-col overflow-hidden", dialogTab === "wardrobe" ? "max-w-2xl" : "max-w-lg")}>
             <DialogHeader className="shrink-0">
               <DialogTitle className="font-display">Add Line Item</DialogTitle>
             </DialogHeader>
@@ -2093,262 +2168,145 @@ export default function OrderDetail() {
               {/* ── WARDROBE TAB ───────────────────────────────────────────── */}
               <TabsContent value="wardrobe" className="flex-1 overflow-y-auto mt-0 pt-3 data-[state=inactive]:hidden">
                 {!customerFinishedItems?.length ? (
+                  /* No wardrobe configured */
                   <div className="py-10 text-center text-muted-foreground">
                     <ShoppingBag className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p className="text-sm font-medium">No wardrobe items yet</p>
                     <p className="text-xs mt-1 text-muted-foreground/70">Go to this customer's Wardrobe tab to build their wardrobe.</p>
                   </div>
-                ) : (
-                  <div className="grid gap-2 pb-2">
-                    {selectedEmployee?.roleId && (
-                      <p className="text-xs text-primary font-medium flex items-center gap-1 mb-1">
-                        <User className="w-3 h-3" /> Showing {selectedEmployee.roleName ? `"${selectedEmployee.roleName}"` : "company-wide"} items for {[selectedEmployee.firstName, selectedEmployee.lastName].filter(Boolean).join(" ")}
-                      </p>
-                    )}
-                    {customerFinishedItems
-                      .filter(fi => !selectedEmployee?.roleId || fi.roleId === null || fi.roleId === selectedEmployee.roleId)
-                      .map(fi => {
-                        const effectivePrice = fi.specialPrice ?? fi.unitPrice;
-                        const isSelected = item.productId === fi.productId && item.productName === (fi.productName ?? fi.name) && item.unitPrice === effectivePrice.toString();
-                        const isRoleMatch = selectedEmployee?.roleId && fi.roleId === selectedEmployee.roleId;
-                        const lastSizeForItem = selectedEmployee
-                          ? (fi.productId ? lastOrderedSizes.byProductId[fi.productId]?.size : null)
-                            ?? lastOrderedSizes.byProductName[fi.productName ?? fi.name]?.size
-                            ?? null
-                          : null;
+                ) : wardrobeRecipient === null ? (
+                  /* ── Step 1: Pick a person ── */
+                  <div className="space-y-3 pb-2">
+                    <p className="text-sm text-muted-foreground">Who is this order for?</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <button
+                        onClick={() => handleWardrobePersonSelect("stock")}
+                        className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
+                      >
+                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/70 transition-colors">
+                          <Archive className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                        <p className="font-semibold text-sm">Bulk Stock</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">No specific recipient</p>
+                      </button>
+                      {customerEmployees?.map(emp => {
+                        const initials = [emp.firstName?.[0], emp.lastName?.[0]].filter(Boolean).join("").toUpperCase();
                         return (
                           <button
-                            key={fi.id}
-                            type="button"
-                            className={cn(
-                              "w-full text-left rounded-lg border px-4 py-3 transition-all hover:bg-muted/40",
-                              isSelected
-                                ? "border-primary bg-primary/5 ring-1 ring-primary/50"
-                                : isRoleMatch
-                                  ? "border-primary/30 bg-primary/5"
-                                  : "border-border hover:border-muted-foreground/30"
-                            )}
-                            onClick={() => handleWardrobeSelect(fi)}
+                            key={emp.id}
+                            onClick={() => handleWardrobePersonSelect(emp)}
+                            className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
                           >
-                            <div className="flex justify-between items-start gap-3">
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  {isSelected && <Check className="w-3.5 h-3.5 text-primary shrink-0" />}
-                                  <p className="font-medium text-sm truncate">{fi.name}</p>
-                                  {fi.roleName && <span className="text-[10px] font-medium text-primary/70 bg-primary/10 rounded px-1 shrink-0">{fi.roleName}</span>}
-                                  {lastSizeForItem && <span className="text-[10px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 shrink-0">Last: {lastSizeForItem}</span>}
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                  {fi.productName}
-                                  {fi.colour && <span> · {fi.colour}</span>}
-                                  {fi.size && <span> · {fi.size}</span>}
-                                  {fi.finishName && (() => {
-                                    const finishDetail = customerFinishes?.find(f => f.id === fi.finishId);
-                                    return (
-                                      <Popover>
-                                        <PopoverTrigger asChild onClick={e => e.stopPropagation()}>
-                                          <span className="text-amber-600 cursor-pointer hover:underline inline-flex items-center gap-0.5 ml-1">
-                                            · <Sparkles className="w-2.5 h-2.5 mx-0.5" />{fi.finishName}
-                                          </span>
-                                        </PopoverTrigger>
-                                        <PopoverContent className="w-64 p-3" onClick={e => e.stopPropagation()}>
-                                          <p className="font-semibold text-sm mb-2 flex items-center gap-1.5">
-                                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />{fi.finishName}
-                                          </p>
-                                          {finishDetail?.processes && finishDetail.processes.length > 0 ? (
-                                            <div className="space-y-1.5">
-                                              {finishDetail.processes.map(proc => (
-                                                <div key={proc.id} className="flex justify-between text-xs">
-                                                  <span className="text-muted-foreground">{proc.name}</span>
-                                                  {proc.price != null && <span className="font-medium tabular-nums">{formatCurrency(proc.price)}</span>}
-                                                </div>
-                                              ))}
-                                              <div className="border-t border-border/40 pt-1.5 mt-1 flex justify-between text-xs font-semibold">
-                                                <span>Total</span>
-                                                <span className="tabular-nums">{formatCurrency(finishDetail.processes.reduce((s, proc) => s + (proc.price ?? 0), 0))}</span>
-                                              </div>
-                                            </div>
-                                          ) : (
-                                            <p className="text-xs text-muted-foreground">No process details available.</p>
-                                          )}
-                                        </PopoverContent>
-                                      </Popover>
-                                    );
-                                  })()}
-                                </p>
-                              </div>
-                              <div className="flex flex-col items-end shrink-0 gap-0.5">
-                                {(() => {
-                                  const baseProd = products?.find(p => p.id === fi.productId);
-                                  const listPrice = baseProd ? parseFloat(String(baseProd.unitPrice)) : null;
-                                  const wardrobePrice = fi.unitPrice;
-                                  const specialPrice = fi.specialPrice;
-                                  // Active price: special price if set, otherwise wardrobe price
-                                  const activePrice = specialPrice ?? wardrobePrice;
-                                  // "Was" price: whatever comes just before the active price in the chain
-                                  const wasPrice = specialPrice != null ? wardrobePrice
-                                    : (listPrice !== null && Math.abs(listPrice - wardrobePrice) > 0.005) ? listPrice
-                                    : null;
-                                  const isDiscounted = wasPrice !== null && activePrice < wasPrice;
-                                  return (
-                                    <>
-                                      {wasPrice !== null && <span className="text-xs text-muted-foreground line-through tabular-nums">{formatCurrency(wasPrice)}</span>}
-                                      <span className={`text-sm font-semibold tabular-nums ${isDiscounted ? "text-emerald-600" : ""}`}>{formatCurrency(activePrice)}</span>
-                                    </>
-                                  );
-                                })()}
-                              </div>
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm mb-3 group-hover:bg-primary/15 transition-colors">
+                              {initials || <User className="w-4 h-4" />}
                             </div>
+                            <p className="font-semibold text-sm leading-tight">{[emp.firstName, emp.lastName].filter(Boolean).join(" ")}</p>
+                            {(emp.roleName || emp.jobTitle) && (
+                              <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.roleName ?? emp.jobTitle}</p>
+                            )}
                           </button>
                         );
                       })}
+                    </div>
                   </div>
-                )}
-
-                {/* Qty + Recipient shown once a wardrobe item is selected */}
-                {item.productId && dialogTab === "wardrobe" && (
-                  <div className="border-t border-border/50 pt-4 mt-2 grid gap-4">
-                    <div className="rounded-md bg-muted/40 px-3 py-2 text-sm flex items-center justify-between">
-                      <span className="font-medium truncate">{item.productName}</span>
-                      <div className="flex flex-col items-end shrink-0 ml-3">
-                        {(() => {
-                          const baseProd = products?.find(p => p.id === item.productId);
-                          const listPrice = baseProd ? parseFloat(String(baseProd.unitPrice)) : null;
-                          const wardrobePrice = parseFloat(item.unitPrice) || 0;
-                          const isDifferent = listPrice !== null && Math.abs(listPrice - wardrobePrice) > 0.005;
-                          return isDifferent ? (
-                            <>
-                              <span className="text-xs text-muted-foreground line-through tabular-nums">List: {formatCurrency(listPrice!)}</span>
-                              <span className="font-semibold text-green-700 tabular-nums">{formatCurrency(wardrobePrice)} ea</span>
-                            </>
-                          ) : (
-                            <span className="font-semibold tabular-nums">{formatCurrency(wardrobePrice)} ea</span>
-                          );
-                        })()}
-                      </div>
-                    </div>
-
-                    {/* Size picker — always shown for wardrobe items */}
-                    {(() => {
-                      const variantSizeSet = new Set((productVariants ?? []).map(v => v.size).filter((s): s is string => s != null && s !== ""));
-                      const sizeOptions = sortSizesWithOrder([...new Set([...sizes, ...variantSizeSet])], sizeOrder);
-                      return (
-                        <div className="grid gap-2">
-                          <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
-                          {sizeOptions.length > 0 ? (
-                            <Select value={item.size || undefined} onValueChange={v => setItem(i => ({ ...i, size: v }))}>
-                              <SelectTrigger><SelectValue placeholder="Select a size" /></SelectTrigger>
-                              <SelectContent>
-                                {sizeOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          ) : (
-                            <Input
-                              placeholder="e.g. M, L, XL or One Size"
-                              value={item.size}
-                              onChange={e => setItem(i => ({ ...i, size: e.target.value }))}
-                            />
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    <div className="grid gap-3">
-                      <Label>Ordered for</Label>
-                      <RadioGroup
-                        value={item.recipientType}
-                        onValueChange={(v) => {
-                          setItem(i => ({ ...i, recipientType: v as "stock" | "person", recipientName: "" }));
-                          if (v !== "person") { setSelectedEmployee(null); setIsNewPerson(false); }
-                        }}
-                        className="flex gap-6"
+                ) : (
+                  /* ── Step 2: Items for the selected person ── */
+                  <div className="space-y-2 pb-2">
+                    {/* Header / breadcrumb */}
+                    <div className="flex items-center gap-3 pb-1 border-b border-border/50">
+                      <button
+                        onClick={() => { setWardrobeRecipient(null); setWardrobeItemSizes({}); setWardrobeItemQtys({}); }}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                       >
-                        <div className="flex items-center gap-2">
-                          <RadioGroupItem value="stock" id="w-for-stock" />
-                          <Label htmlFor="w-for-stock" className="font-normal cursor-pointer flex items-center gap-1">
-                            <Archive className="w-3.5 h-3.5 text-muted-foreground" /> Stock
-                          </Label>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <RadioGroupItem value="person" id="w-for-person" />
-                          <Label htmlFor="w-for-person" className="font-normal cursor-pointer flex items-center gap-1">
-                            <User className="w-3.5 h-3.5 text-muted-foreground" /> Specific person
-                          </Label>
-                        </div>
-                      </RadioGroup>
-
-                      {item.recipientType === "person" && (
-                        <div className="grid gap-2">
-                          {customerEmployees && customerEmployees.length > 0 && (
-                            <Select onValueChange={handleEmployeeSelect} value={selectedEmployee ? selectedEmployee.id.toString() : isNewPerson ? "__new__" : ""}>
-                              <SelectTrigger><SelectValue placeholder="Pick from employees..." /></SelectTrigger>
-                              <SelectContent>
-                                {customerEmployees.map(e => (
-                                  <SelectItem key={e.id} value={e.id.toString()}>
-                                    <div className="flex flex-col items-start">
-                                      <span>{[e.firstName, e.lastName].filter(Boolean).join(" ")}</span>
-                                      {(e.jobTitle || e.roleName) && <span className="text-xs text-muted-foreground">{[e.jobTitle, e.roleName].filter(Boolean).join(" · ")}</span>}
-                                    </div>
-                                  </SelectItem>
-                                ))}
-                                <SelectItem value="__new__">+ Add new person...</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          )}
-
-                          {selectedEmployee?.sizes && selectedEmployee.sizes.length > 0 && (
-                            <div className="rounded-md bg-blue-50 border border-blue-100 px-3 py-2 text-xs text-blue-700">
-                              <p className="font-medium mb-1">Saved sizes for {selectedEmployee.firstName}:</p>
-                              <div className="flex flex-wrap gap-2">
-                                {selectedEmployee.sizes.map(s => (
-                                  <span key={s.id} className="bg-white border border-blue-200 rounded px-2 py-0.5 font-medium">{s.label}: {s.size}</span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          <Input
-                            placeholder={customerEmployees && customerEmployees.length > 0 ? "Or type a name..." : "Recipient name"}
-                            value={item.recipientName}
-                            onChange={e => setItem(i => ({ ...i, recipientName: e.target.value }))}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="w-qty">Quantity</Label>
-                        <Input id="w-qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="w-price" className="flex items-center justify-between">
-                          <span>Customer Price (£)</span>
-                          <button
-                            type="button"
-                            onClick={() => setPriceOverrideEnabled(v => !v)}
-                            className={`flex items-center gap-1 text-xs rounded px-1.5 py-0.5 transition-colors ${priceOverrideEnabled ? "text-amber-700 bg-amber-50 hover:bg-amber-100" : "text-muted-foreground hover:text-foreground hover:bg-muted"}`}
-                            title={priceOverrideEnabled ? "Lock price" : "Override price"}
-                          >
-                            {priceOverrideEnabled ? <LockOpen className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
-                            {priceOverrideEnabled ? "Unlocked" : "Override"}
-                          </button>
-                        </Label>
-                        {priceOverrideEnabled ? (
-                          <Input id="w-price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} className="border-amber-300 focus-visible:ring-amber-400" />
+                        <ChevronLeft className="w-3.5 h-3.5" /> Back
+                      </button>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {wardrobeRecipient === "stock" ? (
+                          <>
+                            <Archive className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            <span className="text-sm font-medium">Bulk Stock</span>
+                          </>
                         ) : (
-                          <div className="flex h-9 w-full items-center rounded-md border border-input bg-muted/40 px-3 text-sm font-medium tabular-nums text-muted-foreground select-none">
-                            {item.unitPrice ? `£${parseFloat(item.unitPrice).toFixed(2)}` : "—"}
-                          </div>
+                          <>
+                            <User className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                            <span className="text-sm font-medium truncate">
+                              {[(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")}
+                            </span>
+                            {(wardrobeRecipient as CustomerEmployee).roleName && (
+                              <span className="text-xs text-muted-foreground shrink-0">{(wardrobeRecipient as CustomerEmployee).roleName}</span>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
 
-                    {item.unitPrice && item.quantity && (
-                      <div className="flex justify-end text-sm text-muted-foreground">
-                        Line total: <span className="font-semibold text-foreground ml-1">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span>
-                      </div>
-                    )}
+                    {/* Item rows */}
+                    {customerFinishedItems
+                      .filter(fi =>
+                        wardrobeRecipient === "stock" ||
+                        fi.roleId === null ||
+                        fi.roleId === (wardrobeRecipient as CustomerEmployee).roleId
+                      )
+                      .map(fi => {
+                        const effectivePrice = fi.specialPrice ?? fi.unitPrice;
+                        const currentSize = wardrobeItemSizes[fi.id] ?? "";
+                        const currentQty = wardrobeItemQtys[fi.id] ?? 1;
+                        return (
+                          <div key={fi.id} className="rounded-lg border border-border bg-card px-4 py-3 flex items-center gap-3 flex-wrap sm:flex-nowrap">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium text-sm leading-tight">{fi.name}</p>
+                                {fi.roleName && (
+                                  <span className="text-[10px] font-medium text-primary/70 bg-primary/10 rounded px-1 shrink-0">{fi.roleName}</span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
+                                {fi.productName}
+                                {fi.colour && <span> · {fi.colour}</span>}
+                                {fi.finishName && <span> · <Sparkles className="w-2.5 h-2.5 inline text-amber-500" /> {fi.finishName}</span>}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {/* Size input */}
+                              <Input
+                                placeholder="Size"
+                                value={currentSize}
+                                onChange={e => setWardrobeItemSizes(s => ({ ...s, [fi.id]: e.target.value }))}
+                                className="w-20 text-center text-sm h-8 px-2"
+                              />
+                              {/* Qty stepper */}
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  onClick={() => setWardrobeItemQtys(s => ({ ...s, [fi.id]: Math.max(1, (s[fi.id] ?? 1) - 1) }))}
+                                  className="w-7 h-7 rounded border flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground"
+                                >
+                                  <Minus className="w-3 h-3" />
+                                </button>
+                                <span className="w-7 text-center text-sm font-medium tabular-nums">{currentQty}</span>
+                                <button
+                                  onClick={() => setWardrobeItemQtys(s => ({ ...s, [fi.id]: (s[fi.id] ?? 1) + 1 }))}
+                                  className="w-7 h-7 rounded border flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                </button>
+                              </div>
+                              {/* Price */}
+                              <span className="text-xs font-semibold tabular-nums text-muted-foreground w-14 text-right hidden sm:block">
+                                {formatCurrency(effectivePrice * currentQty)}
+                              </span>
+                              {/* Add button */}
+                              <Button
+                                size="sm"
+                                disabled={addItemMutation.isPending}
+                                onClick={() => handleWardrobeItemAdd(fi)}
+                                className="h-8 px-3 shrink-0"
+                              >
+                                Add
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
               </TabsContent>
