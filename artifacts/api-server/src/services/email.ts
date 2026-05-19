@@ -851,16 +851,27 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       const LIST_ROW_H = 22;
       const HDR_H = 24;
 
+      // Right-side column widths for simple list: unit price | qty | value
+      const S_PRICE_W = 62;
+      const S_QTY_W   = 38;
+      const S_VALUE_W = 65;
+      const S_RIGHT   = S_PRICE_W + S_QTY_W + S_VALUE_W; // 165
+
       // Section header
       if (y + HDR_H + LIST_ROW_H > CONTENT_BOTTOM) y = newPage(y);
       doc.rect(MARGIN, y, W, HDR_H).fill("#0f172a");
       doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
-        .text("Print Files / Artworks", MARGIN + 8, y + 7, { width: W - 100, lineBreak: false });
+        .text("Print Files / Artworks", MARGIN + 8, y + 7, { width: W - S_RIGHT - 16, lineBreak: false });
       doc.fillColor("#94a3b8").fontSize(8).font("Helvetica")
-        .text("Qty", MARGIN + W - 60, y + 8, { width: 55, align: "right", lineBreak: false });
+        .text("Unit Price", MARGIN + W - S_RIGHT, y + 8, { width: S_PRICE_W, align: "right", lineBreak: false });
+      doc.fillColor("#94a3b8").fontSize(8).font("Helvetica")
+        .text("Qty", MARGIN + W - S_QTY_W - S_VALUE_W, y + 8, { width: S_QTY_W, align: "right", lineBreak: false });
+      doc.fillColor("#94a3b8").fontSize(8).font("Helvetica")
+        .text("Value", MARGIN + W - S_VALUE_W, y + 8, { width: S_VALUE_W - 4, align: "right", lineBreak: false });
       y += HDR_H;
 
       let simpleGrandTotal = 0;
+      let simpleGrandValue = 0;
       let rowAltS = false;
       for (const item of simpleItems) {
         if (y + LIST_ROW_H > CONTENT_BOTTOM) y = newPage(y);
@@ -876,9 +887,31 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
           nameX = MARGIN + 68;
         }
         doc.fillColor("#111827").fontSize(9).font("Helvetica")
-          .text(item.productName, nameX, y + 6, { width: W - (nameX - MARGIN) - 65, lineBreak: false });
+          .text(item.productName, nameX, y + 6, { width: W - (nameX - MARGIN) - S_RIGHT - 4, lineBreak: false });
+
+        // Unit price
+        const lineValue = item.supplierPrice != null ? item.quantityOrdered * item.supplierPrice : null;
+        if (item.supplierPrice != null) {
+          doc.fillColor("#374151").fontSize(8.5).font("Helvetica")
+            .text(`£${item.supplierPrice.toFixed(2)}`, MARGIN + W - S_RIGHT, y + 6, { width: S_PRICE_W, align: "right", lineBreak: false });
+        } else {
+          doc.fillColor("#cbd5e1").fontSize(8.5).font("Helvetica")
+            .text("—", MARGIN + W - S_RIGHT, y + 6, { width: S_PRICE_W, align: "right", lineBreak: false });
+        }
+
+        // Qty
         doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
-          .text(String(item.quantityOrdered), MARGIN + W - 60, y + 6, { width: 55, align: "right", lineBreak: false });
+          .text(String(item.quantityOrdered), MARGIN + W - S_QTY_W - S_VALUE_W, y + 6, { width: S_QTY_W, align: "right", lineBreak: false });
+
+        // Line value
+        if (lineValue != null) {
+          doc.fillColor("#1e293b").fontSize(8.5).font("Helvetica-Bold")
+            .text(`£${lineValue.toFixed(2)}`, MARGIN + W - S_VALUE_W, y + 6, { width: S_VALUE_W - 4, align: "right", lineBreak: false });
+          simpleGrandValue += lineValue;
+        } else {
+          doc.fillColor("#cbd5e1").fontSize(8.5).font("Helvetica")
+            .text("—", MARGIN + W - S_VALUE_W, y + 6, { width: S_VALUE_W - 4, align: "right", lineBreak: false });
+        }
 
         simpleGrandTotal += item.quantityOrdered;
         y += LIST_ROW_H;
@@ -889,9 +922,13 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       if (y + LIST_ROW_H > CONTENT_BOTTOM) y = newPage(y);
       doc.rect(MARGIN, y, W, LIST_ROW_H).fill("#dde3ea").stroke("#c8d0da");
       doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold")
-        .text("TOTAL", MARGIN + 8, y + 7, { width: W - 65, lineBreak: false });
+        .text("TOTAL", MARGIN + 8, y + 7, { width: W - S_RIGHT - 4, lineBreak: false });
       doc.fillColor("#1e293b").fontSize(9).font("Helvetica-Bold")
-        .text(String(simpleGrandTotal), MARGIN + W - 60, y + 7, { width: 55, align: "right", lineBreak: false });
+        .text(String(simpleGrandTotal), MARGIN + W - S_QTY_W - S_VALUE_W, y + 7, { width: S_QTY_W, align: "right", lineBreak: false });
+      if (simpleGrandValue > 0) {
+        doc.fillColor("#1e293b").fontSize(8.5).font("Helvetica-Bold")
+          .text(`£${simpleGrandValue.toFixed(2)}`, MARGIN + W - S_VALUE_W, y + 7, { width: S_VALUE_W - 4, align: "right", lineBreak: false });
+      }
       y += LIST_ROW_H + 16;
     }
 
@@ -923,15 +960,21 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
         // ── Product heading band ──
         const code        = g.code ?? g.sbsCode ?? null;
         const sbsCodeNote = g.sbsCode && g.code && g.sbsCode !== g.code ? `  (SBS: ${g.sbsCode})` : "";
+        const priceLabel  = g.price != null ? `£${g.price.toFixed(2)} / unit` : null;
+        const PRICE_LBL_W = priceLabel ? 88 : 0;
         doc.rect(MARGIN, y, W, PROD_HDR_H).fill("#0f172a");
         if (code) {
           doc.fillColor("#fbbf24").fontSize(10).font("Helvetica-Bold")
             .text(code, MARGIN + 8, y + 7, { width: 120, lineBreak: false });
           doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
-            .text(`  ${g.productName}${sbsCodeNote}`, MARGIN + 10 + 120, y + 7, { width: W - 148, lineBreak: false });
+            .text(`  ${g.productName}${sbsCodeNote}`, MARGIN + 10 + 120, y + 7, { width: W - 148 - PRICE_LBL_W, lineBreak: false });
         } else {
           doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
-            .text(g.productName, MARGIN + 8, y + 7, { width: W - 16, lineBreak: false });
+            .text(g.productName, MARGIN + 8, y + 7, { width: W - 16 - PRICE_LBL_W, lineBreak: false });
+        }
+        if (priceLabel) {
+          doc.fillColor("#94a3b8").fontSize(8.5).font("Helvetica")
+            .text(priceLabel, MARGIN + W - PRICE_LBL_W - 4, y + 8, { width: PRICE_LBL_W, align: "right", lineBreak: false });
         }
         y += PROD_HDR_H;
 
@@ -1003,6 +1046,16 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
 
         grandTotal += groupTotal;
         if (g.price != null) grandValue += groupTotal * g.price;
+
+        // ── Line value annotation ──
+        if (g.price != null && groupTotal > 0) {
+          const lineValue = groupTotal * g.price;
+          doc.fillColor("#64748b").fontSize(7.5).font("Helvetica")
+            .text(`£${g.price.toFixed(2)} × ${groupTotal} = `, tX + COLOUR_W, y + 3, { width: SIZE_W * numCols, align: "right", lineBreak: false });
+          doc.fillColor("#1e293b").fontSize(8).font("Helvetica-Bold")
+            .text(`£${lineValue.toFixed(2)}`, sx, y + 3, { width: TOTAL_W, align: "center", lineBreak: false });
+          y += 13;
+        }
         y += 16;
       }
 
