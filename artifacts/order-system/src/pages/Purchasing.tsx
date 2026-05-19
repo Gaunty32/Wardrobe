@@ -378,18 +378,6 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
                     </TableRow>
                   );
                 })}
-                {g.colours.length > 1 && (
-                  <TableRow className="bg-slate-100 border-t border-slate-300">
-                    <TableCell className="text-xs text-muted-foreground" />
-                    <TableCell className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Subtotal</TableCell>
-                    {allSizes.map((sz) => {
-                      const colTotal = g.colours.reduce((sum, c) => sum + (g.qty.get(c)?.get(sz) ?? 0), 0);
-                      return <TableCell key={sz} className="text-center font-semibold text-sm">{colTotal > 0 ? colTotal : <span className="text-muted-foreground text-xs">—</span>}</TableCell>;
-                    })}
-                    <TableCell className="text-center font-bold">{groupTotal}</TableCell>
-                    {onDeleteLine && <TableCell />}
-                  </TableRow>
-                )}
               </>
             );
           })}
