@@ -1292,6 +1292,8 @@ export default function Purchasing() {
   const [processPoQtys, setProcessPoQtys] = useState<Record<number, number>>({});
   const [selectedOrdersSupplier, setSelectedOrdersSupplier] = useState<string | null>(null);
   const [selectedCompletedSupplier, setSelectedCompletedSupplier] = useState<string | null>(null);
+  const [selectedDraftSupplier, setSelectedDraftSupplier] = useState<string | null>(null);
+  const [selectedBackordersSupplier, setSelectedBackordersSupplier] = useState<string | null>(null);
 
   const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
@@ -1496,6 +1498,35 @@ export default function Purchasing() {
     return [...map.entries()].map(([name, pos]) => ({ name, pos }));
   }, [purchaseOrders]);
 
+  const draftTilesBySupplier = useMemo(() => {
+    const map = new Map<string, { name: string; reqLines: number; psLines: number; poCount: number; supplierId: number | null }>();
+    for (const g of groups) {
+      const key = g.supplierName;
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId });
+      map.get(key)!.reqLines += g.items.length;
+    }
+    for (const g of processReqsBySupplier) {
+      const key = g.supplierName;
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId });
+      map.get(key)!.psLines += g.items.length;
+    }
+    for (const po of draftPos) {
+      const key = po.supplierName;
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: po.supplierId });
+      map.get(key)!.poCount += 1;
+    }
+    return [...map.values()];
+  }, [groups, processReqsBySupplier, draftPos]);
+
+  const backordersBySupplier = useMemo(() => {
+    const map = new Map<string, BackorderLine[]>();
+    for (const b of backorders) {
+      if (!map.has(b.supplierName)) map.set(b.supplierName, []);
+      map.get(b.supplierName)!.push(b);
+    }
+    return [...map.entries()].map(([name, lines]) => ({ name, lines }));
+  }, [backorders]);
+
   const getDraftPoForSupplier = (supplierId: number | null, supplierName: string) =>
     purchaseOrders.find((po) => po.status === "draft" && (supplierId ? po.supplierId === supplierId : po.supplierName === supplierName));
 
@@ -1546,49 +1577,76 @@ export default function Purchasing() {
             </TabsTrigger>
           </TabsList>
 
-          {/* ── Requirements Tab ── */}
+          {/* ── Requirements / Draft Tab ── */}
           <TabsContent value="requirements">
             <div className="space-y-4">
-
-              {reqFetching && groups.length === 0 ? (
+              {(reqFetching && groups.length === 0) ? (
                 <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
-              ) : groups.length === 0 && processReqsBySupplier.length === 0 ? (
+              ) : draftTilesBySupplier.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                   <CheckCircle className="w-12 h-12 text-green-400" />
                   <p className="text-lg font-medium">No purchasing required</p>
                   <p className="text-sm">All order items are in stock or fulfilled.</p>
                 </div>
+              ) : selectedDraftSupplier === null ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {draftTilesBySupplier.map((tile) => {
+                    const logoUrl = supplierLogoMap.get(tile.name);
+                    return (
+                      <button
+                        key={tile.name}
+                        onClick={() => setSelectedDraftSupplier(tile.name)}
+                        className="flex flex-col items-center gap-3 rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all group cursor-pointer"
+                      >
+                        <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {logoUrl ? (
+                            <UploadedImage src={logoUrl} alt={tile.name} className="h-full w-full object-contain p-1.5" fallback={<FileText className="w-7 h-7 text-muted-foreground/40" />} />
+                          ) : (
+                            <FileText className="w-7 h-7 text-muted-foreground/40" />
+                          )}
+                        </div>
+                        <div className="text-center space-y-1.5 w-full">
+                          <p className="font-semibold text-sm text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors">{tile.name}</p>
+                          <div className="flex flex-wrap items-center justify-center gap-1">
+                            {(tile.reqLines + tile.psLines) > 0 && (
+                              <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-200">{tile.reqLines + tile.psLines} to order</Badge>
+                            )}
+                            {tile.poCount > 0 && (
+                              <Badge variant="secondary" className="text-xs">{tile.poCount} draft PO{tile.poCount !== 1 ? "s" : ""}</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               ) : (
-                <>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <AlertTriangle className="w-4 h-4 text-amber-500" />
-                    <span>{totalItems} item{totalItems !== 1 ? "s" : ""} across {groups.length} supplier{groups.length !== 1 ? "s" : ""} need purchasing</span>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSelectedDraftSupplier(null)}>
+                      <ChevronRight className="w-4 h-4 rotate-180" /> All Suppliers
+                    </Button>
+                    <span className="text-muted-foreground text-sm">/</span>
+                    <span className="font-semibold text-sm">{selectedDraftSupplier}</span>
                   </div>
 
-                  {groups.map((group) => {
+                  {/* Requirements for selected supplier */}
+                  {groups.filter(g => g.supplierName === selectedDraftSupplier).map((group) => {
                     const overrides = reqQtyOverrides[group.supplierName] ?? {};
                     const totalQty = group.items.reduce((s, i) => {
                       const cellKey = [i.productName, i.colour ?? "", i.size ?? "", i.supplierCode ?? ""].join("|");
                       return s + (overrides[cellKey] ?? i.purchaseQuantity ?? 0);
                     }, 0);
                     const existingDraft = getDraftPoForSupplier(group.supplierId, group.supplierName);
-                    const isExpanded = !!expandedReqGroups[group.supplierName];
-
                     return (
                       <div key={group.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                        <div
-                          className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
-                          onClick={() => setExpandedReqGroups((prev) => ({ ...prev, [group.supplierName]: !prev[group.supplierName] }))}
-                        >
+                        <div className="flex items-center justify-between px-5 py-4">
                           <div className="flex items-center gap-3 flex-wrap">
-                            {isExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                             <div>
                               <div className="font-semibold text-base flex items-center gap-2">
                                 {group.supplierName}
                                 {group.supplierId === null && (
-                                  <span className="text-xs font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                                    Set supplier on the product to assign
-                                  </span>
+                                  <span className="text-xs font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Set supplier on the product to assign</span>
                                 )}
                               </div>
                               {group.supplierEmail && <div className="text-xs text-muted-foreground">{group.supplierEmail}</div>}
@@ -1596,7 +1654,7 @@ export default function Purchasing() {
                             <Badge variant="secondary">{group.items.length} line{group.items.length !== 1 ? "s" : ""}</Badge>
                             <Badge className="bg-amber-100 text-amber-800 border-amber-200">{totalQty} units needed</Badge>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
                                 onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.map((i) => i.itemId) })}
@@ -1613,56 +1671,34 @@ export default function Purchasing() {
                             </Button>
                           </div>
                         </div>
-                        {isExpanded && (
-                          <div className="border-t border-border px-5 py-4">
-                            <ReqMatrixView
-                              items={group.items}
-                              overrides={overrides}
-                              onQtyChange={(cellKey, qty) =>
-                                setReqQtyOverrides((prev) => ({
-                                  ...prev,
-                                  [group.supplierName]: { ...(prev[group.supplierName] ?? {}), [cellKey]: qty },
-                                }))
-                              }
-                              onDeleteRow={(itemIds) => deleteRequirementMutation.mutate(itemIds)}
-                            />
-                          </div>
-                        )}
+                        <div className="border-t border-border px-5 py-4">
+                          <ReqMatrixView
+                            items={group.items}
+                            overrides={overrides}
+                            onQtyChange={(cellKey, qty) => setReqQtyOverrides((prev) => ({ ...prev, [group.supplierName]: { ...(prev[group.supplierName] ?? {}), [cellKey]: qty } }))}
+                            onDeleteRow={(itemIds) => deleteRequirementMutation.mutate(itemIds)}
+                          />
+                        </div>
                       </div>
                     );
                   })}
-                </>
-              )}
 
-              {/* Process Materials Requirements — merged into Draft tab */}
-              {processReqsBySupplier.length > 0 && (
-                <>
-                  {groups.length > 0 && (
-                    <div className="flex items-center gap-2 pt-2 pb-1">
-                      <div className="flex-1 border-t border-border" />
-                      <span className="text-xs text-muted-foreground uppercase tracking-wide font-semibold px-2">Process Materials</span>
-                      <div className="flex-1 border-t border-border" />
-                    </div>
-                  )}
-                  {processReqsBySupplier.map((psGroup) => {
+                  {/* Process material requirements for selected supplier */}
+                  {processReqsBySupplier.filter(g => g.supplierName === selectedDraftSupplier).map((psGroup) => {
                     const psOverrides = psQtyOverrides[psGroup.supplierName] ?? {};
                     const totalPsQty = psGroup.items.reduce((s, r) => s + (psOverrides[r.processStockId] ?? r.shortfall), 0);
                     const existingDraft = getDraftPoForSupplier(psGroup.supplierId, psGroup.supplierName);
-                    const isPsExpanded = !!expandedPsGroups[psGroup.supplierName];
                     const itemsWithOverrides = psGroup.items.map(r => ({ ...r, shortfall: psOverrides[r.processStockId] ?? r.shortfall }));
                     return (
-                      <div key={psGroup.supplierName} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-                        <div
-                          className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
-                          onClick={() => setExpandedPsGroups((prev) => ({ ...prev, [psGroup.supplierName]: !prev[psGroup.supplierName] }))}
-                        >
+                      <div key={`ps-${psGroup.supplierName}`} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+                        <div className="flex items-center justify-between px-5 py-4">
                           <div className="flex items-center gap-3 flex-wrap">
-                            {isPsExpanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
-                            <div className="font-semibold text-base">{psGroup.supplierName ?? "Unknown Supplier"}</div>
+                            <div className="font-semibold text-base">{psGroup.supplierName}</div>
+                            <Badge variant="outline" className="text-xs">Process Materials</Badge>
                             <Badge variant="secondary">{psGroup.items.length} line{psGroup.items.length !== 1 ? "s" : ""}</Badge>
                             <Badge className="bg-amber-100 text-amber-800 border-amber-200">{totalPsQty} units needed</Badge>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
                                 onClick={() => addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: itemsWithOverrides })}
@@ -1677,42 +1713,19 @@ export default function Purchasing() {
                             )}
                           </div>
                         </div>
-                        {isPsExpanded && (
-                          <div className="border-t border-border px-5 py-4">
-                            <ProcessMaterialsLineTable
-                              items={psGroup.items}
-                              overrides={psOverrides}
-                              onQtyChange={(processStockId, qty) =>
-                                setPsQtyOverrides((prev) => ({
-                                  ...prev,
-                                  [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: qty },
-                                }))
-                              }
-                            />
-                          </div>
-                        )}
+                        <div className="border-t border-border px-5 py-4">
+                          <ProcessMaterialsLineTable
+                            items={psGroup.items}
+                            overrides={psOverrides}
+                            onQtyChange={(processStockId, qty) => setPsQtyOverrides((prev) => ({ ...prev, [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: qty } }))}
+                          />
+                        </div>
                       </div>
                     );
                   })}
-                </>
-              )}
 
-              {/* Draft POs — created but not yet sent to supplier */}
-              {draftPos.length > 0 && (
-                <div className="space-y-3 pt-2">
-                  <div className="flex items-center gap-4">
-                    <div className="flex-1 border-t-2 border-border" />
-                    <div className="flex items-center gap-2 shrink-0">
-                      <FileText className="w-4 h-4 text-primary" />
-                      <span className="text-sm font-semibold text-foreground">Draft Purchase Orders</span>
-                      <Badge variant="secondary" className="text-xs">{draftPos.length}</Badge>
-                    </div>
-                    <div className="flex-1 border-t-2 border-border" />
-                  </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Review quantities on each PO, then click <strong>Mark Ordered</strong> once sent to the supplier.
-                  </p>
-                  {draftPos.map((po) => (
+                  {/* Draft POs for selected supplier */}
+                  {draftPos.filter(po => po.supplierName === selectedDraftSupplier).map((po) => (
                     <POCard
                       key={po.id}
                       po={po}
@@ -1868,13 +1881,51 @@ export default function Purchasing() {
                 <p className="text-lg font-medium">No backorders</p>
                 <p className="text-sm">PO lines with outstanding quantities after 5 days will appear here.</p>
               </div>
+            ) : selectedBackordersSupplier === null ? (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {backordersBySupplier.map(({ name, lines }) => {
+                  const logoUrl = supplierLogoMap.get(name);
+                  const maxOverdue = Math.max(...lines.map(l => l.daysOverdue ?? 0));
+                  return (
+                    <button
+                      key={name}
+                      onClick={() => setSelectedBackordersSupplier(name)}
+                      className="flex flex-col items-center gap-3 rounded-xl border border-amber-200 bg-card p-5 shadow-sm hover:shadow-md hover:border-amber-400 transition-all group cursor-pointer"
+                    >
+                      <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                        {logoUrl ? (
+                          <UploadedImage src={logoUrl} alt={name} className="h-full w-full object-contain p-1.5" fallback={<ClipboardList className="w-7 h-7 text-muted-foreground/40" />} />
+                        ) : (
+                          <ClipboardList className="w-7 h-7 text-muted-foreground/40" />
+                        )}
+                      </div>
+                      <div className="text-center space-y-1.5 w-full">
+                        <p className="font-semibold text-sm text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors">{name}</p>
+                        <div className="flex flex-wrap items-center justify-center gap-1">
+                          <Badge variant="secondary" className="text-xs">{lines.length} line{lines.length !== 1 ? "s" : ""}</Badge>
+                          {maxOverdue > 0 && (
+                            <Badge className="bg-red-100 text-red-800 border-red-300 text-xs">{maxOverdue}d overdue</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
               <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSelectedBackordersSupplier(null)}>
+                    <ChevronRight className="w-4 h-4 rotate-180" /> All Suppliers
+                  </Button>
+                  <span className="text-muted-foreground text-sm">/</span>
+                  <span className="font-semibold text-sm">{selectedBackordersSupplier}</span>
+                </div>
                 <p className="text-sm text-muted-foreground flex items-center gap-2">
                   <ClipboardList className="w-4 h-4 text-amber-500" />
-                  {backorders.length} line{backorders.length !== 1 ? "s" : ""} overdue — ordered more than 5 days ago with quantity still outstanding
+                  {backorders.filter(b => b.supplierName === selectedBackordersSupplier).length} line{backorders.filter(b => b.supplierName === selectedBackordersSupplier).length !== 1 ? "s" : ""} overdue
                 </p>
-                {backorders.map((b) => (
+                {backorders.filter(b => b.supplierName === selectedBackordersSupplier).map((b) => (
                   <div key={b.id} className="rounded-xl border border-amber-200 bg-amber-50/40 px-4 py-3 space-y-1.5">
                     <div className="flex items-start justify-between gap-4 flex-wrap">
                       <div className="space-y-0.5">
@@ -1887,7 +1938,6 @@ export default function Purchasing() {
                         </div>
                         <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
                           <span>PO: <span className="font-mono font-medium text-foreground">{b.poNumber}</span></span>
-                          <span>{b.supplierName}</span>
                           {b.orderNumber && (
                             <span>Order: <span className="font-mono font-medium text-foreground">{b.orderNumber}</span></span>
                           )}
