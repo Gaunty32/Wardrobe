@@ -2085,6 +2085,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const statusBadge = (u: any) => {
     if (u.status === "active") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-200">Active</span>;
     if (u.status === "invited") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">Invited</span>;
+    if (u.status === "pending") return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">Not Sent</span>;
     return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{u.status}</span>;
   };
 

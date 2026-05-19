@@ -80,7 +80,7 @@ async function autoCreateContactDefaults(
       INSERT INTO customer_portal_users
         (customer_id, email, invite_token, invite_expires_at, status, portal_role, linked_employee_id)
       VALUES
-        (${customerId}, ${normalised}, ${token}, ${expires.toISOString()}, 'invited', 'manager', ${employee.id})
+        (${customerId}, ${normalised}, ${token}, ${expires.toISOString()}, 'pending', 'manager', ${employee.id})
       ON CONFLICT (email) DO NOTHING
     `);
   }

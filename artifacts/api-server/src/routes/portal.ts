@@ -169,11 +169,10 @@ router.post("/portal/admin/create-user", async (req: Request, res: Response) => 
 
   await db.execute(sql`
     INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
-    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${portalRole})
+    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'pending', ${portalRole})
     ON CONFLICT (email, customer_id) DO UPDATE
       SET invite_token = ${token},
           invite_expires_at = ${expires.toISOString()},
-          status = 'invited',
           portal_role = ${portalRole},
           updated_at = now()
   `);
@@ -2549,11 +2548,10 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
   try {
     await db.execute(sql`
       INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
-      VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${role})
+      VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'pending', ${role})
       ON CONFLICT (email, customer_id) DO UPDATE SET
         invite_token = ${token},
         invite_expires_at = ${expires.toISOString()},
-        status = 'invited',
         portal_role = ${role},
         updated_at = now()
     `);
@@ -2583,6 +2581,12 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
     });
     emailSent = result.sent;
     emailError = result.error;
+    if (emailSent) {
+      await db.execute(sql`
+        UPDATE customer_portal_users SET status = 'invited', updated_at = now()
+        WHERE customer_id = ${customerId} AND email = ${email}
+      `);
+    }
   }
 
   res.json({ inviteUrl: relativeUrl, token, email, portalRole: role, expiresAt: expires, emailSent, emailError });

@@ -725,5 +725,14 @@ export async function runStartupMigrations(): Promise<void> {
     console.log(`[startup] Restored ${rowCount} orphaned purchase requirement(s)`);
   }
 
+  // Reset portal users who show as 'invited' but never actually received an email
+  // (they were created via create-user or auto-inserted from employee records).
+  // If they've never logged in, 'invited' is misleading — set back to 'pending'.
+  await db.execute(sql`
+    UPDATE customer_portal_users
+    SET status = 'pending', updated_at = now()
+    WHERE status = 'invited' AND last_login_at IS NULL
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
