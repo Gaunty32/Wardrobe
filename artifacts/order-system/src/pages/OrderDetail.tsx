@@ -1309,7 +1309,7 @@ export default function OrderDetail() {
         })()}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="lg:col-span-2 shadow-sm border-border/50 flex flex-col">
+          <Card className="lg:col-span-2 shadow-sm border-border/50 flex flex-col overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10 gap-3 flex-wrap">
               <div className="min-w-0">
                 <CardTitle className="font-display">
@@ -1540,20 +1540,6 @@ export default function OrderDetail() {
             )}
           </Card>
 
-          {/* ── Messages ────────────────────────────────────────────────── */}
-          <Card className="lg:col-span-2 shadow-sm border-border/50">
-            <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
-              <CardTitle className="font-display flex items-center gap-2">
-                <MessageSquare className="w-4 h-4 text-muted-foreground" />
-                Internal Messages
-              </CardTitle>
-              <CardDescription>Staff notes and discussion about this job — not visible to the customer</CardDescription>
-            </CardHeader>
-            <CardContent className="py-5">
-              <OrderMessages orderId={orderId} />
-            </CardContent>
-          </Card>
-
           <div className="flex flex-col gap-6">
             <Card className="shadow-sm border-border/50">
               <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
@@ -1573,6 +1559,60 @@ export default function OrderDetail() {
                     )}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                <CardTitle className="font-display text-lg flex items-center">
+                  <Paperclip className="w-4 h-4 mr-2 text-muted-foreground" /> Attachments
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="py-4 space-y-2">
+                {currentAttachments.length > 0 && (
+                  <ul className="space-y-1.5">
+                    {currentAttachments.map((att, i) => (
+                      <li key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                        <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <a
+                          href={`${API_BASE}/storage${att.objectPath}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm flex-1 min-w-0 truncate hover:underline text-foreground"
+                        >
+                          {att.name}
+                        </a>
+                        <a
+                          href={`${API_BASE}/storage${att.objectPath}`}
+                          download={att.name}
+                          className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                          aria-label="Download"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachment(i)}
+                          disabled={updateAttachmentsMutation.isPending}
+                          className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
+                          aria-label="Remove attachment"
+                        >
+                          <XCircle className="w-3.5 h-3.5" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <FileDropZone
+                  onFile={(file) => uploadFiles([file])}
+                  disabled={uploading || updateAttachmentsMutation.isPending}
+                  className="py-5 px-4"
+                >
+                  <FileDropZoneContent
+                    uploading={uploading}
+                    label="Drag a file here, or click to browse"
+                  />
+                </FileDropZone>
               </CardContent>
             </Card>
 
@@ -1923,84 +1963,19 @@ export default function OrderDetail() {
           </div>
         </div>
 
-        {packStatus && packStatus.recipients.length > 0 && (
-          <Card className="shadow-sm border-border/50 mt-6">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-border/40 py-4 bg-muted/10">
-              <div className="flex items-center gap-2">
-                <PackageCheck className="w-5 h-5 text-primary" />
-                <div>
-                  <CardTitle className="font-display text-lg">Pack &amp; Dispatch</CardTitle>
-                  <CardDescription>Pick and pack status by recipient</CardDescription>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => refetchPackStatus()}>
-                <ClipboardList className="w-4 h-4 text-muted-foreground" />
-              </Button>
-            </CardHeader>
-            <CardContent className="p-4 space-y-4">
-              {packStatus.recipients.map((recipient, idx) => (
-                <div key={idx} className={`rounded-xl border p-4 space-y-3 ${recipient.allComplete ? "border-green-300 bg-green-50/50" : "border-border bg-muted/20"}`}>
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      {recipient.recipientType === "person" ? (
-                        <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
-                          {recipient.recipientName?.charAt(0).toUpperCase()}
-                        </div>
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                          <Archive className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                      )}
-                      <div>
-                        <div className="font-semibold">
-                          {recipient.recipientType === "person" ? recipient.recipientName : "Stock / General"}
-                        </div>
-                        {recipient.recipientType === "person" && (recipient.jobTitle || recipient.department) && (
-                          <div className="text-xs text-muted-foreground">
-                            {[recipient.jobTitle, recipient.department].filter(Boolean).join(" · ")}
-                          </div>
-                        )}
-                      </div>
-                      <Badge className={`text-xs ml-2 gap-1 ${recipient.allComplete ? "bg-green-100 text-green-800 border-green-300" : "bg-amber-100 text-amber-800 border-amber-300"}`}>
-                        {recipient.allComplete ? <><CheckCircle2 className="w-3 h-3" /> Ready to Pack</> : <><Clock className="w-3 h-3" /> Pending</>}
-                      </Badge>
-                    </div>
-                    {recipient.recipientType === "person" && recipient.allComplete && (
-                      <Button size="sm" variant="outline" className="gap-1.5 border-primary/40 text-primary hover:bg-primary/5 text-xs" onClick={() => printLabel(recipient)}>
-                        <Printer className="w-3.5 h-3.5" /> Print 4×6 Label
-                      </Button>
-                    )}
-                  </div>
-
-                  <div className="space-y-1.5">
-                    {recipient.items.map((pi) => (
-                      <div key={pi.orderItemId} className="flex items-center gap-2 text-sm">
-                        {pi.isComplete ? (
-                          <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-                        ) : (
-                          <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                        )}
-                        <span className={`font-medium flex-1 ${pi.isComplete ? "text-foreground" : "text-muted-foreground"}`}>{pi.productName}</span>
-                        <span className="text-xs text-muted-foreground">{[pi.colour, pi.size].filter(Boolean).join(" / ")}</span>
-                        <Badge variant="secondary" className="text-xs">× {pi.quantity}</Badge>
-                        {pi.worksheetNumber && (
-                          <Badge variant="outline" className={`text-xs font-mono ${pi.isComplete ? "border-green-300 text-green-700" : "border-amber-300 text-amber-700"}`}>
-                            {pi.worksheetNumber}
-                          </Badge>
-                        )}
-                        {!pi.worksheetNumber && (
-                          <Badge variant="outline" className="text-xs text-muted-foreground border-muted-foreground/30">
-                            No worksheet
-                          </Badge>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
+        {/* ── Internal Messages ─────────────────────────────────────────────── */}
+        <Card className="shadow-sm border-border/50">
+          <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+            <CardTitle className="font-display flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-muted-foreground" />
+              Internal Messages
+            </CardTitle>
+            <CardDescription>Staff notes and discussion about this job — not visible to the customer</CardDescription>
+          </CardHeader>
+          <CardContent className="py-5">
+            <OrderMessages orderId={orderId} />
+          </CardContent>
+        </Card>
 
         {/* ── Email Log ────────────────────────────────────────────────────── */}
         <Card className="shadow-sm border-border/50">
