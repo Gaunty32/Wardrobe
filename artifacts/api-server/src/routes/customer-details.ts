@@ -17,6 +17,7 @@ import {
   customerReferencesTable,
   customersTable,
   ordersTable,
+  orderItemsTable,
   productsTable,
   productVariantsTable,
 } from "@workspace/db";
@@ -648,6 +649,10 @@ const importRowSchema = z.object({
 
 const importBodySchema = z.object({
   rows: z.array(importRowSchema),
+  orderOptions: z.object({
+    finishId: z.number().int().positive(),
+    sizeLabel: z.string(),
+  }).optional().nullable(),
 });
 
 router.post("/customers/:customerId/employees/import", async (req, res): Promise<void> => {
@@ -790,7 +795,100 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
     }
   }
 
-  res.json({ created, updated, skipped, errors });
+  // ── Optional: Create a draft order from the imported sizes ────────────────
+  let createdOrder: { id: number; orderNumber: string } | null = null;
+  if (body.data.orderOptions) {
+    const { finishId, sizeLabel } = body.data.orderOptions;
+
+    // Aggregate size → count from all imported rows
+    const sizeCounts = new Map<string, number>();
+    for (const row of rows) {
+      const entry = row.sizes?.find(s => s.label === sizeLabel);
+      if (entry?.size?.trim()) {
+        const s = entry.size.trim();
+        sizeCounts.set(s, (sizeCounts.get(s) ?? 0) + 1);
+      }
+    }
+
+    if (sizeCounts.size > 0) {
+      // Fetch finish items for the chosen finish
+      const finishRows = await db.execute(sql`
+        SELECT cfi.id, cfi.name, cfi.product_id, p.name AS product_name, cfi.colour,
+               cfi.unit_price, cfi.special_price, cf.name AS finish_name, cf.id AS finish_id
+        FROM customer_finished_items cfi
+        LEFT JOIN products p ON p.id = cfi.product_id
+        JOIN customer_finishes cf ON cf.id = cfi.finish_id
+        WHERE cfi.finish_id = ${finishId} AND cfi.customer_id = ${customerId}
+      `);
+
+      if ((finishRows.rows as any[]).length > 0) {
+        const [cust] = await db.select({ name: customersTable.name }).from(customersTable).where(eq(customersTable.id, customerId));
+
+        // Generate unique order number
+        const numRows = await db.execute(sql`
+          SELECT order_number FROM orders WHERE order_number ~ '^O[0-9]+$'
+          ORDER BY LENGTH(order_number) DESC, order_number DESC LIMIT 1
+        `);
+        const lastNum = (numRows.rows[0] as any)?.order_number as string | undefined;
+        const orderNum = `O${(lastNum ? parseInt(lastNum.slice(1), 10) : 99) + 1}`;
+
+        const [order] = await db.insert(ordersTable).values({
+          orderNumber: orderNum,
+          customerId,
+          customerName: cust?.name ?? null,
+          status: "draft",
+          totalAmount: "0",
+          notes: `Created from employee spreadsheet import`,
+          orderDate: new Date(),
+        }).returning();
+
+        // Create one order item per finish item × size
+        const itemValues: any[] = [];
+        for (const fi of finishRows.rows as any[]) {
+          for (const [size, qty] of sizeCounts) {
+            // Try to get a colour-matched variant price
+            const variantRow = await db.execute(sql`
+              SELECT price FROM product_variants
+              WHERE product_id = ${fi.product_id ?? 0}
+                AND lower(colour) = lower(${fi.colour ?? ""})
+                AND lower(size) = lower(${size})
+              LIMIT 1
+            `);
+            const variantPrice = (variantRow.rows[0] as any)?.price;
+            const unitPrice = variantPrice
+              ? parseFloat(variantPrice)
+              : fi.special_price ? parseFloat(fi.special_price)
+              : fi.unit_price ? parseFloat(fi.unit_price)
+              : 0;
+
+            itemValues.push({
+              orderId: order.id,
+              productId: fi.product_id ?? null,
+              productName: fi.product_name ?? fi.name,
+              colour: fi.colour ?? null,
+              size,
+              finishId: fi.finish_id,
+              finishName: fi.finish_name,
+              quantity: qty,
+              unitPrice: String(unitPrice),
+              lineTotal: String(unitPrice * qty),
+            });
+          }
+        }
+
+        if (itemValues.length > 0) {
+          await db.insert(orderItemsTable).values(itemValues);
+        }
+
+        const total = itemValues.reduce((s, i) => s + parseFloat(i.lineTotal), 0);
+        await db.update(ordersTable).set({ totalAmount: String(total) }).where(eq(ordersTable.id, order.id));
+
+        createdOrder = { id: order.id, orderNumber: orderNum };
+      }
+    }
+  }
+
+  res.json({ created, updated, skipped, errors, order: createdOrder });
 });
 
 // ─── Bulk Role Assignment ─────────────────────────────────────────────────────

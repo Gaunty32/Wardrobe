@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Check, AlertCircle, Loader2 } from "lucide-react";
+import { Upload, FileSpreadsheet, ArrowRight, ArrowLeft, Check, AlertCircle, Loader2, ShoppingCart, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 async function apiFetch(path: string, opts?: RequestInit) {
@@ -68,9 +68,16 @@ interface ImportResult {
   updated: number;
   skipped: number;
   errors: { row: number; error: string }[];
+  order?: { id: number; orderNumber: string } | null;
 }
 
-type Step = "upload" | "map" | "preview" | "done";
+interface Finish {
+  id: number;
+  name: string;
+  code: string | null;
+}
+
+type Step = "upload" | "map" | "preview" | "order" | "done";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -224,6 +231,11 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
   const [mappings, setMappings] = useState<ColumnMapping[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
+  // Order creation state
+  const [createOrder, setCreateOrder] = useState(false);
+  const [selectedFinishId, setSelectedFinishId] = useState<number | null>(null);
+  const [finishes, setFinishes] = useState<Finish[]>([]);
+  const [loadingFinishes, setLoadingFinishes] = useState(false);
 
   const reset = () => {
     setStep("upload");
@@ -234,6 +246,9 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
     setMappings([]);
     setResult(null);
     setLoading(false);
+    setCreateOrder(false);
+    setSelectedFinishId(null);
+    setFinishes([]);
   };
 
   const handleClose = (v: boolean) => {
@@ -351,6 +366,39 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
   const validMappedRows = dataRows.map(r => buildMappedRow(r, mappings)).filter(Boolean).length;
 
   const hasNameMapping = mappings.some(m => ["full_name", "first_name"].includes(m.type));
+  const hasSizeColumns = mappings.some(m => m.type === "size");
+
+  // Aggregate sizes from all data rows (for the order step preview)
+  const sizeAggregation: { size: string; count: number }[] = (() => {
+    const counts = new Map<string, number>();
+    for (const row of dataRows) {
+      for (let i = 0; i < mappings.length; i++) {
+        if (mappings[i]?.type === "size") {
+          const v = String(row[i] ?? "").trim();
+          if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+        }
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([size, count]) => ({ size, count }));
+  })();
+
+  const firstSizeLabel = mappings.find(m => m.type === "size")?.sizeLabel ?? "Size";
+
+  // Fetch finishes when entering the order step
+  useEffect(() => {
+    if (step !== "order") return;
+    setLoadingFinishes(true);
+    apiFetch(`/customers/${customerId}/finishes`)
+      .then((data: any) => {
+        const list: Finish[] = (data ?? []).map((f: any) => ({ id: f.id, name: f.name, code: f.code ?? null }));
+        setFinishes(list);
+        if (list.length === 1) setSelectedFinishId(list[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingFinishes(false));
+  }, [step, customerId]);
 
   const doImport = async () => {
     setLoading(true);
@@ -359,9 +407,13 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
         .map(r => buildMappedRow(r, mappings))
         .filter(Boolean) as MappedRow[];
 
+      const orderOptions = (createOrder && selectedFinishId)
+        ? { finishId: selectedFinishId, sizeLabel: firstSizeLabel }
+        : null;
+
       const res = await apiFetch(`/customers/${customerId}/employees/import`, {
         method: "POST",
-        body: JSON.stringify({ rows }),
+        body: JSON.stringify({ rows, orderOptions }),
       });
       setResult(res);
       setStep("done");
@@ -385,12 +437,15 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
             Upload an Excel or CSV file, map the columns, and import employees with their sizes.
           </DialogDescription>
           {/* Step indicators */}
-          <div className="flex items-center gap-1.5 mt-3">
-            {(["upload", "map", "preview", "done"] as Step[]).map((s, idx) => {
-              const labels = ["1. Upload", "2. Map Columns", "3. Preview", "4. Done"];
-              const stepIdx = ["upload", "map", "preview", "done"].indexOf(step);
+          <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+            {(["upload", "map", "preview", "order", "done"] as Step[]).map((s, idx) => {
+              const labels = ["1. Upload", "2. Map Columns", "3. Preview", "4. Order", "5. Done"];
+              const allSteps = ["upload", "map", "preview", "order", "done"];
+              const stepIdx = allSteps.indexOf(step);
+              const sIdx = allSteps.indexOf(s);
               const isCurrent = s === step;
-              const isDone = idx < stepIdx;
+              const isDone = sIdx < stepIdx;
+              if (s === "order" && !hasSizeColumns) return null;
               return (
                 <div key={s} className="flex items-center gap-1.5">
                   <span className={cn(
@@ -399,7 +454,7 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                   )}>
                     {labels[idx]}
                   </span>
-                  {idx < 3 && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
+                  {idx < 4 && (s !== "order" || hasSizeColumns) && <ArrowRight className="w-3 h-3 text-muted-foreground/40" />}
                 </div>
               );
             })}
@@ -609,7 +664,89 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
             </div>
           )}
 
-          {/* ── Step 4: Done ── */}
+          {/* ── Step 4: Order ── */}
+          {step === "order" && (
+            <div className="space-y-5">
+              <div>
+                <h3 className="text-sm font-semibold mb-1 flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4 text-primary" /> Size summary from this import
+                </h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  These sizes were found across all {validMappedRows} employees. You can create a draft order with one unit per employee in their size.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {sizeAggregation.map(({ size, count }) => (
+                    <div key={size} className="flex items-center gap-1.5 rounded-md border px-3 py-1.5 bg-muted/30 text-sm">
+                      <span className="font-semibold">{size}</span>
+                      <span className="text-muted-foreground">×{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border rounded-lg p-4 space-y-4">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={createOrder}
+                    onClick={() => setCreateOrder(v => !v)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors",
+                      createOrder ? "bg-primary" : "bg-input"
+                    )}
+                  >
+                    <span className={cn(
+                      "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform",
+                      createOrder ? "translate-x-4" : "translate-x-0"
+                    )} />
+                  </button>
+                  <div>
+                    <p className="text-sm font-medium leading-none">Also create a draft order from these sizes</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Creates a new draft sales order using the customer's wardrobe configuration</p>
+                  </div>
+                </div>
+
+                {createOrder && (
+                  <div className="space-y-3 pt-2 border-t">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Which wardrobe finish should the order use?</Label>
+                      {loadingFinishes ? (
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading finishes…
+                        </div>
+                      ) : finishes.length === 0 ? (
+                        <p className="text-xs text-amber-600">No wardrobe finishes found for this customer.</p>
+                      ) : (
+                        <Select
+                          value={selectedFinishId ? String(selectedFinishId) : ""}
+                          onValueChange={v => setSelectedFinishId(Number(v))}
+                        >
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue placeholder="Select a finish…" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {finishes.map(f => (
+                              <SelectItem key={f.id} value={String(f.id)}>
+                                {f.name}{f.code ? ` (${f.code})` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    {selectedFinishId && (
+                      <p className="text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded px-2.5 py-1.5 text-blue-700">
+                        Order lines will be created for each product in the selected finish, grouped by size.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 5: Done ── */}
           {step === "done" && result && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
@@ -626,6 +763,21 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
                   <p className="text-xs text-amber-600 mt-0.5 font-medium">Skipped (errors)</p>
                 </div>
               </div>
+              {result.order && (
+                <a
+                  href={`/orders/${result.order.id}`}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm hover:bg-primary/10 transition-colors group"
+                >
+                  <div className="flex items-center gap-2">
+                    <ShoppingCart className="w-4 h-4 text-primary" />
+                    <div>
+                      <p className="font-semibold text-primary">Draft order created: {result.order.orderNumber}</p>
+                      <p className="text-xs text-muted-foreground">Click to open the order and review before confirming</p>
+                    </div>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-primary/60 group-hover:text-primary transition-colors shrink-0" />
+                </a>
+              )}
               {result.errors.length > 0 && (
                 <div className="border border-red-200 rounded-lg overflow-hidden">
                   <div className="bg-red-50 px-3 py-2 border-b border-red-200">
@@ -654,7 +806,16 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
         <DialogFooter className="px-6 py-4 border-t border-border/60 shrink-0 flex items-center justify-between">
           <div>
             {step !== "upload" && step !== "done" && (
-              <Button variant="ghost" size="sm" onClick={() => setStep(step === "map" ? "upload" : "map")} className="gap-1.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (step === "map") setStep("upload");
+                  else if (step === "preview") setStep("map");
+                  else if (step === "order") setStep("preview");
+                }}
+                className="gap-1.5"
+              >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </Button>
             )}
@@ -674,8 +835,28 @@ export function ImportSpreadsheetDialog({ customerId, open, onOpenChange, onImpo
               </Button>
             )}
             {step === "preview" && (
-              <Button onClick={doImport} disabled={loading || validMappedRows === 0} className="gap-1.5">
-                {loading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</> : <><Check className="w-3.5 h-3.5" /> Import {validMappedRows} rows</>}
+              hasSizeColumns ? (
+                <Button onClick={() => setStep("order")} disabled={validMappedRows === 0} className="gap-1.5">
+                  Next <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
+              ) : (
+                <Button onClick={doImport} disabled={loading || validMappedRows === 0} className="gap-1.5">
+                  {loading ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</> : <><Check className="w-3.5 h-3.5" /> Import {validMappedRows} rows</>}
+                </Button>
+              )
+            )}
+            {step === "order" && (
+              <Button
+                onClick={doImport}
+                disabled={loading || validMappedRows === 0 || (createOrder && !selectedFinishId)}
+                className="gap-1.5"
+              >
+                {loading
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing…</>
+                  : createOrder
+                    ? <><ShoppingCart className="w-3.5 h-3.5" /> Import & Create Order</>
+                    : <><Check className="w-3.5 h-3.5" /> Import {validMappedRows} rows</>
+                }
               </Button>
             )}
           </div>
