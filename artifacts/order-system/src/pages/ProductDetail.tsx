@@ -557,6 +557,7 @@ export default function ProductDetail() {
   const [detailsDirty, setDetailsDirty] = useState(false);
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
+  const [generateMatrixOpen, setGenerateMatrixOpen] = useState(false);
 
   useEffect(() => {
     if (product && !details) {
@@ -647,6 +648,16 @@ export default function ProductDetail() {
     return <Layout><div className="text-center py-20"><p className="text-muted-foreground">Product not found.</p><Button variant="outline" className="mt-4" onClick={() => navigate("/products")}>Back</Button></div></Layout>;
   }
 
+  const generateMatrixMut = useMutation({
+    mutationFn: () => apiFetch(`/products/${productId}/variants/generate-matrix`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      refetchVariants();
+      setGenerateMatrixOpen(false);
+      toast({ title: `Generated ${data.created} variant${data.created !== 1 ? "s" : ""}${data.deleted > 0 ? `, removed ${data.deleted} colour-only row${data.deleted !== 1 ? "s" : ""}` : ""}` });
+    },
+    onError: (err: any) => toast({ title: err.message || "Failed to generate variants", variant: "destructive" }),
+  });
+
   const totalStock = variants.reduce((sum: number, v: any) => sum + (v.stockQuantity || 0), 0);
   const lowStockCount = variants.filter((v: any) => v.stockQuantity <= 5).length;
   const defaultPrimaryId = details.supplierId;
@@ -656,6 +667,12 @@ export default function ProductDetail() {
   const sortedVariants = sortBySizeWithOrder(variants, (v: any) => v.size, sizeOrder);
   const colours = [...new Set(variants.map((v: any) => v.colour).filter(Boolean))];
   const sizes = [...new Set(sortedVariants.map((v: any) => v.size).filter(Boolean))];
+
+  // Attributes-based colour+size lists (for matrix generation)
+  const attrColours = (attributes as any[]).filter(a => a.type === "colour").map(a => a.value as string);
+  const attrSizes = (attributes as any[]).filter(a => a.type === "size").map(a => a.value as string);
+  const hasColourOnlyVariants = (variants as any[]).some(v => v.size === null);
+  const canGenerateMatrix = attrColours.length > 0 && attrSizes.length > 0 && hasColourOnlyVariants;
 
   return (
     <TooltipProvider>
@@ -954,9 +971,16 @@ export default function ProductDetail() {
                       <h3 className="font-semibold text-foreground">Variant Combinations</h3>
                       <p className="text-xs text-muted-foreground mt-0.5">Each row is a specific colour+size combo with its own stock level and suppliers.</p>
                     </div>
-                    <Button size="sm" onClick={() => setAddVariantOpen(true)}>
-                      <Plus className="w-4 h-4 mr-1.5" /> Add Variant
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {canGenerateMatrix && (
+                        <Button size="sm" variant="outline" onClick={() => setGenerateMatrixOpen(true)}>
+                          <Layers className="w-4 h-4 mr-1.5" /> Generate size variants
+                        </Button>
+                      )}
+                      <Button size="sm" onClick={() => setAddVariantOpen(true)}>
+                        <Plus className="w-4 h-4 mr-1.5" /> Add Variant
+                      </Button>
+                    </div>
                   </div>
 
                   {variants.length === 0 ? (
@@ -1024,6 +1048,33 @@ export default function ProductDetail() {
           defaultSecondaryId={defaultSecondaryId}
           onRefresh={refetchVariants}
         />
+
+        {/* Generate colour × size matrix dialog */}
+        <Dialog open={generateMatrixOpen} onOpenChange={v => { if (!v) setGenerateMatrixOpen(false); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Generate size variants</DialogTitle>
+            </DialogHeader>
+            <div className="py-2 space-y-3 text-sm text-muted-foreground">
+              <p>
+                This will create <strong className="text-foreground">{attrColours.length} colours × {attrSizes.length} sizes = up to {attrColours.length * attrSizes.length} variants</strong> for this product.
+              </p>
+              <p>
+                Existing colour-only variants (those with no size) that have zero stock will be removed once the new combinations are created.
+              </p>
+              <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs space-y-1">
+                <p className="font-medium text-foreground">Sizes: {attrSizes.join(", ")}</p>
+                <p className="font-medium text-foreground">Colours: {attrColours.join(", ")}</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setGenerateMatrixOpen(false)}>Cancel</Button>
+              <Button onClick={() => generateMatrixMut.mutate()} disabled={generateMatrixMut.isPending}>
+                {generateMatrixMut.isPending ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Generating…</> : "Generate variants"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </Layout>
     </TooltipProvider>
   );

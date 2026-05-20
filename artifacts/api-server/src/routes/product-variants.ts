@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { z } from "zod";
-import { db, productVariantsTable, productsTable } from "@workspace/db";
+import { db, productVariantsTable, productsTable, productAttributesTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -72,6 +72,108 @@ router.patch("/products/:productId/variants/:id", async (req, res): Promise<void
     .returning();
   if (!row) { res.status(404).json({ error: "Variant not found" }); return; }
   res.json(row);
+});
+
+// POST /products/:productId/variants/generate-matrix
+// Creates all colour × size combinations from product attributes.
+// Existing colour-only (size=null) variants with 0 stock are removed after expansion.
+router.post("/products/:productId/variants/generate-matrix", async (req, res): Promise<void> => {
+  const p = productIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const productId = p.data.productId;
+  if (!await getProduct(productId)) { res.status(404).json({ error: "Product not found" }); return; }
+
+  // 1. Load attributes
+  const attrs = await db.select().from(productAttributesTable)
+    .where(eq(productAttributesTable.productId, productId));
+  const colourAttrs = attrs.filter(a => a.type === "colour");
+  const sizeAttrs = attrs.filter(a => a.type === "size");
+
+  if (colourAttrs.length === 0 || sizeAttrs.length === 0) {
+    res.status(400).json({ error: "Product must have both colours and sizes defined as attributes" });
+    return;
+  }
+
+  // 2. Load existing variants
+  const existing = await db.select().from(productVariantsTable)
+    .where(eq(productVariantsTable.productId, productId));
+
+  // 3. Build colour → properties map from existing colour-only variants
+  type ColourProps = {
+    imageUrl: string | null;
+    primarySupplierId: number | null;
+    secondarySupplierId: number | null;
+    supplierCode: string | null;
+    supplierPrice: string | null;
+    secondarySupplierCode: string | null;
+    secondarySupplierPrice: string | null;
+    sku: string | null;
+  };
+  const colourProps = new Map<string, ColourProps>();
+  for (const v of existing) {
+    if (v.size === null && v.colour !== null && !colourProps.has(v.colour)) {
+      colourProps.set(v.colour, {
+        imageUrl: v.imageUrl,
+        primarySupplierId: v.primarySupplierId,
+        secondarySupplierId: v.secondarySupplierId,
+        supplierCode: v.supplierCode,
+        supplierPrice: v.supplierPrice,
+        secondarySupplierCode: v.secondarySupplierCode,
+        secondarySupplierPrice: v.secondarySupplierPrice,
+        sku: v.sku,
+      });
+    }
+  }
+
+  // 4. Create colour × size variants that don't already exist
+  let created = 0;
+  for (const colAttr of colourAttrs) {
+    const colour = colAttr.value;
+    const props = colourProps.get(colour) ?? {
+      imageUrl: colAttr.imageUrl,
+      primarySupplierId: null,
+      secondarySupplierId: null,
+      supplierCode: null,
+      supplierPrice: null,
+      secondarySupplierCode: null,
+      secondarySupplierPrice: null,
+      sku: null,
+    };
+    for (const sizeAttr of sizeAttrs) {
+      const size = sizeAttr.value;
+      const alreadyExists = existing.some(v => v.colour === colour && v.size === size);
+      if (!alreadyExists) {
+        await db.insert(productVariantsTable).values({
+          productId,
+          colour,
+          size,
+          imageUrl: props.imageUrl,
+          primarySupplierId: props.primarySupplierId,
+          secondarySupplierId: props.secondarySupplierId,
+          supplierCode: props.supplierCode,
+          supplierPrice: props.supplierPrice,
+          secondarySupplierCode: props.secondarySupplierCode,
+          secondarySupplierPrice: props.secondarySupplierPrice,
+          stockQuantity: 0,
+        });
+        created++;
+      }
+    }
+  }
+
+  // 5. Delete old colour-only (size=null) variants that have 0 stock
+  const toDelete = existing.filter(v => v.size === null && (v.stockQuantity ?? 0) === 0).map(v => v.id);
+  let deleted = 0;
+  if (toDelete.length > 0) {
+    await db.delete(productVariantsTable)
+      .where(and(
+        eq(productVariantsTable.productId, productId),
+        inArray(productVariantsTable.id, toDelete),
+      ));
+    deleted = toDelete.length;
+  }
+
+  res.json({ created, deleted, skipped: existing.filter(v => v.size !== null).length });
 });
 
 // Delete a variant
