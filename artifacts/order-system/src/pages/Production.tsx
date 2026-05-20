@@ -387,8 +387,8 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
       #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
       #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
       #page{display:flex;justify-content:center;padding:24px 0 40px}
-      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:297mm}
-      @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none;padding:0}@page{size:A3 landscape;margin:12mm}}
+      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
+      @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none;padding:0}@page{size:A4 portrait;margin:12mm}}
     </style>
   </head><body>
     <div id="toolbar">
@@ -592,7 +592,7 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
         #toolbar{display:none}body{background:white}#page{padding:0;gap:0}
         .slip{box-shadow:none;width:100%;padding:0}
         .page-break{page-break-after:always}
-        @page{size:A4 landscape;margin:10mm}
+        @page{size:A4 portrait;margin:10mm}
       }
     </style>
   </head><body>
