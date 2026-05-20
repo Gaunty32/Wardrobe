@@ -580,6 +580,7 @@ export default function Dashboard() {
     queryKey: ["portal-select-extra"],
     queryFn: () => apiFetch("/portal/select-extra/current"),
     staleTime: 60_000,
+    enabled: isManager,
   });
 
   // ── Batch PO assignment mode (managers only) ────────────────────────────────
@@ -632,8 +633,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Select Extra — monthly free gift offer */}
-      {selectExtraData?.offer && (
+      {/* Select Extra — monthly free gift offer (admins only) */}
+      {isManager && selectExtraData?.offer && (
         <div className={`rounded-xl border mb-6 overflow-hidden ${selectExtraData.claimed ? "bg-green-50 border-green-200" : "bg-gradient-to-r from-amber-50 via-orange-50/60 to-transparent border-amber-200"}`}>
           <div className="flex items-stretch">
 
