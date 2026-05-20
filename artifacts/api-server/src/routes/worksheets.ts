@@ -11,6 +11,7 @@ import {
   customerProcessesTable,
   customerFinishesTable,
   customerFinishProcessesTable,
+  processStockTable,
 } from "@workspace/db";
 import { logOrderAction, getActor } from "../services/orderLog";
 
@@ -113,6 +114,43 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
       .update(orderItemsTable)
       .set({ stockStatus: "complete" })
       .where(inArray(orderItemsTable.id, plainItems.map((i) => i.id)));
+  }
+
+  // ── Guard: all required process stock must have been delivered (stockQuantity > 0) ──
+  if (finishItems.length > 0) {
+    const finishIds = [...new Set(finishItems.map(i => i.finishId!))] as number[];
+
+    const finishProcessLinks = await db
+      .select({ finishId: customerFinishProcessesTable.finishId, processId: customerFinishProcessesTable.processId })
+      .from(customerFinishProcessesTable)
+      .where(inArray(customerFinishProcessesTable.finishId, finishIds));
+
+    if (finishProcessLinks.length > 0) {
+      const processIds = [...new Set(finishProcessLinks.map(fp => fp.processId))];
+
+      const processes = await db
+        .select({ id: customerProcessesTable.id, processStockId: customerProcessesTable.processStockId })
+        .from(customerProcessesTable)
+        .where(inArray(customerProcessesTable.id, processIds));
+
+      const psIds = [...new Set(processes.filter(p => p.processStockId != null).map(p => p.processStockId!))] as number[];
+
+      if (psIds.length > 0) {
+        const missingStock = await db
+          .select({ id: processStockTable.id, name: processStockTable.name, sku: processStockTable.sku })
+          .from(processStockTable)
+          .where(and(inArray(processStockTable.id, psIds), eq(processStockTable.stockQuantity, 0)));
+
+        if (missingStock.length > 0) {
+          const names = missingStock.map(p => p.name + (p.sku ? ` (${p.sku})` : "")).join(", ");
+          res.status(409).json({
+            error: `Process stock not yet delivered — cannot send to production. Missing: ${names}`,
+            missingProcessStock: missingStock,
+          });
+          return;
+        }
+      }
+    }
   }
 
   // Finish items → create/append production worksheet per order

@@ -1454,7 +1454,17 @@ function PickingListTab({ filters }: { filters: Filters }) {
       if (data.worksheetItems > 0) parts.push(`${data.worksheetItems} sent to production`);
       toast({ title: "Picked", description: parts.join(" · ") || "Items confirmed" });
     },
-    onError: () => toast({ title: "Error marking items picked", variant: "destructive" }),
+    onError: (err: any) => {
+      let title = "Cannot send to production";
+      let description = "An unexpected error occurred. Please try again.";
+      try {
+        const parsed = JSON.parse(err?.message ?? "");
+        if (parsed?.error) description = parsed.error;
+      } catch {
+        if (err?.message) description = err.message;
+      }
+      toast({ title, description, variant: "destructive" });
+    },
   });
 
   const returnMutation = useMutation({
