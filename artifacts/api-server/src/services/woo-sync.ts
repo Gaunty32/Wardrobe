@@ -358,7 +358,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
               unit_price   = ${String(price)},
               regular_price = ${regularPrice},
               on_sale      = ${onSale},
-              stock_quantity = ${stockQty},
+              stock_quantity = COALESCE(${stockQty}, stock_quantity),
               tax_status   = ${taxStatus},
               tax_class    = ${taxClass},
               vat_rate     = ${vatRate}
@@ -447,6 +447,19 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           if (isSizeAttr(attr.name)) (attr.options ?? []).forEach((o: string) => sizes.add(o));
         }
 
+        // Preserve manually entered stock before replacing WooCommerce-managed variants
+        const existingWooVariants = await db
+          .select({ wooVariationId: productVariantsTable.wooVariationId, stockQuantity: productVariantsTable.stockQuantity })
+          .from(productVariantsTable)
+          .where(and(
+            eq(productVariantsTable.productId, productId),
+            isNotNull(productVariantsTable.wooVariationId)
+          ));
+        const stockByWooId = new Map<number, number>();
+        for (const ev of existingWooVariants) {
+          if (ev.wooVariationId != null) stockByWooId.set(ev.wooVariationId, ev.stockQuantity ?? 0);
+        }
+
         // Replace WooCommerce-managed variants; keep any manually created ones (no wooVariationId)
         await db.delete(productVariantsTable).where(
           and(
@@ -455,7 +468,13 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           )
         );
         if (variantRows.length > 0) {
-          await db.insert(productVariantsTable).values(variantRows);
+          // Restore previously-stored stock — WooCommerce doesn't manage stock for SBS
+          await db.insert(productVariantsTable).values(
+            variantRows.map(r => ({
+              ...r,
+              stockQuantity: stockByWooId.has(r.wooVariationId) ? stockByWooId.get(r.wooVariationId)! : r.stockQuantity,
+            }))
+          );
         }
 
         // Update product_attributes colour/size palette from synced data.
