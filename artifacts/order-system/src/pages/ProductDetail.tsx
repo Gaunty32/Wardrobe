@@ -665,9 +665,20 @@ export default function ProductDetail() {
   const defaultPrimaryId = details.supplierId;
   const defaultSecondaryId = details.secondarySupplierId;
 
-  // Group variants for display summary — sorted colour-first, then size smallest→largest
-  const sortedVariants = sortBySizeWithOrder(variants, (v: any) => v.size, sizeOrder);
-  const colours = [...new Set(variants.map((v: any) => v.colour).filter(Boolean))];
+  // Group variants — colour-first (preserving API order), then size within each group
+  const colourOrder = [...new Set((variants as any[]).map((v: any) => v.colour ?? ""))];
+  const sortedVariants = [...(variants as any[])].sort((a, b) => {
+    const ca = a.colour ?? "", cb = b.colour ?? "";
+    const ci = colourOrder.indexOf(ca) - colourOrder.indexOf(cb);
+    if (ci !== 0) return ci;
+    const sa = a.size ?? "", sb = b.size ?? "";
+    const ia = sizeOrder.length ? sizeOrder.findIndex((o: string) => o.toLowerCase() === sa.toLowerCase()) : -1;
+    const ib = sizeOrder.length ? sizeOrder.findIndex((o: string) => o.toLowerCase() === sb.toLowerCase()) : -1;
+    const ra = ia !== -1 ? ia : 10000 + sizeRank(sa);
+    const rb = ib !== -1 ? ib : 10000 + sizeRank(sb);
+    return ra - rb || sa.localeCompare(sb);
+  });
+  const colours = colourOrder.filter(Boolean);
   const sizes = [...new Set(sortedVariants.map((v: any) => v.size).filter(Boolean))];
 
   const filteredVariants = sortedVariants.filter((v: any) => {
