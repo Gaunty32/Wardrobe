@@ -437,6 +437,9 @@ router.get("/production/pending", async (req, res): Promise<void> => {
   }
 
   // 2. Confirmed orders that have NO worksheets yet (need "Send to Production")
+  // Only include orders that have at least one item that is already stocked
+  // (purchaseRequired=false). Orders where every item still needs purchasing
+  // belong in the awaitingStock list, not here.
   const readyRows = await db
     .select({
       id: ordersTable.id,
@@ -444,7 +447,8 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       customerName: ordersTable.customerName,
       requiredDate: ordersTable.requiredDate,
       totalAmount: ordersTable.totalAmount,
-      itemCount: sql<number>`(SELECT COUNT(*) FROM order_items WHERE order_id = ${ordersTable.id})`.as("itemCount"),
+      // Count only items that are ready for production (stock allocated, no purchase pending)
+      itemCount: sql<number>`(SELECT COUNT(*) FROM order_items WHERE order_id = ${ordersTable.id} AND purchase_required = false)`.as("itemCount"),
     })
     .from(ordersTable)
     .where(
@@ -453,6 +457,8 @@ router.get("/production/pending", async (req, res): Promise<void> => {
         notExists(
           db.select({ one: sql`1` }).from(worksheetsTable).where(eq(worksheetsTable.orderId, ordersTable.id))
         ),
+        // Must have at least one item that doesn't need purchasing
+        sql`EXISTS (SELECT 1 FROM order_items WHERE order_id = ${ordersTable.id} AND purchase_required = false)`,
       )
     )
     .orderBy(ordersTable.requiredDate, ordersTable.id);
