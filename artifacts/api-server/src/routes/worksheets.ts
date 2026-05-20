@@ -136,7 +136,7 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
       if (existingWs) {
         worksheetId = existingWs.id;
       } else {
-        const wsNum = generateWorksheetNumber();
+        const wsNum = await generateWorksheetNumber();
         const [ws] = await db
           .insert(worksheetsTable)
           .values({
