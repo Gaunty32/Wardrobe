@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate, formatCurrency } from "@/lib/utils";
+import { sortSizes } from "@/lib/sizeUtils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const API_BASE = `${BASE}/api`;
@@ -306,63 +307,73 @@ function FiltersBar({ filters, onChange }: { filters: Filters; onChange: (f: Fil
   );
 }
 
-// ─── Combined picking slip (multi-order) ──────────────────────────────────────
+// ─── Combined picking slip (multi-order matrix) ────────────────────────────────
 
 function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: PickingOrder[]) {
-  const orderMap = new Map<number, { order: PickingOrder; items: PickingItem[] }>();
-  for (const item of selectedItems) {
-    const order = allOrders.find((o) => o.orderId === item.orderId);
-    if (!order) continue;
-    if (!orderMap.has(item.orderId)) orderMap.set(item.orderId, { order, items: [] });
-    orderMap.get(item.orderId)!.items.push(item);
-  }
-  const dateStr = new Date().toLocaleDateString("en-AU");
-  const groups = Array.from(orderMap.values());
+  const dateStr = new Date().toLocaleDateString("en-GB");
 
-  const orderSections = groups.map(({ order, items }) => {
-    const dueStr = order.requiredDate
-      ? new Date(order.requiredDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })
-      : "—";
-    const rows = items.map((item) => `
-      <tr>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">
-          ${item.supplierCode ? `<div style="font-family:monospace;font-weight:bold;font-size:11px">${item.supplierCode}</div>` : ""}
-          ${item.productSku ? `<div style="font-size:10px;color:#2563eb">${item.productSku}</div>` : ""}
-          ${item.supplierName ? `<div style="font-size:10px;color:#666">${item.supplierName}</div>` : ""}
-          <div style="font-size:11px;margin-top:2px">${item.productName}</div>
-        </td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px">${item.colour ?? "—"}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px">${item.size ?? "—"}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px">${item.finishName ?? "Plain"}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:11px">${item.recipientName ?? item.recipientType}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${item.quantity}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
-          <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
-        </td>
-      </tr>`).join("");
-    return `
-      <div style="margin-bottom:7mm">
-        <div style="background:#1e3a5f;color:white;padding:5px 8px;font-size:11px;font-weight:bold;display:flex;justify-content:space-between">
-          <span>${order.orderNumber}${order.customerName ? ` — ${order.customerName}` : ""}</span>
-          <span>Due: ${dueStr} · ${items.length} line${items.length !== 1 ? "s" : ""}</span>
-        </div>
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr>
-            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Product</th>
-            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Colour</th>
-            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Size</th>
-            <th style="background:#374151;color:white;padding:4px 8px;text-align:left;font-size:10px">Finish</th>
-            <th style="background:#374151;color:white;padding:4px 8px;text-align:center;font-size:10px">Recipient</th>
-            <th style="background:#374151;color:white;padding:4px 8px;text-align:center;font-size:10px">Qty</th>
-            <th style="background:#374151;color:white;padding:4px 8px;text-align:center;font-size:10px">Picked ✓</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>`;
-  }).join("");
-
-  const totalLines = selectedItems.length;
+  // Count distinct orders
+  const orderIds = new Set(selectedItems.map(i => i.orderId));
   const totalQty = selectedItems.reduce((s, i) => s + i.quantity, 0);
+
+  // Build order summary list (date + customer)
+  const orderSummaries = Array.from(orderIds).map(id => {
+    const order = allOrders.find(o => o.orderId === id);
+    if (!order) return "";
+    const dueStr = order.requiredDate
+      ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : null;
+    return `${order.orderNumber}${order.customerName ? ` — ${order.customerName}` : ""}${dueStr ? ` (due ${dueStr})` : ""}`;
+  }).filter(Boolean);
+
+  // Aggregate into matrix: key = product+colour+finish, value = size→qty map
+  type RowKey = { productName: string; productSku: string | null; supplierCode: string | null; supplierName: string | null; colour: string | null; finishName: string | null };
+  const rowMap = new Map<string, { meta: RowKey; sizes: Map<string, number> }>();
+  const allSizes = new Set<string>();
+
+  for (const item of selectedItems) {
+    const key = [item.productName, item.productSku ?? "", item.colour ?? "", item.finishName ?? "Plain"].join("||");
+    if (!rowMap.has(key)) {
+      rowMap.set(key, {
+        meta: { productName: item.productName, productSku: item.productSku, supplierCode: item.supplierCode, supplierName: item.supplierName, colour: item.colour, finishName: item.finishName },
+        sizes: new Map(),
+      });
+    }
+    const sizeKey = item.size ?? "—";
+    allSizes.add(sizeKey);
+    const entry = rowMap.get(key)!;
+    entry.sizes.set(sizeKey, (entry.sizes.get(sizeKey) ?? 0) + item.quantity);
+  }
+
+  const sortedSizes = sortSizes(Array.from(allSizes));
+  const rows = Array.from(rowMap.values());
+
+  const thStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:center;white-space:nowrap`;
+  const thLeftStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:left`;
+  const tdStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:11px`;
+  const tdLeftStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px`;
+
+  const sizeHeaders = sortedSizes.map(s => `<th style="${thStyle}">${s}</th>`).join("");
+  const tableRows = rows.map(({ meta, sizes }) => {
+    const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+    const sizeCells = sortedSizes.map(s => {
+      const qty = sizes.get(s) ?? 0;
+      return `<td style="${tdStyle}${qty > 0 ? ";font-weight:bold" : ";color:#bbb"}">${qty > 0 ? qty : "—"}</td>`;
+    }).join("");
+    return `<tr>
+      <td style="${tdLeftStyle}">
+        ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:11px">${meta.supplierCode}</span> ` : ""}
+        ${meta.productSku ? `<span style="font-size:10px;color:#2563eb">${meta.productSku}</span><br>` : ""}
+        ${meta.supplierName ? `<span style="font-size:10px;color:#888">${meta.supplierName}</span><br>` : ""}
+        <span style="font-size:11px">${meta.productName}</span>
+      </td>
+      <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
+      <td style="${tdLeftStyle}">${meta.finishName ?? "Plain"}</td>
+      ${sizeCells}
+      <td style="${tdStyle};font-weight:bold;background:#f9fafb">${rowTotal}</td>
+      <td style="${tdStyle}"><span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
+    </tr>`;
+  }).join("");
 
   const html = `<!DOCTYPE html><html><head><title>Combined Picking Slip</title>
     <style>
@@ -373,24 +384,37 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
       #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
       #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
       #page{display:flex;justify-content:center;padding:24px 0 40px}
-      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
-      @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none;padding:0}@page{size:A4;margin:15mm}}
+      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:297mm}
+      @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none;padding:0}@page{size:A3 landscape;margin:12mm}}
     </style>
   </head><body>
     <div id="toolbar">
-      <span>📋 Combined Picking Slip — ${groups.length} order${groups.length !== 1 ? "s" : ""} · ${totalLines} line${totalLines !== 1 ? "s" : ""} · Qty ${totalQty}</span>
+      <span>📋 Combined Picking Slip — ${orderIds.size} order${orderIds.size !== 1 ? "s" : ""} · ${rows.length} line${rows.length !== 1 ? "s" : ""} · Qty ${totalQty}</span>
       <button id="btn-print" onclick="window.print()">🖨 Print</button>
       <button id="btn-close" onclick="window.close()">✕ Close</button>
     </div>
     <div id="page"><div id="sheet">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:5mm">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm">
         <div>
           <div style="font-size:20px;font-weight:900;color:#1e3a5f">COMBINED PICKING SLIP</div>
-          <div style="font-size:11px;color:#555;margin-top:1mm">${groups.length} order${groups.length !== 1 ? "s" : ""} · ${totalLines} line${totalLines !== 1 ? "s" : ""} · Total qty ${totalQty}</div>
+          <div style="font-size:11px;color:#555;margin-top:1mm">${orderIds.size} order${orderIds.size !== 1 ? "s" : ""} · ${rows.length} style${rows.length !== 1 ? "s" : ""} · Total qty ${totalQty}</div>
         </div>
         <div style="text-align:right"><div style="font-weight:bold">Select Branding Solutions</div><div style="color:#555">Printed: ${dateStr}</div></div>
       </div>
-      ${orderSections}
+      <div style="font-size:10px;color:#555;margin-bottom:4mm;line-height:1.6">
+        ${orderSummaries.map(s => `<span style="margin-right:16px">📦 ${s}</span>`).join("")}
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="${thLeftStyle}">Product / Style</th>
+          <th style="${thLeftStyle}">Colour</th>
+          <th style="${thLeftStyle}">Finish</th>
+          ${sizeHeaders}
+          <th style="${thStyle};background:#1e3a5f">Total</th>
+          <th style="${thStyle}">Picked ✓</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
       <div style="margin-top:8mm;display:flex;gap:30px;border-top:1px solid #e5e7eb;padding-top:4mm">
         <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Picked by: ___________________________</div>
         <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Date picked: ___________________________</div>
@@ -399,7 +423,7 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
     </div></div>
   </body></html>`;
 
-  const win = window.open("", "_blank", "width=960,height=800");
+  const win = window.open("", "_blank", "width=1100,height=800");
   if (!win) return;
   win.document.write(html);
   win.document.close();
