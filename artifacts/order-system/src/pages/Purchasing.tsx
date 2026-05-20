@@ -2164,7 +2164,7 @@ export default function Purchasing() {
         )}
 
         {emailGroup && (
-          <EmailDialog group={emailGroup} open={!!emailGroup} onClose={() => setEmailGroup(null)} onSent={(ids) => { setEmailGroup(null); fulfillMutation.mutate(ids); }} />
+          <EmailDialog group={emailGroup} open={!!emailGroup} onClose={() => setEmailGroup(null)} onSent={(_ids) => { setEmailGroup(null); queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] }); }} />
         )}
       </div>
     </Layout>
