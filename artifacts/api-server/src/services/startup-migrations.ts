@@ -827,6 +827,18 @@ export async function runStartupMigrations(): Promise<void> {
     UPDATE products SET vat_rate = 0.0500 WHERE tax_class = 'reduced-rate' AND vat_rate = 0.2000;
   `);
 
+  // Backfill order_items.vat_rate from the linked product wherever the order
+  // item still has the old default (0.2000) but the product now has a lower rate.
+  // This corrects existing orders created before the VAT fix was applied.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET vat_rate = p.vat_rate
+    FROM products p
+    WHERE oi.product_id = p.id
+      AND oi.vat_rate = 0.2000
+      AND p.vat_rate <> 0.2000;
+  `);
+
   // Finish stock — decorated/logo'd items held per customer
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS customer_finish_stock (
