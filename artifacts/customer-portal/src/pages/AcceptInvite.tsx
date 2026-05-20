@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
@@ -11,6 +12,7 @@ export default function AcceptInvite() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const token = params.get("token") ?? "";
+  const { refetchUser } = useAuth();
 
   const [status, setStatus] = useState<"verifying" | "success" | "error">("verifying");
   const [errorMsg, setErrorMsg] = useState("");
@@ -26,7 +28,7 @@ export default function AcceptInvite() {
       method: "POST",
       body: JSON.stringify({ token }),
     })
-      .then((data) => {
+      .then(async (data) => {
         if (data.multipleBusinesses) {
           sessionStorage.setItem("portal_selection_token", data.selectionToken);
           sessionStorage.setItem("portal_selection_email", data.email);
@@ -41,6 +43,7 @@ export default function AcceptInvite() {
           localStorage.setItem("portal_customer_name", data.customerName ?? "");
           localStorage.setItem("portal_email", data.email ?? "");
           localStorage.setItem("portal_role", data.portalRole ?? "member");
+          await refetchUser();
           setStatus("success");
           setTimeout(() => setLocation("/orders"), 1200);
         }
