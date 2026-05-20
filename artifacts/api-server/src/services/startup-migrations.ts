@@ -855,5 +855,18 @@ export async function runStartupMigrations(): Promise<void> {
     );
   `);
 
+  // Backfill products.stock_quantity from variant totals for all products that have variants
+  await db.execute(sql`
+    UPDATE products p
+    SET stock_quantity = (
+      SELECT COALESCE(SUM(pv.stock_quantity), 0)
+      FROM product_variants pv
+      WHERE pv.product_id = p.id
+    )
+    WHERE EXISTS (
+      SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id
+    )
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }

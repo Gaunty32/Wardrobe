@@ -119,7 +119,12 @@ router.get("/products", async (req, res): Promise<void> => {
 
   const rows = await db.execute(sql`
     SELECT p.*,
-           c.name AS customer_name
+           c.name AS customer_name,
+           CASE
+             WHEN EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id)
+             THEN (SELECT COALESCE(SUM(pv.stock_quantity), 0) FROM product_variants pv WHERE pv.product_id = p.id)
+             ELSE COALESCE(p.stock_quantity, 0)
+           END AS computed_stock
     FROM products p
     LEFT JOIN customers c ON c.id = p.customer_id
     ${searchTerm
@@ -140,7 +145,7 @@ router.get("/products", async (req, res): Promise<void> => {
     imageUrl: p.image_url ?? null,
     supplierId: p.supplier_id ?? null,
     supplierCode: p.supplier_code ?? null,
-    stockQuantity: p.stock_quantity ?? null,
+    stockQuantity: p.computed_stock != null ? Number(p.computed_stock) : (p.stock_quantity ?? null),
   })));
 });
 

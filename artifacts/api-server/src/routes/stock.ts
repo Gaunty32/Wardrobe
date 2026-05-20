@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -40,9 +40,19 @@ router.patch("/stock/plain/:id", async (req, res): Promise<void> => {
     .update(productVariantsTable)
     .set({ stockQuantity, updatedAt: new Date() })
     .where(eq(productVariantsTable.id, id))
-    .returning({ id: productVariantsTable.id, stockQuantity: productVariantsTable.stockQuantity });
+    .returning({ id: productVariantsTable.id, stockQuantity: productVariantsTable.stockQuantity, productId: productVariantsTable.productId });
   if (!row) { res.status(404).json({ error: "Variant not found" }); return; }
-  res.json(row);
+  // Roll up variant totals to the parent product
+  await db.execute(sql`
+    UPDATE products
+    SET stock_quantity = (
+      SELECT COALESCE(SUM(stock_quantity), 0)
+      FROM product_variants
+      WHERE product_id = ${row.productId}
+    )
+    WHERE id = ${row.productId}
+  `);
+  res.json({ id: row.id, stockQuantity: row.stockQuantity });
 });
 
 // ─── GET /stock/finished — all finished items across all customers ────────────
