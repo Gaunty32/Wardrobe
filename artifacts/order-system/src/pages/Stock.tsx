@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, Search, Loader2, Package, Shirt } from "lucide-react";
+import { AlertTriangle, Search, Loader2, Package, Shirt, ChevronRight, ChevronDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { sortBySizeWithOrder } from "@/lib/sizeUtils";
@@ -92,6 +92,7 @@ function PlainStockTab() {
   const { toast } = useToast();
   const sizeOrder = useSizeOrder();
   const [search, setSearch] = useState("");
+  const [expandedColours, setExpandedColours] = useState<Set<string>>(new Set());
 
   const { data: variants = [], isLoading } = useQuery<PlainVariant[]>({
     queryKey: ["stock-plain"],
@@ -105,12 +106,21 @@ function PlainStockTab() {
     onError: () => toast({ title: "Failed to update stock", variant: "destructive" }),
   });
 
+  const toggleColour = (key: string) => {
+    setExpandedColours(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
   const filtered = variants.filter(v => {
     const q = search.toLowerCase();
     return !q || [v.productName, v.colour, v.size, v.sku, v.productSku].some(s => s?.toLowerCase().includes(q));
   });
 
-  const grouped = filtered.reduce<Record<string, PlainVariant[]>>((acc, v) => {
+  // Group: product → colour → size variants
+  const byProduct = filtered.reduce<Record<string, PlainVariant[]>>((acc, v) => {
     const key = `${v.productId}__${v.productName}`;
     if (!acc[key]) acc[key] = [];
     acc[key].push(v);
@@ -144,20 +154,31 @@ function PlainStockTab() {
 
       {isLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-primary" /></div>
-      ) : Object.keys(grouped).length === 0 ? (
+      ) : Object.keys(byProduct).length === 0 ? (
         <div className="flex flex-col items-center py-16 text-center">
           <Package className="w-12 h-12 text-muted-foreground/30 mb-3" />
           <p className="text-muted-foreground">{search ? "No variants match your search." : "No product variants found."}</p>
         </div>
       ) : (
         <div className="space-y-5">
-          {Object.entries(grouped).map(([key, items]) => {
-            const [, productName] = key.split("__");
+          {Object.entries(byProduct).map(([productKey, items]) => {
+            const [productIdStr, productName] = productKey.split("__");
             const firstItem = items[0];
             const productTotal = items.reduce((s, v) => s + v.stockQuantity, 0);
             const hasLow = items.some(v => v.stockQuantity <= 5);
+
+            // Group by colour within this product
+            const colourMap = new Map<string, PlainVariant[]>();
+            for (const v of items) {
+              const c = v.colour ?? "—";
+              if (!colourMap.has(c)) colourMap.set(c, []);
+              colourMap.get(c)!.push(v);
+            }
+            const colourKeys = [...colourMap.keys()].sort((a, b) => a.localeCompare(b));
+            const hasSizes = items.some(v => v.size !== null);
+
             return (
-              <Card key={key} className="shadow-sm">
+              <Card key={productKey} className="shadow-sm">
                 <CardHeader className="py-3 px-5 border-b bg-muted/20">
                   <div className="flex items-center gap-2">
                     <div className="flex-1 min-w-0 flex items-center gap-2">
@@ -178,26 +199,98 @@ function PlainStockTab() {
                   <Table>
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead>Variant SKU</TableHead>
+                        <TableHead className="w-8" />
                         <TableHead>Colour</TableHead>
-                        <TableHead>Size</TableHead>
+                        {!hasSizes && <TableHead>Variant SKU</TableHead>}
+                        {hasSizes && <TableHead className="text-muted-foreground text-xs font-normal">Sizes</TableHead>}
                         <TableHead className="text-right">Stock Qty</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sortBySizeWithOrder(items, v => v.size, sizeOrder).map(v => (
-                        <TableRow key={v.variantId} className="group">
-                          <TableCell className="font-mono text-xs text-muted-foreground">{v.sku || "—"}</TableCell>
-                          <TableCell className="text-sm">{v.colour || "—"}</TableCell>
-                          <TableCell className="text-sm">{v.size || "—"}</TableCell>
-                          <TableCell className="text-right">
-                            <InlineQty
-                              value={v.stockQuantity}
-                              onSave={(qty) => updateMut.mutate({ variantId: v.variantId, stockQuantity: qty })}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                      {colourKeys.map(colour => {
+                        const colourVariants = colourMap.get(colour)!;
+                        const colourTotal = colourVariants.reduce((s, v) => s + v.stockQuantity, 0);
+                        const colourHasLow = colourVariants.some(v => v.stockQuantity <= 5);
+                        const expandKey = `${productIdStr}__${colour}`;
+                        const isExpanded = expandedColours.has(expandKey);
+                        // Single variant with no size: inline edit directly
+                        const isSingleNoSize = colourVariants.length === 1 && colourVariants[0].size === null;
+                        const sortedVariants = sortBySizeWithOrder(colourVariants, v => v.size, sizeOrder);
+
+                        return [
+                          // Colour summary row
+                          <TableRow
+                            key={`colour-${expandKey}`}
+                            className={cn(
+                              "group",
+                              hasSizes && "cursor-pointer hover:bg-muted/40 select-none",
+                              isExpanded && hasSizes && "bg-muted/20"
+                            )}
+                            onClick={hasSizes && !isSingleNoSize ? () => toggleColour(expandKey) : undefined}
+                          >
+                            <TableCell className="w-8 pr-0">
+                              {hasSizes && !isSingleNoSize
+                                ? isExpanded
+                                  ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                                  : <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                : null}
+                            </TableCell>
+                            <TableCell className="font-medium text-sm">
+                              <span className="flex items-center gap-1.5">
+                                {colour}
+                                {colourHasLow && <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />}
+                              </span>
+                            </TableCell>
+                            {!hasSizes && (
+                              <TableCell className="font-mono text-xs text-muted-foreground">
+                                {colourVariants[0].sku || "—"}
+                              </TableCell>
+                            )}
+                            {hasSizes && (
+                              <TableCell className="text-xs text-muted-foreground">
+                                {isSingleNoSize
+                                  ? "—"
+                                  : isExpanded
+                                    ? ""
+                                    : <span className="italic">{colourVariants.length} size{colourVariants.length !== 1 ? "s" : ""} — click to edit</span>
+                                }
+                              </TableCell>
+                            )}
+                            <TableCell className="text-right" onClick={e => { if (hasSizes && !isSingleNoSize) e.stopPropagation(); }}>
+                              {isSingleNoSize ? (
+                                <InlineQty
+                                  value={colourVariants[0].stockQuantity}
+                                  onSave={(qty) => updateMut.mutate({ variantId: colourVariants[0].variantId, stockQuantity: qty })}
+                                />
+                              ) : (
+                                <span className={cn("tabular-nums font-mono text-sm px-2", colourTotal <= 5 && "text-amber-700 font-semibold")}>
+                                  {colourTotal <= 5 && <AlertTriangle className="w-3 h-3 inline mr-1 text-amber-500" />}
+                                  {colourTotal}
+                                </span>
+                              )}
+                            </TableCell>
+                          </TableRow>,
+
+                          // Size sub-rows (shown when expanded)
+                          ...(isExpanded && !isSingleNoSize ? sortedVariants.map(v => (
+                            <TableRow key={`size-${v.variantId}`} className="bg-muted/10 hover:bg-muted/20">
+                              <TableCell className="w-8" />
+                              <TableCell className="text-xs text-muted-foreground pl-6">
+                                {v.sku || <span className="italic">—</span>}
+                              </TableCell>
+                              <TableCell className="text-sm font-medium">
+                                {v.size || "—"}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <InlineQty
+                                  value={v.stockQuantity}
+                                  onSave={(qty) => updateMut.mutate({ variantId: v.variantId, stockQuantity: qty })}
+                                />
+                              </TableCell>
+                            </TableRow>
+                          )) : []),
+                        ];
+                      })}
                     </TableBody>
                   </Table>
                 </CardContent>
