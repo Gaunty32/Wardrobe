@@ -1318,7 +1318,6 @@ export default function Purchasing() {
   const [expandedPsGroups, setExpandedPsGroups] = useState<Record<string, boolean>>({});
   const [reqQtyOverrides, setReqQtyOverrides] = useState<Record<string, Record<string, number>>>({});
   const [psQtyOverrides, setPsQtyOverrides] = useState<Record<string, Record<number, number>>>({});
-  const [psRemovedRows, setPsRemovedRows] = useState<Record<string, number[]>>({});
   const [emailGroup, setEmailGroup] = useState<SupplierGroup | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
@@ -1725,7 +1724,6 @@ export default function Purchasing() {
                     const totalPsQty = psGroup.items.reduce((s, r) => s + (psOverrides[r.processStockId] ?? r.shortfall), 0);
                     const existingDraft = getDraftPoForSupplier(psGroup.supplierId, psGroup.supplierName);
                     const itemsWithOverrides = psGroup.items
-                      .filter(r => !(psRemovedRows[psGroup.supplierName] ?? []).includes(r.processStockId))
                       .map(r => ({ ...r, shortfall: psOverrides[r.processStockId] ?? r.shortfall }))
                       .filter(r => r.shortfall > 0);
                     return (
@@ -1754,10 +1752,10 @@ export default function Purchasing() {
                         </div>
                         <div className="border-t border-border px-5 py-4">
                           <ProcessMaterialsLineTable
-                            items={psGroup.items.filter(r => !(psRemovedRows[psGroup.supplierName] ?? []).includes(r.processStockId))}
+                            items={itemsWithOverrides}
                             overrides={psOverrides}
                             onQtyChange={(processStockId, qty) => setPsQtyOverrides((prev) => ({ ...prev, [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: qty } }))}
-                            onRemove={(processStockId) => setPsRemovedRows((prev) => ({ ...prev, [psGroup.supplierName]: [...(prev[psGroup.supplierName] ?? []), processStockId] }))}
+                            onRemove={(processStockId) => setPsQtyOverrides((prev) => ({ ...prev, [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: 0 } }))}
                           />
                         </div>
                       </div>
