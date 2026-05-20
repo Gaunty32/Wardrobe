@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { AlertTriangle, Search, Loader2, Package, Shirt, ChevronRight, ChevronDown } from "lucide-react";
+import { AlertTriangle, Search, Loader2, Package, Shirt, ChevronRight, ChevronDown, Pencil } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { sortBySizeWithOrder } from "@/lib/sizeUtils";
@@ -40,22 +40,31 @@ interface PlainVariant {
   stockQuantity: number;
 }
 
-function InlineQty({ value, onSave }: { value: number; onSave: (qty: number) => void }) {
+function InlineQty({
+  value, onSave,
+  forceEdit = false, onDoneEdit,
+}: {
+  value: number; onSave: (qty: number) => void;
+  forceEdit?: boolean; onDoneEdit?: () => void;
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value));
-  const inputRef = useRef<HTMLInputElement>(null);
+
+  const isEditing = editing || forceEdit;
 
   const commit = () => {
     const num = parseInt(draft, 10);
     if (!isNaN(num) && num >= 0 && num !== value) onSave(num);
     else setDraft(String(value));
     setEditing(false);
+    onDoneEdit?.();
   };
 
-  if (editing) {
+  const startEdit = () => { setDraft(String(value)); setEditing(true); };
+
+  if (isEditing) {
     return (
       <input
-        ref={inputRef}
         type="number"
         min={0}
         value={draft}
@@ -63,9 +72,10 @@ function InlineQty({ value, onSave }: { value: number; onSave: (qty: number) => 
         onBlur={commit}
         onKeyDown={e => {
           if (e.key === "Enter") commit();
-          if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
+          if (e.key === "Escape") { setDraft(String(value)); setEditing(false); onDoneEdit?.(); }
         }}
-        className="w-20 text-right border rounded px-2 py-0.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
+        onClick={e => e.stopPropagation()}
+        className="w-20 text-right border border-primary rounded px-2 py-0.5 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary"
         autoFocus
       />
     );
@@ -74,15 +84,17 @@ function InlineQty({ value, onSave }: { value: number; onSave: (qty: number) => 
   const low = value <= 5;
   return (
     <button
-      onClick={() => { setDraft(String(value)); setEditing(true); }}
+      onClick={e => { e.stopPropagation(); startEdit(); }}
       className={cn(
-        "tabular-nums font-mono text-sm px-2 py-0.5 rounded hover:bg-muted transition-colors cursor-pointer",
+        "inline-flex items-center gap-1 tabular-nums font-mono text-sm px-2 py-0.5 rounded",
+        "border border-transparent hover:border-border hover:bg-muted transition-colors cursor-pointer group/qty",
         low ? "text-amber-700 font-semibold" : "text-foreground"
       )}
-      title="Click to edit"
+      title="Click to edit stock quantity"
     >
-      {low && <AlertTriangle className="w-3 h-3 inline mr-1 text-amber-500" />}
+      {low && <AlertTriangle className="w-3 h-3 text-amber-500" />}
       {value}
+      <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover/qty:opacity-60 transition-opacity" />
     </button>
   );
 }
@@ -93,6 +105,7 @@ function PlainStockTab() {
   const sizeOrder = useSizeOrder();
   const [search, setSearch] = useState("");
   const [expandedColours, setExpandedColours] = useState<Set<string>>(new Set());
+  const [editingVariant, setEditingVariant] = useState<number | null>(null);
 
   const { data: variants = [], isLoading } = useQuery<PlainVariant[]>({
     queryKey: ["stock-plain"],
@@ -224,9 +237,14 @@ function PlainStockTab() {
                             className={cn(
                               "group",
                               !isSingleNoSize && "cursor-pointer hover:bg-muted/40 select-none",
+                              isSingleNoSize && "cursor-pointer hover:bg-muted/30 select-none",
                               isExpanded && !isSingleNoSize && "bg-muted/20"
                             )}
-                            onClick={!isSingleNoSize ? () => toggleColour(expandKey) : undefined}
+                            onClick={
+                              isSingleNoSize
+                                ? () => setEditingVariant(colourVariants[0].variantId)
+                                : () => toggleColour(expandKey)
+                            }
                           >
                             <TableCell className="w-8 pr-0">
                               {!isSingleNoSize
@@ -266,6 +284,8 @@ function PlainStockTab() {
                                 <InlineQty
                                   value={colourVariants[0].stockQuantity}
                                   onSave={(qty) => updateMut.mutate({ variantId: colourVariants[0].variantId, stockQuantity: qty })}
+                                  forceEdit={editingVariant === colourVariants[0].variantId}
+                                  onDoneEdit={() => setEditingVariant(null)}
                                 />
                               ) : (
                                 <span className={cn("tabular-nums font-mono text-sm px-2", colourTotal <= 5 && "text-amber-700 font-semibold")}>
