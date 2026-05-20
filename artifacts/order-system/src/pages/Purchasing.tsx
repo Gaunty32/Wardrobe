@@ -855,10 +855,12 @@ function ProcessMaterialsLineTable({
   items,
   overrides,
   onQtyChange,
+  onRemove,
 }: {
   items: ProcessStockRequirement[];
   overrides?: Record<number, number>;
   onQtyChange?: (processStockId: number, qty: number) => void;
+  onRemove?: (processStockId: number) => void;
 }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -896,20 +898,31 @@ function ProcessMaterialsLineTable({
                   </div>
                 </TableCell>
                 <TableCell className="text-center">
-                  {onQtyChange ? (
-                    <input
-                      type="number"
-                      min={0}
-                      value={qty}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value, 10);
-                        if (!isNaN(v) && v >= 0) onQtyChange(req.processStockId, v);
-                      }}
-                      className="w-20 text-center border border-border rounded px-2 py-1 text-sm font-bold focus:outline-none focus:ring-1 focus:ring-primary tabular-nums"
-                    />
-                  ) : (
-                    <span className="font-bold text-sm">{qty}</span>
-                  )}
+                  <div className="flex items-center justify-center gap-2">
+                    {onQtyChange ? (
+                      <input
+                        type="number"
+                        min={0}
+                        value={qty}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          if (!isNaN(v) && v >= 0) onQtyChange(req.processStockId, v);
+                        }}
+                        className="w-20 text-center border border-border rounded px-2 py-1 text-sm font-bold focus:outline-none focus:ring-1 focus:ring-primary tabular-nums"
+                      />
+                    ) : (
+                      <span className="font-bold text-sm">{qty}</span>
+                    )}
+                    {onRemove && (
+                      <button
+                        onClick={() => onRemove(req.processStockId)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                        title="Remove from order"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             );
@@ -1305,6 +1318,7 @@ export default function Purchasing() {
   const [expandedPsGroups, setExpandedPsGroups] = useState<Record<string, boolean>>({});
   const [reqQtyOverrides, setReqQtyOverrides] = useState<Record<string, Record<string, number>>>({});
   const [psQtyOverrides, setPsQtyOverrides] = useState<Record<string, Record<number, number>>>({});
+  const [psRemovedRows, setPsRemovedRows] = useState<Record<string, number[]>>({});
   const [emailGroup, setEmailGroup] = useState<SupplierGroup | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
@@ -1737,9 +1751,10 @@ export default function Purchasing() {
                         </div>
                         <div className="border-t border-border px-5 py-4">
                           <ProcessMaterialsLineTable
-                            items={psGroup.items}
+                            items={psGroup.items.filter(r => !(psRemovedRows[psGroup.supplierName] ?? []).includes(r.processStockId))}
                             overrides={psOverrides}
                             onQtyChange={(processStockId, qty) => setPsQtyOverrides((prev) => ({ ...prev, [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: qty } }))}
+                            onRemove={(processStockId) => setPsRemovedRows((prev) => ({ ...prev, [psGroup.supplierName]: [...(prev[psGroup.supplierName] ?? []), processStockId] }))}
                           />
                         </div>
                       </div>
