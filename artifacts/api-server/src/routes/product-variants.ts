@@ -81,7 +81,9 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
   const p = productIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   const productId = p.data.productId;
-  if (!await getProduct(productId)) { res.status(404).json({ error: "Product not found" }); return; }
+  const product = await getProduct(productId);
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  const productSku = product.sku ?? null;
 
   // 1. Load attributes
   const attrs = await db.select().from(productAttributesTable)
@@ -137,8 +139,9 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
       supplierPrice: null,
       secondarySupplierCode: null,
       secondarySupplierPrice: null,
-      sku: null,
+      sku: productSku,
     };
+    if (!props.sku) props.sku = productSku;
     for (const sizeAttr of sizeAttrs) {
       const size = sizeAttr.value;
       const alreadyExists = existing.some(v => v.colour === colour && v.size === size);

@@ -558,6 +558,8 @@ export default function ProductDetail() {
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
   const [generateMatrixOpen, setGenerateMatrixOpen] = useState(false);
+  const [filterColour, setFilterColour] = useState<string>("all");
+  const [filterSize, setFilterSize] = useState<string>("all");
 
   useEffect(() => {
     if (product && !details) {
@@ -667,6 +669,12 @@ export default function ProductDetail() {
   const sortedVariants = sortBySizeWithOrder(variants, (v: any) => v.size, sizeOrder);
   const colours = [...new Set(variants.map((v: any) => v.colour).filter(Boolean))];
   const sizes = [...new Set(sortedVariants.map((v: any) => v.size).filter(Boolean))];
+
+  const filteredVariants = sortedVariants.filter((v: any) => {
+    if (filterColour !== "all" && v.colour !== filterColour) return false;
+    if (filterSize !== "all" && v.size !== filterSize) return false;
+    return true;
+  });
 
   // Attributes-based colour+size lists (for matrix generation)
   const attrColours = (attributes as any[]).filter(a => a.type === "colour").map(a => a.value as string);
@@ -971,7 +979,29 @@ export default function ProductDetail() {
                       <h3 className="font-semibold text-foreground">Variant Combinations</h3>
                       <p className="text-xs text-muted-foreground mt-0.5">Each row is a specific colour+size combo with its own stock level and suppliers.</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {colours.length > 1 && (
+                        <Select value={filterColour} onValueChange={setFilterColour}>
+                          <SelectTrigger className="h-8 w-[140px] text-xs">
+                            <SelectValue placeholder="All colours" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All colours</SelectItem>
+                            {colours.map((c: string) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {sizes.length > 1 && (
+                        <Select value={filterSize} onValueChange={setFilterSize}>
+                          <SelectTrigger className="h-8 w-[130px] text-xs">
+                            <SelectValue placeholder="All sizes" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All sizes</SelectItem>
+                            {sizes.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
                       {canGenerateMatrix && (
                         <Button size="sm" variant="outline" onClick={() => setGenerateMatrixOpen(true)}>
                           <Layers className="w-4 h-4 mr-1.5" /> Generate size variants
@@ -1005,7 +1035,14 @@ export default function ProductDetail() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {variants.map((v: any) => (
+                          {filteredVariants.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
+                                No variants match the selected filters.{" "}
+                                <button className="underline" onClick={() => { setFilterColour("all"); setFilterSize("all"); }}>Clear filters</button>
+                              </TableCell>
+                            </TableRow>
+                          ) : filteredVariants.map((v: any) => (
                             <VariantRow
                               key={v.id}
                               variant={v}
