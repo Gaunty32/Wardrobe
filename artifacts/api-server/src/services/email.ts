@@ -216,8 +216,11 @@ export function buildAcknowledgementEmail(order: {
 
         <!-- Body -->
         <tr><td style="padding:28px 32px 0;">
-          <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.7;">
+          <p style="margin:0 0 12px;font-size:14px;color:#374151;line-height:1.7;">
             We've put together the details below for your records. Please check everything looks right — particularly the garments, colours, sizes and any finishes. If anything needs adjusting, just get in touch and we'll sort it straight away.
+          </p>
+          <p style="margin:0 0 20px;font-size:14px;color:#374151;line-height:1.7;">
+            If you would prefer to see a summary of the order rather than the full details you can check the attached PDF.
           </p>
         </td></tr>
 
