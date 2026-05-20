@@ -1218,6 +1218,9 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                         </div>
                       )}
 
+                      {/* Controls block — always pinned to bottom of card */}
+                      <div className="mt-auto flex flex-col gap-2">
+
                       {/* Bulk / single toggle — only for multi-size products */}
                       {!oneSize && sizeOptions.length > 1 && (
                         <button
@@ -1236,7 +1239,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
                       {oneSize ? (
                         /* ── No WooCommerce sizes — one size fits all ── */
-                        <div className="flex items-center gap-1.5 mt-auto">
+                        <div className="flex items-center gap-1.5">
                           <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
                             <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}><Minus className="w-3.5 h-3.5" /></button>
                             <input type="number" min={1} value={state.qty} onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 1) setItemState(key, { qty: v }); }} className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
@@ -1300,7 +1303,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                               ))}
                             </SelectContent>
                           </Select>
-                          <div className="flex items-center gap-1.5 mt-auto">
+                          <div className="flex items-center gap-1.5">
                             <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
                               <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}><Minus className="w-3.5 h-3.5" /></button>
                               <input type="number" min={1} value={state.qty} onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 1) setItemState(key, { qty: v }); }} className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
@@ -1310,6 +1313,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                           </div>
                         </>
                       )}
+
+                      </div>{/* end controls block */}
                     </div>
                   </Card>
                 );
