@@ -1372,6 +1372,7 @@ export default function Purchasing() {
       invalidateAll();
       queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] });
       setCreateProcessPoGroup(null); setCreateProcessPoNotes(""); setProcessPoQtys({});
+      setPsQtyOverrides({});
       toast({ title: "Draft PO created", description: "Process material PO added to the Draft tab." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1390,7 +1391,7 @@ export default function Purchasing() {
           })),
         }),
       }),
-    onSuccess: () => { invalidateAll(); queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] }); toast({ title: "Added to draft PO" }); },
+    onSuccess: () => { invalidateAll(); queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] }); setPsQtyOverrides({}); toast({ title: "Added to draft PO" }); },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
@@ -1739,12 +1740,13 @@ export default function Purchasing() {
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
                                 onClick={() => addProcessStockToPoMutation.mutate({ poId: existingDraft.id, items: itemsWithOverrides })}
-                                disabled={addProcessStockToPoMutation.isPending}>
+                                disabled={addProcessStockToPoMutation.isPending || itemsWithOverrides.length === 0}>
                                 <Plus className="w-3.5 h-3.5" /> Add to Draft PO ({existingDraft.poNumber})
                               </Button>
                             ) : (
                               <Button size="sm" className="gap-1.5 text-xs bg-primary hover:bg-primary/90"
-                                onClick={() => { setCreateProcessPoGroup({ ...psGroup, items: itemsWithOverrides }); setCreateProcessPoNotes(""); }}>
+                                onClick={() => { setCreateProcessPoGroup({ ...psGroup, items: itemsWithOverrides }); setCreateProcessPoNotes(""); }}
+                                disabled={itemsWithOverrides.length === 0}>
                                 <FileText className="w-3.5 h-3.5" /> Create Draft PO
                               </Button>
                             )}
