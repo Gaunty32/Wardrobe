@@ -435,25 +435,60 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
 function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: PickingOrder[]) {
   const dateStr = new Date().toLocaleDateString("en-GB");
 
-  const thStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:center;white-space:nowrap`;
-  const thLeftStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:left`;
-  const tdStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:11px`;
-  const tdLeftStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px`;
+  const thStyle = `background:#374151;color:white;padding:4px 7px;font-size:9.5px;text-align:center;white-space:nowrap`;
+  const thLeftStyle = `background:#374151;color:white;padding:4px 7px;font-size:9.5px;text-align:left`;
+  const tdStyle = `padding:4px 7px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:10px`;
+  const tdLeftStyle = `padding:4px 7px;border-bottom:1px solid #e5e7eb;font-size:10px`;
 
-  const orderIds = Array.from(new Set(selectedItems.map(i => i.orderId)));
+  // ── Group items by customer name (same customer = one slip, regardless of order count) ──
+  type CustomerGroup = {
+    customerName: string | null;
+    orders: Array<{ orderNumber: string; requiredDate: string | null; orderId: number }>;
+    items: PickingItem[];
+    earliestDate: string | null;
+  };
+  const groupMap = new Map<string, CustomerGroup>();
 
-  const slipPages = orderIds.map((orderId, pageIdx) => {
-    const orderItems = selectedItems.filter(i => i.orderId === orderId);
-    const order = allOrders.find(o => o.orderId === orderId);
-    const dueStr = order?.requiredDate
-      ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-      : null;
+  for (const item of selectedItems) {
+    const order = allOrders.find(o => o.orderId === item.orderId);
+    // Key by customer name; fall back to orderId string so un-named orders don't collapse
+    const groupKey = item.customerName ? item.customerName.toLowerCase().trim() : `__order_${item.orderId}`;
+    if (!groupMap.has(groupKey)) {
+      groupMap.set(groupKey, { customerName: item.customerName, orders: [], items: [], earliestDate: null });
+    }
+    const group = groupMap.get(groupKey)!;
+    group.items.push(item);
+    if (order && !group.orders.find(o => o.orderId === order.orderId)) {
+      group.orders.push({ orderNumber: order.orderNumber, requiredDate: order.requiredDate, orderId: order.orderId });
+    }
+  }
 
+  // Compute earliest required date per group and sort orders within each group by date
+  for (const group of groupMap.values()) {
+    group.orders.sort((a, b) => {
+      if (!a.requiredDate && !b.requiredDate) return 0;
+      if (!a.requiredDate) return 1;
+      if (!b.requiredDate) return -1;
+      return a.requiredDate.localeCompare(b.requiredDate);
+    });
+    const dates = group.orders.map(o => o.requiredDate).filter(Boolean) as string[];
+    group.earliestDate = dates.length > 0 ? dates[0] : null;
+  }
+
+  // Sort customer groups: most urgent (earliest required date) first, undated last
+  const sortedGroups = Array.from(groupMap.values()).sort((a, b) => {
+    if (!a.earliestDate && !b.earliestDate) return 0;
+    if (!a.earliestDate) return 1;
+    if (!b.earliestDate) return -1;
+    return a.earliestDate.localeCompare(b.earliestDate);
+  });
+
+  const slipPages = sortedGroups.map((group, pageIdx) => {
     type RowKey = { productName: string; productSku: string | null; supplierCode: string | null; supplierName: string | null; colour: string | null; finishName: string | null };
     const rowMap = new Map<string, { meta: RowKey; sizes: Map<string, number> }>();
     const allSizes = new Set<string>();
 
-    for (const item of orderItems) {
+    for (const item of group.items) {
       const key = [item.productName, item.productSku ?? "", item.colour ?? "", item.finishName ?? "Plain"].join("||");
       if (!rowMap.has(key)) {
         rowMap.set(key, {
@@ -469,7 +504,7 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
 
     const sortedSizes = sortSizes(Array.from(allSizes));
     const rows = Array.from(rowMap.values());
-    const totalQty = orderItems.reduce((s, i) => s + i.quantity, 0);
+    const totalQty = group.items.reduce((s, i) => s + i.quantity, 0);
 
     const sizeHeaders = sortedSizes.map(s => `<th style="${thStyle}">${s}</th>`).join("");
     const tableRows = rows.map(({ meta, sizes }) => {
@@ -480,32 +515,46 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
       }).join("");
       return `<tr>
         <td style="${tdLeftStyle}">
-          ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:11px">${meta.supplierCode}</span> ` : ""}
-          ${meta.productSku ? `<span style="font-size:10px;color:#2563eb">${meta.productSku}</span><br>` : ""}
-          ${meta.supplierName ? `<span style="font-size:10px;color:#888">${meta.supplierName}</span><br>` : ""}
-          <span style="font-size:11px">${meta.productName}</span>
+          ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:10px">${meta.supplierCode}</span> ` : ""}
+          ${meta.productSku ? `<span style="font-size:9px;color:#2563eb">${meta.productSku}</span><br>` : ""}
+          ${meta.supplierName ? `<span style="font-size:9px;color:#888">${meta.supplierName}</span><br>` : ""}
+          <span style="font-size:10px">${meta.productName}</span>
         </td>
         <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
         <td style="${tdLeftStyle}">${meta.finishName ?? "Plain"}</td>
         ${sizeCells}
         <td style="${tdStyle};font-weight:bold;background:#f9fafb">${rowTotal}</td>
-        <td style="${tdStyle}"><span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
+        <td style="${tdStyle}"><span style="display:inline-block;width:20px;height:20px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
       </tr>`;
     }).join("");
 
-    const isLast = pageIdx === orderIds.length - 1;
+    // Order list — sorted by required date, each on its own line
+    const orderLines = group.orders.map(o => {
+      const due = o.requiredDate
+        ? new Date(o.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+        : null;
+      const isEarliest = o.requiredDate === group.earliestDate;
+      return `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:18px${isEarliest && group.orders.length > 1 ? ";font-weight:bold" : ""}">
+        <span style="font-family:monospace;font-size:10px;color:#1e3a5f">${o.orderNumber}</span>
+        ${due ? `<span style="font-size:10px;color:${isEarliest ? "#b45309" : "#555"}">${isEarliest && group.orders.length > 1 ? "⚑ " : ""}Due: ${due}</span>` : ""}
+      </span>`;
+    }).join("");
+
+    const isLast = pageIdx === sortedGroups.length - 1;
     return `
       <div class="slip${isLast ? "" : " page-break"}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #1e3a5f;padding-bottom:3mm;margin-bottom:3mm">
           <div>
-            ${order?.customerName ? `<div style="font-size:20px;font-weight:900;color:#1e3a5f">${order.customerName}</div>` : ""}
-            <div style="font-size:14px;font-weight:700;color:#1e3a5f;letter-spacing:0.5px;margin-top:1mm">PICKING SLIP</div>
-            <div style="font-size:11px;color:#555;margin-top:1mm">
-              ${order?.orderNumber ?? ""}${dueStr ? ` &nbsp;·&nbsp; Due: ${dueStr}` : ""}
-              &nbsp;·&nbsp; ${rows.length} style${rows.length !== 1 ? "s" : ""} &nbsp;·&nbsp; Total qty ${totalQty}
-            </div>
+            <div style="font-size:22px;font-weight:900;color:#1e3a5f;line-height:1.1">${group.customerName ?? "Unknown Customer"}</div>
+            <div style="font-size:11px;font-weight:700;color:#374151;letter-spacing:0.5px;margin-top:1.5mm">PICKING SLIP</div>
+            <div style="font-size:10px;color:#555;margin-top:2mm;line-height:1.8">${orderLines}</div>
+            <div style="font-size:10px;color:#666;margin-top:1mm">${rows.length} style${rows.length !== 1 ? "s" : ""} &nbsp;·&nbsp; Total qty <strong>${totalQty}</strong></div>
           </div>
-          <div style="text-align:right"><div style="font-weight:bold">Select Branding Solutions</div><div style="color:#555">Printed: ${dateStr}</div></div>
+          <div style="text-align:right;flex-shrink:0;margin-left:8mm">
+            <div style="font-weight:bold;font-size:12px">Select Branding Solutions</div>
+            <div style="color:#555;font-size:10px">Printed: ${dateStr}</div>
+            ${group.earliestDate ? `<div style="margin-top:2mm;font-size:11px;font-weight:bold;color:#b45309">Required by: ${new Date(group.earliestDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div>` : ""}
+          </div>
         </div>
         <table style="width:100%;border-collapse:collapse">
           <thead><tr>
@@ -518,10 +567,10 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
           </tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
-        <div style="margin-top:8mm;display:flex;gap:30px;border-top:1px solid #e5e7eb;padding-top:4mm">
-          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Picked by: ___________________________</div>
-          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Date picked: ___________________________</div>
-          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Checked by: ___________________________</div>
+        <div style="margin-top:6mm;display:flex;gap:24px;border-top:1px solid #e5e7eb;padding-top:3mm">
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Picked by: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Date picked: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Checked by: ___________________________</div>
         </div>
       </div>`;
   }).join("");
@@ -529,24 +578,24 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
   const html = `<!DOCTYPE html><html><head><title>Per-Customer Picking Slips</title>
     <style>
       *{box-sizing:border-box}
-      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
+      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:10px;color:#111}
       #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
       #toolbar span{flex:1;font-size:14px;font-weight:600}
       #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
       #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
       #page{display:flex;flex-direction:column;align-items:center;padding:24px 0 40px;gap:24px}
-      .slip{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:297mm}
+      .slip{background:white;padding:10mm 12mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:257mm}
       @media print{
         #toolbar{display:none}body{background:white}#page{padding:0;gap:0}
-        .slip{box-shadow:none;padding:12mm 15mm}
+        .slip{box-shadow:none;width:100%;padding:0}
         .page-break{page-break-after:always}
-        @page{size:A3 landscape;margin:0}
+        @page{size:A4 landscape;margin:10mm}
       }
     </style>
   </head><body>
     <div id="toolbar">
-      <span>📋 Per-Customer Picking Slips — ${orderIds.length} customer${orderIds.length !== 1 ? "s" : ""}</span>
-      <button id="btn-print" onclick="window.print()">🖨 Print all ${orderIds.length}</button>
+      <span>📋 Per-Customer Picking Slips — ${sortedGroups.length} customer${sortedGroups.length !== 1 ? "s" : ""} · sorted by required date</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print all ${sortedGroups.length}</button>
       <button id="btn-close" onclick="window.close()">✕ Close</button>
     </div>
     <div id="page">${slipPages}</div>
