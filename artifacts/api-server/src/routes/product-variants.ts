@@ -142,6 +142,8 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
       sku: productSku,
     };
     if (!props.sku) props.sku = productSku;
+    if (!props.primarySupplierId) props.primarySupplierId = product.supplierId ?? null;
+    if (!props.secondarySupplierId) props.secondarySupplierId = product.secondarySupplierId ?? null;
     for (const sizeAttr of sizeAttrs) {
       const size = sizeAttr.value;
       const alreadyExists = existing.some(v => v.colour === colour && v.size === size);
