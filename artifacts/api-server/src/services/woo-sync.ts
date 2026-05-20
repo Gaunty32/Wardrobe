@@ -338,6 +338,13 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
         const taxStatus = wooProduct.tax_status || null;
         // WooCommerce uses empty string for "Standard Rate" — normalise to null for clarity
         const taxClass = wooProduct.tax_class || null;
+        // Map WooCommerce tax class to UK VAT rate
+        // "zero-rate" = children's clothing, books, food etc. → 0%
+        // "reduced-rate" = energy, mobility aids etc. → 5%
+        // "" / null = standard → 20%
+        const vatRate = taxClass === "zero-rate" ? "0.0000"
+          : taxClass === "reduced-rate" ? "0.0500"
+          : "0.2000";
 
         if (existing.length > 0) {
           productId = existing[0].id;
@@ -353,7 +360,8 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
               on_sale      = ${onSale},
               stock_quantity = ${stockQty},
               tax_status   = ${taxStatus},
-              tax_class    = ${taxClass}
+              tax_class    = ${taxClass},
+              vat_rate     = ${vatRate}
             WHERE id = ${productId}
           `);
           updated++;
@@ -369,6 +377,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             stockQuantity: stockQty,
             taxStatus,
             taxClass,
+            vatRate,
           }).returning();
           productId = inserted.id;
           created++;

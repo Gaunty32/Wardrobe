@@ -552,6 +552,7 @@ export default function ProductDetail() {
     secondarySupplierCode: string; secondarySupplierPrice: string;
     supplierCurrency: string;
     minOrderQty: string;
+    vatRate: string;
     priceBreaks: { qty: number; price: number }[];
   } | null>(null);
   const [detailsDirty, setDetailsDirty] = useState(false);
@@ -577,6 +578,7 @@ export default function ProductDetail() {
         secondarySupplierPrice: product.secondarySupplierPrice != null ? String(product.secondarySupplierPrice) : "",
         supplierCurrency: (product as any).supplierCurrency ?? "GBP",
         minOrderQty: (product as any).minOrderQty != null ? String((product as any).minOrderQty) : "",
+        vatRate: (product as any).vatRate != null ? String(parseFloat(String((product as any).vatRate))) : "0.2",
         priceBreaks: Array.isArray((product as any).priceBreaks) ? (product as any).priceBreaks : [],
       });
     }
@@ -624,6 +626,7 @@ export default function ProductDetail() {
           secondarySupplierPrice: details.secondarySupplierPrice !== "" ? parseFloat(details.secondarySupplierPrice) : null,
           supplierCurrency: details.supplierCurrency,
           minOrderQty: details.minOrderQty !== "" ? parseInt(details.minOrderQty, 10) || null : null,
+          vatRate: parseFloat(details.vatRate) || 0,
           priceBreaks: details.priceBreaks.length > 0
             ? [...details.priceBreaks].sort((a, b) => a.qty - b.qty)
             : null,
@@ -764,7 +767,7 @@ export default function ProductDetail() {
                     <Label>Product Name *</Label>
                     <Input value={details.name} onChange={e => handleDetailChange("name", e.target.value)} />
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
                     <div className="grid gap-2">
                       <Label>SKU</Label>
                       <Input value={details.sku} onChange={e => handleDetailChange("sku", e.target.value)} placeholder="e.g. POLO-001" />
@@ -772,6 +775,22 @@ export default function ProductDetail() {
                     <div className="grid gap-2">
                       <Label>Unit Price (£) *</Label>
                       <Input type="number" min="0" step="0.01" value={details.unitPrice} onChange={e => handleDetailChange("unitPrice", parseFloat(e.target.value) || 0)} />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>VAT Rate</Label>
+                      <Select value={details.vatRate} onValueChange={v => handleDetailChange("vatRate", v)}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="0.2">Standard (20%)</SelectItem>
+                          <SelectItem value="0.05">Reduced (5%)</SelectItem>
+                          <SelectItem value="0">Zero-rated (0%)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {parseFloat(details.vatRate) === 0 && (
+                        <p className="text-xs text-green-600">Zero-rated — e.g. children's clothing</p>
+                      )}
                     </div>
                   </div>
                   <div className="grid gap-2">

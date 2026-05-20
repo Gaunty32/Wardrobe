@@ -821,6 +821,12 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE products    ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5,4) NOT NULL DEFAULT 0.2000;
   `);
 
+  // Backfill vat_rate from tax_class for products already imported from WooCommerce
+  await db.execute(sql`
+    UPDATE products SET vat_rate = 0.0000 WHERE tax_class = 'zero-rate'    AND vat_rate = 0.2000;
+    UPDATE products SET vat_rate = 0.0500 WHERE tax_class = 'reduced-rate' AND vat_rate = 0.2000;
+  `);
+
   // Finish stock — decorated/logo'd items held per customer
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS customer_finish_stock (
