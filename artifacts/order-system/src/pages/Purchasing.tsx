@@ -1031,15 +1031,27 @@ function DeliveryRow({ line, onSave }: {
             />
           </div>
           {/* Backorder due date — always visible so users can set it */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <CalendarDays className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
             <Input
               type="date" value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
               onBlur={triggerSave}
-              className="h-7 w-36 text-xs px-1.5"
+              className="h-7 w-32 text-xs px-1.5"
               title="Backorder expected delivery date"
             />
+            <button
+              type="button"
+              onClick={() => {
+                const today = new Date().toISOString().slice(0, 10);
+                setDueDate(today);
+                setTimeout(triggerSave, 0);
+              }}
+              className="h-7 px-1.5 text-xs rounded border border-input bg-background hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Set to today"
+            >
+              Today
+            </button>
           </div>
           {/* Status indicator */}
           {overDelivered ? (
