@@ -20,7 +20,7 @@ import {
   Layers, Palette, Ruler, Upload, Camera
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import { sortBySizeWithOrder } from "@/lib/sizeUtils";
+import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useGetProduct, useUpdateProduct, getListProductsQueryKey, useListSuppliers } from "@workspace/api-client-react";
 
