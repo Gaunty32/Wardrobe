@@ -1724,7 +1724,10 @@ export default function Purchasing() {
                     const psOverrides = psQtyOverrides[psGroup.supplierName] ?? {};
                     const totalPsQty = psGroup.items.reduce((s, r) => s + (psOverrides[r.processStockId] ?? r.shortfall), 0);
                     const existingDraft = getDraftPoForSupplier(psGroup.supplierId, psGroup.supplierName);
-                    const itemsWithOverrides = psGroup.items.map(r => ({ ...r, shortfall: psOverrides[r.processStockId] ?? r.shortfall }));
+                    const itemsWithOverrides = psGroup.items
+                      .filter(r => !(psRemovedRows[psGroup.supplierName] ?? []).includes(r.processStockId))
+                      .map(r => ({ ...r, shortfall: psOverrides[r.processStockId] ?? r.shortfall }))
+                      .filter(r => r.shortfall > 0);
                     return (
                       <div key={`ps-${psGroup.supplierName}`} className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
                         <div className="flex items-center justify-between px-5 py-4">
