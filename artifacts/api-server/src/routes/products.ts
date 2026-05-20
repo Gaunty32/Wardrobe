@@ -146,6 +146,8 @@ router.get("/products", async (req, res): Promise<void> => {
     supplierId: p.supplier_id ?? null,
     supplierCode: p.supplier_code ?? null,
     stockQuantity: p.computed_stock != null ? Number(p.computed_stock) : (p.stock_quantity ?? null),
+    vatRate: p.vat_rate != null ? parseFloat(String(p.vat_rate)) : 0.20,
+    taxClass: p.tax_class ?? null,
   })));
 });
 

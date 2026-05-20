@@ -1589,7 +1589,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     recipientEmployeeId: z.number().int().positive().optional().nullable(),
     quantity: z.number().int().positive(),
     unitPrice: z.number().min(0),
-    vatRate: z.number().min(0).max(1).optional().default(0.20),
+    vatRate: z.number().min(0).max(1).optional(),
     purchaseRequired: z.boolean().optional().default(false),
     purchaseQuantity: z.number().int().min(0).optional().nullable(),
     supplierId: z.number().int().positive().optional().nullable(),
@@ -1601,6 +1601,18 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+
+  // Resolve VAT rate: use client-supplied value if given, otherwise look up from product
+  let effectiveVatRate = parsed.data.vatRate;
+  if (effectiveVatRate === undefined && parsed.data.productId) {
+    const [prod] = await db
+      .select({ vatRate: productsTable.vatRate })
+      .from(productsTable)
+      .where(eq(productsTable.id, parsed.data.productId))
+      .limit(1);
+    effectiveVatRate = prod ? parseFloat(String(prod.vatRate ?? 0.20)) : 0.20;
+  }
+  effectiveVatRate = effectiveVatRate ?? 0.20;
 
   const lineTotal = parsed.data.quantity * parsed.data.unitPrice;
   const [item] = await db
@@ -1619,7 +1631,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       quantity: parsed.data.quantity,
       unitPrice: String(parsed.data.unitPrice),
       lineTotal: String(lineTotal),
-      vatRate: String(parsed.data.vatRate ?? 0.20),
+      vatRate: String(effectiveVatRate),
       purchaseRequired: parsed.data.purchaseRequired ?? false,
       purchaseQuantity: parsed.data.purchaseQuantity ?? null,
       supplierId: parsed.data.supplierId ?? null,
