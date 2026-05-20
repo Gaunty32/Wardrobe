@@ -500,6 +500,14 @@ export default function OrderDetail() {
     onError: (e: Error) => toast({ title: "Failed to update VAT rate", description: e.message, variant: "destructive" }),
   });
 
+  const [editingSizeColour, setEditingSizeColour] = useState<{ itemId: number; size: string; colour: string } | null>(null);
+  const updateItemSizeColourMutation = useMutation({
+    mutationFn: ({ itemId, size, colour }: { itemId: number; size: string; colour: string }) =>
+      apiFetch(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ size: size || null, colour: colour || null }) }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }); setEditingSizeColour(null); },
+    onError: (e: Error) => toast({ title: "Failed to update size/colour", description: e.message, variant: "destructive" }),
+  });
+
   const updateAttachmentsMutation = useMutation({
     mutationFn: (attachments: Array<{ name: string; objectPath: string }>) =>
       apiFetch(`/orders/${orderId}/attachments`, { method: "PATCH", body: JSON.stringify({ attachments }) }),
@@ -1422,7 +1430,7 @@ export default function OrderDetail() {
                         <TableRow key={orderItem.id}>
                           <TableCell>
                             <p className="font-medium text-foreground">{orderItem.productName}</p>
-                            <div className="flex flex-wrap gap-1 mt-1">
+                            <div className="flex flex-wrap gap-1 mt-1 group/badges">
                               {orderItem.colour && (
                                 <Badge variant="outline" className="text-xs gap-1 font-normal">
                                   <Palette className="w-3 h-3" />{orderItem.colour}
@@ -1432,6 +1440,15 @@ export default function OrderDetail() {
                                 <Badge variant="outline" className="text-xs gap-1 font-normal">
                                   <Ruler className="w-3 h-3" />{orderItem.size}
                                 </Badge>
+                              )}
+                              {(orderItem.colour || orderItem.size) && (
+                                <button
+                                  className="opacity-0 group-hover/badges:opacity-100 transition-opacity inline-flex items-center px-1 py-0.5 rounded text-xs text-muted-foreground hover:text-primary hover:bg-muted"
+                                  title="Edit size / colour"
+                                  onClick={() => setEditingSizeColour({ itemId: orderItem.id, size: orderItem.size ?? "", colour: orderItem.colour ?? "" })}
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
                               )}
                               {(orderItem as { purchaseRequired?: boolean }).purchaseRequired && (
                                 <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1 font-normal">
@@ -2679,6 +2696,47 @@ export default function OrderDetail() {
               disabled={deleteOrderMutation.isPending}
             >
               {deleteOrderMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin mr-1.5" />Deleting…</> : "Yes, delete order"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit size / colour */}
+      <Dialog open={!!editingSizeColour} onOpenChange={open => { if (!open) setEditingSizeColour(null); }}>
+        <DialogContent className="sm:max-w-[340px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ruler className="w-4 h-4" /> Correct size / colour
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-colour">Colour</Label>
+              <Input
+                id="edit-colour"
+                value={editingSizeColour?.colour ?? ""}
+                onChange={e => setEditingSizeColour(s => s && ({ ...s, colour: e.target.value }))}
+                placeholder="e.g. Navy/Burgundy"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="edit-size">Size</Label>
+              <Input
+                id="edit-size"
+                value={editingSizeColour?.size ?? ""}
+                onChange={e => setEditingSizeColour(s => s && ({ ...s, size: e.target.value }))}
+                placeholder="e.g. 2XL"
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingSizeColour(null)}>Cancel</Button>
+            <Button
+              disabled={updateItemSizeColourMutation.isPending}
+              onClick={() => editingSizeColour && updateItemSizeColourMutation.mutate(editingSizeColour)}
+            >
+              {updateItemSizeColourMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving…</> : "Save"}
             </Button>
           </DialogFooter>
         </DialogContent>

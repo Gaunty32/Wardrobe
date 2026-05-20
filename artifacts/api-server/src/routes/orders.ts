@@ -1663,6 +1663,8 @@ const UpdateOrderItemBodyExtended = z.object({
   purchaseQuantity: z.number().int().min(0).nullable().optional(),
   supplierId: z.number().int().positive().nullable().optional(),
   supplierName: z.string().nullable().optional(),
+  size: z.string().nullable().optional(),
+  colour: z.string().nullable().optional(),
 });
 
 router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
@@ -1699,6 +1701,8 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
   if (parsed.data.purchaseQuantity !== undefined) updateData.purchaseQuantity = parsed.data.purchaseQuantity;
   if (parsed.data.supplierId !== undefined) updateData.supplierId = parsed.data.supplierId;
   if (parsed.data.supplierName !== undefined) updateData.supplierName = parsed.data.supplierName;
+  if (parsed.data.size !== undefined) updateData.size = parsed.data.size;
+  if (parsed.data.colour !== undefined) updateData.colour = parsed.data.colour;
 
   const [item] = await db
     .update(orderItemsTable)
