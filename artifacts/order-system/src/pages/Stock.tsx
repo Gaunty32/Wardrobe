@@ -223,13 +223,13 @@ function PlainStockTab() {
                             key={`colour-${expandKey}`}
                             className={cn(
                               "group",
-                              hasSizes && "cursor-pointer hover:bg-muted/40 select-none",
-                              isExpanded && hasSizes && "bg-muted/20"
+                              !isSingleNoSize && "cursor-pointer hover:bg-muted/40 select-none",
+                              isExpanded && !isSingleNoSize && "bg-muted/20"
                             )}
-                            onClick={hasSizes && !isSingleNoSize ? () => toggleColour(expandKey) : undefined}
+                            onClick={!isSingleNoSize ? () => toggleColour(expandKey) : undefined}
                           >
                             <TableCell className="w-8 pr-0">
-                              {hasSizes && !isSingleNoSize
+                              {!isSingleNoSize
                                 ? isExpanded
                                   ? <ChevronDown className="w-4 h-4 text-muted-foreground" />
                                   : <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -243,7 +243,12 @@ function PlainStockTab() {
                             </TableCell>
                             {!hasSizes && (
                               <TableCell className="font-mono text-xs text-muted-foreground">
-                                {colourVariants[0].sku || "—"}
+                                {isSingleNoSize
+                                  ? colourVariants[0].sku || "—"
+                                  : isExpanded
+                                    ? ""
+                                    : <span className="italic">{colourVariants.length} variant{colourVariants.length !== 1 ? "s" : ""} — click to edit</span>
+                                }
                               </TableCell>
                             )}
                             {hasSizes && (
@@ -256,7 +261,7 @@ function PlainStockTab() {
                                 }
                               </TableCell>
                             )}
-                            <TableCell className="text-right" onClick={e => { if (hasSizes && !isSingleNoSize) e.stopPropagation(); }}>
+                            <TableCell className="text-right" onClick={e => { if (!isSingleNoSize) e.stopPropagation(); }}>
                               {isSingleNoSize ? (
                                 <InlineQty
                                   value={colourVariants[0].stockQuantity}
