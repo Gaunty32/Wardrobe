@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, productVariantsTable, productsTable, productAttributesTable } from "@workspace/db";
 
@@ -28,6 +28,19 @@ async function getProduct(id: number) {
   return p;
 }
 
+/** Roll up the sum of all variant stock quantities to the parent product's stock_quantity. */
+async function rollupProductStock(productId: number) {
+  await db.execute(sql`
+    UPDATE products
+    SET stock_quantity = (
+      SELECT COALESCE(SUM(stock_quantity), 0)
+      FROM product_variants
+      WHERE product_id = ${productId}
+    )
+    WHERE id = ${productId}
+  `);
+}
+
 // List variants for a product
 router.get("/products/:productId/variants", async (req, res): Promise<void> => {
   const p = productIdParam.safeParse(req.params);
@@ -54,6 +67,7 @@ router.post("/products/:productId/variants", async (req, res): Promise<void> => 
   const [row] = await db.insert(productVariantsTable)
     .values({ ...body.data, productId: p.data.productId })
     .returning();
+  await rollupProductStock(p.data.productId);
   res.status(201).json(row);
 });
 
@@ -71,6 +85,7 @@ router.patch("/products/:productId/variants/:id", async (req, res): Promise<void
     ))
     .returning();
   if (!row) { res.status(404).json({ error: "Variant not found" }); return; }
+  await rollupProductStock(p.data.productId);
   res.json(row);
 });
 
@@ -178,6 +193,7 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
     deleted = toDelete.length;
   }
 
+  await rollupProductStock(productId);
   res.json({ created, deleted, skipped: existing.filter(v => v.size !== null).length });
 });
 
@@ -192,6 +208,7 @@ router.delete("/products/:productId/variants/:id", async (req, res): Promise<voi
     ))
     .returning();
   if (!row) { res.status(404).json({ error: "Variant not found" }); return; }
+  await rollupProductStock(p.data.productId);
   res.sendStatus(204);
 });
 
