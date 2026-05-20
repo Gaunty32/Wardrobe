@@ -1342,6 +1342,19 @@ export default function Purchasing() {
     refetchInterval: 30000,
   });
 
+  // On mount, run a rescan to restore any requirements lost due to PO deletion
+  // bugs. Fires once when the Purchasing page is opened.
+  useEffect(() => {
+    apiFetch("/purchasing/rescan", { method: "POST" })
+      .then((res: { restored: number }) => {
+        if (res.restored > 0) {
+          refetchReqs();
+        }
+      })
+      .catch(() => { /* silent — rescan is best-effort */ });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const { data: allSuppliers = [] } = useListSuppliers();
   const supplierLogoMap = useMemo(() => {
     const map = new Map<string, string | null>();

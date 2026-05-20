@@ -14,6 +14,46 @@ const objectStorageService = new ObjectStorageService();
 
 const router: IRouter = Router();
 
+// ─── Rescan: restore any requirements lost due to PO deletion bugs ────────────
+
+router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
+  // Find order items that should still be in purchasing requirements but have
+  // had purchaseRequired accidentally cleared (e.g. by the old delete-PO bug
+  // that missed sourceOrderItemIds).  Criteria:
+  //   • Order is still active (not cancelled / archived / completed / delivered)
+  //   • Item has a linked product (custom free-text lines are excluded)
+  //   • purchaseRequired is currently false AND purchaseQuantity is null
+  //   • Item is NOT already on a live draft or ordered PO
+  const result = await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required = true,
+        purchase_quantity  = oi.quantity
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.purchase_required = false
+      AND oi.purchase_quantity IS NULL
+      AND oi.product_id IS NOT NULL
+      AND COALESCE(o.status, '') NOT IN ('cancelled', 'archived', 'completed', 'delivered')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON poi.po_id = po.id
+        WHERE po.status IN ('draft', 'ordered')
+          AND (
+            poi.order_item_id = oi.id
+            OR oi.id IN (
+              SELECT (elem.value)::integer
+              FROM jsonb_array_elements_text(
+                COALESCE(poi.source_order_item_ids, '[]'::jsonb)
+              ) AS elem(value)
+            )
+          )
+      )
+  `);
+  const restored = (result as any).rowCount ?? 0;
+  res.json({ restored });
+});
+
 // ─── Requirements ────────────────────────────────────────────────────────────
 
 router.get("/purchasing/requirements", async (req, res): Promise<void> => {
@@ -895,13 +935,26 @@ router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void>
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  // Restore purchaseRequired on any linked order items before deleting
+  // Restore purchaseRequired + purchaseQuantity on ALL linked order items before deleting.
+  // Lines can reference order items in two ways:
+  //   • orderItemId  — a single direct link (un-consolidated)
+  //   • sourceOrderItemIds — a JSON array of order item ids (consolidated line)
   const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, parsed.data.id));
-  const linkedOrderItemIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
-  if (linkedOrderItemIds.length > 0) {
-    await db.update(orderItemsTable)
-      .set({ purchaseRequired: true })
-      .where(inArray(orderItemsTable.id, linkedOrderItemIds));
+
+  const directIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
+  const sourceIds = poItems.flatMap((i) => (i.sourceOrderItemIds as number[] | null) ?? []);
+  const allLinkedIds = [...new Set([...directIds, ...sourceIds])];
+
+  if (allLinkedIds.length > 0) {
+    const linkedItems = await db
+      .select({ id: orderItemsTable.id, quantity: orderItemsTable.quantity })
+      .from(orderItemsTable)
+      .where(inArray(orderItemsTable.id, allLinkedIds));
+    for (const li of linkedItems) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: true, purchaseQuantity: li.quantity ?? null })
+        .where(eq(orderItemsTable.id, li.id));
+    }
   }
 
   const [po] = await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, parsed.data.id)).returning();
