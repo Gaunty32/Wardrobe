@@ -1422,7 +1422,7 @@ export default function OrderDetail() {
                             </button>
                           </TableHead>
                         ))}
-                        <TableHead className="w-[90px]"></TableHead>
+                        <TableHead className="w-[90px] text-right text-muted-foreground font-normal text-xs">VAT</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
