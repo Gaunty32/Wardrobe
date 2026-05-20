@@ -1293,4 +1293,74 @@ router.delete("/customers/:customerId/references/:id", async (req, res): Promise
   res.sendStatus(204);
 });
 
+// ─── Finish Stock ─────────────────────────────────────────────────────────────
+
+const finishStockBody = z.object({
+  productName: z.string().min(1),
+  colour: z.string().optional().nullable(),
+  size: z.string().optional().nullable(),
+  sku: z.string().optional().nullable(),
+  quantity: z.number().int().min(0),
+  notes: z.string().optional().nullable(),
+});
+
+router.get("/customers/:customerId/finish-stock", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const rows = await db.execute(sql`
+    SELECT * FROM customer_finish_stock
+    WHERE customer_id = ${p.data.customerId}
+    ORDER BY product_name, colour, size, id
+  `);
+  res.json(rows.rows);
+});
+
+router.post("/customers/:customerId/finish-stock", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = finishStockBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const [row] = await db.execute(sql`
+    INSERT INTO customer_finish_stock (customer_id, product_name, colour, size, sku, quantity, notes)
+    VALUES (${p.data.customerId}, ${body.data.productName}, ${body.data.colour ?? null},
+            ${body.data.size ?? null}, ${body.data.sku ?? null}, ${body.data.quantity}, ${body.data.notes ?? null})
+    RETURNING *
+  `);
+  res.status(201).json(row);
+});
+
+router.patch("/customers/:customerId/finish-stock/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = finishStockBody.partial().safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const result = await db.execute(sql`
+    UPDATE customer_finish_stock
+    SET product_name = COALESCE(${body.data.productName ?? null}, product_name),
+        colour       = COALESCE(${body.data.colour ?? null}, colour),
+        size         = COALESCE(${body.data.size ?? null}, size),
+        sku          = COALESCE(${body.data.sku ?? null}, sku),
+        quantity     = COALESCE(${body.data.quantity ?? null}, quantity),
+        notes        = COALESCE(${body.data.notes ?? null}, notes),
+        updated_at   = NOW()
+    WHERE id = ${p.data.id} AND customer_id = ${p.data.customerId}
+    RETURNING *
+  `);
+  if (!result.rows[0]) { res.status(404).json({ error: "Item not found" }); return; }
+  res.json(result.rows[0]);
+});
+
+router.delete("/customers/:customerId/finish-stock/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const result = await db.execute(sql`
+    DELETE FROM customer_finish_stock
+    WHERE id = ${p.data.id} AND customer_id = ${p.data.customerId}
+    RETURNING id
+  `);
+  if (!result.rows[0]) { res.status(404).json({ error: "Item not found" }); return; }
+  res.sendStatus(204);
+});
+
 export default router;

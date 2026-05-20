@@ -821,5 +821,21 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE products    ADD COLUMN IF NOT EXISTS vat_rate NUMERIC(5,4) NOT NULL DEFAULT 0.2000;
   `);
 
+  // Finish stock — decorated/logo'd items held per customer
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_finish_stock (
+      id          SERIAL PRIMARY KEY,
+      customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      product_name TEXT NOT NULL,
+      colour      TEXT,
+      size        TEXT,
+      sku         TEXT,
+      quantity    INTEGER NOT NULL DEFAULT 0,
+      notes       TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }

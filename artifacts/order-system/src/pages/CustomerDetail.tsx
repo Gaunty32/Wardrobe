@@ -20,7 +20,7 @@ import { sortSizesWithOrder, sortBySizeWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet, Warehouse } from "lucide-react";
 import { ImportSpreadsheetDialog } from "@/components/ImportSpreadsheetDialog";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 
@@ -3404,6 +3404,173 @@ function PaymentMethodsTab({ customerId }: { customerId: number }) {
 
 // ─── Bespoke Products Tab ─────────────────────────────────────────────────────
 
+// ─── Finish Stock Tab ──────────────────────────────────────────────────────────
+function FinishStockTab({ customerId }: { customerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const blankForm = { productName: "", colour: "", size: "", sku: "", quantity: "0", notes: "" };
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [form, setForm] = useState(blankForm);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finish-stock"] });
+
+  const { data: items = [], isLoading } = useQuery<any[]>({
+    queryKey: ["customer", customerId, "finish-stock"],
+    queryFn: () => apiFetch(`/customers/${customerId}/finish-stock`),
+  });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/finish-stock/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/finish-stock`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: editing ? "Item updated" : "Item added" }); setOpen(false); setEditing(null); setForm(blankForm); },
+    onError: (e: any) => toast({ title: e.message || "Error saving item", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/finish-stock/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Item removed" }); },
+    onError: () => toast({ title: "Error removing item", variant: "destructive" }),
+  });
+
+  const openAdd = () => { setForm(blankForm); setEditing(null); setOpen(true); };
+  const openEdit = (item: any) => {
+    setForm({
+      productName: item.product_name || "",
+      colour: item.colour || "",
+      size: item.size || "",
+      sku: item.sku || "",
+      quantity: String(item.quantity ?? 0),
+      notes: item.notes || "",
+    });
+    setEditing(item);
+    setOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!form.productName.trim()) { toast({ title: "Product name is required", variant: "destructive" }); return; }
+    save.mutate({
+      productName: form.productName.trim(),
+      colour: form.colour.trim() || null,
+      size: form.size.trim() || null,
+      sku: form.sku.trim() || null,
+      quantity: parseInt(form.quantity, 10) || 0,
+      notes: form.notes.trim() || null,
+    });
+  };
+
+  const totalQty = items.reduce((s: number, i: any) => s + (i.quantity || 0), 0);
+
+  return (
+    <>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Decorated items with logo already applied, held in stock for this customer.
+            {totalQty > 0 && <span className="ml-2 font-medium text-foreground">{totalQty} unit{totalQty !== 1 ? "s" : ""} total</span>}
+          </p>
+        </div>
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Item</Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+      ) : items.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-3">
+          <Warehouse className="w-10 h-10 opacity-30" />
+          <p className="text-sm">No finish stock recorded. Add items that are decorated and held ready for this customer.</p>
+          <Button size="sm" variant="outline" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add first item</Button>
+        </div>
+      ) : (
+        <div className="border border-border/50 rounded-lg overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Product</TableHead>
+                <TableHead className="w-[120px]">Colour</TableHead>
+                <TableHead className="w-[100px]">Size</TableHead>
+                <TableHead className="w-[120px]">SKU</TableHead>
+                <TableHead className="w-[80px] text-right">Qty</TableHead>
+                <TableHead>Notes</TableHead>
+                <TableHead className="w-[80px] text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((item: any) => (
+                <TableRow key={item.id}>
+                  <TableCell className="font-medium text-sm">{item.product_name}</TableCell>
+                  <TableCell className="text-sm">{item.colour || <span className="text-muted-foreground italic">Any</span>}</TableCell>
+                  <TableCell className="text-sm">{item.size || <span className="text-muted-foreground italic">Any</span>}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{item.sku || "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <span className={cn("font-mono text-sm font-semibold tabular-nums", item.quantity <= 5 && item.quantity > 0 && "text-amber-700", item.quantity === 0 && "text-muted-foreground")}>
+                      {item.quantity <= 5 && item.quantity > 0 && <AlertCircle className="w-3 h-3 inline mr-1 text-amber-500" />}
+                      {item.quantity}
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{item.notes || "—"}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(item)}><Edit2 className="w-3.5 h-3.5" /></Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => del.mutate(item.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <Dialog open={open} onOpenChange={v => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editing ? "Edit Finish Stock Item" : "Add Finish Stock Item"}</DialogTitle>
+            <DialogDescription>Decorated items held in stock ready for this customer.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Product Name <span className="text-destructive">*</span></Label>
+              <Input value={form.productName} onChange={e => setForm(f => ({ ...f, productName: e.target.value }))} placeholder="e.g. Kinetic Hoodie" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Colour</Label>
+                <Input value={form.colour} onChange={e => setForm(f => ({ ...f, colour: e.target.value }))} placeholder="e.g. Navy Blue" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Size</Label>
+                <Input value={form.size} onChange={e => setForm(f => ({ ...f, size: e.target.value }))} placeholder="e.g. M" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>SKU</Label>
+                <Input value={form.sku} onChange={e => setForm(f => ({ ...f, sku: e.target.value }))} placeholder="Optional" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Quantity</Label>
+                <Input type="number" min={0} value={form.quantity} onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="e.g. Left chest embroidery, ready for dispatch" rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={handleSave} disabled={save.isPending}>
+              {save.isPending ? <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Saving…</> : editing ? "Save changes" : "Add item"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function BespokeProductsTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -4187,6 +4354,7 @@ export default function CustomerDetail() {
             <TabsTrigger value="portal" className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Portal Access</TabsTrigger>
             <TabsTrigger value="payments" className="flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Payment Methods</TabsTrigger>
             <TabsTrigger value="references" className="flex items-center gap-1.5"><BookOpen className="w-3.5 h-3.5" /> References</TabsTrigger>
+            <TabsTrigger value="finish-stock" className="flex items-center gap-1.5"><Warehouse className="w-3.5 h-3.5" /> Finish Stock</TabsTrigger>
           </TabsList>
 
           <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
@@ -4203,6 +4371,7 @@ export default function CustomerDetail() {
             <TabsContent value="portal" className="mt-0"><PortalAccessTab customerId={customerId} /></TabsContent>
             <TabsContent value="payments" className="mt-0"><PaymentMethodsTab customerId={customerId} /></TabsContent>
             <TabsContent value="references" className="mt-0"><ReferencesTab customerId={customerId} /></TabsContent>
+            <TabsContent value="finish-stock" className="mt-0"><FinishStockTab customerId={customerId} /></TabsContent>
           </div>
         </Tabs>
       </div>
