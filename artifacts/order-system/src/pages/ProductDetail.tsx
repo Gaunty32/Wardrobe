@@ -641,13 +641,6 @@ export default function ProductDetail() {
     );
   };
 
-  if (isLoading || !details) {
-    return <Layout><div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
-  }
-  if (!product) {
-    return <Layout><div className="text-center py-20"><p className="text-muted-foreground">Product not found.</p><Button variant="outline" className="mt-4" onClick={() => navigate("/products")}>Back</Button></div></Layout>;
-  }
-
   const generateMatrixMut = useMutation({
     mutationFn: () => apiFetch(`/products/${productId}/variants/generate-matrix`, { method: "POST" }),
     onSuccess: (data: any) => {
@@ -657,6 +650,13 @@ export default function ProductDetail() {
     },
     onError: (err: any) => toast({ title: err.message || "Failed to generate variants", variant: "destructive" }),
   });
+
+  if (isLoading || !details) {
+    return <Layout><div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
+  }
+  if (!product) {
+    return <Layout><div className="text-center py-20"><p className="text-muted-foreground">Product not found.</p><Button variant="outline" className="mt-4" onClick={() => navigate("/products")}>Back</Button></div></Layout>;
+  }
 
   const totalStock = variants.reduce((sum: number, v: any) => sum + (v.stockQuantity || 0), 0);
   const lowStockCount = variants.filter((v: any) => v.stockQuantity <= 5).length;
