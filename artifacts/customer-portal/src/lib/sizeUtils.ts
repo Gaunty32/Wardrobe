@@ -12,6 +12,12 @@ const SIZE_ORDER = [
   "6XL", "7XL", "8XL",
   "4","6","8","10","12","14","16","18","20","22","24","26","28","30",
   "32","34","36","38","40","42","44","46","48","50",
+  "Extra Small Youth", "ExtraSmallYouth", "XS Youth", "XSY",
+  "Small Youth",       "SmallYouth",      "S Youth",  "SY",
+  "Medium Youth",      "MediumYouth",     "M Youth",  "MY",
+  "Large Youth",       "LargeYouth",      "L Youth",  "LY",
+  "Extra Large Youth", "ExtraLargeYouth", "XL Youth", "XLY",
+  "2XL Youth", "XXL Youth",
   "One Size","One-Size","Onesize","Free Size","Universal","N/A",
 ];
 

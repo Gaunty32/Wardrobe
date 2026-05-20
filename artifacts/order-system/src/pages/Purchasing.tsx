@@ -122,8 +122,18 @@ const SIZE_NORMALIZE: Record<string, string> = {
   "xxxl": "3XL", "xxx-large": "3XL", "3x-large": "3XL",
   "xxxxl": "4XL", "xxxx-large": "4XL", "4x-large": "4XL",
   "xxxxxl": "5XL", "5x-large": "5XL",
+  "extra small youth": "Extra Small Youth", "xs youth": "Extra Small Youth", "xsy": "Extra Small Youth",
+  "small youth": "Small Youth", "s youth": "Small Youth", "sy": "Small Youth",
+  "medium youth": "Medium Youth", "m youth": "Medium Youth", "my": "Medium Youth",
+  "large youth": "Large Youth", "l youth": "Large Youth", "ly": "Large Youth",
+  "extra large youth": "Extra Large Youth", "xl youth": "Extra Large Youth", "xly": "Extra Large Youth",
+  "xxl youth": "2XL Youth", "2xl youth": "2XL Youth",
 };
-const SIZE_ORDER = ["One Size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"];
+const SIZE_ORDER = [
+  "One Size",
+  "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL", "6XL", "7XL", "8XL",
+  "Extra Small Youth", "Small Youth", "Medium Youth", "Large Youth", "Extra Large Youth", "2XL Youth",
+];
 function normalizeSize(s: string): string { return SIZE_NORMALIZE[s.toLowerCase().trim()] ?? s; }
 function sortSizes(sizes: string[]): string[] {
   return [...sizes].sort((a, b) => {
