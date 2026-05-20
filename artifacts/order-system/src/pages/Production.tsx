@@ -1433,6 +1433,17 @@ function PickingListTab({ filters }: { filters: Filters }) {
   const queryClient = useQueryClient();
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [returning, setReturning] = useState<Set<number>>(new Set());
+  const [qtyOverrides, setQtyOverrides] = useState<Map<number, number>>(new Map());
+  const [editingQty, setEditingQty] = useState<number | null>(null);
+
+  function setQtyOverride(itemId: number, qty: number, fullQty: number) {
+    setQtyOverrides((prev) => {
+      const next = new Map(prev);
+      if (qty >= fullQty) next.delete(itemId);
+      else next.set(itemId, Math.max(1, qty));
+      return next;
+    });
+  }
 
   const { data: rawPickingOrders = [], isLoading } = useQuery<PickingOrder[]>({
     queryKey: ["picking-list"],
@@ -1443,12 +1454,25 @@ function PickingListTab({ filters }: { filters: Filters }) {
   const pickingOrders = filterPickingOrders(rawPickingOrders, filters);
 
   const pickMutation = useMutation({
-    mutationFn: (itemIds: number[]) =>
-      apiFetch("/picking-list/pick", { method: "POST", body: JSON.stringify({ itemIds }) }),
+    mutationFn: (itemIds: number[]) => {
+      const qtyOverridesObj: Record<string, number> = {};
+      for (const [id, qty] of qtyOverrides.entries()) {
+        if (itemIds.includes(id)) qtyOverridesObj[String(id)] = qty;
+      }
+      return apiFetch("/picking-list/pick", {
+        method: "POST",
+        body: JSON.stringify({
+          itemIds,
+          ...(Object.keys(qtyOverridesObj).length > 0 ? { qtyOverrides: qtyOverridesObj } : {}),
+        }),
+      });
+    },
     onSuccess: (data: { ok: boolean; plainPicked: number; worksheetItems: number }) => {
       queryClient.invalidateQueries({ queryKey: ["picking-list"] });
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
       setChecked(new Set());
+      setQtyOverrides(new Map());
       const parts: string[] = [];
       if (data.plainPicked > 0) parts.push(`${data.plainPicked} ready for dispatch`);
       if (data.worksheetItems > 0) parts.push(`${data.worksheetItems} sent to production`);
@@ -1699,12 +1723,46 @@ function PickingListTab({ filters }: { filters: Filters }) {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          <Badge variant="secondary" className="text-sm font-bold min-w-[2rem] justify-center">
-                            {item.quantity}
-                          </Badge>
+                          {/* Inline qty editor */}
+                          {editingQty === item.itemId ? (
+                            <input
+                              type="number"
+                              min={1}
+                              max={item.quantity}
+                              defaultValue={qtyOverrides.get(item.itemId) ?? item.quantity}
+                              autoFocus
+                              className="w-14 h-7 text-center text-sm font-bold border border-primary rounded px-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                              onBlur={(e) => {
+                                const v = parseInt(e.target.value);
+                                if (!isNaN(v)) setQtyOverride(item.itemId, v, item.quantity);
+                                setEditingQty(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                if (e.key === "Escape") { setEditingQty(null); }
+                              }}
+                            />
+                          ) : (
+                            <button
+                              onClick={() => setEditingQty(item.itemId)}
+                              title="Click to edit quantity picked — reduces the number and sends the shortfall to purchasing"
+                              className={`min-w-[2rem] h-7 px-2 rounded text-sm font-bold transition-colors border ${
+                                qtyOverrides.has(item.itemId)
+                                  ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                                  : "bg-secondary text-secondary-foreground border-transparent hover:bg-muted hover:border-border"
+                              }`}
+                            >
+                              {qtyOverrides.get(item.itemId) ?? item.quantity}
+                            </button>
+                          )}
+                          {qtyOverrides.has(item.itemId) && (
+                            <span className="text-xs text-amber-700 font-medium whitespace-nowrap">
+                              shortfall: {item.quantity - (qtyOverrides.get(item.itemId) ?? item.quantity)}
+                            </span>
+                          )}
                           <button
                             onClick={() => toggleReturning(item.itemId)}
-                            title="Stock not found — return to purchasing"
+                            title="Stock not found — return whole item to purchasing"
                             className={`p-1 rounded transition-colors ${isReturning ? "text-amber-600 bg-amber-100" : "text-muted-foreground hover:text-amber-600 hover:bg-amber-50"}`}
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
@@ -1716,6 +1774,15 @@ function PickingListTab({ filters }: { filters: Filters }) {
                           <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
                           <span>This item will be de-allocated and added to your purchasing requirements. Product stock will be corrected.</span>
                           <button onClick={() => toggleReturning(item.itemId)} className="ml-auto text-amber-600 hover:text-amber-800 underline whitespace-nowrap">Cancel</button>
+                        </div>
+                      )}
+                      {qtyOverrides.has(item.itemId) && !isReturning && (
+                        <div className="flex items-center gap-2 px-12 py-2 bg-amber-50 border-t border-amber-100 text-xs text-amber-800">
+                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                          <span>
+                            Picking <strong>{qtyOverrides.get(item.itemId)}</strong> of {item.quantity} — shortfall of <strong>{item.quantity - (qtyOverrides.get(item.itemId) ?? item.quantity)}</strong> will be added to purchasing requirements.
+                          </span>
+                          <button onClick={() => setQtyOverride(item.itemId, item.quantity, item.quantity)} className="ml-auto text-amber-600 hover:text-amber-800 underline whitespace-nowrap">Reset</button>
                         </div>
                       )}
                     </div>

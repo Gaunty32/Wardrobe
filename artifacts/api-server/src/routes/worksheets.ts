@@ -82,21 +82,30 @@ router.get("/picking-list", async (req, res): Promise<void> => {
 // Plain items (no finish) → stockStatus = 'complete'
 // Items with a finish → create/update production worksheet → stockStatus = 'in_production'
 router.post("/picking-list/pick", async (req, res): Promise<void> => {
-  const parsed = z.object({ itemIds: z.array(z.number().int().positive()) }).safeParse(req.body);
+  const parsed = z.object({
+    itemIds: z.array(z.number().int().positive()),
+    qtyOverrides: z.record(z.string(), z.number().int().min(1)).optional(),
+  }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const items = await db
     .select({
       id: orderItemsTable.id,
       orderId: orderItemsTable.orderId,
+      productId: orderItemsTable.productId,
       productName: orderItemsTable.productName,
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
       quantity: orderItemsTable.quantity,
+      unitPrice: orderItemsTable.unitPrice,
+      vatRate: orderItemsTable.vatRate,
       recipientType: orderItemsTable.recipientType,
       recipientName: orderItemsTable.recipientName,
+      recipientEmployeeId: orderItemsTable.recipientEmployeeId,
       finishId: orderItemsTable.finishId,
       finishName: orderItemsTable.finishName,
+      supplierId: orderItemsTable.supplierId,
+      supplierName: orderItemsTable.supplierName,
       orderNumber: ordersTable.orderNumber,
       customerId: ordersTable.customerId,
       customerName: ordersTable.customerName,
@@ -104,6 +113,56 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
     .from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .where(inArray(orderItemsTable.id, parsed.data.itemIds));
+
+  // ── Partial pick: split items where fewer units were found than required ──
+  const overrides = parsed.data.qtyOverrides ?? {};
+  for (const item of items) {
+    const pickedQty = overrides[String(item.id)];
+    if (pickedQty == null || pickedQty >= item.quantity) continue;
+
+    const shortfallQty = item.quantity - pickedQty;
+    const unitPriceNum = parseFloat(item.unitPrice ?? "0");
+
+    // Reduce original item to the picked quantity
+    await db.update(orderItemsTable).set({
+      quantity: pickedQty,
+      lineTotal: String((pickedQty * unitPriceNum).toFixed(2)),
+    }).where(eq(orderItemsTable.id, item.id));
+
+    // Insert shortfall item — goes straight to purchasing requirements
+    await db.insert(orderItemsTable).values({
+      orderId: item.orderId,
+      productId: item.productId ?? null,
+      productName: item.productName,
+      colour: item.colour ?? null,
+      size: item.size ?? null,
+      finishId: item.finishId ?? null,
+      finishName: item.finishName ?? null,
+      recipientType: item.recipientType,
+      recipientName: item.recipientName ?? null,
+      recipientEmployeeId: item.recipientEmployeeId ?? null,
+      quantity: shortfallQty,
+      unitPrice: item.unitPrice ?? "0",
+      lineTotal: String((shortfallQty * unitPriceNum).toFixed(2)),
+      vatRate: item.vatRate ?? "0.2000",
+      purchaseRequired: true,
+      purchaseQuantity: shortfallQty,
+      supplierId: item.supplierId ?? null,
+      supplierName: item.supplierName ?? null,
+      stockStatus: null,
+      stockAllocatedAt: null,
+    });
+
+    // Decrement product stock by shortfall (those units aren't actually in stock)
+    if (item.productId != null) {
+      await db.execute(
+        sql`UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) - ${shortfallQty} WHERE id = ${item.productId}`
+      );
+    }
+
+    // Update in-memory quantity so the pick logic below uses the reduced amount
+    item.quantity = pickedQty;
+  }
 
   const plainItems = items.filter((i) => i.finishId == null);
   const finishItems = items.filter((i) => i.finishId != null);
