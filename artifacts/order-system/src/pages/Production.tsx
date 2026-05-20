@@ -80,6 +80,9 @@ interface PendingItem {
   size: string | null;
   purchaseQuantity: number;
   supplierName: string | null;
+  poNumber: string | null;
+  poStatus: string | null;
+  estimatedDelivery: string | null;
 }
 
 interface PendingOrder {
@@ -927,8 +930,8 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
         <div className="border-t border-amber-200 px-5 py-4">
           <div className="space-y-2">
             {order.items.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 p-2.5 rounded-lg bg-white/70 border border-amber-100">
-                <Package className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              <div key={item.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${item.poNumber ? "bg-green-50/60 border-green-200" : "bg-white/70 border-amber-100"}`}>
+                <Package className={`w-4 h-4 flex-shrink-0 ${item.poNumber ? "text-green-600" : "text-amber-500"}`} />
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-sm">{item.productName}</div>
                   <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -937,9 +940,29 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
                     {item.supplierName && (
                       <span className="text-xs text-muted-foreground">Supplier: {item.supplierName}</span>
                     )}
+                    {item.poNumber && item.poStatus === "ordered" && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 border border-green-200 rounded px-1.5 py-0.5">
+                        <CheckCircle2 className="w-3 h-3" /> Ordered · {item.poNumber}
+                      </span>
+                    )}
+                    {item.poNumber && item.poStatus === "draft" && (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
+                        <Clock className="w-3 h-3" /> On Draft PO · {item.poNumber}
+                      </span>
+                    )}
+                    {!item.poNumber && (
+                      <span className="inline-flex items-center gap-1 text-xs text-amber-600">
+                        <AlertCircle className="w-3 h-3" /> Not yet ordered
+                      </span>
+                    )}
+                    {item.estimatedDelivery && (
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                        <Calendar className="w-3 h-3" /> Expected {new Date(item.estimatedDelivery).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                      </span>
+                    )}
                   </div>
                 </div>
-                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-sm font-semibold flex-shrink-0">
+                <Badge className={`text-sm font-semibold flex-shrink-0 ${item.poNumber ? "bg-green-100 text-green-800 border-green-200" : "bg-amber-100 text-amber-800 border-amber-200"}`}>
                   × {item.purchaseQuantity}
                 </Badge>
               </div>

@@ -362,10 +362,54 @@ router.get("/production/pending", async (req, res): Promise<void> => {
     .where(eq(orderItemsTable.purchaseRequired, true))
     .orderBy(ordersTable.requiredDate, ordersTable.id);
 
+  // Fetch PO status for each pending item (via direct FK or sourceOrderItemIds JSON array)
+  const itemIds = pendingItems.map((r) => r.itemId);
+  const poStatusMap = new Map<number, { poNumber: string; poStatus: string; estimatedDelivery: Date | null }>();
+
+  if (itemIds.length > 0) {
+    const poRows = await db.execute(sql`
+      SELECT oi_id, po_number, po_status, estimated_delivery_date FROM (
+        SELECT poi.order_item_id::integer AS oi_id,
+               po.po_number,
+               po.status AS po_status,
+               po.estimated_delivery_date
+        FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON poi.po_id = po.id
+        WHERE po.status IN ('draft', 'ordered')
+          AND poi.order_item_id = ANY(ARRAY[${sql.raw(itemIds.join(","))}]::integer[])
+        UNION ALL
+        SELECT (elem.value)::integer AS oi_id,
+               po.po_number,
+               po.status AS po_status,
+               po.estimated_delivery_date
+        FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON poi.po_id = po.id,
+        jsonb_array_elements_text(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) AS elem(value)
+        WHERE po.status IN ('draft', 'ordered')
+          AND jsonb_array_length(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) > 0
+          AND (elem.value)::integer = ANY(ARRAY[${sql.raw(itemIds.join(","))}]::integer[])
+      ) t
+    `);
+    for (const row of poRows.rows as any[]) {
+      const id = Number(row.oi_id);
+      if (!poStatusMap.has(id)) {
+        poStatusMap.set(id, {
+          poNumber: row.po_number as string,
+          poStatus: row.po_status as string,
+          estimatedDelivery: row.estimated_delivery_date ? new Date(row.estimated_delivery_date) : null,
+        });
+      }
+    }
+  }
+
   const orderMap = new Map<number, {
     orderId: number; orderNumber: string; customerName: string | null;
     requiredDate: Date | null;
-    items: Array<{ id: number; productName: string; colour: string | null; size: string | null; purchaseQuantity: number; supplierName: string | null }>;
+    items: Array<{
+      id: number; productName: string; colour: string | null; size: string | null;
+      purchaseQuantity: number; supplierName: string | null;
+      poNumber: string | null; poStatus: string | null; estimatedDelivery: Date | null;
+    }>;
   }>();
 
   for (const row of pendingItems) {
@@ -378,6 +422,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
         items: [],
       });
     }
+    const po = poStatusMap.get(row.itemId) ?? null;
     orderMap.get(row.orderId)!.items.push({
       id: row.itemId,
       productName: row.catalogueName ?? row.productName,
@@ -385,6 +430,9 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       size: row.size,
       purchaseQuantity: row.purchaseQuantity ?? 1,
       supplierName: row.supplierName,
+      poNumber: po?.poNumber ?? null,
+      poStatus: po?.poStatus ?? null,
+      estimatedDelivery: po?.estimatedDelivery ?? null,
     });
   }
 
