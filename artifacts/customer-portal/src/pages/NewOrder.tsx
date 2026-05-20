@@ -1786,8 +1786,9 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const [selectedPmId, setSelectedPmId] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Array<{ name: string; objectPath: string }>>([]);
   const [uploading, setUploading] = useState(false);
-  const [wantsSelectExtra, setWantsSelectExtra] = useState(true);
-  const [giftReminderOpen, setGiftReminderOpen] = useState(false);
+  const [wantsSelectExtra, setWantsSelectExtra] = useState(false);
+  const [giftDialogOpen, setGiftDialogOpen] = useState(false);
+  const giftDialogShownRef = useRef(false);
   const pendingSubmitRef = useRef<Parameters<typeof onSubmit>[0] | null>(null);
 
   const { data: selectExtraData } = useQuery<{
@@ -1849,6 +1850,14 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const selectExtraOffer = selectExtraData?.offer ?? null;
   const alreadyClaimed = selectExtraData?.claimed ?? false;
   const qualifiesForExtra = selectExtraOffer !== null && !alreadyClaimed && itemsTotal >= selectExtraOffer.minSpend;
+
+  // Auto-show the gift offer popup once when the customer first qualifies
+  useEffect(() => {
+    if (qualifiesForExtra && !giftDialogShownRef.current) {
+      giftDialogShownRef.current = true;
+      setGiftDialogOpen(true);
+    }
+  }, [qualifiesForExtra]);
 
   const updateQty = (idx: number, delta: number) => {
     setBasket(b => b.map((item, i) => i === idx ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item));
@@ -1948,17 +1957,14 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                     )}
                   </React.Fragment>
                 ))}
-                {/* ── Select Extra gift row ─────────────────────────────────────── */}
-                {wantsSelectExtra && selectExtraOffer && !alreadyClaimed && (
-                  <TableRow className={qualifiesForExtra ? "bg-amber-50/60 hover:bg-amber-50/80" : "bg-muted/10 hover:bg-muted/20"}>
+                {/* ── Select Extra gift row (only when customer has chosen to add it and qualifies) ── */}
+                {wantsSelectExtra && qualifiesForExtra && !alreadyClaimed && selectExtraOffer && (
+                  <TableRow className="bg-amber-50/60 hover:bg-amber-50/80">
                     <TableCell className="font-medium text-sm align-top">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Gift className={`w-3.5 h-3.5 shrink-0 ${qualifiesForExtra ? "text-amber-600" : "text-muted-foreground"}`} />
+                        <Gift className="w-3.5 h-3.5 shrink-0 text-amber-600" />
                         <span>{selectExtraOffer.productName}</span>
-                        {qualifiesForExtra
-                          ? <span className="inline-flex items-center rounded border border-green-200 bg-green-100 px-1.5 py-0 text-[10px] font-semibold text-green-800">FREE</span>
-                          : <span className="inline-flex items-center rounded border bg-muted px-1.5 py-0 text-[10px] text-muted-foreground">need £{Math.max(0, selectExtraOffer.minSpend - itemsTotal).toFixed(2)} more</span>
-                        }
+                        <span className="inline-flex items-center rounded border border-green-200 bg-green-100 px-1.5 py-0 text-[10px] font-semibold text-green-800">FREE</span>
                       </div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">Select Extra gift</div>
                     </TableCell>
@@ -1966,14 +1972,10 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                     <TableCell className="text-sm text-muted-foreground align-top">Free gift</TableCell>
                     <TableCell className="text-right align-top text-sm">{selectExtraOffer.quantity}</TableCell>
                     <TableCell className="text-right align-top text-sm">
-                      {qualifiesForExtra
-                        ? <span className="text-green-700 font-semibold">£0.00</span>
-                        : <span className="text-muted-foreground">—</span>}
+                      <span className="text-green-700 font-semibold">£0.00</span>
                     </TableCell>
                     <TableCell className="text-right align-top text-sm font-medium">
-                      {qualifiesForExtra
-                        ? <span className="text-green-700 font-semibold">£0.00</span>
-                        : <span className="text-muted-foreground">—</span>}
+                      <span className="text-green-700 font-semibold">£0.00</span>
                     </TableCell>
                     <TableCell className="align-top">
                       <button onClick={() => setWantsSelectExtra(false)} className="text-muted-foreground hover:text-destructive transition-colors" title="Remove gift">
@@ -2180,22 +2182,28 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
         </div>
       )}
 
-      {/* ── Select Extra: re-add dismissed gift / already-claimed notice ───── */}
-      {selectExtraOffer && !alreadyClaimed && !wantsSelectExtra && (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3 flex items-center gap-3">
+      {/* ── Select Extra nudge banners ────────────────────────────────────── */}
+      {selectExtraOffer && !alreadyClaimed && qualifiesForExtra && !wantsSelectExtra && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3 flex items-center gap-3">
           <Gift className="w-4 h-4 text-amber-500 shrink-0" />
           <p className="text-sm text-amber-800 flex-1">
-            You removed the free gift.{" "}
-            {qualifiesForExtra
-              ? <span className="font-medium">You qualify! </span>
-              : <span>Spend £{selectExtraOffer.minSpend.toFixed(0)}+ to unlock. </span>}
+            <span className="font-semibold">You qualify for a free gift!</span>{" "}
+            Add {selectExtraOffer.quantity}× <span className="font-medium">{selectExtraOffer.productName}</span> to your order at no cost.
           </p>
           <button
             onClick={() => setWantsSelectExtra(true)}
-            className="text-xs text-amber-700 underline underline-offset-2 hover:text-amber-900 shrink-0"
+            className="shrink-0 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium px-3 py-1.5 transition-colors"
           >
-            Re-add
+            Add to basket
           </button>
+        </div>
+      )}
+      {selectExtraOffer && !alreadyClaimed && !qualifiesForExtra && (
+        <div className="mt-4 rounded-lg border border-muted bg-muted/30 px-4 py-3 flex items-center gap-3">
+          <Gift className="w-4 h-4 text-muted-foreground shrink-0" />
+          <p className="text-sm text-muted-foreground">
+            Spend <span className="font-medium text-foreground">£{Math.max(0, selectExtraOffer.minSpend - itemsTotal).toFixed(2)} more</span> to unlock a free <span className="font-medium text-foreground">{selectExtraOffer.productName}</span> this month.
+          </p>
         </div>
       )}
       {selectExtraOffer && alreadyClaimed && (
@@ -2205,34 +2213,36 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
         </div>
       )}
 
-      {/* ── Gift reminder dialog ─────────────────────────────────────────────── */}
-      <Dialog open={giftReminderOpen} onOpenChange={setGiftReminderOpen}>
+      {/* ── Gift offer / reminder dialog ─────────────────────────────────── */}
+      <Dialog open={giftDialogOpen} onOpenChange={setGiftDialogOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Gift className="w-5 h-5 text-amber-500" /> Don't forget your free gift!
+              <Gift className="w-5 h-5 text-amber-500" /> You've unlocked a free gift! 🎉
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            You qualify for a free <strong>{selectExtraOffer?.productName}</strong> with this order — at no extra cost. Would you like to add it?
+            Your order qualifies for <strong>{selectExtraOffer?.quantity}× {selectExtraOffer?.productName}</strong> completely free. Would you like to add it to your basket?
           </p>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" size="sm" onClick={() => {
-              setGiftReminderOpen(false);
-              if (pendingSubmitRef.current) onSubmit(pendingSubmitRef.current);
-              pendingSubmitRef.current = null;
+              setGiftDialogOpen(false);
+              if (pendingSubmitRef.current) {
+                onSubmit(pendingSubmitRef.current);
+                pendingSubmitRef.current = null;
+              }
             }}>
               No thanks
             </Button>
             <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => {
               setWantsSelectExtra(true);
-              setGiftReminderOpen(false);
+              setGiftDialogOpen(false);
               if (pendingSubmitRef.current) {
                 onSubmit({ ...pendingSubmitRef.current, claimSelectExtra: true });
+                pendingSubmitRef.current = null;
               }
-              pendingSubmitRef.current = null;
             }}>
-              Yes, add my free gift!
+              Add free gift to basket
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2253,7 +2263,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             };
             if (qualifiesForExtra && !wantsSelectExtra) {
               pendingSubmitRef.current = data;
-              setGiftReminderOpen(true);
+              setGiftDialogOpen(true);
               return;
             }
             onSubmit(data);
