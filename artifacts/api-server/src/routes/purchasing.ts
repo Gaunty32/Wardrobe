@@ -17,22 +17,38 @@ const router: IRouter = Router();
 // ─── Rescan: restore any requirements lost due to PO deletion bugs ────────────
 
 router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
-  // Full re-evaluation of ALL order items from active orders that are not
-  // already covered by a live draft or ordered PO.  This handles two cases:
-  //   1. Items that were accidentally cleared (purchaseRequired=false) when a PO
-  //      was deleted — they get correctly restored with stock-netted quantities.
-  //   2. Items already in requirements (purchaseRequired=true) whose
-  //      purchaseQuantity is wrong (e.g. set to full qty without stock netting).
+  // Full re-evaluation of ALL order items from active orders not already covered
+  // by a live draft or ordered PO.
   //
-  // For each eligible item we compute:
-  //   shortfall = max(0, quantity - available_stock)
-  // and update purchaseRequired / purchaseQuantity accordingly, also deducting
-  // allocated stock from the products table exactly as order creation does.
+  // Stock is matched at colour+size granularity:
+  //   available = variant stock for (product, colour, size), or product stock
+  //               for plain products that have no variants at all.
+  //   shortfall = max(0, quantity - available)
+  //
+  // Idempotency: before allocating we "credit back" any stock previously
+  // allocated to each candidate item, so the pool always starts from the true
+  // unallocated total regardless of how many times rescan has run.
 
   const candidateRows = await db.execute(sql`
     SELECT oi.id, oi.product_id, oi.quantity, oi.purchase_required,
-           oi.purchase_quantity,
-           p.stock_quantity, p.supplier_id,
+           oi.purchase_quantity, oi.colour, oi.size,
+           -- Variant-level stock when a matching variant exists;
+           -- product-level stock only for plain products with no variants at all.
+           COALESCE(
+             (SELECT pv.stock_quantity
+              FROM product_variants pv
+              WHERE pv.product_id = oi.product_id
+                AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+                AND (pv.size   IS NOT DISTINCT FROM oi.size)
+              LIMIT 1),
+             CASE WHEN NOT EXISTS (
+                    SELECT 1 FROM product_variants pv WHERE pv.product_id = oi.product_id
+                  )
+                  THEN p.stock_quantity
+                  ELSE 0
+             END
+           ) AS available_stock,
+           p.supplier_id,
            s.name AS supplier_name, s.email AS supplier_email
     FROM order_items oi
     INNER JOIN orders o ON oi.order_id = o.id
@@ -61,7 +77,8 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
   const candidates = candidateRows.rows as Array<{
     id: number; product_id: number; quantity: number;
     purchase_required: boolean; purchase_quantity: number | null;
-    stock_quantity: number | null;
+    colour: string | null; size: string | null;
+    available_stock: number | null;
     supplier_id: number | null; supplier_name: string | null; supplier_email: string | null;
   }>;
 
@@ -70,60 +87,58 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     return;
   }
 
-  // Build a mutable stock pool per product from the current DB value.
-  // Items already correctly flagged as needing purchasing (purchaseRequired=true
-  // with a sensible purchaseQuantity) have presumably already had their stock
-  // deducted at order-creation time — we don't want to double-deduct.
-  // Items with purchaseRequired=false and purchaseQuantity=null are ones that
-  // were cleared WITHOUT proper stock deduction, so we DO need to allocate
-  // stock against them.
-  // Items with purchaseRequired=true but purchaseQuantity = full quantity (wrong)
-  // need to be re-evaluated: reset their stock deduction and recompute.
-  //
-  // Strategy: treat all candidates uniformly.  First, "return" the stock that
-  // was prematurely deducted by the naive rescan (items where purchaseRequired=true
-  // but purchaseQuantity equals their full quantity — indicating no stock netting
-  // occurred).  Then run the proper stock-netted allocation pass.
-  const stockPool = new Map<number, number>();
+  // Key: "productId|colour|size" — stock pool per variant (or per plain product)
+  const variantKey = (productId: number, colour: string | null, size: string | null) =>
+    `${productId}|${colour ?? ""}|${size ?? ""}`;
+
+  // Initialise pool from current DB stock
+  const stockPool = new Map<string, number>();
   for (const row of candidates) {
-    if (!stockPool.has(row.product_id)) {
-      stockPool.set(row.product_id, row.stock_quantity ?? 0);
+    const k = variantKey(row.product_id, row.colour, row.size);
+    if (!stockPool.has(k)) {
+      stockPool.set(k, Number(row.available_stock) || 0);
     }
   }
 
-  // Return stock that was set aside for items whose purchaseQuantity = full qty
-  // (these were likely set by the naive rescan and never had stock deducted properly).
-  // We identify them as: purchaseRequired=true AND purchaseQuantity = quantity.
+  // Credit back stock previously allocated to each candidate so the pool
+  // starts from the true unallocated total (makes the scan idempotent).
   for (const row of candidates) {
-    if (row.purchase_required && row.purchase_quantity === row.quantity) {
-      // This looks like a naively-restored requirement — credit the stock back
-      // so the proper allocation pass below can re-allocate correctly.
-      // (Items where stock truly covers nothing will end up with the same result.)
-      // We intentionally do NOT return stock for items where purchaseQuantity <
-      // quantity, because those were correctly set (stock was already netted).
+    const k = variantKey(row.product_id, row.colour, row.size);
+    // Previously allocated = quantity − purchaseQuantity (when purchaseRequired)
+    //                      = quantity                    (when fully covered, purchaseRequired=false)
+    let prevAllocated = 0;
+    if (!row.purchase_required && row.purchase_quantity === null) {
+      prevAllocated = row.quantity; // was fully covered by stock
+    } else if (row.purchase_required && row.purchase_quantity !== null && row.purchase_quantity < row.quantity) {
+      prevAllocated = row.quantity - row.purchase_quantity; // partially covered
     }
-    // Note: stock pool starts from current DB value (p.stock_quantity), which
-    // already reflects deductions from properly-created orders. The naive rescan
-    // did NOT deduct stock, so we don't need to credit anything back — the pool
-    // is already correct. We just run the allocation pass fresh.
+    if (prevAllocated > 0) {
+      stockPool.set(k, (stockPool.get(k) ?? 0) + prevAllocated);
+    }
   }
 
   let restored = 0;
-  const stockConsumed = new Map<number, number>(); // how much we allocated per product
+  // Track how much to deduct per variant key after allocation
+  const toDeduct = new Map<string, { productId: number; colour: string | null; size: string | null; amount: number }>();
 
   for (const row of candidates) {
-    const available = stockPool.get(row.product_id) ?? 0;
+    const k = variantKey(row.product_id, row.colour, row.size);
+    const available = stockPool.get(k) ?? 0;
     const qty = row.quantity ?? 0;
     const allocated = Math.min(available, qty);
     const shortfall = qty - allocated;
 
-    stockPool.set(row.product_id, available - allocated);
-    stockConsumed.set(row.product_id, (stockConsumed.get(row.product_id) ?? 0) + allocated);
+    stockPool.set(k, available - allocated);
+
+    if (allocated > 0) {
+      const entry = toDeduct.get(k);
+      if (entry) entry.amount += allocated;
+      else toDeduct.set(k, { productId: row.product_id, colour: row.colour, size: row.size, amount: allocated });
+    }
 
     const newPurchaseRequired = shortfall > 0;
     const newPurchaseQuantity = shortfall > 0 ? shortfall : null;
 
-    // Only write if something changed
     const unchanged =
       row.purchase_required === newPurchaseRequired &&
       (row.purchase_quantity ?? null) === newPurchaseQuantity;
@@ -141,17 +156,35 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     }
   }
 
-  // Persist reduced stock quantities to the products table
-  for (const [productId, consumed] of stockConsumed.entries()) {
-    if (consumed > 0) {
-      const originalRow = candidates.find(r => r.product_id === productId);
-      const original = originalRow?.stock_quantity ?? 0;
-      const newStock = Math.max(0, original - consumed);
-      if (newStock !== original) {
-        await db.update(productsTable)
-          .set({ stockQuantity: newStock })
-          .where(eq(productsTable.id, productId));
-      }
+  // Persist deductions: update variant stock (and roll up to product), or plain product stock
+  for (const [, { productId, colour, size, amount }] of toDeduct.entries()) {
+    if (amount <= 0) continue;
+    if (colour !== null || size !== null) {
+      // Variant-level deduction
+      await db.execute(sql`
+        UPDATE product_variants
+        SET stock_quantity = GREATEST(0, stock_quantity - ${amount})
+        WHERE product_id = ${productId}
+          AND (colour IS NOT DISTINCT FROM ${colour})
+          AND (size   IS NOT DISTINCT FROM ${size})
+      `);
+      // Roll up total to parent product
+      await db.execute(sql`
+        UPDATE products
+        SET stock_quantity = (
+          SELECT COALESCE(SUM(stock_quantity), 0)
+          FROM product_variants
+          WHERE product_id = ${productId}
+        )
+        WHERE id = ${productId}
+      `);
+    } else {
+      // Plain product — deduct directly
+      await db.execute(sql`
+        UPDATE products
+        SET stock_quantity = GREATEST(0, stock_quantity - ${amount})
+        WHERE id = ${productId}
+      `);
     }
   }
 
