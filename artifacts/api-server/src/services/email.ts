@@ -688,15 +688,16 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       doc.font("Helvetica").fontSize(7.5).fillColor("#374151").text(shipLabel, margin, y, { width: 250 });
       if (order.shippingMethod === "free_local") {
         y += 11;
-        doc.font("Helvetica").fontSize(7).fillColor("#4b5563").text(
-          "As you are local to us we offer free delivery to your postcode on a Tuesday and a Friday. We will let you know on the morning of your delivery and you can expect to see Tim with your order before lunchtime!",
-          margin, y, { width: 280 }
-        );
+        const freeLocalNote = "As you are local to us we offer free delivery to your postcode on a Tuesday and a Friday. We will let you know on the morning of your delivery and you can expect to see Tim with your order before lunchtime!";
+        doc.font("Helvetica").fontSize(7).fillColor("#4b5563").text(freeLocalNote, margin, y, { width: 280 });
+        y += doc.heightOfString(freeLocalNote, { width: 280, fontSize: 7 });
+      } else {
+        y += 11;
       }
     }
 
     if (order.deliveryAddress && !isCollection) {
-      y += (shipLabel ? 14 : 10);
+      y += (shipLabel ? 10 : 10);
       doc.fillColor("#555555").fontSize(7.5).font("Helvetica-Bold").text("Delivery Address:", margin, y);
       y += 10;
       doc.font("Helvetica").fontSize(7.5).fillColor("#374151").text(order.deliveryAddress, margin, y, { width: 220 });
