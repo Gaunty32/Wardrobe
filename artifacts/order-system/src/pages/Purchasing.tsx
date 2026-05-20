@@ -146,10 +146,10 @@ function sortSizes(sizes: string[]): string[] {
 
 function buildPOMatrix(items: POItem[]) {
   const groupKeys: string[] = [];
-  const groups = new Map<string, { code: string | null; productName: string; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>>; rowItemIds: Map<string, number[]>; cellItemId: Map<string, Map<string, number>> }>();
+  const groups = new Map<string, { code: string | null; productName: string; productSku: string | null; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>>; rowItemIds: Map<string, number[]>; cellItemId: Map<string, Map<string, number>> }>();
   for (const item of items) {
     const gk = item.supplierCode ?? item.productName;
-    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.productName, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map() }); }
+    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map() }); }
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
     if (!g.colours.includes(c)) g.colours.push(c);
@@ -171,7 +171,7 @@ function buildPOMatrix(items: POItem[]) {
 function buildReqMatrix(items: PurchaseRequirement[]) {
   const groupKeys: string[] = [];
   const groups = new Map<string, {
-    code: string | null; productName: string; colours: string[]; sizes: string[];
+    code: string | null; productName: string; productSku: string | null; colours: string[]; sizes: string[];
     qty: Map<string, Map<string, { total: number; cellKey: string }>>;
     rowItemIds: Map<string, number[]>;
   }>();
@@ -179,7 +179,7 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
     const effectiveCode = item.supplierCode ?? item.secondarySupplierCode ?? null;
     const gk = effectiveCode ?? item.canonicalProductName ?? item.productName;
     if (!groups.has(gk)) groupKeys.push(gk);
-    if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() });
+    if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() });
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
     const cellKey = [item.productName, item.colour ?? "", item.size ?? "", effectiveCode ?? ""].join("|");
@@ -229,7 +229,12 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
                 <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
                   <TableCell className="font-mono font-bold text-xs text-indigo-700">
                     <div>{g.code ?? "—"}</div>
-                    {ci === 0 && <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>}
+                    {ci === 0 && (
+                      <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
+                    )}
+                    {ci === 0 && g.productSku && (
+                      <div className="text-xs font-mono text-indigo-400 truncate max-w-[90px]">{g.productSku}</div>
+                    )}
                   </TableCell>
                   <TableCell className="font-medium text-sm">{colour}</TableCell>
                   {allSizes.map((sz) => {

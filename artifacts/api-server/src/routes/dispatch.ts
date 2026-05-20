@@ -3,7 +3,7 @@ import { eq, inArray, and, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
-  customerEmployeesTable, customerDeliveryAddressesTable, customersTable,
+  customerEmployeesTable, customerDeliveryAddressesTable, customersTable, productsTable,
 } from "@workspace/db";
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
 import { logOrderAction, getActor } from "../services/orderLog";
@@ -34,10 +34,12 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
     ? await db.select().from(worksheetItemsTable).where(inArray(worksheetItemsTable.worksheetId, wsIds))
     : [];
 
-  const orderItems = await db
-    .select()
+  const orderItemRows = await db
+    .select({ item: orderItemsTable, productSku: productsTable.sku })
     .from(orderItemsTable)
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(inArray(orderItemsTable.orderId, orderIds));
+  const orderItems = orderItemRows.map(r => ({ ...r.item, productSku: r.productSku ?? null }));
 
   const employeeIds = [...new Set(orderItems.map((i) => i.recipientEmployeeId).filter((id): id is number => id != null))];
   const employees = employeeIds.length > 0

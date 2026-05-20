@@ -1429,7 +1429,14 @@ export default function OrderDetail() {
                       {filteredItems.map((orderItem) => (
                         <TableRow key={orderItem.id}>
                           <TableCell>
-                            <p className="font-medium text-foreground">{orderItem.productName}</p>
+                            <p className="font-medium text-foreground">
+                              {orderItem.productName}
+                              {(orderItem as { productSku?: string | null }).productSku && (
+                                <span className="ml-1.5 text-xs font-mono text-muted-foreground font-normal">
+                                  {(orderItem as { productSku?: string | null }).productSku}
+                                </span>
+                              )}
+                            </p>
                             <div className="flex flex-wrap gap-1 mt-1 group/badges">
                               {orderItem.colour && (
                                 <Badge variant="outline" className="text-xs gap-1 font-normal">

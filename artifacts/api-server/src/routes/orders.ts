@@ -305,6 +305,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     .select({
       item: orderItemsTable,
       catalogueProductName: productsTable.name,
+      productSku: productsTable.sku,
     })
     .from(orderItemsTable)
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
@@ -332,9 +333,10 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     totalAmount: numericToFloat(order.totalAmount),
     deliveryAddress,
     customerMainAddress,
-    items: itemRows.map(({ item, catalogueProductName }) => ({
+    items: itemRows.map(({ item, catalogueProductName, productSku }) => ({
       ...item,
       productName: catalogueProductName ?? item.productName,
+      productSku: productSku ?? null,
       unitPrice: numericToFloat(item.unitPrice),
       lineTotal: numericToFloat(item.lineTotal),
       vatRate: parseFloat(String(item.vatRate ?? 0.20)),
