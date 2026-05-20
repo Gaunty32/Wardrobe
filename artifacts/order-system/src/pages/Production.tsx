@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
@@ -887,6 +887,33 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
   const totalUnits = order.items.reduce((s, i) => s + i.purchaseQuantity, 0);
   const suppliers = [...new Set(order.items.map((i) => i.supplierName).filter(Boolean))];
 
+  // Build colour × size matrices, grouped by product name
+  const matrices = useMemo(() => {
+    type Matrix = {
+      productName: string;
+      supplierName: string | null;
+      colours: string[];
+      sizes: string[];
+      cells: Map<string, PendingItem>; // key: "colour||size"
+    };
+    const map = new Map<string, Matrix>();
+    for (const item of order.items) {
+      if (!map.has(item.productName)) {
+        map.set(item.productName, { productName: item.productName, supplierName: item.supplierName, colours: [], sizes: [], cells: new Map() });
+      }
+      const m = map.get(item.productName)!;
+      const colour = item.colour ?? "";
+      const size = item.size ?? "";
+      if (!m.colours.includes(colour)) m.colours.push(colour);
+      if (!m.sizes.includes(size)) m.sizes.push(size);
+      m.cells.set(`${colour}||${size}`, item);
+    }
+    for (const m of map.values()) {
+      m.sizes = sortSizes(m.sizes);
+    }
+    return [...map.values()];
+  }, [order.items]);
+
   return (
     <div className="rounded-xl border border-amber-200 bg-amber-50/50 shadow-sm overflow-hidden">
       <div
@@ -927,48 +954,101 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
       </div>
 
       {expanded && (
-        <div className="border-t border-amber-200 px-5 py-4">
-          <div className="space-y-2">
-            {order.items.map((item) => (
-              <div key={item.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${item.poNumber ? "bg-green-50/60 border-green-200" : "bg-white/70 border-amber-100"}`}>
-                <Package className={`w-4 h-4 flex-shrink-0 ${item.poNumber ? "text-green-600" : "text-amber-500"}`} />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm">{item.productName}</div>
-                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                    {item.colour && <Badge variant="outline" className="text-xs py-0">{item.colour}</Badge>}
-                    {item.size && <Badge variant="outline" className="text-xs py-0">{item.size}</Badge>}
-                    {item.supplierName && (
-                      <span className="text-xs text-muted-foreground">Supplier: {item.supplierName}</span>
-                    )}
-                    {item.poNumber && item.poStatus === "ordered" && (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 border border-green-200 rounded px-1.5 py-0.5">
-                        <CheckCircle2 className="w-3 h-3" /> Ordered · {item.poNumber}
-                      </span>
-                    )}
-                    {item.poNumber && item.poStatus === "draft" && (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
-                        <Clock className="w-3 h-3" /> On Draft PO · {item.poNumber}
-                      </span>
-                    )}
-                    {!item.poNumber && (
-                      <span className="inline-flex items-center gap-1 text-xs text-amber-600">
-                        <AlertCircle className="w-3 h-3" /> Not yet ordered
-                      </span>
-                    )}
-                    {item.estimatedDelivery && (
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        <Calendar className="w-3 h-3" /> Expected {new Date(item.estimatedDelivery).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                      </span>
-                    )}
-                  </div>
+        <div className="border-t border-amber-200 px-5 py-4 space-y-4">
+          {matrices.map((m) => {
+            const hasSizes = m.sizes.some(s => s !== "");
+            const hasColours = m.colours.some(c => c !== "");
+            return (
+              <div key={m.productName}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-foreground">{m.productName}</span>
+                  {m.supplierName && (
+                    <span className="text-xs text-muted-foreground">{m.supplierName}</span>
+                  )}
                 </div>
-                <Badge className={`text-sm font-semibold flex-shrink-0 ${item.poNumber ? "bg-green-100 text-green-800 border-green-200" : "bg-amber-100 text-amber-800 border-amber-200"}`}>
-                  × {item.purchaseQuantity}
-                </Badge>
+                <div className="overflow-x-auto rounded-lg border border-amber-100">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-amber-50/80 border-b border-amber-100">
+                        {hasColours && <th className="text-left px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">Colour</th>}
+                        {hasSizes
+                          ? m.sizes.map(size => (
+                              <th key={size} className="text-center px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">{size || "—"}</th>
+                            ))
+                          : <th className="text-center px-3 py-2 font-medium text-muted-foreground">Qty</th>
+                        }
+                        <th className="text-center px-3 py-2 font-medium text-muted-foreground">Total</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {m.colours.map((colour, ci) => {
+                        const rowItems = (hasSizes ? m.sizes : [""]).map(size => m.cells.get(`${colour}||${size}`));
+                        const existing = rowItems.filter(Boolean) as PendingItem[];
+                        const rowTotal = existing.reduce((s, it) => s + it.purchaseQuantity, 0);
+                        const allOrdered = existing.length > 0 && existing.every(it => it.poStatus === "ordered");
+                        const allDraft = existing.length > 0 && existing.every(it => it.poStatus === "draft");
+                        const anyOnPo = existing.some(it => !!it.poNumber);
+                        const delivery = existing.find(it => it.estimatedDelivery)?.estimatedDelivery;
+                        return (
+                          <tr key={colour} className={`border-b border-amber-50 last:border-0 ${ci % 2 === 0 ? "bg-white/60" : "bg-amber-50/20"}`}>
+                            {hasColours && (
+                              <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{colour || "—"}</td>
+                            )}
+                            {(hasSizes ? m.sizes : [""]).map(size => {
+                              const item = m.cells.get(`${colour}||${size}`);
+                              if (!item) return <td key={size} className="text-center px-3 py-2 text-muted-foreground/30 select-none">—</td>;
+                              const cellCls = item.poStatus === "ordered"
+                                ? "bg-green-100 text-green-800"
+                                : item.poStatus === "draft"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-amber-100 text-amber-800";
+                              return (
+                                <td key={size} className="text-center px-2 py-1.5">
+                                  <span className={`inline-block min-w-[1.75rem] rounded px-1.5 py-0.5 font-semibold ${cellCls}`}>
+                                    {item.purchaseQuantity}
+                                  </span>
+                                </td>
+                              );
+                            })}
+                            <td className="text-center px-3 py-2 font-semibold text-foreground">{rowTotal}</td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <div className="flex flex-col gap-0.5">
+                                {allOrdered ? (
+                                  <span className="inline-flex items-center gap-1 text-green-700">
+                                    <CheckCircle2 className="w-3 h-3" /> Ordered
+                                  </span>
+                                ) : allDraft ? (
+                                  <span className="inline-flex items-center gap-1 text-blue-700">
+                                    <Clock className="w-3 h-3" /> Draft PO
+                                  </span>
+                                ) : anyOnPo ? (
+                                  <span className="inline-flex items-center gap-1 text-amber-700">
+                                    <AlertCircle className="w-3 h-3" /> Partial
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-amber-600">
+                                    <AlertCircle className="w-3 h-3" /> Not yet ordered
+                                  </span>
+                                )}
+                                {delivery && (
+                                  <span className="inline-flex items-center gap-1 text-muted-foreground">
+                                    <Calendar className="w-3 h-3" />
+                                    {new Date(delivery).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            ))}
-          </div>
-          <p className="text-xs text-amber-700 mt-3 flex items-center gap-1.5">
+            );
+          })}
+          <p className="text-xs text-amber-700 flex items-center gap-1.5 pt-1">
             <ShoppingCart className="w-3.5 h-3.5" />
             Stock must be received in Purchasing before this order can move to production.
           </p>
