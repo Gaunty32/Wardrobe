@@ -430,6 +430,135 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
   win.focus();
 }
 
+// ─── Print Per-Customer Picking Slips ─────────────────────────────────────────
+
+function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: PickingOrder[]) {
+  const dateStr = new Date().toLocaleDateString("en-GB");
+
+  const thStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:center;white-space:nowrap`;
+  const thLeftStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:left`;
+  const tdStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:11px`;
+  const tdLeftStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px`;
+
+  const orderIds = Array.from(new Set(selectedItems.map(i => i.orderId)));
+
+  const slipPages = orderIds.map((orderId, pageIdx) => {
+    const orderItems = selectedItems.filter(i => i.orderId === orderId);
+    const order = allOrders.find(o => o.orderId === orderId);
+    const dueStr = order?.requiredDate
+      ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : null;
+
+    type RowKey = { productName: string; productSku: string | null; supplierCode: string | null; supplierName: string | null; colour: string | null; finishName: string | null };
+    const rowMap = new Map<string, { meta: RowKey; sizes: Map<string, number> }>();
+    const allSizes = new Set<string>();
+
+    for (const item of orderItems) {
+      const key = [item.productName, item.productSku ?? "", item.colour ?? "", item.finishName ?? "Plain"].join("||");
+      if (!rowMap.has(key)) {
+        rowMap.set(key, {
+          meta: { productName: item.productName, productSku: item.productSku, supplierCode: item.supplierCode, supplierName: item.supplierName, colour: item.colour, finishName: item.finishName },
+          sizes: new Map(),
+        });
+      }
+      const sizeKey = item.size ?? "—";
+      allSizes.add(sizeKey);
+      const entry = rowMap.get(key)!;
+      entry.sizes.set(sizeKey, (entry.sizes.get(sizeKey) ?? 0) + item.quantity);
+    }
+
+    const sortedSizes = sortSizes(Array.from(allSizes));
+    const rows = Array.from(rowMap.values());
+    const totalQty = orderItems.reduce((s, i) => s + i.quantity, 0);
+
+    const sizeHeaders = sortedSizes.map(s => `<th style="${thStyle}">${s}</th>`).join("");
+    const tableRows = rows.map(({ meta, sizes }) => {
+      const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+      const sizeCells = sortedSizes.map(s => {
+        const qty = sizes.get(s) ?? 0;
+        return `<td style="${tdStyle}${qty > 0 ? ";font-weight:bold" : ";color:#bbb"}">${qty > 0 ? qty : "—"}</td>`;
+      }).join("");
+      return `<tr>
+        <td style="${tdLeftStyle}">
+          ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:11px">${meta.supplierCode}</span> ` : ""}
+          ${meta.productSku ? `<span style="font-size:10px;color:#2563eb">${meta.productSku}</span><br>` : ""}
+          ${meta.supplierName ? `<span style="font-size:10px;color:#888">${meta.supplierName}</span><br>` : ""}
+          <span style="font-size:11px">${meta.productName}</span>
+        </td>
+        <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
+        <td style="${tdLeftStyle}">${meta.finishName ?? "Plain"}</td>
+        ${sizeCells}
+        <td style="${tdStyle};font-weight:bold;background:#f9fafb">${rowTotal}</td>
+        <td style="${tdStyle}"><span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
+      </tr>`;
+    }).join("");
+
+    const isLast = pageIdx === orderIds.length - 1;
+    return `
+      <div class="slip${isLast ? "" : " page-break"}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm">
+          <div>
+            ${order?.customerName ? `<div style="font-size:20px;font-weight:900;color:#1e3a5f">${order.customerName}</div>` : ""}
+            <div style="font-size:14px;font-weight:700;color:#1e3a5f;letter-spacing:0.5px;margin-top:1mm">PICKING SLIP</div>
+            <div style="font-size:11px;color:#555;margin-top:1mm">
+              ${order?.orderNumber ?? ""}${dueStr ? ` &nbsp;·&nbsp; Due: ${dueStr}` : ""}
+              &nbsp;·&nbsp; ${rows.length} style${rows.length !== 1 ? "s" : ""} &nbsp;·&nbsp; Total qty ${totalQty}
+            </div>
+          </div>
+          <div style="text-align:right"><div style="font-weight:bold">Select Branding Solutions</div><div style="color:#555">Printed: ${dateStr}</div></div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="${thLeftStyle}">Product / Style</th>
+            <th style="${thLeftStyle}">Colour</th>
+            <th style="${thLeftStyle}">Finish</th>
+            ${sizeHeaders}
+            <th style="${thStyle};background:#1e3a5f">Total</th>
+            <th style="${thStyle}">Picked ✓</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <div style="margin-top:8mm;display:flex;gap:30px;border-top:1px solid #e5e7eb;padding-top:4mm">
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Picked by: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Date picked: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Checked by: ___________________________</div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><title>Per-Customer Picking Slips</title>
+    <style>
+      *{box-sizing:border-box}
+      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
+      #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+      #toolbar span{flex:1;font-size:14px;font-weight:600}
+      #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+      #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
+      #page{display:flex;flex-direction:column;align-items:center;padding:24px 0 40px;gap:24px}
+      .slip{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:297mm}
+      @media print{
+        #toolbar{display:none}body{background:white}#page{padding:0;gap:0}
+        .slip{box-shadow:none;padding:12mm 15mm}
+        .page-break{page-break-after:always}
+        @page{size:A3 landscape;margin:0}
+      }
+    </style>
+  </head><body>
+    <div id="toolbar">
+      <span>📋 Per-Customer Picking Slips — ${orderIds.length} customer${orderIds.length !== 1 ? "s" : ""}</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print all ${orderIds.length}</button>
+      <button id="btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+    <div id="page">${slipPages}</div>
+  </body></html>`;
+
+  const win2 = window.open("", "_blank", "width=1100,height=800");
+  if (!win2) return;
+  win2.document.write(html);
+  win2.document.close();
+  win2.focus();
+}
+
 function PrintWorksheet({ ws }: { ws: Worksheet }) {
   const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
@@ -1398,10 +1527,20 @@ function PickingListTab({ filters }: { filters: Filters }) {
                   variant="outline"
                   className="gap-1.5 text-xs border-purple-400 text-purple-700 hover:bg-purple-50"
                   onClick={() => printCombinedPickingSlip(checkedItems, rawPickingOrders)}
-                  title="Print a combined picking slip for selected items"
+                  title="Print a single combined picking slip for all selected items"
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  Print Slip ({checked.size})
+                  Combined Slip
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs border-indigo-400 text-indigo-700 hover:bg-indigo-50"
+                  onClick={() => printPerCustomerPickingSlips(checkedItems, rawPickingOrders)}
+                  title="Print one picking slip per customer/order"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Per Customer ({new Set(checkedItems.map(i => i.orderId)).size})
                 </Button>
                 <Button
                   size="sm"
