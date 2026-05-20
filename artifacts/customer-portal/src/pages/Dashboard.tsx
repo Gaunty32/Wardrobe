@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import selectExtraLogo from "@assets/image_1779217290966.png";
+import selectExtraLogo from "@assets/Select_Branding_Solutions_Extra_1779270441088.jpg";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import PortalLayout from "@/components/Layout";
@@ -692,7 +692,7 @@ export default function Dashboard() {
                   </p>
                   <div className="mt-2.5 flex items-center gap-2 flex-wrap">
                     <Button size="sm" className="h-7 text-xs px-3 bg-amber-600 hover:bg-amber-700 gap-1" onClick={() => setLocation("/orders/new")}>
-                      Place an order <ArrowRight className="w-3 h-3" />
+                      Add to basket <ShoppingBag className="w-3 h-3" />
                     </Button>
                     {selectExtraData.offer.productUrl && (
                       <a

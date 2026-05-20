@@ -1787,6 +1787,8 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const [attachments, setAttachments] = useState<Array<{ name: string; objectPath: string }>>([]);
   const [uploading, setUploading] = useState(false);
   const [wantsSelectExtra, setWantsSelectExtra] = useState(true);
+  const [giftReminderOpen, setGiftReminderOpen] = useState(false);
+  const pendingSubmitRef = useRef<Parameters<typeof onSubmit>[0] | null>(null);
 
   const { data: selectExtraData } = useQuery<{
     offer: { id: number; productName: string; description: string | null; productUrl: string | null; quantity: number; minSpend: number; title: string } | null;
@@ -1946,6 +1948,40 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                     )}
                   </React.Fragment>
                 ))}
+                {/* ── Select Extra gift row ─────────────────────────────────────── */}
+                {wantsSelectExtra && selectExtraOffer && !alreadyClaimed && (
+                  <TableRow className={qualifiesForExtra ? "bg-amber-50/60 hover:bg-amber-50/80" : "bg-muted/10 hover:bg-muted/20"}>
+                    <TableCell className="font-medium text-sm align-top">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Gift className={`w-3.5 h-3.5 shrink-0 ${qualifiesForExtra ? "text-amber-600" : "text-muted-foreground"}`} />
+                        <span>{selectExtraOffer.productName}</span>
+                        {qualifiesForExtra
+                          ? <span className="inline-flex items-center rounded border border-green-200 bg-green-100 px-1.5 py-0 text-[10px] font-semibold text-green-800">FREE</span>
+                          : <span className="inline-flex items-center rounded border bg-muted px-1.5 py-0 text-[10px] text-muted-foreground">need £{Math.max(0, selectExtraOffer.minSpend - itemsTotal).toFixed(2)} more</span>
+                        }
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">Select Extra gift</div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground align-top">—</TableCell>
+                    <TableCell className="text-sm text-muted-foreground align-top">Free gift</TableCell>
+                    <TableCell className="text-right align-top text-sm">{selectExtraOffer.quantity}</TableCell>
+                    <TableCell className="text-right align-top text-sm">
+                      {qualifiesForExtra
+                        ? <span className="text-green-700 font-semibold">£0.00</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="text-right align-top text-sm font-medium">
+                      {qualifiesForExtra
+                        ? <span className="text-green-700 font-semibold">£0.00</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <button onClick={() => setWantsSelectExtra(false)} className="text-muted-foreground hover:text-destructive transition-colors" title="Remove gift">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </div>
@@ -1958,6 +1994,12 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
               <span className="text-muted-foreground text-sm">Items subtotal</span>
               <span className="text-sm font-medium w-20 text-right">{formatCurrency(itemsTotal)}</span>
             </div>
+            {qualifiesForExtra && wantsSelectExtra && (
+              <div className="flex justify-end gap-6">
+                <span className="text-muted-foreground text-sm">Select Extra gift</span>
+                <span className="text-sm font-medium w-20 text-right text-green-700">FREE</span>
+              </div>
+            )}
             {shippingCost > 0 && (
               <div className="flex justify-end gap-6">
                 <span className="text-muted-foreground text-sm">{selectedShipping?.label}</span>
@@ -2138,67 +2180,84 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
         </div>
       )}
 
-      {/* ── Select Extra offer card ──────────────────────────────────────── */}
-      {selectExtraOffer && !alreadyClaimed && (
-        <div className={`mt-6 rounded-xl border px-5 py-4 ${qualifiesForExtra ? "bg-gradient-to-r from-amber-50 via-orange-50 to-transparent border-amber-200" : "bg-muted/40 border-border"}`}>
-          <div className="flex items-start gap-3">
-            <div className={`mt-0.5 w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${qualifiesForExtra ? "bg-amber-100" : "bg-muted"}`}>
-              <Gift className={`w-4 h-4 ${qualifiesForExtra ? "text-amber-600" : "text-muted-foreground"}`} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                <span className={`text-xs font-bold uppercase tracking-wide ${qualifiesForExtra ? "text-amber-600" : "text-muted-foreground"}`}>Select Extra</span>
-                <span className="text-xs text-muted-foreground">— {selectExtraOffer.title}</span>
-              </div>
-              {qualifiesForExtra ? (
-                <>
-                  <p className="text-sm font-semibold text-amber-900">
-                    You qualify for a free {selectExtraOffer.productName}!
-                  </p>
-                  <p className="text-xs text-amber-800 mt-0.5">{selectExtraOffer.description ?? `${selectExtraOffer.quantity}× included free with this order.`}</p>
-                  <label className="flex items-center gap-2 mt-2.5 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={wantsSelectExtra}
-                      onChange={e => setWantsSelectExtra(e.target.checked)}
-                      className="w-4 h-4 accent-amber-600 rounded"
-                    />
-                    <span className="text-sm text-amber-900 font-medium">Add free gift to this order</span>
-                  </label>
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Add{" "}
-                  <span className="font-medium">£{selectExtraOffer.minSpend.toFixed(0)}</span>
-                  {" "}or more (excl. VAT) to this order to claim {selectExtraOffer.productName} free.
-                  {itemsTotal > 0 && (
-                    <span className="ml-1 text-xs">(Current: £{itemsTotal.toFixed(2)} — need £{Math.max(0, selectExtraOffer.minSpend - itemsTotal).toFixed(2)} more)</span>
-                  )}
-                </p>
-              )}
-            </div>
-          </div>
+      {/* ── Select Extra: re-add dismissed gift / already-claimed notice ───── */}
+      {selectExtraOffer && !alreadyClaimed && !wantsSelectExtra && (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 px-4 py-3 flex items-center gap-3">
+          <Gift className="w-4 h-4 text-amber-500 shrink-0" />
+          <p className="text-sm text-amber-800 flex-1">
+            You removed the free gift.{" "}
+            {qualifiesForExtra
+              ? <span className="font-medium">You qualify! </span>
+              : <span>Spend £{selectExtraOffer.minSpend.toFixed(0)}+ to unlock. </span>}
+          </p>
+          <button
+            onClick={() => setWantsSelectExtra(true)}
+            className="text-xs text-amber-700 underline underline-offset-2 hover:text-amber-900 shrink-0"
+          >
+            Re-add
+          </button>
         </div>
       )}
       {selectExtraOffer && alreadyClaimed && (
-        <div className="mt-6 rounded-xl border border-green-200 bg-green-50 px-5 py-3 flex items-center gap-2">
+        <div className="mt-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
           <p className="text-sm text-green-800">You've already claimed your Select Extra gift this month.</p>
         </div>
       )}
 
+      {/* ── Gift reminder dialog ─────────────────────────────────────────────── */}
+      <Dialog open={giftReminderOpen} onOpenChange={setGiftReminderOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Gift className="w-5 h-5 text-amber-500" /> Don't forget your free gift!
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            You qualify for a free <strong>{selectExtraOffer?.productName}</strong> with this order — at no extra cost. Would you like to add it?
+          </p>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" size="sm" onClick={() => {
+              setGiftReminderOpen(false);
+              if (pendingSubmitRef.current) onSubmit(pendingSubmitRef.current);
+              pendingSubmitRef.current = null;
+            }}>
+              No thanks
+            </Button>
+            <Button size="sm" className="bg-amber-600 hover:bg-amber-700" onClick={() => {
+              setWantsSelectExtra(true);
+              setGiftReminderOpen(false);
+              if (pendingSubmitRef.current) {
+                onSubmit({ ...pendingSubmitRef.current, claimSelectExtra: true });
+              }
+              pendingSubmitRef.current = null;
+            }}>
+              Yes, add my free gift!
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex flex-col gap-1 mt-6">
         <Button
-          onClick={() => onSubmit({
-            requiredDate,
-            notes,
-            shippingOption: shippingId,
-            shippingCost,
-            poNumber,
-            paymentMethodId: portalRole === "manager" && paymentChoice === "card" ? selectedPmId : null,
-            attachments,
-            claimSelectExtra: qualifiesForExtra && wantsSelectExtra,
-          })}
+          onClick={() => {
+            const data = {
+              requiredDate,
+              notes,
+              shippingOption: shippingId,
+              shippingCost,
+              poNumber,
+              paymentMethodId: portalRole === "manager" && paymentChoice === "card" ? selectedPmId : null,
+              attachments,
+              claimSelectExtra: qualifiesForExtra && wantsSelectExtra,
+            };
+            if (qualifiesForExtra && !wantsSelectExtra) {
+              pendingSubmitRef.current = data;
+              setGiftReminderOpen(true);
+              return;
+            }
+            onSubmit(data);
+          }}
           disabled={submitting || basket.length === 0 || !shippingId}
           className="w-full sm:w-auto"
         >
