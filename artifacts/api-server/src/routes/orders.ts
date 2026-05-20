@@ -986,12 +986,31 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       postcode: customersTable.postcode,
       logoUrl: customersTable.logoUrl,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
-    if (!toEmail) toEmail = customer?.email ?? undefined;
     contactFirstName = customer?.contactFirstName ?? null;
     customerAddress = customer?.address ?? null;
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
     customerLogoUrl = customer?.logoUrl ?? null;
+
+    if (!toEmail) {
+      // Prefer manager-role portal users' emails over the generic company email
+      const managerRows = await db.execute(sql`
+        SELECT email FROM customer_portal_users
+        WHERE customer_id = ${order.customerId}
+          AND portal_role IN ('manager', 'dept_manager')
+          AND status = 'active'
+          AND email IS NOT NULL
+        ORDER BY portal_role = 'manager' DESC, id ASC
+      `);
+      const managerEmails = (managerRows.rows as Array<{ email: string }>)
+        .map(r => r.email)
+        .filter(Boolean);
+      if (managerEmails.length > 0) {
+        toEmail = managerEmails.join(", ");
+      } else {
+        toEmail = customer?.email ?? undefined;
+      }
+    }
   }
   if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
 

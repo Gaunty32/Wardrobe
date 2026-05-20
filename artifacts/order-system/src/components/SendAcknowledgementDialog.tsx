@@ -236,13 +236,14 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
 
               {/* Email address */}
               <div className="grid gap-1.5">
-                <Label htmlFor="send-ack-email">Customer Email</Label>
+                <Label htmlFor="send-ack-email">Send To</Label>
                 <Input
                   id="send-ack-email"
-                  placeholder="customer@example.com"
+                  placeholder="manager@example.com"
                   value={emailTo}
                   onChange={e => setEmailTo(e.target.value)}
                 />
+                <p className="text-xs text-muted-foreground">Defaults to the customer's manager email(s). Separate multiple addresses with commas.</p>
               </div>
 
               {/* Preview */}
