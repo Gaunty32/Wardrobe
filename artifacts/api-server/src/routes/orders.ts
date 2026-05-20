@@ -164,6 +164,70 @@ router.get("/orders/weekly-stats", async (req, res): Promise<void> => {
   res.json(rows.rows);
 });
 
+router.get("/dashboard/profit-stats", async (_req, res): Promise<void> => {
+  const notCancelled = `o.status NOT IN ('cancelled', 'portal_draft')`;
+
+  const weekly = await db.execute(sql`
+    SELECT
+      date_trunc('week', o.order_date AT TIME ZONE 'UTC')::date AS week_start,
+      COUNT(DISTINCT o.id)::int AS order_count,
+      COALESCE(SUM(o.total_amount), 0)::float AS revenue,
+      COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+    FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN products p ON p.id = oi.product_id
+    WHERE o.order_date >= NOW() - INTERVAL '13 weeks'
+      AND o.status NOT IN ('cancelled', 'portal_draft')
+    GROUP BY week_start
+    ORDER BY week_start ASC
+  `);
+
+  const monthly = await db.execute(sql`
+    SELECT
+      date_trunc('month', o.order_date AT TIME ZONE 'UTC')::date AS month_start,
+      COUNT(DISTINCT o.id)::int AS order_count,
+      COALESCE(SUM(o.total_amount), 0)::float AS revenue,
+      COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+    FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN products p ON p.id = oi.product_id
+    WHERE o.order_date >= NOW() - INTERVAL '12 months'
+      AND o.status NOT IN ('cancelled', 'portal_draft')
+    GROUP BY month_start
+    ORDER BY month_start ASC
+  `);
+
+  const jobs = await db.execute(sql`
+    SELECT
+      o.id,
+      o.order_number,
+      o.customer_name,
+      o.order_date,
+      o.status,
+      COALESCE(o.total_amount, 0)::float AS revenue,
+      COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+    FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN products p ON p.id = oi.product_id
+    WHERE o.status NOT IN ('cancelled', 'portal_draft')
+    GROUP BY o.id, o.order_number, o.customer_name, o.order_date, o.status, o.total_amount
+    ORDER BY o.order_date DESC
+    LIMIT 25
+  `);
+
+  const enrich = (r: any) => ({
+    ...r,
+    gross_profit: (r.revenue ?? 0) - (r.cost ?? 0),
+    gp_margin: r.revenue > 0 ? (((r.revenue - r.cost) / r.revenue) * 100) : null,
+  });
+
+  res.json({
+    weekly: (weekly.rows as any[]).map(enrich),
+    monthly: (monthly.rows as any[]).map(enrich),
+    jobs: (jobs.rows as any[]).map(enrich),
+  });
+});
+
 router.post("/orders", async (req, res): Promise<void> => {
   const parsed = CreateOrderBodyFixed.safeParse(req.body);
   if (!parsed.success) {

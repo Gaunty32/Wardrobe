@@ -20,26 +20,15 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, TrendingUp, FileText, Pencil, Paperclip, StickyNote, GitMerge } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, FileText, Pencil, Paperclip, StickyNote, GitMerge } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from "recharts";
-
 const API_BASE = "/api";
 async function apiFetch(path: string, opts?: RequestInit) {
   const res = await fetch(`${API_BASE}${path}`, { ...opts, headers: { "Content-Type": "application/json", ...opts?.headers } });
   if (!res.ok) throw new Error(await res.text());
   if (res.status === 204) return null;
   return res.json();
-}
-
-interface WeeklyStat { week_start: string; order_count: number; total_value: number; }
-
-function formatWeekLabel(dateStr: string): string {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-AU", { day: "numeric", month: "short" });
 }
 
 function DueDateCell({ requiredDate }: { requiredDate: string | null | undefined }) {
@@ -61,37 +50,6 @@ function DueDateCell({ requiredDate }: { requiredDate: string | null | undefined
     </span>
   );
   return <span className="text-sm font-medium">{formatted}</span>;
-}
-
-function WeeklyWorm({ data }: { data: WeeklyStat[] }) {
-  if (!data.length) return (
-    <div className="h-24 flex items-center justify-center text-muted-foreground text-sm">No order data for the past 12 weeks</div>
-  );
-  const chartData = data.map((d) => ({ week: formatWeekLabel(d.week_start), value: d.total_value, count: d.order_count }));
-  return (
-    <ResponsiveContainer width="100%" height={100}>
-      <AreaChart data={chartData} margin={{ top: 5, right: 16, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="wormGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor="#1e3a5f" stopOpacity={0.3} />
-            <stop offset="95%" stopColor="#1e3a5f" stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-        <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#888" }} axisLine={false} tickLine={false} />
-        <YAxis
-          tickFormatter={(v) => v === 0 ? "" : `£${(v / 1000).toFixed(0)}k`}
-          tick={{ fontSize: 10, fill: "#888" }} axisLine={false} tickLine={false} width={36}
-        />
-        <Tooltip
-          formatter={(v: number) => [formatCurrency(v), "Order value"]}
-          labelFormatter={(l) => `Week of ${l}`}
-          contentStyle={{ fontSize: 12, borderRadius: 6, border: "1px solid #e5e7eb" }}
-        />
-        <Area type="monotone" dataKey="value" stroke="#1e3a5f" strokeWidth={2} fill="url(#wormGrad)" dot={{ r: 3, fill: "#1e3a5f" }} />
-      </AreaChart>
-    </ResponsiveContainer>
-  );
 }
 
 function QuoteHoldingPanel() {
@@ -412,11 +370,6 @@ export default function Orders() {
 
   const { data: allOrders = [], isLoading } = useListOrders({ status: statusFilter === "all" ? undefined : statusFilter });
   const { data: customers = [] } = useListCustomers();
-  const { data: weeklyStats = [] } = useQuery<WeeklyStat[]>({
-    queryKey: ["orders-weekly-stats"],
-    queryFn: () => apiFetch("/orders/weekly-stats"),
-    refetchInterval: 60000,
-  });
   const createMutation = useCreateOrder();
 
   const selectedCustomer = customers.find(c => c.id.toString() === selectedCustomerId);
@@ -596,18 +549,6 @@ export default function Orders() {
                 {!customerSearch && <Button onClick={openCreate} variant="outline" className="mt-6">Create First Order</Button>}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Weekly worm */}
-        <Card className="shadow-sm border-border/50">
-          <CardHeader className="py-3 px-5 border-b border-border/40 bg-muted/10 flex flex-row items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-primary" />
-            <span className="font-semibold text-sm">Weekly Order Value</span>
-            <span className="text-xs text-muted-foreground ml-1">— rolling 12 weeks</span>
-          </CardHeader>
-          <CardContent className="pt-3 pb-2 px-2">
-            <WeeklyWorm data={weeklyStats} />
           </CardContent>
         </Card>
 
