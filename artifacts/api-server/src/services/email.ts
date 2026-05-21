@@ -523,6 +523,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       sizes: string[];
       qty: Map<string, Map<string, number>>;
       lineTotal: number;
+      vatRate: number;
     };
     const groupKeys: string[] = [];
     const groups = new Map<string, Group>();
@@ -538,7 +539,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       const gk = `${item.productName}||${item.finishName ?? ""}`;
       if (!groups.has(gk)) {
         groupKeys.push(gk);
-        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0 });
+        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0, vatRate: item.vatRate ?? 0.20 });
       }
       const g = groups.get(gk)!;
       const c = item.colour ?? "—";
@@ -594,15 +595,24 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       const g = groups.get(gk)!;
 
       // Product name row (taller when finish is present to fit two lines)
-      const productRowH = g.finishName ? rowH + 9 : rowH;
+      const hasVatNote = g.vatRate !== 0.20;
+      const productRowH = (g.finishName || hasVatNote) ? rowH + 9 : rowH;
       doc.rect(margin, y, tableW, productRowH).fill("#f0f4f8");
       doc.fillColor("#111827").fontSize(7).font("Helvetica-Bold");
       const productLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
       doc.text(productLabel, margin + 3, y + 3, { width: tableW - totalW - 6 });
       doc.text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 3, { width: totalW - 3, align: "right" });
+      const subLineY = y + 12;
       if (g.finishName) {
         doc.fillColor("#4f46e5").fontSize(6.5).font("Helvetica-Oblique")
-          .text(`Finish: ${g.finishName}`, margin + 3, y + 12, { width: tableW - totalW - 6 });
+          .text(`Finish: ${g.finishName}`, margin + 3, subLineY, { width: tableW - totalW - 6 });
+      }
+      if (hasVatNote) {
+        const vatPct = Math.round(g.vatRate * 100);
+        const vatNote = vatPct === 0 ? "Zero-rated (0% VAT)" : `VAT: ${vatPct}%`;
+        const noteX = g.finishName ? margin + 140 : margin + 3;
+        doc.fillColor("#6b7280").fontSize(6.5).font("Helvetica-Oblique")
+          .text(vatNote, noteX, subLineY, { width: tableW - totalW - noteX + margin - 6 });
       }
       y += productRowH;
 

@@ -998,14 +998,13 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       if (order.portalSubmittedByEmail) {
         toEmail = order.portalSubmittedByEmail;
       } else {
-        // Fall back to active manager/dept_manager portal users' emails
+        // Fall back to manager/dept_manager portal users' emails (any status — we just want a valid contact)
         const managerRows = await db.execute(sql`
           SELECT email FROM customer_portal_users
           WHERE customer_id = ${order.customerId}
             AND portal_role IN ('manager', 'dept_manager')
-            AND status = 'active'
             AND email IS NOT NULL
-          ORDER BY portal_role = 'manager' DESC, id ASC
+          ORDER BY portal_role = 'manager' DESC, status = 'active' DESC, id ASC
         `);
         const managerEmails = (managerRows.rows as Array<{ email: string }>)
           .map(r => r.email)
