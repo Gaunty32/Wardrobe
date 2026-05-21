@@ -942,6 +942,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       stripePaymentLinkUrl: ordersTable.stripePaymentLinkUrl,
       shippingMethod: ordersTable.shippingMethod,
       portalSubmittedByName: ordersTable.portalSubmittedByName,
+      portalSubmittedByEmail: ordersTable.portalSubmittedByEmail,
     })
     .from(ordersTable)
     .where(eq(ordersTable.id, params.data.id));
@@ -993,22 +994,27 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     customerLogoUrl = customer?.logoUrl ?? null;
 
     if (!toEmail) {
-      // Prefer manager-role portal users' emails over the generic company email
-      const managerRows = await db.execute(sql`
-        SELECT email FROM customer_portal_users
-        WHERE customer_id = ${order.customerId}
-          AND portal_role IN ('manager', 'dept_manager')
-          AND status = 'active'
-          AND email IS NOT NULL
-        ORDER BY portal_role = 'manager' DESC, id ASC
-      `);
-      const managerEmails = (managerRows.rows as Array<{ email: string }>)
-        .map(r => r.email)
-        .filter(Boolean);
-      if (managerEmails.length > 0) {
-        toEmail = managerEmails.join(", ");
+      // For portal orders, prefer the email of the person who placed the order
+      if (order.portalSubmittedByEmail) {
+        toEmail = order.portalSubmittedByEmail;
       } else {
-        toEmail = customer?.email ?? undefined;
+        // Fall back to active manager/dept_manager portal users' emails
+        const managerRows = await db.execute(sql`
+          SELECT email FROM customer_portal_users
+          WHERE customer_id = ${order.customerId}
+            AND portal_role IN ('manager', 'dept_manager')
+            AND status = 'active'
+            AND email IS NOT NULL
+          ORDER BY portal_role = 'manager' DESC, id ASC
+        `);
+        const managerEmails = (managerRows.rows as Array<{ email: string }>)
+          .map(r => r.email)
+          .filter(Boolean);
+        if (managerEmails.length > 0) {
+          toEmail = managerEmails.join(", ");
+        } else {
+          toEmail = customer?.email ?? undefined;
+        }
       }
     }
   }
@@ -1164,6 +1170,7 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
       colour: orderItemsTable.colour,
       size: orderItemsTable.size, quantity: orderItemsTable.quantity,
       unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
+      vatRate: orderItemsTable.vatRate,
       recipientName: orderItemsTable.recipientName,
       finishName: orderItemsTable.finishName,
     })
