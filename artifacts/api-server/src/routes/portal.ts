@@ -115,13 +115,15 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400 * 1000);
 
   // upsert: update if (email, customer_id) already exists
+  // Only mark as 'invited' when an email is actually being sent; otherwise 'pending'
+  const initialStatus = skipEmail ? 'pending' : 'invited';
   await db.execute(sql`
     INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
-    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'invited', ${portalRole})
+    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, ${initialStatus}, ${portalRole})
     ON CONFLICT (email, customer_id) DO UPDATE
       SET invite_token = ${token},
           invite_expires_at = ${expires.toISOString()},
-          status = 'invited',
+          status = ${initialStatus},
           portal_role = ${portalRole},
           updated_at = now()
   `);

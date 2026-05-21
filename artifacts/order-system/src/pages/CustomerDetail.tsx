@@ -2143,34 +2143,53 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                       <p className="text-xs text-muted-foreground">No specific person — no wardrobe pre-filter</p>
                     </div>
                   </button>
-                  {employees
-                    .filter((e: any) => {
-                      // "Preview as Team Manager" — only show employees with Team Manager role
-                      if (pickerRole === "dept_manager") {
-                        if (!(e.role_name ?? "").toLowerCase().includes("team manager")) return false;
-                      }
-                      const term = empPickerSearch.toLowerCase().trim();
-                      if (!term) return true;
-                      return [e.name, e.first_name, e.last_name, e.job_title, e.role_name, e.email].filter(Boolean).join(" ").toLowerCase().includes(term);
-                    })
-                    .map((e: any) => {
-                      const name = e.name || [e.first_name, e.last_name].filter(Boolean).join(" ") || "—";
-                      const subtitle = [e.job_title, e.role_name, e.manager_name].filter(Boolean).join(" · ");
-                      return (
-                        <button
-                          key={e.id}
-                          type="button"
-                          onClick={() => setPickedEmployeeId(e.id)}
-                          className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedEmployeeId === e.id && "bg-primary/10")}
-                        >
-                          <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === e.id ? "opacity-100" : "opacity-0")} />
-                          <div className="min-w-0">
-                            <p className="font-medium truncate">{name}</p>
-                            {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
-                          </div>
-                        </button>
-                      );
-                    })}
+                  {pickerRole === "dept_manager"
+                    ? (portalUsers ?? [])
+                        .filter((u: any) => u.portal_role === "dept_manager")
+                        .filter((u: any) => {
+                          const term = empPickerSearch.toLowerCase().trim();
+                          if (!term) return true;
+                          return (u.email ?? "").toLowerCase().includes(term);
+                        })
+                        .map((u: any) => (
+                          <button
+                            key={u.id}
+                            type="button"
+                            onClick={() => setPickedEmployeeId(u.linked_employee_id ?? null)}
+                            className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedEmployeeId === (u.linked_employee_id ?? null) && "bg-primary/10")}
+                          >
+                            <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === (u.linked_employee_id ?? null) ? "opacity-100" : "opacity-0")} />
+                            <div className="min-w-0">
+                              <p className="font-medium truncate">{u.email}</p>
+                              <p className="text-xs text-muted-foreground truncate capitalize">{u.status}</p>
+                            </div>
+                          </button>
+                        ))
+                    : employees
+                        .filter((e: any) => {
+                          const term = empPickerSearch.toLowerCase().trim();
+                          if (!term) return true;
+                          return [e.name, e.first_name, e.last_name, e.job_title, e.role_name, e.email].filter(Boolean).join(" ").toLowerCase().includes(term);
+                        })
+                        .map((e: any) => {
+                          const name = e.name || [e.first_name, e.last_name].filter(Boolean).join(" ") || "—";
+                          const subtitle = [e.job_title, e.role_name, e.manager_name].filter(Boolean).join(" · ");
+                          return (
+                            <button
+                              key={e.id}
+                              type="button"
+                              onClick={() => setPickedEmployeeId(e.id)}
+                              className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedEmployeeId === e.id && "bg-primary/10")}
+                            >
+                              <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === e.id ? "opacity-100" : "opacity-0")} />
+                              <div className="min-w-0">
+                                <p className="font-medium truncate">{name}</p>
+                                {subtitle && <p className="text-xs text-muted-foreground truncate">{subtitle}</p>}
+                              </div>
+                            </button>
+                          );
+                        })
+                  }
                   {employees.length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-6">No active employees found.<br /><span className="text-xs">Add employees in the Employees tab first.</span></p>
                   )}
