@@ -1577,17 +1577,20 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   // Top-level managers see ALL pending_review orders across every team.
   // Dept managers (team managers) only see orders from their own team,
   // resolved via their linked employee record.
-  if (portalRole === "manager") {
-    const rows = await db.execute(sql`
-      SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
-             po_number, portal_submitted_by_email, portal_submitted_at,
-             COALESCE(
+  const submittedByNameExpr = sql`COALESCE(
                portal_submitted_by_name,
                CASE WHEN portal_submitted_by_employee_id IS NOT NULL THEN (
                  SELECT TRIM(first_name || ' ' || COALESCE(last_name, ''))
                  FROM customer_employees WHERE id = portal_submitted_by_employee_id
-               ) END
-             ) AS portal_submitted_by_name,
+               ) END,
+               SPLIT_PART(portal_submitted_by_email, '@', 1)
+             )`;
+
+  if (portalRole === "manager") {
+    const rows = await db.execute(sql`
+      SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
+             po_number, portal_submitted_by_email, portal_submitted_at,
+             ${submittedByNameExpr} AS portal_submitted_by_name,
              (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = orders.id) as item_count
       FROM orders
       WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
@@ -1602,7 +1605,8 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   // so orders are never silently hidden when team links haven't been configured.
   const rows = await db.execute(sql`
     SELECT id, order_number, status, portal_status, total_amount, order_date, required_date, notes, portal_notes,
-           po_number, portal_submitted_by_name, portal_submitted_by_email, portal_submitted_at,
+           po_number, portal_submitted_by_email, portal_submitted_at,
+           ${submittedByNameExpr} AS portal_submitted_by_name,
            (SELECT COALESCE(SUM(quantity), 0) FROM order_items WHERE order_id = orders.id) as item_count
     FROM orders
     WHERE customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
