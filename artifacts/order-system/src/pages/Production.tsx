@@ -1066,26 +1066,39 @@ function printPickingSlip(order: PickingOrder) {
     ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
     : "—";
 
-  const itemRows = order.items.map((item, i) => {
-    const supplierCodeCell = item.supplierCode
-      ? `<span style="font-family:monospace;font-weight:bold;font-size:12px">${item.supplierCode}</span>`
+  // Consolidate items by style + colour + size + finish — recipient not needed at pick stage
+  type ConsolidatedKey = { supplierCode: string | null; productSku: string | null; productName: string; supplierName: string | null; colour: string | null; size: string | null; finishName: string | null };
+  const consolidated = new Map<string, { meta: ConsolidatedKey; qty: number }>();
+  for (const item of order.items) {
+    const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? "", item.size ?? "", item.finishName ?? ""].join("||");
+    if (!consolidated.has(key)) {
+      consolidated.set(key, { meta: { supplierCode: item.supplierCode, productSku: item.productSku, productName: item.productName, supplierName: item.supplierName, colour: item.colour, size: item.size, finishName: item.finishName }, qty: 0 });
+    }
+    consolidated.get(key)!.qty += item.quantity;
+  }
+
+  const consolidatedRows = Array.from(consolidated.values());
+  const totalQty = consolidatedRows.reduce((s, r) => s + r.qty, 0);
+
+  const itemRows = consolidatedRows.map(({ meta, qty }, i) => {
+    const supplierCodeCell = meta.supplierCode
+      ? `<span style="font-family:monospace;font-weight:bold;font-size:12px">${meta.supplierCode}</span>`
       : "";
-    const fccSkuCell = item.productSku
-      ? `<span style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;font-size:10px;font-family:monospace">${item.productSku}</span>`
+    const fccSkuCell = meta.productSku
+      ? `<span style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;font-size:10px;font-family:monospace">${meta.productSku}</span>`
       : "";
-    const supplierNameCell = item.supplierName
-      ? `<span style="color:#555;font-size:10px">${item.supplierName}</span>`
-      : `<span style="color:#999;font-size:10px">${item.productName}</span>`;
+    const supplierNameCell = meta.supplierName
+      ? `<span style="color:#555;font-size:10px">${meta.supplierName}</span>`
+      : `<span style="color:#999;font-size:10px">${meta.productName}</span>`;
     const productCell = [supplierCodeCell, fccSkuCell, supplierNameCell].filter(Boolean).join("&nbsp;&nbsp;");
 
     return `
     <tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${productCell}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.colour ?? "—"}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.size ?? "—"}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${item.finishName ?? "—"}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${item.recipientType === "person" ? (item.recipientName ?? "—") : "Stock"}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${item.quantity}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.colour ?? "—"}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.size ?? "—"}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.finishName ?? "—"}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${qty}</td>
       <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
         <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
       </td>
@@ -1106,7 +1119,8 @@ function printPickingSlip(order: PickingOrder) {
     </div>
     <div class="meta">
       <div class="meta-item"><span class="meta-label">Required Date</span><span class="meta-value">${dueStr}</span></div>
-      <div class="meta-item"><span class="meta-label">Items</span><span class="meta-value">${order.items.length}</span></div>
+      <div class="meta-item"><span class="meta-label">Lines</span><span class="meta-value">${consolidatedRows.length}</span></div>
+      <div class="meta-item"><span class="meta-label">Total Qty</span><span class="meta-value">${totalQty}</span></div>
     </div>
     <table>
       <thead>
@@ -1115,7 +1129,6 @@ function printPickingSlip(order: PickingOrder) {
           <th>Colour</th>
           <th>Size</th>
           <th>Finish / Decoration</th>
-          <th class="center">Recipient</th>
           <th class="center">Qty</th>
           <th class="center">Picked ✓</th>
         </tr>
