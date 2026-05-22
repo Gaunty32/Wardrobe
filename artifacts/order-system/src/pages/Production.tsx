@@ -2196,7 +2196,10 @@ function DailyPlanTab({ onNavigate, pendingCount, readyCount }: { onNavigate: (t
 export default function Production() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState("plan");
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("tab") ?? "plan";
+  });
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [readyOrder, setReadyOrder] = useState<DocOrder | null>(null);
 

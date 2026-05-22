@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useUpload } from "@workspace/object-storage-web";
 import { ProcessStockTab } from "@/pages/ProcessStock";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -6,6 +7,7 @@ import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
   CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip, Upload,
+  CheckCircle2, ListChecks, Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -63,6 +65,21 @@ interface PurchaseOrder {
   estimatedDeliveryDate: string | null;
   attachments: Array<{ name: string; objectPath: string }> | null;
   createdAt: string; updatedAt: string; items: POItem[];
+}
+
+interface AllocationResult {
+  ordersAffected: number;
+  pickingItems: number;
+  worksheetsCreated: number;
+  worksheetsUpdated: number;
+  summary: Array<{
+    orderId: number;
+    orderNumber: string;
+    customerName: string | null;
+    worksheetNumber: string | null;
+    pickingCount: number;
+    worksheetCount: number;
+  }>;
 }
 
 function currencySymbol(currency?: string | null): string {
@@ -1318,6 +1335,8 @@ function POCard({
 export default function Purchasing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
+  const [nextStepData, setNextStepData] = useState<AllocationResult | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [expandedReqGroups, setExpandedReqGroups] = useState<Record<string, boolean>>({});
   const [expandedPsGroups, setExpandedPsGroups] = useState<Record<string, boolean>>({});
@@ -1422,23 +1441,34 @@ export default function Purchasing() {
 
   const statusMutation = useMutation({
     mutationFn: ({ id, status, extra }: { id: number; status: string; extra?: Record<string, unknown> }) =>
-      apiFetch(`/purchasing/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status, ...extra }) }),
-    onSuccess: (_data, vars) => {
+      apiFetch<{ allocation?: AllocationResult }>(`/purchasing/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify({ status, ...extra }) }),
+    onSuccess: (data, vars) => {
       invalidateAll();
       setStatusFilter("all");
-      const msgs: Record<string, string> = {
-        ordered: "PO marked as Ordered — now showing in the Ordered tab.",
-        delivered: "Delivery booked — PO moved to Delivered.",
-        draft: "PO moved back to Draft.",
-      };
-      toast({ title: "Status updated", description: msgs[vars.status] });
+      if (vars.status === "delivered" && data?.allocation && data.allocation.pickingItems > 0) {
+        setNextStepData(data.allocation);
+      } else {
+        const msgs: Record<string, string> = {
+          ordered: "PO marked as Ordered — now showing in the Ordered tab.",
+          delivered: "Delivery booked — PO moved to Delivered.",
+          draft: "PO moved back to Draft.",
+        };
+        toast({ title: "Status updated", description: msgs[vars.status] });
+      }
     },
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
   const receiveAllMutation = useMutation({
-    mutationFn: (id: number) => apiFetch(`/purchasing/purchase-orders/${id}/receive-all`, { method: "POST" }),
-    onSuccess: () => { invalidateAll(); toast({ title: "Delivery booked in", description: "All lines marked as received." }); },
+    mutationFn: (id: number) => apiFetch<{ allocation?: AllocationResult }>(`/purchasing/purchase-orders/${id}/receive-all`, { method: "POST" }),
+    onSuccess: (data) => {
+      invalidateAll();
+      if (data?.allocation && data.allocation.pickingItems > 0) {
+        setNextStepData(data.allocation);
+      } else {
+        toast({ title: "Delivery booked in", description: "All lines marked as received." });
+      }
+    },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
@@ -2171,6 +2201,63 @@ export default function Purchasing() {
         {emailGroup && (
           <EmailDialog group={emailGroup} open={!!emailGroup} onClose={() => setEmailGroup(null)} onSent={(_ids) => { setEmailGroup(null); queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] }); }} />
         )}
+
+        {/* ── What's Next dialog — shown after receiving a PO ── */}
+        <Dialog open={!!nextStepData} onOpenChange={(open) => { if (!open) setNextStepData(null); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-green-700">
+                <CheckCircle2 className="w-5 h-5" />
+                Delivery received — what's next?
+              </DialogTitle>
+            </DialogHeader>
+            {nextStepData && (
+              <div className="space-y-4 py-1">
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3.5 space-y-2.5">
+                  <div className="flex items-center gap-2 text-sm font-medium text-blue-800">
+                    <ListChecks className="w-4 h-4 flex-shrink-0" />
+                    {nextStepData.pickingItems} item{nextStepData.pickingItems !== 1 ? "s" : ""} added to the Picking List
+                    {nextStepData.ordersAffected > 1 && (
+                      <span className="text-blue-600 font-normal">across {nextStepData.ordersAffected} orders</span>
+                    )}
+                  </div>
+                  {nextStepData.summary.length > 0 && (
+                    <ul className="space-y-1">
+                      {nextStepData.summary.map((row) => (
+                        <li key={row.orderId} className="flex items-start gap-2 text-sm text-blue-900">
+                          <span className="text-blue-400 mt-0.5">·</span>
+                          <span>
+                            <span className="font-mono font-semibold">{row.orderNumber}</span>
+                            {row.customerName && <span className="text-blue-700"> — {row.customerName}</span>}
+                            <span className="text-blue-600 text-xs ml-1">({row.pickingCount} item{row.pickingCount !== 1 ? "s" : ""})</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {nextStepData.summary.some((r) => r.worksheetCount > 0 || r.pickingCount > 0) && (
+                  <p className="text-xs text-muted-foreground flex items-start gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                    Items with embroidery or print finishes will automatically create production worksheets when picked.
+                  </p>
+                )}
+              </div>
+            )}
+            <DialogFooter className="gap-2 flex-col sm:flex-row">
+              <Button variant="outline" onClick={() => setNextStepData(null)}>
+                Stay here
+              </Button>
+              <Button
+                className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={() => { setNextStepData(null); navigate("/production?tab=picking_list"); }}
+              >
+                <ListChecks className="w-4 h-4" />
+                Go to Picking List
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );
