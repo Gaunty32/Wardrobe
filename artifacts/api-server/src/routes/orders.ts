@@ -167,34 +167,66 @@ router.get("/orders/weekly-stats", async (req, res): Promise<void> => {
 router.get("/dashboard/profit-stats", async (_req, res): Promise<void> => {
   const notCancelled = `o.status NOT IN ('cancelled', 'portal_draft')`;
 
+  // Revenue is pulled from orders alone (to avoid multiplying by item count),
+  // cost is aggregated from order_items separately, then the two are joined.
   const weekly = await db.execute(sql`
     SELECT
-      date_trunc('week', o.order_date AT TIME ZONE 'UTC')::date AS week_start,
-      COUNT(DISTINCT o.id)::int AS order_count,
-      COALESCE(SUM(o.total_amount), 0)::float AS revenue,
-      COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
-    FROM orders o
-    LEFT JOIN order_items oi ON oi.order_id = o.id
-    LEFT JOIN products p ON p.id = oi.product_id
-    WHERE o.order_date >= NOW() - INTERVAL '13 weeks'
-      AND o.status NOT IN ('cancelled', 'portal_draft')
-    GROUP BY week_start
-    ORDER BY week_start ASC
+      rev.week_start,
+      rev.order_count,
+      rev.revenue,
+      COALESCE(cst.cost, 0)::float AS cost
+    FROM (
+      SELECT
+        date_trunc('week', o.order_date AT TIME ZONE 'UTC')::date AS week_start,
+        COUNT(o.id)::int AS order_count,
+        COALESCE(SUM(o.total_amount), 0)::float AS revenue
+      FROM orders o
+      WHERE o.order_date >= NOW() - INTERVAL '13 weeks'
+        AND o.status NOT IN ('cancelled', 'portal_draft')
+      GROUP BY week_start
+    ) rev
+    LEFT JOIN (
+      SELECT
+        date_trunc('week', o.order_date AT TIME ZONE 'UTC')::date AS week_start,
+        COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE o.order_date >= NOW() - INTERVAL '13 weeks'
+        AND o.status NOT IN ('cancelled', 'portal_draft')
+      GROUP BY week_start
+    ) cst ON cst.week_start = rev.week_start
+    ORDER BY rev.week_start ASC
   `);
 
   const monthly = await db.execute(sql`
     SELECT
-      date_trunc('month', o.order_date AT TIME ZONE 'UTC')::date AS month_start,
-      COUNT(DISTINCT o.id)::int AS order_count,
-      COALESCE(SUM(o.total_amount), 0)::float AS revenue,
-      COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
-    FROM orders o
-    LEFT JOIN order_items oi ON oi.order_id = o.id
-    LEFT JOIN products p ON p.id = oi.product_id
-    WHERE o.order_date >= NOW() - INTERVAL '12 months'
-      AND o.status NOT IN ('cancelled', 'portal_draft')
-    GROUP BY month_start
-    ORDER BY month_start ASC
+      rev.month_start,
+      rev.order_count,
+      rev.revenue,
+      COALESCE(cst.cost, 0)::float AS cost
+    FROM (
+      SELECT
+        date_trunc('month', o.order_date AT TIME ZONE 'UTC')::date AS month_start,
+        COUNT(o.id)::int AS order_count,
+        COALESCE(SUM(o.total_amount), 0)::float AS revenue
+      FROM orders o
+      WHERE o.order_date >= NOW() - INTERVAL '12 months'
+        AND o.status NOT IN ('cancelled', 'portal_draft')
+      GROUP BY month_start
+    ) rev
+    LEFT JOIN (
+      SELECT
+        date_trunc('month', o.order_date AT TIME ZONE 'UTC')::date AS month_start,
+        COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE o.order_date >= NOW() - INTERVAL '12 months'
+        AND o.status NOT IN ('cancelled', 'portal_draft')
+      GROUP BY month_start
+    ) cst ON cst.month_start = rev.month_start
+    ORDER BY rev.month_start ASC
   `);
 
   const jobs = await db.execute(sql`
