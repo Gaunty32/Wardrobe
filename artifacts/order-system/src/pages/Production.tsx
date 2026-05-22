@@ -1739,7 +1739,7 @@ function PickingListTab({ filters }: { filters: Filters }) {
                   title="Print one picking slip per customer/order"
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  Per Customer ({new Set(checkedItems.map(i => i.orderId)).size})
+                  Per Customer ({new Set(checkedItems.map(i => i.customerName ?? String(i.orderId))).size})
                 </Button>
                 <Button
                   size="sm"
@@ -1787,12 +1787,29 @@ function PickingListTab({ filters }: { filters: Filters }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-xs">{order.items.length} item{order.items.length !== 1 ? "s" : ""}</Badge>
+                  {order.customerName && (() => {
+                    const customerOrders = rawPickingOrders.filter(o => o.customerName === order.customerName);
+                    const hasMultiple = customerOrders.length > 1;
+                    if (!hasMultiple) return null;
+                    const allCustomerItems = customerOrders.flatMap(o => o.items);
+                    return (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7 px-2.5 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
+                        onClick={() => printPerCustomerPickingSlips(allCustomerItems, rawPickingOrders)}
+                        title={`Print a consolidated slip for all ${customerOrders.length} orders for ${order.customerName}`}
+                      >
+                        <Printer className="w-3 h-3" /> All Orders
+                      </Button>
+                    );
+                  })()}
                   <Button
                     size="sm"
                     variant="outline"
                     className="gap-1.5 text-xs h-7 px-2.5"
                     onClick={() => printPickingSlip(order)}
-                    title="Print picking slip for this order"
+                    title="Print picking slip for this order only"
                   >
                     <Printer className="w-3 h-3" /> Print Slip
                   </Button>
