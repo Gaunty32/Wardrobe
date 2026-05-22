@@ -898,6 +898,25 @@ export async function runStartupMigrations(): Promise<void> {
   `);
 
   // ─────────────────────────────────────────────────────────────────────────
+  // One-time cleanup: worksheet F102 (id=9) is a duplicate of F101 (id=8) —
+  // both cover the same 7 order items for P21 (Pro Fit Security Ltd).
+  // Re-point any order_items referencing worksheet 9 to worksheet 8,
+  // delete the duplicate worksheet_items, and drop worksheet 9.
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM worksheets WHERE id = 9 AND worksheet_number = 'F102') THEN
+        -- Re-point order_items that reference the duplicate worksheet
+        UPDATE order_items SET worksheet_id = 8 WHERE worksheet_id = 9;
+        -- Remove duplicate worksheet_items
+        DELETE FROM worksheet_items WHERE worksheet_id = 9;
+        -- Delete the duplicate worksheet
+        DELETE FROM worksheets WHERE id = 9;
+      END IF;
+    END $$;
+  `);
+
+  // ─────────────────────────────────────────────────────────────────────────
   // One-time backfill: process stock quantities were not incremented when
   // certain POs were marked as delivered (server restarted mid-transaction or
   // the increment logic was added after those POs were already delivered).
