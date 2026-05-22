@@ -898,4 +898,41 @@ export async function runStartupMigrations(): Promise<void> {
   `);
 
   // ─────────────────────────────────────────────────────────────────────────
+  // One-time backfill: process stock quantities were not incremented when
+  // certain POs were marked as delivered (server restarted mid-transaction or
+  // the increment logic was added after those POs were already delivered).
+  // We use a _migration_flags table as a marker so this only runs once.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS _migration_flags (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());
+  `);
+
+  await db.execute(sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM _migration_flags WHERE name = 'backfill_process_stock_from_delivered_pos_v1') THEN
+
+        -- For every delivered PO that has process-stock lines, add any
+        -- quantity_delivered that was never credited to the process_stock row.
+        -- Guard: only touches rows whose stock_quantity is still 0 so we don't
+        -- double-increment if the item was legitimately consumed back to zero
+        -- on a future server start (the marker prevents re-entry in that case).
+        UPDATE process_stock ps
+        SET stock_quantity = ps.stock_quantity + sub.total_delivered
+        FROM (
+          SELECT poi.process_stock_id, SUM(poi.quantity_delivered) AS total_delivered
+          FROM purchase_order_items poi
+          JOIN purchase_orders po ON po.id = poi.po_id
+          WHERE po.status = 'delivered'
+            AND poi.process_stock_id IS NOT NULL
+            AND poi.quantity_delivered > 0
+          GROUP BY poi.process_stock_id
+        ) sub
+        WHERE ps.id = sub.process_stock_id
+          AND ps.stock_quantity = 0;
+
+        INSERT INTO _migration_flags (name) VALUES ('backfill_process_stock_from_delivered_pos_v1');
+      END IF;
+    END $$;
+  `);
+  // ─────────────────────────────────────────────────────────────────────────
 }
