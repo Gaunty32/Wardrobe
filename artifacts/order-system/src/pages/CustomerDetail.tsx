@@ -2108,7 +2108,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
 
           {/* Employee picker — choose which employee to preview as */}
           <Dialog open={empPickerOpen} onOpenChange={v => { if (!v) setEmpPickerOpen(false); }}>
-            <DialogContent className="max-w-sm">
+            <DialogContent className="sm:max-w-lg">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Eye className="w-4 h-4" />
