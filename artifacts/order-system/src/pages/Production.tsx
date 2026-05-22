@@ -1060,135 +1060,151 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
 
 // ─── Print Picking Slip (renders into a new window) ───────────────────────────
 
-function printPickingSlip(order: PickingOrder) {
+function printPickingSlip(order: PickingOrder, allOrders: PickingOrder[]) {
   const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-  const dueStr = order.requiredDate
-    ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-    : "—";
 
-  // Consolidate items by style + colour + size + finish — recipient not needed at pick stage
-  type ConsolidatedKey = { supplierCode: string | null; productSku: string | null; productName: string; supplierName: string | null; colour: string | null; size: string | null; finishName: string | null };
-  const consolidated = new Map<string, { meta: ConsolidatedKey; qty: number }>();
-  for (const item of order.items) {
-    const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? "", item.size ?? "", item.finishName ?? ""].join("||");
-    if (!consolidated.has(key)) {
-      consolidated.set(key, { meta: { supplierCode: item.supplierCode, productSku: item.productSku, productName: item.productName, supplierName: item.supplierName, colour: item.colour, size: item.size, finishName: item.finishName }, qty: 0 });
-    }
-    consolidated.get(key)!.qty += item.quantity;
+  // Gather ALL orders for this customer (consolidate across all their orders)
+  const customerOrders = order.customerName
+    ? allOrders.filter(o => o.customerName === order.customerName)
+    : [order];
+  const allItems = customerOrders.flatMap(o => o.items);
+
+  // Sort orders by required date for the order list header
+  const sortedOrders = [...customerOrders].sort((a, b) => {
+    if (!a.requiredDate && !b.requiredDate) return 0;
+    if (!a.requiredDate) return 1;
+    if (!b.requiredDate) return -1;
+    return a.requiredDate.localeCompare(b.requiredDate);
+  });
+  const earliestDate = sortedOrders.find(o => o.requiredDate)?.requiredDate ?? null;
+
+  // Group items by finish — each finish gets its own slip page
+  const finishGroups = new Map<string, PickingItem[]>();
+  for (const item of allItems) {
+    const key = item.finishName ?? "Plain (No Finish)";
+    if (!finishGroups.has(key)) finishGroups.set(key, []);
+    finishGroups.get(key)!.push(item);
   }
 
-  const consolidatedRows = Array.from(consolidated.values());
-  const totalQty = consolidatedRows.reduce((s, r) => s + r.qty, 0);
+  // Sort finishes alphabetically, Plain last
+  const sortedFinishes = Array.from(finishGroups.keys()).sort((a, b) => {
+    if (a === "Plain (No Finish)") return 1;
+    if (b === "Plain (No Finish)") return -1;
+    return a.localeCompare(b);
+  });
 
-  const itemRows = consolidatedRows.map(({ meta, qty }, i) => {
-    const supplierCodeCell = meta.supplierCode
-      ? `<span style="font-family:monospace;font-weight:bold;font-size:12px">${meta.supplierCode}</span>`
-      : "";
-    const fccSkuCell = meta.productSku
-      ? `<span style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;font-size:10px;font-family:monospace">${meta.productSku}</span>`
-      : "";
-    const supplierNameCell = meta.supplierName
-      ? `<span style="color:#555;font-size:10px">${meta.supplierName}</span>`
-      : `<span style="color:#999;font-size:10px">${meta.productName}</span>`;
-    const productCell = [supplierCodeCell, fccSkuCell, supplierNameCell].filter(Boolean).join("&nbsp;&nbsp;");
+  const thL = `background:#1e3a5f;color:white;padding:5px 8px;font-size:11px;text-align:left`;
+  const thC = `background:#1e3a5f;color:white;padding:5px 8px;font-size:11px;text-align:center`;
 
-    return `
-    <tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${productCell}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.colour ?? "—"}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.size ?? "—"}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.finishName ?? "—"}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${qty}</td>
-      <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
-        <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
-      </td>
-    </tr>`;
+  // Order summary line for the slip header
+  const orderLines = sortedOrders.map(o => {
+    const due = o.requiredDate
+      ? new Date(o.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : null;
+    const isUrgent = o.requiredDate === earliestDate && sortedOrders.length > 1;
+    return `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:16px${isUrgent ? ";font-weight:bold" : ""}">
+      <span style="font-family:monospace;font-size:10px;color:#1e3a5f">${o.orderNumber}</span>
+      ${due ? `<span style="font-size:10px;color:${isUrgent ? "#b45309" : "#555"}">${isUrgent ? "⚑ " : ""}Due: ${due}</span>` : ""}
+    </span>`;
   }).join("");
 
-  const sheetContent = `
-    <div class="header">
-      <div>
-        ${order.customerName ? `<div style="font-size:26px;font-weight:900;color:#1e3a5f;margin-bottom:1mm">${order.customerName}</div>` : ""}
-        <div style="font-size:16px;font-weight:700;color:#1e3a5f;letter-spacing:1px">PICKING SLIP</div>
-        <div style="font-size:12px;color:#555;margin-top:1mm">${order.orderNumber}</div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-weight:bold;font-size:13px">Select Branding Solutions</div>
-        <div style="color:#555">Printed: ${dateStr}</div>
-      </div>
-    </div>
-    <div class="meta">
-      <div class="meta-item"><span class="meta-label">Required Date</span><span class="meta-value">${dueStr}</span></div>
-      <div class="meta-item"><span class="meta-label">Lines</span><span class="meta-value">${consolidatedRows.length}</span></div>
-      <div class="meta-item"><span class="meta-label">Total Qty</span><span class="meta-value">${totalQty}</span></div>
-    </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Supplier Code / FCC SKU / Supplier</th>
-          <th>Colour</th>
-          <th>Size</th>
-          <th>Finish / Decoration</th>
-          <th class="center">Qty</th>
-          <th class="center">Picked ✓</th>
-        </tr>
-      </thead>
-      <tbody>${itemRows}</tbody>
-    </table>
-    <div class="sig-box">
-      <div class="sig-field">Picked by: ___________________________</div>
-      <div class="sig-field">Date picked: ___________________________</div>
-      <div class="sig-field">Checked by: ___________________________</div>
-    </div>
-    <div class="footer">
-      <span>Select Branding Solutions — Internal Use Only</span>
-      <span>${order.orderNumber} · ${dateStr}</span>
-    </div>`;
+  const slipPages = sortedFinishes.map((finishName, pageIdx) => {
+    const items = finishGroups.get(finishName)!;
 
-  const html = `<!DOCTYPE html><html><head><title>Picking Slip — ${order.orderNumber}</title>
+    // Consolidate rows by product + colour + size (no finish col — it's the heading)
+    type RowMeta = { supplierCode: string | null; productSku: string | null; productName: string; supplierName: string | null; colour: string | null; size: string | null };
+    const rowMap = new Map<string, { meta: RowMeta; qty: number }>();
+    for (const item of items) {
+      const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? "", item.size ?? ""].join("||");
+      if (!rowMap.has(key)) {
+        rowMap.set(key, { meta: { supplierCode: item.supplierCode, productSku: item.productSku, productName: item.productName, supplierName: item.supplierName, colour: item.colour, size: item.size }, qty: 0 });
+      }
+      rowMap.get(key)!.qty += item.quantity;
+    }
+
+    const rows = Array.from(rowMap.values());
+    const totalQty = rows.reduce((s, r) => s + r.qty, 0);
+    const isLast = pageIdx === sortedFinishes.length - 1;
+
+    const itemRows = rows.map(({ meta, qty }, i) => {
+      const codeSpan = meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:12px">${meta.supplierCode}</span>&nbsp;&nbsp;` : "";
+      const skuSpan = meta.productSku ? `<span style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;font-size:10px;font-family:monospace">${meta.productSku}</span>&nbsp;&nbsp;` : "";
+      const nameSpan = meta.supplierName ? `<span style="color:#555;font-size:10px">${meta.supplierName}</span>` : `<span style="color:#999;font-size:10px">${meta.productName}</span>`;
+      return `<tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${codeSpan}${skuSpan}${nameSpan}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.colour ?? "—"}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${meta.size ?? "—"}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${qty}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
+          <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
+        </td>
+      </tr>`;
+    }).join("");
+
+    return `
+      <div class="slip${isLast ? "" : " page-break"}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm">
+          <div>
+            <div style="font-size:24px;font-weight:900;color:#1e3a5f;line-height:1.1">${order.customerName ?? "Picking Slip"}</div>
+            <div style="font-size:14px;font-weight:700;color:#374151;letter-spacing:0.5px;margin-top:1.5mm">PICKING SLIP</div>
+            <div style="display:inline-block;margin-top:2mm;padding:2px 10px;background:#1e3a5f;color:white;border-radius:3px;font-size:11px;font-weight:700;letter-spacing:0.5px">${finishName}</div>
+            <div style="font-size:10px;color:#555;margin-top:2.5mm;line-height:1.8">${orderLines}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:8mm">
+            <div style="font-weight:bold;font-size:12px">Select Branding Solutions</div>
+            <div style="color:#555;font-size:10px">Printed: ${dateStr}</div>
+            ${earliestDate ? `<div style="margin-top:2mm;font-size:11px;font-weight:bold;color:#b45309">Required by: ${new Date(earliestDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div>` : ""}
+            <div style="margin-top:1mm;font-size:10px;color:#555">${rows.length} line${rows.length !== 1 ? "s" : ""} · Qty <strong>${totalQty}</strong></div>
+            ${sortedFinishes.length > 1 ? `<div style="margin-top:1mm;font-size:9px;color:#888">Slip ${pageIdx + 1} of ${sortedFinishes.length}</div>` : ""}
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="${thL}">Supplier Code / SKU / Supplier</th>
+            <th style="${thL}">Colour</th>
+            <th style="${thC}">Size</th>
+            <th style="${thC}">Qty</th>
+            <th style="${thC}">Picked ✓</th>
+          </tr></thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+        <div style="margin-top:8mm;display:flex;gap:30px;border-top:1px solid #e5e7eb;padding-top:4mm">
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Picked by: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Date picked: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Checked by: ___________________________</div>
+        </div>
+        <div style="margin-top:6mm;display:flex;justify-content:space-between;font-size:9px;color:#aaa;border-top:1px solid #f0f0f0;padding-top:3mm">
+          <span>Select Branding Solutions — Internal Use Only</span>
+          <span>${order.customerName ?? ""} · ${finishName} · ${dateStr}</span>
+        </div>
+      </div>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><title>Picking Slip — ${order.customerName ?? order.orderNumber}</title>
     <style>
       *{box-sizing:border-box}
       body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
-      #toolbar{
-        position:sticky;top:0;z-index:10;
-        display:flex;align-items:center;gap:10px;
-        padding:10px 20px;background:#1e3a5f;color:white;
-        box-shadow:0 2px 6px rgba(0,0,0,.3);
-      }
+      #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
       #toolbar span{flex:1;font-size:14px;font-weight:600;letter-spacing:.5px}
       #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
-      #btn-print{background:#22c55e;color:white}
-      #btn-print:hover{background:#16a34a}
-      #btn-close{background:rgba(255,255,255,.15);color:white}
-      #btn-close:hover{background:rgba(255,255,255,.25)}
-      #page{display:flex;justify-content:center;padding:24px 0 40px}
-      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
-      table{width:100%;border-collapse:collapse}
-      th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:11px}
-      th.center{text-align:center}
-      .header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm}
-      .meta{display:flex;gap:20px;margin-bottom:5mm}
-      .meta-item{display:flex;flex-direction:column}
-      .meta-label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
-      .meta-value{font-weight:bold}
-      .footer{margin-top:8mm;border-top:1px solid #e5e7eb;padding-top:4mm;display:flex;justify-content:space-between;font-size:9px;color:#888}
-      .sig-box{margin-top:8mm;display:flex;gap:30px}
-      .sig-field{flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666}
+      #btn-print{background:#22c55e;color:white}#btn-print:hover{background:#16a34a}
+      #btn-close{background:rgba(255,255,255,.15);color:white}#btn-close:hover{background:rgba(255,255,255,.25)}
+      #page{display:flex;flex-direction:column;align-items:center;padding:24px 0 40px;gap:24px}
+      .slip{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
       @media print{
-        #toolbar{display:none}
-        body{background:white}
-        #page{padding:0}
-        #sheet{box-shadow:none;padding:0}
-        @page{size:A4;margin:15mm}
+        #toolbar{display:none}body{background:white}#page{padding:0;gap:0}
+        .slip{box-shadow:none;width:100%;padding:0}
+        .page-break{page-break-after:always}
+        @page{size:A4 portrait;margin:12mm}
       }
     </style>
   </head><body>
     <div id="toolbar">
-      <span>📋 Picking Slip — ${order.customerName ?? order.orderNumber}</span>
-      <button id="btn-print" onclick="window.print()">🖨 Print</button>
+      <span>📋 Picking Slip — ${order.customerName ?? order.orderNumber} · ${sortedFinishes.length} finish${sortedFinishes.length !== 1 ? "es" : ""} · ${customerOrders.length} order${customerOrders.length !== 1 ? "s" : ""}</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print all ${sortedFinishes.length}</button>
       <button id="btn-close" onclick="window.close()">✕ Close</button>
     </div>
-    <div id="page"><div id="sheet">${sheetContent}</div></div>
+    <div id="page">${slipPages}</div>
   </body></html>`;
 
   const win = window.open("", "_blank", "width=960,height=800");
@@ -1787,29 +1803,12 @@ function PickingListTab({ filters }: { filters: Filters }) {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-xs">{order.items.length} item{order.items.length !== 1 ? "s" : ""}</Badge>
-                  {order.customerName && (() => {
-                    const customerOrders = rawPickingOrders.filter(o => o.customerName === order.customerName);
-                    const hasMultiple = customerOrders.length > 1;
-                    if (!hasMultiple) return null;
-                    const allCustomerItems = customerOrders.flatMap(o => o.items);
-                    return (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7 px-2.5 border-indigo-300 text-indigo-700 hover:bg-indigo-50"
-                        onClick={() => printPerCustomerPickingSlips(allCustomerItems, rawPickingOrders)}
-                        title={`Print a consolidated slip for all ${customerOrders.length} orders for ${order.customerName}`}
-                      >
-                        <Printer className="w-3 h-3" /> All Orders
-                      </Button>
-                    );
-                  })()}
                   <Button
                     size="sm"
                     variant="outline"
                     className="gap-1.5 text-xs h-7 px-2.5"
-                    onClick={() => printPickingSlip(order)}
-                    title="Print picking slip for this order only"
+                    onClick={() => printPickingSlip(order, rawPickingOrders)}
+                    title="Print picking slip — all orders for this customer, one slip per finish"
                   >
                     <Printer className="w-3 h-3" /> Print Slip
                   </Button>
