@@ -495,8 +495,11 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
       // derive a first name from the email local part (e.g. "sona.kristofcakova" → "Sona")
       const localPart = previewEmail.split("@")[0] ?? "";
       const namePart = localPart.split(".")[0] ?? "";
-      const cap = namePart.charAt(0).toUpperCase() + namePart.slice(1).toLowerCase();
-      firstName = cap.length > 0 && cap.length <= 16 ? cap : "there";
+      // Split CamelCase (e.g. "VasilicaAnaMaria" → ["Vasilica","Ana","Maria"]) and take first word.
+      // Falls back to a simple capitalise if the string is all lowercase (e.g. "sona").
+      const camelWords = namePart.split(/(?=[A-Z])/).filter(Boolean);
+      const firstWord = camelWords.length > 1 ? camelWords[0] : (namePart.charAt(0).toUpperCase() + namePart.slice(1).toLowerCase());
+      firstName = firstWord.length > 0 && firstWord.length <= 20 ? firstWord : "there";
       previewEmployeeName = previewEmail; // show email in banner so staff know who they're viewing as
     } else {
       const contactRows = await db.execute(sql`SELECT contact_first_name FROM customers WHERE id = ${customerId}`);
