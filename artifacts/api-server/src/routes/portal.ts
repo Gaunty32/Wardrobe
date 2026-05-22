@@ -78,8 +78,8 @@ function signToken(userId: number, customerId: number, portalRole: string) {
   return jwt.sign({ sub: userId, customerId, portalRole }, JWT_SECRET, { expiresIn: "30d" });
 }
 
-function signPreviewToken(customerId: number, role: "manager" | "dept_manager" | "member" = "manager", linkedEmployeeId?: number | null) {
-  return jwt.sign({ sub: 0, customerId, portalRole: role, isPreview: true, linkedEmployeeId: linkedEmployeeId ?? null }, JWT_SECRET, { expiresIn: "2h" });
+function signPreviewToken(customerId: number, role: "manager" | "dept_manager" | "member" = "manager", linkedEmployeeId?: number | null, portalUserId?: number | null) {
+  return jwt.sign({ sub: portalUserId ?? 0, customerId, portalRole: role, isPreview: true, linkedEmployeeId: linkedEmployeeId ?? null, previewUserId: portalUserId ?? null }, JWT_SECRET, { expiresIn: "2h" });
 }
 
 export async function portalAuth(req: Request, res: Response, next: NextFunction) {
@@ -89,8 +89,10 @@ export async function portalAuth(req: Request, res: Response, next: NextFunction
     return;
   }
   try {
-    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as { sub: number; customerId: number; portalRole: string; isPreview?: boolean; linkedEmployeeId?: number | null };
-    (req as any).portalUserId = payload.sub;
+    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as { sub: number; customerId: number; portalRole: string; isPreview?: boolean; linkedEmployeeId?: number | null; previewUserId?: number | null };
+    // For preview tokens, use the embedded portal user id (previewUserId / sub) so
+    // dept_manager routes can look up the real user's team/email from the DB.
+    (req as any).portalUserId = payload.previewUserId ?? payload.sub;
     (req as any).portalCustomerId = payload.customerId;
     (req as any).portalRole = payload.portalRole ?? "member";
     (req as any).portalIsPreview = payload.isPreview ?? false;
@@ -472,6 +474,15 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
     const linkedEmployeeId: number | null = (req as any).portalLinkedEmployeeId ?? null;
     let firstName = "there";
     let previewEmployeeName: string | null = null;
+    let previewEmail = "staff-preview@sbs.internal";
+
+    // If previewing as a specific portal user, look up their real email
+    if (userId) {
+      const puRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${userId} LIMIT 1`);
+      const pu = puRows.rows[0] as any;
+      if (pu?.email) previewEmail = pu.email;
+    }
+
     if (linkedEmployeeId) {
       const empRows = await db.execute(sql`SELECT first_name, last_name FROM customer_employees WHERE id = ${linkedEmployeeId} LIMIT 1`);
       const emp = empRows.rows[0] as any;
@@ -485,7 +496,7 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
       firstName = raw.trim().split(/\s+/)[0];
     }
     res.json({
-      user: { id: 0, email: "staff-preview@sbs.internal", status: "active", portal_role: previewRole },
+      user: { id: userId ?? 0, email: previewEmail, status: "active", portal_role: previewRole },
       customer,
       firstName,
       isPreview: true,
@@ -536,12 +547,25 @@ router.post("/portal/admin/preview/:customerId", async (req: Request, res: Respo
 
   const roleParam = req.query.role as string;
   const role: "manager" | "dept_manager" | "member" = roleParam === "member" ? "member" : roleParam === "dept_manager" ? "dept_manager" : "manager";
-  const body = z.object({ employeeId: z.number().int().positive().optional().nullable() }).optional().safeParse(req.body);
-  const linkedEmployeeId = body.success ? (body.data?.employeeId ?? null) : null;
+  const body = z.object({
+    employeeId: z.number().int().positive().optional().nullable(),
+    portalUserId: z.number().int().positive().optional().nullable(),
+  }).optional().safeParse(req.body);
+  let linkedEmployeeId = body.success ? (body.data?.employeeId ?? null) : null;
+  const reqPortalUserId = body.success ? (body.data?.portalUserId ?? null) : null;
 
-  const token = signPreviewToken(customerId, role, linkedEmployeeId);
+  // If a specific portal user was requested but no explicit employeeId was supplied,
+  // resolve their linked_employee_id from the DB so their wardrobe/team filtering works.
+  if (reqPortalUserId && linkedEmployeeId === null) {
+    const userRows = await db.execute(sql`
+      SELECT linked_employee_id FROM customer_portal_users WHERE id = ${reqPortalUserId} LIMIT 1
+    `);
+    linkedEmployeeId = (userRows.rows[0] as any)?.linked_employee_id ?? null;
+  }
+
+  const token = signPreviewToken(customerId, role, linkedEmployeeId, reqPortalUserId);
   const previewUrl = `/customer-portal/preview-login?token=${token}`;
-  res.json({ previewUrl, token, expiresIn: "2h", role, linkedEmployeeId });
+  res.json({ previewUrl, token, expiresIn: "2h", role, linkedEmployeeId, portalUserId: reqPortalUserId });
 });
 
 // ─── portal: list orders ─────────────────────────────────────────────────────

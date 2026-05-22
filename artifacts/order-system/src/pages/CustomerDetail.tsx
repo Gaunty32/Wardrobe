@@ -2057,7 +2057,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     });
   };
 
-  const openPreview = async (role: "manager" | "dept_manager" | "member" = "manager", employeeId?: number | null) => {
+  const openPreview = async (role: "manager" | "dept_manager" | "member" = "manager", employeeId?: number | null, portalUserId?: number | null) => {
     setPreviewLoading(true);
     // Open a blank tab synchronously (within the click handler) so the browser
     // doesn't treat it as a popup. We navigate it to the real URL once we have the token.
@@ -2065,7 +2065,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     try {
       const data: any = await apiFetch(`/portal/admin/preview/${customerId}?role=${role}`, {
         method: "POST",
-        body: JSON.stringify({ employeeId: employeeId ?? null }),
+        body: JSON.stringify({ employeeId: employeeId ?? null, portalUserId: portalUserId ?? null }),
       });
       const href = window.location.origin + data.previewUrl;
       if (newWindow && !newWindow.closed) {
@@ -2206,7 +2206,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                       const selectedUser = pickedPortalUserId !== null
                         ? (portalUsers ?? []).find((u: any) => u.id === pickedPortalUserId)
                         : null;
-                      openPreview("dept_manager", selectedUser?.linked_employee_id ?? null);
+                      openPreview("dept_manager", selectedUser?.linked_employee_id ?? null, pickedPortalUserId);
                     } else {
                       openPreview(pickerRole, pickedEmployeeId);
                     }
