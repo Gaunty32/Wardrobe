@@ -338,10 +338,29 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       item: orderItemsTable,
       catalogueProductName: productsTable.name,
       productSku: productsTable.sku,
+      supplierPrice: productsTable.supplierPrice,
     })
     .from(orderItemsTable)
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(eq(orderItemsTable.orderId, order.id));
+
+  // ── Process stock cost per finish ID ──────────────────────────────────────
+  const finishIds = [...new Set(itemRows.map(r => r.item.finishId).filter((id): id is number => id != null))];
+  const processCostByFinishId = new Map<number, number>();
+  if (finishIds.length > 0) {
+    const costRows = await db.execute(sql`
+      SELECT cfp.finish_id, COALESCE(SUM(ps.unit_cost), 0)::float AS process_cost
+      FROM customer_finish_processes cfp
+      JOIN customer_processes cp ON cp.id = cfp.process_id
+      JOIN process_stock ps ON ps.id = cp.process_stock_id
+      WHERE cfp.finish_id = ANY(${finishIds}::int[])
+      GROUP BY cfp.finish_id
+    `);
+    for (const row of costRows.rows as Array<{ finish_id: number; process_cost: number }>) {
+      processCostByFinishId.set(row.finish_id, row.process_cost);
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
 
   let deliveryAddress: Record<string, unknown> | null = null;
   if (order.deliveryAddressId) {
@@ -365,18 +384,26 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     totalAmount: numericToFloat(order.totalAmount),
     deliveryAddress,
     customerMainAddress,
-    items: itemRows.map(({ item, catalogueProductName, productSku }) => ({
-      ...item,
-      productName: catalogueProductName ?? item.productName,
-      productSku: productSku ?? null,
-      unitPrice: numericToFloat(item.unitPrice),
-      lineTotal: numericToFloat(item.lineTotal),
-      vatRate: parseFloat(String(item.vatRate ?? 0.20)),
-      purchaseRequired: item.purchaseRequired,
-      purchaseQuantity: item.purchaseQuantity,
-      supplierId: item.supplierId,
-      supplierName: item.supplierName,
-    })),
+    items: itemRows.map(({ item, catalogueProductName, productSku, supplierPrice }) => {
+      const qty = item.quantity ?? 1;
+      const garmentCost = supplierPrice != null ? parseFloat(String(supplierPrice)) * qty : null;
+      const processCostPerItem = item.finishId != null ? (processCostByFinishId.get(item.finishId) ?? 0) : 0;
+      const processCost = processCostPerItem * qty;
+      return {
+        ...item,
+        productName: catalogueProductName ?? item.productName,
+        productSku: productSku ?? null,
+        unitPrice: numericToFloat(item.unitPrice),
+        lineTotal: numericToFloat(item.lineTotal),
+        vatRate: parseFloat(String(item.vatRate ?? 0.20)),
+        purchaseRequired: item.purchaseRequired,
+        purchaseQuantity: item.purchaseQuantity,
+        supplierId: item.supplierId,
+        supplierName: item.supplierName,
+        garmentCost,
+        processCost,
+      };
+    }),
   });
 });
 

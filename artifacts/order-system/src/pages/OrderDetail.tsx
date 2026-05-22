@@ -1422,6 +1422,7 @@ export default function OrderDetail() {
                             </button>
                           </TableHead>
                         ))}
+                        <TableHead className="w-[72px] text-right text-muted-foreground font-normal text-xs">GP%</TableHead>
                         <TableHead className="w-[90px] text-right text-muted-foreground font-normal text-xs">VAT</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1539,6 +1540,27 @@ export default function OrderDetail() {
                           </TableCell>
                           <TableCell className="text-center font-semibold">{orderItem.quantity}</TableCell>
                           <TableCell className="text-right font-bold text-primary tabular-nums">{formatCurrency(orderItem.lineTotal)}</TableCell>
+                          <TableCell className="text-right">
+                            {(() => {
+                              const item = orderItem as any;
+                              const garmentCost: number | null = item.garmentCost ?? null;
+                              const processCost: number = item.processCost ?? 0;
+                              if (garmentCost == null) return <span className="text-xs text-muted-foreground/40">—</span>;
+                              const totalCost = garmentCost + processCost;
+                              const lineTotal = parseFloat(String(orderItem.lineTotal)) || 0;
+                              if (lineTotal <= 0) return <span className="text-xs text-muted-foreground/40">—</span>;
+                              const gp = ((lineTotal - totalCost) / lineTotal) * 100;
+                              const color = gp >= 40 ? "text-green-700 bg-green-50 border-green-200"
+                                          : gp >= 20 ? "text-amber-700 bg-amber-50 border-amber-200"
+                                          : "text-red-700 bg-red-50 border-red-200";
+                              return (
+                                <span className={`inline-block text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded border ${color}`}
+                                  title={`Garment: ${formatCurrency(garmentCost)}${processCost > 0 ? ` · Process: ${formatCurrency(processCost)}` : ""} · Total cost: ${formatCurrency(totalCost)}`}>
+                                  {gp.toFixed(1)}%
+                                </span>
+                              );
+                            })()}
+                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
                               {(() => {
