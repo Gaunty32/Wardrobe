@@ -868,5 +868,34 @@ export async function runStartupMigrations(): Promise<void> {
     )
   `);
 
+  // Fix worksheets whose worksheet_number was set to the PostgreSQL column default '{}' instead
+  // of a proper F-number. Assign them sequential numbers below the current minimum F-number.
+  await db.execute(sql`
+    DO $$
+    DECLARE
+      min_num integer;
+      ws_id   integer;
+      counter integer := 1;
+    BEGIN
+      -- Find the lowest existing F-number so we can slot bad rows in below it
+      SELECT COALESCE(MIN(CAST(SUBSTRING(worksheet_number FROM 2) AS integer)), 101)
+      INTO min_num
+      FROM worksheets
+      WHERE worksheet_number ~ '^F[0-9]+$';
+
+      -- Assign each malformed worksheet a number in the gap below min_num
+      FOR ws_id IN
+        SELECT id FROM worksheets
+        WHERE worksheet_number IS NULL OR worksheet_number NOT LIKE 'F%'
+        ORDER BY created_at ASC
+      LOOP
+        UPDATE worksheets
+        SET worksheet_number = 'F' || (min_num - counter)
+        WHERE id = ws_id;
+        counter := counter + 1;
+      END LOOP;
+    END $$;
+  `);
+
   // ─────────────────────────────────────────────────────────────────────────
 }
