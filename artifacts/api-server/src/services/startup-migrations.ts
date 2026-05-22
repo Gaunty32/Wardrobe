@@ -903,7 +903,6 @@ export async function runStartupMigrations(): Promise<void> {
   {
     const dup = await db.execute(sql`SELECT id FROM worksheets WHERE id = 9 AND worksheet_number = 'F102'`);
     if (dup.rows.length > 0) {
-      await db.execute(sql`UPDATE order_items SET worksheet_id = 8 WHERE worksheet_id = 9`);
       await db.execute(sql`DELETE FROM worksheet_items WHERE worksheet_id = 9`);
       await db.execute(sql`DELETE FROM worksheets WHERE id = 9`);
       console.log("[startup] Removed duplicate worksheet F102");
