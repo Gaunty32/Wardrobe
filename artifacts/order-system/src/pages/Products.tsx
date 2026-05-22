@@ -639,6 +639,26 @@ export default function Products() {
   );
 }
 
+function calcGp(product: ProductWithCategory): number | null {
+  const sp = (product as any).supplierPrice;
+  if (sp == null || sp <= 0 || product.unitPrice <= 0) return null;
+  return ((product.unitPrice - sp) / product.unitPrice) * 100;
+}
+
+function GpBadge({ gp }: { gp: number }) {
+  const color = gp >= 70 ? "text-green-700 bg-green-50 border-green-200"
+              : gp >= 30 ? "text-amber-700 bg-amber-50 border-amber-200"
+              : "text-red-700 bg-red-50 border-red-200";
+  return (
+    <span className={`inline-block text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded border ${color}`}>
+      {gp.toFixed(1)}%
+    </span>
+  );
+}
+
+type SortCol = "name" | "price" | "stock" | "gp";
+type SortDir = "asc" | "desc";
+
 function ProductTable({
   products,
   onEdit,
@@ -652,6 +672,41 @@ function ProductTable({
   onDuplicate: (id: number) => void;
   onNavigate: (id: number) => void;
 }) {
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null);
+
+  const toggleSort = (col: SortCol) => {
+    setSort(s => s?.col === col ? (s.dir === "asc" ? { col, dir: "desc" } : null) : { col, dir: "asc" });
+  };
+
+  const sorted = [...products].sort((a, b) => {
+    if (!sort) return 0;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    switch (sort.col) {
+      case "name":  return a.name.localeCompare(b.name) * dir;
+      case "price": return ((a.unitPrice ?? 0) - (b.unitPrice ?? 0)) * dir;
+      case "stock": return (((a.stockQuantity ?? -1)) - ((b.stockQuantity ?? -1))) * dir;
+      case "gp": {
+        const ga = calcGp(a) ?? -Infinity;
+        const gb = calcGp(b) ?? -Infinity;
+        return (ga - gb) * dir;
+      }
+    }
+  });
+
+  const SortHead = ({ col, children, className }: { col: SortCol; children: React.ReactNode; className?: string }) => (
+    <TableHead className={className}>
+      <button
+        className="inline-flex items-center gap-1 hover:text-foreground transition-colors select-none"
+        onClick={() => toggleSort(col)}
+      >
+        {children}
+        <span className="text-muted-foreground/60 text-[10px] w-3 text-center">
+          {sort?.col === col ? (sort.dir === "asc" ? "↑" : "↓") : "↕"}
+        </span>
+      </button>
+    </TableHead>
+  );
+
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -659,70 +714,77 @@ function ProductTable({
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-[48px]"></TableHead>
             <TableHead className="w-[100px]">SKU</TableHead>
-            <TableHead>Product Name</TableHead>
+            <SortHead col="name">Product Name</SortHead>
             <TableHead className="hidden md:table-cell">Description</TableHead>
-            <TableHead className="text-right">Price</TableHead>
-            <TableHead className="text-right">Stock</TableHead>
+            <SortHead col="price" className="text-right">Price</SortHead>
+            <SortHead col="stock" className="text-right">Stock</SortHead>
+            <SortHead col="gp" className="text-right w-[80px]">GP%</SortHead>
             <TableHead className="w-[100px] text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {products.map((product) => (
-            <TableRow
-              key={product.id}
-              className="group hover:bg-muted/30 cursor-pointer"
-              onClick={() => onNavigate(product.id)}
-            >
-              <TableCell className="py-2 pl-4 pr-0">
-                {(product as any).imageUrl ? (
-                  <UploadedImage src={(product as any).imageUrl} alt={product.name} className="w-9 h-9 rounded object-cover border border-border/50" fallback={<div className="w-9 h-9 rounded bg-muted border border-border/50 flex items-center justify-center"><Package className="w-4 h-4 text-muted-foreground/40" /></div>} />
-                ) : (
-                  <div className="w-9 h-9 rounded bg-muted border border-border/50 flex items-center justify-center">
-                    <Package className="w-4 h-4 text-muted-foreground/40" />
-                  </div>
-                )}
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">{product.sku || "—"}</TableCell>
-              <TableCell className="font-medium text-foreground hover:text-primary transition-colors">
-                <div className="flex items-center gap-2 flex-wrap">
-                  {product.name}
-                  {(product as any).isBespoke ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex-shrink-0">
-                      <Package className="w-2.5 h-2.5" /> Bespoke{(product as any).customerName ? ` · ${(product as any).customerName}` : ""}
-                    </span>
-                  ) : (product as any).wooCommerceId ? (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 flex-shrink-0">
-                      <Globe className="w-2.5 h-2.5" /> Website
-                    </span>
+          {sorted.map((product) => {
+            const gp = calcGp(product);
+            return (
+              <TableRow
+                key={product.id}
+                className="group hover:bg-muted/30 cursor-pointer"
+                onClick={() => onNavigate(product.id)}
+              >
+                <TableCell className="py-2 pl-4 pr-0">
+                  {(product as any).imageUrl ? (
+                    <UploadedImage src={(product as any).imageUrl} alt={product.name} className="w-9 h-9 rounded object-cover border border-border/50" fallback={<div className="w-9 h-9 rounded bg-muted border border-border/50 flex items-center justify-center"><Package className="w-4 h-4 text-muted-foreground/40" /></div>} />
                   ) : (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border flex-shrink-0">
-                      <Lock className="w-2.5 h-2.5" /> Internal
-                    </span>
+                    <div className="w-9 h-9 rounded bg-muted border border-border/50 flex items-center justify-center">
+                      <Package className="w-4 h-4 text-muted-foreground/40" />
+                    </div>
                   )}
-                </div>
-              </TableCell>
-              <TableCell className="text-muted-foreground text-sm hidden md:table-cell max-w-[200px] truncate">{product.description || "—"}</TableCell>
-              <TableCell className="text-right font-medium tabular-nums">{formatCurrency(product.unitPrice)}</TableCell>
-              <TableCell className="text-right">
-                <span className={product.stockQuantity != null && product.stockQuantity <= 5 ? "text-red-600 font-bold" : ""}>
-                  {product.stockQuantity ?? "—"}
-                </span>
-              </TableCell>
-              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Duplicate product" onClick={() => onDuplicate(product.id)}>
-                    <Copy className="w-4 h-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => onEdit(product)}>
-                    <Edit2 className="w-4 h-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onDelete(product.id)}>
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{product.sku || "—"}</TableCell>
+                <TableCell className="font-medium text-foreground hover:text-primary transition-colors">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {product.name}
+                    {(product as any).isBespoke ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex-shrink-0">
+                        <Package className="w-2.5 h-2.5" /> Bespoke{(product as any).customerName ? ` · ${(product as any).customerName}` : ""}
+                      </span>
+                    ) : (product as any).wooCommerceId ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200 flex-shrink-0">
+                        <Globe className="w-2.5 h-2.5" /> Website
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground border border-border flex-shrink-0">
+                        <Lock className="w-2.5 h-2.5" /> Internal
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell className="text-muted-foreground text-sm hidden md:table-cell max-w-[200px] truncate">{product.description || "—"}</TableCell>
+                <TableCell className="text-right font-medium tabular-nums">{formatCurrency(product.unitPrice)}</TableCell>
+                <TableCell className="text-right">
+                  <span className={product.stockQuantity != null && product.stockQuantity <= 5 ? "text-red-600 font-bold" : ""}>
+                    {product.stockQuantity ?? "—"}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right">
+                  {gp != null ? <GpBadge gp={gp} /> : <span className="text-xs text-muted-foreground/40">—</span>}
+                </TableCell>
+                <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Duplicate product" onClick={() => onDuplicate(product.id)}>
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => onEdit(product)}>
+                      <Edit2 className="w-4 h-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onDelete(product.id)}>
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
