@@ -490,6 +490,14 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
         firstName = (emp.first_name ?? "there").trim().split(/\s+/)[0];
         previewEmployeeName = [emp.first_name, emp.last_name].filter(Boolean).join(" ");
       }
+    } else if (userId && previewEmail !== "staff-preview@sbs.internal") {
+      // Previewing as a specific portal user with no linked employee —
+      // derive a first name from the email local part (e.g. "sona.kristofcakova" → "Sona")
+      const localPart = previewEmail.split("@")[0] ?? "";
+      const namePart = localPart.split(".")[0] ?? "";
+      const cap = namePart.charAt(0).toUpperCase() + namePart.slice(1).toLowerCase();
+      firstName = cap.length > 0 && cap.length <= 16 ? cap : "there";
+      previewEmployeeName = previewEmail; // show email in banner so staff know who they're viewing as
     } else {
       const contactRows = await db.execute(sql`SELECT contact_first_name FROM customers WHERE id = ${customerId}`);
       const raw = (contactRows.rows[0] as any)?.contact_first_name ?? "there";
