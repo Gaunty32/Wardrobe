@@ -103,6 +103,10 @@
   --sidebar-foreground: 210 40% 95%;
 }
 
+/* Sidebar width offset — used by DialogContent to centre over the content area on desktop */
+:root { --sidebar-offset: 0px; }
+@media (min-width: 768px) { :root { --sidebar-offset: 8rem; } }
+
 @layer base {
   * {
     @apply border-border;

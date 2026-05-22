@@ -94,7 +94,7 @@ const DialogContent = React.forwardRef<
           className,
         )}
         style={{
-          left: `calc(50% + ${offset.x}px)`,
+          left: `calc(50% + var(--sidebar-offset) + ${offset.x}px)`,
           top: `calc(50% + ${offset.y}px)`,
           transform: "translate(-50%, -50%)",
         }}
