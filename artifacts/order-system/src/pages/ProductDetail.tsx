@@ -749,8 +749,8 @@ export default function ProductDetail() {
               {/* Internal GP% badge — only shown when supplier cost is known */}
               {product.supplierPrice != null && product.supplierPrice > 0 && product.unitPrice > 0 && (() => {
                 const gp = ((product.unitPrice - product.supplierPrice) / product.unitPrice) * 100;
-                const color = gp >= 40 ? "bg-green-50 text-green-700 border-green-200"
-                            : gp >= 20 ? "bg-amber-50 text-amber-700 border-amber-200"
+                const color = gp >= 70 ? "bg-green-50 text-green-700 border-green-200"
+                            : gp >= 30 ? "bg-amber-50 text-amber-700 border-amber-200"
                             : "bg-red-50 text-red-700 border-red-200";
                 return (
                   <div className={`flex-shrink-0 flex flex-col items-center rounded-lg border px-4 py-2 ${color}`}>

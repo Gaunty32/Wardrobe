@@ -133,4 +133,68 @@ router.get("/reports/portal-baskets", async (req: Request, res: Response) => {
   res.json({ baskets, total: baskets.length });
 });
 
+// ─── GP summary by order ─────────────────────────────────────────────────────
+// Returns active orders with garment cost, process cost, and calculated GP%.
+// Only includes orders where at least one item has a known supplier price.
+
+router.get("/reports/gp-summary", async (_req: Request, res: Response) => {
+  const rows = await db.execute(sql`
+    SELECT
+      o.id,
+      o.order_number,
+      o.customer_name,
+      o.order_date,
+      o.required_date,
+      o.status,
+      o.total_amount::float AS revenue,
+      COALESCE(garment.cost, 0)::float AS garment_cost,
+      COALESCE(proc.cost, 0)::float   AS process_cost
+    FROM orders o
+    LEFT JOIN (
+      SELECT oi.order_id, SUM(oi.quantity * p.supplier_price) AS cost
+      FROM order_items oi
+      JOIN products p ON p.id = oi.product_id
+      WHERE p.supplier_price IS NOT NULL
+      GROUP BY oi.order_id
+    ) garment ON garment.order_id = o.id
+    LEFT JOIN (
+      SELECT oi.order_id, SUM(ps.unit_cost * oi.quantity) AS cost
+      FROM order_items oi
+      JOIN customer_finish_processes cfp ON cfp.finish_id = oi.finish_id
+      JOIN customer_processes cp ON cp.id = cfp.process_id
+      JOIN process_stock ps ON ps.id = cp.process_stock_id
+      WHERE oi.finish_id IS NOT NULL
+      GROUP BY oi.order_id
+    ) proc ON proc.order_id = o.id
+    WHERE o.status NOT IN ('cancelled', 'portal_draft', 'archived')
+      AND o.total_amount > 0
+      AND garment.cost IS NOT NULL
+    ORDER BY o.required_date ASC NULLS LAST, o.order_date DESC
+    LIMIT 200
+  `);
+
+  const orders = (rows.rows as any[]).map(r => {
+    const revenue = parseFloat(r.revenue ?? "0");
+    const garmentCost = parseFloat(r.garment_cost ?? "0");
+    const processCost = parseFloat(r.process_cost ?? "0");
+    const totalCost = garmentCost + processCost;
+    const gp = revenue > 0 ? ((revenue - totalCost) / revenue) * 100 : null;
+    return {
+      id: r.id,
+      orderNumber: r.order_number,
+      customerName: r.customer_name,
+      orderDate: r.order_date,
+      requiredDate: r.required_date,
+      status: r.status,
+      revenue,
+      garmentCost,
+      processCost,
+      totalCost,
+      gp,
+    };
+  });
+
+  res.json({ orders });
+});
+
 export default router;

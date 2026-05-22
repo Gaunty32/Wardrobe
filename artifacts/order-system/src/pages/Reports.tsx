@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/collapsible";
 import {
   BarChart2, Mail, Phone, ChevronDown, ChevronRight, Clock, AlertCircle,
-  ExternalLink, RefreshCw, ShoppingCart, Users, ShoppingBag, Package,
+  ExternalLink, RefreshCw, ShoppingCart, Users, ShoppingBag, Package, TrendingUp,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -77,6 +77,28 @@ type BasketReportData = {
   baskets: ActiveBasket[];
   total: number;
 };
+
+type GpOrder = {
+  id: number;
+  orderNumber: string;
+  customerName: string;
+  orderDate: string | null;
+  requiredDate: string | null;
+  status: string;
+  revenue: number;
+  garmentCost: number;
+  processCost: number;
+  totalCost: number;
+  gp: number | null;
+};
+
+type GpReportData = { orders: GpOrder[] };
+
+function gpColor(gp: number) {
+  if (gp >= 70) return { badge: "text-green-700 bg-green-50 border-green-200", row: "" };
+  if (gp >= 30) return { badge: "text-amber-700 bg-amber-50 border-amber-200", row: "" };
+  return { badge: "text-red-700 bg-red-50 border-red-200", row: "bg-red-50/40" };
+}
 
 function portalStatusLabel(s: string): { label: string; variant: "default" | "secondary" | "destructive" | "outline" } {
   switch (s) {
@@ -299,6 +321,12 @@ export default function Reports() {
     staleTime: 1000 * 60 * 2,
   });
 
+  const { data: gpData, isLoading: gpLoading } = useQuery<GpReportData>({
+    queryKey: ["reports-gp-summary"],
+    queryFn: () => apiFetch("/reports/gp-summary"),
+    staleTime: 1000 * 60 * 2,
+  });
+
   const customers = data?.customers ?? [];
   const totalOrders = data?.totalOrders ?? 0;
   const baskets = basketData?.baskets ?? [];
@@ -414,6 +442,121 @@ export default function Reports() {
           )}
         </CardContent>
       </Card>
+      {/* ── Gross Profit by Order ─────────────────────────────────────────────── */}
+      <Card className="mt-6">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <CardTitle className="text-base flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                Gross Profit by Order
+              </CardTitle>
+              <CardDescription className="mt-1">
+                Active orders where supplier cost is known. GP% = (Revenue − Garment − Process cost) ÷ Revenue.
+              </CardDescription>
+            </div>
+            {/* Colour key */}
+            <div className="flex items-center gap-2 text-xs shrink-0 flex-wrap">
+              <span className="text-muted-foreground font-medium">Key:</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-green-700 bg-green-50 border-green-200 font-semibold">≥ 70% Good</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-amber-700 bg-amber-50 border-amber-200 font-semibold">30–69% Watch</span>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded border text-red-700 bg-red-50 border-red-200 font-semibold">&lt; 30% Low</span>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {gpLoading ? (
+            <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" /> Loading report…
+            </div>
+          ) : !gpData?.orders.length ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                <TrendingUp className="w-6 h-6 text-muted-foreground/50" />
+              </div>
+              <p className="font-medium text-sm">No data yet</p>
+              <p className="text-muted-foreground text-sm mt-1">Add supplier prices to products to see GP analysis.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Order</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Due</TableHead>
+                    <TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="text-right">Cost</TableHead>
+                    <TableHead className="text-right w-[80px]">GP%</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {gpData.orders.map(order => {
+                    const colors = order.gp != null ? gpColor(order.gp) : null;
+                    return (
+                      <TableRow key={order.id} className={cn("hover:bg-muted/40 transition-colors", colors?.row)}>
+                        <TableCell className="py-2.5">
+                          <Link href={`/orders/${order.id}`} className="font-mono text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+                            {order.orderNumber}
+                            <ExternalLink className="w-3 h-3 opacity-50" />
+                          </Link>
+                          <span className="text-[10px] text-muted-foreground capitalize">{order.status}</span>
+                        </TableCell>
+                        <TableCell className="py-2.5 text-sm">{order.customerName ?? "—"}</TableCell>
+                        <TableCell className="py-2.5 text-xs text-muted-foreground">
+                          {order.requiredDate
+                            ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right tabular-nums text-sm font-medium">
+                          {formatCurrency(order.revenue)}
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right tabular-nums text-sm text-muted-foreground">
+                          <span title={`Garment: ${formatCurrency(order.garmentCost)}${order.processCost > 0 ? ` · Process: ${formatCurrency(order.processCost)}` : ""}`}>
+                            {formatCurrency(order.totalCost)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="py-2.5 text-right">
+                          {order.gp != null && colors ? (
+                            <span className={`inline-block text-xs font-semibold tabular-nums px-2 py-0.5 rounded border ${colors.badge}`}>
+                              {order.gp.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/40">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              {/* Summary footer */}
+              {(() => {
+                const orders = gpData.orders;
+                const totalRev = orders.reduce((s, o) => s + o.revenue, 0);
+                const totalCost = orders.reduce((s, o) => s + o.totalCost, 0);
+                const overallGp = totalRev > 0 ? ((totalRev - totalCost) / totalRev) * 100 : null;
+                const colors = overallGp != null ? gpColor(overallGp) : null;
+                return (
+                  <div className="p-4 bg-muted/20 border-t border-border/40 flex justify-end items-center gap-6 flex-wrap text-sm">
+                    <span className="text-muted-foreground">{orders.length} orders</span>
+                    <span className="text-muted-foreground">Revenue: <span className="font-semibold text-foreground tabular-nums">{formatCurrency(totalRev)}</span></span>
+                    <span className="text-muted-foreground">Cost: <span className="font-semibold text-foreground tabular-nums">{formatCurrency(totalCost)}</span></span>
+                    {overallGp != null && colors && (
+                      <span className="text-muted-foreground">Overall GP:
+                        <span className={`ml-2 inline-block text-sm font-bold tabular-nums px-2 py-0.5 rounded border ${colors.badge}`}>
+                          {overallGp.toFixed(1)}%
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* ── Active Customer Baskets ────────────────────────────────────────────── */}
       <Card className="mt-6">
         <CardHeader className="pb-3">
