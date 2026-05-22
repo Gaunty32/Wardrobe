@@ -1971,6 +1971,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const [empPickerOpen, setEmpPickerOpen] = useState(false);
   const [empPickerSearch, setEmpPickerSearch] = useState("");
   const [pickedEmployeeId, setPickedEmployeeId] = useState<number | null>(null);
+  const [pickedPortalUserId, setPickedPortalUserId] = useState<number | null>(null);
   const [pickerRole, setPickerRole] = useState<"member" | "dept_manager" | "manager">("member");
   const [editEmailUser, setEditEmailUser] = useState<any | null>(null);
   const [editEmailValue, setEditEmailValue] = useState("");
@@ -2099,7 +2100,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickerRole("member"); setPickedEmployeeId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
             <Eye className="w-3.5 h-3.5" /> Preview as Employee
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickerRole("dept_manager"); setPickedEmployeeId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickerRole("dept_manager"); setPickedEmployeeId(null); setPickedPortalUserId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
             <Eye className="w-3.5 h-3.5" /> Preview as Team Manager
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setPickerRole("manager"); setPickedEmployeeId(null); setEmpPickerSearch(""); setEmpPickerOpen(true); }} disabled={previewLoading}>
@@ -2155,12 +2156,12 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                           <button
                             key={u.id}
                             type="button"
-                            onClick={() => setPickedEmployeeId(u.linked_employee_id ?? null)}
-                            className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedEmployeeId === (u.linked_employee_id ?? null) && "bg-primary/10")}
+                            onClick={() => setPickedPortalUserId(u.id)}
+                            className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedPortalUserId === u.id && "bg-primary/10")}
                           >
-                            <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === (u.linked_employee_id ?? null) ? "opacity-100" : "opacity-0")} />
+                            <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedPortalUserId === u.id ? "opacity-100" : "opacity-0")} />
                             <div className="min-w-0">
-                              <p className="font-medium truncate">{u.email}</p>
+                              <p className="font-medium break-all">{u.email}</p>
                               <p className="text-xs text-muted-foreground truncate capitalize">{u.status}</p>
                             </div>
                           </button>
@@ -2201,7 +2202,14 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   disabled={previewLoading}
                   onClick={() => {
                     setEmpPickerOpen(false);
-                    openPreview(pickerRole, pickedEmployeeId);
+                    if (pickerRole === "dept_manager") {
+                      const selectedUser = pickedPortalUserId !== null
+                        ? (portalUsers ?? []).find((u: any) => u.id === pickedPortalUserId)
+                        : null;
+                      openPreview("dept_manager", selectedUser?.linked_employee_id ?? null);
+                    } else {
+                      openPreview(pickerRole, pickedEmployeeId);
+                    }
                   }}
                 >
                   {previewLoading ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Opening…</> : "Open Preview"}
