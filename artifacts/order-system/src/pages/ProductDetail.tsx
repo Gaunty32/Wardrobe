@@ -726,24 +726,42 @@ export default function ProductDetail() {
             <input ref={productImageRef} type="file" accept="image/*" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadProductImage(f); e.target.value = ""; }}
             />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{product.name}</h1>
-                {product.sku && <span className="font-mono text-sm text-muted-foreground bg-muted px-2 py-0.5 rounded">{product.sku}</span>}
+            <div className="flex-1 min-w-0 flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{product.name}</h1>
+                  {product.sku && <span className="font-mono text-sm text-muted-foreground bg-muted px-2 py-0.5 rounded">{product.sku}</span>}
+                </div>
+                <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground text-base">{formatCurrency(product.unitPrice)}</span>
+                  {variants.length > 0 && (
+                    <>
+                      <span>{totalStock} units in stock</span>
+                      {lowStockCount > 0 && (
+                        <span className="text-amber-600 font-medium flex items-center gap-1">
+                          <AlertCircle className="w-3.5 h-3.5" /> {lowStockCount} variant{lowStockCount > 1 ? "s" : ""} low stock
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
-                <span className="font-semibold text-foreground text-base">{formatCurrency(product.unitPrice)}</span>
-                {variants.length > 0 && (
-                  <>
-                    <span>{totalStock} units in stock</span>
-                    {lowStockCount > 0 && (
-                      <span className="text-amber-600 font-medium flex items-center gap-1">
-                        <AlertCircle className="w-3.5 h-3.5" /> {lowStockCount} variant{lowStockCount > 1 ? "s" : ""} low stock
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
+              {/* Internal GP% badge — only shown when supplier cost is known */}
+              {product.supplierPrice != null && product.supplierPrice > 0 && product.unitPrice > 0 && (() => {
+                const gp = ((product.unitPrice - product.supplierPrice) / product.unitPrice) * 100;
+                const color = gp >= 40 ? "bg-green-50 text-green-700 border-green-200"
+                            : gp >= 20 ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-red-50 text-red-700 border-red-200";
+                return (
+                  <div className={`flex-shrink-0 flex flex-col items-center rounded-lg border px-4 py-2 ${color}`}>
+                    <span className="text-xs font-medium uppercase tracking-wide opacity-70">GP</span>
+                    <span className="text-2xl font-bold leading-none">{gp.toFixed(1)}%</span>
+                    <span className="text-xs mt-0.5 opacity-60">
+                      cost {formatCurrency(product.supplierPrice)}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
