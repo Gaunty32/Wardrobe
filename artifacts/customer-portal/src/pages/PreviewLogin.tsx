@@ -9,7 +9,14 @@ const _params = new URLSearchParams(window.location.search);
 const _previewToken = _params.get("token");
 if (_previewToken) {
   localStorage.setItem("portal_token", _previewToken);
-  localStorage.setItem("portal_role", "manager");
+  // Decode the JWT payload (base64url) to read the actual portalRole — do NOT hardcode "manager".
+  try {
+    const b64 = _previewToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(b64));
+    localStorage.setItem("portal_role", payload.portalRole ?? "member");
+  } catch {
+    localStorage.setItem("portal_role", "member");
+  }
 }
 
 export default function PreviewLogin() {

@@ -2157,6 +2157,10 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                             key={u.id}
                             type="button"
                             onClick={() => setPickedPortalUserId(u.id)}
+                            onDoubleClick={() => {
+                              setEmpPickerOpen(false);
+                              openPreview("dept_manager", u.linked_employee_id ?? null, u.id);
+                            }}
                             className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedPortalUserId === u.id && "bg-primary/10")}
                           >
                             <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedPortalUserId === u.id ? "opacity-100" : "opacity-0")} />
@@ -2180,6 +2184,10 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                               key={e.id}
                               type="button"
                               onClick={() => setPickedEmployeeId(e.id)}
+                              onDoubleClick={() => {
+                                setEmpPickerOpen(false);
+                                openPreview(pickerRole, e.id);
+                              }}
                               className={cn("w-full text-left px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors flex items-center gap-2", pickedEmployeeId === e.id && "bg-primary/10")}
                             >
                               <Check className={cn("w-3.5 h-3.5 shrink-0 text-primary", pickedEmployeeId === e.id ? "opacity-100" : "opacity-0")} />
