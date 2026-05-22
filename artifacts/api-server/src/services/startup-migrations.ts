@@ -900,41 +900,30 @@ export async function runStartupMigrations(): Promise<void> {
   // ─────────────────────────────────────────────────────────────────────────
   // One-time cleanup: worksheet F102 (id=9) is a duplicate of F101 (id=8) —
   // both cover the same 7 order items for P21 (Pro Fit Security Ltd).
-  // Re-point any order_items referencing worksheet 9 to worksheet 8,
-  // delete the duplicate worksheet_items, and drop worksheet 9.
-  await db.execute(sql`
-    DO $$
-    BEGIN
-      IF EXISTS (SELECT 1 FROM worksheets WHERE id = 9 AND worksheet_number = 'F102') THEN
-        -- Re-point order_items that reference the duplicate worksheet
-        UPDATE order_items SET worksheet_id = 8 WHERE worksheet_id = 9;
-        -- Remove duplicate worksheet_items
-        DELETE FROM worksheet_items WHERE worksheet_id = 9;
-        -- Delete the duplicate worksheet
-        DELETE FROM worksheets WHERE id = 9;
-      END IF;
-    END $$;
-  `);
+  {
+    const dup = await db.execute(sql`SELECT id FROM worksheets WHERE id = 9 AND worksheet_number = 'F102'`);
+    if (dup.rows.length > 0) {
+      await db.execute(sql`UPDATE order_items SET worksheet_id = 8 WHERE worksheet_id = 9`);
+      await db.execute(sql`DELETE FROM worksheet_items WHERE worksheet_id = 9`);
+      await db.execute(sql`DELETE FROM worksheets WHERE id = 9`);
+      console.log("[startup] Removed duplicate worksheet F102");
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // One-time backfill: process stock quantities were not incremented when
   // certain POs were marked as delivered (server restarted mid-transaction or
   // the increment logic was added after those POs were already delivered).
-  // We use a _migration_flags table as a marker so this only runs once.
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS _migration_flags (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());
   `);
 
-  await db.execute(sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM _migration_flags WHERE name = 'backfill_process_stock_from_delivered_pos_v1') THEN
-
-        -- For every delivered PO that has process-stock lines, add any
-        -- quantity_delivered that was never credited to the process_stock row.
-        -- Guard: only touches rows whose stock_quantity is still 0 so we don't
-        -- double-increment if the item was legitimately consumed back to zero
-        -- on a future server start (the marker prevents re-entry in that case).
+  {
+    const flag = await db.execute(sql`
+      SELECT 1 FROM _migration_flags WHERE name = 'backfill_process_stock_from_delivered_pos_v1'
+    `);
+    if (flag.rows.length === 0) {
+      await db.execute(sql`
         UPDATE process_stock ps
         SET stock_quantity = ps.stock_quantity + sub.total_delivered
         FROM (
@@ -947,11 +936,13 @@ export async function runStartupMigrations(): Promise<void> {
           GROUP BY poi.process_stock_id
         ) sub
         WHERE ps.id = sub.process_stock_id
-          AND ps.stock_quantity = 0;
-
-        INSERT INTO _migration_flags (name) VALUES ('backfill_process_stock_from_delivered_pos_v1');
-      END IF;
-    END $$;
-  `);
+          AND ps.stock_quantity = 0
+      `);
+      await db.execute(sql`
+        INSERT INTO _migration_flags (name) VALUES ('backfill_process_stock_from_delivered_pos_v1')
+      `);
+      console.log("[startup] Backfilled process stock quantities from delivered POs");
+    }
+  }
   // ─────────────────────────────────────────────────────────────────────────
 }
