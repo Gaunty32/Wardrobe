@@ -1392,7 +1392,21 @@ interface DocCustomer { name: string; address: string | null; city: string | nul
 interface DocOrder {
   id: number; orderNumber: string; customerName: string | null; orderDate: string;
   requiredDate: string | null; totalAmount: number; notes: string | null;
+  shippingMethod: string | null; trackingNumber: string | null;
   customer: DocCustomer | null; deliveryAddress: DocAddress | null; items: DocItem[];
+}
+
+const DOC_SHIPPING_LABELS: Record<string, string> = {
+  free_local: "Free Local Delivery",
+  local_delivery: "Local Delivery",
+  office_collection: "Office Collection",
+  warehouse_collection: "Warehouse Collection",
+  courier: "Courier",
+  dpd: "DPD Courier",
+};
+function docShippingLabel(method: string | null): string {
+  if (!method) return "";
+  return DOC_SHIPPING_LABELS[method] ?? method;
 }
 
 function docRecipientName(item: DocItem): string {
@@ -1461,7 +1475,7 @@ function printDocDeliveryNote(order: DocOrder, opts?: { draft?: boolean }) {
       </div>
       <div style="display:flex;gap:24px;margin-bottom:5mm">
         <div style="flex:1"><div class="lbl">Deliver To</div><p><strong>${order.customerName ?? ""}</strong><br>${addrLines.length > 0 ? addrLines.join("<br>") : "<em>No delivery address</em>"}</p></div>
-        <div style="flex:1"><div class="lbl">Order Details</div><p>Order Date: ${new Date(order.orderDate).toLocaleDateString("en-AU")}<br>${order.requiredDate ? `Required By: <strong>${new Date(order.requiredDate).toLocaleDateString("en-AU")}</strong><br>` : ""}Dispatched: ${dateStr}</p></div>
+        <div style="flex:1"><div class="lbl">Order Details</div><p>Order Date: ${new Date(order.orderDate).toLocaleDateString("en-AU")}<br>${order.requiredDate ? `Required By: <strong>${new Date(order.requiredDate).toLocaleDateString("en-AU")}</strong><br>` : ""}Dispatched: ${dateStr}${order.shippingMethod ? `<br>Delivery: <strong>${docShippingLabel(order.shippingMethod)}</strong>` : ""}${order.trackingNumber ? `<br>Tracking: <strong>${order.trackingNumber}</strong>` : ""}</p></div>
       </div>
       <table><thead><tr><th>Item</th><th>Colour</th><th>Size</th><th class="ctr">Qty</th></tr></thead>
       <tbody>${groupRows}${stockRows}<tr style="border-top:2px solid #000"><td colspan="3" style="text-align:right;font-weight:bold">Total Items</td><td class="ctr" style="font-size:13pt">${totalQty}</td></tr></tbody></table>
@@ -1510,7 +1524,7 @@ function printDocInvoice(order: DocOrder) {
       <div style="display:flex;gap:24px;margin-bottom:6mm">
         <div style="flex:1"><div class="lbl">Bill To</div><p><strong>${order.customerName ?? ""}</strong><br>${custAddrLines.length > 0 ? custAddrLines.join("<br>") : ""}<br>${customer?.email ? customer.email : ""}</p></div>
         <div style="flex:1"><div class="lbl">Deliver To</div><p>${addrLines.length > 0 ? addrLines.join("<br>") : "<em>Same as billing</em>"}</p></div>
-        <div style="flex:1"><div class="lbl">Reference</div><p>Order: ${order.orderNumber}<br>${order.requiredDate ? `Required: ${new Date(order.requiredDate).toLocaleDateString("en-AU")}` : ""}</p></div>
+        <div style="flex:1"><div class="lbl">Reference</div><p>Order: ${order.orderNumber}<br>${order.requiredDate ? `Required: ${new Date(order.requiredDate).toLocaleDateString("en-AU")}<br>` : ""}${order.shippingMethod ? `Delivery: ${docShippingLabel(order.shippingMethod)}` : ""}</p></div>
       </div>
       <table><thead><tr><th>Description</th><th class="ctr">Qty</th><th class="right">Unit Price</th><th class="right">Total</th></tr></thead>
       <tbody>${itemRows}</tbody></table>
@@ -1541,7 +1555,27 @@ function printDocWearerLabels(order: DocOrder) {
   const namedItems = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
   if (namedItems.length === 0) return;
 
-  const labels: string[] = [];
+  const deliveryMethod = docShippingLabel(order.shippingMethod);
+  const isDpd = !!order.shippingMethod?.toLowerCase().includes("dpd");
+  const addr = order.deliveryAddress;
+  const addrSummary = addr ? [addr.line1, addr.city, addr.postcode].filter(Boolean).join(", ") : "";
+
+  // ── First label: delivery / dispatch label ──────────────────────────────────
+  const deliveryLabel = `
+    <div class="label delivery-label">
+      <div class="dl-header">
+        <span class="dl-badge">DELIVERY LABEL</span>
+        <span class="dl-order">${order.orderNumber}</span>
+      </div>
+      <div class="dl-customer">${order.customerName ?? ""}</div>
+      <div class="dl-divider"></div>
+      <div class="dl-row"><span class="dl-key">Delivery method</span><span class="dl-val">${deliveryMethod || "Not specified"}</span></div>
+      ${isDpd ? `<div class="dl-row"><span class="dl-key">DPD tracking</span><span class="dl-val dl-tracking">${order.trackingNumber ?? "To be assigned"}</span></div>` : ""}
+      ${addrSummary ? `<div class="dl-addr">${addrSummary}</div>` : ""}
+    </div>`;
+
+  // ── Named wearer labels ─────────────────────────────────────────────────────
+  const labels: string[] = [deliveryLabel];
   for (const item of namedItems) {
     const name = docRecipientName(item);
     const jobTitle = item.employee?.jobTitle ?? null;
@@ -1593,6 +1627,18 @@ function printDocWearerLabels(order: DocOrder) {
     .product{font-size:18pt;font-weight:700;color:#000}
     .finish{font-size:12pt;color:#333;margin-top:4px}
     .variant{font-size:13pt;color:#444;margin-top:4px}
+    /* Delivery label */
+    .delivery-label{justify-content:flex-start;padding:0}
+    .dl-header{background:#1e3a5f;color:white;padding:0.18in 0.4in;display:flex;align-items:center;justify-content:space-between;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .dl-badge{font-size:11pt;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
+    .dl-order{font-size:14pt;font-weight:900;font-family:monospace}
+    .dl-customer{font-size:28pt;font-weight:900;color:#000;padding:0.18in 0.4in 0.06in;line-height:1.1}
+    .dl-divider{border-top:2px solid #1e3a5f;margin:0 0.4in 0.12in}
+    .dl-row{display:flex;align-items:baseline;gap:12px;padding:0.04in 0.4in}
+    .dl-key{font-size:9pt;color:#555;text-transform:uppercase;letter-spacing:.06em;width:1.3in;flex-shrink:0}
+    .dl-val{font-size:13pt;font-weight:700;color:#000}
+    .dl-tracking{font-family:monospace;font-size:14pt;color:#1e3a5f}
+    .dl-addr{font-size:10pt;color:#444;padding:0.1in 0.4in 0}
     @media print{
       @page{size:6in 4in;margin:0}
       #notice{display:none}
@@ -1604,11 +1650,12 @@ function printDocWearerLabels(order: DocOrder) {
         padding:0.3in 0.4in;
         page-break-after:always;
       }
+      .delivery-label{padding:0}
     }
   </style></head><body>
   <div id="notice">
     <div id="notice-text">
-      <div id="notice-title">🏷️ ${labels.length} Wearer Label${labels.length !== 1 ? "s" : ""} · ${order.customerName ?? order.orderNumber}</div>
+      <div id="notice-title">🏷️ ${labels.length} Label${labels.length !== 1 ? "s" : ""} · ${order.customerName ?? order.orderNumber} (1 delivery + ${labels.length - 1} wearer)</div>
       <div id="notice-sub">⚠️ Please select your LABEL PRINTER in the print dialog &nbsp;·&nbsp; 6 × 4 inch label format</div>
     </div>
     <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
