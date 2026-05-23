@@ -116,34 +116,62 @@ function printWearerLabels(order: DispatchOrder) {
 <title>Wearer Labels — ${order.orderNumber}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; background: white; }
-  .label {
-    width: 4in; height: 6in;
-    display: flex; flex-direction: column; justify-content: center;
-    padding: 0.35in;
-    page-break-after: always;
-    border: 1px solid #ccc;
+  body { font-family: Arial, sans-serif; background: #e5e7eb; }
+  #notice {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 20px; background: #1e3a5f; color: white;
+    box-shadow: 0 2px 6px rgba(0,0,0,.3);
   }
-  .order-ref { font-size: 11pt; color: #555; margin-bottom: 18px; }
-  .name { font-size: 32pt; font-weight: bold; color: #000; line-height: 1.1; }
+  #notice-text { flex: 1; }
+  #notice-title { font-size: 14px; font-weight: 700; }
+  #notice-sub { font-size: 12px; opacity: .8; margin-top: 2px; }
+  #notice button { padding: 7px 20px; border: none; border-radius: 5px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  #btn-print { background: #22c55e; color: white; }
+  #btn-close { background: rgba(255,255,255,.15); color: white; margin-left: 4px; }
+  #page { padding: 20px; display: flex; flex-direction: column; gap: 16px; align-items: center; }
+  .label {
+    width: 6in; height: 4in;
+    background: white; border: 1px solid #bbb; border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.12);
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 0.3in 0.4in;
+  }
+  .order-ref { font-size: 9pt; color: #555; margin-bottom: 10px; letter-spacing: .3px; }
+  .name { font-size: 40pt; font-weight: 900; color: #000; line-height: 1.0; }
   .job-title { font-size: 14pt; color: #333; margin-top: 6px; }
-  .divider { border-top: 2px solid #000; margin: 20px 0; }
-  .product { font-size: 16pt; font-weight: 600; color: #000; }
-  .variant { font-size: 13pt; color: #444; margin-top: 6px; }
+  .divider { border-top: 2px solid #000; margin: 14px 0; }
+  .product { font-size: 18pt; font-weight: 700; color: #000; }
+  .variant { font-size: 13pt; color: #444; margin-top: 4px; }
   @media print {
-    @page { size: 4in 6in; margin: 0; }
-    .label { border: none; }
+    @page { size: 6in 4in; margin: 0; }
+    #notice { display: none; }
+    body { background: white; }
+    #page { padding: 0; gap: 0; }
+    .label {
+      width: 6in; height: 4in;
+      border: none; border-radius: 0; box-shadow: none;
+      padding: 0.3in 0.4in;
+      page-break-after: always;
+    }
   }
 </style>
 </head>
 <body>
-  ${labelPages.join("")}
-  <script>window.onload = () => { window.print(); }</script>
+  <div id="notice">
+    <div id="notice-text">
+      <div id="notice-title">🏷️ ${labelPages.length} Wearer Label${labelPages.length !== 1 ? "s" : ""} · ${order.customerName ?? order.orderNumber}</div>
+      <div id="notice-sub">⚠️ Please select your LABEL PRINTER in the print dialog &nbsp;·&nbsp; 6 × 4 inch label format</div>
+    </div>
+    <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
+    <button id="btn-close" onclick="window.close()">✕ Close</button>
+  </div>
+  <div id="page">${labelPages.join("")}</div>
 </body>
 </html>`;
 
-  const win = window.open("", "_blank");
-  if (win) { win.document.write(html); win.document.close(); }
+  const win = window.open("", "_blank", "width=860,height=640");
+  if (win) { win.document.write(html); win.document.close(); win.focus(); }
 }
 
 function printDeliveryNote(order: DispatchOrder) {
