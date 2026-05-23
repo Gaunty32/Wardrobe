@@ -791,6 +791,122 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
   );
 }
 
+function WorksheetCardMatrix({ ws }: { ws: Worksheet }) {
+  const finishMap = useMemo(() => {
+    const map = new Map<string, WorksheetItem[]>();
+    for (const item of ws.items) {
+      const fk = item.finishName ?? "Plain (No Finish)";
+      if (!map.has(fk)) map.set(fk, []);
+      map.get(fk)!.push(item);
+    }
+    return map;
+  }, [ws.items]);
+
+  const sortedFinishes = useMemo(() =>
+    Array.from(finishMap.keys()).sort((a, b) => {
+      if (a === "Plain (No Finish)") return 1;
+      if (b === "Plain (No Finish)") return -1;
+      return a.localeCompare(b);
+    }),
+    [finishMap],
+  );
+
+  return (
+    <div className="border-t border-border px-5 py-4 space-y-3">
+      {sortedFinishes.map((finishName) => {
+        const fItems = finishMap.get(finishName)!;
+        const repProcesses = fItems.find((i) => i.processes.length > 0)?.processes ?? [];
+
+        const matMap = new Map<string, { productName: string; colour: string | null; sizes: Map<string, number> }>();
+        const allSizes = new Set<string>();
+        for (const item of fItems) {
+          const key = `${item.productName}||${item.colour ?? ""}`;
+          if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, sizes: new Map() });
+          const sk = item.size ?? "—";
+          allSizes.add(sk);
+          matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
+        }
+        const sortedSizes = sortSizes(Array.from(allSizes));
+        const matRows = Array.from(matMap.values());
+        const finishTotal = fItems.reduce((s, i) => s + i.quantity, 0);
+        const isPlain = finishName === "Plain (No Finish)";
+
+        return (
+          <div key={finishName} className="rounded-lg border border-border overflow-hidden">
+            {/* Finish header */}
+            <div className={`flex items-center justify-between px-3 py-2 ${isPlain ? "bg-muted/60" : "bg-[#1e3a5f] text-white"}`}>
+              <span className={`text-xs font-semibold flex items-center gap-1.5 ${isPlain ? "text-muted-foreground" : "text-white"}`}>
+                {!isPlain && <Sparkles className="w-3 h-3 text-amber-300" />}
+                {finishName}
+              </span>
+              <span className={`text-xs ${isPlain ? "text-muted-foreground" : "text-white/70"}`}>
+                {matRows.length} style{matRows.length !== 1 ? "s" : ""} · {finishTotal} unit{finishTotal !== 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Decoration processes */}
+            {repProcesses.length > 0 && (
+              <div className="bg-blue-50 border-b border-blue-100 px-3 py-2">
+                <p className="text-[10px] font-semibold text-blue-700 uppercase tracking-wide mb-1.5">Decoration Processes</p>
+                <div className="space-y-1">
+                  {repProcesses.map((p) => (
+                    <div key={p.id} className="flex gap-3 text-xs pl-2 border-l-2 border-blue-300">
+                      <span className="font-semibold text-foreground">{p.name}</span>
+                      {p.type && <span className="text-muted-foreground">{p.type}</span>}
+                      {p.placement && <span className="text-muted-foreground">{p.placement}</span>}
+                      {p.notes && <span className="text-muted-foreground italic">{p.notes}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Matrix table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="bg-muted/40 border-b border-border">
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">Product</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">Colour</th>
+                    {sortedSizes.map((s) => (
+                      <th key={s} className="text-center px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">{s}</th>
+                    ))}
+                    <th className="text-center px-3 py-2 font-semibold text-foreground bg-muted/60 whitespace-nowrap">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {matRows.map(({ productName, colour, sizes }, ri) => {
+                    const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+                    return (
+                      <tr key={ri} className={`border-b border-border last:border-0 ${ri % 2 === 0 ? "bg-background" : "bg-muted/20"}`}>
+                        <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{productName}</td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{colour ?? "—"}</td>
+                        {sortedSizes.map((s) => {
+                          const qty = sizes.get(s) ?? 0;
+                          return (
+                            <td key={s} className={`text-center px-3 py-2 ${qty > 0 ? "font-bold text-foreground" : "text-muted-foreground/30 select-none"}`}>
+                              {qty > 0 ? qty : "—"}
+                            </td>
+                          );
+                        })}
+                        <td className="text-center px-3 py-2 font-bold text-foreground bg-muted/40">{rowTotal}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+
+      {ws.notes && (
+        <div className="text-sm text-muted-foreground italic border-l-2 border-muted pl-3">{ws.notes}</div>
+      )}
+    </div>
+  );
+}
+
 function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   ws: Worksheet;
   onStatusChange: (id: number, status: string) => void;
@@ -911,43 +1027,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
       </div>
 
       {expanded && (
-        <div className="border-t border-border px-5 py-4 space-y-3">
-          {ws.items.map((item) => (
-            <div key={item.id} className="rounded-lg bg-muted/30 p-3 space-y-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="font-semibold">{item.productName}</div>
-                <div className="flex items-center gap-1 flex-wrap justify-end">
-                  {item.colour && <Badge variant="outline" className="text-xs gap-1"><Palette className="w-3 h-3" />{item.colour}</Badge>}
-                  {item.size && <Badge variant="outline" className="text-xs gap-1"><Ruler className="w-3 h-3" />{item.size}</Badge>}
-                  <Badge variant="secondary" className="text-xs font-semibold">× {item.quantity}</Badge>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  {item.recipientType === "person" ? <><User className="w-3 h-3" />{item.recipientName}</> : <><Archive className="w-3 h-3" />Stock</>}
-                </span>
-                {item.finishName && (
-                  <span className="flex items-center gap-1"><Sparkles className="w-3 h-3 text-amber-500" />{item.finishName}</span>
-                )}
-              </div>
-              {item.processes.length > 0 && (
-                <div className="space-y-1">
-                  {item.processes.map((p) => (
-                    <div key={p.id} className="text-xs text-muted-foreground flex gap-2 pl-2 border-l-2 border-amber-300">
-                      <span className="font-medium text-foreground">{p.name}</span>
-                      {p.type && <span>· {p.type}</span>}
-                      {p.placement && <span>· {p.placement}</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-
-          {ws.notes && (
-            <div className="text-sm text-muted-foreground italic border-l-2 border-muted pl-3">{ws.notes}</div>
-          )}
-        </div>
+        <WorksheetCardMatrix ws={ws} />
       )}
 
       <div id={`ws-print-${ws.id}`} style={{ display: "none" }}>
