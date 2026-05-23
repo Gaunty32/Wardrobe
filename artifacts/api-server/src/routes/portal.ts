@@ -2216,11 +2216,11 @@ router.get("/portal/invoices", portalAuth, async (req: Request, res: Response) =
   const rows = await db.execute(sql`
     SELECT id, order_number, invoice_email_sent_at, total_amount,
            xero_invoice_id, xero_invoice_status, tracking_number, order_date,
-           customer_name, status
+           invoice_date, po_number, customer_name, status
     FROM orders
     WHERE customer_id = ${customerId}
       AND invoice_email_sent_at IS NOT NULL
-    ORDER BY invoice_email_sent_at DESC
+    ORDER BY COALESCE(invoice_date, invoice_email_sent_at) DESC
     LIMIT 200
   `);
   res.json(rows.rows);
