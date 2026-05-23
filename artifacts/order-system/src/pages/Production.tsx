@@ -691,9 +691,9 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
         return (
           <div key={finishName} style={{ marginBottom: "6mm", pageBreakInside: "avoid", border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden" }}>
             {/* Finish header */}
-            <div style={{ backgroundColor: "#1e3a5f", color: "white", padding: "5px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: "bold", fontSize: "13px" }}>{finishName}</span>
-              <span style={{ fontSize: "11px" }}>{matRows.length} style{matRows.length !== 1 ? "s" : ""} · {finishTotal} unit{finishTotal !== 1 ? "s" : ""}</span>
+            <div style={{ backgroundColor: "#e8edf5", color: "#1e3a5f", borderLeft: "5px solid #1e3a5f", padding: "5px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: "800", fontSize: "13px" }}>{finishName}</span>
+              <span style={{ fontSize: "11px", color: "#374151" }}>{matRows.length} style{matRows.length !== 1 ? "s" : ""} · {finishTotal} unit{finishTotal !== 1 ? "s" : ""}</span>
             </div>
 
             {/* Decoration processes */}
@@ -924,7 +924,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
     if (!win) return;
     win.document.write(`<!DOCTYPE html><html><head><title>Worksheet ${ws.worksheetNumber}</title>
       <style>
-        *{box-sizing:border-box}
+        *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
         body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif}
         #toolbar{
           position:sticky;top:0;z-index:10;
