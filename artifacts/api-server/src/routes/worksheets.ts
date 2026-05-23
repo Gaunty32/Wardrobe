@@ -249,12 +249,20 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
       }
 
       for (const item of orderItems) {
-        // Avoid duplicates
+        // Avoid duplicates — but still ensure stockStatus is updated even if the
+        // worksheet item already exists (e.g. item was returned to picking but the
+        // worksheet item row was not deleted).
         const [existing] = await db
           .select()
           .from(worksheetItemsTable)
           .where(and(eq(worksheetItemsTable.worksheetId, worksheetId), eq(worksheetItemsTable.orderItemId, item.id)));
-        if (existing) continue;
+        if (existing) {
+          await db
+            .update(orderItemsTable)
+            .set({ stockStatus: "in_production" })
+            .where(eq(orderItemsTable.id, item.id));
+          continue;
+        }
 
         // Build processes snapshot from customer finish config
         let processesSnapshot: string | null = null;
