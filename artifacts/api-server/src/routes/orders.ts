@@ -353,7 +353,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       FROM customer_finish_processes cfp
       JOIN customer_processes cp ON cp.id = cfp.process_id
       JOIN process_stock ps ON ps.id = cp.process_stock_id
-      WHERE cfp.finish_id = ANY(${finishIds}::int[])
+      WHERE cfp.finish_id IN (${sql.raw(finishIds.join(","))})
       GROUP BY cfp.finish_id
     `);
     for (const row of costRows.rows as Array<{ finish_id: number; process_cost: number }>) {
