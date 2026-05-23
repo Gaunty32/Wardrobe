@@ -1292,7 +1292,7 @@ function POCard({
               <POMatrixView
                 items={po.items}
                 currency={po.supplierCurrency}
-                onDeleteLine={po.status === "draft" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
+                onDeleteLine={po.status !== "delivered" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
                 onLineUpdate={po.status === "draft" ? (itemId, qty) => onLineUpdate(po.id, itemId, { quantityOrdered: qty }) : undefined}
               />
 
