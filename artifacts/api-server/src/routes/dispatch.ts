@@ -130,6 +130,10 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
     (i) => i.stockStatus === "complete" || wsCompleteItemIds.has(i.id)
   );
 
+  const incompleteItemIds = items
+    .filter((i) => i.stockStatus !== "complete" && !wsCompleteItemIds.has(i.id))
+    .map((i) => i.id);
+
   let customer = null;
   if (order.customerId) {
     const [c] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
@@ -159,6 +163,7 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
 
   res.json({
     isComplete,
+    incompleteItemIds,
     order: {
       ...order,
       totalAmount: parseFloat(order.totalAmount ?? "0"),

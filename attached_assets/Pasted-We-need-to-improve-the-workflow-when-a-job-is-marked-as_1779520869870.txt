@@ -1,0 +1,54 @@
+We need to improve the workflow when a job is marked as completed through Work In Progress.
+
+This is not a rebuild. Please review the existing order, job, backorder, delivery note and wearer label logic before making changes.
+
+Required behaviour:
+
+When a job is completed through Work In Progress, the system should check whether the full customer order is now complete.
+
+If the full order is complete:
+- flag this clearly to the user
+- prompt the user to produce the Delivery Note
+- prompt the user to produce any Named Wearer Labels if required
+- move the order towards despatch
+
+If the full order is not complete:
+- allow the user to produce a draft/partial Delivery Note
+- check which items are still outstanding
+- check whether the outstanding items are on backorder
+- check the due dates for those backordered items
+- compare those due dates against the planned despatch date
+
+The system should only make a despatch/wait recommendation if the planned despatch date is imminent or has already passed.
+
+Definition of imminent:
+- planned despatch date is today, overdue, or within the next 2 days
+
+Recommendation logic:
+
+If the order is incomplete and the planned despatch date is imminent or passed:
+- show the user the outstanding items
+- show the expected backorder due dates
+- suggest whether it is better to despatch the completed items now or wait for the backorder
+
+Suggested rules:
+- If outstanding/backordered items are due very soon, suggest waiting
+- If outstanding/backordered items are not due soon, suggest despatching what is ready
+- If there is no backorder due date, suggest despatching what is ready and keeping the remaining items outstanding
+
+The user should always be able to override the suggestion.
+
+The aim is to help staff make a clear despatch decision without having to manually check the whole order.
+
+Please keep the interface simple:
+- clear alert/message
+- clear list of outstanding items
+- clear recommendation
+- buttons for:
+  - Produce Delivery Note
+  - Produce Draft/Partial Delivery Note
+  - Produce Named Wearer Labels
+  - Despatch Ready Items
+  - Wait For Backorder
+
+Before coding, please identify the existing components, tables and status fields involved, then make the smallest safe change.

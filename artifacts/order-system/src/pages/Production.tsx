@@ -1346,7 +1346,8 @@ function openPreview(title: string, bodyHtml: string, styleCss: string, toolbarL
   win.focus();
 }
 
-function printDocDeliveryNote(order: DocOrder) {
+function printDocDeliveryNote(order: DocOrder, opts?: { draft?: boolean }) {
+  const isDraft = opts?.draft ?? false;
   const dateStr = new Date().toLocaleDateString("en-AU");
   const addr = order.deliveryAddress;
   const addrLines = addr ? [addr.line1, addr.line2, addr.city, addr.county, addr.postcode, addr.country].filter(Boolean) : [];
@@ -1371,11 +1372,12 @@ function printDocDeliveryNote(order: DocOrder) {
   ` : "";
 
   openPreview(
-    `Delivery Note — ${order.orderNumber}`,
+    `${isDraft ? "DRAFT " : ""}Delivery Note — ${order.orderNumber}`,
     `<div style="padding:15mm">
+      ${isDraft ? `<div style="background:#dc2626;color:white;text-align:center;font-size:11pt;font-weight:900;letter-spacing:.12em;padding:4px 0;margin-bottom:5mm;border-radius:3px">DRAFT — PARTIAL ORDER — NOT ALL ITEMS INCLUDED</div>` : ""}
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1e3a5f;padding-bottom:5mm;margin-bottom:5mm">
         <div><div style="font-size:22pt;font-weight:900;color:#1e3a5f">Select Branding Solutions</div></div>
-        <div style="text-align:right"><div style="font-size:16pt;font-weight:bold;color:#333">DELIVERY NOTE</div><div style="font-size:11pt;color:#555">${order.orderNumber}</div></div>
+        <div style="text-align:right"><div style="font-size:16pt;font-weight:bold;color:#333">${isDraft ? "DRAFT " : ""}DELIVERY NOTE</div><div style="font-size:11pt;color:#555">${order.orderNumber}</div></div>
       </div>
       <div style="display:flex;gap:24px;margin-bottom:5mm">
         <div style="flex:1"><div class="lbl">Deliver To</div><p><strong>${order.customerName ?? ""}</strong><br>${addrLines.length > 0 ? addrLines.join("<br>") : "<em>No delivery address</em>"}</p></div>
@@ -1510,6 +1512,297 @@ function printDocWearerLabels(order: DocOrder) {
   </body></html>`);
   win.document.close();
   win.focus();
+}
+
+// ─── Interfaces for incomplete-order modal ─────────────────────────────────────
+
+interface BackorderLine {
+  id: number;
+  poNumber: string;
+  supplierName: string;
+  productName: string;
+  colour: string | null;
+  size: string | null;
+  remaining: number;
+  estimatedDueDate: string | null;
+}
+
+// ─── Incomplete Order modal ────────────────────────────────────────────────────
+
+function IncompleteOrderModal({
+  order,
+  incompleteItemIds,
+  onClose,
+}: {
+  order: DocOrder;
+  incompleteItemIds: number[];
+  onClose: () => void;
+}) {
+  const completeItems = order.items.filter((i) => !incompleteItemIds.includes(i.id));
+  const outstandingItems = order.items.filter((i) => incompleteItemIds.includes(i.id));
+  const completeQty = completeItems.reduce((s, i) => s + i.quantity, 0);
+  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
+  const namedCompleteCount = completeItems.filter(
+    (i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId),
+  ).length;
+
+  const { data: backorders = [], isLoading: boLoading } = useQuery<BackorderLine[]>({
+    queryKey: ["backorders", order.id],
+    queryFn: () => apiFetch(`/orders/${order.id}/backorders`),
+  });
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dispatchDate = order.requiredDate
+    ? (() => { const d = new Date(order.requiredDate); d.setHours(0, 0, 0, 0); return d; })()
+    : null;
+  const daysUntilDispatch = dispatchDate
+    ? Math.round((dispatchDate.getTime() - today.getTime()) / 86400000)
+    : null;
+  const isImminent = daysUntilDispatch !== null && daysUntilDispatch <= 2;
+
+  let recommendation: "wait" | "despatch" | "despatch_no_eta" | null = null;
+  if (isImminent) {
+    if (backorders.length > 0) {
+      const dueDaysArr = backorders.map((b) =>
+        b.estimatedDueDate
+          ? Math.round((new Date(b.estimatedDueDate).setHours(0, 0, 0, 0) - today.getTime()) / 86400000)
+          : null,
+      );
+      const withDate = dueDaysArr.filter((d): d is number => d !== null);
+      const hasNoEta = dueDaysArr.some((d) => d === null);
+      if (withDate.length > 0 && Math.min(...withDate) <= 3) {
+        recommendation = "wait";
+      } else if (hasNoEta && withDate.length === 0) {
+        recommendation = "despatch_no_eta";
+      } else {
+        recommendation = "despatch";
+      }
+    } else {
+      recommendation = "despatch";
+    }
+  }
+
+  const completeOrder: DocOrder = { ...order, items: completeItems };
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-amber-700">
+            <AlertTriangle className="w-5 h-5" />
+            Order Partially Complete
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2 max-h-[70vh] overflow-y-auto pr-1">
+          {/* Order summary */}
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+            <div className="font-semibold text-amber-900">{order.orderNumber}</div>
+            <div className="text-sm text-amber-700">{order.customerName}</div>
+            <div className="text-xs text-amber-600 mt-1">
+              {completeItems.length} of {order.items.length} line{order.items.length !== 1 ? "s" : ""} complete
+              {" · "}{completeQty} of {totalQty} item{totalQty !== 1 ? "s" : ""} ready
+              {namedCompleteCount > 0 && ` · ${namedCompleteCount} named recipient${namedCompleteCount !== 1 ? "s" : ""}`}
+            </div>
+          </div>
+
+          {/* Imminence + recommendation banner */}
+          {isImminent && (
+            <div
+              className={`rounded-lg border px-4 py-3 flex items-start gap-3 ${
+                daysUntilDispatch! < 0
+                  ? "bg-red-50 border-red-200"
+                  : "bg-orange-50 border-orange-200"
+              }`}
+            >
+              <AlertCircle
+                className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
+                  daysUntilDispatch! < 0 ? "text-red-600" : "text-orange-600"
+                }`}
+              />
+              <div>
+                <p
+                  className={`text-sm font-semibold ${
+                    daysUntilDispatch! < 0 ? "text-red-800" : "text-orange-800"
+                  }`}
+                >
+                  {daysUntilDispatch! < 0
+                    ? `Planned despatch was ${Math.abs(daysUntilDispatch!)} day${Math.abs(daysUntilDispatch!) !== 1 ? "s" : ""} ago`
+                    : daysUntilDispatch === 0
+                    ? "Planned despatch is today"
+                    : `Planned despatch in ${daysUntilDispatch} day${daysUntilDispatch !== 1 ? "s" : ""}`}
+                </p>
+                {recommendation === "wait" && (
+                  <p className="text-xs text-orange-700 mt-1">
+                    Backorder items are due shortly — consider waiting to despatch together.
+                  </p>
+                )}
+                {recommendation === "despatch" && (
+                  <p className="text-xs text-orange-700 mt-1">
+                    Backorder items are not due soon — suggest despatching ready items now and following up the remainder.
+                  </p>
+                )}
+                {recommendation === "despatch_no_eta" && (
+                  <p className="text-xs text-orange-700 mt-1">
+                    No delivery date set for backorder items — suggest despatching ready items now and chasing the supplier.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Outstanding items */}
+          {outstandingItems.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Outstanding Items ({outstandingItems.length})
+              </p>
+              <div className="space-y-1">
+                {outstandingItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-2 text-sm rounded-md bg-muted/40 px-3 py-2"
+                  >
+                    <span className="flex-1 font-medium">{item.productName}</span>
+                    {item.colour && <span className="text-xs text-muted-foreground">{item.colour}</span>}
+                    {item.size && <span className="text-xs text-muted-foreground">{item.size}</span>}
+                    <span className="text-xs font-semibold text-muted-foreground">×{item.quantity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Backorders */}
+          {!boLoading && backorders.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Backorder Status
+              </p>
+              <div className="space-y-1">
+                {backorders.map((bo) => {
+                  const boToday = new Date();
+                  boToday.setHours(0, 0, 0, 0);
+                  const boDays = bo.estimatedDueDate
+                    ? Math.round(
+                        (new Date(bo.estimatedDueDate).setHours(0, 0, 0, 0) - boToday.getTime()) /
+                          86400000,
+                      )
+                    : null;
+                  const dueDateStr = bo.estimatedDueDate
+                    ? new Date(bo.estimatedDueDate).toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : null;
+                  return (
+                    <div
+                      key={bo.id}
+                      className="flex items-center gap-2 text-sm rounded-md bg-blue-50 border border-blue-100 px-3 py-2"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <span className="font-medium">{bo.productName}</span>
+                        {(bo.colour || bo.size) && (
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {[bo.colour, bo.size].filter(Boolean).join(" / ")}
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground ml-2">({bo.poNumber})</span>
+                      </div>
+                      <span className="text-xs font-semibold whitespace-nowrap">×{bo.remaining}</span>
+                      {dueDateStr ? (
+                        <span
+                          className={`text-xs whitespace-nowrap ${
+                            boDays !== null && boDays <= 3
+                              ? "text-orange-700 font-semibold"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          Due {dueDateStr}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">No ETA</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {!boLoading && backorders.length === 0 && outstandingItems.length > 0 && (
+            <p className="text-xs text-muted-foreground italic">No purchase orders found for outstanding items.</p>
+          )}
+
+          {/* Document & action buttons */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+              Documents
+            </p>
+            <div className="grid grid-cols-1 gap-2">
+              {completeItems.length > 0 && (
+                <Button
+                  variant="outline"
+                  className="justify-start gap-2 h-auto py-3"
+                  onClick={() => printDocDeliveryNote(completeOrder)}
+                >
+                  <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">Delivery Note — Ready Items Only</div>
+                    <div className="text-xs text-muted-foreground">
+                      {completeItems.length} line{completeItems.length !== 1 ? "s" : ""} · {completeQty} item{completeQty !== 1 ? "s" : ""} ready to ship
+                    </div>
+                  </div>
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                className="justify-start gap-2 h-auto py-3"
+                onClick={() => printDocDeliveryNote(order, { draft: true })}
+              >
+                <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <div className="text-left">
+                  <div className="font-medium">Delivery Note — Full Order (Draft)</div>
+                  <div className="text-xs text-muted-foreground">
+                    All {order.items.length} line{order.items.length !== 1 ? "s" : ""} including outstanding, marked DRAFT
+                  </div>
+                </div>
+              </Button>
+              {namedCompleteCount > 0 && (
+                <Button
+                  variant="outline"
+                  className="justify-start gap-2 h-auto py-3"
+                  onClick={() => printDocWearerLabels(completeOrder)}
+                >
+                  <User className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <div className="text-left">
+                    <div className="font-medium">Wearer Labels — Ready Items</div>
+                    <div className="text-xs text-muted-foreground">
+                      {namedCompleteCount} named recipient{namedCompleteCount !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 flex-wrap">
+          <Button variant="ghost" onClick={onClose}>
+            Close
+          </Button>
+          <Button
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => { window.location.href = "/dispatch"; }}
+          >
+            <ArrowRight className="w-4 h-4" /> Go to Dispatch
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ─── Ready to Dispatch modal ───────────────────────────────────────────────────
@@ -2379,6 +2672,7 @@ export default function Production() {
   });
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [readyOrder, setReadyOrder] = useState<DocOrder | null>(null);
+  const [partialOrder, setPartialOrder] = useState<{ order: DocOrder; incompleteItemIds: number[] } | null>(null);
 
   const { data: allWorksheets = [], isLoading: wsLoading } = useQuery<Worksheet[]>({
     queryKey: ["worksheets"],
@@ -2413,11 +2707,11 @@ export default function Production() {
       if (variables.status === "complete" && variables.orderId) {
         toast({ title: "Worksheet complete — checking order status…" });
         try {
-          const result = await apiFetch<{ isComplete: boolean; order: DocOrder }>(`/dispatch/orders/${variables.orderId}/ready`);
+          const result = await apiFetch<{ isComplete: boolean; incompleteItemIds: number[]; order: DocOrder }>(`/dispatch/orders/${variables.orderId}/ready`);
           if (result.isComplete) {
             setReadyOrder(result.order);
           } else {
-            toast({ title: "Worksheet marked complete" });
+            setPartialOrder({ order: result.order, incompleteItemIds: result.incompleteItemIds });
           }
         } catch {
           toast({ title: "Worksheet marked complete" });
@@ -2722,6 +3016,13 @@ export default function Production() {
 
       {readyOrder && (
         <ReadyToDispatchModal order={readyOrder} onClose={() => setReadyOrder(null)} />
+      )}
+      {partialOrder && (
+        <IncompleteOrderModal
+          order={partialOrder.order}
+          incompleteItemIds={partialOrder.incompleteItemIds}
+          onClose={() => setPartialOrder(null)}
+        />
       )}
     </Layout>
   );
