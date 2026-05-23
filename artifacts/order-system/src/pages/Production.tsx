@@ -1505,120 +1505,10 @@ function printDocInvoice(order: DocOrder) {
   );
 }
 
-function printDocWearerLabels(order: DocOrder) {
-  const namedItems = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
-  if (namedItems.length === 0) return;
-
-  const deliveryMethod = docShippingLabel(order.shippingMethod);
-  const isDpd = !!order.shippingMethod?.toLowerCase().includes("dpd");
-  const addr = order.deliveryAddress;
-  const addrSummary = addr ? [addr.line1, addr.city, addr.postcode].filter(Boolean).join(", ") : "";
-
-  // ── First label: delivery / dispatch label ──────────────────────────────────
-  const deliveryLabel = `
-    <div class="label delivery-label">
-      <div class="dl-header">
-        <span class="dl-badge">DELIVERY LABEL</span>
-        <span class="dl-order">${order.orderNumber}</span>
-      </div>
-      <div class="dl-customer">${order.customerName ?? ""}</div>
-      <div class="dl-divider"></div>
-      <div class="dl-row"><span class="dl-key">Delivery method</span><span class="dl-val">${deliveryMethod || "Not specified"}</span></div>
-      ${isDpd ? `<div class="dl-row"><span class="dl-key">DPD tracking</span><span class="dl-val dl-tracking">${order.trackingNumber ?? "To be assigned"}</span></div>` : ""}
-      ${addrSummary ? `<div class="dl-addr">${addrSummary}</div>` : ""}
-    </div>`;
-
-  // ── Named wearer labels ─────────────────────────────────────────────────────
-  const labels: string[] = [deliveryLabel];
-  for (const item of namedItems) {
-    const name = docRecipientName(item);
-    const jobTitle = item.employee?.jobTitle ?? null;
-    const variant = [item.colour, item.size].filter(Boolean).join(" / ");
-    for (let q = 0; q < item.quantity; q++) {
-      labels.push(`
-        <div class="label">
-          <div class="order-ref">${order.orderNumber} · ${order.customerName ?? ""}</div>
-          <div class="name">${name}</div>
-          ${jobTitle ? `<div class="job-title">${jobTitle}</div>` : ""}
-          <div class="divider"></div>
-          <div class="product">${item.productName}</div>
-          ${item.finishName ? `<div class="finish">${item.finishName}</div>` : ""}
-          ${variant ? `<div class="variant">${variant}</div>` : ""}
-        </div>`);
-    }
-  }
-
-  const win = window.open("", "_blank", "width=860,height=640");
-  if (!win) return;
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Wearer Labels — ${order.orderNumber}</title>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:Arial,sans-serif;background:#e5e7eb}
-    #notice{
-      position:sticky;top:0;z-index:10;
-      display:flex;align-items:center;gap:16px;
-      padding:10px 20px;background:#1e3a5f;color:white;
-      box-shadow:0 2px 6px rgba(0,0,0,.3);
-    }
-    #notice-text{flex:1}
-    #notice-title{font-size:14px;font-weight:700}
-    #notice-sub{font-size:12px;opacity:.8;margin-top:2px}
-    #notice button{padding:7px 20px;border:none;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer}
-    #btn-print{background:#22c55e;color:white}
-    #btn-close{background:rgba(255,255,255,.15);color:white;margin-left:4px}
-    #page{padding:20px;display:flex;flex-direction:column;gap:16px;align-items:center}
-    .label{
-      width:6in;height:4in;
-      background:white;border:1px solid #bbb;border-radius:4px;
-      box-shadow:0 2px 8px rgba(0,0,0,.12);
-      display:flex;flex-direction:column;justify-content:center;
-      padding:0.3in 0.4in;
-    }
-    .order-ref{font-size:9pt;color:#555;margin-bottom:10px;letter-spacing:.3px}
-    .name{font-size:40pt;font-weight:900;color:#000;line-height:1.0}
-    .job-title{font-size:14pt;color:#333;margin-top:6px}
-    .divider{border-top:2px solid #000;margin:14px 0}
-    .product{font-size:18pt;font-weight:700;color:#000}
-    .finish{font-size:12pt;color:#333;margin-top:4px}
-    .variant{font-size:13pt;color:#444;margin-top:4px}
-    /* Delivery label */
-    .delivery-label{justify-content:flex-start;padding:0}
-    .dl-header{background:#1e3a5f;color:white;padding:0.18in 0.4in;display:flex;align-items:center;justify-content:space-between;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .dl-badge{font-size:11pt;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
-    .dl-order{font-size:14pt;font-weight:900;font-family:monospace}
-    .dl-customer{font-size:28pt;font-weight:900;color:#000;padding:0.18in 0.4in 0.06in;line-height:1.1}
-    .dl-divider{border-top:2px solid #1e3a5f;margin:0 0.4in 0.12in}
-    .dl-row{display:flex;align-items:baseline;gap:12px;padding:0.04in 0.4in}
-    .dl-key{font-size:9pt;color:#555;text-transform:uppercase;letter-spacing:.06em;width:1.3in;flex-shrink:0}
-    .dl-val{font-size:13pt;font-weight:700;color:#000}
-    .dl-tracking{font-family:monospace;font-size:14pt;color:#1e3a5f}
-    .dl-addr{font-size:10pt;color:#444;padding:0.1in 0.4in 0}
-    @media print{
-      @page{size:6in 4in;margin:0}
-      #notice{display:none}
-      body{background:white}
-      #page{padding:0;gap:0}
-      .label{
-        width:6in;height:4in;
-        border:none;border-radius:0;box-shadow:none;
-        padding:0.3in 0.4in;
-        page-break-after:always;
-      }
-      .delivery-label{padding:0}
-    }
-  </style></head><body>
-  <div id="notice">
-    <div id="notice-text">
-      <div id="notice-title">🏷️ ${labels.length} Label${labels.length !== 1 ? "s" : ""} · ${order.customerName ?? order.orderNumber} (1 delivery + ${labels.length - 1} wearer)</div>
-      <div id="notice-sub">⚠️ Please select your LABEL PRINTER in the print dialog &nbsp;·&nbsp; 6 × 4 inch label format</div>
-    </div>
-    <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
-    <button id="btn-close" onclick="window.close()">✕ Close</button>
-  </div>
-  <div id="page">${labels.join("")}</div>
-  </body></html>`);
-  win.document.close();
-  win.focus();
+function openWearerLabels(orderId: number, opts?: { dispatchedItemIds?: number[] }) {
+  const params = new URLSearchParams();
+  if (opts?.dispatchedItemIds?.length) params.set("dispatchedItemIds", opts.dispatchedItemIds.join(","));
+  window.open(`/api/orders/${orderId}/wearer-labels?${params}`, "_blank");
 }
 
 // ─── Interfaces for incomplete-order modal ─────────────────────────────────────
@@ -1880,7 +1770,7 @@ function IncompleteOrderModal({
                 <Button
                   variant="outline"
                   className="justify-start gap-2 h-auto py-3"
-                  onClick={() => printDocWearerLabels(completeOrder)}
+                  onClick={() => openWearerLabels(order.id, { dispatchedItemIds: completeOrder.items.map(i => i.id) })}
                 >
                   <User className="w-4 h-4 text-amber-600 flex-shrink-0" />
                   <div className="text-left">
@@ -2017,7 +1907,7 @@ function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: ()
               <Button
                 variant="outline"
                 className="justify-start gap-2 h-auto py-3"
-                onClick={() => printDocWearerLabels(order)}
+                onClick={() => openWearerLabels(order.id)}
               >
                 <User className="w-4 h-4 text-amber-600 flex-shrink-0" />
                 <div className="text-left">

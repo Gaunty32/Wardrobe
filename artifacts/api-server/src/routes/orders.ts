@@ -2358,6 +2358,232 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
   res.send(html);
 });
 
+// ── Wearer Labels HTML ────────────────────────────────────────────────────────
+router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).send("Bad request"); return; }
+
+  const orderId = parsed.data.id;
+  const dispatchedIdsRaw = req.query.dispatchedItemIds ? String(req.query.dispatchedItemIds) : null;
+  const dispatchedIds: number[] | null = dispatchedIdsRaw
+    ? dispatchedIdsRaw.split(",").map(Number).filter(n => !isNaN(n) && n > 0)
+    : null;
+  const includeDeliveryLabel = req.query.includeDeliveryLabel === "1";
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!order) { res.status(404).send("Order not found"); return; }
+
+  const itemRows = await db
+    .select({ item: orderItemsTable, employee: customerEmployeesTable })
+    .from(orderItemsTable)
+    .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+    .where(eq(orderItemsTable.orderId, orderId));
+
+  const allItems = itemRows.map(r => ({
+    ...r.item,
+    unitPrice: parseFloat(String(r.item.unitPrice ?? "0")),
+    lineTotal:  parseFloat(String(r.item.lineTotal ?? "0")),
+    employee: r.employee ?? null,
+  }));
+
+  const dispatchedItems = dispatchedIds ? allItems.filter(i => dispatchedIds.includes(i.id)) : allItems;
+  const pendingItems    = dispatchedIds ? allItems.filter(i => !dispatchedIds.includes(i.id)) : [];
+
+  let deliveryAddress: { line1: string | null; line2: string | null; city: string | null; county: string | null; postcode: string | null; country: string | null } | null = null;
+  if (includeDeliveryLabel && order.deliveryAddressId) {
+    const [addr] = await db.select().from(customerDeliveryAddressesTable)
+      .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    deliveryAddress = addr ?? null;
+  }
+
+  const SHIPPING_LABELS: Record<string, string> = {
+    free_local: "Free Local Delivery", local_delivery: "Local Delivery",
+    office_collection: "Office Collection", warehouse_collection: "Warehouse Collection",
+    courier: "Courier", dpd: "DPD Courier",
+  };
+  const shippingMethodLabel = order.shippingMethod ? (SHIPPING_LABELS[order.shippingMethod] ?? order.shippingMethod) : "Not specified";
+  const isDpd = !!order.shippingMethod?.toLowerCase().includes("dpd");
+
+  const empName = (item: typeof allItems[0]) => {
+    if (item.employee) return [item.employee.firstName, item.employee.lastName].filter(Boolean).join(" ");
+    return item.recipientName ?? null;
+  };
+  const isNamed = (item: typeof allItems[0]) =>
+    item.recipientType === "person" && !!(item.recipientName || item.recipientEmployeeId);
+
+  // Group dispatched items by wearer name
+  const wearerMap = new Map<string, { name: string; jobTitle: string | null; items: typeof allItems }>();
+  for (const item of dispatchedItems.filter(isNamed)) {
+    const name = empName(item) ?? "Unknown";
+    if (!wearerMap.has(name)) wearerMap.set(name, { name, jobTitle: item.employee?.jobTitle ?? null, items: [] });
+    wearerMap.get(name)!.items.push(item);
+  }
+
+  // Group pending items by wearer name (for "Items to Follow" label)
+  const pendingWearerMap = new Map<string, typeof allItems>();
+  for (const item of pendingItems.filter(isNamed)) {
+    const name = empName(item) ?? "Unknown";
+    if (!pendingWearerMap.has(name)) pendingWearerMap.set(name, []);
+    pendingWearerMap.get(name)!.push(item);
+  }
+
+  if (wearerMap.size === 0) {
+    res.status(400).send("No named recipients found for wearer labels.");
+    return;
+  }
+
+  const logoHtml = `<img src="${SBS_LOGO_DATA_URL}" alt="SBS" class="sbs-logo" />`;
+
+  const renderItemTable = (items: typeof allItems) => `
+    <table class="items-table">
+      <thead><tr>
+        <th class="col-product">Item</th>
+        <th class="col-code">FCC Code</th>
+        <th class="col-colour">Colour</th>
+        <th class="col-size">Size</th>
+        <th class="col-qty">Qty</th>
+      </tr></thead>
+      <tbody>
+        ${items.map(item => `<tr>
+          <td class="col-product">${item.productName}${item.finishName ? `<br><span class="finish-sub">${item.finishName}</span>` : ""}</td>
+          <td class="col-code">${item.supplierCode ?? "—"}</td>
+          <td class="col-colour">${item.colour ?? "—"}</td>
+          <td class="col-size">${item.size ?? "—"}</td>
+          <td class="col-qty">${item.quantity}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+
+  const labels: string[] = [];
+
+  // ── Delivery label (first, when requested) ────────────────────────────────
+  if (includeDeliveryLabel) {
+    const addrLines = deliveryAddress
+      ? [deliveryAddress.line1, deliveryAddress.line2, deliveryAddress.city, deliveryAddress.county, deliveryAddress.postcode, deliveryAddress.country].filter(Boolean)
+      : [];
+    labels.push(`<div class="label delivery-label">
+      <div class="dl-header">
+        <span class="dl-badge">DELIVERY LABEL</span>
+        <span class="dl-order">${order.orderNumber}</span>
+      </div>
+      <div class="dl-customer">${order.customerName ?? ""}</div>
+      <div class="dl-divider"></div>
+      <div class="dl-row"><span class="dl-key">Delivery method</span><span class="dl-val">${shippingMethodLabel}</span></div>
+      ${isDpd ? `<div class="dl-row"><span class="dl-key">DPD tracking</span><span class="dl-val dl-tracking">${order.trackingNumber ?? "To be assigned"}</span></div>` : ""}
+      ${addrLines.length > 0 ? `<div class="dl-addr">${addrLines.join(", ")}</div>` : ""}
+    </div>`);
+  }
+
+  // ── One label per named wearer ────────────────────────────────────────────
+  for (const [name, wearer] of wearerMap) {
+    labels.push(`<div class="label wearer-label">
+      <div class="label-top">
+        <div class="wearer-name">${name}</div>
+        ${logoHtml}
+      </div>
+      ${wearer.jobTitle ? `<div class="job-title">${wearer.jobTitle}</div>` : ""}
+      ${renderItemTable(wearer.items)}
+      <div class="company-name">${order.customerName ?? ""}</div>
+    </div>`);
+
+    // Items to Follow label (if pending items exist for this wearer)
+    const pending = pendingWearerMap.get(name);
+    if (pending?.length) {
+      labels.push(`<div class="label wearer-label">
+        <div class="label-top">
+          <div class="follow-heading">Items to Follow</div>
+          ${logoHtml}
+        </div>
+        ${renderItemTable(pending)}
+        <div class="company-name">${order.customerName ?? ""}</div>
+      </div>`);
+    }
+  }
+
+  const totalCount = labels.length;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Wearer Labels — ${order.orderNumber}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb}
+    #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    #toolbar-text{flex:1}
+    #toolbar-title{font-size:14px;font-weight:700}
+    #toolbar-sub{font-size:12px;opacity:.8;margin-top:2px}
+    #toolbar button{padding:7px 20px;border:none;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer}
+    #btn-print{background:#22c55e;color:white}
+    #btn-close{background:rgba(255,255,255,.15);color:white;margin-left:4px}
+    #page{padding:20px;display:flex;flex-direction:column;gap:16px;align-items:center}
+
+    /* ── Label shell (6×4 in) ── */
+    .label{width:6in;height:4in;background:white;border:1px solid #bbb;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+
+    /* ── Wearer label inner layout ── */
+    .wearer-label{display:flex;flex-direction:column;padding:0.22in 0.3in 0.2in}
+    .label-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:2px}
+    .wearer-name{font-size:28pt;font-weight:900;color:#000;text-decoration:underline;text-align:center;flex:1;line-height:1.1}
+    .follow-heading{font-size:22pt;font-weight:900;color:#b45309;text-decoration:underline;text-align:center;flex:1;line-height:1.15}
+    .sbs-logo{height:0.8in;width:auto;flex-shrink:0;margin-top:2px}
+    .job-title{font-size:10pt;color:#555;margin-bottom:6px}
+
+    /* ── Items table ── */
+    .items-table{width:100%;border-collapse:collapse;margin-top:6px}
+    .items-table thead tr{background:#1e293b;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .items-table th{color:#94a3b8;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;padding:4px 5px;text-align:left;font-weight:600}
+    .items-table td{padding:4px 5px;border-bottom:1px solid #e5e7eb;font-size:10pt;vertical-align:middle}
+    .col-product{width:40%}.col-code{width:14%}.col-colour{width:18%}.col-size{width:13%}
+    .col-qty{width:10%;text-align:center;font-weight:700}
+    .finish-sub{font-size:7.5pt;color:#4f46e5}
+
+    /* ── Company name (bottom) ── */
+    .company-name{font-size:12pt;font-weight:400;color:#444;text-align:center;margin-top:auto;padding-top:6px}
+
+    /* ── Delivery label ── */
+    .delivery-label{justify-content:flex-start;padding:0}
+    .dl-header{background:#1e3a5f;color:white;padding:0.18in 0.4in;display:flex;align-items:center;justify-content:space-between;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .dl-badge{font-size:11pt;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
+    .dl-order{font-size:14pt;font-weight:900;font-family:monospace}
+    .dl-customer{font-size:26pt;font-weight:900;color:#000;padding:0.15in 0.4in 0.05in;line-height:1.1}
+    .dl-divider{border-top:2px solid #1e3a5f;margin:0 0.4in 0.1in}
+    .dl-row{display:flex;align-items:baseline;gap:12px;padding:0.04in 0.4in}
+    .dl-key{font-size:9pt;color:#555;text-transform:uppercase;letter-spacing:.06em;width:1.3in;flex-shrink:0}
+    .dl-val{font-size:13pt;font-weight:700;color:#000}
+    .dl-tracking{font-family:monospace;font-size:14pt;color:#1e3a5f}
+    .dl-addr{font-size:10pt;color:#444;padding:0.1in 0.4in 0}
+
+    @media print{
+      @page{size:6in 4in;margin:0}
+      #toolbar{display:none}
+      body{background:white}
+      #page{padding:0;gap:0}
+      .label{width:6in;height:4in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
+      .delivery-label{padding:0}
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <div id="toolbar-text">
+      <div id="toolbar-title">🏷️ ${totalCount} Label${totalCount !== 1 ? "s" : ""} · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")}</div>
+      <div id="toolbar-sub">⚠️ Please select your LABEL PRINTER in the print dialog &nbsp;·&nbsp; 6 × 4 inch label format</div>
+    </div>
+    <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
+    <button id="btn-close" onclick="window.close()">✕ Close</button>
+  </div>
+  <div id="page">${labels.join("\n")}</div>
+  <script>document.getElementById('btn-print').focus();</script>
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.send(html);
+});
+
 // ─── Order Activity Log ───────────────────────────────────────────────────────
 router.get("/orders/:id/logs", async (req, res): Promise<void> => {
   const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
