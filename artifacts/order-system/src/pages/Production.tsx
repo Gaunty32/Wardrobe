@@ -1567,6 +1567,16 @@ function PickingListTab({ filters }: { filters: Filters }) {
   const [returning, setReturning] = useState<Set<number>>(new Set());
   const [qtyOverrides, setQtyOverrides] = useState<Map<number, number>>(new Map());
   const [editingQty, setEditingQty] = useState<number | null>(null);
+  const [sortBy, setSortBy] = useState<"due_date" | "order_number" | "customer_name">("due_date");
+  const [expandedOrders, setExpandedOrders] = useState<Set<number>>(new Set());
+
+  function toggleExpand(orderId: number) {
+    setExpandedOrders((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId); else next.add(orderId);
+      return next;
+    });
+  }
 
   function setQtyOverride(itemId: number, qty: number, fullQty: number) {
     setQtyOverrides((prev) => {
@@ -1583,7 +1593,18 @@ function PickingListTab({ filters }: { filters: Filters }) {
     refetchInterval: 30000,
   });
 
-  const pickingOrders = filterPickingOrders(rawPickingOrders, filters);
+  const filteredPickingOrders = filterPickingOrders(rawPickingOrders, filters);
+
+  const pickingOrders = [...filteredPickingOrders].sort((a, b) => {
+    if (sortBy === "due_date") {
+      if (!a.requiredDate && !b.requiredDate) return 0;
+      if (!a.requiredDate) return 1;
+      if (!b.requiredDate) return -1;
+      return new Date(a.requiredDate).getTime() - new Date(b.requiredDate).getTime();
+    }
+    if (sortBy === "order_number") return a.orderNumber.localeCompare(b.orderNumber);
+    return (a.customerName ?? "").localeCompare(b.customerName ?? "");
+  });
 
   const pickMutation = useMutation({
     mutationFn: (itemIds: number[]) => {
@@ -1699,18 +1720,33 @@ function PickingListTab({ filters }: { filters: Filters }) {
   );
 
   return (
-    <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={toggleAll} className="text-muted-foreground hover:text-foreground transition-colors">
+    <div className="space-y-3">
+      {/* Toolbar: sort + actions */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <button onClick={toggleAll} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
             {checked.size === allItemIds.length && allItemIds.length > 0
               ? <CheckSquare className="w-5 h-5 text-primary" />
               : <Square className="w-5 h-5" />}
           </button>
-          <span className="text-sm text-muted-foreground">
-            {checked.size > 0 ? `${checked.size} of ${totalItems} selected` : `${totalItems} item${totalItems !== 1 ? "s" : ""} to pick`}
+          <span className="text-sm text-muted-foreground mr-1">
+            {checked.size > 0 ? `${checked.size} of ${totalItems} selected` : `${totalItems} item${totalItems !== 1 ? "s" : ""}`}
           </span>
+          {/* Sort pills */}
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 p-0.5">
+            {(["due_date", "order_number", "customer_name"] as const).map((key) => {
+              const labels = { due_date: "Due Date", order_number: "Order #", customer_name: "Customer" };
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSortBy(key)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sortBy === key ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {labels[key]}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {returning.size > 0 && (
@@ -1731,9 +1767,9 @@ function PickingListTab({ filters }: { filters: Filters }) {
             const plainCount = checkedItems.filter((i) => i.finishId == null).length;
             const finishCount = checkedItems.filter((i) => i.finishId != null).length;
             const label = needsWorksheet && plainCount > 0
-              ? `Pick — ${plainCount} to dispatch, ${finishCount} to production`
+              ? `Pick — ${plainCount} dispatch, ${finishCount} production`
               : needsWorksheet
-              ? `Pick → Send to Production (${finishCount})`
+              ? `Pick → Production (${finishCount})`
               : `Confirm ${checked.size} Picked`;
             return (
               <>
@@ -1772,155 +1808,182 @@ function PickingListTab({ filters }: { filters: Filters }) {
         </div>
       </div>
 
-      {/* Order cards */}
-      <div className="space-y-4">
+      {/* Order rows */}
+      <div className="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border">
         {pickingOrders.map((order) => {
           const orderChecked = order.items.every((i) => checked.has(i.itemId));
           const orderPartial = order.items.some((i) => checked.has(i.itemId)) && !orderChecked;
+          const isExpanded = expandedOrders.has(order.orderId);
+          const dueDate = order.requiredDate
+            ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+            : null;
+          const isOverdue = order.requiredDate ? new Date(order.requiredDate) < new Date(new Date().toDateString()) : false;
+          const isToday = order.requiredDate
+            ? new Date(order.requiredDate).toDateString() === new Date().toDateString()
+            : false;
+
           return (
-            <div key={order.orderId} className="rounded-xl border border-border bg-card overflow-hidden">
-              {/* Order header */}
-              <div className="flex items-center gap-3 px-4 py-3 bg-muted/30 border-b border-border">
-                <button onClick={() => toggleOrder(order)} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0">
+            <div key={order.orderId}>
+              {/* Collapsed row — always visible */}
+              <div
+                className={`flex items-center gap-3 px-4 py-3 transition-colors hover:bg-muted/20 ${isExpanded ? "bg-muted/20" : ""}`}
+              >
+                <button
+                  onClick={() => toggleOrder(order)}
+                  className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                  title="Select all items in this order"
+                >
                   {orderChecked
-                    ? <CheckSquare className="w-5 h-5 text-primary" />
+                    ? <CheckSquare className="w-4.5 h-4.5 text-primary" />
                     : orderPartial
-                    ? <CheckSquare className="w-5 h-5 text-primary/50" />
-                    : <Square className="w-5 h-5" />}
+                    ? <CheckSquare className="w-4.5 h-4.5 text-primary/50" />
+                    : <Square className="w-4.5 h-4.5" />}
                 </button>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{order.orderNumber}</span>
-                    {order.customerName && (
-                      <span className="text-muted-foreground text-sm">{order.customerName}</span>
-                    )}
-                    {order.requiredDate && (
-                      <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 bg-orange-50">
-                        Due {new Date(order.requiredDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
-                      </Badge>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary" className="text-xs">{order.items.length} item{order.items.length !== 1 ? "s" : ""}</Badge>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-xs h-7 px-2.5"
-                    onClick={() => printPickingSlip(order, rawPickingOrders)}
-                    title="Print picking slip — all orders for this customer, one slip per finish"
-                  >
-                    <Printer className="w-3 h-3" /> Print Slip
-                  </Button>
-                </div>
+
+                {/* Order number */}
+                <span className="font-semibold text-sm w-16 flex-shrink-0">{order.orderNumber}</span>
+
+                {/* Customer name */}
+                <span className="flex-1 text-sm text-foreground truncate min-w-0">{order.customerName ?? "—"}</span>
+
+                {/* Due date */}
+                <span className={`text-sm flex-shrink-0 font-medium ${isOverdue ? "text-red-600" : isToday ? "text-orange-600" : "text-muted-foreground"}`}>
+                  {dueDate ?? <span className="text-muted-foreground/50 font-normal">No due date</span>}
+                </span>
+
+                {/* Item count */}
+                <span className="text-xs text-muted-foreground flex-shrink-0 w-16 text-right">
+                  {order.items.length} item{order.items.length !== 1 ? "s" : ""}
+                </span>
+
+                {/* Print Slip */}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs h-7 px-2.5 flex-shrink-0"
+                  onClick={(e) => { e.stopPropagation(); printPickingSlip(order, rawPickingOrders); }}
+                >
+                  <Printer className="w-3 h-3" /> Print Slip
+                </Button>
+
+                {/* Expand toggle */}
+                <button
+                  onClick={() => toggleExpand(order.orderId)}
+                  className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 p-1 rounded hover:bg-muted"
+                  title={isExpanded ? "Collapse items" : "Expand items"}
+                >
+                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </button>
               </div>
 
-              {/* Items */}
-              <div className="divide-y divide-border">
-                {order.items.map((item) => {
-                  const isReturning = returning.has(item.itemId);
-                  return (
-                    <div key={item.itemId}>
-                      <div className={`flex items-center gap-3 px-4 py-3 transition-colors ${checked.has(item.itemId) ? "bg-green-50/50" : isReturning ? "bg-amber-50/60" : ""}`}>
-                        <button onClick={() => toggleItem(item.itemId)} className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors" title="Select for picking">
-                          {checked.has(item.itemId)
-                            ? <CheckSquare className="w-4 h-4 text-green-600" />
-                            : <Square className="w-4 h-4" />}
-                        </button>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm">{item.productName}</span>
-                            {item.finishName && (
-                              <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-800 border border-blue-200 rounded px-1.5 py-0.5 font-medium">
-                                <Sparkles className="w-3 h-3" />{item.finishName}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex flex-wrap gap-1.5 mt-1">
-                            {item.colour && (
-                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                <Palette className="w-3 h-3" />{item.colour}
-                              </span>
-                            )}
-                            {item.size && (
-                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                <Ruler className="w-3 h-3" />{item.size}
-                              </span>
-                            )}
-                            {item.recipientName && (
-                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                <User className="w-3 h-3" />{item.recipientName}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          {/* Inline qty editor */}
-                          {editingQty === item.itemId ? (
-                            <input
-                              type="number"
-                              min={1}
-                              max={item.quantity}
-                              defaultValue={qtyOverrides.get(item.itemId) ?? item.quantity}
-                              autoFocus
-                              className="w-14 h-7 text-center text-sm font-bold border border-primary rounded px-1 focus:outline-none focus:ring-1 focus:ring-primary"
-                              onBlur={(e) => {
-                                const v = parseInt(e.target.value);
-                                if (!isNaN(v)) setQtyOverride(item.itemId, v, item.quantity);
-                                setEditingQty(null);
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                                if (e.key === "Escape") { setEditingQty(null); }
-                              }}
-                            />
-                          ) : (
-                            <button
-                              onClick={() => setEditingQty(item.itemId)}
-                              title="Click to edit quantity picked — reduces the number and sends the shortfall to purchasing"
-                              className={`min-w-[2rem] h-7 px-2 rounded text-sm font-bold transition-colors border ${
-                                qtyOverrides.has(item.itemId)
-                                  ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
-                                  : "bg-secondary text-secondary-foreground border-transparent hover:bg-muted hover:border-border"
-                              }`}
-                            >
-                              {qtyOverrides.get(item.itemId) ?? item.quantity}
-                            </button>
-                          )}
-                          {qtyOverrides.has(item.itemId) && (
-                            <span className="text-xs text-amber-700 font-medium whitespace-nowrap">
-                              shortfall: {item.quantity - (qtyOverrides.get(item.itemId) ?? item.quantity)}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => toggleReturning(item.itemId)}
-                            title="Stock not found — return whole item to purchasing"
-                            className={`p-1 rounded transition-colors ${isReturning ? "text-amber-600 bg-amber-100" : "text-muted-foreground hover:text-amber-600 hover:bg-amber-50"}`}
-                          >
-                            <RotateCcw className="w-3.5 h-3.5" />
+              {/* Expanded items */}
+              {isExpanded && (
+                <div className="divide-y divide-border border-t border-border bg-muted/5">
+                  {order.items.map((item) => {
+                    const isReturning = returning.has(item.itemId);
+                    return (
+                      <div key={item.itemId}>
+                        <div className={`flex items-center gap-3 px-4 py-2.5 transition-colors ${checked.has(item.itemId) ? "bg-green-50/60" : isReturning ? "bg-amber-50/60" : ""}`}>
+                          <div className="w-4 flex-shrink-0" /> {/* indent spacer */}
+                          <button onClick={() => toggleItem(item.itemId)} className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors" title="Select for picking">
+                            {checked.has(item.itemId)
+                              ? <CheckSquare className="w-4 h-4 text-green-600" />
+                              : <Square className="w-4 h-4" />}
                           </button>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm">{item.productName}</span>
+                              {item.finishName && (
+                                <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-800 border border-blue-200 rounded px-1.5 py-0.5 font-medium">
+                                  <Sparkles className="w-3 h-3" />{item.finishName}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-0.5">
+                              {item.colour && (
+                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Palette className="w-3 h-3" />{item.colour}
+                                </span>
+                              )}
+                              {item.size && (
+                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Ruler className="w-3 h-3" />{item.size}
+                                </span>
+                              )}
+                              {item.recipientName && (
+                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                  <User className="w-3 h-3" />{item.recipientName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {editingQty === item.itemId ? (
+                              <input
+                                type="number"
+                                min={1}
+                                max={item.quantity}
+                                defaultValue={qtyOverrides.get(item.itemId) ?? item.quantity}
+                                autoFocus
+                                className="w-14 h-7 text-center text-sm font-bold border border-primary rounded px-1 focus:outline-none focus:ring-1 focus:ring-primary"
+                                onBlur={(e) => {
+                                  const v = parseInt(e.target.value);
+                                  if (!isNaN(v)) setQtyOverride(item.itemId, v, item.quantity);
+                                  setEditingQty(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                                  if (e.key === "Escape") setEditingQty(null);
+                                }}
+                              />
+                            ) : (
+                              <button
+                                onClick={() => setEditingQty(item.itemId)}
+                                title="Click to edit quantity picked"
+                                className={`min-w-[2rem] h-7 px-2 rounded text-sm font-bold transition-colors border ${
+                                  qtyOverrides.has(item.itemId)
+                                    ? "bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200"
+                                    : "bg-secondary text-secondary-foreground border-transparent hover:bg-muted hover:border-border"
+                                }`}
+                              >
+                                {qtyOverrides.get(item.itemId) ?? item.quantity}
+                              </button>
+                            )}
+                            {qtyOverrides.has(item.itemId) && (
+                              <span className="text-xs text-amber-700 font-medium whitespace-nowrap">
+                                shortfall: {item.quantity - (qtyOverrides.get(item.itemId) ?? item.quantity)}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => toggleReturning(item.itemId)}
+                              title="Stock not found — return whole item to purchasing"
+                              className={`p-1 rounded transition-colors ${isReturning ? "text-amber-600 bg-amber-100" : "text-muted-foreground hover:text-amber-600 hover:bg-amber-50"}`}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
+                        {isReturning && (
+                          <div className="flex items-center gap-2 pl-16 pr-4 py-2 bg-amber-50 border-t border-amber-100 text-xs text-amber-800">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>This item will be de-allocated and added to purchasing requirements. Product stock will be corrected.</span>
+                            <button onClick={() => toggleReturning(item.itemId)} className="ml-auto text-amber-600 hover:text-amber-800 underline whitespace-nowrap">Cancel</button>
+                          </div>
+                        )}
+                        {qtyOverrides.has(item.itemId) && !isReturning && (
+                          <div className="flex items-center gap-2 pl-16 pr-4 py-2 bg-amber-50 border-t border-amber-100 text-xs text-amber-800">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span>
+                              Picking <strong>{qtyOverrides.get(item.itemId)}</strong> of {item.quantity} — shortfall of <strong>{item.quantity - (qtyOverrides.get(item.itemId) ?? item.quantity)}</strong> will be added to purchasing requirements.
+                            </span>
+                            <button onClick={() => setQtyOverride(item.itemId, item.quantity, item.quantity)} className="ml-auto text-amber-600 hover:text-amber-800 underline whitespace-nowrap">Reset</button>
+                          </div>
+                        )}
                       </div>
-                      {isReturning && (
-                        <div className="flex items-center gap-2 px-12 py-2 bg-amber-50 border-t border-amber-100 text-xs text-amber-800">
-                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>This item will be de-allocated and added to your purchasing requirements. Product stock will be corrected.</span>
-                          <button onClick={() => toggleReturning(item.itemId)} className="ml-auto text-amber-600 hover:text-amber-800 underline whitespace-nowrap">Cancel</button>
-                        </div>
-                      )}
-                      {qtyOverrides.has(item.itemId) && !isReturning && (
-                        <div className="flex items-center gap-2 px-12 py-2 bg-amber-50 border-t border-amber-100 text-xs text-amber-800">
-                          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                          <span>
-                            Picking <strong>{qtyOverrides.get(item.itemId)}</strong> of {item.quantity} — shortfall of <strong>{item.quantity - (qtyOverrides.get(item.itemId) ?? item.quantity)}</strong> will be added to purchasing requirements.
-                          </span>
-                          <button onClick={() => setQtyOverride(item.itemId, item.quantity, item.quantity)} className="ml-auto text-amber-600 hover:text-amber-800 underline whitespace-nowrap">Reset</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })}
