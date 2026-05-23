@@ -329,53 +329,75 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
     return `${order.orderNumber}${order.customerName ? ` — ${order.customerName}` : ""}${dueStr ? ` (due ${dueStr})` : ""}`;
   }).filter(Boolean);
 
-  // Aggregate into matrix: key = product+colour+finish, value = size→qty map
-  type RowKey = { productName: string; productSku: string | null; supplierCode: string | null; supplierName: string | null; colour: string | null; finishName: string | null };
-  const rowMap = new Map<string, { meta: RowKey; sizes: Map<string, number> }>();
-  const allSizes = new Set<string>();
-
+  // Group items by finish, build a matrix section per finish
+  const finishGroupsMap = new Map<string, typeof selectedItems>();
   for (const item of selectedItems) {
-    const key = [item.productName, item.productSku ?? "", item.colour ?? "", item.finishName ?? "Plain"].join("||");
-    if (!rowMap.has(key)) {
-      rowMap.set(key, {
-        meta: { productName: item.productName, productSku: item.productSku, supplierCode: item.supplierCode, supplierName: item.supplierName, colour: item.colour, finishName: item.finishName },
-        sizes: new Map(),
-      });
-    }
-    const sizeKey = item.size ?? "—";
-    allSizes.add(sizeKey);
-    const entry = rowMap.get(key)!;
-    entry.sizes.set(sizeKey, (entry.sizes.get(sizeKey) ?? 0) + item.quantity);
+    const fk = item.finishName ?? "Plain (No Finish)";
+    if (!finishGroupsMap.has(fk)) finishGroupsMap.set(fk, []);
+    finishGroupsMap.get(fk)!.push(item);
   }
-
-  const sortedSizes = sortSizes(Array.from(allSizes));
-  const rows = Array.from(rowMap.values());
+  const sortedFinishKeys = Array.from(finishGroupsMap.keys()).sort((a, b) => {
+    if (a === "Plain (No Finish)") return 1;
+    if (b === "Plain (No Finish)") return -1;
+    return a.localeCompare(b);
+  });
 
   const thStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:center;white-space:nowrap`;
   const thLeftStyle = `background:#374151;color:white;padding:5px 8px;font-size:10px;text-align:left`;
   const tdStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:11px`;
   const tdLeftStyle = `padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px`;
 
-  const sizeHeaders = sortedSizes.map(s => `<th style="${thStyle}">${s}</th>`).join("");
-  const tableRows = rows.map(({ meta, sizes }) => {
-    const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
-    const sizeCells = sortedSizes.map(s => {
-      const qty = sizes.get(s) ?? 0;
-      return `<td style="${tdStyle}${qty > 0 ? ";font-weight:bold" : ";color:#bbb"}">${qty > 0 ? qty : "—"}</td>`;
+  const finishSections = sortedFinishKeys.map(finishName => {
+    const fItems = finishGroupsMap.get(finishName)!;
+    const matMap = new Map<string, { meta: { productName: string; productSku: string | null; supplierCode: string | null; supplierName: string | null; colour: string | null }; sizes: Map<string, number> }>();
+    const matSizes = new Set<string>();
+    for (const item of fItems) {
+      const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? ""].join("||");
+      if (!matMap.has(key)) {
+        matMap.set(key, { meta: { productName: item.productName, productSku: item.productSku, supplierCode: item.supplierCode, supplierName: item.supplierName, colour: item.colour }, sizes: new Map() });
+      }
+      const sk = item.size ?? "—";
+      matSizes.add(sk);
+      matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
+    }
+    const sortedMatSizes = sortSizes(Array.from(matSizes));
+    const matRows = Array.from(matMap.values());
+    const finishTotal = fItems.reduce((s, i) => s + i.quantity, 0);
+    const sizeHeaders = sortedMatSizes.map(s => `<th style="${thStyle}">${s}</th>`).join("");
+    const tableRows = matRows.map(({ meta, sizes }, i) => {
+      const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+      const sizeCells = sortedMatSizes.map(s => {
+        const qty = sizes.get(s) ?? 0;
+        return `<td style="${tdStyle}${qty > 0 ? ";font-weight:bold" : ";color:#bbb"}">${qty > 0 ? qty : "—"}</td>`;
+      }).join("");
+      return `<tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
+        <td style="${tdLeftStyle}">
+          ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:11px">${meta.supplierCode}</span> ` : ""}
+          ${meta.productSku ? `<span style="font-size:10px;color:#2563eb">${meta.productSku}</span><br>` : ""}
+          ${meta.supplierName ? `<span style="font-size:10px;color:#888">${meta.supplierName}</span><br>` : ""}
+          <span style="font-size:11px">${meta.productName}</span>
+        </td>
+        <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
+        ${sizeCells}
+        <td style="${tdStyle};font-weight:bold;background:#f0f4ff">${rowTotal}</td>
+        <td style="${tdStyle}"><span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
+      </tr>`;
     }).join("");
-    return `<tr>
-      <td style="${tdLeftStyle}">
-        ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:11px">${meta.supplierCode}</span> ` : ""}
-        ${meta.productSku ? `<span style="font-size:10px;color:#2563eb">${meta.productSku}</span><br>` : ""}
-        ${meta.supplierName ? `<span style="font-size:10px;color:#888">${meta.supplierName}</span><br>` : ""}
-        <span style="font-size:11px">${meta.productName}</span>
-      </td>
-      <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
-      <td style="${tdLeftStyle}">${meta.finishName ?? "Plain"}</td>
-      ${sizeCells}
-      <td style="${tdStyle};font-weight:bold;background:#f9fafb">${rowTotal}</td>
-      <td style="${tdStyle}"><span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
-    </tr>`;
+    return `
+      <div style="margin-bottom:6mm">
+        <div style="display:inline-block;margin-bottom:2mm;padding:2px 10px;background:#1e3a5f;color:white;border-radius:3px;font-size:11px;font-weight:700;letter-spacing:0.5px">${finishName}</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="${thLeftStyle}">Product / Style</th>
+            <th style="${thLeftStyle}">Colour</th>
+            ${sizeHeaders}
+            <th style="${thStyle};background:#1e3a5f">Total</th>
+            <th style="${thStyle}">Picked ✓</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <div style="text-align:right;font-size:9px;color:#888;margin-top:1.5mm">${matRows.length} style${matRows.length !== 1 ? "s" : ""} · ${finishTotal} unit${finishTotal !== 1 ? "s" : ""}</div>
+      </div>`;
   }).join("");
 
   const html = `<!DOCTYPE html><html><head><title>Combined Picking Slip</title>
@@ -392,7 +414,7 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
     </style>
   </head><body>
     <div id="toolbar">
-      <span>📋 Combined Picking Slip — ${orderIds.size} order${orderIds.size !== 1 ? "s" : ""} · ${rows.length} line${rows.length !== 1 ? "s" : ""} · Qty ${totalQty}</span>
+      <span>📋 Combined Picking Slip — ${orderIds.size} order${orderIds.size !== 1 ? "s" : ""} · ${sortedFinishKeys.length} finish${sortedFinishKeys.length !== 1 ? "es" : ""} · Qty ${totalQty}</span>
       <button id="btn-print" onclick="window.print()">🖨 Print</button>
       <button id="btn-close" onclick="window.close()">✕ Close</button>
     </div>
@@ -400,24 +422,14 @@ function printCombinedPickingSlip(selectedItems: PickingItem[], allOrders: Picki
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1e3a5f;padding-bottom:4mm;margin-bottom:4mm">
         <div>
           <div style="font-size:20px;font-weight:900;color:#1e3a5f">COMBINED PICKING SLIP</div>
-          <div style="font-size:11px;color:#555;margin-top:1mm">${orderIds.size} order${orderIds.size !== 1 ? "s" : ""} · ${rows.length} style${rows.length !== 1 ? "s" : ""} · Total qty ${totalQty}</div>
+          <div style="font-size:11px;color:#555;margin-top:1mm">${orderIds.size} order${orderIds.size !== 1 ? "s" : ""} · ${sortedFinishKeys.length} finish${sortedFinishKeys.length !== 1 ? "es" : ""} · Total qty ${totalQty}</div>
         </div>
         <div style="text-align:right"><div style="font-weight:bold">Select Branding Solutions</div><div style="color:#555">Printed: ${dateStr}</div></div>
       </div>
       <div style="font-size:10px;color:#555;margin-bottom:4mm;line-height:1.6">
         ${orderSummaries.map(s => `<span style="margin-right:16px">📦 ${s}</span>`).join("")}
       </div>
-      <table style="width:100%;border-collapse:collapse">
-        <thead><tr>
-          <th style="${thLeftStyle}">Product / Style</th>
-          <th style="${thLeftStyle}">Colour</th>
-          <th style="${thLeftStyle}">Finish</th>
-          ${sizeHeaders}
-          <th style="${thStyle};background:#1e3a5f">Total</th>
-          <th style="${thStyle}">Picked ✓</th>
-        </tr></thead>
-        <tbody>${tableRows}</tbody>
-      </table>
+      ${finishSections}
       <div style="margin-top:8mm;display:flex;gap:30px;border-top:1px solid #e5e7eb;padding-top:4mm">
         <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Picked by: ___________________________</div>
         <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Date picked: ___________________________</div>
@@ -487,48 +499,71 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
   });
 
   const slipPages = sortedGroups.map((group, pageIdx) => {
-    type RowKey = { productName: string; productSku: string | null; supplierCode: string | null; supplierName: string | null; colour: string | null; finishName: string | null };
-    const rowMap = new Map<string, { meta: RowKey; sizes: Map<string, number> }>();
-    const allSizes = new Set<string>();
-
-    for (const item of group.items) {
-      const key = [item.productName, item.productSku ?? "", item.colour ?? "", item.finishName ?? "Plain"].join("||");
-      if (!rowMap.has(key)) {
-        rowMap.set(key, {
-          meta: { productName: item.productName, productSku: item.productSku, supplierCode: item.supplierCode, supplierName: item.supplierName, colour: item.colour, finishName: item.finishName },
-          sizes: new Map(),
-        });
-      }
-      const sizeKey = item.size ?? "—";
-      allSizes.add(sizeKey);
-      const entry = rowMap.get(key)!;
-      entry.sizes.set(sizeKey, (entry.sizes.get(sizeKey) ?? 0) + item.quantity);
-    }
-
-    const sortedSizes = sortSizes(Array.from(allSizes));
-    const rows = Array.from(rowMap.values());
     const totalQty = group.items.reduce((s, i) => s + i.quantity, 0);
 
-    const sizeHeaders = sortedSizes.map(s => `<th style="${thStyle}">${s}</th>`).join("");
-    const tableRows = rows.map(({ meta, sizes }) => {
-      const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
-      const sizeCells = sortedSizes.map(s => {
-        const qty = sizes.get(s) ?? 0;
-        return `<td style="${tdStyle}${qty > 0 ? ";font-weight:bold" : ";color:#bbb"}">${qty > 0 ? qty : "—"}</td>`;
+    // Build finish-grouped matrix sections for this customer slip
+    const custFinishMap = new Map<string, typeof group.items>();
+    for (const item of group.items) {
+      const fk = item.finishName ?? "Plain (No Finish)";
+      if (!custFinishMap.has(fk)) custFinishMap.set(fk, []);
+      custFinishMap.get(fk)!.push(item);
+    }
+    const custFinishKeys = Array.from(custFinishMap.keys()).sort((a, b) => {
+      if (a === "Plain (No Finish)") return 1;
+      if (b === "Plain (No Finish)") return -1;
+      return a.localeCompare(b);
+    });
+    const custFinishSections = custFinishKeys.map(finishName => {
+      const fItems = custFinishMap.get(finishName)!;
+      const matMap2 = new Map<string, { meta: { productName: string; productSku: string | null; supplierCode: string | null; supplierName: string | null; colour: string | null }; sizes: Map<string, number> }>();
+      const matSizes2 = new Set<string>();
+      for (const item of fItems) {
+        const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? ""].join("||");
+        if (!matMap2.has(key)) {
+          matMap2.set(key, { meta: { productName: item.productName, productSku: item.productSku, supplierCode: item.supplierCode, supplierName: item.supplierName, colour: item.colour }, sizes: new Map() });
+        }
+        const sk = item.size ?? "—";
+        matSizes2.add(sk);
+        matMap2.get(key)!.sizes.set(sk, (matMap2.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
+      }
+      const sortedMatSizes2 = sortSizes(Array.from(matSizes2));
+      const matRows2 = Array.from(matMap2.values());
+      const finishTotal2 = fItems.reduce((s, i) => s + i.quantity, 0);
+      const sizeHeaders2 = sortedMatSizes2.map(s => `<th style="${thStyle}">${s}</th>`).join("");
+      const tableRows2 = matRows2.map(({ meta, sizes }, i) => {
+        const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+        const sizeCells = sortedMatSizes2.map(s => {
+          const qty = sizes.get(s) ?? 0;
+          return `<td style="${tdStyle}${qty > 0 ? ";font-weight:bold" : ";color:#bbb"}">${qty > 0 ? qty : "—"}</td>`;
+        }).join("");
+        return `<tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
+          <td style="${tdLeftStyle}">
+            ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:10px">${meta.supplierCode}</span> ` : ""}
+            ${meta.productSku ? `<span style="font-size:9px;color:#2563eb">${meta.productSku}</span><br>` : ""}
+            ${meta.supplierName ? `<span style="font-size:9px;color:#888">${meta.supplierName}</span><br>` : ""}
+            <span style="font-size:10px">${meta.productName}</span>
+          </td>
+          <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
+          ${sizeCells}
+          <td style="${tdStyle};font-weight:bold;background:#f0f4ff">${rowTotal}</td>
+          <td style="${tdStyle}"><span style="display:inline-block;width:20px;height:20px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
+        </tr>`;
       }).join("");
-      return `<tr>
-        <td style="${tdLeftStyle}">
-          ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:10px">${meta.supplierCode}</span> ` : ""}
-          ${meta.productSku ? `<span style="font-size:9px;color:#2563eb">${meta.productSku}</span><br>` : ""}
-          ${meta.supplierName ? `<span style="font-size:9px;color:#888">${meta.supplierName}</span><br>` : ""}
-          <span style="font-size:10px">${meta.productName}</span>
-        </td>
-        <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
-        <td style="${tdLeftStyle}">${meta.finishName ?? "Plain"}</td>
-        ${sizeCells}
-        <td style="${tdStyle};font-weight:bold;background:#f9fafb">${rowTotal}</td>
-        <td style="${tdStyle}"><span style="display:inline-block;width:20px;height:20px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
-      </tr>`;
+      return `
+        <div style="margin-bottom:5mm">
+          <div style="display:inline-block;margin-bottom:1.5mm;padding:2px 9px;background:#1e3a5f;color:white;border-radius:3px;font-size:10px;font-weight:700;letter-spacing:0.4px">${finishName}</div>
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="${thLeftStyle}">Product / Style</th>
+              <th style="${thLeftStyle}">Colour</th>
+              ${sizeHeaders2}
+              <th style="${thStyle};background:#1e3a5f">Total</th>
+              <th style="${thStyle}">Picked ✓</th>
+            </tr></thead>
+            <tbody>${tableRows2}</tbody>
+          </table>
+          <div style="text-align:right;font-size:9px;color:#888;margin-top:1mm">${matRows2.length} style${matRows2.length !== 1 ? "s" : ""} · ${finishTotal2} unit${finishTotal2 !== 1 ? "s" : ""}</div>
+        </div>`;
     }).join("");
 
     // Order list — sorted by required date, each on its own line
@@ -551,7 +586,7 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
             <div style="font-size:22px;font-weight:900;color:#1e3a5f;line-height:1.1">${group.customerName ?? "Unknown Customer"}</div>
             <div style="font-size:11px;font-weight:700;color:#374151;letter-spacing:0.5px;margin-top:1.5mm">PICKING SLIP</div>
             <div style="font-size:10px;color:#555;margin-top:2mm;line-height:1.8">${orderLines}</div>
-            <div style="font-size:10px;color:#666;margin-top:1mm">${rows.length} style${rows.length !== 1 ? "s" : ""} &nbsp;·&nbsp; Total qty <strong>${totalQty}</strong></div>
+            <div style="font-size:10px;color:#666;margin-top:1mm">${custFinishKeys.length} finish${custFinishKeys.length !== 1 ? "es" : ""} &nbsp;·&nbsp; Total qty <strong>${totalQty}</strong></div>
           </div>
           <div style="text-align:right;flex-shrink:0;margin-left:8mm">
             <div style="font-weight:bold;font-size:12px">Select Branding Solutions</div>
@@ -559,17 +594,7 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
             ${group.earliestDate ? `<div style="margin-top:2mm;font-size:11px;font-weight:bold;color:#b45309">Required by: ${new Date(group.earliestDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</div>` : ""}
           </div>
         </div>
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr>
-            <th style="${thLeftStyle}">Product / Style</th>
-            <th style="${thLeftStyle}">Colour</th>
-            <th style="${thLeftStyle}">Finish</th>
-            ${sizeHeaders}
-            <th style="${thStyle};background:#1e3a5f">Total</th>
-            <th style="${thStyle}">Picked ✓</th>
-          </tr></thead>
-          <tbody>${tableRows}</tbody>
-        </table>
+        ${custFinishSections}
         <div style="margin-top:6mm;display:flex;gap:24px;border-top:1px solid #e5e7eb;padding-top:3mm">
           <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Picked by: ___________________________</div>
           <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Date picked: ___________________________</div>
@@ -614,6 +639,19 @@ function printPerCustomerPickingSlips(selectedItems: PickingItem[], allOrders: P
 function PrintWorksheet({ ws }: { ws: Worksheet }) {
   const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 
+  // Group items by finish
+  const finishMap = new Map<string, WorksheetItem[]>();
+  for (const item of ws.items) {
+    const fk = item.finishName ?? "Plain (No Finish)";
+    if (!finishMap.has(fk)) finishMap.set(fk, []);
+    finishMap.get(fk)!.push(item);
+  }
+  const sortedFinishes = Array.from(finishMap.keys()).sort((a, b) => {
+    if (a === "Plain (No Finish)") return 1;
+    if (b === "Plain (No Finish)") return -1;
+    return a.localeCompare(b);
+  });
+
   return (
     <div className="print-only bg-white text-black font-sans text-sm" style={{ width: "210mm", padding: "12mm 15mm", boxSizing: "border-box" }}>
       {/* Header */}
@@ -626,73 +664,111 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
         <div style={{ textAlign: "right", fontSize: "11px", color: "#555" }}>
           <div style={{ fontWeight: "bold", fontSize: "13px" }}>Select Branding Solutions</div>
           <div>Printed: {dateStr}</div>
+          <div style={{ marginTop: "1mm" }}>{ws.items.length} item{ws.items.length !== 1 ? "s" : ""} · {sortedFinishes.length} finish{sortedFinishes.length !== 1 ? "es" : ""}</div>
         </div>
       </div>
 
-      {/* One section per item */}
-      {ws.items.map((item, i) => (
-        <div key={item.id} style={{ marginBottom: "5mm", pageBreakInside: "avoid", border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden" }}>
-          {/* Item header */}
-          <div style={{ backgroundColor: "#1e3a5f", color: "white", padding: "4px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontWeight: "bold", fontSize: "12px" }}>Item {i + 1} of {ws.items.length}</span>
-            <span style={{ fontSize: "11px" }}>{item.finishName ?? "No Finish"}</span>
-          </div>
+      {/* One section per finish */}
+      {sortedFinishes.map((finishName) => {
+        const fItems = finishMap.get(finishName)!;
+        // Representative processes from the first item that has any
+        const repProcesses = fItems.find(i => i.processes.length > 0)?.processes ?? [];
 
-          {/* Item details grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: "0", borderBottom: "1px solid #e5e7eb" }}>
-            {[
-              { label: "Product", value: item.productName },
-              { label: "Colour", value: item.colour ?? "—" },
-              { label: "Size", value: item.size ?? "—" },
-              { label: "Qty", value: String(item.quantity) },
-              { label: "Recipient", value: item.recipientType === "person" ? (item.recipientName ?? "—") : "Stock" },
-              { label: "Finish / Decoration", value: item.finishName ?? "—" },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ padding: "4px 8px", borderRight: "1px solid #f0f0f0" }}>
-                <div style={{ fontSize: "9px", color: "#888", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: "1px" }}>{label}</div>
-                <div style={{ fontSize: "11px", fontWeight: "600" }}>{value}</div>
-              </div>
-            ))}
-          </div>
+        // Build matrix: rows = product+colour, columns = sizes
+        const matMap = new Map<string, { productName: string; colour: string | null; sizes: Map<string, number> }>();
+        const allSizes = new Set<string>();
+        for (const item of fItems) {
+          const key = `${item.productName}||${item.colour ?? ""}`;
+          if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, sizes: new Map() });
+          const sk = item.size ?? "—";
+          allSizes.add(sk);
+          matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
+        }
+        const sortedSizes = sortSizes(Array.from(allSizes));
+        const matRows = Array.from(matMap.values());
+        const finishTotal = fItems.reduce((s, i) => s + i.quantity, 0);
 
-          {/* Processes for this item */}
-          {item.processes.length > 0 ? (
-            <div style={{ padding: "5px 10px", backgroundColor: "#f9fafb" }}>
-              <div style={{ fontSize: "9px", fontWeight: "700", color: "#1e3a5f", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "3px" }}>
-                Decoration Processes ({item.processes.length})
+        return (
+          <div key={finishName} style={{ marginBottom: "6mm", pageBreakInside: "avoid", border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden" }}>
+            {/* Finish header */}
+            <div style={{ backgroundColor: "#1e3a5f", color: "white", padding: "5px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: "bold", fontSize: "13px" }}>{finishName}</span>
+              <span style={{ fontSize: "11px" }}>{matRows.length} style{matRows.length !== 1 ? "s" : ""} · {finishTotal} unit{finishTotal !== 1 ? "s" : ""}</span>
+            </div>
+
+            {/* Decoration processes */}
+            {repProcesses.length > 0 && (
+              <div style={{ padding: "5px 10px", backgroundColor: "#f0f4ff", borderBottom: "1px solid #dbeafe" }}>
+                <div style={{ fontSize: "9px", fontWeight: "700", color: "#1e40af", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "3px" }}>
+                  Decoration Processes
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#dbeafe" }}>
+                      <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Process</th>
+                      <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Type</th>
+                      <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Placement</th>
+                      <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Notes</th>
+                      <th style={{ padding: "2px 6px", textAlign: "center", fontWeight: "600" }}>Done ✓</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repProcesses.map((p) => (
+                      <tr key={p.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                        <td style={{ padding: "3px 6px", fontWeight: "600" }}>{p.name}</td>
+                        <td style={{ padding: "3px 6px", color: "#555" }}>{p.type ?? "—"}</td>
+                        <td style={{ padding: "3px 6px", color: "#555" }}>{p.placement ?? "—"}</td>
+                        <td style={{ padding: "3px 6px", color: "#777", fontStyle: "italic" }}>{p.notes ?? "—"}</td>
+                        <td style={{ padding: "3px 6px", textAlign: "center" }}>
+                          <span style={{ display: "inline-block", width: "18px", height: "18px", border: "1.5px solid #999", borderRadius: "3px" }}></span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "10px" }}>
-                <thead>
-                  <tr style={{ backgroundColor: "#e8edf5" }}>
-                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Process</th>
-                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Type</th>
-                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Placement</th>
-                    <th style={{ padding: "2px 6px", textAlign: "left", fontWeight: "600" }}>Notes</th>
-                    <th style={{ padding: "2px 6px", textAlign: "center", fontWeight: "600" }}>Done ✓</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {item.processes.map((p) => (
-                    <tr key={p.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                      <td style={{ padding: "3px 6px", fontWeight: "600" }}>{p.name}</td>
-                      <td style={{ padding: "3px 6px", color: "#555" }}>{p.type ?? "—"}</td>
-                      <td style={{ padding: "3px 6px", color: "#555" }}>{p.placement ?? "—"}</td>
-                      <td style={{ padding: "3px 6px", color: "#777", fontStyle: "italic" }}>{p.notes ?? "—"}</td>
-                      <td style={{ padding: "3px 6px", textAlign: "center" }}>
-                        <span style={{ display: "inline-block", width: "18px", height: "18px", border: "1.5px solid #999", borderRadius: "3px" }}></span>
+            )}
+
+            {/* Matrix: product+colour rows × size columns */}
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+              <thead>
+                <tr style={{ backgroundColor: "#374151", color: "white" }}>
+                  <th style={{ padding: "4px 8px", textAlign: "left", fontSize: "10px" }}>Product</th>
+                  <th style={{ padding: "4px 8px", textAlign: "left", fontSize: "10px" }}>Colour</th>
+                  {sortedSizes.map(s => (
+                    <th key={s} style={{ padding: "4px 8px", textAlign: "center", fontSize: "10px", whiteSpace: "nowrap" }}>{s}</th>
+                  ))}
+                  <th style={{ padding: "4px 8px", textAlign: "center", fontSize: "10px", backgroundColor: "#1e3a5f" }}>Total</th>
+                  <th style={{ padding: "4px 8px", textAlign: "center", fontSize: "10px" }}>Done ✓</th>
+                </tr>
+              </thead>
+              <tbody>
+                {matRows.map(({ productName, colour, sizes }, i) => {
+                  const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+                  return (
+                    <tr key={i} style={{ backgroundColor: i % 2 === 0 ? "#f9fafb" : "white", borderBottom: "1px solid #e5e7eb" }}>
+                      <td style={{ padding: "4px 8px", fontWeight: "600" }}>{productName}</td>
+                      <td style={{ padding: "4px 8px", color: "#555" }}>{colour ?? "—"}</td>
+                      {sortedSizes.map(s => {
+                        const qty = sizes.get(s) ?? 0;
+                        return (
+                          <td key={s} style={{ padding: "4px 8px", textAlign: "center", fontWeight: qty > 0 ? "bold" : "normal", color: qty > 0 ? "#111" : "#ccc" }}>
+                            {qty > 0 ? qty : "—"}
+                          </td>
+                        );
+                      })}
+                      <td style={{ padding: "4px 8px", textAlign: "center", fontWeight: "bold", backgroundColor: "#f0f4ff" }}>{rowTotal}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "center" }}>
+                        <span style={{ display: "inline-block", width: "20px", height: "20px", border: "1.5px solid #999", borderRadius: "3px" }}></span>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div style={{ padding: "4px 10px", fontSize: "10px", color: "#999", fontStyle: "italic" }}>
-              No decoration processes configured for this finish.
-            </div>
-          )}
-        </div>
-      ))}
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
 
       {ws.notes && (
         <div style={{ marginTop: "3mm", padding: "3mm", backgroundColor: "#fff9c4", border: "1px solid #f59e0b", borderRadius: "4px", fontSize: "11px" }}>
@@ -1111,30 +1187,39 @@ function printPickingSlip(order: PickingOrder, allOrders: PickingOrder[]) {
   const slipPages = sortedFinishes.map((finishName, pageIdx) => {
     const items = finishGroups.get(finishName)!;
 
-    // Consolidate rows by product + colour + size (no finish col — it's the heading)
-    type RowMeta = { supplierCode: string | null; productSku: string | null; productName: string; supplierName: string | null; colour: string | null; size: string | null };
-    const rowMap = new Map<string, { meta: RowMeta; qty: number }>();
+    // Matrix: group by product+colour, pivot sizes to columns
+    type MatRowMeta = { supplierCode: string | null; productSku: string | null; productName: string; supplierName: string | null; colour: string | null };
+    const matMap = new Map<string, { meta: MatRowMeta; sizes: Map<string, number> }>();
+    const matSizes = new Set<string>();
     for (const item of items) {
-      const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? "", item.size ?? ""].join("||");
-      if (!rowMap.has(key)) {
-        rowMap.set(key, { meta: { supplierCode: item.supplierCode, productSku: item.productSku, productName: item.productName, supplierName: item.supplierName, colour: item.colour, size: item.size }, qty: 0 });
+      const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? ""].join("||");
+      if (!matMap.has(key)) {
+        matMap.set(key, { meta: { supplierCode: item.supplierCode, productSku: item.productSku, productName: item.productName, supplierName: item.supplierName, colour: item.colour }, sizes: new Map() });
       }
-      rowMap.get(key)!.qty += item.quantity;
+      const sk = item.size ?? "—";
+      matSizes.add(sk);
+      matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
     }
-
-    const rows = Array.from(rowMap.values());
-    const totalQty = rows.reduce((s, r) => s + r.qty, 0);
+    const sortedMatSizes = sortSizes(Array.from(matSizes));
+    const matRows = Array.from(matMap.values());
+    const totalQty = matRows.reduce((s, r) => s + Array.from(r.sizes.values()).reduce((a, b) => a + b, 0), 0);
     const isLast = pageIdx === sortedFinishes.length - 1;
 
-    const itemRows = rows.map(({ meta, qty }, i) => {
+    const sizeHeaders = sortedMatSizes.map(s => `<th style="${thC}">${s}</th>`).join("");
+    const itemRows = matRows.map(({ meta, sizes }, i) => {
+      const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
       const codeSpan = meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:12px">${meta.supplierCode}</span>&nbsp;&nbsp;` : "";
       const skuSpan = meta.productSku ? `<span style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:3px;padding:1px 5px;font-size:10px;font-family:monospace">${meta.productSku}</span>&nbsp;&nbsp;` : "";
       const nameSpan = meta.supplierName ? `<span style="color:#555;font-size:10px">${meta.supplierName}</span>` : `<span style="color:#999;font-size:10px">${meta.productName}</span>`;
+      const sizeCells = sortedMatSizes.map(s => {
+        const qty = sizes.get(s) ?? 0;
+        return `<td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center${qty > 0 ? ";font-weight:bold" : ";color:#ccc"}">${qty > 0 ? qty : "—"}</td>`;
+      }).join("");
       return `<tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
         <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${codeSpan}${skuSpan}${nameSpan}</td>
         <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb">${meta.colour ?? "—"}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">${meta.size ?? "—"}</td>
-        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold">${qty}</td>
+        ${sizeCells}
+        <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center;font-weight:bold;background:#f0f4ff">${rowTotal}</td>
         <td style="padding:5px 8px;border-bottom:1px solid #e5e7eb;text-align:center">
           <span style="display:inline-block;width:22px;height:22px;border:1.5px solid #999;border-radius:3px">&nbsp;</span>
         </td>
