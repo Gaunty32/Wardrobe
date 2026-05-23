@@ -27,7 +27,9 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       customerId: ordersTable.customerId,
       totalAmount: ordersTable.totalAmount,
       status: ordersTable.status,
+      orderDate: ordersTable.orderDate,
       dispatchedAt: ordersTable.dispatchedAt,
+      invoiceDate: ordersTable.invoiceDate,
       trackingNumber: ordersTable.trackingNumber,
       invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
       invoiceEmailSentTo: ordersTable.invoiceEmailSentTo,
@@ -35,7 +37,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       xeroInvoiceStatus: ordersTable.xeroInvoiceStatus,
     })
     .from(ordersTable)
-    .where(eq(ordersTable.status, "dispatched"))
+    .where(sql`${ordersTable.status} IN ('shipped', 'dispatched')`)
     .orderBy(desc(ordersTable.dispatchedAt));
 
   const toSend = orders.filter((o) => !o.invoiceEmailSentAt);
@@ -43,6 +45,25 @@ router.get("/invoices", async (_req, res): Promise<void> => {
   const done = orders.filter((o) => o.invoiceEmailSentAt && o.xeroInvoiceId);
 
   res.json({ toSend, toPost, done });
+});
+
+// ─── Update invoice date ──────────────────────────────────────────────────────
+
+router.patch("/invoices/:orderId/invoice-date", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+
+  const body = z.object({ invoiceDate: z.string() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "invoiceDate (ISO string) required" }); return; }
+
+  const date = new Date(body.data.invoiceDate);
+  if (isNaN(date.getTime())) { res.status(400).json({ error: "Invalid date" }); return; }
+
+  await db.update(ordersTable)
+    .set({ invoiceDate: date, updatedAt: new Date() })
+    .where(eq(ordersTable.id, idParse.data));
+
+  res.json({ ok: true });
 });
 
 // ─── Update tracking number ──────────────────────────────────────────────────

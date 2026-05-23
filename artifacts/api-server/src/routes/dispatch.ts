@@ -232,11 +232,24 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     }
   }
 
+  // ── Compute invoice date with cross-month logic ───────────────────────────
+  // Default: dispatch date. Exception: if the order was placed in a different
+  // month/year, use the order date so sales & purchase invoices stay in the
+  // same reporting period.
+  const now = new Date();
+  const orderDate = order.orderDate ? new Date(order.orderDate) : null;
+  const crossMonth = orderDate && (
+    orderDate.getMonth() !== now.getMonth() ||
+    orderDate.getFullYear() !== now.getFullYear()
+  );
+  const invoiceDate = crossMonth ? orderDate! : now;
+
   // Mark order as shipped regardless of DPD outcome
   const updateFields: Partial<typeof ordersTable.$inferInsert> = {
     status: "shipped",
-    dispatchedAt: new Date(),
-    updatedAt: new Date(),
+    dispatchedAt: now,
+    invoiceDate,
+    updatedAt: now,
     ...(numberOfParcels != null ? { dpdParcelCount: numberOfParcels } : {}),
     ...(dpdResult ? {
       trackingNumber: dpdResult.consignmentNumber,

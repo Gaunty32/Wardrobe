@@ -944,4 +944,8 @@ export async function runStartupMigrations(): Promise<void> {
     }
   }
   // ─────────────────────────────────────────────────────────────────────────
+
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_date timestamptz;
+  `);
 }

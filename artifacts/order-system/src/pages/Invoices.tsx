@@ -37,7 +37,9 @@ interface InvoiceOrder {
   customerId: number | null;
   totalAmount: string;
   status: string;
+  orderDate: string | null;
   dispatchedAt: string | null;
+  invoiceDate: string | null;
   trackingNumber: string | null;
   invoiceEmailSentAt: string | null;
   invoiceEmailSentTo: string | null;
@@ -153,6 +155,17 @@ function TrackingCell({ order, onSaved }: { order: InvoiceOrder; onSaved: () => 
   );
 }
 
+function isCrossMonth(d1: string | null, d2: string | null): boolean {
+  if (!d1 || !d2) return false;
+  const a = new Date(d1), b = new Date(d2);
+  return a.getMonth() !== b.getMonth() || a.getFullYear() !== b.getFullYear();
+}
+
+function toDateInput(iso: string | null): string {
+  if (!iso) return new Date().toISOString().slice(0, 10);
+  return new Date(iso).toISOString().slice(0, 10);
+}
+
 function OrderRow({
   order,
   showSendEmail,
@@ -165,6 +178,14 @@ function OrderRow({
   const { toast } = useToast();
   const qc = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [invoiceDateEdit, setInvoiceDateEdit] = useState(toDateInput(order.invoiceDate));
+  const crossMonth = isCrossMonth(order.orderDate, order.invoiceDate);
+
+  const saveInvoiceDate = useMutation({
+    mutationFn: (d: string) => apiFetch(`/invoices/${order.id}/invoice-date`, { method: "PATCH", body: JSON.stringify({ invoiceDate: d }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
+    onError: (e: Error) => toast({ title: "Error", description: parseApiError(e), variant: "destructive" }),
+  });
 
   const sendEmail = useMutation({
     mutationFn: () => apiFetch<{ ok: boolean; sentTo: string; xeroInvoiceId?: string }>(`/invoices/${order.id}/send-email`, { method: "POST" }),
@@ -281,6 +302,27 @@ function OrderRow({
                   No tracking number — add one for better customer experience
                 </div>
               )}
+            </div>
+
+            {/* Invoice date */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Invoice Date</label>
+              {crossMonth && (
+                <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 text-xs text-amber-800">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                  <span>Order placed in a different month — invoice date set to order date to keep records in the same period.</span>
+                </div>
+              )}
+              <input
+                type="date"
+                value={invoiceDateEdit}
+                className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onChange={(e) => {
+                  setInvoiceDateEdit(e.target.value);
+                  if (e.target.value) saveInvoiceDate.mutate(e.target.value);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">This date will appear on the invoice and in Xero.</p>
             </div>
           </div>
           <DialogFooter>

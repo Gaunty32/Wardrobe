@@ -36,6 +36,7 @@ export const ordersTable = pgTable("orders", {
   portalSubmittedByName: text("portal_submitted_by_name"),
   portalApprovedByEmail: text("portal_approved_by_email"),
   portalApprovedByName: text("portal_approved_by_name"),
+  invoiceDate: timestamp("invoice_date", { withTimezone: true }),
   stripePaymentLinkUrl: text("stripe_payment_link_url"),
   stripePaymentLinkId: text("stripe_payment_link_id"),
   attachments: jsonb("attachments").$type<Array<{ name: string; objectPath: string }>>(),

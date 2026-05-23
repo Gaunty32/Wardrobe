@@ -1072,6 +1072,15 @@ export default function OrderDetail() {
     onError: (e: Error) => toast({ title: "Xero error", description: e.message, variant: "destructive" }),
   });
 
+  const saveInvoiceDateMutation = useMutation({
+    mutationFn: (dateStr: string) => apiFetch(`/invoices/${orderId}/invoice-date`, { method: "PATCH", body: JSON.stringify({ invoiceDate: dateStr }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Invoice date updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const handleStatusChange = (newStatus: UpdateOrderBodyStatus) => {
     updateOrderMutation.mutate(
       { id: orderId, data: { status: newStatus } },
@@ -1887,43 +1896,78 @@ export default function OrderDetail() {
               }
             />
 
-            {/* Xero card — only show if posted or order is dispatched */}
-            {((order as any).xeroInvoiceId || order.status === "dispatched") && (
-              <Card className="shadow-sm border-border/50">
-                <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
-                  <CardTitle className="font-display text-lg flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-indigo-500" /> Xero
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="py-4">
-                  {(order as any).xeroInvoiceId ? (
-                    <div className="space-y-1 text-sm">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="gap-1.5 text-indigo-700 border-indigo-300 bg-indigo-50">
-                          {(order as any).xeroInvoiceStatus ?? "DRAFT"}
-                        </Badge>
+            {/* Invoicing card — show once dispatched/shipped */}
+            {((order as any).xeroInvoiceId || order.status === "shipped" || order.status === "dispatched") && (() => {
+              const rawInvoiceDate: string | null = (order as any).invoiceDate ?? null;
+              const rawOrderDate: string | null = (order as any).orderDate ?? null;
+              const invoiceDateValue = rawInvoiceDate
+                ? new Date(rawInvoiceDate).toISOString().slice(0, 10)
+                : new Date().toISOString().slice(0, 10);
+              const crossMonth = rawOrderDate && rawInvoiceDate && (() => {
+                const od = new Date(rawOrderDate);
+                const id = new Date(rawInvoiceDate);
+                return od.getMonth() !== id.getMonth() || od.getFullYear() !== id.getFullYear();
+              })();
+              return (
+                <Card className="shadow-sm border-border/50">
+                  <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                    <CardTitle className="font-display text-lg flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-indigo-500" /> Invoicing
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="py-4 space-y-3">
+                    {/* Invoice date field */}
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Invoice Date</label>
+                      {crossMonth && (
+                        <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                          <TriangleAlert className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                          <span>Order placed in a different month — invoice date set to order date to keep records in the same period.</span>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <input
+                          type="date"
+                          defaultValue={invoiceDateValue}
+                          key={invoiceDateValue}
+                          className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          onChange={(e) => {
+                            if (e.target.value) saveInvoiceDateMutation.mutate(e.target.value);
+                          }}
+                        />
                       </div>
-                      <p className="text-xs text-muted-foreground">Invoice ID: {(order as any).xeroInvoiceId}</p>
+                      <p className="text-xs text-muted-foreground">Used on the invoice email and Xero entry.</p>
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Order is dispatched — ready to post an invoice to Xero.</p>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 border-indigo-300 text-indigo-700 hover:bg-indigo-50 w-full"
-                        onClick={() => postToXeroMutation.mutate()}
-                        disabled={postToXeroMutation.isPending}
-                      >
-                        {postToXeroMutation.isPending
-                          ? <><Loader2 className="w-4 h-4 animate-spin" />Posting…</>
-                          : <><BookOpen className="w-4 h-4" />Post to Xero</>}
-                      </Button>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+
+                    {/* Xero status / action */}
+                    {(order as any).xeroInvoiceId ? (
+                      <div className="space-y-1 text-sm pt-1 border-t border-border/40">
+                        <div className="flex items-center gap-2 pt-2">
+                          <Badge variant="outline" className="gap-1.5 text-indigo-700 border-indigo-300 bg-indigo-50">
+                            <BookOpen className="w-3 h-3" /> {(order as any).xeroInvoiceStatus ?? "DRAFT"}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Xero invoice ID: {(order as any).xeroInvoiceId}</p>
+                      </div>
+                    ) : (
+                      <div className="pt-1 border-t border-border/40">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 border-indigo-300 text-indigo-700 hover:bg-indigo-50 w-full mt-2"
+                          onClick={() => postToXeroMutation.mutate()}
+                          disabled={postToXeroMutation.isPending}
+                        >
+                          {postToXeroMutation.isPending
+                            ? <><Loader2 className="w-4 h-4 animate-spin" />Posting…</>
+                            : <><BookOpen className="w-4 h-4" />Post to Xero</>}
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })()}
 
             <Card className="shadow-sm border-border/50">
               <CardHeader className="py-4 border-b border-border/40 bg-muted/10">

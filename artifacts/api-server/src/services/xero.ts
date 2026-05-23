@@ -525,11 +525,16 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     TaxType: "OUTPUT",
   }));
 
+  const invoiceDateStr = order.invoiceDate
+    ? new Date(order.invoiceDate).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
+
   const invoice = {
     Type: "ACCREC",
     Contact: { ContactID: xeroContactId },
     InvoiceNumber: order.orderNumber,
     Reference: order.orderNumber,
+    DateString: invoiceDateStr,
     Status: "DRAFT",
     LineAmountTypes: "Exclusive",
     LineItems: lineItems,
