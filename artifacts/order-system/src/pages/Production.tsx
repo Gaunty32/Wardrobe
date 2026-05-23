@@ -1440,57 +1440,11 @@ function openPreview(title: string, bodyHtml: string, styleCss: string, toolbarL
   win.focus();
 }
 
-function printDocDeliveryNote(order: DocOrder, opts?: { draft?: boolean }) {
-  const isDraft = opts?.draft ?? false;
-  const dateStr = new Date().toLocaleDateString("en-AU");
-  const addr = order.deliveryAddress;
-  const addrLines = addr ? [addr.line1, addr.line2, addr.city, addr.county, addr.postcode, addr.country].filter(Boolean) : [];
-  const namedItems = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
-  const stockItems = order.items.filter((i) => !(i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)));
-  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
-
-  const recipientGroups = new Map<string, { name: string; jobTitle: string | null; items: DocItem[] }>();
-  for (const item of namedItems) {
-    const name = docRecipientName(item);
-    if (!recipientGroups.has(name)) recipientGroups.set(name, { name, jobTitle: item.employee?.jobTitle ?? null, items: [] });
-    recipientGroups.get(name)!.items.push(item);
-  }
-
-  const groupRows = [...recipientGroups.values()].map((g) => `
-    <tr class="group-hdr"><td colspan="4"><strong>${g.name}</strong>${g.jobTitle ? ` <span class="job">${g.jobTitle}</span>` : ""}</td></tr>
-    ${g.items.map((i) => `<tr><td style="padding-left:18px">${i.productName}${i.finishName ? ` <span class="finish">${i.finishName}</span>` : ""}</td><td>${i.colour ?? "—"}</td><td>${i.size ?? "—"}</td><td class="ctr">${i.quantity}</td></tr>`).join("")}
-  `).join("");
-  const stockRows = stockItems.length > 0 ? `
-    <tr class="group-hdr"><td colspan="4"><strong>General Stock</strong></td></tr>
-    ${stockItems.map((i) => `<tr><td style="padding-left:18px">${i.productName}${i.finishName ? ` <span class="finish">${i.finishName}</span>` : ""}</td><td>${i.colour ?? "—"}</td><td>${i.size ?? "—"}</td><td class="ctr">${i.quantity}</td></tr>`).join("")}
-  ` : "";
-
-  openPreview(
-    `${isDraft ? "DRAFT " : ""}Delivery Note — ${order.orderNumber}`,
-    `<div style="padding:15mm">
-      ${isDraft ? `<div style="background:#dc2626;color:white;text-align:center;font-size:11pt;font-weight:900;letter-spacing:.12em;padding:4px 0;margin-bottom:5mm;border-radius:3px">DRAFT — PARTIAL ORDER — NOT ALL ITEMS INCLUDED</div>` : ""}
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #1e3a5f;padding-bottom:5mm;margin-bottom:5mm">
-        <div><div style="font-size:22pt;font-weight:900;color:#1e3a5f">Select Branding Solutions</div></div>
-        <div style="text-align:right"><div style="font-size:16pt;font-weight:bold;color:#333">${isDraft ? "DRAFT " : ""}DELIVERY NOTE</div><div style="font-size:11pt;color:#555">${order.orderNumber}</div></div>
-      </div>
-      <div style="display:flex;gap:24px;margin-bottom:5mm">
-        <div style="flex:1"><div class="lbl">Deliver To</div><p><strong>${order.customerName ?? ""}</strong><br>${addrLines.length > 0 ? addrLines.join("<br>") : "<em>No delivery address</em>"}</p></div>
-        <div style="flex:1"><div class="lbl">Order Details</div><p>Order Date: ${new Date(order.orderDate).toLocaleDateString("en-AU")}<br>${order.requiredDate ? `Required By: <strong>${new Date(order.requiredDate).toLocaleDateString("en-AU")}</strong><br>` : ""}Dispatched: ${dateStr}${order.shippingMethod ? `<br>Delivery: <strong>${docShippingLabel(order.shippingMethod)}</strong>` : ""}${order.trackingNumber ? `<br>Tracking: <strong>${order.trackingNumber}</strong>` : ""}</p></div>
-      </div>
-      <table><thead><tr><th>Item</th><th>Colour</th><th>Size</th><th class="ctr">Qty</th></tr></thead>
-      <tbody>${groupRows}${stockRows}<tr style="border-top:2px solid #000"><td colspan="3" style="text-align:right;font-weight:bold">Total Items</td><td class="ctr" style="font-size:13pt">${totalQty}</td></tr></tbody></table>
-      <div style="margin-top:8mm;display:flex;gap:32px"><div class="sig">Packed by: ______________________</div><div class="sig">Checked by: ______________________</div><div class="sig">Date: ______________________</div></div>
-      <div style="margin-top:6mm;font-size:8pt;color:#888;border-top:1px solid #ddd;padding-top:4mm">Please check contents carefully. Any discrepancies should be reported within 48 hours of receipt.</div>
-    </div>`,
-    `.lbl{font-size:8pt;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:4px}
-     table{width:100%;border-collapse:collapse;margin-top:8px}
-     th{background:#1e3a5f;color:white;padding:5px 8px;text-align:left;font-size:9pt}th.ctr{text-align:center}
-     td{padding:4px 8px;border-bottom:1px solid #e0e0e0;font-size:10pt}td.ctr{text-align:center;font-weight:bold}
-     tr.group-hdr td{background:#f5f5f5;padding:5px 8px;border-bottom:1px solid #ccc;font-size:10pt}
-     .job{font-size:9pt;color:#555;font-weight:normal;margin-left:6px}.finish{font-size:9pt;color:#2563eb}
-     .sig{flex:1;border-top:1px solid #999;padding-top:4px;font-size:9pt;color:#555}`,
-    `📄 Delivery Note — ${order.customerName ?? order.orderNumber}`
-  );
+function openDeliveryNote(orderId: number, opts?: { dispatchedItemIds?: number[]; draft?: boolean }) {
+  const params = new URLSearchParams();
+  if (opts?.dispatchedItemIds?.length) params.set("dispatchedItemIds", opts.dispatchedItemIds.join(","));
+  if (opts?.draft) params.set("draft", "1");
+  window.open(`/api/orders/${orderId}/delivery-note?${params}`, "_blank");
 }
 
 function printDocInvoice(order: DocOrder) {
@@ -1898,7 +1852,7 @@ function IncompleteOrderModal({
                 <Button
                   variant="outline"
                   className="justify-start gap-2 h-auto py-3"
-                  onClick={() => printDocDeliveryNote(completeOrder)}
+                  onClick={() => openDeliveryNote(order.id, { dispatchedItemIds: completeOrder.items.map(i => i.id) })}
                 >
                   <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
                   <div className="text-left">
@@ -1912,7 +1866,7 @@ function IncompleteOrderModal({
               <Button
                 variant="outline"
                 className="justify-start gap-2 h-auto py-3"
-                onClick={() => printDocDeliveryNote(order, { draft: true })}
+                onClick={() => openDeliveryNote(order.id, { draft: true })}
               >
                 <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
                 <div className="text-left">
@@ -2038,7 +1992,7 @@ function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: ()
             <Button
               variant="outline"
               className="justify-start gap-2 h-auto py-3"
-              onClick={() => printDocDeliveryNote(order)}
+              onClick={() => openDeliveryNote(order.id)}
             >
               <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
               <div className="text-left">

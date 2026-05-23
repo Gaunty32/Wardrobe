@@ -230,143 +230,8 @@ function printWearerLabels(order: DispatchOrder, trackingNumberOverride?: string
   if (win) { win.document.write(html); win.document.close(); win.focus(); }
 }
 
-function printDeliveryNote(order: DispatchOrder) {
-  const namedItems = order.items.filter((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
-  const stockItems = order.items.filter((i) => i.recipientType !== "person" || (!i.recipientName && !i.recipientEmployeeId));
-
-  const recipientGroups = new Map<string, { name: string; jobTitle: string | null; items: DispatchItem[] }>();
-  for (const item of namedItems) {
-    const name = recipientFullName(item);
-    if (!recipientGroups.has(name)) {
-      recipientGroups.set(name, { name, jobTitle: recipientJobTitle(item), items: [] });
-    }
-    recipientGroups.get(name)!.items.push(item);
-  }
-
-  const addr = order.deliveryAddress;
-  const addrLines = addr ? [addr.line1, addr.line2, addr.city, addr.county, addr.postcode, addr.country].filter(Boolean) : [];
-
-  const totalQty = order.items.reduce((s, i) => s + i.quantity, 0);
-
-  const groupRows = [...recipientGroups.values()].map((g) => `
-    <tr class="group-header">
-      <td colspan="4"><strong>${g.name}</strong>${g.jobTitle ? ` <span class="job">${g.jobTitle}</span>` : ""}</td>
-    </tr>
-    ${g.items.map((item) => `
-      <tr>
-        <td style="padding-left: 20px">${item.productName}</td>
-        <td>${item.colour ?? "—"}</td>
-        <td>${item.size ?? "—"}</td>
-        <td class="qty">${item.quantity}</td>
-      </tr>
-    `).join("")}
-  `).join("");
-
-  const stockRows = stockItems.length > 0 ? `
-    <tr class="group-header">
-      <td colspan="4"><strong>General Stock</strong></td>
-    </tr>
-    ${stockItems.map((item) => `
-      <tr>
-        <td style="padding-left: 20px">${item.productName}</td>
-        <td>${item.colour ?? "—"}</td>
-        <td>${item.size ?? "—"}</td>
-        <td class="qty">${item.quantity}</td>
-      </tr>
-    `).join("")}
-  ` : "";
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Delivery Note — ${order.orderNumber}</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, sans-serif; font-size: 10pt; color: #000; background: white; padding: 20mm; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
-  .company-name { font-size: 22pt; font-weight: bold; color: #000; }
-  .doc-title { font-size: 16pt; font-weight: bold; text-align: right; color: #333; }
-  .doc-number { font-size: 11pt; color: #555; text-align: right; }
-  .info-row { display: flex; gap: 32px; margin-bottom: 24px; }
-  .info-block { flex: 1; }
-  .info-block h3 { font-size: 8pt; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 6px; }
-  .info-block p { font-size: 10pt; line-height: 1.5; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  th { background: #222; color: white; padding: 6px 10px; text-align: left; font-size: 9pt; text-transform: uppercase; letter-spacing: 0.06em; }
-  th.qty { text-align: center; }
-  td { padding: 5px 10px; border-bottom: 1px solid #e0e0e0; font-size: 10pt; }
-  td.qty { text-align: center; font-weight: bold; }
-  tr.group-header td { background: #f5f5f5; font-size: 10pt; padding: 6px 10px; border-bottom: 1px solid #ccc; }
-  .job { font-size: 9pt; color: #555; font-weight: normal; margin-left: 8px; }
-  .totals { margin-top: 16px; text-align: right; font-size: 10pt; }
-  .sig-block { margin-top: 32px; display: flex; gap: 48px; }
-  .sig-line { flex: 1; border-top: 1px solid #000; padding-top: 6px; font-size: 9pt; color: #555; }
-  .footer { margin-top: 24px; font-size: 8pt; color: #888; border-top: 1px solid #ddd; padding-top: 8px; }
-  @media print { @page { size: A4; margin: 20mm; } body { padding: 0; } }
-</style>
-</head>
-<body>
-  <div class="header">
-    <div>
-      <div class="company-name">Select Branding Solutions</div>
-    </div>
-    <div>
-      <div class="doc-title">Delivery Note</div>
-      <div class="doc-number">${order.orderNumber}</div>
-    </div>
-  </div>
-
-  <div class="info-row">
-    <div class="info-block">
-      <h3>Deliver To</h3>
-      <p><strong>${order.customerName ?? ""}</strong><br>
-      ${order.attentionOf ? `FAO: ${order.attentionOf}<br>` : ""}${addrLines.length > 0 ? addrLines.join("<br>") : "<em>No delivery address on record</em>"}</p>
-    </div>
-    <div class="info-block">
-      <h3>Order Details</h3>
-      <p>Order Date: ${new Date(order.orderDate).toLocaleDateString("en-GB")}<br>
-      ${order.requiredDate ? `Required By: <strong>${new Date(order.requiredDate).toLocaleDateString("en-GB")}</strong><br>` : ""}
-      Dispatched: ${new Date().toLocaleDateString("en-GB")}<br>
-      Delivery: <strong>${shippingLabel(order.shippingMethod)}</strong>${order.trackingNumber ? `<br>Tracking: <strong>${order.trackingNumber}</strong>` : ""}</p>
-    </div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Item</th>
-        <th>Colour</th>
-        <th>Size</th>
-        <th class="qty">Qty</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${groupRows}
-      ${stockRows}
-      <tr style="border-top: 2px solid #000">
-        <td colspan="3" style="text-align:right; font-weight: bold">Total Items</td>
-        <td class="qty" style="font-size: 12pt">${totalQty}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  <div class="sig-block">
-    <div class="sig-line">Packed by: ______________________</div>
-    <div class="sig-line">Checked by: ______________________</div>
-    <div class="sig-line">Date: ______________________</div>
-  </div>
-
-  <div class="footer">
-    Please check contents carefully. Any discrepancies should be reported within 48 hours of receipt.
-  </div>
-
-  <script>window.onload = () => { window.print(); }</script>
-</body>
-</html>`;
-
-  const win = window.open("", "_blank");
-  if (win) { win.document.write(html); win.document.close(); }
+function openDeliveryNote(orderId: number) {
+  window.open(`/api/orders/${orderId}/delivery-note`, "_blank");
 }
 
 function RequiredDateBadge({ requiredDate }: { requiredDate: string | null }) {
@@ -493,7 +358,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => printWearerLabels(order)} disabled={namedCount === 0}>
             <Tag className="w-3.5 h-3.5" /> Wearer Labels
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => printDeliveryNote(order)}>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id)}>
             <FileText className="w-3.5 h-3.5" /> Delivery Note
           </Button>
           <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={openDispatchModal}>
