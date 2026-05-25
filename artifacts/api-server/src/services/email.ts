@@ -1289,6 +1289,8 @@ export function buildInvoiceEmail(params: {
   const isCollection = params.shippingMethod
     ? ["office_collection", "warehouse_collection"].includes(params.shippingMethod)
     : false;
+  const isWarehouseCollection = params.shippingMethod === "warehouse_collection";
+  const isOfficeCollection = params.shippingMethod === "office_collection";
 
   const fmtDate = (d: Date) =>
     new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
@@ -1334,11 +1336,18 @@ export function buildInvoiceEmail(params: {
       </td></tr>`
     : "";
 
-  const collectionHtml = isCollection
+  const collectionHtml = isWarehouseCollection
     ? `<tr><td style="padding:0 32px 16px;">
         <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:16px 20px;">
           <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#15803d;">Your order is ready for collection!</p>
-          <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">Please visit us at <strong>Spence Mills, Mill Lane, Leeds, LS13 3HE</strong> during business hours. Please bring a copy of this invoice or quote your order reference <strong>${params.orderNumber}</strong>.</p>
+          <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">Please collect from our warehouse at <strong>Spence Mills, Mill Lane, Leeds, LS13 3HE</strong>. Collection hours: <strong>8am–2pm, Monday–Friday</strong>. Please bring a copy of this invoice or quote your order reference <strong>${params.orderNumber}</strong>.</p>
+        </div>
+      </td></tr>`
+    : isOfficeCollection
+    ? `<tr><td style="padding:0 32px 16px;">
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:16px 20px;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#854d0e;">Your order is ready for collection!</p>
+          <p style="margin:0;font-size:13px;color:#713f12;line-height:1.6;">Please collect from our office at <strong>3rd Floor, Albion Mills Business Centre, Albion Mills, Apperley Bridge, BD10 9TQ</strong>. Collection hours: <strong>9:30am–4pm, Monday–Friday</strong>. Please bring a copy of this invoice or quote your order reference <strong>${params.orderNumber}</strong>.</p>
         </div>
       </td></tr>`
     : "";
@@ -1488,7 +1497,8 @@ export function buildInvoiceEmail(params: {
       ? `Status: PAID — This invoice is for your records.`
       : `Payment Due: ${paymentDueStr}`,
     ``,
-    isCollection ? `Your order is ready for collection at:\nSpence Mills, Mill Lane, Leeds, LS13 3HE\n` : null,
+    isWarehouseCollection ? `Your order is ready for collection at:\nSpence Mills, Mill Lane, Leeds, LS13 3HE\nCollection hours: 8am–2pm, Monday–Friday\n` : null,
+    isOfficeCollection ? `Your order is ready for collection at:\n3rd Floor, Albion Mills Business Centre, Albion Mills, Apperley Bridge, BD10 9TQ\nCollection hours: 9:30am–4pm, Monday–Friday\n` : null,
     params.trackingNumber ? `Your order is on its way! Tracking: ${params.trackingNumber}\nhttps://track.dpd.co.uk/parcels/${params.trackingNumber}\n` : null,
     `ITEMS:`,
     ...params.items.map(
@@ -1634,6 +1644,8 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
     const isCollection = data.shippingMethod
       ? ["office_collection", "warehouse_collection"].includes(data.shippingMethod)
       : false;
+    const isWarehouseCollection = data.shippingMethod === "warehouse_collection";
+    const isOfficeCollection = data.shippingMethod === "office_collection";
 
     const fmtDate = (d: Date | string) =>
       new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
@@ -1814,13 +1826,24 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       y += 68;
     }
 
-    if (isCollection && !isPaid) {
+    if (isWarehouseCollection && !isPaid) {
       y += 8;
-      doc.rect(MARGIN, y, W, 32).fill("#dcfce7");
-      doc.rect(MARGIN, y, W, 32).stroke("#86efac");
+      doc.rect(MARGIN, y, W, 40).fill("#dcfce7");
+      doc.rect(MARGIN, y, W, 40).stroke("#86efac");
       doc.fillColor("#15803d").fontSize(9).font("Helvetica-Bold")
-        .text("Ready for collection at: Spence Mills, Mill Lane, Leeds, LS13 3HE", MARGIN + 10, y + 11, { width: W - 20 });
-      y += 44;
+        .text("Ready for collection — Warehouse", MARGIN + 10, y + 8, { width: W - 20 });
+      doc.fillColor("#166534").fontSize(8.5).font("Helvetica")
+        .text("Spence Mills, Mill Lane, Leeds, LS13 3HE  ·  8am–2pm, Monday–Friday", MARGIN + 10, y + 22, { width: W - 20 });
+      y += 52;
+    } else if (isOfficeCollection && !isPaid) {
+      y += 8;
+      doc.rect(MARGIN, y, W, 40).fill("#fefce8");
+      doc.rect(MARGIN, y, W, 40).stroke("#fde68a");
+      doc.fillColor("#854d0e").fontSize(9).font("Helvetica-Bold")
+        .text("Ready for collection — Office", MARGIN + 10, y + 8, { width: W - 20 });
+      doc.fillColor("#713f12").fontSize(8.5).font("Helvetica")
+        .text("3rd Floor, Albion Mills Business Centre, Albion Mills, Apperley Bridge, BD10 9TQ  ·  9:30am–4pm, Monday–Friday", MARGIN + 10, y + 22, { width: W - 20 });
+      y += 52;
     }
 
     if (data.notes) {
