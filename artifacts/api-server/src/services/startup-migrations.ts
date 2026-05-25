@@ -962,4 +962,20 @@ export async function runStartupMigrations(): Promise<void> {
       AND oi.purchase_required = true
       AND o.status IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
   `);
+
+  // Promote stock-covered items on active orders to 'allocated' so they appear
+  // in the picking list. Previously, only PO delivery set stock_status='allocated';
+  // items already in stock (purchase_required=false) were never promoted and so
+  // were invisible to the production picking/worksheet workflow.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET stock_status = 'allocated',
+        stock_allocated_at = NOW()
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.purchase_required = false
+      AND oi.stock_status IS NULL
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+  `);
+  console.log("[startup] Promoted stock-covered items to picking list");
 }

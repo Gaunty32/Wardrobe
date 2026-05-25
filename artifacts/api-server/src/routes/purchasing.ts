@@ -31,7 +31,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
 
   const candidateRows = await db.execute(sql`
     SELECT oi.id, oi.product_id, oi.quantity, oi.purchase_required,
-           oi.purchase_quantity, oi.colour, oi.size,
+           oi.purchase_quantity, oi.colour, oi.size, oi.stock_status,
            -- Variant-level stock when a matching variant exists;
            -- product-level stock only for plain products with no variants at all.
            COALESCE(
@@ -77,7 +77,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
   const candidates = candidateRows.rows as Array<{
     id: number; product_id: number; quantity: number;
     purchase_required: boolean; purchase_quantity: number | null;
-    colour: string | null; size: string | null;
+    colour: string | null; size: string | null; stock_status: string | null;
     available_stock: number | null;
     supplier_id: number | null; supplier_name: string | null; supplier_email: string | null;
   }>;
@@ -139,9 +139,17 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     const newPurchaseRequired = shortfall > 0;
     const newPurchaseQuantity = shortfall > 0 ? shortfall : null;
 
+    // When fully covered by stock: mark as allocated so it appears in the picking list.
+    // Only promote to 'allocated' — never demote an item already in production or complete.
+    const alreadyProgressed = ["in_production", "complete"].includes(row.stock_status ?? "");
+    const newStockStatus = (!newPurchaseRequired && !alreadyProgressed && !row.stock_status)
+      ? "allocated"
+      : undefined;
+
     const unchanged =
       row.purchase_required === newPurchaseRequired &&
-      (row.purchase_quantity ?? null) === newPurchaseQuantity;
+      (row.purchase_quantity ?? null) === newPurchaseQuantity &&
+      newStockStatus === undefined;
 
     if (!unchanged) {
       await db.update(orderItemsTable)
@@ -150,6 +158,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
           purchaseQuantity: newPurchaseQuantity,
           supplierId: newPurchaseRequired ? (row.supplier_id ?? null) : null,
           supplierName: newPurchaseRequired ? (row.supplier_name ?? null) : null,
+          ...(newStockStatus ? { stockStatus: newStockStatus, stockAllocatedAt: new Date() } : {}),
         })
         .where(eq(orderItemsTable.id, row.id));
       if (newPurchaseRequired) restored++;
