@@ -17,7 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
   Truck, Clock, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
-  Eye, MessageSquare, BadgeCheck, CircleDashed,
+  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -49,6 +49,7 @@ interface InvoiceOrder {
   xeroInvoiceId: string | null;
   xeroInvoiceStatus: string | null;
   customerPhone: string | null;
+  invoiceScheduledSendAt: string | null;
 }
 
 function toWhatsAppNumber(phone: string): string {
@@ -195,6 +196,15 @@ function OrderRow({
   const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
   const [loadingEmailPreview, setLoadingEmailPreview] = useState(false);
 
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split("T")[0];
+  const [scheduledDate, setScheduledDate] = useState(
+    order.invoiceScheduledSendAt
+      ? new Date(order.invoiceScheduledSendAt).toISOString().split("T")[0]
+      : ""
+  );
+
   const isCollection = ["office_collection", "warehouse_collection"].includes(order.shippingMethod ?? "");
 
   const saveInvoiceDate = useMutation({
@@ -221,6 +231,22 @@ function OrderRow({
       toast({ title: "Invoice sent", description: `Emailed to ${res.sentTo}.${xeroMsg}` });
     },
     onError: (e: Error) => toast({ title: "Failed to send", description: parseApiError(e), variant: "destructive" }),
+  });
+
+  const scheduleSend = useMutation({
+    mutationFn: (scheduledSendAt: string | null) =>
+      apiFetch(`/invoices/${order.id}/schedule`, { method: "PATCH", body: JSON.stringify({ scheduledSendAt }) }),
+    onSuccess: (_data, scheduledSendAt) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      setConfirmOpen(false);
+      if (scheduledSendAt) {
+        const d = new Date(scheduledSendAt).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+        toast({ title: "Invoice scheduled", description: `Will be sent automatically on ${d}.` });
+      } else {
+        toast({ title: "Schedule cancelled" });
+      }
+    },
+    onError: (e: Error) => toast({ title: "Error", description: parseApiError(e), variant: "destructive" }),
   });
 
   const postXero = useMutation({
@@ -287,6 +313,20 @@ function OrderRow({
               </div>
               <div className="text-muted-foreground">{order.invoiceEmailSentTo}</div>
               <div className="text-muted-foreground">{formatDate(order.invoiceEmailSentAt)}</div>
+            </div>
+          ) : order.invoiceScheduledSendAt ? (
+            <div className="text-xs space-y-0.5">
+              <div className="flex items-center gap-1 text-amber-700 font-medium">
+                <CalendarClock className="w-3.5 h-3.5" /> Scheduled
+              </div>
+              <div className="text-muted-foreground">{formatDate(order.invoiceScheduledSendAt)}</div>
+              <button
+                className="flex items-center gap-0.5 text-red-600 hover:text-red-800 hover:underline text-xs mt-0.5"
+                onClick={() => scheduleSend.mutate(null)}
+                disabled={scheduleSend.isPending}
+              >
+                <X className="w-3 h-3" /> Cancel
+              </button>
             </div>
           ) : (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -458,12 +498,42 @@ function OrderRow({
             )}
           </div>
 
+          {/* Schedule for later */}
+          <div className="border-t pt-4 space-y-2">
+            <p className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" /> Schedule for later
+            </p>
+            <p className="text-xs text-muted-foreground">Pick a future date — the invoice will be sent automatically at 9am on that day.</p>
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={scheduledDate}
+                min={tomorrowStr}
+                onChange={(e) => setScheduledDate(e.target.value)}
+                className="flex h-8 flex-1 rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 text-xs shrink-0"
+                disabled={!scheduledDate || scheduleSend.isPending}
+                onClick={() => {
+                  const dt = new Date(scheduledDate + "T09:00:00Z");
+                  scheduleSend.mutate(dt.toISOString());
+                }}
+              >
+                {scheduleSend.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CalendarClock className="w-3 h-3" />}
+                Schedule
+              </Button>
+            </div>
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
             <Button onClick={() => sendEmail.mutate()} disabled={sendEmail.isPending} className="gap-2">
               {sendEmail.isPending
                 ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</>
-                : <><Mail className="w-4 h-4" />Send Invoice</>}
+                : <><Mail className="w-4 h-4" />Send Now</>}
             </Button>
           </DialogFooter>
         </DialogContent>

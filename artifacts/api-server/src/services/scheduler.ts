@@ -1,7 +1,9 @@
 import { schedule, type ScheduledTask } from "node-cron";
 import { db, settingsTable, customersTable, ordersTable, tasksTable } from "@workspace/db";
-import { eq, sql, and, or, isNull, lt } from "drizzle-orm";
+import { eq, sql, and, or, isNull, lt, lte, isNotNull } from "drizzle-orm";
 import { runWooSync } from "./woo-sync";
+import { sendInvoiceEmail } from "./email.js";
+import { postInvoiceToXero } from "./xero.js";
 
 let currentTask: ScheduledTask | null = null;
 
@@ -167,5 +169,45 @@ schedule("0 9 * * *", async () => {
     await createCheckInReminders();
   } catch (err) {
     console.error("[reminders] Check-in reminder job failed:", err);
+  }
+});
+
+// ─── Scheduled invoice sends ──────────────────────────────────────────────────
+// Every minute: find orders with a scheduled send time that has now passed
+// and fire off the invoice email + Xero post, then clear the schedule.
+schedule("* * * * *", async () => {
+  try {
+    const due = await db
+      .select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber })
+      .from(ordersTable)
+      .where(
+        and(
+          isNotNull(ordersTable.invoiceScheduledSendAt),
+          lte(ordersTable.invoiceScheduledSendAt, new Date()),
+          isNull(ordersTable.invoiceEmailSentAt),
+        )
+      );
+
+    for (const order of due) {
+      try {
+        // Clear schedule first so a retry loop can't double-fire
+        await db.update(ordersTable)
+          .set({ invoiceScheduledSendAt: null, updatedAt: new Date() })
+          .where(eq(ordersTable.id, order.id));
+
+        await sendInvoiceEmail(order.id);
+        console.log(`[invoice-scheduler] Sent scheduled invoice for ${order.orderNumber}`);
+
+        try {
+          await postInvoiceToXero(order.id);
+        } catch {
+          // Xero not connected — non-fatal
+        }
+      } catch (err) {
+        console.error(`[invoice-scheduler] Failed to send invoice for ${order.orderNumber}:`, err);
+      }
+    }
+  } catch (err) {
+    console.error("[invoice-scheduler] Scheduled invoice job failed:", err);
   }
 });

@@ -42,6 +42,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       xeroInvoiceId: ordersTable.xeroInvoiceId,
       xeroInvoiceStatus: ordersTable.xeroInvoiceStatus,
       customerPhone: customersTable.phone,
+      invoiceScheduledSendAt: ordersTable.invoiceScheduledSendAt,
     })
     .from(ordersTable)
     .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -116,6 +117,29 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
     res.json({ ok: true, sentTo: result.sentTo, ...xeroResult });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to send invoice" });
+  }
+});
+
+// ─── Schedule / cancel scheduled invoice send ────────────────────────────────
+
+router.patch("/invoices/:orderId/schedule", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  const { scheduledSendAt } = req.body as { scheduledSendAt: string | null };
+  try {
+    const val = scheduledSendAt ? new Date(scheduledSendAt) : null;
+    await db.update(ordersTable)
+      .set({ invoiceScheduledSendAt: val, updatedAt: new Date() })
+      .where(eq(ordersTable.id, idParse.data));
+    if (val) {
+      await logOrderAction(idParse.data, "Invoice send scheduled", getActor(req),
+        `Scheduled for ${val.toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })}`);
+    } else {
+      await logOrderAction(idParse.data, "Invoice schedule cancelled", getActor(req));
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to update" });
   }
 });
 

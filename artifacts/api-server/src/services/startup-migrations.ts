@@ -982,4 +982,7 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;
   `);
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_scheduled_send_at timestamptz;
+  `);
 }

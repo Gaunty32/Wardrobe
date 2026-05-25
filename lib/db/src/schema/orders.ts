@@ -40,6 +40,7 @@ export const ordersTable = pgTable("orders", {
   stripePaymentLinkUrl: text("stripe_payment_link_url"),
   stripePaymentLinkId: text("stripe_payment_link_id"),
   paidAt: timestamp("paid_at", { withTimezone: true }),
+  invoiceScheduledSendAt: timestamp("invoice_scheduled_send_at", { withTimezone: true }),
   attachments: jsonb("attachments").$type<Array<{ name: string; objectPath: string }>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
