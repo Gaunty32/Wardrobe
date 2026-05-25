@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { UploadedImage } from "@/components/UploadedImage";
@@ -143,7 +143,19 @@ export default function Customers() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: customers, isLoading } = useListCustomers({ search });
+  const { data: allCustomers, isLoading } = useListCustomers();
+  const customers = useMemo(() => {
+    if (!allCustomers) return allCustomers;
+    if (!search.trim()) return allCustomers;
+    const term = search.trim().toLowerCase();
+    return allCustomers.filter((c) =>
+      c.name.toLowerCase().includes(term) ||
+      (c.email ?? "").toLowerCase().includes(term) ||
+      (c.phone ?? "").toLowerCase().includes(term) ||
+      (c.contactFirstName ?? "").toLowerCase().includes(term) ||
+      (c.contactLastName ?? "").toLowerCase().includes(term)
+    );
+  }, [allCustomers, search]);
   const createMutation = useCreateCustomer();
   const updateMutation = useUpdateCustomer();
   const deleteMutation = useDeleteCustomer();
