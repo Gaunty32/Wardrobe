@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Truck, Package, CheckCircle, AlertTriangle, Clock, Printer,
-  RefreshCw, ChevronDown, ChevronRight, FileText, Tag, Send
+  RefreshCw, ChevronDown, ChevronRight, FileText, Tag, Send,
+  History, Search, X, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,17 @@ interface DispatchOrder {
   items: DispatchItem[];
   deliveryAddress: DeliveryAddress | null;
 }
+interface ShippedOrder {
+  id: number; orderNumber: string; customerName: string | null;
+  status: string; totalAmount: number;
+  orderDate: string; requiredDate: string | null; dispatchedAt: string | null;
+  shippingMethod: string | null;
+  trackingNumber: string | null;
+  dpdConsignmentId: string | null;
+  attentionOf: string | null;
+  items: DispatchItem[];
+  deliveryAddress: DeliveryAddress | null;
+}
 
 const SHIPPING_LABELS: Record<string, string> = {
   free_local: "Free Local Delivery",
@@ -79,10 +91,6 @@ function recipientFullName(item: DispatchItem): string {
     return [item.employee.firstName, item.employee.lastName].filter(Boolean).join(" ");
   }
   return item.recipientName ?? "Unknown";
-}
-
-function recipientJobTitle(item: DispatchItem): string | null {
-  return item.employee?.jobTitle ?? null;
 }
 
 function isToday(dateStr: string | null): boolean {
@@ -178,7 +186,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         if (data.dpd.labelPdfBase64) {
           printBase64Pdf(data.dpd.labelPdfBase64);
         }
-        // Auto-print wearer labels with the confirmed tracking number
         const namedCount = order.items.filter(
           (i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)
         ).length;
@@ -203,7 +210,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-      {/* Header */}
       <div
         className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
         onClick={() => setExpanded((e) => !e)}
@@ -240,7 +246,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
       </div>
 
-      {/* Smart banners */}
       {order.productionComplete && (
         <div className="mx-5 mb-3 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
@@ -251,7 +256,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         <div className="mx-5 mb-3 flex items-center justify-between px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            <span><span className="font-medium">{overdue ? "Overdue" : "Due today"}</span> — production not yet complete. Dispatch what's ready now or wait?</span>
+            <span><span className="font-medium">{overdue ? "Overdue" : "Due today"}</span> — production not yet complete.</span>
           </div>
           <div className="flex gap-2 flex-shrink-0 ml-3">
             <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1" onClick={openDispatchModal}>
@@ -261,10 +266,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
       )}
 
-      {/* Expanded detail */}
       {expanded && (
         <div className="border-t border-border px-5 py-4 space-y-4">
-          {/* Worksheets */}
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Worksheets</h4>
             <div className="flex flex-wrap gap-2">
@@ -281,7 +284,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             </div>
           </div>
 
-          {/* Items by recipient */}
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Items</h4>
             <div className="space-y-1">
@@ -305,7 +307,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             </div>
           </div>
 
-          {/* Delivery address */}
           {order.deliveryAddress && (
             <div>
               <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Delivery Address</h4>
@@ -318,7 +319,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
       )}
 
-      {/* Dispatch modal */}
       <Dialog open={dispatchOpen} onOpenChange={setDispatchOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -332,7 +332,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Delivery method pill */}
             <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
               isDpdShipping ? "border-blue-200 bg-blue-50" : "border-border bg-muted/30"
             }`}>
@@ -348,7 +347,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               )}
             </div>
 
-            {/* Delivery address */}
             {order.deliveryAddress && (
               <div className="rounded-lg bg-muted/40 border border-border px-4 py-3 text-sm">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Delivering to</p>
@@ -394,7 +392,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               )}
             </div>
 
-            {/* What happens next */}
             <div className="rounded-lg bg-muted/20 border border-border px-4 py-3 text-xs text-muted-foreground space-y-1">
               <p className="font-semibold text-foreground text-xs uppercase tracking-wide mb-1.5">What happens when you confirm</p>
               {isDpdShipping && <p>✓ DPD booking created automatically — tracking number assigned</p>}
@@ -425,9 +422,234 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
   );
 }
 
+// ── Dispatched history row ─────────────────────────────────────────────────────
+function ShippedRow({ order }: { order: ShippedOrder }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const tracking = order.trackingNumber || order.dpdConsignmentId;
+  const isDpd = !!order.dpdConsignmentId;
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div
+        className="flex items-center justify-between px-5 py-3.5 cursor-pointer hover:bg-muted/20 transition-colors"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono font-bold text-sm">{order.orderNumber}</span>
+              <span className="text-muted-foreground font-medium text-sm">{order.customerName}</span>
+              {order.status === "delivered" ? (
+                <Badge className="text-xs bg-green-100 text-green-800 border-green-300 gap-1">
+                  <CheckCircle className="w-3 h-3" /> Delivered
+                </Badge>
+              ) : (
+                <Badge className="text-xs bg-blue-100 text-blue-800 border-blue-300 gap-1">
+                  <Truck className="w-3 h-3" /> Shipped
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-4 mt-0.5 text-xs text-muted-foreground flex-wrap">
+              <span>Dispatched {order.dispatchedAt ? formatDate(order.dispatchedAt) : "—"}</span>
+              <span>{shippingLabel(order.shippingMethod)}</span>
+              {tracking && (
+                <span className="flex items-center gap-1 font-mono">
+                  {tracking}
+                  {isDpd && (
+                    <a
+                      href={`https://track.dpd.co.uk/search?reference=${order.dpdConsignmentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-blue-600 hover:text-blue-800 ml-0.5"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </span>
+              )}
+              <span>{order.items.length} item lines</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-3" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id)}>
+            <FileText className="w-3 h-3" /> Delivery Note
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => openWearerLabels(order.id, { includeDeliveryLabel: true })}
+            disabled={!order.items.some((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId))}>
+            <Tag className="w-3 h-3" /> Wearer Labels
+          </Button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border px-5 py-4 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            {order.deliveryAddress && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Delivered to</h4>
+                {order.attentionOf && <p className="font-medium">{order.attentionOf}</p>}
+                <p className="text-muted-foreground text-xs">
+                  {[order.deliveryAddress.line1, order.deliveryAddress.line2, order.deliveryAddress.city, order.deliveryAddress.postcode]
+                    .filter(Boolean).join(", ")}
+                </p>
+              </div>
+            )}
+            {tracking && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Tracking</h4>
+                <p className="font-mono text-sm flex items-center gap-1.5">
+                  {tracking}
+                  {isDpd && (
+                    <a
+                      href={`https://track.dpd.co.uk/search?reference=${order.dpdConsignmentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Items</h4>
+            <div className="space-y-1">
+              {order.items.map((item) => (
+                <div key={item.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
+                  <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium">{item.productName}</span>
+                    {(item.colour || item.size) && (
+                      <span className="text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
+                    )}
+                  </div>
+                  <span className="text-muted-foreground text-xs">
+                    {item.recipientType === "person" && (item.recipientName || item.employee)
+                      ? [item.employee?.firstName, item.employee?.lastName, item.recipientName].filter(Boolean).join(" ")
+                      : "Stock"}
+                  </span>
+                  <Badge variant="secondary" className="text-xs">×{item.quantity}</Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── History tab with filters ───────────────────────────────────────────────────
+function DispatchedHistory() {
+  const [customerFilter, setCustomerFilter] = useState("");
+  const [searchFilter, setSearchFilter] = useState("");
+  const [debouncedCustomer, setDebouncedCustomer] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCustomer(customerFilter), 350);
+    return () => clearTimeout(t);
+  }, [customerFilter]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchFilter), 350);
+    return () => clearTimeout(t);
+  }, [searchFilter]);
+
+  const params = new URLSearchParams();
+  if (debouncedCustomer) params.set("customer", debouncedCustomer);
+  if (debouncedSearch) params.set("search", debouncedSearch);
+
+  const { data: orders = [], isLoading, refetch } = useQuery<ShippedOrder[]>({
+    queryKey: ["dispatch-shipped", debouncedCustomer, debouncedSearch],
+    queryFn: () => apiFetch(`/dispatch/shipped?${params}`),
+  });
+
+  const hasFilter = !!debouncedCustomer || !!debouncedSearch;
+
+  return (
+    <div className="space-y-4">
+      {/* Filter bar */}
+      <div className="flex gap-3 flex-wrap items-end">
+        <div className="flex-1 min-w-48 space-y-1">
+          <Label htmlFor="filter-customer" className="text-xs">Customer</Label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              id="filter-customer"
+              placeholder="e.g. Uneek Clothing"
+              value={customerFilter}
+              onChange={(e) => setCustomerFilter(e.target.value)}
+              className="pl-8 h-8 text-sm"
+            />
+            {customerFilter && (
+              <button onClick={() => setCustomerFilter("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 min-w-48 space-y-1">
+          <Label htmlFor="filter-search" className="text-xs">Order / despatch / tracking number</Label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              id="filter-search"
+              placeholder="e.g. SBS-001 or 15012345678901"
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              className="pl-8 h-8 text-sm"
+            />
+            {searchFilter && (
+              <button onClick={() => setSearchFilter("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+        <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => refetch()}>
+          <RefreshCw className="w-4 h-4" />
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-16 text-muted-foreground gap-2">
+          <RefreshCw className="w-5 h-5 animate-spin" /> Loading history...
+        </div>
+      ) : orders.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-2">
+          <History className="w-10 h-10 text-muted-foreground/40" />
+          <p className="font-medium">{hasFilter ? "No dispatched orders match your filters" : "No dispatched orders yet"}</p>
+          {hasFilter && (
+            <Button variant="ghost" size="sm" className="text-xs gap-1" onClick={() => { setCustomerFilter(""); setSearchFilter(""); }}>
+              <X className="w-3 h-3" /> Clear filters
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">{orders.length} order{orders.length !== 1 ? "s" : ""} found (most recent first)</p>
+          {orders.map((order) => (
+            <ShippedRow key={order.id} order={order} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Page ───────────────────────────────────────────────────────────────────────
 export default function Dispatch() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<"queue" | "history">("queue");
 
   const { data: orders = [], isLoading, refetch } = useQuery<DispatchOrder[]>({
     queryKey: ["dispatch-orders"],
@@ -449,44 +671,82 @@ export default function Dispatch() {
             </h1>
             <p className="text-muted-foreground mt-1">Post-production packing, labelling, and dispatch.</p>
           </div>
-          <Button variant="ghost" size="icon" onClick={() => refetch()}><RefreshCw className="w-4 h-4" /></Button>
+          {tab === "queue" && (
+            <Button variant="ghost" size="icon" onClick={() => refetch()}><RefreshCw className="w-4 h-4" /></Button>
+          )}
         </div>
 
-        {/* Summary bar */}
-        {orders.length > 0 && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
-              <div className="text-2xl font-bold text-green-600">{readyCount}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Ready to dispatch</div>
-            </div>
-            <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
-              <div className="text-2xl font-bold text-amber-600">{pendingCount}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Awaiting production</div>
-            </div>
-            <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
-              <div className={`text-2xl font-bold ${urgentCount > 0 ? "text-red-600" : "text-muted-foreground"}`}>{urgentCount}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">Urgent / overdue</div>
-            </div>
-          </div>
+        {/* Tabs */}
+        <div className="flex border-b border-border">
+          <button
+            onClick={() => setTab("queue")}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              tab === "queue"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Truck className="w-4 h-4" />
+            Dispatch Queue
+            {orders.length > 0 && (
+              <span className="ml-1 text-xs bg-muted text-muted-foreground rounded-full px-1.5 py-0.5">
+                {orders.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab("history")}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${
+              tab === "history"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <History className="w-4 h-4" />
+            Dispatched
+          </button>
+        </div>
+
+        {tab === "queue" && (
+          <>
+            {orders.length > 0 && (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
+                  <div className="text-2xl font-bold text-green-600">{readyCount}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Ready to dispatch</div>
+                </div>
+                <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
+                  <div className="text-2xl font-bold text-amber-600">{pendingCount}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Awaiting production</div>
+                </div>
+                <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
+                  <div className={`text-2xl font-bold ${urgentCount > 0 ? "text-red-600" : "text-muted-foreground"}`}>{urgentCount}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Urgent / overdue</div>
+                </div>
+              </div>
+            )}
+
+            {isLoading ? (
+              <div className="flex items-center justify-center py-20 text-muted-foreground gap-2">
+                <RefreshCw className="w-5 h-5 animate-spin" /> Loading dispatch queue...
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                <CheckCircle className="w-12 h-12 text-green-400" />
+                <p className="text-lg font-medium">Nothing to dispatch</p>
+                <p className="text-sm">Orders will appear here once production worksheets are marked complete.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {orders.map((order) => (
+                  <DispatchCard key={order.id} order={order} onDispatched={() => {}} />
+                ))}
+              </div>
+            )}
+          </>
         )}
 
-        {isLoading ? (
-          <div className="flex items-center justify-center py-20 text-muted-foreground gap-2">
-            <RefreshCw className="w-5 h-5 animate-spin" /> Loading dispatch queue...
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-            <CheckCircle className="w-12 h-12 text-green-400" />
-            <p className="text-lg font-medium">Nothing to dispatch</p>
-            <p className="text-sm">Orders will appear here once production worksheets are marked complete.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {orders.map((order) => (
-              <DispatchCard key={order.id} order={order} onDispatched={() => {}} />
-            ))}
-          </div>
-        )}
+        {tab === "history" && <DispatchedHistory />}
       </div>
     </Layout>
   );

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray, and, notInArray } from "drizzle-orm";
+import { eq, inArray, and, notInArray, desc, or, ilike } from "drizzle-orm";
 import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
@@ -102,6 +102,78 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
       };
     })
     .filter(Boolean);
+
+  res.json(result);
+});
+
+// ── Dispatched/shipped order history ──────────────────────────────────────────
+router.get("/dispatch/shipped", async (req, res): Promise<void> => {
+  const { customer, search } = req.query as { customer?: string; search?: string };
+
+  const conditions = [inArray(ordersTable.status, ["shipped", "delivered"])];
+
+  if (customer && customer.trim()) {
+    conditions.push(ilike(ordersTable.customerName, `%${customer.trim()}%`));
+  }
+  if (search && search.trim()) {
+    conditions.push(
+      or(
+        ilike(ordersTable.orderNumber, `%${search.trim()}%`),
+        ilike(ordersTable.trackingNumber, `%${search.trim()}%`),
+        ilike(ordersTable.dpdConsignmentId, `%${search.trim()}%`),
+      )!
+    );
+  }
+
+  const orders = await db
+    .select()
+    .from(ordersTable)
+    .where(and(...conditions))
+    .orderBy(desc(ordersTable.dispatchedAt))
+    .limit(200);
+
+  if (orders.length === 0) { res.json([]); return; }
+
+  const orderIds = orders.map((o) => o.id);
+
+  const orderItemRows = await db
+    .select({ item: orderItemsTable })
+    .from(orderItemsTable)
+    .where(inArray(orderItemsTable.orderId, orderIds));
+  const orderItems = orderItemRows.map(r => r.item);
+
+  const employeeIds = [...new Set(orderItems.map((i) => i.recipientEmployeeId).filter((id): id is number => id != null))];
+  const employees = employeeIds.length > 0
+    ? await db.select().from(customerEmployeesTable).where(inArray(customerEmployeesTable.id, employeeIds))
+    : [];
+
+  const deliveryAddressIds = [...new Set(orders.map((o) => o.deliveryAddressId).filter((id): id is number => id != null))];
+  const addresses = deliveryAddressIds.length > 0
+    ? await db.select().from(customerDeliveryAddressesTable).where(inArray(customerDeliveryAddressesTable.id, deliveryAddressIds))
+    : [];
+
+  const result = orders.map((order) => {
+    const items = orderItems.filter((i) => i.orderId === order.id);
+    const address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
+    const enrichedItems = items.map((item) => {
+      const employee = item.recipientEmployeeId ? employees.find((e) => e.id === item.recipientEmployeeId) ?? null : null;
+      return {
+        ...item,
+        unitPrice: parseFloat(item.unitPrice ?? "0"),
+        lineTotal: parseFloat(item.lineTotal ?? "0"),
+        employee: employee ? {
+          id: employee.id, firstName: employee.firstName, lastName: employee.lastName,
+          jobTitle: employee.jobTitle, department: employee.department,
+        } : null,
+      };
+    });
+    return {
+      ...order,
+      totalAmount: parseFloat(order.totalAmount ?? "0"),
+      items: enrichedItems,
+      deliveryAddress: address,
+    };
+  });
 
   res.json(result);
 });
