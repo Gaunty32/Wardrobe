@@ -1834,11 +1834,16 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
 
     // ── Footer ────────────────────────────────────────────────────────────────
     doc.rect(0, PAGE_H - 36, PAGE_W, 36).fill(DARK);
+    // Zero the bottom margin so PDFKit doesn't auto-insert a new page for text
+    // drawn in the absolute footer zone (below the normal content boundary).
+    const savedBottom = doc.page.margins.bottom;
+    doc.page.margins.bottom = 0;
     doc.fillColor("#64748b").fontSize(8).font("Helvetica")
       .text(
         "Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds, LS13 3HE  ·  accounts@selectbranding.co.uk  ·  0113 255 2694  ·  selectbranding.co.uk",
-        0, PAGE_H - 23, { align: "center", width: PAGE_W }
+        0, PAGE_H - 23, { align: "center", width: PAGE_W, lineBreak: false }
       );
+    doc.page.margins.bottom = savedBottom;
 
     doc.end();
   });
