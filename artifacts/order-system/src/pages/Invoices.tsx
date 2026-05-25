@@ -601,7 +601,7 @@ export default function Invoices() {
                 : "bg-amber-100 text-amber-800 border-amber-300 gap-1.5"
               }>
                 <Mail className="w-3 h-3" />
-                {emailStatus.configured ? `Email: ${emailStatus.fromEmail}` : "Email not configured"}
+                {emailStatus.configured ? (emailStatus.fromEmail ? `Email: ${emailStatus.fromEmail}` : "Email configured") : "Email not configured"}
               </Badge>
             )}
             <Button variant="outline" size="sm" asChild className="gap-1.5 text-xs">
