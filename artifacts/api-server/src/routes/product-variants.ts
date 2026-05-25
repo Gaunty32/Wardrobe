@@ -11,6 +11,7 @@ const subIdParam = z.object({ productId: z.coerce.number().int().positive(), id:
 const variantBody = z.object({
   colour: z.string().optional().nullable(),
   size: z.string().optional().nullable(),
+  sleeve: z.string().optional().nullable(),
   sku: z.string().optional().nullable(),
   price: z.number().positive().optional().nullable(),
   stockQuantity: z.number().int().min(0).default(0),
@@ -48,7 +49,7 @@ router.get("/products/:productId/variants", async (req, res): Promise<void> => {
   if (!await getProduct(p.data.productId)) { res.status(404).json({ error: "Product not found" }); return; }
   const rows = await db.select().from(productVariantsTable)
     .where(eq(productVariantsTable.productId, p.data.productId))
-    .orderBy(productVariantsTable.colour, productVariantsTable.size);
+    .orderBy(productVariantsTable.colour, productVariantsTable.sleeve, productVariantsTable.size);
   res.json(rows.map(r => ({
     ...r,
     price: r.price != null ? parseFloat(r.price) : null,
@@ -105,6 +106,7 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
     .where(eq(productAttributesTable.productId, productId));
   const colourAttrs = attrs.filter(a => a.type === "colour");
   const sizeAttrs = attrs.filter(a => a.type === "size");
+  const sleeveAttrs = attrs.filter(a => a.type === "sleeve");
 
   if (colourAttrs.length === 0 || sizeAttrs.length === 0) {
     res.status(400).json({ error: "Product must have both colours and sizes defined as attributes" });
@@ -115,7 +117,7 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
   const existing = await db.select().from(productVariantsTable)
     .where(eq(productVariantsTable.productId, productId));
 
-  // 3. Build colour → properties map from existing colour-only variants
+  // 3. Build colour → properties map from existing colour-only (size=null, sleeve=null) variants
   type ColourProps = {
     imageUrl: string | null;
     primarySupplierId: number | null;
@@ -142,7 +144,9 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
     }
   }
 
-  // 4. Create colour × size variants that don't already exist
+  // 4. Create colour × size (× sleeve) variants that don't already exist
+  const hasSleeve = sleeveAttrs.length > 0;
+  // When sleeve is active, treat colour×size without a sleeve as expandable (like old colour-only logic)
   let created = 0;
   for (const colAttr of colourAttrs) {
     const colour = colAttr.value;
@@ -159,42 +163,70 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
     if (!props.sku) props.sku = productSku;
     if (!props.primarySupplierId) props.primarySupplierId = product.supplierId ?? null;
     if (!props.secondarySupplierId) props.secondarySupplierId = product.secondarySupplierId ?? null;
+
     for (const sizeAttr of sizeAttrs) {
       const size = sizeAttr.value;
-      const alreadyExists = existing.some(v => v.colour === colour && v.size === size);
-      if (!alreadyExists) {
-        await db.insert(productVariantsTable).values({
-          productId,
-          colour,
-          size,
-          imageUrl: props.imageUrl,
-          primarySupplierId: props.primarySupplierId,
-          secondarySupplierId: props.secondarySupplierId,
-          supplierCode: props.supplierCode,
-          supplierPrice: props.supplierPrice,
-          secondarySupplierCode: props.secondarySupplierCode,
-          secondarySupplierPrice: props.secondarySupplierPrice,
-          stockQuantity: 0,
-        });
-        created++;
+
+      if (!hasSleeve) {
+        // Original colour × size logic
+        const alreadyExists = existing.some(v => v.colour === colour && v.size === size);
+        if (!alreadyExists) {
+          await db.insert(productVariantsTable).values({
+            productId, colour, size,
+            imageUrl: props.imageUrl,
+            primarySupplierId: props.primarySupplierId,
+            secondarySupplierId: props.secondarySupplierId,
+            supplierCode: props.supplierCode,
+            supplierPrice: props.supplierPrice,
+            secondarySupplierCode: props.secondarySupplierCode,
+            secondarySupplierPrice: props.secondarySupplierPrice,
+            stockQuantity: 0,
+          });
+          created++;
+        }
+      } else {
+        // Three-way: colour × size × sleeve
+        for (const sleeveAttr of sleeveAttrs) {
+          const sleeve = sleeveAttr.value;
+          const alreadyExists = existing.some(v => v.colour === colour && v.size === size && v.sleeve === sleeve);
+          if (!alreadyExists) {
+            await db.insert(productVariantsTable).values({
+              productId, colour, size, sleeve,
+              imageUrl: props.imageUrl,
+              primarySupplierId: props.primarySupplierId,
+              secondarySupplierId: props.secondarySupplierId,
+              supplierCode: props.supplierCode,
+              supplierPrice: props.supplierPrice,
+              secondarySupplierCode: props.secondarySupplierCode,
+              secondarySupplierPrice: props.secondarySupplierPrice,
+              stockQuantity: 0,
+            });
+            created++;
+          }
+        }
       }
     }
   }
 
   // 5. Delete old colour-only (size=null) variants that have 0 stock
-  const toDelete = existing.filter(v => v.size === null && (v.stockQuantity ?? 0) === 0).map(v => v.id);
+  const toDeleteIds: number[] = [];
+  existing.forEach(v => {
+    if (v.size === null && (v.stockQuantity ?? 0) === 0) toDeleteIds.push(v.id);
+    // When sleeve is now active, also clean up old sleeve-less colour×size variants with 0 stock
+    if (hasSleeve && v.sleeve === null && v.size !== null && (v.stockQuantity ?? 0) === 0) toDeleteIds.push(v.id);
+  });
   let deleted = 0;
-  if (toDelete.length > 0) {
+  if (toDeleteIds.length > 0) {
     await db.delete(productVariantsTable)
       .where(and(
         eq(productVariantsTable.productId, productId),
-        inArray(productVariantsTable.id, toDelete),
+        inArray(productVariantsTable.id, toDeleteIds),
       ));
-    deleted = toDelete.length;
+    deleted = toDeleteIds.length;
   }
 
   await rollupProductStock(productId);
-  res.json({ created, deleted, skipped: existing.filter(v => v.size !== null).length });
+  res.json({ created, deleted, skipped: existing.filter(v => hasSleeve ? v.sleeve !== null : v.size !== null).length });
 });
 
 // Delete a variant

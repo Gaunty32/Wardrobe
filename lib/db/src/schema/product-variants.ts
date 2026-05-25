@@ -8,6 +8,7 @@ export const productVariantsTable = pgTable("product_variants", {
   wooVariationId: integer("woo_variation_id"),
   colour: text("colour"),
   size: text("size"),
+  sleeve: text("sleeve"),
   sku: text("sku"),
   price: numeric("price", { precision: 10, scale: 2 }),
   imageUrl: text("image_url"),

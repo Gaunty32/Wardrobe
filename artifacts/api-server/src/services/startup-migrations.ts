@@ -30,6 +30,10 @@ export async function runStartupMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS sleeve text;
+  `);
+
+  await db.execute(sql`
     ALTER TABLE sync_logs ADD COLUMN IF NOT EXISTS progress_pct integer;
   `);
 

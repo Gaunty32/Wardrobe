@@ -40,7 +40,7 @@ async function apiFetch(path: string, opts?: RequestInit) {
 function TagInput({
   type, productId, attributes, onRefresh,
 }: {
-  type: "colour" | "size"; productId: number; attributes: any[]; onRefresh: () => void;
+  type: "colour" | "size" | "sleeve"; productId: number; attributes: any[]; onRefresh: () => void;
 }) {
   const { toast } = useToast();
   const [inputVal, setInputVal] = useState("");
@@ -66,13 +66,17 @@ function TagInput({
   const colourMap: Record<string, string> = {
     colour: "bg-pink-100 text-pink-800 border-pink-200",
     size:   "bg-blue-100 text-blue-800 border-blue-200",
+    sleeve: "bg-amber-100 text-amber-800 border-amber-200",
   };
+
+  const emptyLabel = type === "colour" ? "colours" : type === "size" ? "sizes" : "sleeve types";
+  const placeholder = type === "colour" ? "colour" : type === "size" ? "size" : "e.g. Long Sleeve";
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2 min-h-[2.5rem]">
         {items.length === 0 && (
-          <p className="text-sm text-muted-foreground italic">No {type === "colour" ? "colours" : "sizes"} added yet</p>
+          <p className="text-sm text-muted-foreground italic">No {emptyLabel} added yet</p>
         )}
         {items.map(a => (
           <span key={a.id} className={`inline-flex items-center gap-1.5 pr-2 py-1 rounded-full text-sm font-medium border ${colourMap[type]} ${a.imageUrl ? "pl-1" : "pl-3"}`}>
@@ -86,7 +90,7 @@ function TagInput({
       </div>
       <div className="flex gap-2">
         <Input
-          placeholder={`Add ${type === "colour" ? "colour" : "size"}… (press Enter)`}
+          placeholder={`Add ${placeholder}… (press Enter)`}
           value={inputVal}
           onChange={e => setInputVal(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -247,6 +251,11 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
           </div>
         </TableCell>
         <TableCell>
+          {variant.sleeve
+            ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">{variant.sleeve}</span>
+            : <span className="text-muted-foreground text-sm italic">—</span>}
+        </TableCell>
+        <TableCell>
           {variant.size
             ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">{variant.size}</span>
             : <span className="text-muted-foreground text-sm italic">Any</span>}
@@ -293,8 +302,9 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
           <DialogHeader>
             <DialogTitle>Edit Variant</DialogTitle>
           </DialogHeader>
-          <div className="flex gap-2 mb-4">
+          <div className="flex flex-wrap gap-2 mb-4">
             {variant.colour && <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-800 border border-pink-200">{variant.colour}</span>}
+            {variant.sleeve && <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">{variant.sleeve}</span>}
             {variant.size && <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">{variant.size}</span>}
           </div>
           <div className="grid gap-4">
@@ -394,11 +404,14 @@ function AddVariantDialog({ open, onClose, productId, attributes, suppliers, def
   const { toast } = useToast();
   const colours = attributes.filter(a => a.type === "colour").map(a => a.value);
   const sizes = attributes.filter(a => a.type === "size").map(a => a.value);
+  const sleevesAttr = attributes.filter(a => a.type === "sleeve").map(a => a.value);
 
   const [colour, setColour] = useState("none");
   const [customColour, setCustomColour] = useState("");
   const [size, setSize] = useState("none");
   const [customSize, setCustomSize] = useState("");
+  const [sleeve, setSleeve] = useState("none");
+  const [customSleeve, setCustomSleeve] = useState("");
   const [stock, setStock] = useState("0");
   const [primaryId, setPrimaryId] = useState(defaultPrimaryId);
   const [secondaryId, setSecondaryId] = useState(defaultSecondaryId);
@@ -407,6 +420,7 @@ function AddVariantDialog({ open, onClose, productId, attributes, suppliers, def
     if (open) {
       setColour("none"); setCustomColour("");
       setSize("none"); setCustomSize("");
+      setSleeve("none"); setCustomSleeve("");
       setStock("0");
       setPrimaryId(defaultPrimaryId);
       setSecondaryId(defaultSecondaryId);
@@ -422,9 +436,11 @@ function AddVariantDialog({ open, onClose, productId, attributes, suppliers, def
   const handleSave = () => {
     const finalColour = colour === "custom" ? customColour.trim() : colour === "none" ? null : colour;
     const finalSize = size === "custom" ? customSize.trim() : size === "none" ? null : size;
+    const finalSleeve = sleeve === "custom" ? customSleeve.trim() : sleeve === "none" ? null : sleeve;
     createMut.mutate({
       colour: finalColour,
       size: finalSize,
+      sleeve: finalSleeve,
       stockQuantity: parseInt(stock, 10) || 0,
       primarySupplierId: primaryId !== "none" ? Number(primaryId) : null,
       secondarySupplierId: secondaryId !== "none" ? Number(secondaryId) : null,
@@ -465,6 +481,20 @@ function AddVariantDialog({ open, onClose, productId, attributes, suppliers, def
                 <Input placeholder="Enter size" value={customSize} onChange={e => setCustomSize(e.target.value)} />
               )}
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label>Sleeve <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Select value={sleeve} onValueChange={setSleeve}>
+              <SelectTrigger><SelectValue placeholder="Select sleeve type…" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— No sleeve —</SelectItem>
+                {sleevesAttr.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                <SelectItem value="custom">Custom…</SelectItem>
+              </SelectContent>
+            </Select>
+            {sleeve === "custom" && (
+              <Input placeholder="e.g. Long Sleeve" value={customSleeve} onChange={e => setCustomSleeve(e.target.value)} />
+            )}
           </div>
           <div className="grid gap-2">
             <Label>Stock Quantity</Label>
@@ -561,6 +591,7 @@ export default function ProductDetail() {
   const [generateMatrixOpen, setGenerateMatrixOpen] = useState(false);
   const [filterColour, setFilterColour] = useState<string>("all");
   const [filterSize, setFilterSize] = useState<string>("all");
+  const [filterSleeve, setFilterSleeve] = useState<string>("all");
 
   useEffect(() => {
     if (product && !details) {
@@ -683,18 +714,19 @@ export default function ProductDetail() {
   });
   const colours = colourOrder.filter(Boolean);
   const sizes = [...new Set(sortedVariants.map((v: any) => v.size).filter(Boolean))];
+  const sleeves = [...new Set(sortedVariants.map((v: any) => v.sleeve).filter(Boolean))];
 
   const filteredVariants = sortedVariants.filter((v: any) => {
     if (filterColour !== "all" && v.colour !== filterColour) return false;
     if (filterSize !== "all" && v.size !== filterSize) return false;
+    if (filterSleeve !== "all" && v.sleeve !== filterSleeve) return false;
     return true;
   });
 
-  // Attributes-based colour+size lists (for matrix generation)
+  // Attributes-based colour+size+sleeve lists (for matrix generation)
   const attrColours = (attributes as any[]).filter(a => a.type === "colour").map(a => a.value as string);
   const attrSizes = (attributes as any[]).filter(a => a.type === "size").map(a => a.value as string);
-  const hasColourOnlyVariants = (variants as any[]).some(v => v.size === null);
-  const canGenerateMatrix = attrColours.length > 0 && attrSizes.length > 0 && hasColourOnlyVariants;
+  const canGenerateMatrix = attrColours.length > 0 && attrSizes.length > 0;
 
   return (
     <TooltipProvider>
@@ -988,8 +1020,8 @@ export default function ProductDetail() {
             {/* ── Variants ── */}
             <TabsContent value="variants">
               <div className="mt-4 space-y-4">
-                {/* Colour + Size palette editors */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Colour + Size + Sleeve palette editors */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="bg-card border border-border/50 rounded-lg p-5 shadow-sm">
                     <div className="flex items-center gap-2 mb-3">
                       <Palette className="w-4 h-4 text-pink-500" />
@@ -1018,6 +1050,14 @@ export default function ProductDetail() {
                     )}
                     <TagInput type="size" productId={productId} attributes={attributes} onRefresh={refetchAttrs} />
                   </div>
+                  <div className="bg-card border border-border/50 rounded-lg p-5 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Layers className="w-4 h-4 text-amber-500" />
+                      <h3 className="font-semibold text-foreground">Sleeve Types</h3>
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-3">Optional — add sleeve types (e.g. Long Sleeve, Short Sleeve) to create a third variant dimension.</p>
+                    <TagInput type="sleeve" productId={productId} attributes={attributes} onRefresh={refetchAttrs} />
+                  </div>
                 </div>
 
                 {/* Variant table */}
@@ -1025,7 +1065,7 @@ export default function ProductDetail() {
                   <div className="flex items-center justify-between p-4 border-b border-border/40">
                     <div>
                       <h3 className="font-semibold text-foreground">Variant Combinations</h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">Each row is a specific colour+size combo with its own stock level and suppliers.</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Each row is a specific colour / sleeve / size combo with its own stock level and suppliers.</p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
                       {colours.length > 1 && (
@@ -1047,6 +1087,17 @@ export default function ProductDetail() {
                           <SelectContent>
                             <SelectItem value="all">All sizes</SelectItem>
                             {sizes.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {sleeves.length > 1 && (
+                        <Select value={filterSleeve} onValueChange={setFilterSleeve}>
+                          <SelectTrigger className="h-8 w-[140px] text-xs">
+                            <SelectValue placeholder="All sleeves" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All sleeves</SelectItem>
+                            {sleeves.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       )}
@@ -1074,6 +1125,7 @@ export default function ProductDetail() {
                         <TableHeader>
                           <TableRow className="hover:bg-transparent">
                             <TableHead className="w-[180px]">Colour</TableHead>
+                            <TableHead className="w-[130px]">Sleeve</TableHead>
                             <TableHead className="w-[110px]">Size</TableHead>
                             <TableHead className="w-[130px]">SKU</TableHead>
                             <TableHead className="w-[90px]">Stock</TableHead>
@@ -1085,9 +1137,9 @@ export default function ProductDetail() {
                         <TableBody>
                           {filteredVariants.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground text-sm">
+                              <TableCell colSpan={8} className="text-center py-8 text-muted-foreground text-sm">
                                 No variants match the selected filters.{" "}
-                                <button className="underline" onClick={() => { setFilterColour("all"); setFilterSize("all"); }}>Clear filters</button>
+                                <button className="underline" onClick={() => { setFilterColour("all"); setFilterSize("all"); setFilterSleeve("all"); }}>Clear filters</button>
                               </TableCell>
                             </TableRow>
                           ) : filteredVariants.map((v: any) => (
@@ -1115,6 +1167,7 @@ export default function ProductDetail() {
                     <span>·</span>
                     <span>{totalStock} total units</span>
                     {colours.length > 0 && <><span>·</span><span>{colours.length} colour{colours.length !== 1 ? "s" : ""}</span></>}
+                    {sleeves.length > 0 && <><span>·</span><span>{sleeves.length} sleeve type{sleeves.length !== 1 ? "s" : ""}</span></>}
                     {sizes.length > 0 && <><span>·</span><span>{sizes.length} size{sizes.length !== 1 ? "s" : ""}</span></>}
                   </div>
                 )}
