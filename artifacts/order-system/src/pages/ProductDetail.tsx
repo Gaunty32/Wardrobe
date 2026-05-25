@@ -483,9 +483,9 @@ function AddVariantDialog({ open, onClose, productId, attributes, suppliers, def
             </div>
           </div>
           <div className="grid gap-2">
-            <Label>Sleeve <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Label>Fit / Length <span className="text-muted-foreground font-normal">(optional)</span></Label>
             <Select value={sleeve} onValueChange={setSleeve}>
-              <SelectTrigger><SelectValue placeholder="Select sleeve type…" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select fit / length…" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">— No sleeve —</SelectItem>
                 {sleevesAttr.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
@@ -1053,9 +1053,9 @@ export default function ProductDetail() {
                   <div className="bg-card border border-border/50 rounded-lg p-5 shadow-sm">
                     <div className="flex items-center gap-2 mb-3">
                       <Layers className="w-4 h-4 text-amber-500" />
-                      <h3 className="font-semibold text-foreground">Sleeve Types</h3>
+                      <h3 className="font-semibold text-foreground">Fit / Length</h3>
                     </div>
-                    <p className="text-xs text-muted-foreground mb-3">Optional — add sleeve types (e.g. Long Sleeve, Short Sleeve) to create a third variant dimension.</p>
+                    <p className="text-xs text-muted-foreground mb-3">Optional third dimension — e.g. <strong>Short / Regular / Long</strong> for body length, or <strong>Long Sleeve / Short Sleeve</strong> for sleeve type.</p>
                     <TagInput type="sleeve" productId={productId} attributes={attributes} onRefresh={refetchAttrs} />
                   </div>
                 </div>
@@ -1093,10 +1093,10 @@ export default function ProductDetail() {
                       {sleeves.length > 1 && (
                         <Select value={filterSleeve} onValueChange={setFilterSleeve}>
                           <SelectTrigger className="h-8 w-[140px] text-xs">
-                            <SelectValue placeholder="All sleeves" />
+                            <SelectValue placeholder="All fits" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="all">All sleeves</SelectItem>
+                            <SelectItem value="all">All fits</SelectItem>
                             {sleeves.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                           </SelectContent>
                         </Select>
@@ -1125,7 +1125,7 @@ export default function ProductDetail() {
                         <TableHeader>
                           <TableRow className="hover:bg-transparent">
                             <TableHead className="w-[180px]">Colour</TableHead>
-                            <TableHead className="w-[130px]">Sleeve</TableHead>
+                            <TableHead className="w-[130px]">Fit / Length</TableHead>
                             <TableHead className="w-[110px]">Size</TableHead>
                             <TableHead className="w-[130px]">SKU</TableHead>
                             <TableHead className="w-[90px]">Stock</TableHead>
@@ -1167,7 +1167,7 @@ export default function ProductDetail() {
                     <span>·</span>
                     <span>{totalStock} total units</span>
                     {colours.length > 0 && <><span>·</span><span>{colours.length} colour{colours.length !== 1 ? "s" : ""}</span></>}
-                    {sleeves.length > 0 && <><span>·</span><span>{sleeves.length} sleeve type{sleeves.length !== 1 ? "s" : ""}</span></>}
+                    {sleeves.length > 0 && <><span>·</span><span>{sleeves.length} fit{sleeves.length !== 1 ? "s" : ""}</span></>}
                     {sizes.length > 0 && <><span>·</span><span>{sizes.length} size{sizes.length !== 1 ? "s" : ""}</span></>}
                   </div>
                 )}
