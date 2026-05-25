@@ -28,4 +28,6 @@ export interface UpdateCustomerBody {
   notes?: string | null;
   /** @nullable */
   logoUrl?: string | null;
+  /** @nullable */
+  highLevelContactId?: string | null;
 }

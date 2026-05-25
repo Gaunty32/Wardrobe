@@ -29,6 +29,8 @@ export interface Customer {
   notes: string | null;
   /** @nullable */
   logoUrl?: string | null;
+  /** @nullable */
+  highLevelContactId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

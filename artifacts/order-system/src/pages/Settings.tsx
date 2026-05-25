@@ -4,7 +4,7 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck
+  UserPlus, Trash2, UserCheck, Zap
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -309,6 +309,83 @@ function StaffAccountsCard() {
           <UserPlus className="w-4 h-4" /> Add staff member
         </Button>
       )}
+    </div>
+  );
+}
+
+function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | undefined }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [webhookUrl, setWebhookUrl] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (rawSettings && !loaded) {
+      setWebhookUrl(rawSettings["high_level_webhook_url"] ?? "");
+      setLoaded(true);
+    }
+  }, [rawSettings, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: (url: string) =>
+      fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ high_level_webhook_url: url || null }),
+      }).then((r) => { if (!r.ok) throw new Error("Save failed"); return r.json(); }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings-raw"] });
+      toast({ title: "High Level settings saved" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="grid gap-6 max-w-2xl">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-amber-500" />
+          <h2 className="font-semibold text-base">High Level Webhook</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          When you click <strong>Send via High Level</strong> on a collection order invoice, SBS posts the order data to this URL, triggering your High Level workflow to send the customer their invoice template.
+        </p>
+        <div className="space-y-1.5">
+          <Label htmlFor="hlWebhookUrl">Webhook URL</Label>
+          <Input
+            id="hlWebhookUrl"
+            placeholder="https://services.leadconnectorhq.com/hooks/..."
+            value={webhookUrl}
+            onChange={(e) => setWebhookUrl(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Find this in High Level → Automations → your workflow → Webhook trigger → copy the URL.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="gap-1.5"
+          onClick={() => saveMutation.mutate(webhookUrl)}
+          disabled={saveMutation.isPending}
+        >
+          {saveMutation.isPending
+            ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+            : <><CheckCircle className="w-4 h-4" />Save Webhook URL</>}
+        </Button>
+      </div>
+      <div className="rounded-xl border border-border bg-card p-5 space-y-2">
+        <h2 className="font-semibold text-sm">Payload sent to High Level</h2>
+        <p className="text-xs text-muted-foreground">The following fields are POSTed as JSON to your webhook URL:</p>
+        <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
+          <li><code>contactId</code> — the customer's High Level contact ID (set per-customer)</li>
+          <li><code>orderNumber</code> — e.g. SBS-1234</li>
+          <li><code>customerName</code></li>
+          <li><code>totalAmountExVat</code> — e.g. "250.00"</li>
+          <li><code>totalAmountIncVat</code> — e.g. "300.00"</li>
+          <li><code>customerEmail</code></li>
+          <li><code>shippingMethod</code> — e.g. "office_collection"</li>
+        </ul>
+      </div>
     </div>
   );
 }
@@ -673,6 +750,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="security" className="gap-2">
               <Lock className="w-4 h-4" /> Security
+            </TabsTrigger>
+            <TabsTrigger value="highlevel" className="gap-2">
+              <Zap className="w-4 h-4" /> High Level
             </TabsTrigger>
             <TabsTrigger value="sizes" className="gap-2">
               <Ruler className="w-4 h-4" /> Sizes
@@ -1194,6 +1274,11 @@ export default function Settings() {
           {/* ─── Security Tab ──────────────────────────────────────── */}
           <TabsContent value="security" className="mt-6">
             <SecurityTab />
+          </TabsContent>
+
+          {/* ─── High Level Tab ────────────────────────────────────── */}
+          <TabsContent value="highlevel" className="mt-6">
+            <HighLevelTab rawSettings={rawSettings} />
           </TabsContent>
 
           {/* ─── Sizes Tab ─────────────────────────────────────────── */}

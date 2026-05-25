@@ -2084,8 +2084,11 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
   const pendingItems    = dispatchedIds ? allItems.filter(i => !dispatchedIds.includes(i.id)) : [];
 
   let customerLogoDataUrl: string | null = null;
+  let customerPostalAddress: string | null = null;
+  let customerPostalCity: string | null = null;
+  let customerPostalPostcode: string | null = null;
   if (order.customerId) {
-    const [cust] = await db.select({ logoUrl: customersTable.logoUrl })
+    const [cust] = await db.select({ logoUrl: customersTable.logoUrl, address: customersTable.address, city: customersTable.city, postcode: customersTable.postcode })
       .from(customersTable).where(eq(customersTable.id, order.customerId));
     if (cust?.logoUrl) {
       try {
@@ -2093,6 +2096,9 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
         if (logo) customerLogoDataUrl = `data:${logo.contentType};base64,${logo.buffer.toString("base64")}`;
       } catch {}
     }
+    customerPostalAddress = cust?.address ?? null;
+    customerPostalCity = cust?.city ?? null;
+    customerPostalPostcode = cust?.postcode ?? null;
   }
 
   let deliveryAddress: { line1: string | null; line2: string | null; city: string | null; county: string | null; postcode: string | null; country: string | null } | null = null;
@@ -2136,7 +2142,7 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
 
   const addrLines = deliveryAddress
     ? [deliveryAddress.line1, deliveryAddress.line2, deliveryAddress.city, deliveryAddress.county, deliveryAddress.postcode, deliveryAddress.country].filter(Boolean)
-    : [];
+    : [customerPostalAddress, customerPostalCity, customerPostalPostcode].filter(Boolean);
 
   const empName = (item: typeof allItems[0]) => {
     if (item.employee) return [item.employee.firstName, item.employee.lastName].filter(Boolean).join(" ");

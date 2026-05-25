@@ -1609,6 +1609,9 @@ interface InvoiceData {
   orderNumber: string;
   customerName: string;
   customerEmail?: string | null;
+  customerAddress?: string | null;
+  customerCity?: string | null;
+  customerPostcode?: string | null;
   invoiceDate?: Date | null;
   shippingMethod?: string | null;
   trackingNumber?: string | null;
@@ -1694,10 +1697,17 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       .text("BILL TO", MARGIN, y);
     doc.fillColor(TEXT).fontSize(10).font("Helvetica-Bold")
       .text(data.customerName, MARGIN, y + 14);
-    if (data.customerEmail) {
-      doc.fillColor(DIM).fontSize(8.5).font("Helvetica")
-        .text(data.customerEmail, MARGIN, y + 28);
-    }
+
+    const billToLines: string[] = [];
+    if (data.customerAddress) billToLines.push(data.customerAddress);
+    if (data.customerCity) billToLines.push(data.customerCity);
+    if (data.customerPostcode) billToLines.push(data.customerPostcode);
+    if (data.customerEmail) billToLines.push(data.customerEmail);
+
+    doc.fillColor(DIM).fontSize(8.5).font("Helvetica");
+    billToLines.forEach((line, i) => {
+      doc.text(line, MARGIN, y + 28 + i * 12);
+    });
 
     // Right side: invoice metadata
     const RX = MARGIN + HALF + 16;
@@ -1890,21 +1900,27 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   let customerEmail: string | null = null;
   let contactFirstName: string | null = null;
   let customerLogoDataUrl: string | null = null;
+  let customerAddress: string | null = null;
+  let customerCity: string | null = null;
+  let customerPostcode: string | null = null;
 
   if (order.customerId) {
     const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
     customerEmail = customer?.email ?? null;
     contactFirstName = customer?.contactFirstName ?? null;
+    customerAddress = customer?.address ?? null;
+    customerCity = customer?.city ?? null;
+    customerPostcode = customer?.postcode ?? null;
     if (customer?.logoUrl) customerLogoDataUrl = await fetchLogoDataUrl(customer.logoUrl);
   }
 
-  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl };
+  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, customerAddress, customerCity, customerPostcode };
 }
 
 export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: string }> {
   if (!isEmailConfigured) throw new Error("Email not configured. Go to Settings → Email to set up.");
 
-  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl } = await buildInvoiceDataForOrder(orderId);
+  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(orderId);
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
   const mappedItems = items.map((i) => ({
@@ -1936,6 +1952,9 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? "Customer",
     customerEmail,
+    customerAddress,
+    customerCity,
+    customerPostcode,
     invoiceDate: order.invoiceDate,
     shippingMethod: order.shippingMethod,
     trackingNumber: order.trackingNumber,

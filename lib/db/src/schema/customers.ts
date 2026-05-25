@@ -18,6 +18,7 @@ export const customersTable = pgTable("customers", {
   xeroContactId: text("xero_contact_id"),
   stripeCustomerId: text("stripe_customer_id"),
   defaultShippingService: text("default_shipping_service"),
+  highLevelContactId: text("high_level_contact_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -43,6 +43,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       xeroInvoiceStatus: ordersTable.xeroInvoiceStatus,
       customerPhone: customersTable.phone,
       invoiceScheduledSendAt: ordersTable.invoiceScheduledSendAt,
+      customerHighLevelContactId: customersTable.highLevelContactId,
     })
     .from(ordersTable)
     .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -166,11 +167,14 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
   const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
   try {
-    const { order, items, customerEmail } = await buildInvoiceDataForOrder(idParse.data);
+    const { order, items, customerEmail, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(idParse.data);
     const pdfBuffer = await generateInvoicePDF({
       orderNumber: order.orderNumber,
       customerName: order.customerName ?? "Customer",
       customerEmail,
+      customerAddress,
+      customerCity,
+      customerPostcode,
       invoiceDate: order.invoiceDate,
       shippingMethod: order.shippingMethod,
       trackingNumber: order.trackingNumber,
@@ -308,6 +312,70 @@ router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
     totalEx: Math.round(g.totalEx * 100) / 100,
     totalInc: Math.round(g.totalInc * 100) / 100,
   })));
+});
+
+// ─── Send via High Level webhook ─────────────────────────────────────────────
+
+router.post("/invoices/:orderId/send-highlevel", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+
+  const [row] = await db
+    .select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      totalAmount: ordersTable.totalAmount,
+      shippingMethod: ordersTable.shippingMethod,
+      highLevelContactId: customersTable.highLevelContactId,
+      customerEmail: customersTable.email,
+    })
+    .from(ordersTable)
+    .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
+    .where(eq(ordersTable.id, idParse.data));
+
+  if (!row) { res.status(404).json({ error: "Order not found" }); return; }
+  if (!row.highLevelContactId) {
+    res.status(400).json({ error: "Customer does not have a High Level contact ID set" });
+    return;
+  }
+
+  const [webhookSetting] = await db
+    .select({ value: settingsTable.value })
+    .from(settingsTable)
+    .where(eq(settingsTable.key, "high_level_webhook_url"));
+
+  const webhookUrl = webhookSetting?.value;
+  if (!webhookUrl) {
+    res.status(400).json({ error: "High Level webhook URL not configured in Settings" });
+    return;
+  }
+
+  const totalInc = (parseFloat(row.totalAmount ?? "0") * 1.2).toFixed(2);
+
+  const payload = {
+    contactId: row.highLevelContactId,
+    orderNumber: row.orderNumber,
+    customerName: row.customerName,
+    totalAmountExVat: row.totalAmount,
+    totalAmountIncVat: totalInc,
+    customerEmail: row.customerEmail,
+    shippingMethod: row.shippingMethod,
+  };
+
+  const hlRes = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!hlRes.ok) {
+    const text = await hlRes.text().catch(() => "");
+    res.status(502).json({ error: `High Level webhook returned ${hlRes.status}: ${text}` });
+    return;
+  }
+
+  res.json({ ok: true, contactId: row.highLevelContactId, orderNumber: row.orderNumber });
 });
 
 router.post("/settings/email/test", async (_req, res): Promise<void> => {

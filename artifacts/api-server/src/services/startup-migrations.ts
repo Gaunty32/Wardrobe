@@ -26,6 +26,10 @@ export async function runStartupMigrations(): Promise<void> {
   `);
 
   await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS high_level_contact_id text;
+  `);
+
+  await db.execute(sql`
     ALTER TABLE sync_logs ADD COLUMN IF NOT EXISTS progress_pct integer;
   `);
 

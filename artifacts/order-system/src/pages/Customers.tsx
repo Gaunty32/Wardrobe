@@ -132,7 +132,7 @@ export default function Customers() {
     return (localStorage.getItem("customersViewMode") as "list" | "tile") ?? "tile";
   });
   
-  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "", logoUrl: "" };
+  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "", logoUrl: "", highLevelContactId: "" };
   const [formData, setFormData] = useState(initialForm);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile, isUploading } = useUpload({
@@ -167,6 +167,7 @@ export default function Customers() {
       notes: customer.notes || "",
       defaultShippingService: (customer as any).defaultShippingService || "",
       logoUrl: (customer as any).logoUrl || "",
+      highLevelContactId: (customer as any).highLevelContactId || "",
     });
     setEditingCustomer(customer);
   };
@@ -460,6 +461,21 @@ export default function Customers() {
                     <p className="text-xs text-muted-foreground">PNG, JPG, SVG, WebP, PDF or EPS. Click the square or the button to pick a file.</p>
                   )}
                 </div>
+              </div>
+
+              <div className="grid gap-2 mt-2">
+                <h4 className="text-sm font-semibold text-muted-foreground tracking-wide">Integrations</h4>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="highLevelContactId">High Level Contact ID</Label>
+                <Input
+                  id="highLevelContactId"
+                  placeholder="abc123xyz"
+                  value={formData.highLevelContactId}
+                  onChange={(e) => setFormData({...formData, highLevelContactId: e.target.value})}
+                />
+                <p className="text-xs text-muted-foreground">Used to trigger High Level automation when sending collection order invoices. Find this in the contact's URL in High Level.</p>
               </div>
 
               <div className="grid gap-2 mt-2">

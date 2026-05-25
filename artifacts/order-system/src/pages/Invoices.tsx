@@ -17,7 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
   Truck, Clock, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
-  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X,
+  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -50,6 +50,7 @@ interface InvoiceOrder {
   xeroInvoiceStatus: string | null;
   customerPhone: string | null;
   invoiceScheduledSendAt: string | null;
+  customerHighLevelContactId: string | null;
 }
 
 function toWhatsAppNumber(phone: string): string {
@@ -231,6 +232,16 @@ function OrderRow({
       toast({ title: "Invoice sent", description: `Emailed to ${res.sentTo}.${xeroMsg}` });
     },
     onError: (e: Error) => toast({ title: "Failed to send", description: parseApiError(e), variant: "destructive" }),
+  });
+
+  const sendHighLevel = useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean; contactId: string; orderNumber: string }>(`/invoices/${order.id}/send-highlevel`, { method: "POST" }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      setConfirmOpen(false);
+      toast({ title: "Sent via High Level", description: `Workflow triggered for ${res.orderNumber}.` });
+    },
+    onError: (e: Error) => toast({ title: "High Level error", description: parseApiError(e), variant: "destructive" }),
   });
 
   const scheduleSend = useMutation({
@@ -477,6 +488,20 @@ function OrderRow({
                   onClick={handleWhatsApp}
                 >
                   <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                </Button>
+              )}
+              {isCollection && order.customerHighLevelContactId && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
+                  onClick={() => sendHighLevel.mutate()}
+                  disabled={sendHighLevel.isPending}
+                >
+                  {sendHighLevel.isPending
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Zap className="w-3.5 h-3.5" />}
+                  Send via High Level
                 </Button>
               )}
             </div>
