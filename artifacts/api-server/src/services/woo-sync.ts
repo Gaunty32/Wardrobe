@@ -211,9 +211,13 @@ function isColourAttr(name: string): boolean {
   return /colou?r|pa_colou?r/i.test(name);
 }
 function isSizeAttr(name: string): boolean {
-  // Match any attribute that contains "size" (pa_size, clothing-size, dress-size, etc.)
-  // but exclude colour-related names just in case
-  return /size/i.test(name) && !/colou?r/i.test(name);
+  // Match size, waist, chest, bust, hip — the primary "size" dimension
+  // but exclude colour and length/leg/sleeve attributes
+  return /size|waist|chest|bust|hip/i.test(name) && !/colou?r|length|leg|sleeve|inseam|fit/i.test(name);
+}
+function isLengthAttr(name: string): boolean {
+  // Match leg length, sleeve length, inseam, fit — stored in the sleeve column
+  return /leg.?length|sleeve.?length|leg|inseam|\blength\b|fit/i.test(name) && !/colou?r|size|waist|chest|bust|hip/i.test(name);
 }
 
 /** Strip HTML tags and normalise whitespace */
@@ -385,13 +389,14 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
 
         const colours = new Set<string>();
         const sizes = new Set<string>();
+        const sleeves = new Set<string>();
         // Maps colour name → first variation image URL found for that colour
         const colourImages = new Map<string, string>();
 
         // Fetch variations for variable products and upsert product_variants
         const variantRows: {
           productId: number; wooVariationId: number; colour: string | null; size: string | null;
-          sku: string | null; price: string | null; imageUrl: string | null; stockQuantity: number;
+          sleeve: string | null; sku: string | null; price: string | null; imageUrl: string | null; stockQuantity: number;
         }[] = [];
 
         if (wooProduct.type === "variable" && wooProduct.variations?.length > 0) {
@@ -401,9 +406,11 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           for (const v of variations) {
             let vColour: string | null = null;
             let vSize: string | null = null;
+            let vSleeve: string | null = null;
             for (const attr of v.attributes) {
               if (isColourAttr(attr.name)) vColour = attr.option;
               else if (isSizeAttr(attr.name)) vSize = attr.option;
+              else if (isLengthAttr(attr.name)) vSleeve = attr.option;
             }
 
             // Resolve variation image
@@ -419,6 +426,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
 
             if (vColour) colours.add(vColour);
             if (vSize) sizes.add(vSize);
+            if (vSleeve) sleeves.add(vSleeve);
             if (vColour && vImageUrl && !colourImages.has(vColour)) colourImages.set(vColour, vImageUrl);
 
             const vPrice = v.price || v.regular_price || null;
@@ -427,6 +435,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
               wooVariationId: v.id,
               colour: vColour,
               size: vSize,
+              sleeve: vSleeve,
               sku: v.sku || null,
               price: vPrice ? String(parseFloat(vPrice)) : null,
               imageUrl: vImageUrl,
@@ -437,14 +446,16 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           for (const attr of wooProduct.attributes) {
             if (isColourAttr(attr.name)) attr.options.forEach((o) => colours.add(o));
             else if (isSizeAttr(attr.name)) attr.options.forEach((o) => sizes.add(o));
+            else if (isLengthAttr(attr.name)) attr.options.forEach((o) => sleeves.add(o));
           }
         }
 
-        // Always also scan product-level attributes for sizes — variable products that
+        // Always also scan product-level attributes for sizes and lengths — variable products that
         // vary only by colour won't have sizes in the variation attributes, but the
-        // product itself may declare a Size attribute with all available options.
+        // product itself may declare a Size/Length attribute with all available options.
         for (const attr of (wooProduct.attributes ?? [])) {
           if (isSizeAttr(attr.name)) (attr.options ?? []).forEach((o: string) => sizes.add(o));
+          else if (isLengthAttr(attr.name)) (attr.options ?? []).forEach((o: string) => sleeves.add(o));
         }
 
         // Preserve manually entered stock before replacing WooCommerce-managed variants
@@ -477,7 +488,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           );
         }
 
-        // Update product_attributes colour/size palette from synced data.
+        // Update product_attributes colour/size/sleeve palette from synced data.
         // Only replace a type when WooCommerce actually provided values for it — this
         // preserves manually-added sizes for colour-only variable products where
         // WooCommerce has no Size attribute defined (e.g. polo shirts, t-shirts).
@@ -494,6 +505,12 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             and(eq(productAttributesTable.productId, productId), eq(productAttributesTable.type, "size"))
           );
           for (const s of sizes) attrValues.push({ productId, type: "size", value: s, imageUrl: null, sortOrder: i++ });
+        }
+        if (sleeves.size > 0) {
+          await db.delete(productAttributesTable).where(
+            and(eq(productAttributesTable.productId, productId), eq(productAttributesTable.type, "sleeve"))
+          );
+          for (const sl of sleeves) attrValues.push({ productId, type: "sleeve", value: sl, imageUrl: null, sortOrder: i++ });
         }
         if (attrValues.length > 0) await db.insert(productAttributesTable).values(attrValues);
 
