@@ -993,4 +993,17 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_scheduled_send_at timestamptz;
   `);
+
+  // One-time data fix: order items whose worksheet is already 'complete' but
+  // stock_status is still 'allocated' (caused by the POST /worksheets route not
+  // updating order item status). Mark them complete so they leave the picking list.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET stock_status = 'complete'
+    FROM worksheet_items wi
+    JOIN worksheets w ON w.id = wi.worksheet_id
+    WHERE wi.order_item_id = oi.id
+      AND w.status = 'complete'
+      AND oi.stock_status = 'allocated'
+  `);
 }

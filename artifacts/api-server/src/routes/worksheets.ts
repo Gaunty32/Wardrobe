@@ -813,6 +813,15 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     })
   );
 
+  // Move the linked order items to in_production so they leave the picking list
+  const linkedItemIds = orderItems.map((oi) => oi.id);
+  if (linkedItemIds.length > 0) {
+    await db
+      .update(orderItemsTable)
+      .set({ stockStatus: "in_production" })
+      .where(inArray(orderItemsTable.id, linkedItemIds));
+  }
+
   if (ws.orderId) {
     await logOrderAction(ws.orderId, "Production worksheet created", getActor(req),
       `Worksheet ${ws.worksheetNumber} created with ${wsItems.flat().length} item(s)`);
@@ -850,6 +859,22 @@ router.patch("/worksheets/:id", async (req, res): Promise<void> => {
     .returning();
 
   if (!ws) { res.status(404).json({ error: "Worksheet not found" }); return; }
+
+  // When marking complete, move all linked order items to 'complete' so they
+  // leave the picking list and don't appear as outstanding work.
+  if (parsed.data.status === "complete") {
+    const wsItems = await db
+      .select({ orderItemId: worksheetItemsTable.orderItemId })
+      .from(worksheetItemsTable)
+      .where(eq(worksheetItemsTable.worksheetId, ws.id));
+    const orderItemIds = wsItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
+    if (orderItemIds.length > 0) {
+      await db
+        .update(orderItemsTable)
+        .set({ stockStatus: "complete" })
+        .where(inArray(orderItemsTable.id, orderItemIds));
+    }
+  }
 
   if (ws.orderId && parsed.data.status) {
     const statusLabels: Record<string, string> = { pre_wip: "Production started (pre-WIP)", wip: "Production in progress (WIP)", complete: "Production completed" };
