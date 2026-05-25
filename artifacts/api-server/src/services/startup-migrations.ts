@@ -948,4 +948,18 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_date timestamptz;
   `);
+
+  // Clean up stale purchase_required flags on items from orders that are no
+  // longer active (shipped, completed, delivered, invoiced, cancelled, archived).
+  // These were left behind because the requirements query previously only
+  // excluded 'cancelled' and 'archived', allowing shipped orders to bleed through.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required = false,
+        purchase_quantity = NULL
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.purchase_required = true
+      AND o.status IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+  `);
 }

@@ -55,7 +55,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     INNER JOIN products p ON p.id = oi.product_id
     LEFT  JOIN suppliers s ON s.id = p.supplier_id
     WHERE oi.product_id IS NOT NULL
-      AND COALESCE(o.status, '') NOT IN ('cancelled', 'archived', 'completed', 'delivered')
+      AND COALESCE(o.status, '') NOT IN ('cancelled', 'archived', 'completed', 'delivered', 'shipped', 'invoiced')
       AND NOT EXISTS (
         SELECT 1
         FROM purchase_order_items poi
@@ -225,8 +225,8 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
     .leftJoin(productSupplier, eq(productsTable.supplierId, productSupplier.id))
     .where(and(
       eq(orderItemsTable.purchaseRequired, true),
-      // Exclude items belonging to cancelled or archived orders
-      sql`COALESCE(${ordersTable.status}, '') NOT IN ('cancelled', 'archived')`,
+      // Exclude items belonging to orders that are no longer active
+      sql`COALESCE(${ordersTable.status}, '') NOT IN ('cancelled', 'archived', 'shipped', 'completed', 'delivered', 'invoiced')`,
       sql`${orderItemsTable.id} NOT IN (
         SELECT poi.order_item_id
         FROM purchase_order_items poi
