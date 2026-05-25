@@ -978,4 +978,8 @@ export async function runStartupMigrations(): Promise<void> {
       AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
   `);
   console.log("[startup] Promoted stock-covered items to picking list");
+
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+  `);
 }

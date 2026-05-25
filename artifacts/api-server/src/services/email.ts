@@ -1259,6 +1259,270 @@ export function buildPOEmail(po: POData, extraNotes: string): { subject: string;
   return { subject, html, text };
 }
 
+// ─── Invoice Email Builder ────────────────────────────────────────────────────
+
+export function buildInvoiceEmail(params: {
+  orderNumber: string;
+  customerName: string | null;
+  contactFirstName?: string | null;
+  customerLogoDataUrl?: string | null;
+  invoiceDate: Date | null;
+  shippingMethod?: string | null;
+  trackingNumber?: string | null;
+  notes?: string | null;
+  paidAt?: Date | null;
+  stripePaymentLinkUrl?: string | null;
+  items: Array<{
+    productName: string;
+    colour?: string | null;
+    size?: string | null;
+    finishName?: string | null;
+    quantity: number;
+    unitPrice: number;
+    lineTotal: number;
+    vatRate?: number;
+  }>;
+}): { subject: string; html: string; text: string } {
+  const subject = `Invoice ${params.orderNumber} — Select Branding Solutions`;
+  const firstName = toFirstName(params.contactFirstName ?? params.customerName);
+  const isPaid = !!params.paidAt;
+  const isCollection = params.shippingMethod
+    ? ["office_collection", "warehouse_collection"].includes(params.shippingMethod)
+    : false;
+
+  const fmtDate = (d: Date) =>
+    new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+
+  const invoiceDateStr = params.invoiceDate ? fmtDate(params.invoiceDate) : fmtDate(new Date());
+  const paymentDueDate = params.invoiceDate
+    ? new Date(new Date(params.invoiceDate).getTime() + 30 * 86400000)
+    : new Date(Date.now() + 30 * 86400000);
+  const paymentDueStr = fmtDate(paymentDueDate);
+
+  const subtotal = params.items.reduce((s, i) => s + i.lineTotal, 0);
+  const vatAmount = params.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.2), 0);
+  const totalIncVat = subtotal + vatAmount;
+
+  const itemRows = params.items
+    .map(
+      (i) => `<tr>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;">${i.productName}${i.finishName ? `<br><span style="font-size:11px;color:#6366f1;font-weight:600;">Finish: ${i.finishName}</span>` : ""}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:13px;font-weight:600;color:#1e293b;">${i.quantity}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;color:#64748b;">£${i.unitPrice.toFixed(2)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;font-weight:700;color:#1e293b;">£${i.lineTotal.toFixed(2)}</td>
+    </tr>`
+    )
+    .join("\n");
+
+  const customerLogoBlock = params.customerLogoDataUrl
+    ? `<td style="vertical-align:middle;text-align:right;">
+        <p style="margin:0 0 6px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Billed to</p>
+        <img src="${params.customerLogoDataUrl}" alt="${params.customerName ?? "Customer"}" height="38" style="display:block;height:38px;width:auto;max-width:130px;margin-left:auto;" />
+      </td>`
+    : `<td style="vertical-align:middle;text-align:right;">
+        <p style="margin:0;color:#94a3b8;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Invoice</p>
+        <p style="margin:4px 0 0;color:#fff;font-size:17px;font-weight:700;">${params.orderNumber}</p>
+      </td>`;
+
+  const orderRefSubBar = params.customerLogoDataUrl
+    ? `<tr><td style="background:#0f172a;padding:10px 32px;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td><p style="margin:0;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Invoice</p>
+          <p style="margin:2px 0 0;color:#fff;font-size:15px;font-weight:700;">${params.orderNumber}</p></td>
+        </tr></table>
+      </td></tr>`
+    : "";
+
+  const collectionHtml = isCollection
+    ? `<tr><td style="padding:0 32px 16px;">
+        <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:16px 20px;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#15803d;">Your order is ready for collection!</p>
+          <p style="margin:0;font-size:13px;color:#166534;line-height:1.6;">Please visit us at <strong>Spence Mills, Mill Lane, Leeds, LS13 3HE</strong> during business hours. Please bring a copy of this invoice or quote your order reference <strong>${params.orderNumber}</strong>.</p>
+        </div>
+      </td></tr>`
+    : "";
+
+  const trackingHtml = params.trackingNumber
+    ? `<tr><td style="padding:0 32px 16px;">
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:16px 20px;">
+          <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#1e40af;">Your order is on its way!</p>
+          <p style="margin:0 0 6px;font-size:13px;color:#1e3a8a;">DPD Tracking: <strong style="font-family:monospace;">${params.trackingNumber}</strong></p>
+          <a href="https://track.dpd.co.uk/parcels/${params.trackingNumber}" style="font-size:13px;color:#1d4ed8;font-weight:600;text-decoration:none;">Track your parcel on DPD &rarr;</a>
+        </div>
+      </td></tr>`
+    : "";
+
+  const statusRow = isPaid
+    ? `<tr style="background:#dcfce7;">
+        <td style="padding:10px 16px;font-size:12px;color:#15803d;border-bottom:1px solid #86efac;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Status</td>
+        <td style="padding:10px 16px;font-size:13px;font-weight:700;color:#15803d;border-bottom:1px solid #86efac;text-align:right;">&#10003; PAID</td>
+      </tr>`
+    : `<tr>
+        <td style="padding:10px 16px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Payment Due</td>
+        <td style="padding:10px 16px;font-size:13px;color:#b45309;font-weight:600;border-bottom:1px solid #e2e8f0;text-align:right;">${paymentDueStr}</td>
+      </tr>`;
+
+  const paymentSectionHtml = isPaid
+    ? `<tr><td style="padding:0 32px 24px;">
+        <div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:18px 24px;text-align:center;">
+          <p style="margin:0;font-size:16px;font-weight:700;color:#15803d;">&#10003; Payment Received — Thank You!</p>
+          <p style="margin:6px 0 0;font-size:13px;color:#166534;">This invoice is for your records. No further payment is required.</p>
+        </div>
+      </td></tr>`
+    : `<tr><td style="padding:0 32px 24px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+          <tr><td style="background:#f8fafc;padding:14px 18px;border-bottom:1px solid #e2e8f0;">
+            <p style="margin:0;font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px;">Payment Details</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#64748b;">Payment is due within 30 days. Please quote <strong>${params.orderNumber}</strong> as your reference.</p>
+          </td></tr>
+          <tr><td style="padding:16px 18px;">
+            ${params.stripePaymentLinkUrl
+              ? `<table cellpadding="0" cellspacing="0" style="margin-bottom:16px;"><tr><td style="background:#1e3a5f;border-radius:6px;">
+                  <a href="${params.stripePaymentLinkUrl}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Pay by Card Online &rarr;</a>
+                </td></tr></table>`
+              : ""}
+            <table cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:6px;border-collapse:collapse;min-width:260px;">
+              <tr style="background:#f1f5f9;"><td colspan="2" style="padding:8px 12px;font-size:10px;font-weight:700;color:#64748b;letter-spacing:0.8px;text-transform:uppercase;border-bottom:1px solid #e2e8f0;">BACS Bank Transfer</td></tr>
+              <tr><td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;">Account name</td><td style="padding:7px 12px;font-size:12px;font-weight:600;color:#1e293b;">Select Branding Solutions Ltd</td></tr>
+              <tr style="background:#f8fafc;"><td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;">Sort code</td><td style="padding:7px 12px;font-size:12px;font-weight:600;color:#1e293b;font-family:monospace;">04-06-05</td></tr>
+              <tr><td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;">Account number</td><td style="padding:7px 12px;font-size:12px;font-weight:600;color:#1e293b;font-family:monospace;">30422879</td></tr>
+              <tr style="background:#f8fafc;"><td style="padding:7px 12px;font-size:12px;color:#64748b;white-space:nowrap;">Reference</td><td style="padding:7px 12px;font-size:12px;font-weight:600;color:#1e293b;font-family:monospace;">${params.orderNumber}</td></tr>
+            </table>
+          </td></tr>
+        </table>
+      </td></tr>`;
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.10);">
+
+        <tr><td style="background:#1e293b;padding:22px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td style="vertical-align:middle;"><img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="48" style="display:block;height:48px;width:auto;" /></td>
+            ${customerLogoBlock}
+          </tr></table>
+        </td></tr>
+        ${orderRefSubBar}
+
+        <tr><td style="background:#1e3a5f;padding:24px 32px;">
+          <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Hi ${firstName},</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">Please find your invoice attached for order <strong style="color:#ffffff;">${params.orderNumber}</strong>.</p>
+        </td></tr>
+
+        <tr><td style="padding:24px 32px 16px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <tr style="background:#f8fafc;"><td style="padding:10px 16px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Invoice Number</td><td style="padding:10px 16px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #e2e8f0;text-align:right;">${params.orderNumber}</td></tr>
+            <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Invoice Date</td><td style="padding:10px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;text-align:right;">${invoiceDateStr}</td></tr>
+            ${statusRow}
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:0 32px 16px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <thead><tr style="background:#1e293b;">
+              <th style="padding:10px 14px;text-align:left;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Product</th>
+              <th style="padding:10px 14px;text-align:left;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Colour / Size</th>
+              <th style="padding:10px 14px;text-align:center;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Qty</th>
+              <th style="padding:10px 14px;text-align:right;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Unit</th>
+              <th style="padding:10px 14px;text-align:right;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Total</th>
+            </tr></thead>
+            <tbody>${itemRows}</tbody>
+            <tfoot>
+              <tr style="background:#f8fafc;"><td colspan="4" style="padding:10px 14px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">Subtotal (exc. VAT)</td><td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;border-top:1px solid #e2e8f0;">£${subtotal.toFixed(2)}</td></tr>
+              <tr style="background:#f8fafc;"><td colspan="4" style="padding:6px 14px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">VAT (20%)</td><td style="padding:6px 14px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${vatAmount.toFixed(2)}</td></tr>
+              <tr style="background:#1e293b;"><td colspan="4" style="padding:12px 14px;text-align:right;font-size:13px;font-weight:700;color:#ffffff;">Total (inc. VAT)</td><td style="padding:12px 14px;text-align:right;font-size:15px;font-weight:800;color:#ffffff;">£${totalIncVat.toFixed(2)}</td></tr>
+            </tfoot>
+          </table>
+        </td></tr>
+
+        ${collectionHtml}
+        ${trackingHtml}
+        ${paymentSectionHtml}
+        ${params.notes ? `<tr><td style="padding:0 32px 16px;"><div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:12px 16px;"><p style="margin:0;font-size:13px;color:#92400e;"><strong>Order notes:</strong> ${params.notes}</p></div></td></tr>` : ""}
+
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #dbeafe;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <tr><td style="background:#eff6ff;padding:12px 18px;border-bottom:1px solid #dbeafe;"><p style="margin:0;font-size:13px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:0.5px;">Questions? We're Here For You</p></td></tr>
+            <tr><td style="padding:14px 18px;">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding:5px 0;width:50%;vertical-align:top;"><p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Email</p><a href="mailto:accounts@selectbranding.co.uk" style="font-size:13px;color:#1d4ed8;text-decoration:none;font-weight:500;">accounts@selectbranding.co.uk</a></td>
+                  <td style="padding:5px 0;width:50%;vertical-align:top;"><p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Phone</p><a href="${SBS_PHONE_HREF}" style="font-size:13px;color:#1e293b;text-decoration:none;font-weight:500;">${SBS_PHONE_DISPLAY}</a></td>
+                </tr>
+                <tr>
+                  <td style="padding:5px 0;vertical-align:top;"><p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">WhatsApp</p><a href="${SBS_WHATSAPP_URL}" style="font-size:13px;color:#16a34a;text-decoration:none;font-weight:500;">Message us on WhatsApp</a></td>
+                  <td style="padding:5px 0;vertical-align:top;"><p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Live Chat</p><a href="${SBS_CHAT_URL}" style="font-size:13px;color:#1d4ed8;text-decoration:none;font-weight:500;">Chat on our website</a></td>
+                </tr>
+              </table>
+            </td></tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:0 32px 28px;">
+          <p style="font-size:14px;color:#374151;margin:0;line-height:1.6;">Kind regards,<br><strong style="color:#1e293b;font-size:15px;">The Select Branding Solutions Team</strong></p>
+        </td></tr>
+
+        <tr><td style="background:#f8fafc;padding:14px 32px;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:11px;color:#94a3b8;text-align:center;line-height:1.8;">
+            Select Branding Solutions Ltd &middot; Spence Mills, Mill Lane, Leeds, LS13 3HE<br>
+            <a href="https://www.selectbranding.co.uk" style="color:#94a3b8;text-decoration:none;">www.selectbranding.co.uk</a>
+            &middot; <a href="mailto:accounts@selectbranding.co.uk" style="color:#94a3b8;text-decoration:none;">accounts@selectbranding.co.uk</a>
+            &middot; <a href="${SBS_PHONE_HREF}" style="color:#94a3b8;text-decoration:none;">${SBS_PHONE_DISPLAY}</a>
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+
+  const text = [
+    subject, ``,
+    `Hi ${firstName},`, ``,
+    `Please find your invoice attached for order ${params.orderNumber}.`, ``,
+    `Invoice Date: ${invoiceDateStr}`,
+    isPaid
+      ? `Status: PAID — This invoice is for your records.`
+      : `Payment Due: ${paymentDueStr}`,
+    ``,
+    isCollection ? `Your order is ready for collection at:\nSpence Mills, Mill Lane, Leeds, LS13 3HE\n` : null,
+    params.trackingNumber ? `Your order is on its way! Tracking: ${params.trackingNumber}\nhttps://track.dpd.co.uk/parcels/${params.trackingNumber}\n` : null,
+    `ITEMS:`,
+    ...params.items.map(
+      (i) =>
+        `  ${i.productName}${[i.colour, i.size].filter(Boolean).length ? ` (${[i.colour, i.size].filter(Boolean).join(", ")})` : ""}${i.finishName ? ` [${i.finishName}]` : ""} – Qty: ${i.quantity} @ £${i.unitPrice.toFixed(2)} = £${i.lineTotal.toFixed(2)}`
+    ),
+    ``,
+    `Subtotal (exc. VAT): £${subtotal.toFixed(2)}`,
+    `VAT (20%):           £${vatAmount.toFixed(2)}`,
+    `Total (inc. VAT):    £${totalIncVat.toFixed(2)}`,
+    ``,
+    !isPaid
+      ? [
+          `PAYMENT:`,
+          params.stripePaymentLinkUrl ? `  Pay by card: ${params.stripePaymentLinkUrl}` : null,
+          `  BACS: Sort 04-06-05, Account 30422879, Ref ${params.orderNumber}`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : null,
+    params.notes ? `\nOrder notes: ${params.notes}` : null,
+    ``,
+    `Questions? Email accounts@selectbranding.co.uk or call ${SBS_PHONE_DISPLAY}`,
+    ``,
+    `Kind regards,`,
+    `The Select Branding Solutions Team`,
+    `Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, LS13 3HE`,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
+
+  return { subject, html, text };
+}
+
 // ─── DB-backed SMTP config (for invoice emails) ───────────────────────────────
 
 async function getDbSetting(key: string): Promise<string | null> {
@@ -1328,13 +1592,18 @@ interface InvoiceLineItem {
   quantity: number;
   unitPrice: string;
   lineTotal: string;
+  vatRate?: number;
 }
 
 interface InvoiceData {
   orderNumber: string;
   customerName: string;
   customerEmail?: string | null;
+  invoiceDate?: Date | null;
+  shippingMethod?: string | null;
   trackingNumber?: string | null;
+  paidAt?: Date | null;
+  stripePaymentLinkUrl?: string | null;
   items: InvoiceLineItem[];
   totalAmount: string;
   notes?: string | null;
@@ -1343,89 +1612,233 @@ interface InvoiceData {
 export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    const doc = new PDFDocument({ margin: 50, size: "A4" });
+    const MARGIN = 50;
+    const doc = new PDFDocument({ margin: MARGIN, size: "A4" });
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
 
-    const navy = "#1e3a5f";
-    const lightGray = "#f5f5f5";
-    const darkGray = "#444444";
-    const W = doc.page.width - 100;
+    const PAGE_W = doc.page.width;
+    const PAGE_H = doc.page.height;
+    const W = PAGE_W - MARGIN * 2;
+    const DARK = "#1e293b";
+    const NAVY = "#1e3a5f";
+    const MID = "#334155";
+    const LIGHT = "#f1f5f9";
+    const ALT = "#f8fafc";
+    const BORDER = "#e2e8f0";
+    const DIM = "#64748b";
+    const TEXT = "#1e293b";
 
-    // Header
-    doc.rect(0, 0, doc.page.width, 80).fill(navy);
-    doc.fillColor("white").fontSize(22).font("Helvetica-Bold").text("SELECT BRANDING SOLUTIONS", 50, 22);
-    doc.fontSize(9).font("Helvetica").fillColor("rgba(255,255,255,0.7)").text("selectbranding.co.uk", 50, 50);
-    doc.fillColor("white").fontSize(18).font("Helvetica-Bold").text("INVOICE", doc.page.width - 150, 28, { width: 100, align: "right" });
+    const isPaid = !!data.paidAt;
+    const isCollection = data.shippingMethod
+      ? ["office_collection", "warehouse_collection"].includes(data.shippingMethod)
+      : false;
 
-    // Invoice details
-    let y = 104;
-    const details: [string, string][] = [
-      ["Invoice Number:", data.orderNumber],
-      ["Invoice Date:", new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })],
-      ["Payment Due:", new Date(Date.now() + 30 * 86400000).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" })],
+    const fmtDate = (d: Date | string) =>
+      new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
+
+    const invoiceDateStr = data.invoiceDate ? fmtDate(data.invoiceDate) : fmtDate(new Date());
+    const paymentDueDate = data.invoiceDate
+      ? new Date(new Date(data.invoiceDate).getTime() + 30 * 86400000)
+      : new Date(Date.now() + 30 * 86400000);
+    const paymentDueStr = fmtDate(paymentDueDate);
+
+    // ── Header band ──────────────────────────────────────────────────────────
+    const HEADER_H = 80;
+    doc.rect(0, 0, PAGE_W, HEADER_H).fill(DARK);
+
+    if (SBS_LOGO_BUFFER) {
+      doc.image(SBS_LOGO_BUFFER, MARGIN, 18, { height: 36, fit: [200, 36] });
+    } else {
+      doc.fillColor("white").fontSize(18).font("Helvetica-Bold")
+        .text("SELECT BRANDING SOLUTIONS", MARGIN, 28);
+    }
+
+    // INVOICE label top-right
+    doc.fillColor("#94a3b8").fontSize(9).font("Helvetica-Bold")
+      .text("INVOICE", MARGIN, 22, { width: W, align: "right" });
+    doc.fillColor("white").fontSize(20).font("Helvetica-Bold")
+      .text(data.orderNumber, MARGIN, 36, { width: W, align: "right" });
+
+    // ── Sub-header band ──────────────────────────────────────────────────────
+    const SUB_H = 28;
+    doc.rect(0, HEADER_H, PAGE_W, SUB_H).fill(MID);
+    doc.fillColor("#cbd5e1").fontSize(8).font("Helvetica")
+      .text(`Invoice Date: ${invoiceDateStr}`, MARGIN, HEADER_H + 9, { width: W / 2, lineBreak: false });
+    if (isPaid) {
+      doc.fillColor("#86efac").fontSize(9).font("Helvetica-Bold")
+        .text("✓  PAID", MARGIN, HEADER_H + 8, { width: W, align: "right" });
+    } else {
+      doc.fillColor("#fde68a").fontSize(8).font("Helvetica")
+        .text(`Payment Due: ${paymentDueStr}`, MARGIN, HEADER_H + 9, { width: W, align: "right" });
+    }
+
+    // ── Bill To / Details block ───────────────────────────────────────────────
+    let y = HEADER_H + SUB_H + 20;
+    const HALF = W / 2 - 8;
+
+    doc.fillColor(NAVY).fontSize(8).font("Helvetica-Bold")
+      .text("BILL TO", MARGIN, y);
+    doc.fillColor(TEXT).fontSize(10).font("Helvetica-Bold")
+      .text(data.customerName, MARGIN, y + 14);
+    if (data.customerEmail) {
+      doc.fillColor(DIM).fontSize(8.5).font("Helvetica")
+        .text(data.customerEmail, MARGIN, y + 28);
+    }
+
+    // Right side: invoice metadata
+    const RX = MARGIN + HALF + 16;
+    const metaRows: [string, string, boolean?][] = [
+      ["Invoice Number", data.orderNumber],
+      ["Invoice Date", invoiceDateStr],
+      isPaid ? ["Status", "PAID — for your records", true] : ["Payment Due", paymentDueStr],
     ];
-    if (data.trackingNumber) details.push(["DPD Tracking:", data.trackingNumber]);
+    if (data.trackingNumber) metaRows.push(["DPD Tracking", data.trackingNumber]);
+    if (isCollection) metaRows.push(["Collection", "Ready to collect"]);
 
-    for (const [label, val] of details) {
-      doc.font("Helvetica-Bold").fontSize(9).fillColor(darkGray).text(label, 50, y);
-      doc.font("Helvetica").fillColor(label === "DPD Tracking:" ? "#1a56a0" : darkGray).text(val, 160, y);
-      y += 16;
+    let my = y;
+    for (const [label, val, highlight] of metaRows) {
+      doc.fillColor(DIM).fontSize(8).font("Helvetica-Bold")
+        .text(label, RX, my, { width: HALF / 2, lineBreak: false });
+      doc.fillColor(highlight ? "#16a34a" : TEXT).fontSize(8.5).font(highlight ? "Helvetica-Bold" : "Helvetica")
+        .text(val, RX + HALF / 2, my, { width: HALF / 2, align: "right", lineBreak: false });
+      my += 16;
     }
 
-    // Bill To
-    const billY = 104;
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(navy).text("BILL TO", doc.page.width - 220, billY);
-    doc.font("Helvetica").fillColor(darkGray).text(data.customerName, doc.page.width - 220, billY + 14);
-    if (data.customerEmail) doc.text(data.customerEmail, doc.page.width - 220, billY + 28);
+    y = Math.max(y + 50, my) + 20;
 
-    // Table
-    const tableY = y + 14;
-    const colQty = 360, colUnit = 420, colTotal = 490;
-    doc.rect(50, tableY, W, 22).fill(navy);
-    doc.fillColor("white").fontSize(8.5).font("Helvetica-Bold");
-    doc.text("Description", 56, tableY + 6, { width: 295 });
-    doc.text("Qty", colQty, tableY + 6, { width: 55, align: "right" });
-    doc.text("Unit Price", colUnit, tableY + 6, { width: 65, align: "right" });
-    doc.text("Total", colTotal, tableY + 6, { width: 55, align: "right" });
+    // ── Items table ──────────────────────────────────────────────────────────
+    const COL_DESC_W = Math.floor(W * 0.45);
+    const COL_CS_W   = Math.floor(W * 0.2);
+    const COL_QTY_W  = Math.floor(W * 0.08);
+    const COL_UNIT_W = Math.floor(W * 0.12);
+    const COL_TOT_W  = W - COL_DESC_W - COL_CS_W - COL_QTY_W - COL_UNIT_W;
 
-    let rowY = tableY + 22;
-    doc.font("Helvetica").fontSize(9).fillColor(darkGray);
-    for (let i = 0; i < data.items.length; i++) {
-      const item = data.items[i];
-      if (i % 2 === 0) doc.rect(50, rowY, W, 20).fill(lightGray);
-      const desc = [item.productName, item.colour, item.size, item.finishName ? `[${item.finishName}]` : null].filter(Boolean).join(" – ");
-      doc.fillColor(darkGray);
-      doc.text(desc, 56, rowY + 5, { width: 295 });
-      doc.text(String(item.quantity), colQty, rowY + 5, { width: 55, align: "right" });
-      doc.text(`£${parseFloat(item.unitPrice).toFixed(2)}`, colUnit, rowY + 5, { width: 65, align: "right" });
-      doc.text(`£${parseFloat(item.lineTotal).toFixed(2)}`, colTotal, rowY + 5, { width: 55, align: "right" });
-      rowY += 20;
+    const HDR_H = 22;
+    doc.rect(MARGIN, y, W, HDR_H).fill(DARK);
+    doc.fillColor("#94a3b8").fontSize(8).font("Helvetica-Bold");
+    let cx = MARGIN + 6;
+    doc.text("Description",   cx,              y + 7, { width: COL_DESC_W - 6, lineBreak: false });
+    doc.text("Colour / Size", cx + COL_DESC_W, y + 7, { width: COL_CS_W,       lineBreak: false });
+    doc.text("Qty",           cx + COL_DESC_W + COL_CS_W, y + 7, { width: COL_QTY_W, align: "right", lineBreak: false });
+    doc.text("Unit",          cx + COL_DESC_W + COL_CS_W + COL_QTY_W, y + 7, { width: COL_UNIT_W, align: "right", lineBreak: false });
+    doc.text("Total",         cx + COL_DESC_W + COL_CS_W + COL_QTY_W + COL_UNIT_W, y + 7, { width: COL_TOT_W - 6, align: "right", lineBreak: false });
+    y += HDR_H;
+
+    const ROW_H = 20;
+    let rowAlt = false;
+    let subtotalCalc = 0;
+    let vatCalc = 0;
+
+    for (const item of data.items) {
+      if (y + ROW_H > PAGE_H - 120) {
+        doc.addPage();
+        y = MARGIN;
+      }
+      if (rowAlt) doc.rect(MARGIN, y, W, ROW_H).fill(ALT);
+      const desc = item.productName + (item.finishName ? ` [${item.finishName}]` : "");
+      const cs   = [item.colour, item.size].filter(Boolean).join(" / ") || "—";
+      const qty  = item.quantity;
+      const unit = parseFloat(item.unitPrice);
+      const tot  = parseFloat(item.lineTotal);
+      const vatR = item.vatRate ?? 0.2;
+      subtotalCalc += tot;
+      vatCalc += tot * vatR;
+
+      cx = MARGIN + 6;
+      doc.fillColor(TEXT).fontSize(8.5).font("Helvetica")
+        .text(desc, cx, y + 6, { width: COL_DESC_W - 6, lineBreak: false, ellipsis: true });
+      doc.fillColor(DIM)
+        .text(cs, cx + COL_DESC_W, y + 6, { width: COL_CS_W, lineBreak: false, ellipsis: true });
+      doc.fillColor(TEXT).font("Helvetica-Bold")
+        .text(String(qty), cx + COL_DESC_W + COL_CS_W, y + 6, { width: COL_QTY_W, align: "right", lineBreak: false });
+      doc.font("Helvetica").fillColor(DIM)
+        .text(`£${unit.toFixed(2)}`, cx + COL_DESC_W + COL_CS_W + COL_QTY_W, y + 6, { width: COL_UNIT_W, align: "right", lineBreak: false });
+      doc.fillColor(TEXT).font("Helvetica-Bold")
+        .text(`£${tot.toFixed(2)}`, cx + COL_DESC_W + COL_CS_W + COL_QTY_W + COL_UNIT_W, y + 6, { width: COL_TOT_W - 6, align: "right", lineBreak: false });
+
+      doc.rect(MARGIN, y + ROW_H - 1, W, 1).fill(BORDER);
+      y += ROW_H;
+      rowAlt = !rowAlt;
     }
-    doc.rect(50, tableY, W, rowY - tableY).stroke("#cccccc");
 
-    // Totals
-    rowY += 12;
-    const subtotal = parseFloat(data.totalAmount);
-    const vat = subtotal * 0.2;
-    const totX = doc.page.width - 220;
-    doc.font("Helvetica").fontSize(10).fillColor(darkGray);
-    doc.text("Subtotal:", totX, rowY, { width: 100 }); doc.text(`£${subtotal.toFixed(2)}`, totX + 100, rowY, { width: 65, align: "right" }); rowY += 18;
-    doc.text("VAT (20%):", totX, rowY, { width: 100 }); doc.text(`£${vat.toFixed(2)}`, totX + 100, rowY, { width: 65, align: "right" }); rowY += 8;
-    doc.rect(totX, rowY, 165, 1).fill("#cccccc"); rowY += 8;
-    doc.font("Helvetica-Bold").fontSize(12).fillColor(navy);
-    doc.text("TOTAL:", totX, rowY, { width: 100 }); doc.text(`£${(subtotal + vat).toFixed(2)}`, totX + 100, rowY, { width: 65, align: "right" }); rowY += 40;
+    // ── Totals block ─────────────────────────────────────────────────────────
+    y += 12;
+    if (y + 90 > PAGE_H - 80) { doc.addPage(); y = MARGIN; }
 
-    // Terms box
-    doc.rect(50, rowY, W, 46).fill(lightGray).stroke("#dddddd");
-    doc.font("Helvetica-Bold").fontSize(9).fillColor(navy).text("Payment Terms", 60, rowY + 8);
-    doc.font("Helvetica").fillColor(darkGray).text("Payment is due within 30 days of invoice date. Please reference the invoice number when making payment.", 60, rowY + 22, { width: W - 20 });
+    const totX = MARGIN + W - 200;
+    const totW = 200;
 
-    // Footer
-    doc.rect(0, doc.page.height - 40, doc.page.width, 40).fill(navy);
-    doc.fillColor("rgba(255,255,255,0.6)").fontSize(8).font("Helvetica")
-      .text("Select Branding Solutions  |  selectbranding.co.uk", 0, doc.page.height - 26, { align: "center", width: doc.page.width });
+    const drawTotRow = (label: string, val: string, bold = false, bg?: string) => {
+      if (bg) doc.rect(totX, y, totW, 20).fill(bg);
+      doc.fillColor(bold ? TEXT : DIM).fontSize(bold ? 10 : 9).font(bold ? "Helvetica-Bold" : "Helvetica")
+        .text(label, totX + 6, y + 5, { width: totW / 2, lineBreak: false });
+      doc.fillColor(bold ? TEXT : DIM).fontSize(bold ? 11 : 9).font(bold ? "Helvetica-Bold" : "Helvetica")
+        .text(val, totX, y + 5, { width: totW - 6, align: "right", lineBreak: false });
+      y += 20;
+    };
+
+    drawTotRow("Subtotal (exc. VAT)", `£${subtotalCalc.toFixed(2)}`, false, ALT);
+    drawTotRow("VAT (20%)", `£${vatCalc.toFixed(2)}`, false, ALT);
+
+    doc.rect(totX, y, totW, 28).fill(DARK);
+    doc.fillColor("white").fontSize(10).font("Helvetica-Bold")
+      .text("TOTAL (inc. VAT)", totX + 6, y + 8, { width: totW / 2, lineBreak: false });
+    doc.fillColor("white").fontSize(12).font("Helvetica-Bold")
+      .text(`£${(subtotalCalc + vatCalc).toFixed(2)}`, totX, y + 7, { width: totW - 6, align: "right", lineBreak: false });
+    y += 36;
+
+    // ── Payment status / terms ────────────────────────────────────────────────
+    y += 16;
+    if (y + 60 > PAGE_H - 80) { doc.addPage(); y = MARGIN; }
+
+    if (isPaid) {
+      doc.rect(MARGIN, y, W, 40).fill("#dcfce7");
+      doc.rect(MARGIN, y, W, 40).stroke("#86efac");
+      doc.fillColor("#15803d").fontSize(13).font("Helvetica-Bold")
+        .text("✓  PAYMENT RECEIVED — THANK YOU", MARGIN, y + 13, { width: W, align: "center" });
+      y += 56;
+      doc.fillColor(DIM).fontSize(8.5).font("Helvetica")
+        .text("This is your VAT invoice for your records. No further payment is required.", MARGIN, y, { width: W, align: "center" });
+      y += 20;
+    } else {
+      doc.rect(MARGIN, y, W, 52).fill(LIGHT);
+      doc.rect(MARGIN, y, W, 52).stroke(BORDER);
+      doc.fillColor(NAVY).fontSize(9).font("Helvetica-Bold").text("Payment Terms", MARGIN + 10, y + 8);
+      doc.fillColor(TEXT).fontSize(8.5).font("Helvetica")
+        .text(
+          `Payment is due within 30 days (by ${paymentDueStr}). BACS: Select Branding Solutions Ltd · Sort 04-06-05 · Account 30422879 · Reference ${data.orderNumber}`,
+          MARGIN + 10, y + 24, { width: W - 20 }
+        );
+      y += 68;
+    }
+
+    if (isCollection && !isPaid) {
+      y += 8;
+      doc.rect(MARGIN, y, W, 32).fill("#dcfce7");
+      doc.rect(MARGIN, y, W, 32).stroke("#86efac");
+      doc.fillColor("#15803d").fontSize(9).font("Helvetica-Bold")
+        .text("Ready for collection at: Spence Mills, Mill Lane, Leeds, LS13 3HE", MARGIN + 10, y + 11, { width: W - 20 });
+      y += 44;
+    }
+
+    if (data.notes) {
+      y += 8;
+      doc.rect(MARGIN, y, W, 32).fill("#fffbeb");
+      doc.rect(MARGIN, y, W, 32).stroke("#fde68a");
+      doc.fillColor("#92400e").fontSize(8.5).font("Helvetica-Bold").text("Notes: ", MARGIN + 10, y + 11, { continued: true });
+      doc.font("Helvetica").text(data.notes, { width: W - 20 });
+      y += 44;
+    }
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    doc.rect(0, PAGE_H - 36, PAGE_W, 36).fill(DARK);
+    doc.fillColor("#64748b").fontSize(8).font("Helvetica")
+      .text(
+        "Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds, LS13 3HE  ·  accounts@selectbranding.co.uk  ·  0113 255 2694  ·  selectbranding.co.uk",
+        0, PAGE_H - 23, { align: "center", width: PAGE_W }
+      );
 
     doc.end();
   });
@@ -1433,29 +1846,73 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
 
 // ─── Send Invoice Email ───────────────────────────────────────────────────────
 
-export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: string }> {
-  const config = await getSmtpConfig();
-  if (!config) throw new Error("SMTP not configured. Go to Settings → Email to set up.");
-
+// Helper to build invoice data from the DB (shared between send + preview)
+export async function buildInvoiceDataForOrder(orderId: number): Promise<{
+  order: typeof ordersTable.$inferSelect;
+  items: typeof orderItemsTable.$inferSelect[];
+  customerEmail: string | null;
+  contactFirstName: string | null;
+  customerLogoDataUrl: string | null;
+}> {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) throw new Error("Order not found.");
 
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
 
   let customerEmail: string | null = null;
-  let customerFirstName: string | null = null;
+  let contactFirstName: string | null = null;
+  let customerLogoDataUrl: string | null = null;
+
   if (order.customerId) {
     const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
-    customerEmail = (customer as any)?.email ?? null;
-    customerFirstName = (customer as any)?.contactFirstName ?? null;
+    customerEmail = customer?.email ?? null;
+    contactFirstName = customer?.contactFirstName ?? null;
+    if (customer?.logoUrl) customerLogoDataUrl = await fetchLogoDataUrl(customer.logoUrl);
   }
+
+  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl };
+}
+
+export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: string }> {
+  if (!isEmailConfigured) throw new Error("Email not configured. Go to Settings → Email to set up.");
+
+  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl } = await buildInvoiceDataForOrder(orderId);
   if (!customerEmail) throw new Error("Customer has no email address on record.");
+
+  const mappedItems = items.map((i) => ({
+    productName: i.productName,
+    colour: i.colour,
+    size: i.size,
+    finishName: i.finishName,
+    quantity: i.quantity,
+    unitPrice: parseFloat(i.unitPrice as string),
+    lineTotal: parseFloat(i.lineTotal as string),
+    vatRate: parseFloat(i.vatRate as string),
+  }));
+
+  const { subject, html, text } = buildInvoiceEmail({
+    orderNumber: order.orderNumber,
+    customerName: order.customerName,
+    contactFirstName,
+    customerLogoDataUrl,
+    invoiceDate: order.invoiceDate,
+    shippingMethod: order.shippingMethod,
+    trackingNumber: order.trackingNumber,
+    notes: order.notes,
+    paidAt: order.paidAt,
+    stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+    items: mappedItems,
+  });
 
   const pdfBuffer = await generateInvoicePDF({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? "Customer",
     customerEmail,
+    invoiceDate: order.invoiceDate,
+    shippingMethod: order.shippingMethod,
     trackingNumber: order.trackingNumber,
+    paidAt: order.paidAt,
+    stripePaymentLinkUrl: order.stripePaymentLinkUrl,
     items: items.map((i) => ({
       productName: i.productName,
       colour: i.colour,
@@ -1464,73 +1921,21 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
       quantity: i.quantity,
       unitPrice: i.unitPrice as string,
       lineTotal: i.lineTotal as string,
+      vatRate: parseFloat(i.vatRate as string),
     })),
     totalAmount: order.totalAmount as string,
     notes: order.notes,
   });
 
-  const trackingHtml = order.trackingNumber ? `
-    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:16px;margin:16px 0;">
-      <p style="margin:0 0 6px;font-weight:bold;color:#1e40af;">📦 Your order is on its way!</p>
-      <p style="margin:0 0 4px;color:#374151;">Tracking number: <strong>${order.trackingNumber}</strong></p>
-      <a href="https://track.dpd.co.uk/parcels/${order.trackingNumber}" style="color:#1d4ed8;">Track your parcel on DPD →</a>
-    </div>` : "";
-
-  const trackingText = order.trackingNumber
-    ? `\nYour order is on its way!\nTracking: ${order.trackingNumber}\nhttps://track.dpd.co.uk/parcels/${order.trackingNumber}\n`
-    : "";
-
-  const t = nodemailer.createTransport({
-    host: config.host, port: config.port, secure: config.secure,
-    auth: { user: config.user, pass: config.pass },
-    tls: { rejectUnauthorized: false },
-  });
-
-  const total = parseFloat(order.totalAmount as string);
-
-  await t.sendMail({
-    from: `"${config.fromName}" <${config.fromEmail}>`,
+  const result = await sendEmail({
     to: customerEmail,
-    subject: `Invoice ${order.orderNumber} – Select Branding Solutions`,
-    text: [
-      `Hi ${toFirstName(customerFirstName)},`,
-      ``,
-      `Please find your invoice attached for order ${order.orderNumber}.`,
-      ``,
-      `Invoice Total: £${(total * 1.2).toFixed(2)} (inc. VAT)`,
-      `Payment Due: ${new Date(Date.now() + 30 * 86400000).toLocaleDateString("en-GB")}`,
-      trackingText,
-      `If you have any questions, please don't hesitate to get in touch.`,
-      ``,
-      `Kind regards,`,
-      config.fromName,
-      `Select Branding Solutions`,
-    ].join("\n"),
-    html: `
-      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
-        <div style="background:#1e3a5f;padding:24px;border-radius:8px 8px 0 0;">
-          <h1 style="color:white;margin:0;font-size:20px;">Select Branding Solutions</h1>
-        </div>
-        <div style="padding:24px;border:1px solid #e5e7eb;border-top:none;border-radius:0 0 8px 8px;">
-          <p>Hi ${toFirstName(customerFirstName)},</p>
-          <p>Please find your invoice attached for order <strong>${order.orderNumber}</strong>.</p>
-          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
-            <tr style="background:#f9fafb;">
-              <td style="padding:8px 12px;font-weight:bold;">Invoice Total</td>
-              <td style="padding:8px 12px;text-align:right;">£${(total * 1.2).toFixed(2)} <span style="color:#6b7280;font-size:12px;">(inc. VAT)</span></td>
-            </tr>
-            <tr>
-              <td style="padding:8px 12px;font-weight:bold;">Payment Due</td>
-              <td style="padding:8px 12px;text-align:right;">${new Date(Date.now() + 30 * 86400000).toLocaleDateString("en-GB")}</td>
-            </tr>
-          </table>
-          ${trackingHtml}
-          <p>If you have any questions about this invoice, please don't hesitate to get in touch.</p>
-          <p>Kind regards,<br><strong>${config.fromName}</strong><br>Select Branding Solutions</p>
-        </div>
-      </div>`,
+    subject,
+    html,
+    text,
     attachments: [{ filename: `Invoice-${order.orderNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" }],
   });
+
+  if (!result.sent) throw new Error(result.error ?? "Failed to send invoice email");
 
   await db.update(ordersTable)
     .set({ invoiceEmailSentAt: new Date(), invoiceEmailSentTo: customerEmail, updatedAt: new Date() })

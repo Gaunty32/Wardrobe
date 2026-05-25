@@ -16,7 +16,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
-  Truck, Clock, ArrowRight, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
+  Truck, Clock, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
+  Eye, MessageSquare, BadgeCheck, CircleDashed,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -41,10 +42,20 @@ interface InvoiceOrder {
   dispatchedAt: string | null;
   invoiceDate: string | null;
   trackingNumber: string | null;
+  shippingMethod: string | null;
+  paidAt: string | null;
   invoiceEmailSentAt: string | null;
   invoiceEmailSentTo: string | null;
   xeroInvoiceId: string | null;
   xeroInvoiceStatus: string | null;
+  customerPhone: string | null;
+}
+
+function toWhatsAppNumber(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("44")) return digits;
+  if (digits.startsWith("0")) return `44${digits.slice(1)}`;
+  return `44${digits}`;
 }
 
 interface InvoicesData {
@@ -180,11 +191,25 @@ function OrderRow({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [invoiceDateEdit, setInvoiceDateEdit] = useState(toDateInput(order.invoiceDate));
   const crossMonth = isCrossMonth(order.orderDate, order.invoiceDate);
+  const [isPaid, setIsPaid] = useState(!!order.paidAt);
+  const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
+  const [loadingEmailPreview, setLoadingEmailPreview] = useState(false);
+
+  const isCollection = ["office_collection", "warehouse_collection"].includes(order.shippingMethod ?? "");
 
   const saveInvoiceDate = useMutation({
     mutationFn: (d: string) => apiFetch(`/invoices/${order.id}/invoice-date`, { method: "PATCH", body: JSON.stringify({ invoiceDate: d }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
     onError: (e: Error) => toast({ title: "Error", description: parseApiError(e), variant: "destructive" }),
+  });
+
+  const togglePaid = useMutation({
+    mutationFn: (paid: boolean) => apiFetch(`/invoices/${order.id}/paid`, { method: "PATCH", body: JSON.stringify({ paid }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
+    onError: (e: Error) => {
+      setIsPaid(!isPaid);
+      toast({ title: "Error", description: parseApiError(e), variant: "destructive" });
+    },
   });
 
   const sendEmail = useMutation({
@@ -206,6 +231,31 @@ function OrderRow({
     },
     onError: (e: Error) => toast({ title: "Xero error", description: parseApiError(e), variant: "destructive" }),
   });
+
+  const handlePreviewPdf = () => {
+    window.open(`/api/invoices/${order.id}/preview-pdf`, "_blank");
+  };
+
+  const handlePreviewEmail = async () => {
+    if (emailPreviewHtml) { setEmailPreviewHtml(null); return; }
+    setLoadingEmailPreview(true);
+    try {
+      const data = await apiFetch<{ subject: string; html: string }>(`/invoices/${order.id}/preview-email`);
+      setEmailPreviewHtml(data.html);
+    } catch (e) {
+      toast({ title: "Preview failed", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setLoadingEmailPreview(false);
+    }
+  };
+
+  const handleWhatsApp = () => {
+    if (!order.customerPhone) return;
+    const waNum = toWhatsAppNumber(order.customerPhone);
+    const firstName = order.customerName?.split(" ")[0] ?? "there";
+    const msg = `Hi ${firstName}, your order ${order.orderNumber} from Select Branding Solutions is ready for collection at Spence Mills, Mill Lane, Leeds, LS13 3HE. Please bring a copy of this invoice or quote your order reference: ${order.orderNumber}. See you soon!`;
+    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(msg)}`, "_blank");
+  };
 
   const subtotal = parseFloat(order.totalAmount);
   const total = subtotal * 1.2;
@@ -282,26 +332,63 @@ function OrderRow({
         </TableCell>
       </TableRow>
 
-      {/* Confirm send dialog */}
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="max-w-sm">
+      {/* Send invoice dialog */}
+      <Dialog open={confirmOpen} onOpenChange={(open) => { setConfirmOpen(open); if (!open) setEmailPreviewHtml(null); }}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Send Invoice — {order.orderNumber}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 text-sm">
-            <p>This will email the invoice PDF to the customer and automatically post it to Xero as a draft invoice.</p>
+          <div className="space-y-4 text-sm">
+            <p className="text-muted-foreground">This will email the invoice PDF to the customer and post it to Xero as a draft invoice.</p>
+
+            {/* Summary card */}
             <div className="rounded-lg bg-muted/50 border border-border p-3 space-y-1.5">
               <div><span className="text-muted-foreground">Customer:</span> <strong>{order.customerName}</strong></div>
               <div><span className="text-muted-foreground">Amount:</span> <strong>{formatCurrency(total)} inc. VAT</strong></div>
               {order.trackingNumber && (
-                <div><span className="text-muted-foreground">DPD tracking:</span> <strong className="font-mono">{order.trackingNumber}</strong></div>
+                <div><span className="text-muted-foreground">DPD:</span> <strong className="font-mono text-xs">{order.trackingNumber}</strong></div>
               )}
-              {!order.trackingNumber && (
-                <div className="flex items-center gap-1.5 text-amber-700 text-xs">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  No tracking number — add one for better customer experience
+              {isCollection && (
+                <div className="flex items-center gap-1.5 text-green-700 text-xs font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Customer collection order
                 </div>
               )}
+              {!order.trackingNumber && !isCollection && (
+                <div className="flex items-center gap-1.5 text-amber-700 text-xs">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  No tracking number — add one for a better customer experience
+                </div>
+              )}
+            </div>
+
+            {/* Paid toggle */}
+            <div className="flex items-center gap-3 rounded-lg border border-border p-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isPaid;
+                  setIsPaid(next);
+                  togglePaid.mutate(next);
+                }}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none ${isPaid ? "bg-green-600" : "bg-gray-300"}`}
+                role="switch"
+                aria-checked={isPaid}
+              >
+                <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition-transform ${isPaid ? "translate-x-5" : "translate-x-0"}`} />
+              </button>
+              <div className="flex-1">
+                <div className="font-medium text-foreground flex items-center gap-1.5">
+                  {isPaid
+                    ? <><BadgeCheck className="w-4 h-4 text-green-600" /> Already paid</>
+                    : <><CircleDashed className="w-4 h-4 text-muted-foreground" /> Not yet paid</>}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {isPaid
+                    ? "Invoice will include a \u2018Payment Received\u2019 notice \u2014 a VAT invoice for their records."
+                    : "Invoice will include payment instructions (BACS + card link if available)."}
+                </p>
+              </div>
+              {togglePaid.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
             </div>
 
             {/* Invoice date */}
@@ -310,7 +397,7 @@ function OrderRow({
               {crossMonth && (
                 <div className="flex items-start gap-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-2 text-xs text-amber-800">
                   <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                  <span>Order placed in a different month — invoice date set to order date to keep records in the same period.</span>
+                  <span>Order placed in a different month — check the invoice date is correct.</span>
                 </div>
               )}
               <input
@@ -322,13 +409,61 @@ function OrderRow({
                   if (e.target.value) saveInvoiceDate.mutate(e.target.value);
                 }}
               />
-              <p className="text-xs text-muted-foreground">This date will appear on the invoice and in Xero.</p>
+              <p className="text-xs text-muted-foreground">This date appears on the invoice and in Xero.</p>
             </div>
+
+            {/* Preview + WhatsApp actions */}
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={handlePreviewPdf}>
+                <Eye className="w-3.5 h-3.5" /> Preview PDF
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className={`h-8 gap-1.5 text-xs ${emailPreviewHtml ? "bg-slate-100" : ""}`}
+                onClick={handlePreviewEmail}
+                disabled={loadingEmailPreview}
+              >
+                {loadingEmailPreview
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Eye className="w-3.5 h-3.5" />}
+                {emailPreviewHtml ? "Hide email preview" : "Preview email"}
+              </Button>
+              {isCollection && order.customerPhone && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs border-green-200 text-green-700 hover:bg-green-50"
+                  onClick={handleWhatsApp}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                </Button>
+              )}
+            </div>
+
+            {/* Email preview iframe */}
+            {emailPreviewHtml && (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <div className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground font-medium border-b border-border">
+                  Email preview
+                </div>
+                <iframe
+                  srcDoc={emailPreviewHtml}
+                  className="w-full"
+                  style={{ height: 480, border: "none" }}
+                  sandbox="allow-same-origin"
+                  title="Email preview"
+                />
+              </div>
+            )}
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
             <Button onClick={() => sendEmail.mutate()} disabled={sendEmail.isPending} className="gap-2">
-              {sendEmail.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</> : <><Mail className="w-4 h-4" />Send Invoice</>}
+              {sendEmail.isPending
+                ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</>
+                : <><Mail className="w-4 h-4" />Send Invoice</>}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2,7 +2,11 @@ import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db, ordersTable, orderItemsTable, customersTable, settingsTable } from "@workspace/db";
 import { eq, desc, and, isNotNull, isNull, sql } from "drizzle-orm";
-import { sendInvoiceEmail, getSmtpConfig, testSmtpConnection } from "../services/email";
+import {
+  sendInvoiceEmail, getSmtpConfig, testSmtpConnection,
+  buildInvoiceEmail, generateInvoicePDF, buildInvoiceDataForOrder,
+  fetchLogoDataUrl,
+} from "../services/email";
 import { postInvoiceToXero } from "../services/xero";
 import { logOrderAction, getActor } from "../services/orderLog";
 
@@ -31,12 +35,16 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       dispatchedAt: ordersTable.dispatchedAt,
       invoiceDate: ordersTable.invoiceDate,
       trackingNumber: ordersTable.trackingNumber,
+      shippingMethod: ordersTable.shippingMethod,
+      paidAt: ordersTable.paidAt,
       invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
       invoiceEmailSentTo: ordersTable.invoiceEmailSentTo,
       xeroInvoiceId: ordersTable.xeroInvoiceId,
       xeroInvoiceStatus: ordersTable.xeroInvoiceStatus,
+      customerPhone: customersTable.phone,
     })
     .from(ordersTable)
+    .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
     .where(sql`${ordersTable.status} IN ('shipped', 'dispatched')`)
     .orderBy(desc(ordersTable.dispatchedAt));
 
@@ -108,6 +116,96 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
     res.json({ ok: true, sentTo: result.sentTo, ...xeroResult });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to send invoice" });
+  }
+});
+
+// ─── Mark order as paid / unpaid ─────────────────────────────────────────────
+
+router.patch("/invoices/:orderId/paid", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  const { paid } = req.body as { paid: boolean };
+  try {
+    await db.update(ordersTable)
+      .set({ paidAt: paid ? new Date() : null, updatedAt: new Date() })
+      .where(eq(ordersTable.id, idParse.data));
+    await logOrderAction(idParse.data, paid ? "Invoice marked as paid" : "Invoice marked as unpaid", getActor(req));
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to update" });
+  }
+});
+
+// ─── Preview invoice PDF (returns raw PDF) ───────────────────────────────────
+
+router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  try {
+    const { order, items, customerEmail } = await buildInvoiceDataForOrder(idParse.data);
+    const pdfBuffer = await generateInvoicePDF({
+      orderNumber: order.orderNumber,
+      customerName: order.customerName ?? "Customer",
+      customerEmail,
+      invoiceDate: order.invoiceDate,
+      shippingMethod: order.shippingMethod,
+      trackingNumber: order.trackingNumber,
+      paidAt: order.paidAt,
+      stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+      items: items.map((i) => ({
+        productName: i.productName,
+        colour: i.colour,
+        size: i.size,
+        finishName: i.finishName,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice as string,
+        lineTotal: i.lineTotal as string,
+        vatRate: parseFloat(i.vatRate as string),
+      })),
+      totalAmount: order.totalAmount as string,
+      notes: order.notes,
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="Invoice-${order.orderNumber}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to generate PDF" });
+  }
+});
+
+// ─── Preview invoice email HTML ───────────────────────────────────────────────
+
+router.get("/invoices/:orderId/preview-email", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  try {
+    const { order, items, contactFirstName, customerLogoDataUrl } = await buildInvoiceDataForOrder(idParse.data);
+    const mappedItems = items.map((i) => ({
+      productName: i.productName,
+      colour: i.colour,
+      size: i.size,
+      finishName: i.finishName,
+      quantity: i.quantity,
+      unitPrice: parseFloat(i.unitPrice as string),
+      lineTotal: parseFloat(i.lineTotal as string),
+      vatRate: parseFloat(i.vatRate as string),
+    }));
+    const { subject, html } = buildInvoiceEmail({
+      orderNumber: order.orderNumber,
+      customerName: order.customerName,
+      contactFirstName,
+      customerLogoDataUrl,
+      invoiceDate: order.invoiceDate,
+      shippingMethod: order.shippingMethod,
+      trackingNumber: order.trackingNumber,
+      notes: order.notes,
+      paidAt: order.paidAt,
+      stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+      items: mappedItems,
+    });
+    res.json({ subject, html });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to build preview" });
   }
 });
 
