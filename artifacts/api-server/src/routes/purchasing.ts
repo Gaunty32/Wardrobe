@@ -411,6 +411,19 @@ async function getPoWithItems(poId: number) {
          AND cp.file_url IS NOT NULL
          LIMIT 1)
       )`,
+      customerName: sql<string | null>`(
+        SELECT STRING_AGG(DISTINCT o.customer_name, ', ')
+        FROM order_items oi2
+        JOIN orders o ON oi2.order_id = o.id
+        WHERE oi2.id = ANY(
+          ARRAY(
+            SELECT (elem)::int
+            FROM jsonb_array_elements_text(
+              COALESCE(${purchaseOrderItemsTable.sourceOrderItemIds}, '[]'::jsonb)
+            ) AS t(elem)
+          )
+        )
+      )`,
     })
     .from(purchaseOrderItemsTable)
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
@@ -427,6 +440,7 @@ async function getPoWithItems(poId: number) {
       productSku: r.productSku ?? null,
       canonicalProductName: r.canonicalProductName ?? null,
       processStockFileUrl: r.processStockFileUrl ?? null,
+      customerName: r.customerName ?? null,
     })),
   };
 }
@@ -506,6 +520,19 @@ router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
              AND cp.file_url IS NOT NULL
              LIMIT 1)
           )`,
+          customerName: sql<string | null>`(
+            SELECT STRING_AGG(DISTINCT o.customer_name, ', ')
+            FROM order_items oi2
+            JOIN orders o ON oi2.order_id = o.id
+            WHERE oi2.id = ANY(
+              ARRAY(
+                SELECT (elem)::int
+                FROM jsonb_array_elements_text(
+                  COALESCE(${purchaseOrderItemsTable.sourceOrderItemIds}, '[]'::jsonb)
+                ) AS t(elem)
+              )
+            )
+          )`,
         })
         .from(purchaseOrderItemsTable)
         .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
@@ -523,6 +550,7 @@ router.get("/purchasing/purchase-orders", async (req, res): Promise<void> => {
         productSku: r.productSku ?? null,
         canonicalProductName: r.canonicalProductName ?? null,
         processStockFileUrl: r.processStockFileUrl ?? null,
+        customerName: r.customerName ?? null,
       })),
   }));
   res.json(result);

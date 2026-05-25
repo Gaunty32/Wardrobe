@@ -51,6 +51,7 @@ interface SupplierGroup {
 
 interface POItem {
   id: number; poId: number; orderItemId: number | null; orderId: number | null; orderNumber: string | null;
+  customerName: string | null;
   productName: string; colour: string | null; size: string | null;
   supplierCode: string | null; supplierPrice: number | null;
   productSku: string | null; canonicalProductName: string | null;
@@ -161,12 +162,25 @@ function sortSizes(sizes: string[]): string[] {
   });
 }
 
+type POCellInfo = { orderNumber: string | null; customerName: string | null };
+
 function buildPOMatrix(items: POItem[]) {
   const groupKeys: string[] = [];
-  const groups = new Map<string, { code: string | null; productName: string; productSku: string | null; price: number | null; colours: string[]; sizes: string[]; qty: Map<string, Map<string, number>>; rowItemIds: Map<string, number[]>; cellItemId: Map<string, Map<string, number>> }>();
+  const groups = new Map<string, {
+    code: string | null; productName: string; productSku: string | null; price: number | null;
+    colours: string[]; sizes: string[];
+    qty: Map<string, Map<string, number>>;
+    rowItemIds: Map<string, number[]>;
+    cellItemId: Map<string, Map<string, number>>;
+    cellInfo: Map<string, Map<string, POCellInfo>>;
+    rowInfo: Map<string, POCellInfo[]>;
+  }>();
   for (const item of items) {
     const gk = item.supplierCode ?? item.productName;
-    if (!groups.has(gk)) { groupKeys.push(gk); groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map() }); }
+    if (!groups.has(gk)) {
+      groupKeys.push(gk);
+      groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map(), cellInfo: new Map(), rowInfo: new Map() });
+    }
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
     if (!g.colours.includes(c)) g.colours.push(c);
@@ -178,11 +192,47 @@ function buildPOMatrix(items: POItem[]) {
     g.rowItemIds.get(c)!.push(item.id);
     if (!g.cellItemId.has(c)) g.cellItemId.set(c, new Map());
     g.cellItemId.get(c)!.set(s, item.id);
+    // Order info for tooltips
+    const info: POCellInfo = { orderNumber: item.orderNumber, customerName: item.customerName };
+    if (!g.cellInfo.has(c)) g.cellInfo.set(c, new Map());
+    g.cellInfo.get(c)!.set(s, info);
+    if (!g.rowInfo.has(c)) g.rowInfo.set(c, []);
+    const existing = g.rowInfo.get(c)!;
+    if (!existing.find(r => r.orderNumber === item.orderNumber && r.customerName === item.customerName)) {
+      existing.push(info);
+    }
   }
   const allSizesSet = new Set<string>();
   for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) allSizesSet.add(s);
   const allSizes = sortSizes([...allSizesSet]);
   return { groupKeys, groups, allSizes };
+}
+
+function POTooltip({ orderNumber, customerName }: POCellInfo) {
+  if (!orderNumber && !customerName) return null;
+  return (
+    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5 shadow-xl pointer-events-none min-w-max whitespace-nowrap">
+      {orderNumber && <div className="font-semibold">{orderNumber}</div>}
+      {customerName && <div className="text-slate-300">{customerName}</div>}
+      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+    </div>
+  );
+}
+
+function RowTooltip({ infos }: { infos: POCellInfo[] }) {
+  const entries = infos.filter(i => i.orderNumber || i.customerName);
+  if (entries.length === 0) return null;
+  return (
+    <div className="absolute bottom-full left-0 mb-2 z-50 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5 shadow-xl pointer-events-none min-w-max whitespace-nowrap">
+      {entries.map((e, i) => (
+        <div key={i} className={i > 0 ? "mt-1 pt-1 border-t border-slate-600" : ""}>
+          {e.orderNumber && <div className="font-semibold">{e.orderNumber}</div>}
+          {e.customerName && <div className="text-slate-300">{e.customerName}</div>}
+        </div>
+      ))}
+      <div className="absolute top-full left-4 border-4 border-transparent border-t-slate-800" />
+    </div>
+  );
 }
 
 function buildReqMatrix(items: PurchaseRequirement[]) {
@@ -345,6 +395,8 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
   onLineUpdate?: (itemId: number, qty: number) => void;
 }) {
   const { groupKeys, groups, allSizes } = buildPOMatrix(items);
+  const [hoveredCell, setHoveredCell] = useState<string | null>(null);
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -361,12 +413,13 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
         <TableBody>
           {groupKeys.map((gk) => {
             const g = groups.get(gk)!;
-            const groupTotal = g.colours.reduce((sum, c) => sum + allSizes.reduce((s2, sz) => s2 + (g.qty.get(c)?.get(sz) ?? 0), 0), 0);
             return (
               <>
                 {g.colours.map((colour, ci) => {
                   const rowTotal = allSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
                   const rowIds = g.rowItemIds.get(colour) ?? [];
+                  const rowInfos = g.rowInfo.get(colour) ?? [];
+                  const rowKey = `${gk}||${colour}`;
                   return (
                     <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
                       {ci === 0 ? (
@@ -378,20 +431,49 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
                       ) : (
                         <TableCell />
                       )}
-                      <TableCell className="font-medium">{colour}</TableCell>
+                      <TableCell className="font-medium">
+                        <div
+                          className="relative inline-block cursor-default"
+                          onMouseEnter={() => setHoveredRow(rowKey)}
+                          onMouseLeave={() => setHoveredRow(null)}
+                        >
+                          {colour}
+                          {hoveredRow === rowKey && <RowTooltip infos={rowInfos} />}
+                        </div>
+                      </TableCell>
                       {allSizes.map((sz) => {
                         const qty = g.qty.get(colour)?.get(sz) ?? 0;
                         const cellItemId = g.cellItemId.get(colour)?.get(sz);
+                        const cellKey = `${gk}||${colour}||${sz}`;
+                        const cellInfo = g.cellInfo.get(colour)?.get(sz);
                         if (onLineUpdate && cellItemId && qty > 0) {
                           return (
                             <TableCell key={sz} className="text-center p-1">
-                              <MatrixQtyInput itemId={cellItemId} initialQty={qty} onSave={onLineUpdate} />
+                              <div
+                                className="relative inline-block"
+                                onMouseEnter={() => setHoveredCell(cellKey)}
+                                onMouseLeave={() => setHoveredCell(null)}
+                              >
+                                <MatrixQtyInput itemId={cellItemId} initialQty={qty} onSave={onLineUpdate} />
+                                {hoveredCell === cellKey && cellInfo && <POTooltip {...cellInfo} />}
+                              </div>
                             </TableCell>
                           );
                         }
                         return (
                           <TableCell key={sz} className="text-center">
-                            {qty > 0 ? <span className="font-semibold text-primary">{qty}</span> : <span className="text-muted-foreground text-xs">—</span>}
+                            {qty > 0 ? (
+                              <div
+                                className="relative inline-block cursor-default"
+                                onMouseEnter={() => setHoveredCell(cellKey)}
+                                onMouseLeave={() => setHoveredCell(null)}
+                              >
+                                <span className="font-semibold text-primary">{qty}</span>
+                                {hoveredCell === cellKey && cellInfo && <POTooltip {...cellInfo} />}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
                           </TableCell>
                         );
                       })}
