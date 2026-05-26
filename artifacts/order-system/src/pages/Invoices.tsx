@@ -481,28 +481,19 @@ function OrderRow({
                   : <Eye className="w-3.5 h-3.5" />}
                 Preview email
               </Button>
-              {isCollection && order.customerPhone && (
+              {isCollection && (order.customerHighLevelContactId || order.customerPhone) && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-8 gap-1.5 text-xs border-green-200 text-green-700 hover:bg-green-50"
-                  onClick={handleWhatsApp}
+                  onClick={() => order.customerHighLevelContactId ? sendHighLevel.mutate() : handleWhatsApp()}
+                  disabled={!!order.customerHighLevelContactId && sendHighLevel.isPending}
+                  title={order.customerHighLevelContactId ? "Send via High Level WhatsApp" : "Open WhatsApp"}
                 >
-                  <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
-                </Button>
-              )}
-              {isCollection && order.customerHighLevelContactId && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50"
-                  onClick={() => sendHighLevel.mutate()}
-                  disabled={sendHighLevel.isPending}
-                >
-                  {sendHighLevel.isPending
+                  {order.customerHighLevelContactId && sendHighLevel.isPending
                     ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    : <Zap className="w-3.5 h-3.5" />}
-                  Send via High Level
+                    : <MessageSquare className="w-3.5 h-3.5" />}
+                  WhatsApp
                 </Button>
               )}
             </div>
