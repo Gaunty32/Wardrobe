@@ -1,5 +1,5 @@
-import { db, settingsTable, customersTable, suppliersTable, ordersTable, orderItemsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, settingsTable, customersTable, suppliersTable, ordersTable, orderItemsTable, customerFinishesTable } from "@workspace/db";
+import { eq, and } from "drizzle-orm";
 
 // ─── Xero OAuth endpoints ────────────────────────────────────────────────────
 const XERO_AUTH_URL = "https://login.xero.com/identity/connect/authorize";
@@ -504,7 +504,24 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) throw new Error("Order not found.");
 
-  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+  const itemRows = await db
+    .select({
+      productName: orderItemsTable.productName,
+      colour: orderItemsTable.colour,
+      size: orderItemsTable.size,
+      finishName: orderItemsTable.finishName,
+      customerFinishName: customerFinishesTable.name,
+      quantity: orderItemsTable.quantity,
+      unitPrice: orderItemsTable.unitPrice,
+      vatRate: orderItemsTable.vatRate,
+    })
+    .from(orderItemsTable)
+    .leftJoin(customerFinishesTable, eq(customerFinishesTable.id, orderItemsTable.finishId))
+    .where(eq(orderItemsTable.orderId, orderId));
+  const items = itemRows.map((r) => ({
+    ...r,
+    finishName: r.customerFinishName ?? r.finishName,
+  }));
 
   // Get customer's xeroContactId
   let xeroContactId: string | null = null;
