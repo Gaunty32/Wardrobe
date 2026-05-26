@@ -529,10 +529,10 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
   const lineItems = items.map((item) => {
     const taxType = xeroTaxType(item.vatRate as string | null);
     const line: Record<string, unknown> = {
-      Description: [item.productName, item.colour, item.size].filter(Boolean).join(" – "),
+      Description: [item.productName, item.colour, item.size, item.finishName].filter(Boolean).join(" – "),
       Quantity: item.quantity,
       UnitAmount: parseFloat(item.unitPrice as string),
-      AccountCode: "200",
+      AccountCode: "4000",
     };
     if (taxType) line.TaxType = taxType;
     return line;
