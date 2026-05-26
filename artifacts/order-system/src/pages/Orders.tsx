@@ -382,7 +382,7 @@ export default function Orders() {
     );
   }
 
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("active");
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("orderNumber");
@@ -507,7 +507,8 @@ export default function Orders() {
                   <SelectValue placeholder="Filter by status..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
+                  <SelectItem value="active">Active orders</SelectItem>
+                  <SelectItem value="all">All (inc. completed)</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="quote">Quote</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
