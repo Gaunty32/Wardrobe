@@ -225,6 +225,7 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       secondarySupplierCode: productsTable.secondarySupplierCode,
       productSku: productsTable.sku,
       canonicalProductName: productsTable.name,
+      supplierPrice: productsTable.supplierPrice,
       supplierCurrency: sql<string | null>`COALESCE(${itemSupplier.currency}, ${productSupplier.currency})`,
     })
     .from(orderItemsTable)
