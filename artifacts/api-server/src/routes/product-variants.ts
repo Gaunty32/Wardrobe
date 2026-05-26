@@ -90,6 +90,32 @@ router.patch("/products/:productId/variants/:id", async (req, res): Promise<void
   res.json(row);
 });
 
+// Bulk-update supplier + price across multiple variants of the same product
+router.patch("/products/:productId/variants/bulk", async (req, res): Promise<void> => {
+  const p = productIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const bodySchema = z.object({
+    ids: z.array(z.number().int().positive()).min(1),
+    primarySupplierId: z.number().int().positive().optional().nullable(),
+    supplierPrice: z.number().optional().nullable(),
+  });
+  const body = bodySchema.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const updates: Record<string, any> = { updatedAt: new Date() };
+  if ("primarySupplierId" in req.body) updates.primarySupplierId = body.data.primarySupplierId ?? null;
+  if ("supplierPrice" in req.body) updates.supplierPrice = body.data.supplierPrice != null ? body.data.supplierPrice : null;
+
+  await db.update(productVariantsTable)
+    .set(updates)
+    .where(and(
+      eq(productVariantsTable.productId, p.data.productId),
+      inArray(productVariantsTable.id, body.data.ids),
+    ));
+
+  res.json({ updated: body.data.ids.length });
+});
+
 // POST /products/:productId/variants/generate-matrix
 // Creates all colour × size combinations from product attributes.
 // Existing colour-only (size=null) variants with 0 stock are removed after expansion.

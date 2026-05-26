@@ -105,12 +105,12 @@ function TagInput({
 }
 
 // ── Supplier select ────────────────────────────────────────────────────────
-function SupplierSelect({ value, onChange, suppliers, placeholder = "Select supplier…" }: {
-  value: string; onChange: (v: string) => void; suppliers: any[]; placeholder?: string;
+function SupplierSelect({ value, onChange, suppliers, placeholder = "Select supplier…", className }: {
+  value: string; onChange: (v: string) => void; suppliers: any[]; placeholder?: string; className?: string;
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-8 text-sm">
+      <SelectTrigger className={className ?? "h-8 text-sm"}>
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent>
@@ -592,6 +592,8 @@ export default function ProductDetail() {
   const [filterColour, setFilterColour] = useState<string>("all");
   const [filterSize, setFilterSize] = useState<string>("all");
   const [filterSleeve, setFilterSleeve] = useState<string>("all");
+  const [bulkPrimaryId, setBulkPrimaryId] = useState<string>("none");
+  const [bulkPrice, setBulkPrice] = useState<string>("");
 
   useEffect(() => {
     if (product && !details) {
@@ -685,6 +687,22 @@ export default function ProductDetail() {
       toast({ title: `Generated ${data.created} variant${data.created !== 1 ? "s" : ""}${data.deleted > 0 ? `, removed ${data.deleted} colour-only row${data.deleted !== 1 ? "s" : ""}` : ""}` });
     },
     onError: (err: any) => toast({ title: err.message || "Failed to generate variants", variant: "destructive" }),
+  });
+
+  const bulkUpdateMut = useMutation({
+    mutationFn: (ids: number[]) => apiFetch(`/products/${productId}/variants/bulk`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        ids,
+        ...(bulkPrimaryId !== "none" ? { primarySupplierId: Number(bulkPrimaryId) } : { primarySupplierId: null }),
+        ...(bulkPrice !== "" ? { supplierPrice: parseFloat(bulkPrice) } : {}),
+      }),
+    }),
+    onSuccess: (_data: any, ids: number[]) => {
+      refetchVariants();
+      toast({ title: `Updated ${ids.length} variant${ids.length !== 1 ? "s" : ""}` });
+    },
+    onError: () => toast({ title: "Bulk update failed", variant: "destructive" }),
   });
 
   if (isLoading || !details) {
@@ -1111,6 +1129,50 @@ export default function ProductDetail() {
                       </Button>
                     </div>
                   </div>
+
+                  {/* Bulk supplier price strip — visible when there are variants */}
+                  {variants.length > 0 && (() => {
+                    const targetIds = filteredVariants.map((v: any) => v.id);
+                    const isFiltered = filterColour !== "all" || filterSize !== "all" || filterSleeve !== "all";
+                    const canApply = targetIds.length > 0 && (bulkPrimaryId !== "none" || bulkPrice !== "");
+                    const bulkSup = suppliers.find((s: any) => String(s.id) === bulkPrimaryId);
+                    const currSym = (bulkSup as any)?.currency === "USD" ? "$" : (bulkSup as any)?.currency === "EUR" ? "€" : "£";
+                    return (
+                      <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 bg-muted/40 border-b border-border/40 text-sm">
+                        <span className="text-muted-foreground font-medium shrink-0">
+                          Set supplier price{isFiltered ? ` (${targetIds.length} filtered)` : ` (all ${targetIds.length})`}:
+                        </span>
+                        <SupplierSelect value={bulkPrimaryId} onChange={setBulkPrimaryId} suppliers={suppliers} className="h-7 text-xs w-[160px]" />
+                        <div className="relative flex items-center">
+                          <span className="absolute left-2.5 text-muted-foreground text-xs pointer-events-none">{currSym}</span>
+                          <Input
+                            type="number" min="0" step="0.01"
+                            value={bulkPrice}
+                            onChange={e => setBulkPrice(e.target.value)}
+                            placeholder="0.00"
+                            className="h-7 text-xs w-24 pl-5"
+                          />
+                        </div>
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={!canApply || bulkUpdateMut.isPending}
+                          onClick={() => bulkUpdateMut.mutate(targetIds)}
+                        >
+                          {bulkUpdateMut.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                          Apply
+                        </Button>
+                        {(bulkPrimaryId !== "none" || bulkPrice !== "") && (
+                          <button
+                            className="text-xs text-muted-foreground hover:text-foreground underline"
+                            onClick={() => { setBulkPrimaryId("none"); setBulkPrice(""); }}
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {variants.length === 0 ? (
                     <div className="py-12 text-center text-muted-foreground">
