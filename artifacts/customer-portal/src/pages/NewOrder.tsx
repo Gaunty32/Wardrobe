@@ -507,7 +507,40 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
       return { garmentPrice: totalPrice, processLines, unitPrice: totalPrice };
     }
 
-    const wooBase = parseFloat(wi.woo_price ?? wi.unit_price ?? "0");
+    // Customer-specific price (set by SBS staff on the finished item) takes priority over
+    // the WooCommerce catalogue price. When it is present we use it as the garment base
+    // and add decoration surcharges on top — the WooCommerce sale detection is intentionally
+    // skipped because the agreed customer price is already correct.
+    const customerSpecificPrice = wi.unit_price != null && wi.unit_price !== "" ? parseFloat(wi.unit_price) : null;
+
+    const buildProcessLines = (): { processLines: ProcessLine[]; totalExtra: number } => {
+      const processLines: ProcessLine[] = [];
+      let totalExtra = 0;
+      if (finishProcs.length > 0) {
+        const priced = finishProcs.map((p: any) => ({ ...p, numPrice: parseFloat(p.price ?? "0") || 0 }));
+        const minPrice = Math.min(...priced.map(p => p.numPrice));
+        let includedDone = false;
+        for (const p of priced) {
+          const included = !includedDone && p.numPrice === minPrice;
+          if (included) includedDone = true;
+          else totalExtra += p.numPrice;
+          processLines.push({
+            name: p.item_finish_name ?? p.process_type ?? "",
+            type: p.process_type ?? null,
+            price: p.numPrice,
+            included,
+          });
+        }
+      }
+      return { processLines, totalExtra };
+    };
+
+    if (customerSpecificPrice != null && customerSpecificPrice > 0) {
+      const { processLines, totalExtra } = buildProcessLines();
+      return { garmentPrice: customerSpecificPrice, processLines, unitPrice: customerSpecificPrice + totalExtra };
+    }
+
+    const wooBase = parseFloat(wi.woo_price ?? "0");
     const wooRegular = wi.woo_regular_price ? parseFloat(wi.woo_regular_price) : null;
 
     // WooCommerce sale price is all-in: product is marked on_sale, OR its current price
@@ -530,25 +563,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
     const garmentPrice = breaks.length > 0 ? (sorted.find(pb => breakQty >= pb.qty)?.price ?? wooBase) : wooBase;
 
-    const processLines: ProcessLine[] = [];
-    let totalExtra = 0;
-
-    if (finishProcs.length > 0) {
-      const priced = finishProcs.map((p: any) => ({ ...p, numPrice: parseFloat(p.price ?? "0") || 0 }));
-      const minPrice = Math.min(...priced.map(p => p.numPrice));
-      let includedDone = false;
-      for (const p of priced) {
-        const included = !includedDone && p.numPrice === minPrice;
-        if (included) includedDone = true;
-        else totalExtra += p.numPrice;
-        processLines.push({
-          name: p.item_finish_name ?? p.process_type ?? "",
-          type: p.process_type ?? null,
-          price: p.numPrice,
-          included,
-        });
-      }
-    }
+    const { processLines, totalExtra } = buildProcessLines();
 
     return { garmentPrice, processLines, unitPrice: garmentPrice + totalExtra };
   };
