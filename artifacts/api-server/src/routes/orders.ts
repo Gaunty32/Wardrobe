@@ -129,7 +129,7 @@ async function recalcOrderTotal(orderId: number): Promise<void> {
     .where(eq(ordersTable.id, orderId));
 }
 
-const DUE_DATE_SORT = [sql`${ordersTable.requiredDate} ASC NULLS LAST`, desc(ordersTable.createdAt)] as const;
+const ORDER_NUM_SORT = [sql`NULLIF(REGEXP_REPLACE(${ordersTable.orderNumber}, '[^0-9]', '', 'g'), '')::integer DESC NULLS LAST`] as const;
 
 router.get("/orders", async (req, res): Promise<void> => {
   const query = ListOrdersQueryParams.safeParse(req.query);
@@ -143,9 +143,9 @@ router.get("/orders", async (req, res): Promise<void> => {
     const conditions = [baseCondition];
     if (query.data.status) conditions.push(eq(ordersTable.status, query.data.status));
     if (query.data.customerId) conditions.push(eq(ordersTable.customerId, query.data.customerId));
-    orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(...DUE_DATE_SORT);
+    orders = await db.select().from(ordersTable).where(and(...conditions)).orderBy(...ORDER_NUM_SORT);
   } else {
-    orders = await db.select().from(ordersTable).where(baseCondition).orderBy(...DUE_DATE_SORT);
+    orders = await db.select().from(ordersTable).where(baseCondition).orderBy(...ORDER_NUM_SORT);
   }
   res.json(orders.map((o) => ({ ...o, totalAmount: numericToFloat(o.totalAmount) })));
 });
