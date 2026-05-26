@@ -1913,46 +1913,95 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
     }
 
     if (productIds.length > 0) {
-      const productStocks = await db
+      // Fetch supplier info keyed by product id
+      const productInfoRows = await db
         .select({
           id: productsTable.id,
-          stockQuantity: productsTable.stockQuantity,
           supplierId: productsTable.supplierId,
           supplierName: suppliersTable.name,
         })
         .from(productsTable)
         .leftJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
         .where(inArray(productsTable.id, productIds));
+      const supplierMap = new Map(productInfoRows.map(p => [p.id, p]));
 
-      const stockMap = new Map(productStocks.map(p => [p.id, p]));
-      const remainingStock = new Map(productStocks.map(p => [p.id, p.stockQuantity ?? 0]));
+      // Fetch variant-level stock for all relevant products.
+      // For plain products (no variants), fall back to product.stock_quantity.
+      const variantStockRows = await db.execute(sql`
+        SELECT pv.product_id, pv.colour, pv.size, pv.stock_quantity
+        FROM product_variants pv
+        WHERE pv.product_id = ANY(${productIds}::int[])
+      `);
+      const plainStockRows = await db.execute(sql`
+        SELECT p.id AS product_id, NULL::text AS colour, NULL::text AS size, p.stock_quantity
+        FROM products p
+        WHERE p.id = ANY(${productIds}::int[])
+          AND NOT EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id)
+      `);
+
+      // Build mutable stock pool keyed by "productId|colour|size"
+      const vKey = (pid: number, c: string | null, s: string | null) => `${pid}|${c ?? ""}|${s ?? ""}`;
+      const remainingStock = new Map<string, number>();
+      for (const r of [...variantStockRows.rows, ...plainStockRows.rows] as Array<{ product_id: number; colour: string | null; size: string | null; stock_quantity: number | null }>) {
+        const k = vKey(r.product_id, r.colour, r.size);
+        remainingStock.set(k, Number(r.stock_quantity) || 0);
+      }
 
       for (const item of allItems) {
         if (!item.productId) continue;
-        const stock = stockMap.get(item.productId);
-        if (!stock) { allocatedItemIds.push(item.id); continue; }
+        const sup = supplierMap.get(item.productId);
 
-        const available = remainingStock.get(item.productId) ?? 0;
+        // Look up stock for this exact colour+size variant first; fall back to plain product key
+        const k = vKey(item.productId, item.colour ?? null, item.size ?? null);
+        const plainK = vKey(item.productId, null, null);
+        const available = remainingStock.has(k) ? (remainingStock.get(k) ?? 0)
+                        : (remainingStock.get(plainK) ?? 0);
+        const activeKey = remainingStock.has(k) ? k : plainK;
+
         const qty = item.quantity ?? 0;
         const allocatedQty = Math.min(available, qty);
         const shortfall = qty - allocatedQty;
-        remainingStock.set(item.productId, available - allocatedQty);
+        remainingStock.set(activeKey, available - allocatedQty);
 
         await db.update(orderItemsTable).set({
           purchaseRequired: shortfall > 0,
           purchaseQuantity: shortfall > 0 ? shortfall : null,
-          supplierId: shortfall > 0 ? (stock.supplierId ?? null) : null,
-          supplierName: shortfall > 0 ? (stock.supplierName ?? null) : null,
+          supplierId: shortfall > 0 ? (sup?.supplierId ?? null) : null,
+          supplierName: shortfall > 0 ? (sup?.supplierName ?? null) : null,
         }).where(eq(orderItemsTable.id, item.id));
 
         if (shortfall === 0) allocatedItemIds.push(item.id);
       }
 
-      // Commit stock decrements
-      for (const [productId, remaining] of remainingStock.entries()) {
-        const original = stockMap.get(productId);
-        if (original && (original.stockQuantity ?? 0) - remaining > 0) {
-          await db.update(productsTable).set({ stockQuantity: remaining }).where(eq(productsTable.id, productId));
+      // Persist deductions: update variant stock (+ rollup) or plain product stock
+      for (const [key, remaining] of remainingStock.entries()) {
+        const [pidStr, colour, size] = key.split("|");
+        const productId = parseInt(pidStr, 10);
+        const colourVal = colour || null;
+        const sizeVal = size || null;
+
+        if (colourVal !== null || sizeVal !== null) {
+          // Variant row — update directly then roll up to product
+          await db.execute(sql`
+            UPDATE product_variants
+            SET stock_quantity = ${remaining}
+            WHERE product_id = ${productId}
+              AND (colour IS NOT DISTINCT FROM ${colourVal})
+              AND (size   IS NOT DISTINCT FROM ${sizeVal})
+          `);
+          await db.execute(sql`
+            UPDATE products
+            SET stock_quantity = (
+              SELECT COALESCE(SUM(stock_quantity), 0)
+              FROM product_variants WHERE product_id = ${productId}
+            )
+            WHERE id = ${productId}
+          `);
+        } else {
+          // Plain product
+          await db.execute(sql`
+            UPDATE products SET stock_quantity = ${remaining} WHERE id = ${productId}
+          `);
         }
       }
     }
