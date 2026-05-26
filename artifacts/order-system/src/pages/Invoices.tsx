@@ -194,7 +194,6 @@ function OrderRow({
   const [invoiceDateEdit, setInvoiceDateEdit] = useState(toDateInput(order.invoiceDate));
   const crossMonth = isCrossMonth(order.orderDate, order.invoiceDate);
   const [isPaid, setIsPaid] = useState(!!order.paidAt);
-  const [emailPreviewHtml, setEmailPreviewHtml] = useState<string | null>(null);
   const [loadingEmailPreview, setLoadingEmailPreview] = useState(false);
 
   const tomorrow = new Date();
@@ -274,11 +273,13 @@ function OrderRow({
   };
 
   const handlePreviewEmail = async () => {
-    if (emailPreviewHtml) { setEmailPreviewHtml(null); return; }
     setLoadingEmailPreview(true);
     try {
       const data = await apiFetch<{ subject: string; html: string }>(`/invoices/${order.id}/preview-email`);
-      setEmailPreviewHtml(data.html);
+      const blob = new Blob([data.html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e) {
       toast({ title: "Preview failed", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -384,12 +385,12 @@ function OrderRow({
       </TableRow>
 
       {/* Send invoice dialog */}
-      <Dialog open={confirmOpen} onOpenChange={(open) => { setConfirmOpen(open); if (!open) setEmailPreviewHtml(null); }}>
-        <DialogContent className={`max-w-lg max-h-[90vh] ${emailPreviewHtml ? "flex flex-col h-[90vh]" : "overflow-y-auto"}`}>
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Send Invoice — {order.orderNumber}</DialogTitle>
           </DialogHeader>
-          <div className={`space-y-4 text-sm ${emailPreviewHtml ? "flex-1 min-h-0 flex flex-col overflow-y-auto" : ""}`}>
+          <div className="space-y-4 text-sm">
             <p className="text-muted-foreground">This will email the invoice PDF to the customer and post it to Xero as a draft invoice.</p>
 
             {/* Summary card */}
@@ -471,14 +472,14 @@ function OrderRow({
               <Button
                 variant="outline"
                 size="sm"
-                className={`h-8 gap-1.5 text-xs ${emailPreviewHtml ? "bg-slate-100" : ""}`}
+                className="h-8 gap-1.5 text-xs"
                 onClick={handlePreviewEmail}
                 disabled={loadingEmailPreview}
               >
                 {loadingEmailPreview
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   : <Eye className="w-3.5 h-3.5" />}
-                {emailPreviewHtml ? "Hide email preview" : "Preview email"}
+                Preview email
               </Button>
               {isCollection && order.customerPhone && (
                 <Button
@@ -506,21 +507,6 @@ function OrderRow({
               )}
             </div>
 
-            {/* Email preview iframe */}
-            {emailPreviewHtml && (
-              <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-border overflow-hidden">
-                <div className="shrink-0 bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground font-medium border-b border-border">
-                  Email preview
-                </div>
-                <iframe
-                  srcDoc={emailPreviewHtml}
-                  className="w-full flex-1 min-h-0"
-                  style={{ border: "none" }}
-                  sandbox="allow-same-origin"
-                  title="Email preview"
-                />
-              </div>
-            )}
           </div>
 
           {/* Schedule for later */}
