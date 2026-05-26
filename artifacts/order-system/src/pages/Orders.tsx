@@ -414,34 +414,44 @@ export default function Orders() {
       );
     })();
 
+    const toMs = (v: unknown) => v ? new Date(v as string).getTime() : null;
+
     return [...filtered].sort((a, b) => {
-      let cmp = 0;
+      // For date columns, keep nulls at the bottom regardless of sort direction
+      const dateSort = (av: unknown, bv: unknown) => {
+        const at = toMs(av), bt = toMs(bv);
+        if (at === null && bt === null) return 0;
+        if (at === null) return 1;
+        if (bt === null) return -1;
+        return sortDir === "asc" ? at - bt : bt - at;
+      };
+
       switch (sortKey) {
         case "orderNumber": {
           const n = (o: typeof a) => parseInt((o.orderNumber ?? "").replace(/[^0-9]/g, "") || "0", 10);
-          cmp = n(a) - n(b);
-          break;
+          return sortDir === "asc" ? n(a) - n(b) : n(b) - n(a);
         }
         case "requiredDate":
-          cmp = ((a as any).requiredDate ?? "").localeCompare((b as any).requiredDate ?? "");
-          break;
+          return dateSort((a as any).requiredDate, (b as any).requiredDate);
         case "orderDate":
-          cmp = (a.orderDate ?? "").localeCompare(b.orderDate ?? "");
-          break;
-        case "customerName":
-          cmp = (a.customerName ?? "").localeCompare(b.customerName ?? "");
-          break;
-        case "poNumber":
-          cmp = ((a as any).poNumber ?? "").localeCompare((b as any).poNumber ?? "");
-          break;
-        case "status":
-          cmp = (a.status ?? "").localeCompare(b.status ?? "");
-          break;
+          return dateSort(a.orderDate, b.orderDate);
+        case "customerName": {
+          const cmp = (a.customerName ?? "").localeCompare(b.customerName ?? "");
+          return sortDir === "asc" ? cmp : -cmp;
+        }
+        case "poNumber": {
+          const cmp = ((a as any).poNumber ?? "").localeCompare((b as any).poNumber ?? "");
+          return sortDir === "asc" ? cmp : -cmp;
+        }
+        case "status": {
+          const cmp = (a.status ?? "").localeCompare(b.status ?? "");
+          return sortDir === "asc" ? cmp : -cmp;
+        }
         case "totalAmount":
-          cmp = (a.totalAmount ?? 0) - (b.totalAmount ?? 0);
-          break;
+          return sortDir === "asc" ? (a.totalAmount ?? 0) - (b.totalAmount ?? 0) : (b.totalAmount ?? 0) - (a.totalAmount ?? 0);
+        default:
+          return 0;
       }
-      return sortDir === "asc" ? cmp : -cmp;
     });
   }, [allOrders, customerSearch, sortKey, sortDir]);
 
