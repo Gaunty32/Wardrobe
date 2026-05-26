@@ -489,7 +489,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   // When a special_price is set it is the ALL-IN total price for this customer — no extra
   // logo surcharges are added on top; all process lines are shown as included.
   // Returns { garmentPrice, processLines, unitPrice }.
-  const resolveItemPricing = (wi: any, qty: number): { garmentPrice: number; processLines: ProcessLine[]; unitPrice: number } => {
+  // qtyForBreaks: total quantity across all sizes (used for price-break tier lookup).
+  // qty: the actual per-size quantity (used for the order line itself).
+  const resolveItemPricing = (wi: any, qty: number, qtyForBreaks?: number): { garmentPrice: number; processLines: ProcessLine[]; unitPrice: number } => {
+    const breakQty = qtyForBreaks ?? qty;
     const finishProcs = processes.filter((p: any) => p.finish_id === wi.finish_id);
 
     // Special price → total all-in price, all processes included
@@ -522,9 +525,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     }
 
     // Standard pricing: WooCommerce base + extra logos
+    // Price break tier is determined by breakQty (total across all sizes), not per-size qty.
     const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
     const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
-    const garmentPrice = breaks.length > 0 ? (sorted.find(pb => qty >= pb.qty)?.price ?? wooBase) : wooBase;
+    const garmentPrice = breaks.length > 0 ? (sorted.find(pb => breakQty >= pb.qty)?.price ?? wooBase) : wooBase;
 
     const processLines: ProcessLine[] = [];
     let totalExtra = 0;
@@ -552,8 +556,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   // Quick price-only helper used for the live price display on cards before adding to basket.
   const resolveUnitPrice = (wi: any, qty: number): number => resolveItemPricing(wi, qty).unitPrice;
 
-  const makeItem = (wi: any, recipientType: "stock" | "person", size: string, qty: number, employee?: any): OrderItem => {
-    const { garmentPrice, processLines, unitPrice } = resolveItemPricing(wi, qty);
+  const makeItem = (wi: any, recipientType: "stock" | "person", size: string, qty: number, employee?: any, qtyForBreaks?: number): OrderItem => {
+    const { garmentPrice, processLines, unitPrice } = resolveItemPricing(wi, qty, qtyForBreaks);
     return {
       productId: wi.product_id ?? null,
       productName: wi.product_name ?? wi.name,
@@ -1054,9 +1058,13 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     const qtys = bulkQtys[key] ?? {};
     const isStock = selectedRecipient === "stock";
     const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === selectedRecipient);
-    const newItems: OrderItem[] = sizeOptions
-      .filter(s => (qtys[s] ?? 0) > 0)
-      .map(s => makeItem(wi, isStock ? "stock" : "person", s, qtys[s], emp));
+    const sizesWithQty = sizeOptions.filter(s => (qtys[s] ?? 0) > 0);
+    // Total qty across all sizes + any already in basket for this product — used for price-break tier lookup.
+    const addedTotal = sizesWithQty.reduce((s, sz) => s + (qtys[sz] ?? 0), 0);
+    const existingTotal = basket.filter((x: OrderItem) => x.productId === (wi.product_id ?? null)).reduce((s: number, x: OrderItem) => s + x.quantity, 0);
+    const totalQtyForBreaks = existingTotal + addedTotal;
+    const newItems: OrderItem[] = sizesWithQty
+      .map(s => makeItem(wi, isStock ? "stock" : "person", s, qtys[s], emp, totalQtyForBreaks));
     if (newItems.length === 0) return;
 
     // Price-break suggestion (compute before updating basket)
