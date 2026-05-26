@@ -1588,6 +1588,41 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     savedSizes[eid].push({ label: row.label, size: row.size });
   }
 
+  // Build sleevesMap: { [productId]: string[] } from product_attributes type='sleeve'
+  // Used by the portal to show a second "Fit / Length" selector for trousers etc.
+  const sleevesMap: Record<string, string[]> = {};
+  try {
+    const sleeveAttrRows = await db.execute(sql`
+      SELECT DISTINCT pa.product_id, pa.value AS sleeve
+      FROM product_attributes pa
+      WHERE pa.type = 'sleeve'
+        AND pa.value IS NOT NULL AND pa.value != ''
+        AND pa.product_id IN (
+          SELECT DISTINCT cfi.product_id
+          FROM customer_finished_items cfi
+          WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+        )
+      ORDER BY pa.product_id, pa.value
+    `);
+    for (const row of sleeveAttrRows.rows as any[]) {
+      const pid = String(row.product_id);
+      if (!sleevesMap[pid]) sleevesMap[pid] = [];
+      sleevesMap[pid].push(row.sleeve as string);
+    }
+    // Sort: numeric values ascending, then non-numeric alphabetically at end
+    for (const pid of Object.keys(sleevesMap)) {
+      sleevesMap[pid] = [...new Set(sleevesMap[pid])].sort((a, b) => {
+        const an = parseInt(a, 10), bn = parseInt(b, 10);
+        if (!isNaN(an) && !isNaN(bn)) return an - bn;
+        if (!isNaN(an)) return -1;
+        if (!isNaN(bn)) return 1;
+        return a.localeCompare(b);
+      });
+    }
+  } catch {
+    // sleeve data is best-effort
+  }
+
   res.json({
     items: finishes.rows,
     processes: processes.rows,
@@ -1595,6 +1630,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     lastSizes,
     savedSizes,
     sizesMap,
+    sleevesMap,
     myEmployeeId,
   });
 });

@@ -210,7 +210,7 @@ function ProcessBadgeInline({ type }: { type: string }) {
   );
 }
 
-type ItemState = { size: string; qty: number };
+type ItemState = { size: string; sleeve: string; qty: number };
 
 /** Returns a friendly price-break suggestion toast payload, or null if none applies. */
 function getPriceBreakSuggestion(
@@ -253,12 +253,13 @@ function getPriceBreakSuggestion(
   };
 }
 
-function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole }: {
+function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleevesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole }: {
   items: any[];
   employees: any[];
   lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
   savedSizes: Record<string, Array<{ label: string; size: string }>>;
   sizesMap: Record<string, Record<string, string[]>>;
+  sleevesMap: Record<string, string[]>;
   processes: any[];
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
@@ -346,7 +347,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
   const filteredEmployees = isDeptManager ? myTeamEmployees : myTeamEmployees;
 
   const getItemState = (key: string): ItemState =>
-    itemStates[key] ?? { size: "", qty: 1 };
+    itemStates[key] ?? { size: "", sleeve: "", qty: 1 };
   const setItemState = (key: string, patch: Partial<ItemState>) =>
     setItemStates(s => ({ ...s, [key]: { ...getItemState(key), ...patch } }));
 
@@ -482,6 +483,12 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     // is fixed for display but shouldn't restrict which sizes can be ordered
     const all = [...new Set(Object.values(byColour).flat())];
     return sortSizesWithOrder(all, sizeOrder);
+  };
+
+  // Returns sleeve (leg-length / fit) options for a product, or [] if it has none.
+  const getAvailableSleeveOptions = (wi: any): string[] => {
+    if (!sleevesMap || !wi.product_id) return [];
+    return sleevesMap[String(wi.product_id)] ?? [];
   };
 
   // Computes the garment base price (with quantity breaks) and decoration process lines.
@@ -1046,8 +1053,13 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
   const handleAdd = (wi: any, key: string, forcedSize?: string) => {
     const state = getItemState(key);
-    const size = forcedSize ?? state.size;
-    if (!size) return;
+    const sleeveOpts = getAvailableSleeveOptions(wi);
+    const rawSize = forcedSize ?? state.size;
+    if (!rawSize) return;
+    const size = sleeveOpts.length > 0 && state.sleeve
+      ? `${rawSize}/${state.sleeve}`
+      : rawSize;
+    if (sleeveOpts.length > 0 && !state.sleeve) return;
     const isStock = selectedRecipient === "stock";
     const emp = isStock ? undefined : employees.find((e: any) => String(e.id) === selectedRecipient);
     const addedQty = state.qty;
@@ -1066,7 +1078,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     }
 
     setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", size, addedQty, emp)]);
-    setItemState(key, { size: "", qty: 1 });
+    setItemState(key, { size: "", sleeve: "", qty: 1 });
   };
 
   const handleBulkAdd = (wi: any, key: string, sizeOptions: string[]) => {
@@ -1098,7 +1110,8 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
 
     setBasket(b => [...b, ...newItems]);
     setBulkQtys(q => ({ ...q, [key]: {} }));
-    toast({ title: `${newItems.length} size${newItems.length !== 1 ? "s" : ""} added to basket` });
+    const lineCount = newItems.length;
+    toast({ title: `${lineCount} line${lineCount !== 1 ? "s" : ""} added to basket` });
   };
 
   const handleAddAll = () => {
@@ -1111,7 +1124,12 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
         const key = `${group.finish_id}-${i}`;
         const state = getItemState(key);
         if (!state.size.trim()) return;
-        newItems.push(makeItem(wi, isStock ? "stock" : "person", state.size, state.qty, emp));
+        const sleeveOpts = getAvailableSleeveOptions(wi);
+        if (sleeveOpts.length > 0 && !state.sleeve.trim()) return;
+        const combinedSize = sleeveOpts.length > 0 && state.sleeve
+          ? `${state.size}/${state.sleeve}`
+          : state.size;
+        newItems.push(makeItem(wi, isStock ? "stock" : "person", combinedSize, state.qty, emp));
         keysToReset.push(key);
       });
     });
@@ -1119,14 +1137,20 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
     setBasket(b => [...b, ...newItems]);
     setItemStates(s => {
       const next = { ...s };
-      keysToReset.forEach(key => { next[key] = { size: "", qty: 1 }; });
+      keysToReset.forEach(key => { next[key] = { size: "", sleeve: "", qty: 1 }; });
       return next;
     });
     setSelectedRecipient(null);
   };
 
   const configuredCount = finishGroups.reduce((count, group) =>
-    count + group.items.filter((_: any, i: number) => !!getItemState(`${group.finish_id}-${i}`).size.trim()).length,
+    count + group.items.filter((wi: any, i: number) => {
+      const state = getItemState(`${group.finish_id}-${i}`);
+      if (!state.size.trim()) return false;
+      const sleeveOpts = getAvailableSleeveOptions(wi);
+      if (sleeveOpts.length > 0 && !state.sleeve.trim()) return false;
+      return true;
+    }).length,
   0);
 
   return (
@@ -1163,8 +1187,13 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                 const key = `${group.finish_id}-${i}`;
                 const state = getItemState(key);
                 const availSizes = getAvailableSizes(wi);
+                const sleeveOptions = getAvailableSleeveOptions(wi);
                 const oneSize = availSizes.length === 0;
                 const sizeOptions = availSizes;
+                // For bulk mode on 2D products, keys are "size/sleeve" combos
+                const bulkComboOptions = sleeveOptions.length > 0
+                  ? sizeOptions.flatMap(s => sleeveOptions.map(sl => `${s}/${sl}`))
+                  : sizeOptions;
                 const suggestion = selectedEmployee ? getSuggestedSize(wi, selectedEmployee.id) : null;
                 const { garmentPrice, unitPrice } = resolveItemPricing(wi, state.qty);
                 const logoSurcharge = unitPrice - garmentPrice;
@@ -1245,7 +1274,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                       <div className="mt-auto flex flex-col gap-2">
 
                       {/* Bulk / single toggle — only for multi-size products */}
-                      {!oneSize && sizeOptions.length > 1 && (
+                      {!oneSize && (sizeOptions.length > 1 || sleeveOptions.length > 1) && (
                         <button
                           type="button"
                           onClick={() => setBulkModes(m => ({ ...m, [key]: !m[key] }))}
@@ -1274,6 +1303,55 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                         /* ── Bulk entry grid ── */
                         (() => {
                           const qtys = bulkQtys[key] ?? {};
+                          if (sleeveOptions.length > 0) {
+                            // 2D grid: rows = waist sizes, columns = leg lengths
+                            const total = bulkComboOptions.reduce((s, k) => s + (qtys[k] ?? 0), 0);
+                            return (
+                              <div className="space-y-2">
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs border-collapse">
+                                    <thead>
+                                      <tr>
+                                        <th className="text-left pr-1 text-muted-foreground font-semibold py-0.5 text-[10px]">Waist</th>
+                                        {sleeveOptions.map(sl => (
+                                          <th key={sl} className="text-center px-0.5 text-muted-foreground font-semibold py-0.5 text-[10px] min-w-[2.5rem]">{sl}"</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {sizeOptions.map((sz) => (
+                                        <tr key={sz}>
+                                          <td className="pr-1 text-muted-foreground font-semibold py-0.5 text-[10px]">{sz}</td>
+                                          {sleeveOptions.map((sl) => {
+                                            const combo = `${sz}/${sl}`;
+                                            return (
+                                              <td key={sl} className="px-0.5 py-0.5">
+                                                <input
+                                                  type="number"
+                                                  min={0}
+                                                  value={qtys[combo] || ""}
+                                                  placeholder="0"
+                                                  onChange={e => {
+                                                    const v = parseInt(e.target.value, 10);
+                                                    setBulkQtys(q => ({ ...q, [key]: { ...(q[key] ?? {}), [combo]: isNaN(v) || v < 0 ? 0 : v } }));
+                                                  }}
+                                                  className="w-full h-7 text-center text-xs font-semibold rounded border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                                />
+                                              </td>
+                                            );
+                                          })}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0} onClick={() => handleBulkAdd(wi, key, bulkComboOptions)}>
+                                  Add {total > 0 ? `${total} ` : ""}to basket
+                                </Button>
+                              </div>
+                            );
+                          }
+                          // Standard 1D grid
                           const total = sizeOptions.reduce((s, sz) => s + (qtys[sz] ?? 0), 0);
                           return (
                             <div className="space-y-2">
@@ -1312,7 +1390,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                           )}
                           <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
                             <SelectTrigger className="h-8 text-sm w-full">
-                              <SelectValue placeholder="Select size" />
+                              <SelectValue placeholder={sleeveOptions.length > 0 ? "Waist" : "Select size"} />
                             </SelectTrigger>
                             <SelectContent>
                               {sizeOptions.map(s => (
@@ -1326,13 +1404,30 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, baske
                               ))}
                             </SelectContent>
                           </Select>
+                          {sleeveOptions.length > 0 && (
+                            <Select value={state.sleeve} onValueChange={v => setItemState(key, { sleeve: v })}>
+                              <SelectTrigger className="h-8 text-sm w-full">
+                                <SelectValue placeholder="Fit / Length" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {sleeveOptions.map(sl => (
+                                  <SelectItem key={sl} value={sl}>{sl}"</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                           <div className="flex items-center gap-1.5">
                             <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
                               <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: Math.max(1, state.qty - 1) })}><Minus className="w-3.5 h-3.5" /></button>
                               <input type="number" min={1} value={state.qty} onChange={e => { const v = parseInt(e.target.value, 10); if (!isNaN(v) && v >= 1) setItemState(key, { qty: v }); }} className="w-7 text-center text-sm font-semibold bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
                               <button className="px-2 h-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors" onClick={() => setItemState(key, { qty: state.qty + 1 })}><Plus className="w-3.5 h-3.5" /></button>
                             </div>
-                            <Button size="sm" className="flex-1 h-8 text-sm" disabled={!state.size.trim()} onClick={() => handleAdd(wi, key)}>Add</Button>
+                            <Button
+                              size="sm"
+                              className="flex-1 h-8 text-sm"
+                              disabled={!state.size.trim() || (sleeveOptions.length > 0 && !state.sleeve.trim())}
+                              onClick={() => handleAdd(wi, key)}
+                            >Add</Button>
                           </div>
                         </>
                       )}
@@ -2729,6 +2824,7 @@ export default function NewOrder() {
             lastSizes={wardrobe?.lastSizes ?? {}}
             savedSizes={wardrobe?.savedSizes ?? {}}
             sizesMap={wardrobe?.sizesMap ?? {}}
+            sleevesMap={wardrobe?.sleevesMap ?? {}}
             basket={basket}
             setBasket={setBasket}
             onNext={() => setStep(2)}
