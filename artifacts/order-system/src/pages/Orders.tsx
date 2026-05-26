@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, FileText, Pencil, Paperclip, StickyNote, GitMerge } from "lucide-react";
+import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, FileText, Pencil, Paperclip, StickyNote, GitMerge, ChevronUp, ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 const API_BASE = "/api";
@@ -359,9 +359,34 @@ function PortalPendingOrders() {
 
 export default function Orders() {
   const [, setLocation] = useLocation();
+  type SortKey = "orderNumber" | "requiredDate" | "orderDate" | "customerName" | "poNumber" | "status" | "totalAmount";
+  type SortDir = "asc" | "desc";
+
+  function SortableHead({ label, sortKey: key, current, dir, onSort, className }: {
+    label: string; sortKey: SortKey; current: SortKey; dir: SortDir;
+    onSort: (k: SortKey) => void; className?: string;
+  }) {
+    const active = current === key;
+    return (
+      <TableHead
+        className={cn("cursor-pointer select-none whitespace-nowrap group", className)}
+        onClick={() => onSort(key)}
+      >
+        <span className="inline-flex items-center gap-1">
+          {label}
+          <span className={cn("transition-opacity", active ? "opacity-100" : "opacity-0 group-hover:opacity-40")}>
+            {active && dir === "asc" ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </span>
+        </span>
+      </TableHead>
+    );
+  }
+
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("orderNumber");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
 
@@ -374,14 +399,51 @@ export default function Orders() {
 
   const selectedCustomer = customers.find(c => c.id.toString() === selectedCustomerId);
 
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir(key === "orderNumber" ? "desc" : "asc"); }
+  };
+
   const orders = useMemo(() => {
-    if (!customerSearch.trim()) return allOrders;
-    const q = customerSearch.toLowerCase();
-    return allOrders.filter(o =>
-      (o.customerName ?? "").toLowerCase().includes(q) ||
-      o.orderNumber.toLowerCase().includes(q)
-    );
-  }, [allOrders, customerSearch]);
+    const filtered = (() => {
+      if (!customerSearch.trim()) return allOrders;
+      const q = customerSearch.toLowerCase();
+      return allOrders.filter(o =>
+        (o.customerName ?? "").toLowerCase().includes(q) ||
+        o.orderNumber.toLowerCase().includes(q)
+      );
+    })();
+
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      switch (sortKey) {
+        case "orderNumber": {
+          const n = (o: typeof a) => parseInt((o.orderNumber ?? "").replace(/[^0-9]/g, "") || "0", 10);
+          cmp = n(a) - n(b);
+          break;
+        }
+        case "requiredDate":
+          cmp = ((a as any).requiredDate ?? "").localeCompare((b as any).requiredDate ?? "");
+          break;
+        case "orderDate":
+          cmp = (a.orderDate ?? "").localeCompare(b.orderDate ?? "");
+          break;
+        case "customerName":
+          cmp = (a.customerName ?? "").localeCompare(b.customerName ?? "");
+          break;
+        case "poNumber":
+          cmp = ((a as any).poNumber ?? "").localeCompare((b as any).poNumber ?? "");
+          break;
+        case "status":
+          cmp = (a.status ?? "").localeCompare(b.status ?? "");
+          break;
+        case "totalAmount":
+          cmp = (a.totalAmount ?? 0) - (b.totalAmount ?? 0);
+          break;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [allOrders, customerSearch, sortKey, sortDir]);
 
   const totalValue = useMemo(() => orders.reduce((s, o) => s + (o.totalAmount ?? 0), 0), [orders]);
 
@@ -468,13 +530,13 @@ export default function Orders() {
                   <Table>
                     <TableHeader>
                       <TableRow className="hover:bg-transparent">
-                        <TableHead className="w-[90px]">Order #</TableHead>
-                        <TableHead>Due Date</TableHead>
-                        <TableHead>Order Date</TableHead>
-                        <TableHead>Customer</TableHead>
-                        <TableHead>PO Number</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
+                        <SortableHead label="Order #"    sortKey="orderNumber"  current={sortKey} dir={sortDir} onSort={handleSort} className="w-[90px]" />
+                        <SortableHead label="Due Date"   sortKey="requiredDate" current={sortKey} dir={sortDir} onSort={handleSort} />
+                        <SortableHead label="Order Date" sortKey="orderDate"    current={sortKey} dir={sortDir} onSort={handleSort} />
+                        <SortableHead label="Customer"   sortKey="customerName" current={sortKey} dir={sortDir} onSort={handleSort} />
+                        <SortableHead label="PO Number"  sortKey="poNumber"     current={sortKey} dir={sortDir} onSort={handleSort} />
+                        <SortableHead label="Status"     sortKey="status"       current={sortKey} dir={sortDir} onSort={handleSort} />
+                        <SortableHead label="Total"      sortKey="totalAmount"  current={sortKey} dir={sortDir} onSort={handleSort} className="text-right" />
                         <TableHead className="w-[80px]"></TableHead>
                       </TableRow>
                     </TableHeader>
