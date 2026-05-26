@@ -1006,4 +1006,27 @@ export async function runStartupMigrations(): Promise<void> {
       AND w.status = 'complete'
       AND oi.stock_status = 'allocated'
   `);
+
+  // One-time data fix: process stock items that were ordered and delivered outside
+  // the system (Fast Lane Club print/embroidery materials PS0006–PS0016). Set
+  // stock_quantity to the total required by confirmed orders so they no longer
+  // appear as outstanding purchasing requirements.
+  await db.execute(sql`
+    UPDATE process_stock ps
+    SET stock_quantity = sub.total_needed
+    FROM (
+      SELECT cp.process_stock_id AS ps_id,
+             SUM(oi.quantity)    AS total_needed
+      FROM order_items oi
+      JOIN orders o               ON o.id  = oi.order_id
+      JOIN customer_finish_processes cfp ON cfp.finish_id = oi.finish_id
+      JOIN customer_processes cp  ON cp.id = cfp.process_id
+      WHERE o.status = 'confirmed'
+        AND oi.finish_id IS NOT NULL
+        AND cp.process_stock_id IS NOT NULL
+      GROUP BY cp.process_stock_id
+    ) sub
+    WHERE ps.id = sub.ps_id
+      AND ps.stock_quantity = 0
+  `);
 }
