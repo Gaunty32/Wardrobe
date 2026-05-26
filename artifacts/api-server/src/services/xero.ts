@@ -517,13 +517,26 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     throw new Error("Customer is not linked to a Xero contact. Run a Xero contact sync first.");
   }
 
-  const lineItems = items.map((item) => ({
-    Description: [item.productName, item.colour, item.size].filter(Boolean).join(" – "),
-    Quantity: item.quantity,
-    UnitAmount: parseFloat(item.unitPrice as string),
-    AccountCode: "200", // Sales account — adjust if needed
-    TaxType: "OUTPUT",
-  }));
+  function xeroTaxType(vatRate: string | null): string | undefined {
+    const rate = vatRate ? parseFloat(vatRate) : null;
+    if (rate === null) return undefined;
+    if (rate >= 0.19) return "OUTPUT2";       // 20% standard rate
+    if (rate <= 0.01) return "ZERORATEDOUTPUT"; // 0% zero-rated
+    if (Math.abs(rate - 0.05) < 0.01) return "RROUTPUT"; // 5% reduced
+    return undefined; // let Xero use the account default
+  }
+
+  const lineItems = items.map((item) => {
+    const taxType = xeroTaxType(item.vatRate as string | null);
+    const line: Record<string, unknown> = {
+      Description: [item.productName, item.colour, item.size].filter(Boolean).join(" – "),
+      Quantity: item.quantity,
+      UnitAmount: parseFloat(item.unitPrice as string),
+      AccountCode: "200",
+    };
+    if (taxType) line.TaxType = taxType;
+    return line;
+  });
 
   const invoiceDateStr = order.invoiceDate
     ? new Date(order.invoiceDate).toISOString().slice(0, 10)
