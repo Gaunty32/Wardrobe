@@ -1027,6 +1027,6 @@ export async function runStartupMigrations(): Promise<void> {
       GROUP BY cp.process_stock_id
     ) sub
     WHERE ps.id = sub.ps_id
-      AND ps.stock_quantity = 0
+      AND ps.stock_quantity < sub.total_needed
   `);
 }
