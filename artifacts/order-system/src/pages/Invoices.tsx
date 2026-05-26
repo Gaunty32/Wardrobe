@@ -17,7 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
   Truck, Clock, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
-  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap,
+  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap, Search,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -578,10 +578,22 @@ export default function Invoices() {
     staleTime: 60_000,
   });
 
+  const [searchQuery, setSearchQuery] = useState("");
+
   const toSend = data?.toSend ?? [];
   const toPost = data?.toPost ?? [];
   const done = data?.done ?? [];
   const groups = poGroups ?? [];
+
+  const allInvoices = [...toSend, ...toPost, ...done];
+  const searchTrimmed = searchQuery.trim().toLowerCase();
+  const searchResults = searchTrimmed
+    ? allInvoices.filter((o) =>
+        o.orderNumber.toLowerCase().includes(searchTrimmed) ||
+        (o.customerName?.toLowerCase().includes(searchTrimmed)) ||
+        (o.xeroInvoiceId?.toLowerCase().includes(searchTrimmed))
+      )
+    : null;
 
   return (
     <Layout>
@@ -641,6 +653,55 @@ export default function Invoices() {
           ))}
         </div>
 
+        {/* Search bar */}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search by order number, customer name, or Xero ID…"
+            className="pl-9 pr-8 h-9 text-sm"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        {/* Search results — shown only when a query is active */}
+        {searchResults !== null && (
+          <div>
+            <p className="text-sm text-muted-foreground mb-3">
+              {searchResults.length === 0
+                ? "No invoices matched your search."
+                : `${searchResults.length} result${searchResults.length !== 1 ? "s" : ""} found`}
+            </p>
+            {searchResults.length > 0 && (
+              <div className="rounded-xl border border-border overflow-hidden">
+                <Table>
+                  <TableHeader>{COLS}</TableHeader>
+                  <TableBody>
+                    {searchResults.map((order) => (
+                      <OrderRow
+                        key={order.id}
+                        order={order}
+                        showSendEmail={!order.invoiceEmailSentAt}
+                        showPostXero={!!order.invoiceEmailSentAt && !order.xeroInvoiceId}
+                      />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tabs — hidden while searching */}
+        {searchResults === null && (
         <Tabs defaultValue="to-send">
           <TabsList>
             <TabsTrigger value="to-send" className="gap-2">
@@ -763,6 +824,7 @@ export default function Invoices() {
             )}
           </TabsContent>
         </Tabs>
+        )}
       </div>
     </Layout>
   );
