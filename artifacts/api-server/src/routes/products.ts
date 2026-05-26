@@ -232,6 +232,50 @@ router.post("/products/:id/duplicate", async (req, res): Promise<void> => {
   res.status(201).json(fmtProduct(created));
 });
 
+router.get("/products/analytics", async (req, res): Promise<void> => {
+  const { dateFrom, dateTo } = req.query as { dateFrom?: string; dateTo?: string };
+
+  const rows = await db.execute(sql`
+    SELECT
+      p.id,
+      p.sku,
+      p.name,
+      p.unit_price,
+      p.supplier_price,
+      p.supplier_currency,
+      s.name AS supplier_name,
+      COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN oi.quantity ELSE 0 END), 0) AS qty_sold,
+      COALESCE(SUM(CASE WHEN o.id IS NOT NULL THEN oi.line_total::numeric ELSE 0 END), 0) AS revenue
+    FROM products p
+    LEFT JOIN suppliers s ON s.id = p.supplier_id
+    LEFT JOIN order_items oi ON oi.product_id = p.id
+    LEFT JOIN orders o ON o.id = oi.order_id
+      AND o.status NOT IN ('cancelled', 'portal_draft', 'draft')
+      ${dateFrom ? sql`AND o.order_date >= ${dateFrom}::date` : sql``}
+      ${dateTo ? sql`AND o.order_date < ${dateTo}::date + interval '1 day'` : sql``}
+    GROUP BY p.id, p.sku, p.name, p.unit_price, p.supplier_price, p.supplier_currency, s.name
+    ORDER BY p.name
+  `);
+
+  res.json((rows.rows as any[]).map((r) => {
+    const price = r.unit_price != null ? parseFloat(r.unit_price) : 0;
+    const cost = r.supplier_price != null ? parseFloat(r.supplier_price) : null;
+    const gp = cost != null && price > 0 ? ((price - cost) / price) * 100 : null;
+    return {
+      id: r.id,
+      sku: r.sku ?? "",
+      name: r.name,
+      supplierName: r.supplier_name ?? null,
+      price,
+      supplierCost: cost,
+      supplierCurrency: r.supplier_currency ?? "GBP",
+      grossProfitPct: gp != null ? Math.round(gp * 10) / 10 : null,
+      qtySold: Number(r.qty_sold),
+      revenue: parseFloat(r.revenue ?? "0"),
+    };
+  }));
+});
+
 router.get("/products/:id", async (req, res): Promise<void> => {
   const params = GetProductParams.safeParse(req.params);
   if (!params.success) {

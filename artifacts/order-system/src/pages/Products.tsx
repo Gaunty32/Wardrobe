@@ -25,11 +25,24 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2 } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const UNCATEGORISED = "Uncategorised";
+
+interface ProductAnalytics {
+  id: number;
+  sku: string;
+  name: string;
+  supplierName: string | null;
+  price: number;
+  supplierCost: number | null;
+  supplierCurrency: string;
+  grossProfitPct: number | null;
+  qtySold: number;
+  revenue: number;
+}
 
 interface ProductCategory {
   id: number;
@@ -56,6 +69,10 @@ export default function Products() {
   const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal" | "bespoke">("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
+  const [viewMode, setViewMode] = useState<"catalogue" | "sales">("catalogue");
+  const [salesDateFrom, setSalesDateFrom] = useState("");
+  const [salesDateTo, setSalesDateTo] = useState("");
+  const [salesSearch, setSalesSearch] = useState("");
 
   const [formData, setFormData] = useState({
     name: "", sku: "", category: "", description: "", unitPrice: 0, stockQuantity: 0,
@@ -77,6 +94,17 @@ export default function Products() {
   const { data: storedCategories = [], isLoading: categoriesLoading } = useQuery<ProductCategory[]>({
     queryKey: ["product-categories"],
     queryFn: () => apiFetch("/product-categories"),
+  });
+  const { data: analyticsData = [], isLoading: analyticsLoading } = useQuery<ProductAnalytics[]>({
+    queryKey: ["product-analytics", salesDateFrom, salesDateTo],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (salesDateFrom) params.set("dateFrom", salesDateFrom);
+      if (salesDateTo) params.set("dateTo", salesDateTo);
+      const qs = params.toString();
+      return apiFetch(`/products/analytics${qs ? `?${qs}` : ""}`);
+    },
+    enabled: viewMode === "sales",
   });
 
   const createMutation = useCreateProduct();
@@ -322,8 +350,8 @@ export default function Products() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex items-center gap-3">
-            {/* Breadcrumb back navigation */}
-            {(showBackToTop || showBackToSub) && (
+            {/* Breadcrumb back navigation (catalogue mode only) */}
+            {viewMode === "catalogue" && (showBackToTop || showBackToSub) && (
               <div className="flex items-center gap-1 text-sm text-muted-foreground">
                 <button
                   onClick={() => { setSelectedTopCat(null); setSelectedSubCat(null); }}
@@ -350,67 +378,128 @@ export default function Products() {
                 )}
               </div>
             )}
-            {!selectedTopCat && (
+            {(viewMode === "sales" || !selectedTopCat) && (
               <div>
                 <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Products</h1>
                 <p className="text-muted-foreground mt-1">
-                  {allProducts.length} product{allProducts.length !== 1 ? "s" : ""} across {topLevelEntries.length} categor{topLevelEntries.length !== 1 ? "ies" : "y"}
+                  {viewMode === "sales"
+                    ? `${analyticsData.length} product${analyticsData.length !== 1 ? "s" : ""} · sales analytics`
+                    : `${allProducts.length} product${allProducts.length !== 1 ? "s" : ""} across ${topLevelEntries.length} categor${topLevelEntries.length !== 1 ? "ies" : "y"}`}
                 </p>
               </div>
             )}
-            {selectedTopCat && !selectedSubCat && currentSubs.length === 0 && (
+            {viewMode === "catalogue" && selectedTopCat && !selectedSubCat && currentSubs.length === 0 && (
               <div>
                 <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{selectedTopCat.name}</h1>
                 <p className="text-muted-foreground mt-1">{filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}</p>
               </div>
             )}
-            {selectedSubCat && (
+            {viewMode === "catalogue" && selectedSubCat && (
               <div>
                 <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{selectedSubCat.name}</h1>
                 <p className="text-muted-foreground mt-1">{filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}</p>
               </div>
             )}
           </div>
-          <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
-            <Plus className="w-4 h-4 mr-2" /> Add Product
-          </Button>
+          <div className="flex items-center gap-2">
+            {/* View mode toggle */}
+            <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5">
+              <button
+                onClick={() => setViewMode("catalogue")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  viewMode === "catalogue" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Package className="w-3 h-3" /> Catalogue
+              </button>
+              <button
+                onClick={() => setViewMode("sales")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  viewMode === "sales" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <BarChart2 className="w-3 h-3" /> Sales
+              </button>
+            </div>
+            {viewMode === "catalogue" && (
+              <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
+                <Plus className="w-4 h-4 mr-2" /> Add Product
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Search + filter bar */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative max-w-sm flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search products..."
-              className="pl-9 bg-background"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); }}
-            />
+        {viewMode === "catalogue" ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative max-w-sm flex-1 min-w-[200px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search products..."
+                className="pl-9 bg-background"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); }}
+              />
+            </div>
+            {/* Website / Internal / Bespoke filter */}
+            <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5">
+              {(["all", "website", "internal", "bespoke"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => { setWebsiteFilter(f); setSelectedTopCat(null); setSelectedSubCat(null); }}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    websiteFilter === f
+                      ? "bg-background shadow-sm text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {f === "website" && <Globe className="w-3 h-3" />}
+                  {f === "internal" && <Lock className="w-3 h-3" />}
+                  {f === "bespoke" && <Package className="w-3 h-3" />}
+                  {f === "all" ? "All" : f === "website" ? "Website" : f === "internal" ? "Internal only" : "Bespoke"}
+                </button>
+              ))}
+            </div>
           </div>
-
-          {/* Website / Internal / Bespoke filter */}
-          <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5">
-            {(["all", "website", "internal", "bespoke"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => { setWebsiteFilter(f); setSelectedTopCat(null); setSelectedSubCat(null); }}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  websiteFilter === f
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {f === "website" && <Globe className="w-3 h-3" />}
-                {f === "internal" && <Lock className="w-3 h-3" />}
-                {f === "bespoke" && <Package className="w-3 h-3" />}
-                {f === "all" ? "All" : f === "website" ? "Website" : f === "internal" ? "Internal only" : "Bespoke"}
-              </button>
-            ))}
+        ) : (
+          /* Sales view filter bar */
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search SKU, name, supplier..."
+                className="pl-9 bg-background"
+                value={salesSearch}
+                onChange={(e) => setSalesSearch(e.target.value)}
+              />
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span className="text-xs font-medium">From</span>
+              <Input type="date" className="w-36 bg-background text-sm" value={salesDateFrom} onChange={(e) => setSalesDateFrom(e.target.value)} />
+              <span className="text-xs font-medium">To</span>
+              <Input type="date" className="w-36 bg-background text-sm" value={salesDateTo} onChange={(e) => setSalesDateTo(e.target.value)} />
+              {(salesDateFrom || salesDateTo) && (
+                <button onClick={() => { setSalesDateFrom(""); setSalesDateTo(""); }} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
-        {productsLoading || (showTopGrid && categoriesLoading) ? (
+        {viewMode === "sales" ? (
+          /* ── Sales analytics view ── */
+          analyticsLoading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <SalesAnalyticsTable data={analyticsData} search={salesSearch} onNavigate={(id) => navigate(`/products/${id}`)} />
+          )
+        ) : productsLoading || (showTopGrid && categoriesLoading) ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>
@@ -787,6 +876,147 @@ function ProductTable({
           })}
         </TableBody>
       </Table>
+    </div>
+  );
+}
+
+type SalesSortCol = "sku" | "name" | "supplierName" | "price" | "supplierCost" | "grossProfitPct" | "qtySold" | "revenue";
+
+function SalesAnalyticsTable({
+  data,
+  search,
+  onNavigate,
+}: {
+  data: ProductAnalytics[];
+  search: string;
+  onNavigate: (id: number) => void;
+}) {
+  const [sort, setSort] = useState<{ col: SalesSortCol; dir: "asc" | "desc" }>({ col: "qtySold", dir: "desc" });
+  const [colSearch, setColSearch] = useState<Partial<Record<SalesSortCol, string>>>({});
+
+  const toggleSort = (col: SalesSortCol) => {
+    setSort((s) => s.col === col ? { col, dir: s.dir === "asc" ? "desc" : "asc" } : { col, dir: col === "qtySold" || col === "revenue" ? "desc" : "asc" });
+  };
+
+  const SortHead = ({ col, children, className }: { col: SalesSortCol; children: React.ReactNode; className?: string }) => (
+    <TableHead className={className}>
+      <div className="flex flex-col gap-1">
+        <button
+          className="inline-flex items-center gap-1 hover:text-foreground transition-colors select-none whitespace-nowrap"
+          onClick={() => toggleSort(col)}
+        >
+          {children}
+          <span className="text-muted-foreground/60 text-[10px] w-3 text-center">
+            {sort.col === col ? (sort.dir === "asc" ? "↑" : "↓") : "↕"}
+          </span>
+        </button>
+        <input
+          className="w-full text-[11px] border border-border/50 rounded px-1.5 py-0.5 bg-background text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/40"
+          placeholder="Filter…"
+          value={colSearch[col] ?? ""}
+          onChange={(e) => setColSearch((p) => ({ ...p, [col]: e.target.value }))}
+          onClick={(e) => e.stopPropagation()}
+        />
+      </div>
+    </TableHead>
+  );
+
+  const filtered = data
+    .filter((r) => {
+      if (search) {
+        const q = search.toLowerCase();
+        if (!r.sku.toLowerCase().includes(q) && !r.name.toLowerCase().includes(q) && !(r.supplierName ?? "").toLowerCase().includes(q)) return false;
+      }
+      for (const [k, v] of Object.entries(colSearch)) {
+        if (!v) continue;
+        const val = String((r as any)[k] ?? "").toLowerCase();
+        if (!val.includes(v.toLowerCase())) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      const dir = sort.dir === "asc" ? 1 : -1;
+      const va = (a as any)[sort.col] ?? (typeof (a as any)[sort.col] === "number" ? -Infinity : "");
+      const vb = (b as any)[sort.col] ?? (typeof (b as any)[sort.col] === "number" ? -Infinity : "");
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      return String(va).localeCompare(String(vb)) * dir;
+    });
+
+  const currencySymbol = (cur: string) => cur === "USD" ? "$" : cur === "EUR" ? "€" : "£";
+
+  const totals = filtered.reduce(
+    (acc, r) => ({ qty: acc.qty + r.qtySold, rev: acc.rev + r.revenue }),
+    { qty: 0, rev: 0 }
+  );
+
+  return (
+    <div className="border rounded-xl overflow-hidden bg-card shadow-sm">
+      {filtered.length === 0 ? (
+        <div className="py-16 text-center text-muted-foreground">
+          <TrendingUp className="w-12 h-12 mx-auto mb-3 text-muted-foreground/30" />
+          <p className="font-medium text-foreground">No products match</p>
+          <p className="text-sm mt-1">Try adjusting your search or date filter.</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent align-top">
+                <SortHead col="sku" className="w-[100px]">SKU</SortHead>
+                <SortHead col="name">Product Name</SortHead>
+                <SortHead col="supplierName" className="hidden md:table-cell">Supplier</SortHead>
+                <SortHead col="price" className="text-right">Price</SortHead>
+                <SortHead col="supplierCost" className="text-right hidden lg:table-cell">Supplier Cost</SortHead>
+                <SortHead col="grossProfitPct" className="text-right w-[80px]">GP%</SortHead>
+                <SortHead col="qtySold" className="text-right w-[90px]">Qty Sold</SortHead>
+                <SortHead col="revenue" className="text-right w-[110px]">Revenue</SortHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.map((r) => (
+                <TableRow
+                  key={r.id}
+                  className="group hover:bg-muted/30 cursor-pointer"
+                  onClick={() => onNavigate(r.id)}
+                >
+                  <TableCell className="font-mono text-xs text-muted-foreground">{r.sku || "—"}</TableCell>
+                  <TableCell className="font-medium text-foreground group-hover:text-primary transition-colors">{r.name}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground hidden md:table-cell">{r.supplierName ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">{formatCurrency(r.price)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground hidden lg:table-cell">
+                    {r.supplierCost != null
+                      ? `${currencySymbol(r.supplierCurrency)}${r.supplierCost.toFixed(2)}`
+                      : <span className="text-muted-foreground/40">—</span>}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {r.grossProfitPct != null
+                      ? <GpBadge gp={r.grossProfitPct} />
+                      : <span className="text-xs text-muted-foreground/40">—</span>}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.qtySold > 0
+                      ? <span className="font-semibold text-foreground">{r.qtySold.toLocaleString()}</span>
+                      : <span className="text-muted-foreground/40">0</span>}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {r.revenue > 0
+                      ? formatCurrency(r.revenue)
+                      : <span className="text-muted-foreground/40">—</span>}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          {/* Footer totals */}
+          <div className="flex items-center justify-between px-4 py-2.5 border-t border-border/50 bg-muted/20 text-xs text-muted-foreground">
+            <span>{filtered.length.toLocaleString()} product{filtered.length !== 1 ? "s" : ""}</span>
+            <div className="flex items-center gap-6 font-medium">
+              <span>Total sold: <span className="text-foreground">{totals.qty.toLocaleString()}</span></span>
+              <span>Total revenue: <span className="text-foreground">{formatCurrency(totals.rev)}</span></span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
