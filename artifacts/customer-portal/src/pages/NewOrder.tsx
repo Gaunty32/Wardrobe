@@ -2235,7 +2235,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Your order qualifies for <strong>{selectExtraOffer?.quantity}× {selectExtraOffer?.productName}</strong> completely free. Would you like to add it to your basket?
+            Your order qualifies for <strong>{selectExtraOffer?.productName}</strong> completely free. Would you like to add it to your basket?
           </p>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" size="sm" onClick={() => {
