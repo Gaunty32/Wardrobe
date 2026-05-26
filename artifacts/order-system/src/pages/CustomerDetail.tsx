@@ -4204,6 +4204,23 @@ export default function CustomerDetail() {
     }
   };
 
+  const [zeroVatToggling, setZeroVatToggling] = useState(false);
+  const toggleZeroVat = async (checked: boolean) => {
+    setZeroVatToggling(true);
+    try {
+      await apiFetch(`/customers/${customerId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ zeroVat: checked }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+      toast({ title: checked ? "Zero-rated VAT enabled" : "Zero-rated VAT disabled", description: checked ? "All new order items will be 0% VAT." : "VAT will apply at standard rates." });
+    } catch {
+      toast({ title: "Failed to update VAT setting", variant: "destructive" });
+    } finally {
+      setZeroVatToggling(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -4258,20 +4275,37 @@ export default function CustomerDetail() {
                 )}
                 {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
               </div>
-              <div className="flex items-center gap-2 mt-2">
-                <Switch
-                  id="requires-prepayment"
-                  checked={(customer as any).requiresPrepayment ?? false}
-                  onCheckedChange={togglePrepayment}
-                  disabled={prepayToggling}
-                  className="scale-90"
-                />
-                <Label htmlFor="requires-prepayment" className="text-xs text-muted-foreground cursor-pointer select-none">
-                  Requires prepayment
-                </Label>
-                {(customer as any).requiresPrepayment && (
-                  <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 bg-amber-50">Prepayment required</Badge>
-                )}
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 mt-2">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="requires-prepayment"
+                    checked={(customer as any).requiresPrepayment ?? false}
+                    onCheckedChange={togglePrepayment}
+                    disabled={prepayToggling}
+                    className="scale-90"
+                  />
+                  <Label htmlFor="requires-prepayment" className="text-xs text-muted-foreground cursor-pointer select-none">
+                    Requires prepayment
+                  </Label>
+                  {(customer as any).requiresPrepayment && (
+                    <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 bg-amber-50">Prepayment required</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="zero-vat"
+                    checked={(customer as any).zeroVat ?? false}
+                    onCheckedChange={toggleZeroVat}
+                    disabled={zeroVatToggling}
+                    className="scale-90"
+                  />
+                  <Label htmlFor="zero-vat" className="text-xs text-muted-foreground cursor-pointer select-none">
+                    Zero-rated VAT (Channel Islands)
+                  </Label>
+                  {(customer as any).zeroVat && (
+                    <Badge variant="outline" className="text-xs border-blue-300 text-blue-700 bg-blue-50">0% VAT</Badge>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2 mt-3">
                 <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />

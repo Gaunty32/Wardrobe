@@ -1753,6 +1753,15 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     effectiveVatRate = prod ? parseFloat(String(prod.vatRate ?? 0.20)) : 0.20;
   }
   effectiveVatRate = effectiveVatRate ?? 0.20;
+  // Override to zero-rated if the customer is Channel Islands / zero-VAT
+  if (order.customerId) {
+    const [cust] = await db
+      .select({ zeroVat: customersTable.zeroVat })
+      .from(customersTable)
+      .where(eq(customersTable.id, order.customerId))
+      .limit(1);
+    if (cust?.zeroVat) effectiveVatRate = 0;
+  }
 
   const lineTotal = parsed.data.quantity * parsed.data.unitPrice;
   const [item] = await db

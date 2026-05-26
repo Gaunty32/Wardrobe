@@ -523,11 +523,13 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     finishName: r.customerFinishName ?? r.finishName,
   }));
 
-  // Get customer's xeroContactId
+  // Get customer's xeroContactId and zero-VAT flag
   let xeroContactId: string | null = null;
+  let customerZeroVat = false;
   if (order.customerId) {
     const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
     xeroContactId = customer?.xeroContactId ?? null;
+    customerZeroVat = customer?.zeroVat ?? false;
   }
 
   if (!xeroContactId) {
@@ -544,7 +546,7 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
   }
 
   const lineItems = items.map((item) => {
-    const taxType = xeroTaxType(item.vatRate as string | null);
+    const taxType = customerZeroVat ? "ZERORATEDOUTPUT" : xeroTaxType(item.vatRate as string | null);
     const line: Record<string, unknown> = {
       Description: [item.productName, item.colour, item.size, item.finishName].filter(Boolean).join(" – "),
       Quantity: item.quantity,

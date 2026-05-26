@@ -1038,4 +1038,8 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE ps.id = sub.ps_id
       AND ps.stock_quantity < sub.total_needed
   `);
+
+  await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS zero_vat boolean NOT NULL DEFAULT false;
+  `);
 }

@@ -98,6 +98,7 @@ export const UpdateCustomerBody = zod.object({
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
   logoUrl: zod.string().nullish(),
+  zeroVat: zod.boolean().optional(),
 });
 
 export const UpdateCustomerResponse = zod.object({

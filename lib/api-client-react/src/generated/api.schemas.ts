@@ -80,6 +80,7 @@ export interface UpdateCustomerBody {
   postcode?: string | null;
   /** @nullable */
   notes?: string | null;
+  zeroVat?: boolean;
 }
 
 export interface Product {
