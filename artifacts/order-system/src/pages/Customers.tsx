@@ -360,14 +360,14 @@ export default function Customers() {
           if (!open) { setIsCreateOpen(false); setEditingCustomer(null); }
         }}>
           <DialogContent
-            className="sm:max-w-[600px]"
+            className="sm:max-w-[600px] flex flex-col max-h-[90vh]"
             onInteractOutside={(e) => e.preventDefault()}
             onEscapeKeyDown={(e) => e.preventDefault()}
           >
             <DialogHeader>
               <DialogTitle className="font-display text-xl">{editingCustomer ? 'Edit Customer' : 'Add New Customer'}</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
+            <div className="grid gap-4 py-4 overflow-y-auto pr-1">
               <div className="grid gap-2">
                 <Label htmlFor="name">Company / Full Name *</Label>
                 <Input id="name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
