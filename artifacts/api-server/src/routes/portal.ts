@@ -1012,7 +1012,10 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   }
 
   const itemsTotal = sbsItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
-  const totalAmount = itemsTotal + (body.shippingCost ?? 0);
+  // Carriage is derived server-side from the shipping option so it can't be zero'd by the client.
+  const SHIPPING_CARRIAGE: Record<string, number> = { dpd_next_day: 8.50 };
+  const carriageAmount = SHIPPING_CARRIAGE[body.shippingOption ?? ""] ?? (body.shippingCost ?? 0);
+  const totalAmount = itemsTotal; // total_amount stores items subtotal; carriage_amount is separate
 
   // Get customer name and default delivery address
   const custRows = await db.execute(sql`SELECT name, address, city, postcode FROM customers WHERE id = ${customerId}`);
@@ -1114,7 +1117,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
 
   // Insert with a unique temp order number; update to P{id} after getting auto-generated id
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, carriage_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments)
     VALUES (
       'P-' || gen_random_uuid()::text,
       ${customerId},
@@ -1124,6 +1127,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${portalStatus},
       ${body.portalNotes ?? null},
       ${totalAmount.toFixed(2)},
+      ${carriageAmount.toFixed(2)},
       ${body.notes ?? null},
       now(),
       ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null},
@@ -1825,7 +1829,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
 
   // Load order to get submitter/approver emails and check delivery address
   const orderRows = await db.execute(sql`
-    SELECT id, order_number, customer_id, customer_name, order_date, required_date, notes, total_amount,
+    SELECT id, order_number, customer_id, customer_name, order_date, required_date, notes, total_amount, carriage_amount,
            delivery_address_id, attention_of,
            portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id,
            portal_approved_by_email, portal_approved_by_name
@@ -2089,6 +2093,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
         customerPostcode,
         deliveryAddress: deliveryAddressText,
         totalAmount: parseFloat(ord.total_amount ?? "0"),
+        shippingAmount: parseFloat(ord.carriage_amount ?? "0") || undefined,
         items: pdfItems,
       });
     } catch (_e) {}
