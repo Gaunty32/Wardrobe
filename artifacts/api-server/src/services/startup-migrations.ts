@@ -994,6 +994,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_scheduled_send_at timestamptz;
   `);
 
+  await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS requires_prepayment boolean NOT NULL DEFAULT false;
+  `);
+
   // One-time data fix: order items whose worksheet is already 'complete' but
   // stock_status is still 'allocated' (caused by the POST /worksheets route not
   // updating order item status). Mark them complete so they leave the picking list.

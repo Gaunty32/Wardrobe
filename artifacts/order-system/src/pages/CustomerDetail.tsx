@@ -19,6 +19,7 @@ import { cn, toTitleCase } from "@/lib/utils";
 import { sortSizesWithOrder, sortBySizeWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet, Warehouse } from "lucide-react";
 import { ImportSpreadsheetDialog } from "@/components/ImportSpreadsheetDialog";
@@ -4187,6 +4188,22 @@ export default function CustomerDetail() {
     }
   };
 
+  const [prepayToggling, setPrepayToggling] = useState(false);
+  const togglePrepayment = async (checked: boolean) => {
+    setPrepayToggling(true);
+    try {
+      await apiFetch(`/customers/${customerId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ requiresPrepayment: checked }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+    } catch {
+      toast({ title: "Failed to update prepayment setting", variant: "destructive" });
+    } finally {
+      setPrepayToggling(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -4240,6 +4257,21 @@ export default function CustomerDetail() {
                   </span>
                 )}
                 {(customer as any).defaultShippingService && <span className="inline-flex items-center gap-1">📦 {(customer as any).defaultShippingService}</span>}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <Switch
+                  id="requires-prepayment"
+                  checked={(customer as any).requiresPrepayment ?? false}
+                  onCheckedChange={togglePrepayment}
+                  disabled={prepayToggling}
+                  className="scale-90"
+                />
+                <Label htmlFor="requires-prepayment" className="text-xs text-muted-foreground cursor-pointer select-none">
+                  Requires prepayment
+                </Label>
+                {(customer as any).requiresPrepayment && (
+                  <Badge variant="outline" className="text-xs border-amber-300 text-amber-700 bg-amber-50">Prepayment required</Badge>
+                )}
               </div>
               <div className="flex items-center gap-2 mt-3">
                 <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />

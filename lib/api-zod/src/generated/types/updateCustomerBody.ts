@@ -30,4 +30,5 @@ export interface UpdateCustomerBody {
   logoUrl?: string | null;
   /** @nullable */
   highLevelContactId?: string | null;
+  requiresPrepayment?: boolean;
 }
