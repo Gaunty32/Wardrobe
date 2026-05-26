@@ -460,6 +460,13 @@ export default function Customers() {
                   >
                     {isUploading ? <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Uploading…</> : <><Upload className="w-3 h-3 mr-2" />{formData.logoUrl ? "Replace Logo" : "Upload Logo"}</>}
                   </Button>
+                  <Input
+                    type="url"
+                    placeholder="or paste a logo URL (https://...)"
+                    className="h-7 text-xs mt-0.5"
+                    value={formData.logoUrl.startsWith("/api/") ? "" : formData.logoUrl}
+                    onChange={e => setFormData(f => ({ ...f, logoUrl: e.target.value }))}
+                  />
                   {formData.logoUrl && (
                     <button
                       type="button"
