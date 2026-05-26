@@ -2674,7 +2674,17 @@ export default function NewOrder() {
     toast({ title: "Previous basket restored", description: `${serverBasket.items.length} item${serverBasket.items.length !== 1 ? "s" : ""} loaded from your last visit.` });
   }, [serverBasket]);
 
-  // ── Auto-save basket to server (debounced 2 s) ────────────────────────────
+  // ── Auto-save basket to server (debounced 500 ms) ────────────────────────
+  const flushBasketSave = () => {
+    if (isPreview || confirmedOrder || confirmedEnquiry) return;
+    if (serverSaveTimer.current) { clearTimeout(serverSaveTimer.current); serverSaveTimer.current = null; }
+    if (basket.length === 0) {
+      apiFetch("/portal/basket", { method: "DELETE" }).catch(() => {});
+    } else {
+      apiFetch("/portal/basket", { method: "PUT", body: JSON.stringify({ items: basket, mode, step }) }).catch(() => {});
+    }
+  };
+
   useEffect(() => {
     if (isPreview || confirmedOrder || confirmedEnquiry) return;
     if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current);
@@ -2685,7 +2695,7 @@ export default function NewOrder() {
       } else {
         apiFetch("/portal/basket", { method: "PUT", body: JSON.stringify({ items: basket, mode, step }) }).catch(() => {});
       }
-    }, 2000);
+    }, 500);
     return () => { if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current); };
   }, [basket, mode, step]);
 
@@ -2696,6 +2706,7 @@ export default function NewOrder() {
     lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
     savedSizes: Record<string, Array<{ label: string; size: string }>>;
     sizesMap: Record<string, Record<string, string[]>>;
+    sleevesMap: Record<string, string[]>;
     myEmployeeId: number | null;
   }>({
     queryKey: ["portal-wardrobe"],
@@ -2827,7 +2838,7 @@ export default function NewOrder() {
             sleevesMap={wardrobe?.sleevesMap ?? {}}
             basket={basket}
             setBasket={setBasket}
-            onNext={() => setStep(2)}
+            onNext={() => { flushBasketSave(); setStep(2); }}
             isManager={portalRole === "manager"}
             onEmployeeAdded={() => queryClient.invalidateQueries({ queryKey: ["portal-wardrobe"] })}
             myEmployeeId={wardrobe?.myEmployeeId ?? null}
