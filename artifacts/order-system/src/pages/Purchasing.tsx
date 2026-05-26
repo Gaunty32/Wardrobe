@@ -44,6 +44,7 @@ interface PurchaseRequirement {
   productId: number | null; productName: string; colour: string | null; size: string | null;
   purchaseQuantity: number | null; supplierId: number | null; supplierName: string; supplierEmail: string | null;
   supplierCode: string | null; secondarySupplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
+  supplierPrice: number | null;
 }
 interface SupplierGroup {
   supplierId: number | null; supplierName: string; supplierEmail: string | null; supplierCurrency: string; items: PurchaseRequirement[];
@@ -1665,21 +1666,33 @@ export default function Purchasing() {
   }, [purchaseOrders]);
 
   const draftTilesBySupplier = useMemo(() => {
-    const map = new Map<string, { name: string; reqLines: number; psLines: number; poCount: number; supplierId: number | null }>();
+    const map = new Map<string, { name: string; reqLines: number; psLines: number; poCount: number; supplierId: number | null; totalValue: number | null }>();
     for (const g of groups) {
       const key = g.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId });
-      map.get(key)!.reqLines += g.items.length;
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null });
+      const tile = map.get(key)!;
+      tile.reqLines += g.items.length;
+      for (const item of g.items) {
+        if (item.supplierPrice != null && item.purchaseQuantity != null) {
+          tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * item.purchaseQuantity;
+        }
+      }
     }
     for (const g of processReqsBySupplier) {
       const key = g.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId });
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null });
       map.get(key)!.psLines += g.items.length;
     }
     for (const po of draftPos) {
       const key = po.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: po.supplierId });
-      map.get(key)!.poCount += 1;
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: po.supplierId, totalValue: null });
+      const tile = map.get(key)!;
+      tile.poCount += 1;
+      for (const item of po.items) {
+        if (item.supplierPrice != null) {
+          tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * item.quantityOrdered;
+        }
+      }
     }
     return [...map.values()];
   }, [groups, processReqsBySupplier, draftPos]);
@@ -1781,6 +1794,9 @@ export default function Purchasing() {
                               <Badge variant="secondary" className="text-xs">{tile.poCount} draft PO{tile.poCount !== 1 ? "s" : ""}</Badge>
                             )}
                           </div>
+                          {tile.totalValue != null && (
+                            <p className="text-xs text-muted-foreground font-medium">£{tile.totalValue.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                          )}
                         </div>
                       </button>
                     );
