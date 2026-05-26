@@ -20,6 +20,7 @@ export const ordersTable = pgTable("orders", {
   deliveryAddressId: integer("delivery_address_id"),
   dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
   xeroInvoiceId: text("xero_invoice_id"),
+  xeroInvoiceNumber: text("xero_invoice_number"),
   xeroInvoiceStatus: text("xero_invoice_status"),
   trackingNumber: text("tracking_number"),
   dpdConsignmentId: text("dpd_consignment_id"),

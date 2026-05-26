@@ -957,6 +957,11 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_date timestamptz;
   `);
 
+  await db.execute(sql`
+    CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS xero_invoice_number text;
+  `);
+
   // Clean up stale purchase_required flags on items from orders that are no
   // longer active (shipped, completed, delivered, invoiced, cancelled, archived).
   // These were left behind because the requirements query previously only
