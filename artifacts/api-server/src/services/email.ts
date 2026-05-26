@@ -1297,8 +1297,8 @@ export function buildInvoiceEmail(params: {
 
   const invoiceDateStr = params.invoiceDate ? fmtDate(params.invoiceDate) : fmtDate(new Date());
   const paymentDueDate = params.invoiceDate
-    ? new Date(new Date(params.invoiceDate).getTime() + 30 * 86400000)
-    : new Date(Date.now() + 30 * 86400000);
+    ? new Date(new Date(params.invoiceDate).getTime() + 14 * 86400000)
+    : new Date(Date.now() + 14 * 86400000);
   const paymentDueStr = fmtDate(paymentDueDate);
 
   const subtotal = params.items.reduce((s, i) => s + i.lineTotal, 0);
@@ -1383,7 +1383,7 @@ export function buildInvoiceEmail(params: {
         <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
           <tr><td style="background:#f8fafc;padding:14px 18px;border-bottom:1px solid #e2e8f0;">
             <p style="margin:0;font-size:13px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:0.5px;">Payment Details</p>
-            <p style="margin:4px 0 0;font-size:13px;color:#64748b;">Payment is due within 30 days. Please quote <strong>${params.orderNumber}</strong> as your reference.</p>
+            <p style="margin:4px 0 0;font-size:13px;color:#64748b;">Payment is due within 14 days. Please quote <strong>${params.orderNumber}</strong> as your reference.</p>
           </td></tr>
           <tr><td style="padding:16px 18px;">
             ${params.stripePaymentLinkUrl
@@ -1655,8 +1655,8 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
 
     const invoiceDateStr = data.invoiceDate ? fmtDate(data.invoiceDate) : fmtDate(new Date());
     const paymentDueDate = data.invoiceDate
-      ? new Date(new Date(data.invoiceDate).getTime() + 30 * 86400000)
-      : new Date(Date.now() + 30 * 86400000);
+      ? new Date(new Date(data.invoiceDate).getTime() + 14 * 86400000)
+      : new Date(Date.now() + 14 * 86400000);
     const paymentDueStr = fmtDate(paymentDueDate);
 
     // ── Header band ──────────────────────────────────────────────────────────
@@ -1830,7 +1830,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       doc.fillColor(NAVY).fontSize(9).font("Helvetica-Bold").text("Payment Terms", MARGIN + 10, y + 8);
       doc.fillColor(TEXT).fontSize(8.5).font("Helvetica")
         .text(
-          `Payment is due within 30 days (by ${paymentDueStr}). BACS: Select Branding Solutions Ltd · Sort 04-06-05 · Account 30422879 · Reference ${data.orderNumber}`,
+          `Payment is due within 14 days (by ${paymentDueStr}). BACS: Select Branding Solutions Ltd · Sort 04-06-05 · Account 30422879 · Reference ${data.orderNumber}`,
           MARGIN + 10, y + 24, { width: W - 20 }
         );
       y += 68;
