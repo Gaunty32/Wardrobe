@@ -363,7 +363,7 @@ function ConfirmedMergeableBanner() {
   const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
   const [, setLocation] = useLocation();
 
-  const { data: confirmedOrders = [] } = useListOrders({ status: "confirmed" });
+  const { data: confirmedOrders = [] } = useListOrders({ status: "confirmed" }, { query: { refetchInterval: 15_000 } });
 
   const groups = useMemo(() => {
     const poMap = new Map<string, any[]>();
@@ -494,7 +494,10 @@ export default function Orders() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: allOrders = [], isLoading } = useListOrders({ status: statusFilter === "all" ? undefined : statusFilter });
+  const { data: allOrders = [], isLoading } = useListOrders(
+    { status: statusFilter === "all" ? undefined : statusFilter },
+    { query: { refetchInterval: 15_000 } },
+  );
   const { data: customers = [] } = useListCustomers();
   const createMutation = useCreateOrder();
 
