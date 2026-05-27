@@ -602,12 +602,36 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
   const res = await xeroFetch("/Invoices", { method: "POST", body: JSON.stringify({ Invoices: [invoice] }) });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Xero invoice creation failed: ${text}`);
+    let errorMsg = `Xero invoice creation failed (HTTP ${res.status})`;
+    try {
+      const body = JSON.parse(text);
+      if (body.Detail) {
+        errorMsg = body.Detail;
+      } else if (body.Message) {
+        errorMsg = body.Message;
+      } else if (body.Invoices?.[0]) {
+        const inv = body.Invoices[0];
+        const invErrors: string[] = (inv.ValidationErrors ?? []).map((e: any) => e.Message).filter(Boolean);
+        const lineErrors: string[] = (inv.LineItems ?? [])
+          .flatMap((li: any) => (li.ValidationErrors ?? []).map((e: any) => e.Message))
+          .filter(Boolean);
+        const all = [...invErrors, ...lineErrors];
+        if (all.length) errorMsg = all.join("; ");
+      }
+    } catch {
+      errorMsg = `Xero error (HTTP ${res.status}): ${text.slice(0, 300)}`;
+    }
+    throw new Error(errorMsg);
   }
 
-  const data = await res.json() as { Invoices: Array<{ InvoiceID: string; Status: string; InvoiceNumber: string }> };
+  const data = await res.json() as { Invoices: Array<{ InvoiceID: string; Status: string; InvoiceNumber: string; ValidationErrors?: Array<{ Message: string }> }> };
   const created = data.Invoices?.[0];
-  if (!created?.InvoiceID) throw new Error("Xero did not return an invoice ID.");
+
+  // Xero can return 200 but with validation errors (invoice not created)
+  if (!created?.InvoiceID) {
+    const errs = (created?.ValidationErrors ?? []).map((e) => e.Message).filter(Boolean);
+    throw new Error(errs.length ? errs.join("; ") : "Xero did not return an invoice ID.");
+  }
 
   // Persist IDs back to order
   await db.update(ordersTable)
