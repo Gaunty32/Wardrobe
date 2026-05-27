@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation, Link } from "wouter";
+import { useLocation, useSearch, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
@@ -2656,6 +2656,24 @@ export default function NewOrder() {
     writeSession({ step: persistedStep, mode: persistedMode, basket: persistedBasket });
   }
 
+  // ── Quote pre-fill: if URL has ?quote=TOKEN, load quote items ─────────────
+  const search = useSearch();
+  const quoteToken = useMemo(() => new URLSearchParams(search).get("quote"), [search]);
+
+  const { data: quoteData } = useQuery<{
+    id: number;
+    quoteNumber: string;
+    customerName: string;
+    notes: string | null;
+    items: OrderItem[];
+  }>({
+    queryKey: ["portal-quote", quoteToken],
+    queryFn: () => apiFetch(`/portal/quote/${quoteToken}`),
+    enabled: !!quoteToken && !isPreview,
+    staleTime: Infinity,
+    retry: false,
+  });
+
   // ── Server-side basket: restore on mount if session was empty ──────────────
   const { data: serverBasket } = useQuery<{ items: OrderItem[]; mode: string | null; step: number }>({
     queryKey: ["portal-basket"],
@@ -2666,6 +2684,7 @@ export default function NewOrder() {
 
   useEffect(() => {
     if (!serverBasket || isPreview) return;
+    if (quoteToken) return; // quote pre-fill takes priority over saved basket
     if (basket.length > 0 || step > 0) return; // local session takes priority
     if (!serverBasket.items?.length) return;
     setBasket(serverBasket.items);
@@ -2676,6 +2695,18 @@ export default function NewOrder() {
     }
     toast({ title: "Previous basket restored", description: `${serverBasket.items.length} item${serverBasket.items.length !== 1 ? "s" : ""} loaded from your last visit.` });
   }, [serverBasket]);
+
+  useEffect(() => {
+    if (!quoteData?.items?.length || isPreview) return;
+    if (basket.length > 0 || step > 0) return;
+    setBasket(quoteData.items);
+    setMode("catalogue");
+    setStep(1);
+    toast({
+      title: `Quote ${quoteData.quoteNumber} loaded`,
+      description: `${quoteData.items.length} item${quoteData.items.length !== 1 ? "s" : ""} pre-filled. Review quantities and submit when ready.`,
+    });
+  }, [quoteData]);
 
   // ── Auto-save basket to server (debounced 500 ms) ────────────────────────
   const flushBasketSave = () => {

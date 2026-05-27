@@ -107,6 +107,8 @@ function Router() {
       <Route path="/settings" component={Settings} />
       <Route path="/reports" component={Reports} />
       <Route path="/select-extra" component={SelectExtra} />
+      <Route path="/quotes" component={Quotes} />
+      <Route path="/quotes/:id" component={QuoteDetail} />
       <Route component={NotFound} />
     </Switch>
   );
