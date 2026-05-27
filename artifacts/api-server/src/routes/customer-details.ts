@@ -20,6 +20,7 @@ import {
   orderItemsTable,
   productsTable,
   productVariantsTable,
+  settingsTable,
 } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -1051,6 +1052,149 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
     finishName: r.finishId ? (finishMap.get(r.finishId) ?? null) : null,
     roleName: r.roleId ? (roleMap.get(r.roleId) ?? null) : null,
   })));
+});
+
+router.get("/customers/:customerId/wardrobe-data", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const { customerId } = p.data;
+
+  // Rich item data — de-duplicated by product+finish+colour+role, with images
+  const items = await db.execute(sql`
+    SELECT DISTINCT ON (COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, cf.role_id, 0))
+      cf.id   AS finish_id,
+      cf.name AS finish_name,
+      cfi.id,
+      cfi.name,
+      cfi.product_id,
+      p.name        AS product_name,
+      p.sku         AS product_sku,
+      p.image_url   AS product_image_url,
+      p.price_breaks,
+      cfi.colour,
+      cfi.unit_price,
+      cfi.special_price,
+      cfi.role_id,
+      COALESCE(cfi.role_id, cf.role_id) AS effective_role_id,
+      cr.name AS role_name,
+      (SELECT pv.image_url
+         FROM product_variants pv
+        WHERE pv.product_id = cfi.product_id
+          AND lower(pv.colour) = lower(cfi.colour)
+          AND pv.image_url IS NOT NULL
+        LIMIT 1
+      ) AS variant_image_url
+    FROM customer_finished_items cfi
+    LEFT JOIN customer_finishes  cf  ON cf.id = cfi.finish_id
+    LEFT JOIN products           p   ON p.id = cfi.product_id
+    LEFT JOIN customer_roles     cr  ON cr.id = COALESCE(cfi.role_id, cf.role_id)
+    WHERE cfi.customer_id = ${customerId}
+    ORDER BY COALESCE(cf.id, 0), COALESCE(cfi.product_id, 0), COALESCE(lower(cfi.colour), ''), COALESCE(cfi.role_id, cf.role_id, 0), cfi.id
+  `);
+
+  // Decoration processes per finish
+  const processes = await db.execute(sql`
+    SELECT
+      cfp.finish_id,
+      cp.id        AS process_id,
+      cp.name      AS item_finish_name,
+      cp.type      AS process_type,
+      cp.placement,
+      cp.price
+    FROM customer_finish_processes cfp
+    JOIN customer_processes cp ON cp.id = cfp.process_id
+    JOIN customer_finishes  cf ON cf.id = cfp.finish_id
+    WHERE cf.customer_id = ${customerId}
+    ORDER BY cp.name
+  `);
+
+  // Build sizesMap: { [productId]: { [colour]: string[] } }
+  const sizesMap: Record<string, Record<string, string[]>> = {};
+  const variantRows = await db.execute(sql`
+    SELECT DISTINCT pv.product_id, pv.colour, pv.size
+    FROM product_variants pv
+    WHERE pv.product_id IN (
+      SELECT DISTINCT cfi.product_id
+      FROM customer_finished_items cfi
+      WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+    )
+    AND pv.size IS NOT NULL AND pv.size != ''
+    ORDER BY pv.product_id, pv.colour, pv.size
+  `);
+  for (const row of variantRows.rows as any[]) {
+    const pid = String(row.product_id);
+    if (!sizesMap[pid]) sizesMap[pid] = {};
+    const col = row.colour ?? "__any__";
+    if (!sizesMap[pid][col]) sizesMap[pid][col] = [];
+    sizesMap[pid][col].push(row.size);
+  }
+  // Merge product_attributes sizes (covers colour-only variable products)
+  try {
+    const attrRows = await db.execute(sql`
+      SELECT DISTINCT pa.product_id, pa.value AS size
+      FROM product_attributes pa
+      WHERE pa.type = 'size' AND pa.value IS NOT NULL AND pa.value != ''
+        AND pa.product_id IN (
+          SELECT DISTINCT cfi.product_id FROM customer_finished_items cfi
+          WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+        )
+    `);
+    for (const row of attrRows.rows as any[]) {
+      const pid = String(row.product_id);
+      if (!sizesMap[pid]) sizesMap[pid] = {};
+      if (!sizesMap[pid]["__any__"]) sizesMap[pid]["__any__"] = [];
+      sizesMap[pid]["__any__"].push(row.size);
+    }
+  } catch { /* best-effort */ }
+  // Sort sizes using saved size_order setting
+  try {
+    const [sizeOrderRow] = await db.select().from(settingsTable).where(eq(settingsTable.key, "size_order"));
+    if (sizeOrderRow?.value) {
+      const sizeOrder: string[] = JSON.parse(sizeOrderRow.value);
+      const sortFn = (a: string, b: string) => {
+        const ai = sizeOrder.indexOf(a), bi = sizeOrder.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        return a.localeCompare(b);
+      };
+      for (const pid of Object.keys(sizesMap))
+        for (const col of Object.keys(sizesMap[pid]))
+          sizesMap[pid][col] = [...new Set(sizesMap[pid][col])].sort(sortFn);
+    }
+  } catch { /* best-effort */ }
+
+  // Build sleevesMap: { [productId]: string[] } from product_attributes type='sleeve'
+  const sleevesMap: Record<string, string[]> = {};
+  try {
+    const sleeveRows = await db.execute(sql`
+      SELECT DISTINCT pa.product_id, pa.value AS sleeve
+      FROM product_attributes pa
+      WHERE pa.type = 'sleeve' AND pa.value IS NOT NULL AND pa.value != ''
+        AND pa.product_id IN (
+          SELECT DISTINCT cfi.product_id FROM customer_finished_items cfi
+          WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+        )
+      ORDER BY pa.product_id, pa.value
+    `);
+    for (const row of sleeveRows.rows as any[]) {
+      const pid = String(row.product_id);
+      if (!sleevesMap[pid]) sleevesMap[pid] = [];
+      sleevesMap[pid].push(row.sleeve as string);
+    }
+    for (const pid of Object.keys(sleevesMap)) {
+      sleevesMap[pid] = [...new Set(sleevesMap[pid])].sort((a, b) => {
+        const an = parseInt(a, 10), bn = parseInt(b, 10);
+        if (!isNaN(an) && !isNaN(bn)) return an - bn;
+        if (!isNaN(an)) return -1;
+        if (!isNaN(bn)) return 1;
+        return a.localeCompare(b);
+      });
+    }
+  } catch { /* best-effort */ }
+
+  res.json({ items: items.rows, processes: processes.rows, sizesMap, sleevesMap });
 });
 
 router.post("/customers/:customerId/finished-items", async (req, res): Promise<void> => {

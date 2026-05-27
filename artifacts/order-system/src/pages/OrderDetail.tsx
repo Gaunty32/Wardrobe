@@ -227,6 +227,20 @@ function useCustomerFinishedItems(customerId: number | null) {
   });
 }
 
+interface WardrobeData {
+  items: any[];
+  processes: any[];
+  sizesMap: Record<string, Record<string, string[]>>;
+  sleevesMap: Record<string, string[]>;
+}
+function useCustomerWardrobeData(customerId: number | null) {
+  return useQuery<WardrobeData>({
+    queryKey: ["customer-wardrobe-data", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/wardrobe-data`),
+    enabled: customerId !== null && customerId > 0,
+  });
+}
+
 function useCustomerDeliveryAddresses(customerId: number | null) {
   return useQuery<DeliveryAddress[]>({
     queryKey: ["customer-delivery-addresses", customerId],
@@ -346,6 +360,7 @@ export default function OrderDetail() {
   const { data: customerFinishes } = useCustomerFinishes(customerId);
   const { data: customerEmployees, refetch: refetchEmployees } = useCustomerEmployees(customerId);
   const { data: customerFinishedItems } = useCustomerFinishedItems(customerId);
+  const { data: wardrobeData } = useCustomerWardrobeData(customerId);
   const { data: customerDeliveryAddresses } = useCustomerDeliveryAddresses(customerId);
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
@@ -368,7 +383,10 @@ export default function OrderDetail() {
   // CustomerEmployee = ordering for a specific person
   const [wardrobeRecipient, setWardrobeRecipient] = useState<null | "stock" | CustomerEmployee>(null);
   const [wardrobeItemSizes, setWardrobeItemSizes] = useState<Record<number, string>>({});
+  const [wardrobeItemSleeves, setWardrobeItemSleeves] = useState<Record<number, string>>({});
   const [wardrobeItemQtys, setWardrobeItemQtys] = useState<Record<number, number>>({});
+  const [wardrobeBulkModes, setWardrobeBulkModes] = useState<Record<number, boolean>>({});
+  const [wardrobeBulkQtys, setWardrobeBulkQtys] = useState<Record<number, Record<string, number>>>({});
 
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
@@ -841,7 +859,10 @@ export default function OrderDetail() {
   const handleWardrobePersonSelect = async (recipient: "stock" | CustomerEmployee) => {
     setWardrobeRecipient(recipient);
     setWardrobeItemSizes({});
+    setWardrobeItemSleeves({});
     setWardrobeItemQtys({});
+    setWardrobeBulkModes({});
+    setWardrobeBulkQtys({});
     if (recipient === "stock" || !customerId || typeof recipient === "string") return;
     try {
       const lastSizes = await apiFetch<{
@@ -899,6 +920,101 @@ export default function OrderDetail() {
         onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
       }
     );
+  };
+
+  // Add a single wardrobe item using new rich wardrobe-data format
+  const handleWardrobeWiAdd = (wi: any) => {
+    const id = wi.id as number;
+    const waist = wardrobeItemSizes[id] ?? "";
+    const sleeve = wardrobeItemSleeves[id] ?? "";
+    const sleeveOpts = wardrobeData?.sleevesMap?.[String(wi.product_id)] ?? [];
+    const sizeOpts = (() => {
+      if (!wardrobeData?.sizesMap) return [] as string[];
+      const byColour = wardrobeData.sizesMap[String(wi.product_id)];
+      if (!byColour) return [] as string[];
+      return [...new Set(Object.values(byColour).flat())] as string[];
+    })();
+    const effectiveSize = sizeOpts.length === 0
+      ? ""
+      : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist;
+    const qty = wardrobeItemQtys[id] ?? 1;
+    const effectivePrice = wi.special_price != null
+      ? parseFloat(String(wi.special_price))
+      : parseFloat(String(wi.unit_price ?? "0"));
+    const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
+    const recipientName = isPersonRecipient
+      ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
+      : "";
+    const recipientEmployeeId = isPersonRecipient ? (wardrobeRecipient as CustomerEmployee).id : null;
+    addItemMutation.mutate(
+      {
+        id: orderId,
+        data: {
+          productId: wi.product_id,
+          productName: wi.product_name ?? wi.name,
+          colour: wi.colour ?? null,
+          size: effectiveSize || null,
+          finishId: wi.finish_id ?? null,
+          finishName: wi.finish_name ?? null,
+          recipientType: isPersonRecipient ? "person" : "stock",
+          recipientName: isPersonRecipient ? recipientName : null,
+          recipientEmployeeId: isPersonRecipient ? recipientEmployeeId : null,
+          quantity: qty,
+          unitPrice: effectivePrice,
+        } as Parameters<typeof addItemMutation.mutate>[0]["data"],
+      },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          toast({ title: "Item Added", description: `${wi.product_name ?? wi.name} added to the order.` });
+          setWardrobeItemQtys(s => { const n = { ...s }; delete n[id]; return n; });
+          setWardrobeItemSleeves(s => { const n = { ...s }; delete n[id]; return n; });
+        },
+        onError: (err) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+      }
+    );
+  };
+
+  // Add multiple wardrobe items in bulk (one line per size with qty > 0)
+  const handleWardrobeBulkAdd = async (wi: any, comboOptions: string[]) => {
+    const id = wi.id as number;
+    const qtys = wardrobeBulkQtys[id] ?? {};
+    const sizesWithQty = comboOptions.filter(s => (qtys[s] ?? 0) > 0);
+    if (sizesWithQty.length === 0) return;
+    const effectivePrice = wi.special_price != null
+      ? parseFloat(String(wi.special_price))
+      : parseFloat(String(wi.unit_price ?? "0"));
+    const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
+    const recipientName = isPersonRecipient
+      ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
+      : "";
+    const recipientEmployeeId = isPersonRecipient ? (wardrobeRecipient as CustomerEmployee).id : null;
+    try {
+      await Promise.all(sizesWithQty.map(size =>
+        apiFetch(`/orders/${orderId}/items`, {
+          method: "POST",
+          body: JSON.stringify({
+            productId: wi.product_id,
+            productName: wi.product_name ?? wi.name,
+            colour: wi.colour ?? null,
+            size,
+            finishId: wi.finish_id ?? null,
+            finishName: wi.finish_name ?? null,
+            recipientType: isPersonRecipient ? "person" : "stock",
+            recipientName: isPersonRecipient ? recipientName : null,
+            recipientEmployeeId,
+            quantity: qtys[size],
+            unitPrice: effectivePrice,
+          }),
+        })
+      ));
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: `${sizesWithQty.length} line${sizesWithQty.length !== 1 ? "s" : ""} added to order` });
+      setWardrobeBulkQtys(q => { const n = { ...q }; delete n[id]; return n; });
+      setWardrobeBulkModes(m => ({ ...m, [id]: false }));
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
@@ -2276,73 +2392,215 @@ export default function OrderDetail() {
                       </div>
                     </div>
 
-                    {/* Item rows */}
-                    {customerFinishedItems
-                      .filter(fi =>
+                    {/* Card grid — matches portal wardrobe layout */}
+                    {(() => {
+                      const wiItems = (wardrobeData?.items ?? []).filter((wi: any) =>
                         wardrobeRecipient === "stock" ||
-                        fi.roleId === null ||
-                        fi.roleId === (wardrobeRecipient as CustomerEmployee).roleId
-                      )
-                      .map(fi => {
-                        const effectivePrice = fi.specialPrice ?? fi.unitPrice;
-                        const currentSize = wardrobeItemSizes[fi.id] ?? "";
-                        const currentQty = wardrobeItemQtys[fi.id] ?? 1;
-                        return (
-                          <div key={fi.id} className="rounded-lg border border-border bg-card px-4 py-3 flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium text-sm leading-tight">{fi.name}</p>
-                                {fi.roleName && (
-                                  <span className="text-[10px] font-medium text-primary/70 bg-primary/10 rounded px-1 shrink-0">{fi.roleName}</span>
-                                )}
+                        wi.effective_role_id == null ||
+                        wi.effective_role_id === (wardrobeRecipient as CustomerEmployee).roleId
+                      );
+                      if (wardrobeData && wiItems.length === 0) return (
+                        <div className="py-8 text-center text-muted-foreground">
+                          <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-20" />
+                          <p className="text-sm">No items for this role</p>
+                        </div>
+                      );
+                      return (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          {wiItems.map((wi: any) => {
+                            const id = wi.id as number;
+                            const pid = String(wi.product_id ?? "");
+                            const byColour = wardrobeData?.sizesMap?.[pid];
+                            const sizeOpts: string[] = byColour
+                              ? [...new Set(Object.values(byColour).flat())] as string[]
+                              : [];
+                            const sleeveOpts: string[] = wardrobeData?.sleevesMap?.[pid] ?? [];
+                            const procs: any[] = (wardrobeData?.processes ?? []).filter((p: any) => p.finish_id === wi.finish_id);
+                            const oneSize = sizeOpts.length === 0;
+                            const isBulk = wardrobeBulkModes[id] ?? false;
+                            const currentSize = wardrobeItemSizes[id] ?? "";
+                            const currentSleeve = wardrobeItemSleeves[id] ?? "";
+                            const currentQty = wardrobeItemQtys[id] ?? 1;
+                            const bulkComboOpts = sleeveOpts.length > 0
+                              ? sizeOpts.flatMap(s => sleeveOpts.map(sl => `${s}/${sl}`))
+                              : sizeOpts;
+                            const effectivePrice = wi.special_price != null
+                              ? parseFloat(String(wi.special_price))
+                              : parseFloat(String(wi.unit_price ?? "0"));
+                            const imageUrl = wi.variant_image_url ?? wi.product_image_url;
+                            return (
+                              <div key={id} className="rounded-xl border bg-card overflow-hidden flex flex-col">
+                                {/* Image */}
+                                <div className="aspect-square bg-white flex items-center justify-center border-b p-3">
+                                  {imageUrl
+                                    ? <img src={imageUrl} alt={wi.product_name ?? wi.name} className="w-full h-full object-contain" />
+                                    : <ShoppingBag className="w-10 h-10 text-muted-foreground/20" />}
+                                </div>
+                                {/* Body */}
+                                <div className="p-3 flex flex-col gap-2 flex-1">
+                                  {/* Name + colour + price */}
+                                  <div>
+                                    <p className="font-semibold text-sm leading-snug line-clamp-2">{wi.product_name ?? wi.name}</p>
+                                    {(wi.colour || wi.product_sku) && (
+                                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{[wi.colour, wi.product_sku].filter(Boolean).join(" · ")}</p>
+                                    )}
+                                    {effectivePrice > 0 && (
+                                      <p className="text-sm font-bold text-primary mt-1">{formatCurrency(effectivePrice)}</p>
+                                    )}
+                                  </div>
+                                  {/* Finish + processes */}
+                                  {(wi.finish_name || procs.length > 0) && (
+                                    <div className="space-y-1">
+                                      {wi.finish_name && (
+                                        <p className="text-xs font-bold leading-snug">{wi.finish_name}</p>
+                                      )}
+                                      {procs.slice(0, 2).map((p: any) => (
+                                        <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5 text-[10px]">
+                                          <Sparkles className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                                          <span className="font-medium text-foreground/70 truncate">{p.item_finish_name}</span>
+                                          {p.placement && <span className="text-muted-foreground shrink-0">· {p.placement}</span>}
+                                        </div>
+                                      ))}
+                                      {procs.length > 2 && (
+                                        <p className="text-[10px] text-muted-foreground">+{procs.length - 2} more</p>
+                                      )}
+                                    </div>
+                                  )}
+                                  {/* Controls */}
+                                  <div className="mt-auto flex flex-col gap-2">
+                                    {/* Bulk toggle */}
+                                    {!oneSize && sizeOpts.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setWardrobeBulkModes(m => ({ ...m, [id]: !m[id] }))}
+                                        className={cn(
+                                          "w-full py-1.5 rounded-md text-xs font-semibold transition-colors border",
+                                          isBulk
+                                            ? "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+                                            : "bg-[hsl(218,45%,19%)] text-white border-[hsl(218,45%,19%)] hover:bg-[hsl(218,45%,24%)]"
+                                        )}
+                                      >
+                                        {isBulk ? "← Single item" : "Bulk Order"}
+                                      </button>
+                                    )}
+                                    {oneSize ? (
+                                      /* One size — just qty + add */
+                                      <div className="flex items-center gap-1.5">
+                                        <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                          <span className="w-7 text-center text-sm font-semibold">{currentQty}</span>
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
+                                        </div>
+                                        <Button size="sm" className="flex-1 h-8 text-sm" disabled={addItemMutation.isPending} onClick={() => handleWardrobeWiAdd(wi)}>Add</Button>
+                                      </div>
+                                    ) : isBulk ? (
+                                      /* Bulk entry grid */
+                                      (() => {
+                                        const qtys = wardrobeBulkQtys[id] ?? {};
+                                        if (sleeveOpts.length > 0) {
+                                          const total = bulkComboOpts.reduce((s, k) => s + (qtys[k] ?? 0), 0);
+                                          return (
+                                            <div className="space-y-2">
+                                              <div className="overflow-x-auto">
+                                                <table className="w-full text-xs border-collapse">
+                                                  <thead>
+                                                    <tr>
+                                                      <th className="text-left pr-1 text-muted-foreground font-semibold py-0.5 text-[10px]">Waist</th>
+                                                      {sleeveOpts.map(sl => (
+                                                        <th key={sl} className="text-center px-0.5 text-muted-foreground font-semibold py-0.5 text-[10px] min-w-[2rem]">{sl}"</th>
+                                                      ))}
+                                                    </tr>
+                                                  </thead>
+                                                  <tbody>
+                                                    {sizeOpts.map(sz => (
+                                                      <tr key={sz}>
+                                                        <td className="pr-1 text-muted-foreground font-semibold py-0.5 text-[10px]">{sz}</td>
+                                                        {sleeveOpts.map(sl => {
+                                                          const combo = `${sz}/${sl}`;
+                                                          return (
+                                                            <td key={sl} className="px-0.5 py-0.5">
+                                                              <input type="number" min={0} value={qtys[combo] || ""} placeholder="0"
+                                                                onChange={e => { const v = parseInt(e.target.value, 10); setWardrobeBulkQtys(q => ({ ...q, [id]: { ...(q[id] ?? {}), [combo]: isNaN(v) || v < 0 ? 0 : v } })); }}
+                                                                className="w-full h-7 text-center text-xs font-semibold rounded border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                                              />
+                                                            </td>
+                                                          );
+                                                        })}
+                                                      </tr>
+                                                    ))}
+                                                  </tbody>
+                                                </table>
+                                              </div>
+                                              <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0 || addItemMutation.isPending} onClick={() => handleWardrobeBulkAdd(wi, bulkComboOpts)}>
+                                                Add {total > 0 ? `${total} ` : ""}to order
+                                              </Button>
+                                            </div>
+                                          );
+                                        }
+                                        const total = sizeOpts.reduce((s, sz) => s + (qtys[sz] ?? 0), 0);
+                                        return (
+                                          <div className="space-y-2">
+                                            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(sizeOpts.length, 4)}, 1fr)` }}>
+                                              {sizeOpts.map(sz => (
+                                                <div key={sz} className="flex flex-col items-center gap-0.5">
+                                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{sz}</span>
+                                                  <input type="number" min={0} value={qtys[sz] || ""} placeholder="0"
+                                                    onChange={e => { const v = parseInt(e.target.value, 10); setWardrobeBulkQtys(q => ({ ...q, [id]: { ...(q[id] ?? {}), [sz]: isNaN(v) || v < 0 ? 0 : v } })); }}
+                                                    className="w-full h-8 text-center text-sm font-semibold rounded-md border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                                  />
+                                                </div>
+                                              ))}
+                                            </div>
+                                            <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0 || addItemMutation.isPending} onClick={() => handleWardrobeBulkAdd(wi, sizeOpts)}>
+                                              Add {total > 0 ? `${total} ` : ""}to order
+                                            </Button>
+                                          </div>
+                                        );
+                                      })()
+                                    ) : (
+                                      /* Single item — size selector + qty + add */
+                                      <>
+                                        <Select value={currentSize} onValueChange={v => setWardrobeItemSizes(s => ({ ...s, [id]: v }))}>
+                                          <SelectTrigger className="h-8 text-sm w-full">
+                                            <SelectValue placeholder={sleeveOpts.length > 0 ? "Waist" : "Select size"} />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {sizeOpts.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                          </SelectContent>
+                                        </Select>
+                                        {sleeveOpts.length > 0 && (
+                                          <Select value={currentSleeve} onValueChange={v => setWardrobeItemSleeves(s => ({ ...s, [id]: v }))}>
+                                            <SelectTrigger className="h-8 text-sm w-full">
+                                              <SelectValue placeholder="Fit / Length" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {sleeveOpts.map(sl => <SelectItem key={sl} value={sl}>{sl}"</SelectItem>)}
+                                            </SelectContent>
+                                          </Select>
+                                        )}
+                                        <div className="flex items-center gap-1.5">
+                                          <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
+                                            <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                            <span className="w-7 text-center text-sm font-semibold">{currentQty}</span>
+                                            <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
+                                          </div>
+                                          <Button
+                                            size="sm"
+                                            className="flex-1 h-8 text-sm"
+                                            disabled={(!oneSize && !currentSize.trim()) || (sleeveOpts.length > 0 && !currentSleeve.trim()) || addItemMutation.isPending}
+                                            onClick={() => handleWardrobeWiAdd(wi)}
+                                          >Add</Button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
-                              <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                                {fi.productName}
-                                {fi.colour && <span> · {fi.colour}</span>}
-                                {fi.finishName && <span> · <Sparkles className="w-2.5 h-2.5 inline text-amber-500" /> {fi.finishName}</span>}
-                              </p>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {/* Size input */}
-                              <Input
-                                placeholder="Size"
-                                value={currentSize}
-                                onChange={e => setWardrobeItemSizes(s => ({ ...s, [fi.id]: e.target.value }))}
-                                className="w-20 text-center text-sm h-8 px-2"
-                              />
-                              {/* Qty stepper */}
-                              <div className="flex items-center gap-0.5">
-                                <button
-                                  onClick={() => setWardrobeItemQtys(s => ({ ...s, [fi.id]: Math.max(1, (s[fi.id] ?? 1) - 1) }))}
-                                  className="w-7 h-7 rounded border flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground"
-                                >
-                                  <Minus className="w-3 h-3" />
-                                </button>
-                                <span className="w-7 text-center text-sm font-medium tabular-nums">{currentQty}</span>
-                                <button
-                                  onClick={() => setWardrobeItemQtys(s => ({ ...s, [fi.id]: (s[fi.id] ?? 1) + 1 }))}
-                                  className="w-7 h-7 rounded border flex items-center justify-center hover:bg-muted transition-colors text-muted-foreground"
-                                >
-                                  <Plus className="w-3 h-3" />
-                                </button>
-                              </div>
-                              {/* Price */}
-                              <span className="text-xs font-semibold tabular-nums text-muted-foreground w-14 text-right hidden sm:block">
-                                {formatCurrency(effectivePrice * currentQty)}
-                              </span>
-                              {/* Add button */}
-                              <Button
-                                size="sm"
-                                disabled={addItemMutation.isPending}
-                                onClick={() => handleWardrobeItemAdd(fi)}
-                                className="h-8 px-3 shrink-0"
-                              >
-                                Add
-                              </Button>
-                            </div>
-                          </div>
-                        );
-                      })}
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </TabsContent>
