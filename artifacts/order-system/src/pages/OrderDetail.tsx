@@ -640,10 +640,11 @@ export default function OrderDetail() {
     refetchInterval: 15_000,
   });
 
-  const printLabel = (recipient: PackRecipient) => {
+  const printLabel = (recipient: PackRecipient, itemsToPrint?: PackItem[]) => {
     const win = window.open("", "_blank", "width=600,height=900");
     if (!win) return;
-    const lines = recipient.items.map(i => `<tr><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px">${i.productName}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px;color:#555">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px;text-align:center;font-weight:bold">${i.quantity}</td></tr>`).join("");
+    const printItems = itemsToPrint ?? recipient.items;
+    const lines = printItems.map(i => `<tr><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px">${i.productName}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px;color:#555">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td><td style="padding:3px 6px;border-bottom:1px solid #eee;font-size:13px;text-align:center;font-weight:bold">${i.quantity}</td></tr>`).join("");
     win.document.write(`<!DOCTYPE html><html><head>
       <meta charset="UTF-8"><title>Pack Label — ${recipient.recipientName}</title>
       <style>
@@ -2130,6 +2131,54 @@ export default function OrderDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {/* ── Wearer Labels ──────────────────────────────────────────────── */}
+            {packStatus && packStatus.recipients.some(r => r.items.some(i => i.isComplete)) && (
+              <Card className="shadow-sm border-border/50">
+                <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                  <CardTitle className="font-display text-lg flex items-center gap-2">
+                    <Printer className="w-4 h-4 text-muted-foreground" /> Wearer Labels
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="py-3 space-y-2">
+                  <p className="text-xs text-muted-foreground mb-3">Print labels for recipients whose items have been received. Partial packs are allowed — only received items appear on the label.</p>
+                  {packStatus.recipients.map((recipient, idx) => {
+                    const receivedItems = recipient.items.filter(i => i.isComplete);
+                    const totalItems = recipient.items.length;
+                    if (receivedItems.length === 0) return null;
+                    const displayName = recipient.recipientType === "stock" ? "Bulk Stock" : (recipient.recipientName ?? "Unknown");
+                    const isPartial = receivedItems.length < totalItems;
+                    return (
+                      <div key={idx} className="flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2.5">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{displayName}</p>
+                          {recipient.jobTitle && <p className="text-xs text-muted-foreground truncate">{recipient.jobTitle}</p>}
+                          <div className="flex items-center gap-1.5 mt-1">
+                            {isPartial ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                <TriangleAlert className="w-3 h-3" /> {receivedItems.length}/{totalItems} received
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-0.5">
+                                <Check className="w-3 h-3" /> All {totalItems} received
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0 gap-1.5 text-xs"
+                          onClick={() => printLabel(recipient, receivedItems)}
+                        >
+                          <Printer className="w-3.5 h-3.5" /> Print
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
 
           </div>
         </div>

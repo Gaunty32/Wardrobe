@@ -2002,7 +2002,8 @@ router.get("/orders/:id/pack-status", async (req, res): Promise<void> => {
 
   for (const oi of items) {
     const wsInfo = wsItemMap.get(oi.id);
-    const isComplete = wsInfo?.status === "complete";
+    // Decorated items: complete when worksheet is done. Plain items (no worksheet): complete when stockStatus = 'complete'.
+    const isComplete = wsInfo ? wsInfo.status === "complete" : oi.stockStatus === "complete";
     const entry = { orderItemId: oi.id, productName: oi.productName, colour: oi.colour, size: oi.size, quantity: oi.quantity, isComplete, worksheetNumber: wsInfo?.worksheetNumber ?? null };
 
     if (oi.recipientType === "person" && oi.recipientName) {
