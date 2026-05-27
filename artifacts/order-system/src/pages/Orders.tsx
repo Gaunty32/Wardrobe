@@ -357,6 +357,107 @@ function PortalPendingOrders() {
   );
 }
 
+function ConfirmedMergeableBanner() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
+  const [, setLocation] = useLocation();
+
+  const { data: confirmedOrders = [] } = useListOrders({ status: "confirmed" });
+
+  const groups = useMemo(() => {
+    const poMap = new Map<string, any[]>();
+    for (const o of confirmedOrders) {
+      const po = (o as any).poNumber;
+      const cid = (o as any).customerId;
+      if (po && cid) {
+        const key = `${cid}::${po}`;
+        if (!poMap.has(key)) poMap.set(key, []);
+        poMap.get(key)!.push(o);
+      }
+    }
+    const result: Array<{ key: string; po: string; customer: string; orders: any[] }> = [];
+    for (const [key, orders] of poMap.entries()) {
+      if (orders.length > 1) {
+        result.push({ key, po: orders[0].poNumber, customer: orders[0].customerName, orders });
+      }
+    }
+    return result;
+  }, [confirmedOrders]);
+
+  if (groups.length === 0) return null;
+
+  async function mergeGroup(orderIds: number[], groupKey: string) {
+    setMergingIds(s => new Set([...s, groupKey]));
+    try {
+      await apiFetch("/portal/admin/orders/merge", { method: "POST", body: JSON.stringify({ orderIds }) });
+      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: "Orders merged", description: `${orderIds.length} confirmed orders combined into one.` });
+    } catch (e: any) {
+      toast({ title: "Could not merge", description: e.message, variant: "destructive" });
+    } finally {
+      setMergingIds(s => { const n = new Set(s); n.delete(groupKey); return n; });
+    }
+  }
+
+  return (
+    <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
+      <CardHeader className="py-3 px-5 border-b border-blue-200/60 flex flex-row items-center gap-2">
+        <GitMerge className="w-4 h-4 text-blue-600" />
+        <span className="font-semibold text-blue-800 text-sm">Confirmed Orders — Mergeable by PO Number</span>
+        <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
+          {groups.length}
+        </span>
+      </CardHeader>
+      <CardContent className="p-0 divide-y divide-blue-100">
+        {groups.map(g => {
+          const isMerging = mergingIds.has(g.key);
+          const totalValue = g.orders.reduce((s: number, o: any) => s + (o.totalAmount ?? 0), 0);
+          return (
+            <div key={g.key} className="px-5 py-3 flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2 min-w-0">
+                <GitMerge className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="text-sm font-medium text-blue-900">
+                  {toTitleCase(g.customer)}
+                </span>
+                <span className="text-xs text-blue-600 font-mono bg-blue-100 px-1.5 py-0.5 rounded">
+                  PO# {g.po}
+                </span>
+                <span className="text-xs text-blue-700">
+                  {g.orders.length} orders · {formatCurrency(totalValue)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 ml-auto flex-wrap">
+                <div className="flex gap-1.5 flex-wrap">
+                  {g.orders.map((o: any) => (
+                    <button
+                      key={o.id}
+                      className="text-xs font-mono text-blue-700 hover:text-blue-900 hover:underline"
+                      onClick={() => setLocation(`/orders/${o.id}`)}
+                    >
+                      {o.orderNumber}
+                    </button>
+                  ))}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 bg-white shrink-0"
+                  disabled={isMerging}
+                  onClick={() => mergeGroup(g.orders.map((o: any) => o.id), g.key)}
+                >
+                  {isMerging ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitMerge className="w-3 h-3" />}
+                  {isMerging ? "Merging…" : "Merge into one order"}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Orders() {
   const [, setLocation] = useLocation();
   type SortKey = "orderNumber" | "requiredDate" | "orderDate" | "customerName" | "poNumber" | "status" | "totalAmount";
@@ -498,6 +599,7 @@ export default function Orders() {
 
         <QuoteHoldingPanel />
         <PortalPendingOrders />
+        <ConfirmedMergeableBanner />
 
         <Card className="shadow-sm border-border/50">
           <CardHeader className="py-3 border-b border-border/40 bg-muted/10 flex flex-row items-center gap-3 flex-wrap">

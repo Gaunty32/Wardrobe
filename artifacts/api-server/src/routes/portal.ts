@@ -1793,9 +1793,9 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
   if (orders.length !== orderIds.length) {
     res.status(404).json({ error: "One or more orders not found" }); return;
   }
-  const notPending = orders.filter(o => o.status !== "portal_pending");
-  if (notPending.length > 0) {
-    res.status(400).json({ error: `Orders ${notPending.map(o => o.orderNumber).join(", ")} are not portal_pending` }); return;
+  const invalidStatus = orders.filter(o => !["portal_pending", "confirmed"].includes(o.status));
+  if (invalidStatus.length > 0) {
+    res.status(400).json({ error: `Orders ${invalidStatus.map(o => o.orderNumber).join(", ")} cannot be merged (must be portal_pending or confirmed)` }); return;
   }
   const customerIds = [...new Set(orders.map(o => o.customerId))];
   if (customerIds.length > 1) {
@@ -1811,6 +1811,11 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
   await db.update(orderItemsTable)
     .set({ orderId: primary.id })
     .where(inArray(orderItemsTable.orderId, secondaryIds));
+
+  // Move worksheets from secondary orders to primary
+  await db.update(worksheetsTable)
+    .set({ orderId: primary.id })
+    .where(inArray(worksheetsTable.orderId, secondaryIds));
 
   // Move logs from secondary orders to primary
   await db.update(orderLogsTable)
