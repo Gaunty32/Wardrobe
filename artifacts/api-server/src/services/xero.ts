@@ -1,5 +1,5 @@
 import { db, settingsTable, customersTable, suppliersTable, ordersTable, orderItemsTable, customerFinishesTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 // ─── Xero OAuth endpoints ────────────────────────────────────────────────────
 const XERO_AUTH_URL = "https://login.xero.com/identity/connect/authorize";
