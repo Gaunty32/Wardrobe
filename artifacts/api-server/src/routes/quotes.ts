@@ -41,6 +41,7 @@ router.get("/quotes", async (_req, res: Response): Promise<void> => {
 // ─── Create quote ─────────────────────────────────────────────────────────────
 const CreateSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
+  enquiryId: z.number().int().positive().nullable().optional(),
   customerName: z.string().min(1),
   notes: z.string().optional().nullable(),
   expiresAt: z.string().optional().nullable(),
@@ -49,15 +50,15 @@ const CreateSchema = z.object({
 router.post("/quotes", async (req: Request, res: Response): Promise<void> => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const { customerId, customerName, notes, expiresAt } = parsed.data;
+  const { customerId, enquiryId, customerName, notes, expiresAt } = parsed.data;
 
   const seqRows = await db.execute(sql`SELECT nextval('quote_number_seq') AS n`);
   const n = Number((seqRows.rows[0] as any).n);
   const quoteNumber = `Q${String(n).padStart(3, "0")}`;
 
   const result = await db.execute(sql`
-    INSERT INTO quotes (quote_number, customer_id, customer_name, notes, cover_text, expires_at)
-    VALUES (${quoteNumber}, ${customerId ?? null}, ${customerName}, ${notes ?? null}, ${DEFAULT_COVER_TEXT}, ${expiresAt ? new Date(expiresAt) : null})
+    INSERT INTO quotes (quote_number, customer_id, enquiry_id, customer_name, notes, cover_text, expires_at)
+    VALUES (${quoteNumber}, ${customerId ?? null}, ${enquiryId ?? null}, ${customerName}, ${notes ?? null}, ${DEFAULT_COVER_TEXT}, ${expiresAt ? new Date(expiresAt) : null})
     RETURNING *
   `);
   res.status(201).json(result.rows[0]);

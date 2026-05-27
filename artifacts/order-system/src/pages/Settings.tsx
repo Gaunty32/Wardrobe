@@ -317,21 +317,29 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [locationId, setLocationId] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (rawSettings && !loaded) {
       setWebhookUrl(rawSettings["high_level_webhook_url"] ?? "");
+      setApiKey(rawSettings["high_level_api_key"] ?? "");
+      setLocationId(rawSettings["high_level_location_id"] ?? "");
       setLoaded(true);
     }
   }, [rawSettings, loaded]);
 
   const saveMutation = useMutation({
-    mutationFn: (url: string) =>
+    mutationFn: () =>
       fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ high_level_webhook_url: url || null }),
+        body: JSON.stringify({
+          high_level_webhook_url: webhookUrl || null,
+          high_level_api_key: apiKey || null,
+          high_level_location_id: locationId || null,
+        }),
       }).then((r) => { if (!r.ok) throw new Error("Save failed"); return r.json(); }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings-raw"] });
@@ -340,8 +348,78 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const syncMutation = useMutation({
+    mutationFn: () =>
+      fetch("/api/enquiries/sync", { method: "POST" }).then(async (r) => {
+        if (!r.ok) throw new Error(await r.text());
+        return r.json() as Promise<{ synced: number }>;
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["enquiries"] });
+      toast({ title: "Enquiries synced", description: `${data.synced} lead${data.synced !== 1 ? "s" : ""} imported from High Level` });
+    },
+    onError: (e: Error) => toast({ title: "Sync failed", description: e.message, variant: "destructive" }),
+  });
+
+  const { data: enquiries = [] } = useQuery<any[]>({
+    queryKey: ["enquiries"],
+    queryFn: () => fetch("/api/enquiries").then((r) => r.json()),
+  });
+
   return (
     <div className="grid gap-6 max-w-2xl">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-amber-500" />
+          <h2 className="font-semibold text-base">Leads Sync (Enquiries)</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Contacts tagged <strong>Telephone Enquiry</strong>, <strong>Website Lead</strong>, or <strong>Showroom Contact</strong> in High Level will appear as selectable Enquiries when creating a new quote.
+        </p>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="hlApiKey">API Key (Private Integration Token)</Label>
+            <Input
+              id="hlApiKey"
+              type="password"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              High Level → Settings → Integrations → Private Integrations → create or copy token.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="hlLocationId">Location ID</Label>
+            <Input
+              id="hlLocationId"
+              placeholder="abc123xyz..."
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              High Level → Settings → Business Profile — the Location ID shown at the top.
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <Button size="sm" className="gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+            {saveMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><CheckCircle className="w-4 h-4" />Save</>}
+          </Button>
+          <Button
+            size="sm" variant="outline" className="gap-1.5"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending || !apiKey || !locationId}
+          >
+            {syncMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing…</> : <><RefreshCw className="w-4 h-4" />Sync Enquiries Now</>}
+          </Button>
+          {enquiries.length > 0 && (
+            <span className="text-xs text-muted-foreground">{enquiries.length} enquiri{enquiries.length !== 1 ? "es" : "y"} cached</span>
+          )}
+        </div>
+      </div>
+
       <div className="rounded-xl border border-border bg-card p-5 space-y-4">
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 text-amber-500" />
@@ -362,17 +440,11 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
             Find this in High Level → Automations → your workflow → Webhook trigger → copy the URL.
           </p>
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => saveMutation.mutate(webhookUrl)}
-          disabled={saveMutation.isPending}
-        >
-          {saveMutation.isPending
-            ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
-            : <><CheckCircle className="w-4 h-4" />Save Webhook URL</>}
+        <Button size="sm" className="gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          {saveMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><CheckCircle className="w-4 h-4" />Save Webhook URL</>}
         </Button>
       </div>
+
       <div className="rounded-xl border border-border bg-card p-5 space-y-2">
         <h2 className="font-semibold text-sm">Payload sent to High Level</h2>
         <p className="text-xs text-muted-foreground">The following fields are POSTed as JSON to your webhook URL:</p>

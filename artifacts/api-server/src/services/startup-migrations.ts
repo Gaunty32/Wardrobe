@@ -1080,4 +1080,18 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS quote_id integer REFERENCES quotes(id) ON DELETE SET NULL;
   `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS enquiries (
+      id              serial PRIMARY KEY,
+      hl_contact_id   text NOT NULL UNIQUE,
+      name            text NOT NULL,
+      email           text,
+      phone           text,
+      source_tag      text NOT NULL DEFAULT 'unknown',
+      last_synced_at  timestamptz NOT NULL DEFAULT now(),
+      created_at      timestamptz NOT NULL DEFAULT now()
+    );
+    ALTER TABLE quotes ADD COLUMN IF NOT EXISTS enquiry_id integer REFERENCES enquiries(id) ON DELETE SET NULL;
+  `);
 }

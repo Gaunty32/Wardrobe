@@ -26,6 +26,7 @@ import staffAuthRouter from "./staff-auth";
 import messagesRouter from "./messages";
 import selectExtraRouter from "./select-extra";
 import quotesRouter from "./quotes";
+import enquiriesRouter from "./enquiries";
 
 const router: IRouter = Router();
 
@@ -56,5 +57,6 @@ router.use(staffAuthRouter);
 router.use(messagesRouter);
 router.use(selectExtraRouter);
 router.use(quotesRouter);
+router.use(enquiriesRouter);
 
 export default router;

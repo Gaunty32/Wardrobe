@@ -13,14 +13,11 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { formatDate } from "@/lib/utils";
 import {
   FileText, Plus, Search, Loader2, Trash2, Eye, ChevronRight,
-  Clock, Send, CheckCircle2, ShoppingCart, X,
+  Clock, Send, CheckCircle2, X, Phone, Globe, Store,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -54,6 +51,14 @@ interface Customer {
   name: string;
 }
 
+interface Enquiry {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  source_tag: string;
+}
+
 const STATUS_CONFIG: Record<Quote["status"], { label: string; color: string; icon: React.ElementType }> = {
   draft:   { label: "Draft",   color: "bg-slate-100 text-slate-700 border-slate-300",   icon: Clock },
   sent:    { label: "Sent",    color: "bg-blue-100 text-blue-700 border-blue-300",      icon: Send },
@@ -73,6 +78,23 @@ function StatusBadge({ status }: { status: Quote["status"] }) {
   );
 }
 
+const SOURCE_TAG_CONFIG: Record<string, { label: string; color: string; Icon: React.ElementType }> = {
+  "telephone enquiry": { label: "Telephone",  color: "bg-amber-100 text-amber-700",  Icon: Phone  },
+  "website lead":      { label: "Website",    color: "bg-blue-100 text-blue-700",    Icon: Globe  },
+  "showroom contact":  { label: "Showroom",   color: "bg-purple-100 text-purple-700", Icon: Store },
+};
+
+function EnquirySourceBadge({ tag }: { tag: string }) {
+  const cfg = SOURCE_TAG_CONFIG[tag.toLowerCase()] ?? { label: tag, color: "bg-slate-100 text-slate-600", Icon: FileText };
+  const { Icon } = cfg;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium ${cfg.color}`}>
+      <Icon className="w-3 h-3" />
+      {cfg.label}
+    </span>
+  );
+}
+
 export default function Quotes() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -82,6 +104,7 @@ export default function Quotes() {
   const [newOpen, setNewOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerId, setNewCustomerId] = useState<number | null>(null);
+  const [newEnquiryId, setNewEnquiryId] = useState<number | null>(null);
   const [newNotes, setNewNotes] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
 
@@ -96,17 +119,29 @@ export default function Quotes() {
     queryFn: () => apiFetch("/customers"),
   });
 
+  const { data: enquiries = [] } = useQuery<Enquiry[]>({
+    queryKey: ["enquiries"],
+    queryFn: () => apiFetch("/enquiries"),
+  });
+
   const createQuote = useMutation({
     mutationFn: () => apiFetch<{ id: number }>("/quotes", {
       method: "POST",
-      body: JSON.stringify({ customerName: newCustomerName, customerId: newCustomerId, notes: newNotes || null }),
+      body: JSON.stringify({
+        customerName: newCustomerName,
+        customerId: newCustomerId,
+        enquiryId: newEnquiryId,
+        notes: newNotes || null,
+      }),
     }),
     onSuccess: (q) => {
       qc.invalidateQueries({ queryKey: ["quotes"] });
       setNewOpen(false);
       setNewCustomerName("");
       setNewCustomerId(null);
+      setNewEnquiryId(null);
       setNewNotes("");
+      setCustomerSearch("");
       setLocation(`/quotes/${q.id}`);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -127,10 +162,27 @@ export default function Quotes() {
     !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase())
   );
 
+  const filteredEnquiries = enquiries.filter((e) => {
+    if (!customerSearch) return true;
+    const s = customerSearch.toLowerCase();
+    return e.name.toLowerCase().includes(s) || (e.email ?? "").toLowerCase().includes(s);
+  });
+
+  const showDropdown = customerSearch.length > 0 && !newCustomerId && !newEnquiryId &&
+    (filteredCustomers.length > 0 || filteredEnquiries.length > 0);
+
   const statusCounts = quotes.reduce((acc, q) => {
     acc[q.status] = (acc[q.status] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
+
+  function resetDialog() {
+    setNewCustomerName("");
+    setNewCustomerId(null);
+    setNewEnquiryId(null);
+    setNewNotes("");
+    setCustomerSearch("");
+  }
 
   return (
     <Layout>
@@ -238,14 +290,14 @@ export default function Quotes() {
         )}
       </div>
 
-      <Dialog open={newOpen} onOpenChange={setNewOpen}>
+      <Dialog open={newOpen} onOpenChange={(open) => { setNewOpen(open); if (!open) resetDialog(); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>New Quote</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label>Customer</Label>
+              <Label>Customer or Enquiry</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <Input
@@ -254,34 +306,78 @@ export default function Quotes() {
                     setCustomerSearch(e.target.value);
                     setNewCustomerName(e.target.value);
                     setNewCustomerId(null);
+                    setNewEnquiryId(null);
                   }}
-                  placeholder="Search existing customers…"
+                  placeholder="Search customers or High Level enquiries…"
                   className="pl-9"
                 />
               </div>
-              {customerSearch && filteredCustomers.length > 0 && !newCustomerId && (
-                <div className="border rounded-lg overflow-hidden max-h-40 overflow-y-auto shadow-sm">
-                  {filteredCustomers.slice(0, 8).map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
-                      onClick={() => {
-                        setNewCustomerId(c.id);
-                        setNewCustomerName(c.name);
-                        setCustomerSearch(c.name);
-                      }}
-                    >
-                      {c.name}
-                    </button>
-                  ))}
+
+              {showDropdown && (
+                <div className="border rounded-lg overflow-hidden max-h-56 overflow-y-auto shadow-sm">
+                  {filteredCustomers.length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b">
+                        Existing Customers
+                      </div>
+                      {filteredCustomers.slice(0, 6).map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
+                          onClick={() => {
+                            setNewCustomerId(c.id);
+                            setNewEnquiryId(null);
+                            setNewCustomerName(c.name);
+                            setCustomerSearch(c.name);
+                          }}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {filteredEnquiries.length > 0 && (
+                    <>
+                      <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b border-t">
+                        Enquiries from High Level
+                      </div>
+                      {filteredEnquiries.slice(0, 6).map((e) => (
+                        <button
+                          key={e.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
+                          onClick={() => {
+                            setNewEnquiryId(e.id);
+                            setNewCustomerId(null);
+                            setNewCustomerName(e.name);
+                            setCustomerSearch(e.name);
+                          }}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium">{e.name}</span>
+                            <EnquirySourceBadge tag={e.source_tag} />
+                          </div>
+                          {(e.email || e.phone) && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {e.email ?? e.phone}
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
+
               {newCustomerId && (
-                <p className="text-xs text-green-600 font-medium">✓ Linked to existing customer</p>
+                <p className="text-xs text-green-600 font-medium">Linked to existing customer</p>
               )}
-              {!newCustomerId && customerSearch && (
-                <p className="text-xs text-muted-foreground">No match — will be saved as a new customer name</p>
+              {newEnquiryId && (
+                <p className="text-xs text-amber-600 font-medium">High Level enquiry selected — quote will be saved under their name</p>
+              )}
+              {!newCustomerId && !newEnquiryId && customerSearch && filteredCustomers.length === 0 && filteredEnquiries.length === 0 && (
+                <p className="text-xs text-muted-foreground">No match — will be saved as a new name</p>
               )}
             </div>
             <div className="space-y-1.5">
@@ -295,7 +391,7 @@ export default function Quotes() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setNewOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setNewOpen(false); resetDialog(); }}>Cancel</Button>
             <Button
               onClick={() => createQuote.mutate()}
               disabled={!newCustomerName.trim() || createQuote.isPending}
