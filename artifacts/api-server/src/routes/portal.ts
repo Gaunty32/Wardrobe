@@ -3211,6 +3211,57 @@ router.get("/portal/stock/:id/movements", portalAuth, async (req: Request, res: 
   res.json(rows.rows);
 });
 
+// ─── Portal: get quote by token (pre-fills the ordering form) ────────────────
+router.get("/portal/quote/:token", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const { token } = req.params;
+
+  const quoteRows = await db.execute(sql`SELECT * FROM quotes WHERE token = ${token}`);
+  const quote = quoteRows.rows[0] as any;
+  if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
+
+  if (quote.customer_id && quote.customer_id !== customerId) {
+    res.status(403).json({ error: "Access denied" }); return;
+  }
+  if (quote.expires_at && new Date(quote.expires_at) < new Date()) {
+    res.status(410).json({ error: "This quote has expired." }); return;
+  }
+
+  const itemRows = await db.execute(sql`
+    SELECT * FROM quote_items WHERE quote_id = ${quote.id} ORDER BY sort_order, id
+  `);
+
+  const items = (itemRows.rows as any[]).map((item) => ({
+    productId: item.product_id ?? null,
+    productName: item.product_name,
+    sku: null,
+    colour: item.colour ?? "",
+    size: item.size ?? "",
+    finishId: item.finish_id ?? null,
+    finishName: item.finish_name ?? "",
+    recipientType: "stock" as const,
+    recipientName: "",
+    recipientEmployeeId: null,
+    quantity: item.quantity,
+    garmentBasePrice: parseFloat(String(item.unit_price ?? 0)),
+    processLines: [],
+    unitPrice: parseFloat(String(item.unit_price ?? 0)),
+  }));
+
+  if (quote.status === "sent") {
+    await db.execute(sql`UPDATE quotes SET status = 'viewed', updated_at = now() WHERE id = ${quote.id}`);
+  }
+
+  res.json({
+    id: quote.id,
+    quoteNumber: quote.quote_number,
+    customerName: quote.customer_name,
+    notes: quote.notes,
+    expiresAt: quote.expires_at,
+    items,
+  });
+});
+
 // ─── GET /portal/stock/picking-note/:ref ─────────────────────────────────────
 router.get("/portal/stock/picking-note/:ref", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;

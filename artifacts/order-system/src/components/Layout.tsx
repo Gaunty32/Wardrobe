@@ -213,6 +213,7 @@ export default function Layout({ children }: LayoutProps) {
       items: [
         { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
         { name: "Orders", href: "/orders", icon: ShoppingCart },
+        { name: "Quotes", href: "/quotes", icon: FileText },
         { name: "Customers", href: "/customers", icon: Users },
         { name: "Products", href: "/products", icon: Package },
       ],

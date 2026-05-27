@@ -1042,4 +1042,42 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS zero_vat boolean NOT NULL DEFAULT false;
   `);
+
+  // ── Quotes system ─────────────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS quotes (
+      id           serial PRIMARY KEY,
+      quote_number text NOT NULL UNIQUE,
+      customer_id  integer REFERENCES customers(id) ON DELETE SET NULL,
+      customer_name text NOT NULL,
+      status       text NOT NULL DEFAULT 'draft',
+      notes        text,
+      cover_text   text,
+      expires_at   timestamptz,
+      token        uuid NOT NULL DEFAULT gen_random_uuid(),
+      created_at   timestamptz NOT NULL DEFAULT now(),
+      updated_at   timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS quote_items (
+      id           serial PRIMARY KEY,
+      quote_id     integer NOT NULL REFERENCES quotes(id) ON DELETE CASCADE,
+      product_id   integer REFERENCES products(id) ON DELETE SET NULL,
+      product_name text NOT NULL,
+      colour       text,
+      size         text,
+      finish_id    integer,
+      finish_name  text,
+      quantity     integer NOT NULL DEFAULT 1,
+      unit_price   numeric(10,2) NOT NULL DEFAULT 0,
+      vat_rate     numeric(6,4) NOT NULL DEFAULT 0.20,
+      notes        text,
+      sort_order   integer NOT NULL DEFAULT 0,
+      created_at   timestamptz NOT NULL DEFAULT now()
+    );
+    CREATE SEQUENCE IF NOT EXISTS quote_number_seq START 1;
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS quote_id integer REFERENCES quotes(id) ON DELETE SET NULL;
+  `);
 }
