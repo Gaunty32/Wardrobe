@@ -17,7 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
   Truck, Clock, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
-  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap, Search,
+  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap, Search, RefreshCw,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -560,13 +560,13 @@ const COLS = (
 export default function Invoices() {
   const { toast } = useToast();
 
-  const { data, isLoading } = useQuery<InvoicesData>({
+  const { data, isLoading, refetch: refetchInvoices, isFetching } = useQuery<InvoicesData>({
     queryKey: ["invoices"],
     queryFn: () => apiFetch("/invoices"),
     refetchInterval: 30_000,
   });
 
-  const { data: poGroups, isLoading: poLoading } = useQuery<PoGroup[]>({
+  const { data: poGroups, isLoading: poLoading, refetch: refetchPo } = useQuery<PoGroup[]>({
     queryKey: ["invoices-by-po"],
     queryFn: () => apiFetch("/invoices/by-po-number"),
     refetchInterval: 30_000,
@@ -618,6 +618,16 @@ export default function Invoices() {
                 {emailStatus.configured ? (emailStatus.fromEmail ? `Email: ${emailStatus.fromEmail}` : "Email configured") : "Email not configured"}
               </Badge>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => { refetchInvoices(); refetchPo(); }}
+              disabled={isFetching}
+            >
+              <RefreshCw className={`w-3 h-3 ${isFetching ? "animate-spin" : ""}`} />
+              {isFetching ? "Refreshing…" : "Refresh"}
+            </Button>
             <Button variant="outline" size="sm" asChild className="gap-1.5 text-xs">
               <a href="/settings">Configure email →</a>
             </Button>
