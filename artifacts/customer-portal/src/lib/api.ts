@@ -15,7 +15,14 @@ export async function apiFetch(path: string, opts?: RequestInit) {
 
   if (res.status === 401) {
     localStorage.removeItem("portal_token");
-    window.location.href = import.meta.env.BASE_URL + "login";
+    // Don't redirect if we're already on a public auth page — doing so would
+    // navigate away from /accept-invite before the magic-link token is consumed,
+    // causing an infinite email loop.
+    const publicPages = ["accept-invite", "login", "select-business", "preview-login"];
+    const onPublicPage = publicPages.some((p) => window.location.pathname.includes(p));
+    if (!onPublicPage) {
+      window.location.href = import.meta.env.BASE_URL + "login";
+    }
   }
 
   if (!res.ok) {
