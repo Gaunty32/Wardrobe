@@ -1963,15 +1963,17 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
 
       // Fetch variant-level stock for all relevant products.
       // For plain products (no variants), fall back to product.stock_quantity.
+      // Note: productIds are integer PKs from the DB — safe to inline.
+      const pidArrayLiteral = sql.raw(`ARRAY[${productIds.join(",")}]::int[]`);
       const variantStockRows = await db.execute(sql`
         SELECT pv.product_id, pv.colour, pv.size, pv.stock_quantity
         FROM product_variants pv
-        WHERE pv.product_id = ANY(${productIds}::int[])
+        WHERE pv.product_id = ANY(${pidArrayLiteral})
       `);
       const plainStockRows = await db.execute(sql`
         SELECT p.id AS product_id, NULL::text AS colour, NULL::text AS size, p.stock_quantity
         FROM products p
-        WHERE p.id = ANY(${productIds}::int[])
+        WHERE p.id = ANY(${pidArrayLiteral})
           AND NOT EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id)
       `);
 
