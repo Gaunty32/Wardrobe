@@ -532,8 +532,20 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     customerZeroVat = customer?.zeroVat ?? false;
   }
 
+  // If not yet linked, auto-run a contact sync and retry
+  if (!xeroContactId && order.customerId) {
+    try {
+      await syncContacts();
+    } catch {
+      // sync failed — fall through to the error below
+    }
+    const [refreshed] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
+    xeroContactId = refreshed?.xeroContactId ?? null;
+    customerZeroVat = refreshed?.zeroVat ?? customerZeroVat;
+  }
+
   if (!xeroContactId) {
-    throw new Error("Customer is not linked to a Xero contact. Run a Xero contact sync first.");
+    throw new Error("Customer is not linked to a Xero contact. The automatic sync could not find a match — please check the customer name or email matches a contact in Xero.");
   }
 
   function xeroTaxType(vatRate: string | null): string | undefined {
