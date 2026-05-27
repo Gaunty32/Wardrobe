@@ -346,8 +346,11 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
   // For non-dept-manager paths
   const filteredEmployees = isDeptManager ? myTeamEmployees : myTeamEmployees;
 
-  const getItemState = (key: string): ItemState =>
-    itemStates[key] ?? { size: "", sleeve: "", qty: 1 };
+  const getItemState = (key: string): ItemState => {
+    const s = itemStates[key];
+    if (!s) return { size: "", sleeve: "", qty: 1 };
+    return { size: s.size ?? "", sleeve: s.sleeve ?? "", qty: s.qty ?? 1 };
+  };
   const setItemState = (key: string, patch: Partial<ItemState>) =>
     setItemStates(s => ({ ...s, [key]: { ...getItemState(key), ...patch } }));
 
@@ -388,7 +391,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
           );
           return partial?.size ?? null;
         })() : null;
-        updates[key] = { size: hist ?? saved ?? "", qty: 1 };
+        updates[key] = { size: hist ?? saved ?? "", sleeve: "", qty: 1 };
       });
     });
     setItemStates(updates);
