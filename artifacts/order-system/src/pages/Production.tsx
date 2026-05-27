@@ -1848,33 +1848,35 @@ function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: ()
             </div>
           </div>
 
-          {/* DPD Tracking Number */}
-          <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
-            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-              📦 DPD Tracking Number
-              {trackingSaved && tracking && <span className="text-green-600 normal-case font-normal">(saved)</span>}
-            </Label>
-            <div className="flex items-center gap-2">
-              <Input
-                value={tracking}
-                onChange={(e) => { setTracking(e.target.value); setTrackingSaved(false); }}
-                placeholder="e.g. 15006678987456"
-                className="h-8 text-xs font-mono flex-1"
-              />
-              <Button
-                size="sm"
-                variant={trackingSaved ? "outline" : "default"}
-                className="h-8 px-3 text-xs shrink-0"
-                onClick={() => saveTracking.mutate(tracking)}
-                disabled={saveTracking.isPending || trackingSaved}
-              >
-                {saveTracking.isPending ? "Saving…" : trackingSaved ? "✓ Saved" : "Save"}
-              </Button>
+          {/* DPD Tracking Number — only shown when shipping method is DPD */}
+          {order.shippingMethod === "dpd" && (
+            <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
+              <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                📦 DPD Tracking Number
+                {trackingSaved && tracking && <span className="text-green-600 normal-case font-normal">(saved)</span>}
+              </Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={tracking}
+                  onChange={(e) => { setTracking(e.target.value); setTrackingSaved(false); }}
+                  placeholder="e.g. 15006678987456"
+                  className="h-8 text-xs font-mono flex-1"
+                />
+                <Button
+                  size="sm"
+                  variant={trackingSaved ? "outline" : "default"}
+                  className="h-8 px-3 text-xs shrink-0"
+                  onClick={() => saveTracking.mutate(tracking)}
+                  disabled={saveTracking.isPending || trackingSaved}
+                >
+                  {saveTracking.isPending ? "Saving…" : trackingSaved ? "✓ Saved" : "Save"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Saved here, it will be included in the invoice email and shown on the customer's DPD tracking link.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Saved here, it will be included in the invoice email and shown on the customer's DPD tracking link.
-            </p>
-          </div>
+          )}
 
           <p className="text-sm text-muted-foreground">Print the documents you need before dispatching.</p>
 
