@@ -532,20 +532,25 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     customerZeroVat = customer?.zeroVat ?? false;
   }
 
-  // If not yet linked, auto-run a contact sync and retry
+  // If not yet linked, try: 1) sync from Xero, 2) create in Xero
   if (!xeroContactId && order.customerId) {
-    try {
-      await syncContacts();
-    } catch {
-      // sync failed — fall through to the error below
+    // Step 1: pull contacts from Xero and match by name/email
+    try { await syncContacts(); } catch { /* ignore — fall through */ }
+    const [afterSync] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
+    xeroContactId = afterSync?.xeroContactId ?? null;
+    customerZeroVat = afterSync?.zeroVat ?? customerZeroVat;
+
+    // Step 2: still no match — create a new Xero contact from local data
+    if (!xeroContactId) {
+      await pushCustomerToXero(order.customerId);
+      const [afterCreate] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
+      xeroContactId = afterCreate?.xeroContactId ?? null;
+      customerZeroVat = afterCreate?.zeroVat ?? customerZeroVat;
     }
-    const [refreshed] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
-    xeroContactId = refreshed?.xeroContactId ?? null;
-    customerZeroVat = refreshed?.zeroVat ?? customerZeroVat;
   }
 
   if (!xeroContactId) {
-    throw new Error("Customer is not linked to a Xero contact. The automatic sync could not find a match — please check the customer name or email matches a contact in Xero.");
+    throw new Error("Could not link or create a Xero contact for this customer. Please check that Xero is connected in Settings.");
   }
 
   function xeroTaxType(vatRate: string | null): string | undefined {
