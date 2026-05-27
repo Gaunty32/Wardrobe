@@ -1402,7 +1402,7 @@ export default function OrderDetail() {
             <CardContent className="p-0 flex-1">
               {order.items && order.items.length > 0 ? (
                 <div className="overflow-x-auto">
-                  <Table>
+                  <Table className="min-w-[760px]">
                     <TableHeader>
                       <TableRow>
                         {(["product", "finish", "recipient"] as const).map(col => (
