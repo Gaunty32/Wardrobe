@@ -605,18 +605,25 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     let errorMsg = `Xero invoice creation failed (HTTP ${res.status})`;
     try {
       const body = JSON.parse(text);
-      if (body.Detail) {
+      // Check specific validation errors first — Xero often returns a generic
+      // "A validation exception occurred" in body.Detail, with the real message
+      // buried in Invoices[0].ValidationErrors or LineItems[*].ValidationErrors.
+      const inv = body.Invoices?.[0];
+      const invErrors: string[] = (inv?.ValidationErrors ?? []).map((e: any) => e.Message).filter(Boolean);
+      const lineErrors: string[] = (inv?.LineItems ?? [])
+        .flatMap((li: any) => (li.ValidationErrors ?? []).map((e: any) => e.Message))
+        .filter(Boolean);
+      const specific = [...invErrors, ...lineErrors];
+      if (specific.length) {
+        errorMsg = specific.join("; ");
+      } else if (body.Detail && body.Detail !== "A validation exception occurred") {
         errorMsg = body.Detail;
-      } else if (body.Message) {
+      } else if (body.Message && body.Message !== "A validation exception occurred") {
         errorMsg = body.Message;
-      } else if (body.Invoices?.[0]) {
-        const inv = body.Invoices[0];
-        const invErrors: string[] = (inv.ValidationErrors ?? []).map((e: any) => e.Message).filter(Boolean);
-        const lineErrors: string[] = (inv.LineItems ?? [])
-          .flatMap((li: any) => (li.ValidationErrors ?? []).map((e: any) => e.Message))
-          .filter(Boolean);
-        const all = [...invErrors, ...lineErrors];
-        if (all.length) errorMsg = all.join("; ");
+      } else if (body.Detail) {
+        // Generic validation error with no detail — log the full body for debugging
+        console.error("[xero] validation error body:", JSON.stringify(body));
+        errorMsg = body.Detail;
       }
     } catch {
       errorMsg = `Xero error (HTTP ${res.status}): ${text.slice(0, 300)}`;
