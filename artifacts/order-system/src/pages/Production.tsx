@@ -1016,9 +1016,18 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
             </>
           )}
           {ws.status === "complete" && (
-            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
-              <Printer className="w-3.5 h-3.5" /> Print
-            </Button>
+            <>
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
+                <Printer className="w-3.5 h-3.5" /> Print
+              </Button>
+              <Button
+                size="sm"
+                className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => { window.location.href = "/dispatch"; }}
+              >
+                <ArrowRight className="w-3.5 h-3.5" /> Go to Dispatch
+              </Button>
+            </>
           )}
           <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => onDelete(ws.id)}>
             <Trash2 className="w-4 h-4" />
