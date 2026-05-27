@@ -1517,11 +1517,11 @@ export default function OrderDetail() {
             )}
             <CardContent className="p-0 flex-1">
               {order.items && order.items.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[760px]">
+                <div>
+                  <Table>
                     <TableHeader>
                       <TableRow>
-                        {(["product", "finish", "recipient"] as const).map(col => (
+                        {(["product"] as const).map(col => (
                           <TableHead key={col}>
                             <button
                               className="inline-flex items-center gap-1 hover:text-foreground transition-colors select-none capitalize"
@@ -1589,27 +1589,21 @@ export default function OrderDetail() {
                                   Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
                                 </Badge>
                               )}
+                              {orderItem.finishName ? (
+                                <Badge variant="secondary" className="text-xs gap-1 font-normal">
+                                  <Sparkles className="w-3 h-3" />{orderItem.finishName}
+                                </Badge>
+                              ) : null}
+                              {orderItem.recipientType === "person" && orderItem.recipientName ? (
+                                <Badge variant="outline" className="text-xs gap-1 border-blue-200 text-blue-700 bg-blue-50 font-normal">
+                                  <User className="w-3 h-3" />{orderItem.recipientName}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs gap-1 border-muted-foreground/20 text-muted-foreground font-normal">
+                                  <Archive className="w-3 h-3" />Stock
+                                </Badge>
+                              )}
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            {orderItem.finishName ? (
-                              <Badge variant="secondary" className="text-xs gap-1 font-normal">
-                                <Sparkles className="w-3 h-3" />{orderItem.finishName}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Plain</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {orderItem.recipientType === "person" && orderItem.recipientName ? (
-                              <Badge variant="outline" className="text-xs gap-1 border-blue-200 text-blue-700 bg-blue-50 font-normal">
-                                <User className="w-3 h-3" />{orderItem.recipientName}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs gap-1 border-muted-foreground/20 text-muted-foreground font-normal">
-                                <Archive className="w-3 h-3" />Stock
-                              </Badge>
-                            )}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {editingItemPrice?.id === orderItem.id ? (
