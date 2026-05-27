@@ -214,7 +214,7 @@ function ManagerReviewPanel() {
   const { data: pendingOrders = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-manager-pending"],
     queryFn: () => apiFetch("/portal/manager/pending-orders"),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
   useEffect(() => { setSelected(new Set()); }, [pendingOrders]);
@@ -579,7 +579,6 @@ export default function Dashboard() {
   }>({
     queryKey: ["portal-select-extra"],
     queryFn: () => apiFetch("/portal/select-extra/current"),
-    staleTime: 60_000,
     enabled: isManager,
   });
 

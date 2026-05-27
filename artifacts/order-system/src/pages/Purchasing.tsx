@@ -1440,13 +1440,13 @@ export default function Purchasing() {
   const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
     queryFn: () => apiFetch("/purchasing/requirements"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   const { data: purchaseOrders = [], isFetching: posFetching, refetch: refetchPos } = useQuery<PurchaseOrder[]>({
     queryKey: ["purchase-orders"],
     queryFn: () => apiFetch("/purchasing/purchase-orders"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   // On mount, run a rescan to restore any requirements lost due to PO deletion
@@ -1620,13 +1620,13 @@ export default function Purchasing() {
   const { data: backorders = [] } = useQuery<BackorderLine[]>({
     queryKey: ["purchasing-backorders"],
     queryFn: () => apiFetch("/purchasing/backorders"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   const { data: processStockReqs = [] } = useQuery<ProcessStockRequirement[]>({
     queryKey: ["process-stock-requirements"],
     queryFn: () => apiFetch("/purchasing/process-stock-requirements"),
-    refetchInterval: 60000,
+    refetchInterval: 15_000,
   });
   const processShortfallCount = processStockReqs.filter(r => r.shortfall > 0).length;
   const processReqsBySupplier = Object.values(

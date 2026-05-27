@@ -563,19 +563,18 @@ export default function Invoices() {
   const { data, isLoading, refetch: refetchInvoices, isFetching } = useQuery<InvoicesData>({
     queryKey: ["invoices"],
     queryFn: () => apiFetch("/invoices"),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
   const { data: poGroups, isLoading: poLoading, refetch: refetchPo } = useQuery<PoGroup[]>({
     queryKey: ["invoices-by-po"],
     queryFn: () => apiFetch("/invoices/by-po-number"),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
   const { data: emailStatus } = useQuery<EmailStatus>({
     queryKey: ["email-status"],
     queryFn: () => apiFetch("/settings/email/status"),
-    staleTime: 60_000,
   });
 
   const [searchQuery, setSearchQuery] = useState("");

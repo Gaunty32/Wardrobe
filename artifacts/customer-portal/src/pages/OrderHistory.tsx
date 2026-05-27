@@ -86,7 +86,7 @@ export default function OrderHistory() {
   const { data: orders = [], isLoading } = useQuery<PortalOrder[]>({
     queryKey: ["portal-orders"],
     queryFn: () => apiFetch("/portal/orders"),
-    staleTime: 30_000,
+    refetchInterval: 15_000,
   });
 
   const filtered = useMemo(() => {

@@ -1976,7 +1976,7 @@ function PickingListTab({ filters }: { filters: Filters }) {
   const { data: rawPickingOrders = [], isLoading } = useQuery<PickingOrder[]>({
     queryKey: ["picking-list"],
     queryFn: () => apiFetch("/picking-list"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   const filteredPickingOrders = filterPickingOrders(rawPickingOrders, filters);
@@ -2529,7 +2529,7 @@ function DailyPlanTab({ onNavigate, pendingCount, readyCount }: { onNavigate: (t
   const { data: plan, isLoading } = useQuery<DailyPlan>({
     queryKey: ["daily-plan"],
     queryFn: () => apiFetch("/production/daily-plan"),
-    refetchInterval: 60_000,
+    refetchInterval: 15_000,
   });
 
   if (isLoading) {
@@ -2700,7 +2700,7 @@ export default function Production() {
   const { data: pickingOrders = [] } = useQuery<PickingOrder[]>({
     queryKey: ["picking-list"],
     queryFn: () => apiFetch("/picking-list"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   const pickingCount = pickingOrders.reduce((s, o) => s + o.items.length, 0);
@@ -2793,7 +2793,7 @@ export default function Production() {
   const { data: dailyPlan } = useQuery<DailyPlan>({
     queryKey: ["daily-plan"],
     queryFn: () => apiFetch("/production/daily-plan"),
-    refetchInterval: 60_000,
+    refetchInterval: 15_000,
   });
 
   const urgentPlanCount = dailyPlan?.summary.urgentCount ?? 0;

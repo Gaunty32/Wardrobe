@@ -4118,7 +4118,6 @@ export default function CustomerDetail() {
     queryKey: ["xero-balance-customer", customerId],
     queryFn: () => apiFetch(`/xero/balance/customer/${customerId}`),
     enabled: !!xeroContactId,
-    staleTime: 1000 * 60 * 5,
     retry: false,
   });
 
@@ -4140,7 +4139,6 @@ export default function CustomerDetail() {
     queryKey: ["customer-invoice-summary", customerId],
     queryFn: () => apiFetch(`/customers/${customerId}/invoice-summary`),
     enabled: !!customerId,
-    staleTime: 1000 * 60 * 2,
     retry: false,
   });
 

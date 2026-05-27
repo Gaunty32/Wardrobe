@@ -138,7 +138,6 @@ function ProductModal({ product, onClose }: { product: PortalProduct; onClose: (
   const { data: variants = [], isLoading } = useQuery<ProductVariant[]>({
     queryKey: ["portal-product-variants", product.id],
     queryFn: () => apiFetch(`/portal/products/${product.id}/variants`),
-    staleTime: 60_000,
   });
 
   // Group variants by colour
@@ -326,13 +325,11 @@ export default function Products() {
   const { data: products = [], isLoading: productsLoading } = useQuery<PortalProduct[]>({
     queryKey: ["portal-products"],
     queryFn: () => apiFetch("/portal/products"),
-    staleTime: 60_000,
   });
 
   const { data: storedCategories = [] } = useQuery<ProductCategory[]>({
     queryKey: ["product-categories"],
     queryFn: () => apiFetch("/product-categories"),
-    staleTime: 300_000,
   });
 
   // Derive categories from products, enriched with stored images

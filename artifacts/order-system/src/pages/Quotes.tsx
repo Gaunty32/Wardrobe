@@ -88,13 +88,12 @@ export default function Quotes() {
   const { data: quotes = [], isLoading } = useQuery<Quote[]>({
     queryKey: ["quotes"],
     queryFn: () => apiFetch("/quotes"),
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
   const { data: customers = [] } = useQuery<Customer[]>({
     queryKey: ["customers-list"],
     queryFn: () => apiFetch("/customers"),
-    staleTime: 60_000,
   });
 
   const createQuote = useMutation({

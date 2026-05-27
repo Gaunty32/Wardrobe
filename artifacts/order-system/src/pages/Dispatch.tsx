@@ -654,7 +654,7 @@ export default function Dispatch() {
   const { data: orders = [], isLoading, refetch } = useQuery<DispatchOrder[]>({
     queryKey: ["dispatch-orders"],
     queryFn: () => apiFetch("/dispatch/orders"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   const readyCount = orders.filter((o) => o.productionComplete).length;

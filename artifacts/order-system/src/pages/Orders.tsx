@@ -58,7 +58,7 @@ function QuoteHoldingPanel() {
   const { data: quotes = [], isLoading } = useQuery<any[]>({
     queryKey: ["quote-orders"],
     queryFn: () => apiFetch("/orders?status=quote"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   if (isLoading || !quotes.length) return null;
@@ -164,7 +164,7 @@ function PortalPendingOrders() {
   const { data: pending = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-pending-orders"],
     queryFn: () => apiFetch("/portal/admin/pending-orders"),
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   const [confirmingAll, setConfirmingAll] = useState(false);

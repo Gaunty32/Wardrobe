@@ -407,7 +407,7 @@ export default function OrderDetail() {
     queryKey: ["order-logs", orderId],
     queryFn: () => apiFetch(`/orders/${orderId}/logs`),
     enabled: orderId > 0,
-    refetchInterval: 30000,
+    refetchInterval: 15_000,
   });
 
   interface OrderEmailLog { id: number; orderId: number; emailType: string; toEmail: string; subject: string | null; sentBy: string | null; sentAt: string; success: boolean; error: string | null; }
@@ -637,7 +637,7 @@ export default function OrderDetail() {
     queryKey: ["order-backorders", orderId],
     queryFn: () => apiFetch(`/orders/${orderId}/backorders`),
     enabled: orderId > 0,
-    refetchInterval: 60000,
+    refetchInterval: 15_000,
   });
 
   const printLabel = (recipient: PackRecipient) => {
