@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useListProducts } from "@workspace/api-client-react";
 import { Link, useParams, useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -131,26 +132,24 @@ export default function QuoteDetail() {
     },
   });
 
-  // Product autocomplete — preload all products once, filter client-side
+  // Product autocomplete — debounced server-side search (same as Products page)
   const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
   const [addFinishLine, setAddFinishLine] = useState(false);
   const [finishLine, setFinishLine] = useState({ ...EMPTY_FINISH });
   const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [productSearchTerm, setProductSearchTerm] = useState("");
   const productDropdownRef = useRef<HTMLDivElement>(null);
 
-  const { data: allProducts = [] } = useQuery<{ id: number; name: string; sku: string; unitPrice: number | null; permalink: string | null }[]>({
-    queryKey: ["products-all"],
-    queryFn: () => apiFetch("/products"),
-    staleTime: 5 * 60 * 1000,
-  });
+  useEffect(() => {
+    const t = setTimeout(() => setProductSearchTerm(newItem.productName.trim()), 300);
+    return () => clearTimeout(t);
+  }, [newItem.productName]);
 
-  const productSuggestions = (() => {
-    const q = newItem.productName.trim().toLowerCase();
-    if (q.length < 2) return [];
-    return allProducts
-      .filter(p => p.name.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q))
-      .slice(0, 8);
-  })();
+  const { data: productResults = [] } = useListProducts(
+    { search: productSearchTerm },
+    { query: { enabled: productSearchTerm.length >= 2 } },
+  );
+  const productSuggestions = productResults.slice(0, 8);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -509,7 +508,7 @@ export default function QuoteDetail() {
                                 setNewItem((prev) => ({
                                   ...prev,
                                   productName: p.name,
-                                  productUrl: p.permalink ?? "",
+                                  productUrl: (p as any).permalink ?? "",
                                   unitPrice: p.unitPrice != null ? Number(p.unitPrice) : prev.unitPrice,
                                 }));
                                 setShowProductDropdown(false);
