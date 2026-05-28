@@ -580,17 +580,12 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
   dueDate.setDate(dueDate.getDate() + 14);
   const dueDateStr = dueDate.toISOString().slice(0, 10);
 
-  // Generate a unique sequential invoice number (INV-0001, INV-0002, …).
-  // This avoids Xero duplicate-InvoiceNumber errors when one order is invoiced
-  // across multiple dispatches. The order number is kept as the Reference.
-  const seqRows = await db.execute(sql`SELECT nextval('invoice_number_seq') AS n`);
-  const seqN = Number((seqRows.rows[0] as any).n);
-  const invoiceNumber = `INV-${String(seqN).padStart(4, "0")}`;
-
+  // Let Xero auto-assign the invoice number from its own sequence.
+  // Using our own INV-XXXX numbers caused collisions with pre-existing Xero
+  // invoices that used the same format. The order number is kept as the Reference.
   const invoice = {
     Type: "ACCREC",
     Contact: { ContactID: xeroContactId },
-    InvoiceNumber: invoiceNumber,
     Reference: order.orderNumber,
     DateString: invoiceDateStr,
     DueDateString: dueDateStr,
@@ -642,9 +637,9 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     throw new Error(errs.length ? errs.join("; ") : "Xero did not return an invoice ID.");
   }
 
-  // Persist IDs back to order
+  // Persist IDs back to order (use Xero's auto-assigned InvoiceNumber)
   await db.update(ordersTable)
-    .set({ xeroInvoiceId: created.InvoiceID, xeroInvoiceNumber: invoiceNumber, xeroInvoiceStatus: created.Status, updatedAt: new Date() })
+    .set({ xeroInvoiceId: created.InvoiceID, xeroInvoiceNumber: created.InvoiceNumber ?? null, xeroInvoiceStatus: created.Status, updatedAt: new Date() })
     .where(eq(ordersTable.id, orderId));
 
   return {
