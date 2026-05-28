@@ -1764,6 +1764,72 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     if (cust?.zeroVat) effectiveVatRate = 0;
   }
 
+  // For confirmed orders, run a real stock check rather than trusting the
+  // client-supplied purchaseRequired flag (which defaults to false).
+  let resolvedPurchaseRequired = parsed.data.purchaseRequired ?? false;
+  let resolvedPurchaseQuantity = parsed.data.purchaseQuantity ?? null;
+  let resolvedSupplierId = parsed.data.supplierId ?? null;
+  let resolvedSupplierName = parsed.data.supplierName ?? null;
+
+  if (order.status === "confirmed" && parsed.data.productId) {
+    const productId = parsed.data.productId;
+    const qty = parsed.data.quantity;
+    const colour = parsed.data.colour ?? null;
+    const size = parsed.data.size ?? null;
+
+    // Look up variant or plain product stock
+    const stockRows = await db.execute(sql`
+      SELECT
+        COALESCE(
+          (SELECT pv.stock_quantity
+           FROM product_variants pv
+           WHERE pv.product_id = ${productId}
+             AND (pv.colour IS NOT DISTINCT FROM ${colour})
+             AND (pv.size   IS NOT DISTINCT FROM ${size})
+           LIMIT 1),
+          CASE WHEN NOT EXISTS (
+                 SELECT 1 FROM product_variants pv WHERE pv.product_id = ${productId}
+               )
+               THEN p.stock_quantity
+               ELSE 0
+          END
+        ) AS available_stock,
+        p.supplier_id,
+        s.name AS supplier_name
+      FROM products p
+      LEFT JOIN suppliers s ON s.id = p.supplier_id
+      WHERE p.id = ${productId}
+    `);
+    const stockRow = stockRows.rows[0] as any;
+    const available = Number(stockRow?.available_stock ?? 0);
+    const allocatedQty = Math.min(available, qty);
+    const shortfall = qty - allocatedQty;
+
+    resolvedPurchaseRequired = shortfall > 0;
+    resolvedPurchaseQuantity = shortfall > 0 ? shortfall : null;
+    resolvedSupplierId = shortfall > 0 ? (stockRow?.supplier_id ?? null) : null;
+    resolvedSupplierName = shortfall > 0 ? (stockRow?.supplier_name ?? null) : null;
+
+    // Deduct allocated stock from the variant (or plain product)
+    if (allocatedQty > 0) {
+      await db.execute(sql`
+        UPDATE product_variants
+        SET stock_quantity = GREATEST(0, stock_quantity - ${allocatedQty})
+        WHERE product_id = ${productId}
+          AND (colour IS NOT DISTINCT FROM ${colour})
+          AND (size   IS NOT DISTINCT FROM ${size})
+      `);
+      // Roll up to parent product
+      await db.execute(sql`
+        UPDATE products
+        SET stock_quantity = (
+          SELECT COALESCE(SUM(stock_quantity), 0) FROM product_variants WHERE product_id = ${productId}
+        )
+        WHERE id = ${productId}
+      `);
+    }
+  }
+
   const lineTotal = parsed.data.quantity * parsed.data.unitPrice;
   const [item] = await db
     .insert(orderItemsTable)
@@ -1782,10 +1848,10 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       unitPrice: String(parsed.data.unitPrice),
       lineTotal: String(lineTotal),
       vatRate: String(effectiveVatRate),
-      purchaseRequired: parsed.data.purchaseRequired ?? false,
-      purchaseQuantity: parsed.data.purchaseQuantity ?? null,
-      supplierId: parsed.data.supplierId ?? null,
-      supplierName: parsed.data.supplierName ?? null,
+      purchaseRequired: resolvedPurchaseRequired,
+      purchaseQuantity: resolvedPurchaseQuantity,
+      supplierId: resolvedSupplierId,
+      supplierName: resolvedSupplierName,
     })
     .returning();
 
@@ -1827,6 +1893,8 @@ const UpdateOrderItemBodyExtended = z.object({
   supplierName: z.string().nullable().optional(),
   size: z.string().nullable().optional(),
   colour: z.string().nullable().optional(),
+  stockStatus: z.string().nullable().optional(),
+  stockAllocatedAt: z.string().nullable().optional(),
 });
 
 router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
@@ -1865,6 +1933,8 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
   if (parsed.data.supplierName !== undefined) updateData.supplierName = parsed.data.supplierName;
   if (parsed.data.size !== undefined) updateData.size = parsed.data.size;
   if (parsed.data.colour !== undefined) updateData.colour = parsed.data.colour;
+  if (parsed.data.stockStatus !== undefined) updateData.stockStatus = parsed.data.stockStatus;
+  if (parsed.data.stockAllocatedAt !== undefined) updateData.stockAllocatedAt = parsed.data.stockAllocatedAt ? new Date(parsed.data.stockAllocatedAt) : null;
 
   const [item] = await db
     .update(orderItemsTable)
