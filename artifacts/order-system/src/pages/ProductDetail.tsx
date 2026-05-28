@@ -714,8 +714,8 @@ export default function ProductDetail() {
 
   const totalStock = variants.reduce((sum: number, v: any) => sum + (v.stockQuantity || 0), 0);
   const lowStockCount = variants.filter((v: any) => v.stockQuantity <= 5).length;
-  const defaultPrimaryId = details.supplierId;
-  const defaultSecondaryId = details.secondarySupplierId;
+  const defaultPrimaryId = details.supplierId !== "none" ? Number(details.supplierId) : null;
+  const defaultSecondaryId = details.secondarySupplierId !== "none" ? Number(details.secondarySupplierId) : null;
 
   // Group variants — colour-first (preserving API order), then size within each group
   const colourOrder = [...new Set((variants as any[]).map((v: any) => v.colour ?? ""))];
