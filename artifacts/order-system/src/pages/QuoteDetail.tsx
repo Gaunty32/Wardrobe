@@ -38,6 +38,7 @@ interface QuoteItem {
   quoteId: number;
   productId: number | null;
   productName: string;
+  productUrl: string | null;
   colour: string | null;
   size: string | null;
   finishName: string | null;
@@ -97,7 +98,8 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   );
 }
 
-const EMPTY_ITEM = { productName: "", colour: "", size: "", finishName: "", quantity: 1, unitPrice: 0 };
+const EMPTY_ITEM = { productName: "", productUrl: "", colour: "", size: "", finishName: "", quantity: 1, unitPrice: 0 };
+const EMPTY_FINISH = { finishName: "", unitPrice: 0 };
 
 export default function QuoteDetail() {
   const { id } = useParams<{ id: string }>();
@@ -131,7 +133,9 @@ export default function QuoteDetail() {
 
   // Product autocomplete
   const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
-  const [productSuggestions, setProductSuggestions] = useState<{ id: number; name: string; sku: string; unitPrice: string | null }[]>([]);
+  const [addFinishLine, setAddFinishLine] = useState(false);
+  const [finishLine, setFinishLine] = useState({ ...EMPTY_FINISH });
+  const [productSuggestions, setProductSuggestions] = useState<{ id: number; name: string; sku: string; unitPrice: string | null; permalink: string | null }[]>([]);
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [productSearching, setProductSearching] = useState(false);
   const productDropdownRef = useRef<HTMLDivElement>(null);
@@ -208,21 +212,36 @@ export default function QuoteDetail() {
   });
 
   const addItem = useMutation({
-    mutationFn: () => apiFetch(`/quotes/${quoteId}/items`, {
-      method: "POST",
-      body: JSON.stringify({
-        productName: newItem.productName,
-        colour: newItem.colour || null,
-        size: newItem.size || null,
-        finishName: newItem.finishName || null,
-        quantity: newItem.quantity,
-        unitPrice: newItem.unitPrice,
-      }),
-    }),
+    mutationFn: async () => {
+      await apiFetch(`/quotes/${quoteId}/items`, {
+        method: "POST",
+        body: JSON.stringify({
+          productName: newItem.productName,
+          productUrl: newItem.productUrl || null,
+          colour: newItem.colour || null,
+          size: newItem.size || null,
+          finishName: newItem.finishName || null,
+          quantity: newItem.quantity,
+          unitPrice: newItem.unitPrice,
+        }),
+      });
+      if (addFinishLine && finishLine.finishName.trim()) {
+        await apiFetch(`/quotes/${quoteId}/items`, {
+          method: "POST",
+          body: JSON.stringify({
+            productName: finishLine.finishName.trim(),
+            quantity: newItem.quantity,
+            unitPrice: finishLine.unitPrice,
+          }),
+        });
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["quote", quoteId] });
       qc.invalidateQueries({ queryKey: ["quotes"] });
       setNewItem({ ...EMPTY_ITEM });
+      setFinishLine({ ...EMPTY_FINISH });
+      setAddFinishLine(false);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -277,6 +296,9 @@ export default function QuoteDetail() {
   }
 
   const items = quote.items ?? [];
+  const hasColour = items.some((i) => i.colour);
+  const hasSize = items.some((i) => i.size);
+  const colSpan = 5 + (hasColour ? 1 : 0) + (hasSize ? 1 : 0) + 1;
   const subtotal = items.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
   const vat = items.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity * parseFloat(i.vatRate), 0);
   const total = subtotal + vat;
@@ -434,138 +456,204 @@ export default function QuoteDetail() {
 
         {/* Items */}
         <div className="rounded-xl border overflow-hidden">
-          <div className="px-5 py-3 bg-muted/40 border-b">
-            <h3 className="font-semibold text-sm">Quoted Items</h3>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Product</TableHead>
-                <TableHead className="w-28">Colour</TableHead>
-                <TableHead className="w-24">Size</TableHead>
-                <TableHead className="w-36">Finish / Decoration</TableHead>
-                <TableHead className="w-20 text-right">Qty</TableHead>
-                <TableHead className="w-28 text-right">Unit Price</TableHead>
-                <TableHead className="w-28 text-right">Line Total</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {items.map((item) => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  onDelete={() => deleteItem.mutate(item.id)}
-                  onSave={(data) => updateItem.mutate({ itemId: item.id, data })}
-                />
-              ))}
-              {items.length === 0 && (
+            <div className="px-5 py-3 bg-muted/40 border-b">
+              <h3 className="font-semibold text-sm">Quoted Items</h3>
+            </div>
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground py-6 text-sm">
-                    No items yet — add your first item below.
+                  <TableHead>Product</TableHead>
+                  {hasColour && <TableHead className="w-28">Colour</TableHead>}
+                  {hasSize && <TableHead className="w-24">Size</TableHead>}
+                  <TableHead className="w-36">Finish / Decoration</TableHead>
+                  <TableHead className="w-20 text-right">Qty</TableHead>
+                  <TableHead className="w-28 text-right">Unit Price</TableHead>
+                  <TableHead className="w-28 text-right">Line Total</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    showColour={hasColour}
+                    showSize={hasSize}
+                    onDelete={() => deleteItem.mutate(item.id)}
+                    onSave={(data) => updateItem.mutate({ itemId: item.id, data })}
+                  />
+                ))}
+                {items.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={colSpan} className="text-center text-muted-foreground py-6 text-sm">
+                      No items yet — add your first item below.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {/* Add row */}
+                <TableRow className="bg-muted/20">
+                  <TableCell>
+                    <div className="relative" ref={productDropdownRef}>
+                      <Input
+                        value={newItem.productName}
+                        onChange={(e) => setNewItem((p) => ({ ...p, productName: e.target.value, productUrl: "" }))}
+                        onFocus={() => { if (productSuggestions.length > 0) setShowProductDropdown(true); }}
+                        placeholder="Product name *"
+                        className="h-8 text-sm"
+                        autoComplete="off"
+                      />
+                      {productSearching && (
+                        <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-muted-foreground" />
+                      )}
+                      {showProductDropdown && productSuggestions.length > 0 && (
+                        <div className="absolute z-50 left-0 top-full mt-1 w-80 bg-background border rounded-lg shadow-lg overflow-hidden">
+                          {productSuggestions.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setNewItem((prev) => ({
+                                  ...prev,
+                                  productName: p.name,
+                                  productUrl: p.permalink ?? "",
+                                  unitPrice: p.unitPrice ? parseFloat(p.unitPrice) : prev.unitPrice,
+                                }));
+                                setShowProductDropdown(false);
+                              }}
+                            >
+                              <div className="font-medium">{p.name}</div>
+                              <div className="text-xs text-muted-foreground">{p.sku}{p.unitPrice ? ` · £${parseFloat(p.unitPrice).toFixed(2)}` : ""}</div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TableCell>
+                  {hasColour && (
+                    <TableCell>
+                      <Input
+                        value={newItem.colour}
+                        onChange={(e) => setNewItem((p) => ({ ...p, colour: e.target.value }))}
+                        placeholder="Colour"
+                        className="h-8 text-sm"
+                      />
+                    </TableCell>
+                  )}
+                  {hasSize && (
+                    <TableCell>
+                      <Input
+                        value={newItem.size}
+                        onChange={(e) => setNewItem((p) => ({ ...p, size: e.target.value }))}
+                        placeholder="Size"
+                        className="h-8 text-sm"
+                      />
+                    </TableCell>
+                  )}
+                  <TableCell>
+                    <Input
+                      value={newItem.finishName}
+                      onChange={(e) => setNewItem((p) => ({ ...p, finishName: e.target.value }))}
+                      placeholder="e.g. Logo Embroidery"
+                      className="h-8 text-sm"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={newItem.quantity}
+                      onChange={(e) => setNewItem((p) => ({ ...p, quantity: parseInt(e.target.value) || 1 }))}
+                      className="h-8 text-sm text-right"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={newItem.unitPrice}
+                      onChange={(e) => setNewItem((p) => ({ ...p, unitPrice: parseFloat(e.target.value) || 0 }))}
+                      className="h-8 text-sm text-right"
+                    />
+                  </TableCell>
+                  <TableCell className="text-right text-sm text-muted-foreground">
+                    £{(newItem.quantity * newItem.unitPrice).toFixed(2)}
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      onClick={() => addItem.mutate()}
+                      disabled={!newItem.productName.trim() || addItem.isPending}
+                      title="Add item"
+                    >
+                      {addItem.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    </Button>
                   </TableCell>
                 </TableRow>
-              )}
-              {/* Add row */}
-              <TableRow className="bg-muted/20">
-                <TableCell>
-                  <div className="relative" ref={productDropdownRef}>
-                    <Input
-                      value={newItem.productName}
-                      onChange={(e) => setNewItem((p) => ({ ...p, productName: e.target.value }))}
-                      onFocus={() => { if (productSuggestions.length > 0) setShowProductDropdown(true); }}
-                      placeholder="Product name *"
-                      className="h-8 text-sm"
-                      autoComplete="off"
-                    />
-                    {productSearching && (
-                      <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-muted-foreground" />
-                    )}
-                    {showProductDropdown && productSuggestions.length > 0 && (
-                      <div className="absolute z-50 left-0 top-full mt-1 w-80 bg-background border rounded-lg shadow-lg overflow-hidden">
-                        {productSuggestions.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setNewItem((prev) => ({
-                                ...prev,
-                                productName: p.name,
-                                unitPrice: p.unitPrice ? parseFloat(p.unitPrice) : prev.unitPrice,
-                              }));
-                              setShowProductDropdown(false);
-                            }}
-                          >
-                            <div className="font-medium">{p.name}</div>
-                            <div className="text-xs text-muted-foreground">{p.sku}{p.unitPrice ? ` · £${parseFloat(p.unitPrice).toFixed(2)}` : ""}</div>
-                          </button>
-                        ))}
+                {/* Finish line row */}
+                {addFinishLine && (
+                  <TableRow className="bg-amber-50/40 dark:bg-amber-950/10">
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground pl-1 whitespace-nowrap">↳ Finish:</span>
+                        <Input
+                          value={finishLine.finishName}
+                          onChange={(e) => setFinishLine((p) => ({ ...p, finishName: e.target.value }))}
+                          placeholder="e.g. Logo Embroidery"
+                          className="h-8 text-sm"
+                          autoFocus
+                        />
                       </div>
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Input
-                    value={newItem.colour}
-                    onChange={(e) => setNewItem((p) => ({ ...p, colour: e.target.value }))}
-                    placeholder="Colour"
-                    className="h-8 text-sm"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    value={newItem.size}
-                    onChange={(e) => setNewItem((p) => ({ ...p, size: e.target.value }))}
-                    placeholder="Size"
-                    className="h-8 text-sm"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    value={newItem.finishName}
-                    onChange={(e) => setNewItem((p) => ({ ...p, finishName: e.target.value }))}
-                    placeholder="e.g. Logo Embroidery"
-                    className="h-8 text-sm"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={newItem.quantity}
-                    onChange={(e) => setNewItem((p) => ({ ...p, quantity: parseInt(e.target.value) || 1 }))}
-                    className="h-8 text-sm text-right"
-                  />
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    min={0}
-                    step={0.01}
-                    value={newItem.unitPrice}
-                    onChange={(e) => setNewItem((p) => ({ ...p, unitPrice: parseFloat(e.target.value) || 0 }))}
-                    className="h-8 text-sm text-right"
-                  />
-                </TableCell>
-                <TableCell className="text-right text-sm text-muted-foreground">
-                  £{(newItem.quantity * newItem.unitPrice).toFixed(2)}
-                </TableCell>
-                <TableCell>
-                  <Button
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() => addItem.mutate()}
-                    disabled={!newItem.productName.trim() || addItem.isPending}
-                    title="Add item"
-                  >
-                    {addItem.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  </Button>
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+                    </TableCell>
+                    {hasColour && <TableCell />}
+                    {hasSize && <TableCell />}
+                    <TableCell />
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground text-right block">{newItem.quantity}×</span>
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={finishLine.unitPrice}
+                        onChange={(e) => setFinishLine((p) => ({ ...p, unitPrice: parseFloat(e.target.value) || 0 }))}
+                        className="h-8 text-sm text-right"
+                        placeholder="0.00"
+                      />
+                    </TableCell>
+                    <TableCell className="text-right text-sm text-muted-foreground">
+                      £{(newItem.quantity * finishLine.unitPrice).toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => { setAddFinishLine(false); setFinishLine({ ...EMPTY_FINISH }); }}
+                        title="Remove finish line"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+            {/* Add finish line toggle */}
+            {!addFinishLine && (
+              <div className="px-4 py-2 border-t bg-muted/10">
+                <button
+                  type="button"
+                  onClick={() => setAddFinishLine(true)}
+                  className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" /> Add finish / decoration line
+                </button>
+              </div>
+            )}
 
           {/* Totals */}
           {items.length > 0 && (
@@ -649,10 +737,14 @@ export default function QuoteDetail() {
 
 function ItemRow({
   item,
+  showColour,
+  showSize,
   onDelete,
   onSave,
 }: {
   item: QuoteItem;
+  showColour: boolean;
+  showSize: boolean;
   onDelete: () => void;
   onSave: (data: { productName?: string; colour?: string; size?: string; finishName?: string; quantity?: number; unitPrice?: number }) => void;
 }) {
@@ -670,31 +762,48 @@ function ItemRow({
   return (
     <TableRow>
       <TableCell>
-        <Input
-          value={productName}
-          onChange={(e) => setProductName(e.target.value)}
-          onBlur={save}
-          className="h-8 text-sm border-transparent hover:border-input focus:border-input"
-        />
+        <div className="flex items-center gap-1.5">
+          <Input
+            value={productName}
+            onChange={(e) => setProductName(e.target.value)}
+            onBlur={save}
+            className="h-8 text-sm border-transparent hover:border-input focus:border-input"
+          />
+          {item.productUrl && (
+            <a
+              href={item.productUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+              title="View on website"
+            >
+              <LinkIcon className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
       </TableCell>
-      <TableCell>
-        <Input
-          value={colour}
-          onChange={(e) => setColour(e.target.value)}
-          onBlur={save}
-          placeholder="—"
-          className="h-8 text-sm border-transparent hover:border-input focus:border-input"
-        />
-      </TableCell>
-      <TableCell>
-        <Input
-          value={size}
-          onChange={(e) => setSize(e.target.value)}
-          onBlur={save}
-          placeholder="—"
-          className="h-8 text-sm border-transparent hover:border-input focus:border-input"
-        />
-      </TableCell>
+      {showColour && (
+        <TableCell>
+          <Input
+            value={colour}
+            onChange={(e) => setColour(e.target.value)}
+            onBlur={save}
+            placeholder="—"
+            className="h-8 text-sm border-transparent hover:border-input focus:border-input"
+          />
+        </TableCell>
+      )}
+      {showSize && (
+        <TableCell>
+          <Input
+            value={size}
+            onChange={(e) => setSize(e.target.value)}
+            onBlur={save}
+            placeholder="—"
+            className="h-8 text-sm border-transparent hover:border-input focus:border-input"
+          />
+        </TableCell>
+      )}
       <TableCell>
         <Input
           value={finishName}

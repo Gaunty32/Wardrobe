@@ -160,6 +160,7 @@ const ItemSchema = z.object({
   unitPrice: z.number().min(0).default(0),
   vatRate: z.number().min(0).max(1).default(0.20),
   notes: z.string().nullable().optional(),
+  productUrl: z.string().nullable().optional(),
 });
 
 router.post("/quotes/:id/items", async (req: Request, res: Response): Promise<void> => {
@@ -170,9 +171,9 @@ router.post("/quotes/:id/items", async (req: Request, res: Response): Promise<vo
   const d = parsed.data;
 
   const result = await db.execute(sql`
-    INSERT INTO quote_items (quote_id, product_id, product_name, colour, size, finish_id, finish_name, quantity, unit_price, vat_rate, notes)
+    INSERT INTO quote_items (quote_id, product_id, product_name, colour, size, finish_id, finish_name, quantity, unit_price, vat_rate, notes, product_url)
     VALUES (${quoteId}, ${d.productId ?? null}, ${d.productName}, ${d.colour ?? null}, ${d.size ?? null},
-            ${d.finishId ?? null}, ${d.finishName ?? null}, ${d.quantity}, ${d.unitPrice}, ${d.vatRate}, ${d.notes ?? null})
+            ${d.finishId ?? null}, ${d.finishName ?? null}, ${d.quantity}, ${d.unitPrice}, ${d.vatRate}, ${d.notes ?? null}, ${d.productUrl ?? null})
     RETURNING *
   `);
   await db.execute(sql`UPDATE quotes SET updated_at = now() WHERE id = ${quoteId}`);

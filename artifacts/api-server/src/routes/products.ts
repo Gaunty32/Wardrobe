@@ -143,6 +143,7 @@ router.get("/products", async (req, res): Promise<void> => {
     customerId: p.customer_id ?? null,
     wooCommerceId: p.woo_commerce_id ?? null,
     imageUrl: p.image_url ?? null,
+    permalink: p.permalink ?? null,
     supplierId: p.supplier_id ?? null,
     supplierCode: p.supplier_code ?? null,
     stockQuantity: p.computed_stock != null ? Number(p.computed_stock) : (p.stock_quantity ?? null),

@@ -18,6 +18,7 @@ interface WooProduct {
   regular_price: string;
   sale_price: string;
   on_sale: boolean;
+  permalink: string;
   description: string;
   short_description: string;
   stock_quantity: number | null;
@@ -358,6 +359,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
               sku          = ${wooProduct.sku || null},
               category     = ${category},
               image_url    = ${imageUrl},
+              permalink    = ${wooProduct.permalink || null},
               description  = ${stripHtml(wooProduct.short_description || wooProduct.description)},
               unit_price   = ${String(price)},
               regular_price = ${regularPrice},
@@ -382,7 +384,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             taxStatus,
             taxClass,
             vatRate,
-          }).returning();
+          } as any).returning();
           productId = inserted.id;
           created++;
         }
