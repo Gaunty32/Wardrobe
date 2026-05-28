@@ -13,6 +13,12 @@ We've put together a quote based on our initial conversation, featuring the prod
 
 Simply click the link below to view your items, adjust any quantities to suit your team's needs, and place your order when you're ready.
 
+Please note: our garment pricing by default includes a left chest logo in print or embroidery. Should your logo require converting to stitches then a set-up cost of £35 will apply. Should you decide print is your preferred option then there is no set-up cost, as long as you are able to supply a hi-res file in EPS or PDF format.
+
+Your branded workwear is a great opportunity to showcase your brand and we can enhance your workwear with additional logo applications. For example, a large rear logo up to A4 size can be applied for just £6 per garment.
+
+Standard lead time is 7 days. All prices are subject to carriage and VAT.
+
 If you have any questions or would like to make any changes before ordering, please don't hesitate to get in touch — we're always happy to help.
 
 Kind regards,
