@@ -22,6 +22,19 @@ T: 01274 598571
 E: info@selectbranding.co.uk
 W: www.selectbranding.co.uk`;
 
+// ─── camelCase helpers ────────────────────────────────────────────────────────
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+function rowToCamel(row: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(row).map(([k, v]) => [snakeToCamel(k), v]));
+}
+function quoteToCamel(row: any, items?: any[]) {
+  const r = rowToCamel(row);
+  if (items !== undefined) r.items = items.map(rowToCamel);
+  return r;
+}
+
 // ─── List quotes ──────────────────────────────────────────────────────────────
 router.get("/quotes", async (_req, res: Response): Promise<void> => {
   const rows = await db.execute(sql`
@@ -35,7 +48,7 @@ router.get("/quotes", async (_req, res: Response): Promise<void> => {
     GROUP BY q.id
     ORDER BY q.created_at DESC
   `);
-  res.json(rows.rows);
+  res.json((rows.rows as any[]).map(rowToCamel));
 });
 
 // ─── Create quote ─────────────────────────────────────────────────────────────
@@ -61,7 +74,7 @@ router.post("/quotes", async (req: Request, res: Response): Promise<void> => {
     VALUES (${quoteNumber}, ${customerId ?? null}, ${enquiryId ?? null}, ${customerName}, ${notes ?? null}, ${DEFAULT_COVER_TEXT}, ${expiresAt ? new Date(expiresAt) : null})
     RETURNING *
   `);
-  res.status(201).json(result.rows[0]);
+  res.status(201).json(quoteToCamel(result.rows[0] as any));
 });
 
 // ─── Get quote detail ─────────────────────────────────────────────────────────
@@ -74,7 +87,7 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
   const items = (await db.execute(sql`SELECT * FROM quote_items WHERE quote_id = ${id} ORDER BY sort_order, id`)).rows;
-  res.json({ ...quote, items });
+  res.json(quoteToCamel(quote, items as any[]));
 });
 
 // ─── Update quote ─────────────────────────────────────────────────────────────
@@ -109,7 +122,7 @@ router.patch("/quotes/:id", async (req: Request, res: Response): Promise<void> =
     WHERE id = ${id}
     RETURNING *
   `);
-  res.json(result.rows[0]);
+  res.json(quoteToCamel(result.rows[0] as any));
 });
 
 // ─── Delete quote ─────────────────────────────────────────────────────────────
@@ -148,7 +161,7 @@ router.post("/quotes/:id/items", async (req: Request, res: Response): Promise<vo
     RETURNING *
   `);
   await db.execute(sql`UPDATE quotes SET updated_at = now() WHERE id = ${quoteId}`);
-  res.status(201).json(result.rows[0]);
+  res.status(201).json(rowToCamel(result.rows[0] as any));
 });
 
 // ─── Update item ──────────────────────────────────────────────────────────────
@@ -177,7 +190,7 @@ router.patch("/quotes/:id/items/:itemId", async (req: Request, res: Response): P
     RETURNING *
   `);
   await db.execute(sql`UPDATE quotes SET updated_at = now() WHERE id = ${quoteId}`);
-  res.json(result.rows[0]);
+  res.json(rowToCamel(result.rows[0] as any));
 });
 
 // ─── Delete item ──────────────────────────────────────────────────────────────
