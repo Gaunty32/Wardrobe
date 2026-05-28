@@ -107,7 +107,7 @@ export default function Quotes() {
   const [newEnquiryId, setNewEnquiryId] = useState<number | null>(null);
   const [newNotes, setNewNotes] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
-  const [hlContacts, setHlContacts] = useState<{ id: string; name: string; email: string | null; phone: string | null }[]>([]);
+  const [hlContacts, setHlContacts] = useState<{ id: string; name: string; company: string | null; email: string | null; phone: string | null }[]>([]);
   const [hlSearching, setHlSearching] = useState(false);
   const hlDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -410,14 +410,14 @@ export default function Quotes() {
                           type="button"
                           className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
                           onClick={() => {
-                            setNewCustomerName(c.name);
-                            setCustomerSearch(c.name);
+                            setNewCustomerName(c.company || c.name);
+                            setCustomerSearch(c.company || c.name);
                             setNewCustomerId(null);
                             setNewEnquiryId(null);
                             setHlContacts([]);
                           }}
                         >
-                          <div className="font-medium">{c.name}</div>
+                          <div className="font-medium">{c.name}{c.company && <span className="text-muted-foreground font-normal"> · {c.company}</span>}</div>
                           {(c.email || c.phone) && (
                             <div className="text-xs text-muted-foreground mt-0.5">
                               {c.email ?? c.phone}

@@ -57,6 +57,7 @@ router.get("/enquiries/search", async (req: any, res: Response): Promise<void> =
     const contacts = (data2.contacts ?? []).slice(0, 8).map((c: any) => ({
       id: c.id,
       name: [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Unknown",
+      company: c.companyName ?? null,
       email: c.email ?? null,
       phone: c.phone ?? null,
     }));
