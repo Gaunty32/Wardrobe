@@ -2152,6 +2152,48 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) { res.status(404).send("Order not found"); return; }
 
+  // ── Guard: all production worksheets must be complete before issuing a delivery note ──
+  if (!isDraft) {
+    const incompleteWs = await db
+      .select({ worksheetNumber: worksheetsTable.worksheetNumber, status: worksheetsTable.status })
+      .from(worksheetsTable)
+      .where(and(
+        eq(worksheetsTable.orderId, orderId),
+        inArray(worksheetsTable.status, ["pre_wip", "wip"]),
+      ));
+
+    if (incompleteWs.length > 0) {
+      const wsDetails = incompleteWs
+        .map(w => `${w.worksheetNumber} — ${w.status === "pre_wip" ? "Awaiting Production" : "In Production"}`)
+        .join("<br>");
+      res.status(409).send(`<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delivery Note Blocked — ${order.orderNumber}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f7fa; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,.1); max-width: 480px; width: 90%; padding: 2rem; }
+    .icon { font-size: 2.5rem; margin-bottom: 1rem; }
+    h1 { margin: 0 0 .5rem; font-size: 1.25rem; color: #1e3a5f; }
+    p { margin: 0 0 1rem; color: #444; font-size: .95rem; line-height: 1.5; }
+    .ws-list { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: .75rem 1rem; font-size: .875rem; color: #92400e; line-height: 1.8; }
+    button { margin-top: 1.25rem; background: #1e3a5f; color: #fff; border: none; border-radius: 6px; padding: .6rem 1.25rem; font-size: .9rem; cursor: pointer; }
+    button:hover { background: #16304f; }
+  </style>
+</head><body>
+  <div class="card">
+    <div class="icon">🚫</div>
+    <h1>Cannot Generate Delivery Note</h1>
+    <p>The delivery note for <strong>${order.orderNumber}</strong> cannot be produced until all production worksheets are marked as <strong>Complete</strong>.</p>
+    <div class="ws-list"><strong>Incomplete worksheets:</strong><br>${wsDetails}</div>
+    <p style="margin-top:1rem;margin-bottom:0;font-size:.85rem;color:#666;">Mark each worksheet as complete on the Production tab, then try again.</p>
+    <button onclick="window.close()">Close</button>
+  </div>
+</body></html>`);
+      return;
+    }
+  }
+
   const itemRows = await db
     .select({ item: orderItemsTable, employee: customerEmployeesTable })
     .from(orderItemsTable)
