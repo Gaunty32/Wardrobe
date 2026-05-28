@@ -130,6 +130,7 @@ export default function QuoteDetail() {
   });
 
   // Product autocomplete
+  const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
   const [productSuggestions, setProductSuggestions] = useState<{ id: number; name: string; sku: string; unitPrice: string | null }[]>([]);
   const [showProductDropdown, setShowProductDropdown] = useState(false);
   const [productSearching, setProductSearching] = useState(false);
@@ -205,8 +206,6 @@ export default function QuoteDetail() {
     onSuccess: () => { setLocation("/quotes"); },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
-
-  const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
 
   const addItem = useMutation({
     mutationFn: () => apiFetch(`/quotes/${quoteId}/items`, {
