@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { generateQuotePdf, fetchLogoBuffer, type QuotePdfItem } from "../services/email.js";
 
 const router = Router();
 
@@ -217,6 +218,67 @@ router.delete("/quotes/:id/items/:itemId", async (req: Request, res: Response): 
   await db.execute(sql`DELETE FROM quote_items WHERE id = ${itemId} AND quote_id = ${quoteId}`);
   await db.execute(sql`UPDATE quotes SET updated_at = now() WHERE id = ${quoteId}`);
   res.json({ ok: true });
+});
+
+// ─── Quote PDF ────────────────────────────────────────────────────────────────
+router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const quoteRows = await db.execute(sql`SELECT * FROM quotes WHERE id = ${id}`);
+  const quote = quoteRows.rows[0] as any;
+  if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
+
+  // Fetch items joined with products for image_url, description, sku
+  const itemRows = await db.execute(sql`
+    SELECT
+      qi.id, qi.product_name, qi.colour, qi.size, qi.finish_name,
+      qi.quantity, qi.unit_price, qi.vat_rate, qi.notes,
+      p.sku        AS product_sku,
+      p.description AS product_description,
+      p.image_url  AS product_image_url
+    FROM quote_items qi
+    LEFT JOIN products p ON p.id = qi.product_id
+    WHERE qi.quote_id = ${id}
+    ORDER BY qi.sort_order, qi.id
+  `);
+  const rows = itemRows.rows as any[];
+
+  // Fetch all product images in parallel (deduplicated by URL)
+  const uniqueUrls = [...new Set(rows.map((r) => r.product_image_url).filter(Boolean))] as string[];
+  const imageMap = new Map<string, Buffer | null>();
+  await Promise.all(uniqueUrls.map(async (url) => {
+    imageMap.set(url, await fetchLogoBuffer(url));
+  }));
+
+  const items: QuotePdfItem[] = rows.map((r) => ({
+    productName:  r.product_name,
+    sku:          r.product_sku ?? null,
+    description:  r.product_description ?? null,
+    colour:       r.colour ?? null,
+    size:         r.size ?? null,
+    finishName:   r.finish_name ?? null,
+    quantity:     Number(r.quantity),
+    unitPrice:    Number(r.unit_price),
+    vatRate:      Number(r.vat_rate ?? 0.20),
+    imageBuffer:  r.product_image_url ? (imageMap.get(r.product_image_url) ?? null) : null,
+  }));
+
+  const customerLogoBuffer = await fetchLogoBuffer(quote.customer_logo_url);
+
+  const pdf = await generateQuotePdf({
+    quoteNumber:        quote.quote_number,
+    customerName:       quote.customer_name,
+    quoteDate:          quote.created_at,
+    expiresAt:          quote.expires_at ?? null,
+    notes:              quote.notes ?? null,
+    items,
+    customerLogoBuffer,
+  });
+
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="Quote-${quote.quote_number}.pdf"`);
+  res.send(pdf);
 });
 
 export default router;

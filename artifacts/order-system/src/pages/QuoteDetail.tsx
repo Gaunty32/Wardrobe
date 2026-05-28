@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Loader2, Trash2, Plus, Copy, Check, Send, Clock,
   Eye, CheckCircle2, ShoppingCart, X, Link as LinkIcon, FileText,
-  ChevronDown, Save, Upload, ImageOff,
+  ChevronDown, Save, Upload, ImageOff, Download,
 } from "lucide-react";
 import { UploadedImage } from "@/components/UploadedImage";
 import { useUpload } from "@workspace/object-storage-web";
@@ -321,6 +321,11 @@ export default function QuoteDetail() {
               {saveQuote.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               Save changes
             </Button>
+            <a href={`${API_BASE}/quotes/${quoteId}/pdf`} target="_blank" rel="noopener noreferrer">
+              <Button variant="outline" size="sm" className="gap-1.5">
+                <Download className="w-3.5 h-3.5" /> Download PDF
+              </Button>
+            </a>
             <Button
               variant="outline" size="sm"
               className="gap-1.5 text-destructive hover:text-destructive"

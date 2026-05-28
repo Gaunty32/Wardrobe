@@ -731,6 +731,228 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
   });
 }
 
+// ─── Quote PDF ────────────────────────────────────────────────────────────────
+
+export interface QuotePdfItem {
+  productName: string;
+  sku: string | null;
+  description: string | null;
+  colour: string | null;
+  size: string | null;
+  finishName: string | null;
+  quantity: number;
+  unitPrice: number;
+  vatRate: number;
+  imageBuffer: Buffer | null;
+}
+
+export interface QuotePdfData {
+  quoteNumber: string;
+  customerName: string;
+  quoteDate: Date | string;
+  expiresAt: Date | string | null;
+  notes: string | null;
+  items: QuotePdfItem[];
+  customerLogoBuffer: Buffer | null;
+}
+
+/** Strip HTML tags and collapse whitespace for plain-text display */
+function stripHtml(html: string | null | undefined): string {
+  if (!html) return "";
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 32, size: "A4", autoFirstPage: true });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const pageW = doc.page.width;
+    const pageH = doc.page.height;
+    const margin = 32;
+    const contentW = pageW - margin * 2;
+
+    const fmtDate = (d: Date | string | null | undefined) =>
+      d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+
+    // ── Header bar ────────────────────────────────────────────────────────────
+    const hdrH = 52;
+    doc.rect(margin, margin, contentW, hdrH).fill("#1e293b");
+
+    if (SBS_LOGO_BUFFER) {
+      try { doc.image(SBS_LOGO_BUFFER, margin + 8, margin + 6, { fit: [110, 40], valign: "center" }); } catch {}
+    }
+    doc.font("Helvetica-Bold").fontSize(13).fillColor("#ffffff")
+      .text("Quotation", margin + 130, margin + 19, { width: contentW - 260, align: "center" });
+    if (data.customerLogoBuffer) {
+      try { doc.image(data.customerLogoBuffer, margin + contentW - 100, margin + 6, { fit: [92, 40], align: "right", valign: "center" }); } catch {}
+    }
+
+    // ── Customer name + SBS contact ───────────────────────────────────────────
+    const addrY = margin + hdrH + 8;
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#111827").text(data.customerName, margin, addrY);
+
+    const sbsX = margin + contentW - 170;
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827").text("Select Branding Solutions Ltd", sbsX, addrY, { width: 170, align: "right" });
+    doc.font("Helvetica").fontSize(7.5).fillColor("#555555");
+    doc.text(`Tel: ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk`, sbsX, addrY + 11, { width: 170, align: "right" });
+    doc.text("www.selectbranding.co.uk", sbsX, addrY + 21, { width: 170, align: "right" });
+
+    // ── Divider ───────────────────────────────────────────────────────────────
+    const divY = addrY + 32;
+    doc.moveTo(margin, divY).lineTo(margin + contentW, divY).strokeColor("#d1d5db").lineWidth(0.5).stroke();
+
+    // ── Quote info strip ──────────────────────────────────────────────────────
+    const infoY = divY + 6;
+    const infoCols = [
+      { label: "Quote Number", value: data.quoteNumber },
+      { label: "Quote Date",   value: fmtDate(data.quoteDate) },
+      { label: "Valid Until",  value: fmtDate(data.expiresAt) },
+    ];
+    const infoColW = contentW / infoCols.length;
+    infoCols.forEach(({ label, value }, i) => {
+      const x = margin + i * infoColW;
+      doc.font("Helvetica-Bold").fontSize(6.5).fillColor("#6b7280").text(label, x, infoY, { width: infoColW - 4 });
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#111827").text(value, x, infoY + 9, { width: infoColW - 4 });
+    });
+
+    // ── Items table ───────────────────────────────────────────────────────────
+    const tableStartY = infoY + 28;
+    const tblHdrH = 14;
+    const ROW_H   = 58; // fixed height — fits 50px thumbnail + two text lines
+
+    const imgW     = 54;
+    const colourW  = 62;
+    const sizeW    = 42;
+    const qtyW     = 30;
+    const priceW   = 52;
+    const totalW   = 58;
+    const productW = contentW - imgW - colourW - sizeW - qtyW - priceW - totalW;
+
+    const drawTableHeader = (ty: number) => {
+      doc.rect(margin, ty, contentW, tblHdrH).fill("#1e293b");
+      doc.fillColor("#94a3b8").fontSize(6.5).font("Helvetica-Bold");
+      let hx = margin + imgW;
+      doc.text("ITEM",   hx + 3,  ty + 4, { width: productW - 3 }); hx += productW;
+      doc.text("COLOUR", hx + 2,  ty + 4, { width: colourW - 2 }); hx += colourW;
+      doc.text("SIZE",   hx + 2,  ty + 4, { width: sizeW - 2, align: "center" }); hx += sizeW;
+      doc.text("QTY",    hx + 2,  ty + 4, { width: qtyW - 2,  align: "center" }); hx += qtyW;
+      doc.text("UNIT",   hx + 2,  ty + 4, { width: priceW - 2, align: "right" }); hx += priceW;
+      doc.text("TOTAL",  hx + 2,  ty + 4, { width: totalW - 2, align: "right" });
+    };
+
+    drawTableHeader(tableStartY);
+    let y = tableStartY + tblHdrH;
+    let rowAlt = false;
+
+    for (const item of data.items) {
+      const lineTotal = item.quantity * item.unitPrice;
+      const desc = stripHtml(item.description);
+
+      doc.rect(margin, y, contentW, ROW_H).fill(rowAlt ? "#f9fafb" : "#ffffff").stroke("#e5e7eb");
+      rowAlt = !rowAlt;
+
+      // Thumbnail
+      if (item.imageBuffer) {
+        try { doc.image(item.imageBuffer, margin + 3, y + 4, { fit: [48, 50] }); } catch {}
+      } else {
+        // Placeholder box
+        doc.rect(margin + 3, y + 4, 48, 50).fill("#f3f4f6").stroke("#e5e7eb");
+        doc.fillColor("#d1d5db").fontSize(7).font("Helvetica")
+          .text("No image", margin + 3, y + 25, { width: 48, align: "center" });
+      }
+
+      // Product name
+      const px = margin + imgW;
+      const productLabel = item.sku ? `${item.sku}  ${item.productName}` : item.productName;
+      doc.fillColor("#111827").fontSize(7.5).font("Helvetica-Bold")
+        .text(productLabel, px + 3, y + 5, { width: productW - 6, lineBreak: false, ellipsis: true });
+
+      // Description (up to 2 lines)
+      if (desc) {
+        doc.fillColor("#4b5563").fontSize(6.5).font("Helvetica")
+          .text(desc, px + 3, y + 16, { width: productW - 6, height: 22, ellipsis: true });
+      }
+
+      // Finish (italic, indigo)
+      if (item.finishName) {
+        doc.fillColor("#4f46e5").fontSize(6.5).font("Helvetica-Oblique")
+          .text(`Finish: ${item.finishName}`, px + 3, y + 40, { width: productW - 6, lineBreak: false, ellipsis: true });
+      }
+
+      // Colour / size / qty / price / total — vertically centred
+      const midY = y + (ROW_H - 8) / 2;
+      doc.fillColor("#374151").fontSize(7).font("Helvetica");
+      doc.text(item.colour ?? "—",         margin + imgW + productW + 2,                midY, { width: colourW - 4, lineBreak: false, ellipsis: true });
+      doc.text(item.size ?? "—",           margin + imgW + productW + colourW + 2,      midY, { width: sizeW - 4,   align: "center" });
+      doc.font("Helvetica-Bold")
+        .text(String(item.quantity),       margin + imgW + productW + colourW + sizeW + 2, midY, { width: qtyW - 4, align: "center" });
+      doc.font("Helvetica")
+        .text(`£${item.unitPrice.toFixed(2)}`, margin + imgW + productW + colourW + sizeW + qtyW + 2, midY, { width: priceW - 4, align: "right" });
+      doc.font("Helvetica-Bold")
+        .text(`£${lineTotal.toFixed(2)}`,  margin + imgW + productW + colourW + sizeW + qtyW + priceW + 2, midY, { width: totalW - 4, align: "right" });
+
+      y += ROW_H;
+
+      // Page break
+      if (y > pageH - 140) {
+        doc.addPage();
+        y = margin;
+        drawTableHeader(y);
+        y += tblHdrH;
+        rowAlt = false;
+      }
+    }
+
+    // ── Totals ────────────────────────────────────────────────────────────────
+    const subtotal = data.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+    const vat      = data.items.reduce((s, i) => s + i.quantity * i.unitPrice * (i.vatRate ?? 0.20), 0);
+    const grand    = subtotal + vat;
+
+    const totalsX = margin + contentW - 200;
+    const totalsW = 200;
+    y += 8;
+
+    const totalsRows: { label: string; value: string; bold?: boolean; big?: boolean }[] = [
+      { label: "Subtotal (exc. VAT):", value: `£${subtotal.toFixed(2)}` },
+      { label: "VAT:",                 value: `£${vat.toFixed(2)}` },
+      { label: "TOTAL (inc. VAT):",    value: `£${grand.toFixed(2)}`, bold: true, big: true },
+    ];
+    for (const row of totalsRows) {
+      const rowBg = row.big ? "#1e293b" : "#f8fafc";
+      const fg    = row.big ? "#ffffff" : "#111827";
+      const rH    = row.big ? 16 : 13;
+      doc.rect(totalsX, y, totalsW, rH).fill(rowBg).stroke("#e5e7eb");
+      doc.fillColor(fg).font(row.bold ? "Helvetica-Bold" : "Helvetica").fontSize(7.5);
+      doc.text(row.label, totalsX + 4, y + (row.big ? 4 : 3), { width: 124 });
+      doc.font("Helvetica-Bold").text(row.value, totalsX + 128, y + (row.big ? 4 : 3), { width: totalsW - 132, align: "right" });
+      y += rH;
+    }
+
+    // ── Notes ─────────────────────────────────────────────────────────────────
+    if (data.notes?.trim()) {
+      y += 14;
+      doc.fillColor("#555555").fontSize(7.5).font("Helvetica-Bold").text("Notes:", margin, y);
+      y += 10;
+      doc.font("Helvetica").fontSize(7.5).fillColor("#374151")
+        .text(data.notes.trim(), margin, y, { width: contentW - 210 });
+    }
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    const footY = pageH - margin - 16;
+    doc.fontSize(6.5).fillColor("#9ca3af").font("Helvetica")
+      .text(
+        `Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE  ·  ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk  ·  www.selectbranding.co.uk`,
+        margin, footY, { align: "center", width: contentW, lineBreak: false }
+      );
+
+    doc.end();
+  });
+}
+
 // ─── Purchase Order PDF + Email ───────────────────────────────────────────────
 
 interface POItemData {
