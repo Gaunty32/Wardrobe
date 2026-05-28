@@ -1093,5 +1093,6 @@ export async function runStartupMigrations(): Promise<void> {
       created_at      timestamptz NOT NULL DEFAULT now()
     );
     ALTER TABLE quotes ADD COLUMN IF NOT EXISTS enquiry_id integer REFERENCES enquiries(id) ON DELETE SET NULL;
+    ALTER TABLE enquiries ADD COLUMN IF NOT EXISTS company text;
   `);
 }

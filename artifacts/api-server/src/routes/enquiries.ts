@@ -71,7 +71,7 @@ router.get("/enquiries/search", async (req: any, res: Response): Promise<void> =
 // ─── List cached enquiries ────────────────────────────────────────────────────
 router.get("/enquiries", async (_req, res: Response): Promise<void> => {
   const rows = await db.execute(sql`
-    SELECT id, hl_contact_id, name, email, phone, source_tag, last_synced_at, created_at
+    SELECT id, hl_contact_id, name, company, email, phone, source_tag, last_synced_at, created_at
     FROM enquiries
     ORDER BY name ASC
   `);
@@ -102,7 +102,7 @@ router.post("/enquiries/sync", async (_req, res: Response): Promise<void> => {
   }
 
   const contactMap = new Map<string, {
-    id: string; name: string; email: string | null; phone: string | null; sourceTag: string;
+    id: string; name: string; company: string | null; email: string | null; phone: string | null; sourceTag: string;
   }>();
 
   let nextUrl: string | null =
@@ -137,6 +137,7 @@ router.post("/enquiries/sync", async (_req, res: Response): Promise<void> => {
         contactMap.set(c.id, {
           id: c.id,
           name,
+          company: c.companyName ?? null,
           email: c.email ?? null,
           phone: c.phone ?? null,
           sourceTag: matchingTag,
@@ -151,10 +152,11 @@ router.post("/enquiries/sync", async (_req, res: Response): Promise<void> => {
   let synced = 0;
   for (const contact of contactMap.values()) {
     await db.execute(sql`
-      INSERT INTO enquiries (hl_contact_id, name, email, phone, source_tag, last_synced_at)
+      INSERT INTO enquiries (hl_contact_id, name, company, email, phone, source_tag, last_synced_at)
       VALUES (
         ${contact.id},
         ${contact.name},
+        ${contact.company},
         ${contact.email},
         ${contact.phone},
         ${contact.sourceTag},
@@ -162,6 +164,7 @@ router.post("/enquiries/sync", async (_req, res: Response): Promise<void> => {
       )
       ON CONFLICT (hl_contact_id) DO UPDATE SET
         name           = EXCLUDED.name,
+        company        = EXCLUDED.company,
         email          = EXCLUDED.email,
         phone          = EXCLUDED.phone,
         source_tag     = EXCLUDED.source_tag,

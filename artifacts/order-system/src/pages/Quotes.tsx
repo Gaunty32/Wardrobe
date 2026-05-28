@@ -54,6 +54,7 @@ interface Customer {
 interface Enquiry {
   id: number;
   name: string;
+  company: string | null;
   email: string | null;
   phone: string | null;
   source_tag: string;
@@ -145,6 +146,12 @@ export default function Quotes() {
     queryFn: () => apiFetch("/enquiries"),
   });
 
+  const defaultExpiresAt = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 14);
+    return d.toISOString().slice(0, 10);
+  })();
+
   const createQuote = useMutation({
     mutationFn: () => apiFetch<{ id: number }>("/quotes", {
       method: "POST",
@@ -153,6 +160,7 @@ export default function Quotes() {
         customerId: newCustomerId,
         enquiryId: newEnquiryId,
         notes: newNotes || null,
+        expiresAt: defaultExpiresAt,
       }),
     }),
     onSuccess: (q) => {
@@ -375,15 +383,16 @@ export default function Quotes() {
                           type="button"
                           className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
                           onClick={() => {
+                            const displayName = e.company || e.name;
                             setNewEnquiryId(e.id);
                             setNewCustomerId(null);
-                            setNewCustomerName(e.name);
-                            setCustomerSearch(e.name);
+                            setNewCustomerName(displayName);
+                            setCustomerSearch(displayName);
                             setHlContacts([]);
                           }}
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium">{e.name}</span>
+                            <span className="font-medium">{e.company || e.name}{e.company && <span className="text-muted-foreground font-normal text-xs"> ({e.name})</span>}</span>
                             <EnquirySourceBadge tag={e.source_tag} />
                           </div>
                           {(e.email || e.phone) && (

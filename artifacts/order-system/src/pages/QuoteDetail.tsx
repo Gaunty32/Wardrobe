@@ -122,7 +122,13 @@ export default function QuoteDetail() {
     setStatus(quote.status);
     setNotes(quote.notes ?? "");
     setCoverText(quote.coverText ?? "");
-    setExpiresAt(quote.expiresAt ? new Date(quote.expiresAt).toISOString().slice(0, 10) : "");
+    if (quote.expiresAt) {
+      setExpiresAt(new Date(quote.expiresAt).toISOString().slice(0, 10));
+    } else {
+      const d = new Date();
+      d.setDate(d.getDate() + 14);
+      setExpiresAt(d.toISOString().slice(0, 10));
+    }
     setDirty(false);
   }, [quote]);
 
