@@ -131,31 +131,26 @@ export default function QuoteDetail() {
     },
   });
 
-  // Product autocomplete
+  // Product autocomplete — preload all products once, filter client-side
   const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
   const [addFinishLine, setAddFinishLine] = useState(false);
   const [finishLine, setFinishLine] = useState({ ...EMPTY_FINISH });
-  const [productSuggestions, setProductSuggestions] = useState<{ id: number; name: string; sku: string; unitPrice: string | null; permalink: string | null }[]>([]);
   const [showProductDropdown, setShowProductDropdown] = useState(false);
-  const [productSearching, setProductSearching] = useState(false);
   const productDropdownRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const q = newItem.productName.trim();
-    if (q.length < 2) { setProductSuggestions([]); setShowProductDropdown(false); return; }
-    setProductSearching(true);
-    const timer = setTimeout(async () => {
-      try {
-        const results = await apiFetch<{ id: number; name: string; sku: string; unitPrice: string | null }[]>(
-          `/products?search=${encodeURIComponent(q)}`
-        );
-        setProductSuggestions(results.slice(0, 8));
-        setShowProductDropdown(results.length > 0);
-      } catch { setProductSuggestions([]); }
-      finally { setProductSearching(false); }
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [newItem.productName]);
+  const { data: allProducts = [] } = useQuery<{ id: number; name: string; sku: string; unitPrice: number | null; permalink: string | null }[]>({
+    queryKey: ["products-all"],
+    queryFn: () => apiFetch("/products"),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const productSuggestions = (() => {
+    const q = newItem.productName.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return allProducts
+      .filter(p => p.name.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q))
+      .slice(0, 8);
+  })();
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -496,15 +491,12 @@ export default function QuoteDetail() {
                     <div className="relative" ref={productDropdownRef}>
                       <Input
                         value={newItem.productName}
-                        onChange={(e) => setNewItem((p) => ({ ...p, productName: e.target.value, productUrl: "" }))}
-                        onFocus={() => { if (productSuggestions.length > 0) setShowProductDropdown(true); }}
+                        onChange={(e) => { setNewItem((p) => ({ ...p, productName: e.target.value, productUrl: "" })); setShowProductDropdown(true); }}
+                        onFocus={() => setShowProductDropdown(true)}
                         placeholder="Product name *"
                         className="h-8 text-sm"
                         autoComplete="off"
                       />
-                      {productSearching && (
-                        <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-muted-foreground" />
-                      )}
                       {showProductDropdown && productSuggestions.length > 0 && (
                         <div className="absolute z-50 left-0 top-full mt-1 w-80 bg-background border rounded-lg shadow-lg overflow-hidden">
                           {productSuggestions.map((p) => (
@@ -518,13 +510,13 @@ export default function QuoteDetail() {
                                   ...prev,
                                   productName: p.name,
                                   productUrl: p.permalink ?? "",
-                                  unitPrice: p.unitPrice ? parseFloat(p.unitPrice) : prev.unitPrice,
+                                  unitPrice: p.unitPrice != null ? Number(p.unitPrice) : prev.unitPrice,
                                 }));
                                 setShowProductDropdown(false);
                               }}
                             >
                               <div className="font-medium">{p.name}</div>
-                              <div className="text-xs text-muted-foreground">{p.sku}{p.unitPrice ? ` · £${parseFloat(p.unitPrice).toFixed(2)}` : ""}</div>
+                              <div className="text-xs text-muted-foreground">{p.sku}{p.unitPrice != null ? ` · £${Number(p.unitPrice).toFixed(2)}` : ""}</div>
                             </button>
                           ))}
                         </div>
