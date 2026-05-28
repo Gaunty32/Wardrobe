@@ -645,11 +645,78 @@ function DispatchedHistory() {
   );
 }
 
+// ── Bulk Labels Dialog ─────────────────────────────────────────────────────────
+function BulkLabelsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [customerInput, setCustomerInput] = useState("");
+  const [orderInput, setOrderInput] = useState("");
+  const { toast } = useToast();
+
+  function handleOpen() {
+    const orderNum = orderInput.trim();
+    const customer = customerInput.trim();
+    if (!orderNum && !customer) {
+      toast({ title: "Enter a value", description: "Type a customer name or order number.", variant: "destructive" });
+      return;
+    }
+    const params = new URLSearchParams();
+    if (orderNum) params.set("orderNumber", orderNum);
+    else params.set("customer", customer);
+    window.open(`/api/wearer-labels/bulk?${params}`, "_blank");
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Tag className="w-4 h-4" /> Bulk Wearer Labels</DialogTitle>
+          <DialogDescription>
+            Print all wearer labels for a customer or a single order in one go.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="bulk-customer" className="text-sm font-medium">Customer name</Label>
+            <Input
+              id="bulk-customer"
+              placeholder="e.g. Fast Lane Club"
+              value={customerInput}
+              onChange={(e) => setCustomerInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleOpen()}
+            />
+            <p className="text-xs text-muted-foreground">Partial match across all confirmed &amp; dispatched orders.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex-1 border-t border-border" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <div className="flex-1 border-t border-border" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="bulk-order" className="text-sm font-medium">Order number</Label>
+            <Input
+              id="bulk-order"
+              placeholder="e.g. SBS-042"
+              value={orderInput}
+              onChange={(e) => setOrderInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleOpen()}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleOpen} className="gap-1.5"><Printer className="w-3.5 h-3.5" /> Open Labels</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────────
 export default function Dispatch() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"queue" | "history">("queue");
+  const [bulkLabelsOpen, setBulkLabelsOpen] = useState(false);
 
   const { data: orders = [], isLoading, refetch } = useQuery<DispatchOrder[]>({
     queryKey: ["dispatch-orders"],
@@ -664,6 +731,7 @@ export default function Dispatch() {
   return (
     <Layout>
       <div className="space-y-6">
+        <BulkLabelsDialog open={bulkLabelsOpen} onClose={() => setBulkLabelsOpen(false)} />
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
@@ -671,9 +739,14 @@ export default function Dispatch() {
             </h1>
             <p className="text-muted-foreground mt-1">Post-production packing, labelling, and dispatch.</p>
           </div>
-          {tab === "queue" && (
-            <Button variant="ghost" size="icon" onClick={() => refetch()}><RefreshCw className="w-4 h-4" /></Button>
-          )}
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setBulkLabelsOpen(true)}>
+              <Tag className="w-3.5 h-3.5" /> Bulk Labels
+            </Button>
+            {tab === "queue" && (
+              <Button variant="ghost" size="icon" onClick={() => refetch()}><RefreshCw className="w-4 h-4" /></Button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
