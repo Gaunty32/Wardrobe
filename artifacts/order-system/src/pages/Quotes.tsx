@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
@@ -107,6 +107,27 @@ export default function Quotes() {
   const [newEnquiryId, setNewEnquiryId] = useState<number | null>(null);
   const [newNotes, setNewNotes] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
+  const [hlContacts, setHlContacts] = useState<{ id: string; name: string; email: string | null; phone: string | null }[]>([]);
+  const [hlSearching, setHlSearching] = useState(false);
+  const hlDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Live HL contact search with debounce
+  useEffect(() => {
+    if (newCustomerId || newEnquiryId) return;
+    if (hlDebounceRef.current) clearTimeout(hlDebounceRef.current);
+    if (customerSearch.trim().length < 2) { setHlContacts([]); return; }
+    hlDebounceRef.current = setTimeout(async () => {
+      setHlSearching(true);
+      try {
+        const data = await apiFetch<{ contacts: { id: string; name: string; email: string | null; phone: string | null }[] }>(
+          `/enquiries/search?q=${encodeURIComponent(customerSearch.trim())}`
+        );
+        setHlContacts(data.contacts ?? []);
+      } catch { setHlContacts([]); }
+      finally { setHlSearching(false); }
+    }, 350);
+    return () => { if (hlDebounceRef.current) clearTimeout(hlDebounceRef.current); };
+  }, [customerSearch, newCustomerId, newEnquiryId]);
 
   const { data: quotes = [], isLoading } = useQuery<Quote[]>({
     queryKey: ["quotes"],
@@ -168,8 +189,12 @@ export default function Quotes() {
     return e.name.toLowerCase().includes(s) || (e.email ?? "").toLowerCase().includes(s);
   });
 
+  // HL live results — exclude IDs already shown in cached enquiries
+  const cachedHlIds = new Set(enquiries.map((e: any) => e.hl_contact_id));
+  const filteredHlContacts = hlContacts.filter((c) => !cachedHlIds.has(c.id));
+
   const showDropdown = customerSearch.length > 0 && !newCustomerId && !newEnquiryId &&
-    (filteredCustomers.length > 0 || filteredEnquiries.length > 0);
+    (filteredCustomers.length > 0 || filteredEnquiries.length > 0 || filteredHlContacts.length > 0 || hlSearching);
 
   const statusCounts = quotes.reduce((acc, q) => {
     acc[q.status] = (acc[q.status] ?? 0) + 1;
@@ -182,6 +207,7 @@ export default function Quotes() {
     setNewEnquiryId(null);
     setNewNotes("");
     setCustomerSearch("");
+    setHlContacts([]);
   }
 
   return (
@@ -314,7 +340,7 @@ export default function Quotes() {
               </div>
 
               {showDropdown && (
-                <div className="border rounded-lg overflow-hidden max-h-56 overflow-y-auto shadow-sm">
+                <div className="border rounded-lg overflow-hidden max-h-64 overflow-y-auto shadow-sm">
                   {filteredCustomers.length > 0 && (
                     <>
                       <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b">
@@ -330,6 +356,7 @@ export default function Quotes() {
                             setNewEnquiryId(null);
                             setNewCustomerName(c.name);
                             setCustomerSearch(c.name);
+                            setHlContacts([]);
                           }}
                         >
                           {c.name}
@@ -340,9 +367,9 @@ export default function Quotes() {
                   {filteredEnquiries.length > 0 && (
                     <>
                       <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b border-t">
-                        Enquiries from High Level
+                        Enquiries (synced from High Level)
                       </div>
-                      {filteredEnquiries.slice(0, 6).map((e) => (
+                      {filteredEnquiries.slice(0, 5).map((e) => (
                         <button
                           key={e.id}
                           type="button"
@@ -352,6 +379,7 @@ export default function Quotes() {
                             setNewCustomerId(null);
                             setNewCustomerName(e.name);
                             setCustomerSearch(e.name);
+                            setHlContacts([]);
                           }}
                         >
                           <div className="flex items-center justify-between gap-2">
@@ -361,6 +389,38 @@ export default function Quotes() {
                           {(e.email || e.phone) && (
                             <div className="text-xs text-muted-foreground mt-0.5">
                               {e.email ?? e.phone}
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                  {(filteredHlContacts.length > 0 || hlSearching) && (
+                    <>
+                      <div className="px-3 py-1.5 text-xs font-semibold text-muted-foreground bg-muted/50 border-b border-t flex items-center gap-1.5">
+                        High Level (live search)
+                        {hlSearching && <Loader2 className="w-3 h-3 animate-spin" />}
+                      </div>
+                      {hlSearching && filteredHlContacts.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-muted-foreground">Searching…</div>
+                      )}
+                      {filteredHlContacts.slice(0, 6).map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
+                          onClick={() => {
+                            setNewCustomerName(c.name);
+                            setCustomerSearch(c.name);
+                            setNewCustomerId(null);
+                            setNewEnquiryId(null);
+                            setHlContacts([]);
+                          }}
+                        >
+                          <div className="font-medium">{c.name}</div>
+                          {(c.email || c.phone) && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {c.email ?? c.phone}
                             </div>
                           )}
                         </button>

@@ -6,6 +6,67 @@ const router = Router();
 
 const TARGET_TAGS = ["telephone enquiry", "website lead", "showroom contact"];
 
+// ─── Live HL contact search ───────────────────────────────────────────────────
+router.get("/enquiries/search", async (req: any, res: Response): Promise<void> => {
+  const q = (req.query.q as string ?? "").trim();
+  if (!q || q.length < 2) { res.json({ contacts: [] }); return; }
+
+  const settingsRows = await db.execute(sql`
+    SELECT key, value FROM settings
+    WHERE key IN ('high_level_api_key', 'high_level_location_id')
+  `);
+  const settingsMap = Object.fromEntries(
+    (settingsRows.rows as any[]).map((r: any) => [r.key, r.value])
+  );
+  const apiKey: string | undefined = settingsMap["high_level_api_key"];
+  const locationId: string | undefined = settingsMap["high_level_location_id"];
+
+  if (!apiKey || !locationId) {
+    res.json({ contacts: [], error: "High Level not configured" });
+    return;
+  }
+
+  try {
+    const url = `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&name=${encodeURIComponent(q)}`;
+    const hlRes = await fetch(url, {
+      headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" },
+    });
+
+    if (!hlRes.ok) {
+      res.json({ contacts: [] });
+      return;
+    }
+
+    const data = await hlRes.json();
+    // duplicate-search returns { contact: {...} } for a single match
+    // Fall back to a general contacts query if the duplicate endpoint returns nothing
+    if (data.contact) {
+      const c = data.contact;
+      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Unknown";
+      res.json({ contacts: [{ id: c.id, name, email: c.email ?? null, phone: c.phone ?? null }] });
+      return;
+    }
+
+    // General contacts search by query
+    const url2 = `https://services.leadconnectorhq.com/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(q)}&limit=10`;
+    const hlRes2 = await fetch(url2, {
+      headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" },
+    });
+    if (!hlRes2.ok) { res.json({ contacts: [] }); return; }
+    const data2 = await hlRes2.json();
+    const contacts = (data2.contacts ?? []).slice(0, 8).map((c: any) => ({
+      id: c.id,
+      name: [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Unknown",
+      email: c.email ?? null,
+      phone: c.phone ?? null,
+    }));
+    res.json({ contacts });
+  } catch (err: any) {
+    console.error("[enquiries/search] HL error:", err.message);
+    res.json({ contacts: [] });
+  }
+});
+
 // ─── List cached enquiries ────────────────────────────────────────────────────
 router.get("/enquiries", async (_req, res: Response): Promise<void> => {
   const rows = await db.execute(sql`
