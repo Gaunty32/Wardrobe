@@ -2650,8 +2650,8 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   <title>Wearer Labels — ${order.orderNumber}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb}
-    #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;color:#000}
+    #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
     #toolbar-text{flex:1}
     #toolbar-title{font-size:14px;font-weight:700}
     #toolbar-sub{font-size:12px;opacity:.8;margin-top:2px}
@@ -2661,50 +2661,49 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     #btn-close{background:rgba(255,255,255,.15);color:white;margin-left:4px}
     #page{padding:20px;display:flex;flex-direction:column;gap:16px;align-items:center}
 
-    /* ── Label shell (6×4 in) ── */
-    .label{width:6in;height:4in;background:white;border:1px solid #bbb;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+    /* ── Label shell (4×3 in) ── */
+    .label{width:4in;height:3in;background:white;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
 
     /* ── Wearer label inner layout ── */
-    .wearer-label{display:flex;flex-direction:column;padding:0.22in 0.3in 0.2in}
-    .label-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:2px}
-    .wearer-name{font-size:28pt;font-weight:900;color:#000;text-align:center;flex:1;line-height:1.1;white-space:nowrap;overflow:hidden}
-    .follow-section{margin-top:6px}
-    .follow-heading{font-size:8pt;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
-    .sbs-logo{height:0.75in;width:auto;flex-shrink:0;margin-top:2px}
-    .job-title{font-size:10pt;color:#555;margin-bottom:6px}
+    .wearer-label{display:flex;flex-direction:column;padding:0.14in 0.18in 0.12in}
+    .label-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;border-bottom:1.5px solid #000;padding-bottom:4px}
+    .wearer-name{font-size:22pt;font-weight:900;color:#000;flex:1;line-height:1.1;white-space:nowrap;overflow:hidden}
+    .follow-section{margin-top:4px}
+    .follow-heading{font-size:6.5pt;font-weight:700;color:#000;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;border-top:1px dashed #000;padding-top:3px}
+    .sbs-logo{height:0.45in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
+    .job-title{font-size:8pt;color:#333;margin-bottom:4px}
 
     /* ── Items table ── */
-    .items-table{width:100%;border-collapse:collapse;margin-top:6px}
-    .items-table thead tr{background:#1e293b;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .items-table th{color:#94a3b8;font-size:7pt;text-transform:uppercase;letter-spacing:.05em;padding:4px 5px;text-align:left;font-weight:600}
-    .items-table td{padding:4px 5px;border-bottom:1px solid #e5e7eb;font-size:10pt;vertical-align:middle}
-    .col-product{width:40%}.col-code{width:14%}.col-colour{width:18%}.col-size{width:13%}
-    .col-qty{width:10%;text-align:center;font-weight:700}
-    .finish-sub{font-size:7.5pt;color:#4f46e5}
+    .items-table{width:100%;border-collapse:collapse;margin-top:4px}
+    .items-table thead tr{border-bottom:1.5px solid #000}
+    .items-table th{color:#000;font-size:6pt;text-transform:uppercase;letter-spacing:.04em;padding:2px 4px;text-align:left;font-weight:700}
+    .items-table td{padding:2px 4px;border-bottom:0.5px solid #ccc;font-size:8pt;vertical-align:middle;color:#000}
+    .col-product{width:42%}.col-code{width:13%}.col-colour{width:19%}.col-size{width:13%}
+    .col-qty{width:9%;text-align:center;font-weight:700}
+    .finish-sub{font-size:6pt;color:#000;font-style:italic}
 
     /* ── Company name (bottom) ── */
-    .company-name{font-size:12pt;font-weight:400;color:#444;text-align:center;margin-top:auto;padding-top:6px}
+    .company-name{font-size:9pt;font-weight:600;color:#000;text-align:center;margin-top:auto;padding-top:4px;border-top:0.5px solid #ccc;letter-spacing:.03em}
 
     /* ── Delivery label ── */
-    .delivery-label{justify-content:flex-start;padding:0}
-    .dl-header{background:#1e3a5f;color:white;padding:0.18in 0.4in;display:flex;align-items:center;justify-content:space-between;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    .dl-badge{font-size:11pt;font-weight:900;letter-spacing:.05em;text-transform:uppercase}
-    .dl-order{font-size:14pt;font-weight:900;font-family:monospace}
-    .dl-customer{font-size:26pt;font-weight:900;color:#000;padding:0.15in 0.4in 0.05in;line-height:1.1}
-    .dl-divider{border-top:2px solid #1e3a5f;margin:0 0.4in 0.1in}
-    .dl-row{display:flex;align-items:baseline;gap:12px;padding:0.04in 0.4in}
-    .dl-key{font-size:9pt;color:#555;text-transform:uppercase;letter-spacing:.06em;width:1.3in;flex-shrink:0}
-    .dl-val{font-size:13pt;font-weight:700;color:#000}
-    .dl-tracking{font-family:monospace;font-size:14pt;color:#1e3a5f}
-    .dl-addr-block{font-size:11pt;color:#000;font-weight:600;padding:0.08in 0.4in 0;line-height:1.5}
+    .delivery-label{display:flex;flex-direction:column;padding:0}
+    .dl-header{background:white;color:#000;padding:0.1in 0.2in 0.08in;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000}
+    .dl-badge{font-size:8pt;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+    .dl-order{font-size:11pt;font-weight:900;font-family:monospace}
+    .dl-customer{font-size:18pt;font-weight:900;color:#000;padding:0.08in 0.2in 0.04in;line-height:1.1}
+    .dl-divider{border-top:1.5px solid #000;margin:0 0.2in 0.06in}
+    .dl-row{display:flex;align-items:baseline;gap:8px;padding:0.03in 0.2in}
+    .dl-key{font-size:7pt;color:#000;text-transform:uppercase;letter-spacing:.06em;width:1in;flex-shrink:0;font-weight:700}
+    .dl-val{font-size:10pt;font-weight:600;color:#000}
+    .dl-tracking{font-family:monospace;font-size:10pt;color:#000}
+    .dl-addr-block{font-size:9pt;color:#000;font-weight:600;padding:0.06in 0.2in 0;line-height:1.4}
 
     @media print{
-      @page{size:6in 4in;margin:0}
+      @page{size:4in 3in;margin:0}
       #toolbar{display:none}
       body{background:white}
       #page{padding:0;gap:0}
-      .label{width:6in;height:4in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
-      .delivery-label{padding:0}
+      .label{width:4in;height:3in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
     }
   </style>
 </head>
@@ -2712,7 +2711,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   <div id="toolbar">
     <div id="toolbar-text">
       <div id="toolbar-title">🏷️ ${totalCount} Label${totalCount !== 1 ? "s" : ""} · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")}</div>
-      <div id="toolbar-sub">⚠️ Please select your LABEL PRINTER in the print dialog &nbsp;·&nbsp; 6 × 4 inch label format</div>
+      <div id="toolbar-sub">⚠️ Please select your LABEL PRINTER in the print dialog &nbsp;·&nbsp; 4 × 3 inch label format (GC420d)</div>
     </div>
     <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
     <button id="btn-dl" onclick="downloadPdf()">💾 Download PDF</button>
