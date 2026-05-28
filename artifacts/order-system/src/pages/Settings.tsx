@@ -596,6 +596,7 @@ export default function Settings() {
   const [smtpFromName, setSmtpFromName] = useState("Select Branding Solutions");
   const [showSmtpPass, setShowSmtpPass] = useState(false);
   const [smtpFormLoaded, setSmtpFormLoaded] = useState(false);
+  const [testEmailTo, setTestEmailTo] = useState("");
 
   // Detect ?xero=connected redirect from OAuth callback
   useEffect(() => {
@@ -721,12 +722,12 @@ export default function Settings() {
   });
 
   const testSmtpMutation = useMutation({
-    mutationFn: () => apiFetch<{ ok: boolean; error?: string }>("/settings/email/test", { method: "POST" }),
+    mutationFn: (to: string) => apiFetch<{ ok: boolean; provider?: string; messageId?: string; error?: string }>("/settings/email/test", { method: "POST", body: JSON.stringify({ to }) }),
     onSuccess: (res) => {
       if (res.ok) {
-        toast({ title: "Connection successful", description: "SMTP server accepted the connection." });
+        toast({ title: "Test email sent", description: `Delivered via ${res.provider ?? "unknown"}. Check the inbox (and spam folder) for the test message.` });
       } else {
-        toast({ title: "Connection failed", description: res.error ?? "Unknown error", variant: "destructive" });
+        toast({ title: "Send failed", description: res.error ?? "Unknown error", variant: "destructive" });
       }
     },
     onError: (e: Error) => toast({ title: "Test failed", description: parseApiError(e), variant: "destructive" }),
@@ -1261,17 +1262,28 @@ export default function Settings() {
                 <p className="text-sm text-emerald-800 leading-relaxed">
                   Outgoing emails (invoices, portal sign-in links, order acknowledgements, and purchase orders) are sent through <strong>Resend</strong>. No SMTP configuration is needed.
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => testSmtpMutation.mutate()}
-                  disabled={testSmtpMutation.isPending}
-                  className="gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-100"
-                >
-                  {testSmtpMutation.isPending
-                    ? <><Loader2 className="w-4 h-4 animate-spin" />Testing…</>
-                    : <><Send className="w-4 h-4" />Test Resend connection</>}
-                </Button>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    type="email"
+                    placeholder="Send test email to…"
+                    value={testEmailTo}
+                    onChange={e => setTestEmailTo(e.target.value)}
+                    className="h-8 text-sm bg-white border-emerald-300 max-w-xs"
+                    onKeyDown={e => { if (e.key === "Enter" && testEmailTo.includes("@")) testSmtpMutation.mutate(testEmailTo); }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => testSmtpMutation.mutate(testEmailTo)}
+                    disabled={testSmtpMutation.isPending || !testEmailTo.includes("@")}
+                    className="gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-100 shrink-0"
+                  >
+                    {testSmtpMutation.isPending
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Sending…</>
+                      : <><Send className="w-4 h-4" />Send test</>}
+                  </Button>
+                </div>
+                <p className="text-xs text-emerald-700">Enter your email address and click Send test — if you receive it, login codes will work. Check your spam/junk folder too.</p>
               </div>
 
               {/* SMTP fallback (collapsed / reference only) */}

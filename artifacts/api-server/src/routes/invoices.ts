@@ -378,20 +378,44 @@ router.post("/invoices/:orderId/send-highlevel", async (req, res): Promise<void>
   res.json({ ok: true, contactId: row.highLevelContactId, orderNumber: row.orderNumber });
 });
 
-router.post("/settings/email/test", async (_req, res): Promise<void> => {
+router.post("/settings/email/test", async (req, res): Promise<void> => {
+  const { to } = req.body ?? {};
+  if (!to || typeof to !== "string" || !to.includes("@")) {
+    res.status(400).json({ ok: false, error: "Provide a valid 'to' email address" });
+    return;
+  }
   try {
-    if (isResendAvailable) {
-      // Test Resend by fetching credentials — throws if not connected
-      const { getResendClient } = await import("../services/resend-client.js");
-      const { client } = await getResendClient();
-      // Send a quick API ping by listing domains (read-only, no email sent)
-      const domains = await client.domains.list();
-      if ((domains as any).error) throw new Error((domains as any).error.message);
-      res.json({ ok: true, provider: "resend" });
+    const result = await sendEmail({
+      to,
+      subject: "SBS email test — delivery check",
+      html: `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.1);">
+        <tr><td style="background:#1e293b;padding:20px 28px;">
+          <p style="margin:0;color:#ffffff;font-size:17px;font-weight:700;">Select Branding Solutions</p>
+          <p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">Email Delivery Test</p>
+        </td></tr>
+        <tr><td style="padding:28px;">
+          <p style="margin:0 0 12px;font-size:15px;color:#374151;">✅ Email delivery is working correctly.</p>
+          <p style="margin:0;font-size:13px;color:#6b7280;">This is a test message sent from the SBS Order Management System. If you received this, your email configuration is working correctly and staff login codes will be delivered to this inbox.</p>
+        </td></tr>
+        <tr><td style="background:#f8fafc;padding:14px 28px;border-top:1px solid #e2e8f0;">
+          <p style="margin:0;font-size:11px;color:#9ca3af;">Select Branding Solutions Ltd · wardrobe.selectbranding.co.uk</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`,
+      text: `Email delivery test from Select Branding Solutions.\n\nIf you received this, email delivery is working correctly and staff login codes will be delivered to this inbox.\n\n— SBS Order Management System`,
+    });
+    if (!result.sent) {
+      res.status(500).json({ ok: false, error: result.error ?? "Email send failed", provider: result.provider });
       return;
     }
-    const result = await testSmtpConnection();
-    res.json({ ...result, provider: "smtp" });
+    console.log(`[email] Test email sent to ${to} via ${result.provider}, messageId=${result.messageId ?? "n/a"}`);
+    res.json({ ok: true, provider: result.provider, messageId: result.messageId });
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : "Test failed" });
   }

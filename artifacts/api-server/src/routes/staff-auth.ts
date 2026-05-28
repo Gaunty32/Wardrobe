@@ -117,12 +117,12 @@ router.post("/auth/staff/request-otp", async (req, res): Promise<void> => {
   });
 
   if (!emailResult.sent) {
-    console.error(`[auth] OTP email failed for ${normEmail}:`, emailResult.error ?? "unknown error");
+    console.error(`[auth] OTP email failed for ${normEmail}: ${emailResult.error ?? "unknown error"}`);
     res.status(500).json({ error: "Failed to send login code email. Please contact your administrator." });
     return;
   }
 
-  console.log(`[auth] OTP email sent to ${normEmail}`);
+  console.log(`[auth] OTP email sent to ${normEmail} via ${emailResult.provider ?? "unknown"}, messageId=${emailResult.messageId ?? "n/a"}`);
   res.json({ ok: true });
 });
 

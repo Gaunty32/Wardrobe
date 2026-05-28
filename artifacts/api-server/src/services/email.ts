@@ -72,7 +72,7 @@ export async function sendEmail(opts: {
   html: string;
   text: string;
   attachments?: Array<{ filename: string; content: Buffer; contentType: string }>;
-}): Promise<{ sent: boolean; error?: string }> {
+}): Promise<{ sent: boolean; messageId?: string; provider?: string; error?: string }> {
 
   // ── Resend (preferred) ──────────────────────────────────────────────────────
   if (isResendAvailable) {
@@ -82,7 +82,7 @@ export async function sendEmail(opts: {
       const ccArr = opts.cc
         ? (Array.isArray(opts.cc) ? opts.cc : [opts.cc])
         : undefined;
-      const { error } = await client.emails.send({
+      const { data, error } = await client.emails.send({
         from,
         to: [opts.to],
         ...(ccArr?.length ? { cc: ccArr } : {}),
@@ -94,8 +94,11 @@ export async function sendEmail(opts: {
           content: a.content,
         })),
       });
-      if (error) return { sent: false, error: error.message };
-      return { sent: true };
+      if (error) {
+        console.error("[email] Resend error:", error.message, "— trying SMTP fallback");
+      } else {
+        return { sent: true, messageId: (data as any)?.id, provider: "resend" };
+      }
     } catch (err: any) {
       // If connector fails for any reason, fall through to SMTP
       console.error("[email] Resend failed, trying SMTP fallback:", err.message);
@@ -103,10 +106,10 @@ export async function sendEmail(opts: {
   }
 
   // ── SMTP fallback ───────────────────────────────────────────────────────────
-  if (!smtpTransporter) return { sent: false, error: "Email not configured" };
+  if (!smtpTransporter) return { sent: false, error: "Email not configured (no Resend and no SMTP)" };
   try {
-    await smtpTransporter.sendMail({ from: DEFAULT_FROM, ...opts });
-    return { sent: true };
+    const info = await smtpTransporter.sendMail({ from: DEFAULT_FROM, ...opts });
+    return { sent: true, messageId: info.messageId, provider: "smtp" };
   } catch (err: any) {
     return { sent: false, error: err.message };
   }
