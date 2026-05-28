@@ -65,13 +65,20 @@ router.post("/quotes", async (req: Request, res: Response): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { customerId, enquiryId, customerName, notes, expiresAt } = parsed.data;
 
+  // Auto-fill logo from linked customer
+  let customerLogoUrl: string | null = null;
+  if (customerId) {
+    const custRows = await db.execute(sql`SELECT logo_url FROM customers WHERE id = ${customerId}`);
+    customerLogoUrl = (custRows.rows[0] as any)?.logo_url ?? null;
+  }
+
   const seqRows = await db.execute(sql`SELECT nextval('quote_number_seq') AS n`);
   const n = Number((seqRows.rows[0] as any).n);
   const quoteNumber = `Q${String(n).padStart(3, "0")}`;
 
   const result = await db.execute(sql`
-    INSERT INTO quotes (quote_number, customer_id, enquiry_id, customer_name, notes, cover_text, expires_at)
-    VALUES (${quoteNumber}, ${customerId ?? null}, ${enquiryId ?? null}, ${customerName}, ${notes ?? null}, ${DEFAULT_COVER_TEXT}, ${expiresAt ? new Date(expiresAt) : null})
+    INSERT INTO quotes (quote_number, customer_id, enquiry_id, customer_name, notes, cover_text, expires_at, customer_logo_url)
+    VALUES (${quoteNumber}, ${customerId ?? null}, ${enquiryId ?? null}, ${customerName}, ${notes ?? null}, ${DEFAULT_COVER_TEXT}, ${expiresAt ? new Date(expiresAt) : null}, ${customerLogoUrl})
     RETURNING *
   `);
   res.status(201).json(quoteToCamel(result.rows[0] as any));
@@ -98,6 +105,7 @@ const UpdateSchema = z.object({
   notes: z.string().nullable().optional(),
   coverText: z.string().nullable().optional(),
   expiresAt: z.string().nullable().optional(),
+  customerLogoUrl: z.string().nullable().optional(),
 });
 
 router.patch("/quotes/:id", async (req: Request, res: Response): Promise<void> => {
@@ -112,13 +120,14 @@ router.patch("/quotes/:id", async (req: Request, res: Response): Promise<void> =
   const d = parsed.data;
   const result = await db.execute(sql`
     UPDATE quotes SET
-      customer_name = ${d.customerName ?? existing.customer_name},
-      customer_id   = ${d.customerId !== undefined ? d.customerId : existing.customer_id},
-      status        = ${d.status ?? existing.status},
-      notes         = ${d.notes !== undefined ? d.notes : existing.notes},
-      cover_text    = ${d.coverText !== undefined ? d.coverText : existing.cover_text},
-      expires_at    = ${d.expiresAt !== undefined ? (d.expiresAt ? new Date(d.expiresAt) : null) : existing.expires_at},
-      updated_at    = now()
+      customer_name      = ${d.customerName ?? existing.customer_name},
+      customer_id        = ${d.customerId !== undefined ? d.customerId : existing.customer_id},
+      status             = ${d.status ?? existing.status},
+      notes              = ${d.notes !== undefined ? d.notes : existing.notes},
+      cover_text         = ${d.coverText !== undefined ? d.coverText : existing.cover_text},
+      expires_at         = ${d.expiresAt !== undefined ? (d.expiresAt ? new Date(d.expiresAt) : null) : existing.expires_at},
+      customer_logo_url  = ${d.customerLogoUrl !== undefined ? d.customerLogoUrl : existing.customer_logo_url},
+      updated_at         = now()
     WHERE id = ${id}
     RETURNING *
   `);

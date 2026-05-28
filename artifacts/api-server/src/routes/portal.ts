@@ -3258,6 +3258,7 @@ router.get("/portal/quote/:token", portalAuth, async (req: Request, res: Respons
     customerName: quote.customer_name,
     notes: quote.notes,
     expiresAt: quote.expires_at,
+    customerLogoUrl: quote.customer_logo_url ?? null,
     items,
   });
 });

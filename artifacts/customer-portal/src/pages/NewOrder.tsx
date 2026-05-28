@@ -2665,6 +2665,7 @@ export default function NewOrder() {
     quoteNumber: string;
     customerName: string;
     notes: string | null;
+    customerLogoUrl: string | null;
     items: OrderItem[];
   }>({
     queryKey: ["portal-quote", quoteToken],
@@ -2849,6 +2850,24 @@ export default function NewOrder() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">New Order</h1>
       </div>
+
+      {quoteToken && quoteData && (
+        <div className="mb-6 rounded-xl border bg-muted/30 px-5 py-4 flex items-center gap-4">
+          {quoteData.customerLogoUrl ? (
+            <img
+              src={quoteData.customerLogoUrl}
+              alt={quoteData.customerName}
+              className="h-14 w-auto max-w-[120px] object-contain rounded shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : null}
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">Your Quote</p>
+            <p className="font-semibold text-base">{quoteData.quoteNumber} · {quoteData.customerName}</p>
+            {quoteData.notes && <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{quoteData.notes}</p>}
+          </div>
+        </div>
+      )}
 
       <Steps current={step} steps={STEPS} />
 

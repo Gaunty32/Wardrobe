@@ -17,8 +17,10 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Loader2, Trash2, Plus, Copy, Check, Send, Clock,
   Eye, CheckCircle2, ShoppingCart, X, Link as LinkIcon, FileText,
-  ChevronDown, Save,
+  ChevronDown, Save, Upload, ImageOff,
 } from "lucide-react";
+import { UploadedImage } from "@/components/UploadedImage";
+import { useUpload } from "@workspace/object-storage-web";
 
 const API_BASE = "/api";
 
@@ -55,6 +57,7 @@ interface Quote {
   notes: string | null;
   coverText: string | null;
   expiresAt: string | null;
+  customerLogoUrl: string | null;
   token: string;
   createdAt: string;
   updatedAt: string;
@@ -114,7 +117,17 @@ export default function QuoteDetail() {
   const [notes, setNotes] = useState("");
   const [coverText, setCoverText] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [customerLogoUrl, setCustomerLogoUrl] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+
+  const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile, isUploading: isUploadingLogo } = useUpload({
+    onSuccess: (res) => {
+      const url = `/api/storage/objects${res.objectPath.replace(/^\/objects/, "")}`;
+      setCustomerLogoUrl(url);
+      setDirty(true);
+    },
+  });
 
   // Product autocomplete
   const [productSuggestions, setProductSuggestions] = useState<{ id: number; name: string; sku: string; unitPrice: string | null }[]>([]);
@@ -155,6 +168,7 @@ export default function QuoteDetail() {
     setStatus(quote.status);
     setNotes(quote.notes ?? "");
     setCoverText(quote.coverText ?? "");
+    setCustomerLogoUrl(quote.customerLogoUrl ?? null);
     if (quote.expiresAt) {
       setExpiresAt(new Date(quote.expiresAt).toISOString().slice(0, 10));
     } else {
@@ -174,6 +188,7 @@ export default function QuoteDetail() {
         notes: notes || null,
         coverText: coverText || null,
         expiresAt: expiresAt || null,
+        customerLogoUrl: customerLogoUrl ?? null,
       }),
     }),
     onSuccess: () => {
@@ -330,6 +345,53 @@ export default function QuoteDetail() {
           <div className="space-y-4 rounded-xl border bg-card p-5">
             <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Quote Details</h3>
             <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Customer Logo</Label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => logoFileInputRef.current?.click()}
+                    className="w-20 h-14 rounded-lg border-2 border-dashed border-muted-foreground/30 hover:border-primary/40 transition-colors flex items-center justify-center bg-muted/20 overflow-hidden shrink-0"
+                    title="Click to upload logo"
+                  >
+                    {customerLogoUrl ? (
+                      <UploadedImage src={customerLogoUrl} alt="Logo" className="w-full h-full object-contain p-1" fallback={<ImageOff className="w-4 h-4 text-muted-foreground" />} />
+                    ) : (
+                      <Upload className="w-5 h-5 text-muted-foreground" />
+                    )}
+                  </button>
+                  <div className="flex-1 space-y-1.5">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-xs gap-1.5"
+                      onClick={() => logoFileInputRef.current?.click()}
+                      disabled={isUploadingLogo}
+                    >
+                      {isUploadingLogo ? <><Loader2 className="w-3 h-3 animate-spin" />Uploading…</> : <><Upload className="w-3 h-3" />{customerLogoUrl ? "Replace Logo" : "Upload Logo"}</>}
+                    </Button>
+                    {customerLogoUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-xs text-muted-foreground gap-1.5"
+                        onClick={() => { setCustomerLogoUrl(null); setDirty(true); }}
+                      >
+                        <X className="w-3 h-3" /> Remove logo
+                      </Button>
+                    )}
+                  </div>
+                  <input
+                    ref={logoFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFile(f); e.target.value = ""; }}
+                  />
+                </div>
+              </div>
               <div className="space-y-1.5">
                 <Label>Customer Name</Label>
                 <Input
