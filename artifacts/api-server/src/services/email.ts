@@ -957,6 +957,215 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
   });
 }
 
+// ─── Quote Email ──────────────────────────────────────────────────────────────
+
+export function buildQuoteEmail(data: {
+  quoteNumber: string;
+  customerName: string | null;
+  contactFirstName?: string | null;
+  customerLogoUrl?: string | null;
+  quoteDate: Date | string | null;
+  expiresAt?: Date | string | null;
+  notes?: string | null;
+  coverText: string;
+  portalLink: string;
+  items: Array<{
+    productName: string;
+    colour?: string | null;
+    size?: string | null;
+    finishName?: string | null;
+    quantity: number;
+    unitPrice: number;
+    vatRate?: number;
+  }>;
+}): { subject: string; html: string; text: string } {
+  const subject = `Your Quotation from Select Branding Solutions – ${data.quoteNumber}`;
+  const firstName = toFirstName(data.contactFirstName ?? data.customerName);
+  const fmtDate = (d: Date | string | null | undefined) =>
+    d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+
+  const subtotal = data.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0);
+  const vatAmount = data.items.reduce((s, i) => s + i.unitPrice * i.quantity * (i.vatRate ?? 0.20), 0);
+  const totalIncVat = subtotal + vatAmount;
+
+  const itemRows = data.items.map(i =>
+    `<tr>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;">${i.productName}${i.finishName ? `<br><span style="font-size:11px;color:#6366f1;font-weight:600;">Finish: ${i.finishName}</span>` : ""}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:13px;font-weight:600;color:#1e293b;">${i.quantity}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;color:#64748b;">£${i.unitPrice.toFixed(2)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;font-weight:700;color:#1e293b;">£${(i.unitPrice * i.quantity).toFixed(2)}</td>
+    </tr>`
+  ).join("\n");
+
+  const customerLogoBlock = data.customerLogoUrl
+    ? `<td style="vertical-align:middle;text-align:right;">
+        <p style="margin:0 0 6px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Prepared for</p>
+        <img src="${data.customerLogoUrl}" alt="${data.customerName ?? "Customer"}" height="38" style="display:block;height:38px;width:auto;max-width:130px;margin-left:auto;" />
+      </td>`
+    : `<td style="vertical-align:middle;text-align:right;">
+        <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Quotation</p>
+        <p style="margin:4px 0 0;color:#fff;font-size:17px;font-weight:700;">${data.quoteNumber}</p>
+      </td>`;
+
+  const quoteRefSubBar = data.customerLogoUrl
+    ? `<tr><td style="background:#0f172a;padding:10px 32px;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td><p style="margin:0;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Quotation</p>
+          <p style="margin:2px 0 0;color:#fff;font-size:15px;font-weight:700;">${data.quoteNumber}</p></td>
+        </tr></table>
+      </td></tr>`
+    : "";
+
+  const coverHtml = data.coverText.split(/\n\n+/).map(p =>
+    `<p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.7;">${p.replace(/\n/g, "<br>")}</p>`
+  ).join("\n");
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>${subject}</title></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;">
+    <tr><td align="center" style="padding:32px 16px;">
+      <table width="620" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.10);">
+
+        <tr><td style="background:#1e293b;padding:22px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0"><tr>
+            <td style="vertical-align:middle;">
+              <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" height="48" style="display:block;height:48px;width:auto;" />
+            </td>
+            ${customerLogoBlock}
+          </tr></table>
+        </td></tr>
+        ${quoteRefSubBar}
+
+        <tr><td style="background:#1e3a5f;padding:24px 32px;">
+          <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Your Quote is Ready, ${firstName}!</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">We've put together a personalised quote — review the items and place your order when you're ready.</p>
+        </td></tr>
+
+        <tr><td style="padding:28px 32px 4px;">${coverHtml}</td></tr>
+
+        <tr><td style="padding:16px 32px 24px;text-align:center;">
+          <a href="${data.portalLink}" style="display:inline-block;background:#1e3a5f;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;padding:14px 32px;border-radius:8px;letter-spacing:0.3px;">View Quote &amp; Place Order →</a>
+          <p style="margin:12px 0 0;font-size:12px;color:#94a3b8;">Or copy this link: <a href="${data.portalLink}" style="color:#3b82f6;text-decoration:none;">${data.portalLink}</a></p>
+        </td></tr>
+
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;">
+            <tr>
+              <td style="padding:12px 16px;border-right:1px solid #e2e8f0;">
+                <p style="margin:0;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Quote Number</p>
+                <p style="margin:4px 0 0;font-size:14px;font-weight:700;color:#1e293b;">${data.quoteNumber}</p>
+              </td>
+              <td style="padding:12px 16px;border-right:1px solid #e2e8f0;">
+                <p style="margin:0;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Date</p>
+                <p style="margin:4px 0 0;font-size:14px;font-weight:700;color:#1e293b;">${fmtDate(data.quoteDate)}</p>
+              </td>
+              <td style="padding:12px 16px;">
+                <p style="margin:0;font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Valid Until</p>
+                <p style="margin:4px 0 0;font-size:14px;font-weight:700;color:#1e293b;">${fmtDate(data.expiresAt)}</p>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+        <tr><td style="padding:0 32px 24px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
+            <thead>
+              <tr style="background:#1e293b;">
+                <th style="padding:10px 12px;text-align:left;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Product</th>
+                <th style="padding:10px 12px;text-align:left;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Colour / Size</th>
+                <th style="padding:10px 12px;text-align:center;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Qty</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Unit</th>
+                <th style="padding:10px 12px;text-align:right;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Total</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+            <tfoot>
+              <tr style="background:#f8fafc;">
+                <td colspan="4" style="padding:10px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">Subtotal (exc. VAT)</td>
+                <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;border-top:1px solid #e2e8f0;">£${subtotal.toFixed(2)}</td>
+              </tr>
+              <tr style="background:#f8fafc;">
+                <td colspan="4" style="padding:6px 12px;text-align:right;font-size:12px;color:#64748b;">VAT (20%)</td>
+                <td style="padding:6px 12px;text-align:right;font-size:12px;color:#64748b;">£${vatAmount.toFixed(2)}</td>
+              </tr>
+              <tr style="background:#1e293b;">
+                <td colspan="4" style="padding:12px;text-align:right;font-size:13px;font-weight:700;color:#f1f5f9;">Total (inc. VAT)</td>
+                <td style="padding:12px;text-align:right;font-size:15px;font-weight:700;color:#ffffff;">£${totalIncVat.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </td></tr>
+
+        ${data.notes ? `
+        <tr><td style="padding:0 32px 24px;">
+          <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;">
+            <p style="margin:0 0 6px;font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;">Notes</p>
+            <p style="margin:0;font-size:13px;color:#78350f;line-height:1.6;">${data.notes}</p>
+          </div>
+        </td></tr>` : ""}
+
+        <tr><td style="background:#0f172a;padding:24px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:5px 0;width:50%;vertical-align:top;">
+                <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Phone</p>
+                <a href="${SBS_PHONE_HREF}" style="font-size:13px;color:#e2e8f0;text-decoration:none;font-weight:500;">${SBS_PHONE_DISPLAY}</a>
+              </td>
+              <td style="padding:5px 0;width:50%;vertical-align:top;">
+                <p style="margin:0;font-size:12px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:0.4px;">Email</p>
+                <a href="mailto:info@selectbranding.co.uk" style="font-size:13px;color:#e2e8f0;text-decoration:none;font-weight:500;">info@selectbranding.co.uk</a>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2" style="padding-top:16px;border-top:1px solid #1e293b;">
+                <p style="margin:0;font-size:11px;color:#475569;text-align:center;">Select Branding Solutions Ltd &middot; Spence Mills, Mill Lane, Leeds LS13 3HE &middot; <a href="${SBS_PHONE_HREF}" style="color:#94a3b8;text-decoration:none;">${SBS_PHONE_DISPLAY}</a></p>
+              </td>
+            </tr>
+          </table>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+  const text = [
+    subject,
+    "=".repeat(60),
+    "",
+    data.coverText,
+    "",
+    "─".repeat(40),
+    `View your quote and place your order:`,
+    data.portalLink,
+    "─".repeat(40),
+    "",
+    `Quote Number: ${data.quoteNumber}`,
+    `Date:         ${fmtDate(data.quoteDate)}`,
+    `Valid Until:  ${fmtDate(data.expiresAt)}`,
+    "",
+    "Items:",
+    ...data.items.map(i =>
+      `  ${i.productName}${[i.colour, i.size].filter(Boolean).length ? ` (${[i.colour, i.size].filter(Boolean).join(" / ")})` : ""}  ·  Qty: ${i.quantity}  ·  £${i.unitPrice.toFixed(2)} each  ·  £${(i.unitPrice * i.quantity).toFixed(2)}`
+    ),
+    "",
+    `Subtotal (exc. VAT): £${subtotal.toFixed(2)}`,
+    `VAT (20%):           £${vatAmount.toFixed(2)}`,
+    `Total (inc. VAT):    £${totalIncVat.toFixed(2)}`,
+    ...(data.notes ? ["", `Notes: ${data.notes}`] : []),
+    "",
+    "─".repeat(40),
+    `info@selectbranding.co.uk  |  ${SBS_PHONE_DISPLAY}`,
+    "Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE",
+  ].join("\n");
+
+  return { subject, html, text };
+}
+
 // ─── Purchase Order PDF + Email ───────────────────────────────────────────────
 
 interface POItemData {

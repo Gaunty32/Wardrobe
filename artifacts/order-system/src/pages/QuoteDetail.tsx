@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { UploadedImage } from "@/components/UploadedImage";
 import { useUpload } from "@workspace/object-storage-web";
+import { SendQuoteDialog } from "@/components/SendQuoteDialog";
 
 const API_BASE = "/api";
 
@@ -123,6 +124,7 @@ export default function QuoteDetail() {
   const [expiresAt, setExpiresAt] = useState("");
   const [customerLogoUrl, setCustomerLogoUrl] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
 
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile, isUploading: isUploadingLogo } = useUpload({
@@ -322,6 +324,13 @@ export default function QuoteDetail() {
             <Button onClick={() => saveQuote.mutate()} disabled={!dirty || saveQuote.isPending} size="sm" className="gap-1.5">
               {saveQuote.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
               Save changes
+            </Button>
+            <Button
+              variant="outline" size="sm"
+              className="gap-1.5 text-blue-700 border-blue-300 hover:bg-blue-50"
+              onClick={() => setSendOpen(true)}
+            >
+              <Send className="w-3.5 h-3.5" /> Send
             </Button>
             <a href={`${API_BASE}/quotes/${quoteId}/pdf`} target="_blank" rel="noopener noreferrer">
               <Button variant="outline" size="sm" className="gap-1.5">
@@ -726,6 +735,17 @@ export default function QuoteDetail() {
           </div>
         </div>
       </div>
+
+      <SendQuoteDialog
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        quote={{ id: quoteId, quoteNumber: quote.quoteNumber, customerName: quote.customerName ?? null }}
+        onSent={() => {
+          setSendOpen(false);
+          qc.invalidateQueries({ queryKey: ["quote", quoteId] });
+          qc.invalidateQueries({ queryKey: ["quotes"] });
+        }}
+      />
     </Layout>
   );
 }

@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { generateQuotePdf, fetchLogoBuffer, type QuotePdfItem } from "../services/email.js";
+import { generateQuotePdf, fetchLogoBuffer, buildQuoteEmail, sendEmail, isEmailConfigured, type QuotePdfItem } from "../services/email.js";
 
 const router = Router();
 
@@ -287,6 +287,140 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="Quote-${quote.quote_number}.pdf"`);
   res.send(pdf);
+});
+
+// ─── Send quote email ─────────────────────────────────────────────────────────
+router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({
+    toEmail: z.string().optional(),
+    previewOnly: z.boolean().optional(),
+  }).safeParse(req.body);
+
+  const quoteRows = await db.execute(sql`SELECT * FROM quotes WHERE id = ${id}`);
+  const quote = quoteRows.rows[0] as any;
+  if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
+
+  // Fetch items joined with products
+  const itemRows = await db.execute(sql`
+    SELECT qi.product_name, qi.colour, qi.size, qi.finish_name, qi.quantity, qi.unit_price, qi.vat_rate,
+           p.sku AS product_sku
+    FROM quote_items qi
+    LEFT JOIN products p ON p.id = qi.product_id
+    WHERE qi.quote_id = ${id}
+    ORDER BY qi.sort_order, qi.id
+  `);
+  const items = (itemRows.rows as any[]).map(r => ({
+    productName: r.product_sku ? `${r.product_sku} ${r.product_name}` : r.product_name,
+    colour: r.colour ?? null,
+    size: r.size ?? null,
+    finishName: r.finish_name ?? null,
+    quantity: Number(r.quantity),
+    unitPrice: Number(r.unit_price),
+    vatRate: Number(r.vat_rate ?? 0.20),
+  }));
+
+  // Resolve customer email
+  let toEmail: string | undefined = body.success ? body.data.toEmail : undefined;
+  let contactFirstName: string | null = null;
+
+  if (!toEmail && quote.customer_id) {
+    // Prefer manager/dept_manager portal users
+    const managerRows = await db.execute(sql`
+      SELECT email FROM customer_portal_users
+      WHERE customer_id = ${quote.customer_id}
+        AND portal_role IN ('manager', 'dept_manager')
+        AND email IS NOT NULL
+      ORDER BY portal_role = 'manager' DESC, status = 'active' DESC, id ASC
+    `);
+    const managerEmails = (managerRows.rows as Array<{ email: string }>).map(r => r.email).filter(Boolean);
+    if (managerEmails.length > 0) {
+      toEmail = managerEmails.join(", ");
+    } else {
+      const custRows = await db.execute(sql`SELECT email, contact_first_name FROM customers WHERE id = ${quote.customer_id}`);
+      const cust = custRows.rows[0] as any;
+      toEmail = cust?.email ?? undefined;
+      contactFirstName = cust?.contact_first_name ?? null;
+    }
+  }
+
+  if (!toEmail && !body.data?.previewOnly) {
+    res.status(400).json({ error: "No customer email address found — enter one manually." }); return;
+  }
+
+  // Build portal link
+  const host = req.get("x-forwarded-host") ?? req.get("host") ?? "wardrobe.selectbranding.co.uk";
+  const protocol = (req.get("x-forwarded-proto") ?? req.protocol ?? "https").split(",")[0].trim();
+  const portalLink = `${protocol}://${host}/customer-portal/orders/new?quote=${quote.token}`;
+
+  const coverText = (quote.cover_text as string | null) ?? DEFAULT_COVER_TEXT;
+
+  const { subject, html, text } = buildQuoteEmail({
+    quoteNumber: quote.quote_number,
+    customerName: quote.customer_name ?? null,
+    contactFirstName,
+    customerLogoUrl: quote.customer_logo_url ?? null,
+    quoteDate: quote.created_at,
+    expiresAt: quote.expires_at ?? null,
+    notes: null, // internal notes — not sent to customer
+    coverText,
+    portalLink,
+    items,
+  });
+
+  // Generate PDF attachment
+  let attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
+  try {
+    const pdfItems: QuotePdfItem[] = (itemRows.rows as any[]).map(r => ({
+      productName: r.product_name,
+      productUrl: null,
+      sku: r.product_sku ?? null,
+      description: null,
+      colour: r.colour ?? null,
+      size: r.size ?? null,
+      finishName: r.finish_name ?? null,
+      quantity: Number(r.quantity),
+      unitPrice: Number(r.unit_price),
+      vatRate: Number(r.vat_rate ?? 0.20),
+      imageBuffer: null,
+    }));
+    const customerLogoBuffer = await fetchLogoBuffer(quote.customer_logo_url);
+    const pdfBuffer = await generateQuotePdf({
+      quoteNumber: quote.quote_number,
+      customerName: quote.customer_name ?? "",
+      quoteDate: quote.created_at,
+      expiresAt: quote.expires_at ?? null,
+      notes: null,
+      items: pdfItems,
+      customerLogoBuffer,
+    });
+    attachments = [{ filename: `Quote-${quote.quote_number}.pdf`, content: pdfBuffer, contentType: "application/pdf" }];
+  } catch (_err) {
+    // Non-fatal — email sends without attachment
+  }
+
+  const previewOnly = body.success ? (body.data.previewOnly ?? false) : false;
+  const result = previewOnly
+    ? { sent: false as const, error: null as string | null }
+    : await sendEmail({ to: toEmail!, subject, html, text, attachments });
+
+  // Update status to "sent" if still draft (and not preview)
+  if (!previewOnly && result.sent && quote.status === "draft") {
+    await db.execute(sql`UPDATE quotes SET status = 'sent', updated_at = now() WHERE id = ${id}`);
+  }
+
+  res.json({
+    sent: result.sent,
+    error: result.error,
+    subject,
+    html,
+    text,
+    to: toEmail ?? "",
+    emailConfigured: isEmailConfigured,
+    portalLink,
+  });
 });
 
 export default router;
