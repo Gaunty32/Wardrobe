@@ -3213,17 +3213,14 @@ router.get("/portal/stock/:id/movements", portalAuth, async (req: Request, res: 
 });
 
 // ─── Portal: get quote by token (pre-fills the ordering form) ────────────────
-router.get("/portal/quote/:token", portalAuth, async (req: Request, res: Response) => {
-  const customerId = (req as any).portalCustomerId;
+// Public endpoint — the quote token in the URL IS the credential; no JWT needed.
+router.get("/portal/quote/:token", async (req: Request, res: Response) => {
   const { token } = req.params;
 
   const quoteRows = await db.execute(sql`SELECT * FROM quotes WHERE token = ${token}`);
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
-  if (quote.customer_id && quote.customer_id !== customerId) {
-    res.status(403).json({ error: "Access denied" }); return;
-  }
   if (quote.expires_at && new Date(quote.expires_at) < new Date()) {
     res.status(410).json({ error: "This quote has expired." }); return;
   }

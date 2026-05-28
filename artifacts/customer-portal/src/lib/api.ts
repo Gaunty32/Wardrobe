@@ -18,7 +18,7 @@ export async function apiFetch(path: string, opts?: RequestInit) {
     // Don't redirect if we're already on a public auth page — doing so would
     // navigate away from /accept-invite before the magic-link token is consumed,
     // causing an infinite email loop.
-    const publicPages = ["accept-invite", "login", "select-business", "preview-login"];
+    const publicPages = ["accept-invite", "login", "select-business", "preview-login", "orders/new"];
     const onPublicPage = publicPages.some((p) => window.location.pathname.includes(p));
     if (!onPublicPage) {
       const returnTo = window.location.pathname + window.location.search;
