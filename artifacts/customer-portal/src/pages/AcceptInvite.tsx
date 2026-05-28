@@ -12,6 +12,7 @@ export default function AcceptInvite() {
   const search = useSearch();
   const params = new URLSearchParams(search);
   const token = params.get("token") ?? "";
+  const returnTo = params.get("returnTo") ?? "";
   const { refetchUser } = useAuth();
 
   const [status, setStatus] = useState<"verifying" | "success" | "error">("verifying");
@@ -33,6 +34,7 @@ export default function AcceptInvite() {
           sessionStorage.setItem("portal_selection_token", data.selectionToken);
           sessionStorage.setItem("portal_selection_email", data.email);
           sessionStorage.setItem("portal_selection_businesses", JSON.stringify(data.businesses));
+          if (returnTo) sessionStorage.setItem("portal_selection_returnTo", returnTo);
           localStorage.setItem("portal_businesses", JSON.stringify(data.businesses));
           localStorage.setItem("portal_email", data.email ?? "");
           setStatus("success");
@@ -45,7 +47,7 @@ export default function AcceptInvite() {
           localStorage.setItem("portal_role", data.portalRole ?? "member");
           await refetchUser();
           setStatus("success");
-          setTimeout(() => setLocation("/orders"), 1200);
+          setTimeout(() => setLocation(returnTo || "/orders"), 1200);
         }
       })
       .catch((err) => {

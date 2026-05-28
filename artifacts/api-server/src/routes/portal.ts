@@ -403,12 +403,12 @@ router.post("/portal/auth/switch-business", portalAuth, async (req: Request, res
 // Takes an email address and sends (or returns in dev) a one-time sign-in link.
 
 router.post("/portal/auth/login", async (req: Request, res: Response) => {
-  const parsed = z.object({ email: z.string().email() }).safeParse(req.body);
+  const parsed = z.object({ email: z.string().email(), returnTo: z.string().optional() }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "A valid email address is required" });
     return;
   }
-  const { email } = parsed.data;
+  const { email, returnTo } = parsed.data;
 
   const rows = await db.execute(sql`
     SELECT u.*, c.name AS customer_name, c.logo_url AS customer_logo
@@ -436,7 +436,8 @@ router.post("/portal/auth/login", async (req: Request, res: Response) => {
 
   const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
   const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
-  const magicUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
+  const returnToParam = returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : "";
+  const magicUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}${returnToParam}`;
 
   let emailSent = false;
   let emailError: string | undefined;

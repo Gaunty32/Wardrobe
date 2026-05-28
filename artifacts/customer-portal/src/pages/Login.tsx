@@ -87,6 +87,8 @@ export default function Login() {
   const [devUrl, setDevUrl] = useState<string | null>(null);
   const [error, setError] = useState("");
 
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo") ?? "";
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -94,7 +96,7 @@ export default function Login() {
     try {
       const data = await apiFetch("/portal/auth/login", {
         method: "POST",
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, returnTo: returnTo || undefined }),
       });
       if (data.noAccount) {
         setError("No portal account found for that email address. Please contact your account manager at Select Branding Solutions.");

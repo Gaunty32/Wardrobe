@@ -47,9 +47,11 @@ export default function SelectBusiness() {
         method: "POST",
         body: JSON.stringify({ selectionToken, portalUserId: b.portalUserId }),
       });
+      const pendingReturnTo = sessionStorage.getItem("portal_selection_returnTo") ?? "";
       sessionStorage.removeItem("portal_selection_token");
       sessionStorage.removeItem("portal_selection_email");
       sessionStorage.removeItem("portal_selection_businesses");
+      sessionStorage.removeItem("portal_selection_returnTo");
       localStorage.setItem("portal_token", data.token);
       localStorage.setItem("portal_customer_id", String(data.customerId));
       localStorage.setItem("portal_customer_name", data.customerName ?? "");
@@ -59,7 +61,7 @@ export default function SelectBusiness() {
       if (businesses.length > 1) {
         localStorage.setItem("portal_businesses", JSON.stringify(businesses));
       }
-      setLocation("/orders");
+      setLocation(pendingReturnTo || "/orders");
     } catch (err: any) {
       setError(err.message ?? "Something went wrong. Please sign in again.");
       setSelecting(null);

@@ -21,7 +21,8 @@ export async function apiFetch(path: string, opts?: RequestInit) {
     const publicPages = ["accept-invite", "login", "select-business", "preview-login"];
     const onPublicPage = publicPages.some((p) => window.location.pathname.includes(p));
     if (!onPublicPage) {
-      window.location.href = import.meta.env.BASE_URL + "login";
+      const returnTo = window.location.pathname + window.location.search;
+      window.location.href = import.meta.env.BASE_URL + "login?returnTo=" + encodeURIComponent(returnTo);
     }
   }
 
