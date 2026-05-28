@@ -282,7 +282,7 @@ export default function QuoteDetail() {
   const vat = items.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity * parseFloat(i.vatRate), 0);
   const total = subtotal + vat;
 
-  const portalLink = `${window.location.origin}/customer-portal/new-order?quote=${quote.token}`;
+  const portalLink = `${window.location.origin}/customer-portal/orders/new?quote=${quote.token}`;
   const fullMessage = `${coverText}\n\nClick the link below to view your quote and place your order:\n${portalLink}`;
 
   const stepIndex = STATUS_STEPS.findIndex((s) => s.key === quote.status);
