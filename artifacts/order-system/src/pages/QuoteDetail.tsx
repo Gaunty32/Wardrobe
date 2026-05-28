@@ -100,7 +100,7 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   );
 }
 
-const EMPTY_ITEM = { productName: "", productUrl: "", colour: "", size: "", finishName: "", quantity: 1, unitPrice: 0 };
+const EMPTY_ITEM = { productId: null as number | null, productName: "", productUrl: "", colour: "", size: "", finishName: "", quantity: 1, unitPrice: 0 };
 const EMPTY_FINISH = { finishName: "", unitPrice: 0 };
 
 export default function QuoteDetail() {
@@ -211,6 +211,7 @@ export default function QuoteDetail() {
       await apiFetch(`/quotes/${quoteId}/items`, {
         method: "POST",
         body: JSON.stringify({
+          productId: newItem.productId ?? null,
           productName: newItem.productName,
           productUrl: newItem.productUrl || null,
           colour: newItem.colour || null,
@@ -511,6 +512,7 @@ export default function QuoteDetail() {
                                 e.preventDefault();
                                 setNewItem((prev) => ({
                                   ...prev,
+                                  productId: p.id,
                                   productName: p.sku ? `${p.sku} ${p.name}` : p.name,
                                   productUrl: (p as any).permalink ?? "",
                                   unitPrice: p.unitPrice != null ? Number(p.unitPrice) : prev.unitPrice,

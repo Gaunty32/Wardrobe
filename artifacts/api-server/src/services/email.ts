@@ -735,6 +735,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
 export interface QuotePdfItem {
   productName: string;
+  productUrl: string | null;
   sku: string | null;
   description: string | null;
   colour: string | null;
@@ -865,11 +866,14 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
           .text("No image", margin + 3, y + 25, { width: 48, align: "center" });
       }
 
-      // Product name
+      // Product name (hyperlink if URL available)
       const px = margin + imgW;
       const productLabel = item.sku ? `${item.sku}  ${item.productName}` : item.productName;
-      doc.fillColor("#111827").fontSize(7.5).font("Helvetica-Bold")
-        .text(productLabel, px + 3, y + 5, { width: productW - 6, lineBreak: false, ellipsis: true });
+      doc.fillColor(item.productUrl ? "#1d4ed8" : "#111827").fontSize(7.5).font("Helvetica-Bold")
+        .text(productLabel, px + 3, y + 5, {
+          width: productW - 6, lineBreak: false, ellipsis: true,
+          ...(item.productUrl ? { link: item.productUrl, underline: true } : {}),
+        });
 
       // Description (up to 2 lines)
       if (desc) {

@@ -238,11 +238,12 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
   // Fetch items joined with products for image_url, description, sku
   const itemRows = await db.execute(sql`
     SELECT
-      qi.id, qi.product_name, qi.colour, qi.size, qi.finish_name,
+      qi.id, qi.product_name, qi.product_url, qi.colour, qi.size, qi.finish_name,
       qi.quantity, qi.unit_price, qi.vat_rate, qi.notes,
-      p.sku        AS product_sku,
+      p.sku         AS product_sku,
       p.description AS product_description,
-      p.image_url  AS product_image_url
+      p.image_url   AS product_image_url,
+      p.permalink   AS product_permalink
     FROM quote_items qi
     LEFT JOIN products p ON p.id = qi.product_id
     WHERE qi.quote_id = ${id}
@@ -259,6 +260,7 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
 
   const items: QuotePdfItem[] = rows.map((r) => ({
     productName:  r.product_name,
+    productUrl:   r.product_url ?? r.product_permalink ?? null,
     sku:          r.product_sku ?? null,
     description:  r.product_description ?? null,
     colour:       r.colour ?? null,
