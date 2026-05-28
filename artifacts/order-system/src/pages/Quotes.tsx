@@ -383,11 +383,11 @@ export default function Quotes() {
                           type="button"
                           className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
                           onClick={() => {
-                            const displayName = e.company || e.name;
+                            const businessName = e.company ?? "";
                             setNewEnquiryId(e.id);
                             setNewCustomerId(null);
-                            setNewCustomerName(displayName);
-                            setCustomerSearch(displayName);
+                            setNewCustomerName(businessName);
+                            setCustomerSearch(businessName);
                             setHlContacts([]);
                           }}
                         >
@@ -419,8 +419,9 @@ export default function Quotes() {
                           type="button"
                           className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
                           onClick={() => {
-                            setNewCustomerName(c.company || c.name);
-                            setCustomerSearch(c.company || c.name);
+                            const businessName = c.company ?? "";
+                            setNewCustomerName(businessName);
+                            setCustomerSearch(businessName);
                             setNewCustomerId(null);
                             setNewEnquiryId(null);
                             setHlContacts([]);
