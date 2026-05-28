@@ -39,6 +39,7 @@ interface QuoteItem {
   quoteId: number;
   productId: number | null;
   productName: string;
+  productSku: string | null;
   productUrl: string | null;
   colour: string | null;
   size: string | null;
@@ -510,7 +511,7 @@ export default function QuoteDetail() {
                                 e.preventDefault();
                                 setNewItem((prev) => ({
                                   ...prev,
-                                  productName: p.name,
+                                  productName: p.sku ? `${p.sku} ${p.name}` : p.name,
                                   productUrl: (p as any).permalink ?? "",
                                   unitPrice: p.unitPrice != null ? Number(p.unitPrice) : prev.unitPrice,
                                 }));
@@ -755,6 +756,11 @@ function ItemRow({
     <TableRow>
       <TableCell>
         <div className="flex items-center gap-1.5">
+          {item.productSku && !item.productName.startsWith(item.productSku) && (
+            <span className="shrink-0 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              {item.productSku}
+            </span>
+          )}
           <Input
             value={productName}
             onChange={(e) => setProductName(e.target.value)}

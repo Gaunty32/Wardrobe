@@ -100,8 +100,14 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
-  const items = (await db.execute(sql`SELECT * FROM quote_items WHERE quote_id = ${id} ORDER BY sort_order, id`)).rows;
-  res.json(quoteToCamel(quote, items as any[]));
+  const itemRows = await db.execute(sql`
+    SELECT qi.*, p.sku AS product_sku
+    FROM quote_items qi
+    LEFT JOIN products p ON p.id = qi.product_id
+    WHERE qi.quote_id = ${id}
+    ORDER BY qi.sort_order, qi.id
+  `);
+  res.json(quoteToCamel(quote, itemRows.rows as any[]));
 });
 
 // ─── Update quote ─────────────────────────────────────────────────────────────
