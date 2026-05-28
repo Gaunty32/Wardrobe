@@ -133,11 +133,12 @@ const ORDER_NUM_SORT = [sql`NULLIF(REGEXP_REPLACE(${ordersTable.orderNumber}, '[
 
 router.get("/orders", async (req, res): Promise<void> => {
   const query = ListOrdersQueryParams.safeParse(req.query);
-  // Exclude portal_draft orders (awaiting customer manager approval)
-  // and portal_pending orders (awaiting SBS confirmation — shown in the dedicated panel instead).
+  // Exclude portal_draft orders (awaiting customer manager approval),
+  // portal_pending orders (awaiting SBS confirmation — shown in the dedicated panel instead),
+  // and cancelled orders (not needed in the orders view).
   // Do NOT filter by portal_status='rejected' here — orders that went through the portal flow
   // can end up confirmed/cancelled with that flag set, and should still appear in the list.
-  const baseCondition = sql`(${ordersTable.status} IS DISTINCT FROM 'portal_draft' AND ${ordersTable.status} IS DISTINCT FROM 'portal_pending')`;
+  const baseCondition = sql`(${ordersTable.status} IS DISTINCT FROM 'portal_draft' AND ${ordersTable.status} IS DISTINCT FROM 'portal_pending' AND ${ordersTable.status} IS DISTINCT FROM 'cancelled')`;
   let orders;
   if (query.success) {
     const conditions = [baseCondition];
@@ -1899,19 +1900,18 @@ router.delete("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
 });
 
 router.get("/dashboard/stats", async (_req, res): Promise<void> => {
-  // Exclude portal_draft orders — these are awaiting customer manager approval
-  // and have not yet entered the SBS workflow
-  const notPortalDraft = sql`${ordersTable.status} IS DISTINCT FROM 'portal_draft'`;
+  // Exclude portal_draft orders (not yet in SBS workflow) and cancelled orders
+  const visibleOrders = sql`(${ordersTable.status} IS DISTINCT FROM 'portal_draft' AND ${ordersTable.status} IS DISTINCT FROM 'cancelled')`;
 
   const [{ count: totalOrders }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(ordersTable)
-    .where(notPortalDraft);
+    .where(visibleOrders);
 
   const [{ total: totalRevenue }] = await db
     .select({ total: sql<number>`coalesce(sum(total_amount), 0)::float` })
     .from(ordersTable)
-    .where(and(eq(ordersTable.status, "delivered"), notPortalDraft));
+    .where(and(eq(ordersTable.status, "delivered"), visibleOrders));
 
   const [{ count: totalCustomers }] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -1927,10 +1927,10 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
       count: sql<number>`count(*)::int`,
     })
     .from(ordersTable)
-    .where(notPortalDraft)
+    .where(visibleOrders)
     .groupBy(ordersTable.status);
 
-  const ordersByStatus = { draft: 0, confirmed: 0, shipped: 0, delivered: 0, cancelled: 0 };
+  const ordersByStatus = { draft: 0, confirmed: 0, shipped: 0, delivered: 0 };
   for (const row of statusCounts) {
     const key = row.status as keyof typeof ordersByStatus;
     if (key in ordersByStatus) {
@@ -1941,7 +1941,7 @@ router.get("/dashboard/stats", async (_req, res): Promise<void> => {
   const recentOrders = await db
     .select()
     .from(ordersTable)
-    .where(notPortalDraft)
+    .where(visibleOrders)
     .orderBy(desc(ordersTable.createdAt))
     .limit(10);
 

@@ -248,7 +248,6 @@ export default function Dashboard() {
     { name: "Confirmed", value: stats.ordersByStatus.confirmed, color: "#3b82f6" },
     { name: "Shipped", value: stats.ordersByStatus.shipped, color: "#f59e0b" },
     { name: "Delivered", value: stats.ordersByStatus.delivered, color: "#10b981" },
-    { name: "Cancelled", value: stats.ordersByStatus.cancelled, color: "#ef4444" },
   ].filter((item) => item.value > 0);
 
   return (
