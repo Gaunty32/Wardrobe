@@ -514,12 +514,12 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       const variantStockRows = await db.execute(sql`
         SELECT pv.product_id, pv.colour, pv.size, pv.stock_quantity
         FROM product_variants pv
-        WHERE pv.product_id = ANY(${productIds}::int[])
+        WHERE pv.product_id IN (${sql.join(productIds.map(id => sql`${id}`), sql`, `)})
       `);
       const plainStockRows = await db.execute(sql`
         SELECT p.id AS product_id, NULL::text AS colour, NULL::text AS size, p.stock_quantity
         FROM products p
-        WHERE p.id = ANY(${productIds}::int[])
+        WHERE p.id IN (${sql.join(productIds.map(id => sql`${id}`), sql`, `)})
           AND NOT EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id)
       `);
 
