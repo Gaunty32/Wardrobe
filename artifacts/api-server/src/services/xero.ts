@@ -602,28 +602,30 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
   const res = await xeroFetch("/Invoices", { method: "POST", body: JSON.stringify({ Invoices: [invoice] }) });
   if (!res.ok) {
     const text = await res.text();
+    console.error(`[xero] POST /Invoices HTTP ${res.status} raw body:`, text.slice(0, 1000));
     let errorMsg = `Xero invoice creation failed (HTTP ${res.status})`;
     try {
       const body = JSON.parse(text);
-      // Check specific validation errors first — Xero often returns a generic
-      // "A validation exception occurred" in body.Detail, with the real message
-      // buried in Invoices[0].ValidationErrors or LineItems[*].ValidationErrors.
+      // 1. Xero 400: body.Elements[0].ValidationErrors (most specific)
+      const element = body.Elements?.[0];
+      const elemErrors: string[] = (element?.ValidationErrors ?? []).map((e: any) => e.Message).filter(Boolean);
+      // 2. body.Invoices[0].ValidationErrors (200-with-errors path)
       const inv = body.Invoices?.[0];
       const invErrors: string[] = (inv?.ValidationErrors ?? []).map((e: any) => e.Message).filter(Boolean);
-      const lineErrors: string[] = (inv?.LineItems ?? [])
-        .flatMap((li: any) => (li.ValidationErrors ?? []).map((e: any) => e.Message))
-        .filter(Boolean);
-      const specific = [...invErrors, ...lineErrors];
+      // 3. Line item errors
+      const lineErrors: string[] = [
+        ...(inv?.LineItems ?? []),
+        ...(element?.LineItems ?? []),
+      ].flatMap((li: any) => (li.ValidationErrors ?? []).map((e: any) => e.Message)).filter(Boolean);
+      const specific = [...elemErrors, ...invErrors, ...lineErrors];
       if (specific.length) {
         errorMsg = specific.join("; ");
       } else if (body.Detail && body.Detail !== "A validation exception occurred") {
         errorMsg = body.Detail;
       } else if (body.Message && body.Message !== "A validation exception occurred") {
         errorMsg = body.Message;
-      } else if (body.Detail) {
-        // Generic validation error with no detail — log the full body for debugging
-        console.error("[xero] validation error body:", JSON.stringify(body));
-        errorMsg = body.Detail;
+      } else if (body.Detail || body.Message) {
+        errorMsg = body.Detail ?? body.Message;
       }
     } catch {
       errorMsg = `Xero error (HTTP ${res.status}): ${text.slice(0, 300)}`;
