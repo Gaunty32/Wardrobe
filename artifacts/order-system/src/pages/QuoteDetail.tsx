@@ -497,12 +497,12 @@ export default function QuoteDetail() {
                         autoComplete="off"
                       />
                       {showProductDropdown && productSuggestions.length > 0 && (
-                        <div className="absolute z-50 left-0 top-full mt-1 w-80 bg-background border rounded-lg shadow-lg overflow-hidden">
+                        <div className="absolute z-50 left-0 top-full mt-1 min-w-[420px] w-max max-w-[640px] bg-background border rounded-lg shadow-lg">
                           {productSuggestions.map((p) => (
                             <button
                               key={p.id}
                               type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
+                              className="w-full text-left px-4 py-3 text-sm hover:bg-muted transition-colors border-b last:border-b-0 first:rounded-t-lg last:rounded-b-lg"
                               onMouseDown={(e) => {
                                 e.preventDefault();
                                 setNewItem((prev) => ({
