@@ -104,6 +104,7 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
     SELECT qi.*, p.sku AS product_sku
     FROM quote_items qi
     LEFT JOIN products p ON p.id = qi.product_id
+      OR (qi.product_id IS NULL AND p.sku IS NOT NULL AND qi.product_name LIKE (p.sku || ' %'))
     WHERE qi.quote_id = ${id}
     ORDER BY qi.sort_order, qi.id
   `);
@@ -246,6 +247,7 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
       p.permalink   AS product_permalink
     FROM quote_items qi
     LEFT JOIN products p ON p.id = qi.product_id
+      OR (qi.product_id IS NULL AND p.sku IS NOT NULL AND qi.product_name LIKE (p.sku || ' %'))
     WHERE qi.quote_id = ${id}
     ORDER BY qi.sort_order, qi.id
   `);
@@ -309,6 +311,7 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
            p.sku AS product_sku
     FROM quote_items qi
     LEFT JOIN products p ON p.id = qi.product_id
+      OR (qi.product_id IS NULL AND p.sku IS NOT NULL AND qi.product_name LIKE (p.sku || ' %'))
     WHERE qi.quote_id = ${id}
     ORDER BY qi.sort_order, qi.id
   `);
