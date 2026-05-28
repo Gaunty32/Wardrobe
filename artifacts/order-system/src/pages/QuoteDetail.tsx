@@ -317,12 +317,10 @@ export default function QuoteDetail() {
             <Badge className={`${STATUS_COLOR[quote.status]} text-xs`}>{quote.status}</Badge>
           </div>
           <div className="flex items-center gap-2">
-            {dirty && (
-              <Button onClick={() => saveQuote.mutate()} disabled={saveQuote.isPending} size="sm" className="gap-1.5">
-                {saveQuote.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Save changes
-              </Button>
-            )}
+            <Button onClick={() => saveQuote.mutate()} disabled={!dirty || saveQuote.isPending} size="sm" className="gap-1.5">
+              {saveQuote.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              Save changes
+            </Button>
             <Button
               variant="outline" size="sm"
               className="gap-1.5 text-destructive hover:text-destructive"
@@ -713,12 +711,10 @@ export default function QuoteDetail() {
               </p>
             </div>
 
-            {dirty && (
-              <Button onClick={() => saveQuote.mutate()} disabled={saveQuote.isPending} className="gap-1.5">
-                {saveQuote.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Save changes
-              </Button>
-            )}
+            <Button onClick={() => saveQuote.mutate()} disabled={!dirty || saveQuote.isPending} className="gap-1.5">
+              {saveQuote.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Save changes
+            </Button>
           </div>
         </div>
       </div>

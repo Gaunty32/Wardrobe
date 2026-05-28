@@ -62,7 +62,12 @@ function Router() {
       <Route path="/accept-invite" component={AcceptInvite} />
       <Route path="/select-business" component={SelectBusiness} />
       <Route path="/preview-login" component={PreviewLogin} />
-      <Route path="/orders/new" component={() => <ProtectedRoute component={NewOrder} />} />
+      <Route path="/orders/new" component={() => {
+        // Quote preview links carry a ?quote=TOKEN — the token IS the credential,
+        // so allow unauthenticated access when it is present.
+        const hasQuote = new URLSearchParams(window.location.search).has("quote");
+        return hasQuote ? <NewOrder /> : <ProtectedRoute component={NewOrder} />;
+      }} />
       <Route path="/orders/:id" component={() => <ProtectedRoute component={OrderDetailPage} />} />
       <Route path="/orders" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/invoices" component={() => <ProtectedRoute component={Invoices} />} />
