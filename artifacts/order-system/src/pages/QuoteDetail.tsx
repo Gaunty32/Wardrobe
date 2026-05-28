@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import Layout from "@/components/Layout";
@@ -115,6 +115,39 @@ export default function QuoteDetail() {
   const [coverText, setCoverText] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [dirty, setDirty] = useState(false);
+
+  // Product autocomplete
+  const [productSuggestions, setProductSuggestions] = useState<{ id: number; name: string; sku: string; unitPrice: string | null }[]>([]);
+  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [productSearching, setProductSearching] = useState(false);
+  const productDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const q = newItem.productName.trim();
+    if (q.length < 2) { setProductSuggestions([]); setShowProductDropdown(false); return; }
+    setProductSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const results = await apiFetch<{ id: number; name: string; sku: string; unitPrice: string | null }[]>(
+          `/products?search=${encodeURIComponent(q)}`
+        );
+        setProductSuggestions(results.slice(0, 8));
+        setShowProductDropdown(results.length > 0);
+      } catch { setProductSuggestions([]); }
+      finally { setProductSearching(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [newItem.productName]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (productDropdownRef.current && !productDropdownRef.current.contains(e.target as Node)) {
+        setShowProductDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
   useEffect(() => {
     if (!quote) return;
@@ -375,12 +408,42 @@ export default function QuoteDetail() {
               {/* Add row */}
               <TableRow className="bg-muted/20">
                 <TableCell>
-                  <Input
-                    value={newItem.productName}
-                    onChange={(e) => setNewItem((p) => ({ ...p, productName: e.target.value }))}
-                    placeholder="Product name *"
-                    className="h-8 text-sm"
-                  />
+                  <div className="relative" ref={productDropdownRef}>
+                    <Input
+                      value={newItem.productName}
+                      onChange={(e) => setNewItem((p) => ({ ...p, productName: e.target.value }))}
+                      onFocus={() => { if (productSuggestions.length > 0) setShowProductDropdown(true); }}
+                      placeholder="Product name *"
+                      className="h-8 text-sm"
+                      autoComplete="off"
+                    />
+                    {productSearching && (
+                      <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 animate-spin text-muted-foreground" />
+                    )}
+                    {showProductDropdown && productSuggestions.length > 0 && (
+                      <div className="absolute z-50 left-0 top-full mt-1 w-80 bg-background border rounded-lg shadow-lg overflow-hidden">
+                        {productSuggestions.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b last:border-b-0"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setNewItem((prev) => ({
+                                ...prev,
+                                productName: p.name,
+                                unitPrice: p.unitPrice ? parseFloat(p.unitPrice) : prev.unitPrice,
+                              }));
+                              setShowProductDropdown(false);
+                            }}
+                          >
+                            <div className="font-medium">{p.name}</div>
+                            <div className="text-xs text-muted-foreground">{p.sku}{p.unitPrice ? ` · £${parseFloat(p.unitPrice).toFixed(2)}` : ""}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <Input
