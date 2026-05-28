@@ -334,7 +334,7 @@ export default function Quotes() {
                     setNewCustomerId(null);
                     setNewEnquiryId(null);
                   }}
-                  placeholder="Search customers or High Level enquiries…"
+                  placeholder="Search customers or type to search High Level…"
                   className="pl-9"
                 />
               </div>
