@@ -18,7 +18,7 @@ If you have any questions or would like to make any changes before ordering, ple
 Kind regards,
 
 The Select Branding Solutions Team
-T: 01274 598571
+T: 0113 255 2694
 E: info@selectbranding.co.uk
 W: www.selectbranding.co.uk`;
 
