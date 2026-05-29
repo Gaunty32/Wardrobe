@@ -25,6 +25,7 @@ import Reports from "@/pages/Reports";
 import SelectExtra from "@/pages/SelectExtra";
 import Quotes from "@/pages/Quotes";
 import QuoteDetail from "@/pages/QuoteDetail";
+import WooOrders from "@/pages/WooOrders";
 import NotFound from "@/pages/not-found";
 import DemoGate from "@/pages/DemoGate";
 import DemoDashboard from "@/pages/DemoDashboard";
@@ -109,6 +110,7 @@ function Router() {
       <Route path="/select-extra" component={SelectExtra} />
       <Route path="/quotes" component={Quotes} />
       <Route path="/quotes/:id" component={QuoteDetail} />
+      <Route path="/woo-orders" component={WooOrders} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,0 +1,280 @@
+import { Router, type Request, type Response } from "express";
+import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
+
+const router = Router();
+
+interface WooSettings {
+  baseUrl: string;
+  ck: string;
+  cs: string;
+}
+
+async function getWooSettings(): Promise<WooSettings | null> {
+  const rows = await db.execute(sql`
+    SELECT key, value FROM settings
+    WHERE key IN ('woo_url', 'woo_consumer_key', 'woo_consumer_secret')
+  `);
+  const map = Object.fromEntries((rows.rows as any[]).map((r: any) => [r.key, r.value]));
+  if (!map["woo_url"] || !map["woo_consumer_key"] || !map["woo_consumer_secret"]) return null;
+  return { baseUrl: map["woo_url"], ck: map["woo_consumer_key"], cs: map["woo_consumer_secret"] };
+}
+
+async function wooFetch<T>(settings: WooSettings, path: string): Promise<T> {
+  const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3${path}`);
+  url.searchParams.set("consumer_key", settings.ck);
+  url.searchParams.set("consumer_secret", settings.cs);
+  const res = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
+  if (!res.ok) throw new Error(`WooCommerce API error ${res.status}: ${await res.text()}`);
+  return res.json() as T;
+}
+
+// ─── List recent WooCommerce orders ──────────────────────────────────────────
+router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => {
+  const settings = await getWooSettings();
+  if (!settings) {
+    res.status(400).json({ error: "WooCommerce not configured. Check Settings → WooCommerce." });
+    return;
+  }
+
+  try {
+    const status = (req.query.status as string) || "processing,on-hold,pending";
+    const page = parseInt(req.query.page as string) || 1;
+    const perPage = 20;
+    const path = `/orders?status=${status}&per_page=${perPage}&page=${page}&orderby=date&order=desc`;
+    const wooOrders = await wooFetch<any[]>(settings, path);
+
+    // Check which have already been imported
+    const wooIds = wooOrders.map((o: any) => o.id);
+    let importedIds = new Set<number>();
+    if (wooIds.length > 0) {
+      const imported = await db.execute(sql`
+        SELECT woo_order_id, order_number FROM orders
+        WHERE woo_order_id = ANY(${wooIds}::integer[])
+      `);
+      for (const r of imported.rows as any[]) {
+        importedIds.add(r.woo_order_id);
+      }
+    }
+
+    const orders = wooOrders.map((o: any) => ({
+      id: o.id,
+      number: o.number,
+      status: o.status,
+      dateCreated: o.date_created,
+      customerNote: o.customer_note || null,
+      billing: {
+        firstName: o.billing?.first_name ?? "",
+        lastName: o.billing?.last_name ?? "",
+        company: o.billing?.company ?? "",
+        email: o.billing?.email ?? "",
+        phone: o.billing?.phone ?? "",
+      },
+      shipping: {
+        firstName: o.shipping?.first_name ?? "",
+        lastName: o.shipping?.last_name ?? "",
+        company: o.shipping?.company ?? "",
+        address1: o.shipping?.address_1 ?? "",
+        address2: o.shipping?.address_2 ?? "",
+        city: o.shipping?.city ?? "",
+        postcode: o.shipping?.postcode ?? "",
+        country: o.shipping?.country ?? "",
+      },
+      lineItems: (o.line_items ?? []).map((li: any) => ({
+        id: li.id,
+        name: li.name,
+        sku: li.sku || null,
+        quantity: li.quantity,
+        price: li.price,
+        total: li.total,
+        metaData: (li.meta_data ?? []).filter((m: any) =>
+          !m.key.startsWith("_") && m.display_value
+        ).map((m: any) => ({ key: m.display_key || m.key, value: m.display_value })),
+      })),
+      shippingLines: (o.shipping_lines ?? []).map((sl: any) => ({
+        methodTitle: sl.method_title,
+        total: sl.total,
+      })),
+      total: o.total,
+      currency: o.currency,
+      paymentMethodTitle: o.payment_method_title || null,
+      alreadyImported: importedIds.has(o.id),
+    }));
+
+    res.json({ orders, page, perPage });
+  } catch (err: any) {
+    console.error("[woo/orders] Error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Import a WooCommerce order into the order system ────────────────────────
+router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Promise<void> => {
+  const wooId = parseInt(req.params.wooId);
+  if (isNaN(wooId)) { res.status(400).json({ error: "Invalid WooCommerce order ID" }); return; }
+
+  const settings = await getWooSettings();
+  if (!settings) {
+    res.status(400).json({ error: "WooCommerce not configured." });
+    return;
+  }
+
+  // Check not already imported
+  const existing = await db.execute(sql`
+    SELECT id, order_number FROM orders WHERE woo_order_id = ${wooId}
+  `);
+  if ((existing.rows as any[]).length > 0) {
+    const row = existing.rows[0] as any;
+    res.status(409).json({ error: `Already imported as ${row.order_number}`, orderNumber: row.order_number, orderId: row.id });
+    return;
+  }
+
+  try {
+    const woo = await wooFetch<any>(settings, `/orders/${wooId}`);
+
+    // Determine customer name (billing company > full name)
+    const billingName = [woo.billing?.first_name, woo.billing?.last_name].filter(Boolean).join(" ");
+    const customerName = woo.billing?.company?.trim() || billingName || `WooCommerce #${woo.number}`;
+
+    // Try to find matching customer in our DB by email or company name
+    let customerId: number | null = null;
+    const email = woo.billing?.email?.toLowerCase().trim();
+    if (email) {
+      const byEmail = await db.execute(sql`
+        SELECT id FROM customers WHERE LOWER(email) = ${email} LIMIT 1
+      `);
+      if ((byEmail.rows as any[]).length > 0) {
+        customerId = (byEmail.rows[0] as any).id;
+      }
+    }
+    if (!customerId && woo.billing?.company) {
+      const byName = await db.execute(sql`
+        SELECT id FROM customers WHERE LOWER(name) = LOWER(${woo.billing.company.trim()}) LIMIT 1
+      `);
+      if ((byName.rows as any[]).length > 0) {
+        customerId = (byName.rows[0] as any).id;
+      }
+    }
+
+    // Generate the next order number
+    const numRows = await db.execute(sql`
+      SELECT order_number FROM orders
+      WHERE order_number ~ '^O[0-9]+$'
+      ORDER BY LENGTH(order_number) DESC, order_number DESC
+      LIMIT 1
+    `);
+    const lastNum = (numRows.rows[0] as any)?.order_number as string | undefined;
+    const orderNumber = `O${(lastNum ? parseInt(lastNum.slice(1), 10) : 99) + 1}`;
+
+    // Calculate carriage from shipping lines
+    const carriageAmount = (woo.shipping_lines ?? [])
+      .reduce((sum: number, sl: any) => sum + parseFloat(sl.total || "0"), 0);
+
+    // Build notes
+    const notesParts: string[] = [];
+    if (woo.customer_note?.trim()) notesParts.push(`Customer note: ${woo.customer_note.trim()}`);
+    if (woo.payment_method_title) notesParts.push(`Payment: ${woo.payment_method_title}`);
+
+    // Create the order
+    const orderResult = await db.execute(sql`
+      INSERT INTO orders (
+        order_number, customer_id, customer_name, status, total_amount,
+        carriage_amount, notes, order_date, source, woo_order_id, created_at, updated_at
+      ) VALUES (
+        ${orderNumber},
+        ${customerId},
+        ${customerName},
+        'confirmed',
+        ${woo.total},
+        ${carriageAmount.toFixed(2)},
+        ${notesParts.join("\n") || null},
+        ${woo.date_created ? new Date(woo.date_created).toISOString() : new Date().toISOString()},
+        'woocommerce',
+        ${wooId},
+        now(), now()
+      )
+      RETURNING id, order_number
+    `);
+    const order = orderResult.rows[0] as any;
+
+    // Import line items — try to match products by SKU
+    for (const li of woo.line_items ?? []) {
+      let productId: number | null = null;
+      if (li.sku) {
+        const prod = await db.execute(sql`
+          SELECT id FROM products WHERE sku = ${li.sku} LIMIT 1
+        `);
+        if ((prod.rows as any[]).length > 0) productId = (prod.rows[0] as any).id;
+      }
+
+      // Extract colour/size from meta_data
+      let colour: string | null = null;
+      let size: string | null = null;
+      for (const m of li.meta_data ?? []) {
+        const key = (m.key || m.display_key || "").toLowerCase();
+        const val = m.display_value || m.value || "";
+        if (key.includes("colour") || key.includes("color")) colour = String(val);
+        else if (key.includes("size")) size = String(val);
+      }
+
+      const unitPrice = li.quantity > 0 ? (parseFloat(li.total || "0") / li.quantity).toFixed(2) : "0.00";
+      await db.execute(sql`
+        INSERT INTO order_items (
+          order_id, product_id, product_name, colour, size,
+          quantity, unit_price, line_total, recipient_type, created_at
+        ) VALUES (
+          ${order.id},
+          ${productId},
+          ${li.name},
+          ${colour},
+          ${size},
+          ${li.quantity},
+          ${unitPrice},
+          ${li.total},
+          'stock',
+          now()
+        )
+      `);
+    }
+
+    // Recalc total (includes carriage)
+    await db.execute(sql`
+      UPDATE orders SET
+        total_amount = (
+          SELECT COALESCE(SUM(line_total::numeric), 0) + ${carriageAmount}
+          FROM order_items WHERE order_id = ${order.id}
+        ),
+        updated_at = now()
+      WHERE id = ${order.id}
+    `);
+
+    // Log the import
+    await db.execute(sql`
+      INSERT INTO order_logs (order_id, action, actor, details, created_at)
+      VALUES (${order.id}, 'Order imported', 'WooCommerce', ${`Imported from WooCommerce order #${woo.number}`}, now())
+    `);
+
+    res.status(201).json({ orderId: order.id, orderNumber: order.order_number, customerName });
+  } catch (err: any) {
+    console.error("[woo/orders/:id/import] Error:", err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Fetch a single WooCommerce order (for preview) ──────────────────────────
+router.get("/woo/orders/:wooId", async (req: Request, res: Response): Promise<void> => {
+  const wooId = parseInt(req.params.wooId);
+  if (isNaN(wooId)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
+
+  try {
+    const woo = await wooFetch<any>(settings, `/orders/${wooId}`);
+    res.json(woo);
+  } catch (err: any) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+export default router;

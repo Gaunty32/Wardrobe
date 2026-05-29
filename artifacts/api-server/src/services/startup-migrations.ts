@@ -1098,4 +1098,9 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS permalink text;
     ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS product_url text;
   `);
+
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_id integer;
+    CREATE UNIQUE INDEX IF NOT EXISTS orders_woo_order_id_idx ON orders (woo_order_id) WHERE woo_order_id IS NOT NULL;
+  `);
 }

@@ -27,6 +27,7 @@ import messagesRouter from "./messages";
 import selectExtraRouter from "./select-extra";
 import quotesRouter from "./quotes";
 import enquiriesRouter from "./enquiries";
+import wooRouter from "./woo";
 
 const router: IRouter = Router();
 
@@ -58,5 +59,6 @@ router.use(messagesRouter);
 router.use(selectExtraRouter);
 router.use(quotesRouter);
 router.use(enquiriesRouter);
+router.use(wooRouter);
 
 export default router;
