@@ -98,13 +98,54 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
 
   const quoteRows = await db.execute(sql`
     SELECT q.*,
-      c.contact_first_name, c.contact_last_name, c.phone AS customer_phone, c.email AS customer_email
+      c.contact_first_name, c.contact_last_name, c.phone AS customer_phone, c.email AS customer_email,
+      c.high_level_contact_id
     FROM quotes q
     LEFT JOIN customers c ON c.id = q.customer_id
     WHERE q.id = ${id}
   `);
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
+
+  // If contact fields are missing but we have a High Level contact ID, fetch fresh from HL
+  const needsHlFetch = quote.customer_id && quote.high_level_contact_id &&
+    (!quote.contact_first_name && !quote.contact_last_name && !quote.customer_phone && !quote.customer_email);
+
+  if (needsHlFetch) {
+    try {
+      const settingsRows = await db.execute(sql`
+        SELECT key, value FROM settings WHERE key = 'high_level_api_key'
+      `);
+      const apiKey = (settingsRows.rows[0] as any)?.value as string | undefined;
+      if (apiKey) {
+        const hlRes = await fetch(
+          `https://services.leadconnectorhq.com/contacts/${quote.high_level_contact_id}`,
+          { headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" } }
+        );
+        if (hlRes.ok) {
+          const hlData = await hlRes.json() as any;
+          const c = hlData?.contact;
+          if (c) {
+            quote.contact_first_name = c.firstName ?? null;
+            quote.contact_last_name  = c.lastName  ?? null;
+            quote.customer_phone     = c.phone      ?? null;
+            quote.customer_email     = c.email      ?? null;
+            // Persist back so future loads are instant
+            await db.execute(sql`
+              UPDATE customers SET
+                contact_first_name = ${c.firstName ?? null},
+                contact_last_name  = ${c.lastName  ?? null},
+                phone              = ${c.phone      ?? null},
+                email              = COALESCE(email, ${c.email ?? null})
+              WHERE id = ${quote.customer_id}
+            `);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.error("[quotes/:id] HL contact fetch failed:", err.message);
+    }
+  }
 
   const itemRows = await db.execute(sql`
     SELECT qi.*, p.sku AS product_sku

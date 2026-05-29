@@ -988,8 +988,8 @@ export function buildQuoteEmail(data: {
   }>;
 }): { subject: string; html: string; text: string } {
   const subject = `Your Quotation from Select Branding Solutions – ${data.quoteNumber}`;
-  // Never use the company name as a first name — fall back to "there" when no contact name is set
-  const firstName = data.contactFirstName ? toFirstName(data.contactFirstName) : "there";
+  // Use the contact's first name when available; null means no personal name known
+  const firstName = data.contactFirstName ? toFirstName(data.contactFirstName) : null;
   const fmtDate = (d: Date | string | null | undefined) =>
     d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 
@@ -1027,11 +1027,13 @@ export function buildQuoteEmail(data: {
     : "";
 
   // Resolve placeholders — also patch legacy literal phrases from old saved cover texts
+  const greetingName = firstName ?? data.customerName ?? null;
   const resolvedCoverText = data.coverText
-    .replace(/^Hi there,/m, `Hi ${firstName},`)
+    .replace(/^Hi there,/m, greetingName ? `Hi ${greetingName},` : "Hi,")
+    .replace(/^Hi \{firstName\},/m, greetingName ? `Hi ${greetingName},` : "Hi,")
     .replace(/Thank you for your enquiry with Select Branding Solutions\./g,
       `Thank you for the opportunity to quote for ${data.customerName ?? "your organisation"}.`)
-    .replace(/\{firstName\}/g, firstName)
+    .replace(/\{firstName\}/g, firstName ?? "")
     .replace(/\{businessName\}/g, data.customerName ?? "your organisation");
 
   const coverHtml = resolvedCoverText.split(/\n\n+/).map(p =>
@@ -1057,7 +1059,7 @@ export function buildQuoteEmail(data: {
         ${quoteRefSubBar}
 
         <tr><td style="background:#1e3a5f;padding:24px 32px;">
-          <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Your Quote is Ready, ${firstName}!</p>
+          <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Your quote for ${data.customerName ?? "you"} is ready!</p>
           <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">We've put together a personalised quote — review the items and place your order when you're ready.</p>
         </td></tr>
 
