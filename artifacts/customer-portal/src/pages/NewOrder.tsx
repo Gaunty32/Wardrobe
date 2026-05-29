@@ -2772,7 +2772,7 @@ export default function NewOrder() {
   }>({
     queryKey: ["portal-quote", quoteToken],
     queryFn: () => apiFetch(`/portal/quote/${quoteToken}`),
-    enabled: !!quoteToken && !isPreview,
+    enabled: !!quoteToken,
     staleTime: Infinity,
     retry: false,
   });
@@ -2800,7 +2800,7 @@ export default function NewOrder() {
   }, [serverBasket]);
 
   useEffect(() => {
-    if (!quoteData?.items?.length || isPreview) return;
+    if (!quoteData?.items?.length) return;
     // Quote URL always wins — override any saved basket/session state
     setBasket(quoteData.items);
     setMode("quote");
