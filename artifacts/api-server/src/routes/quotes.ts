@@ -400,6 +400,22 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
     }
   }
 
+  // Resolve contact first name if still unknown — match first email against customer_contacts
+  if (!contactFirstName && quote.customer_id && toEmail) {
+    const firstEmail = toEmail.split(",")[0].trim();
+    const ccRows = await db.execute(sql`
+      SELECT first_name FROM customer_contacts
+      WHERE customer_id = ${quote.customer_id} AND LOWER(email) = LOWER(${firstEmail})
+      LIMIT 1
+    `);
+    contactFirstName = (ccRows.rows[0] as any)?.first_name ?? null;
+  }
+  // Final fallback: customers.contact_first_name
+  if (!contactFirstName && quote.customer_id) {
+    const cfRows = await db.execute(sql`SELECT contact_first_name FROM customers WHERE id = ${quote.customer_id}`);
+    contactFirstName = (cfRows.rows[0] as any)?.contact_first_name ?? null;
+  }
+
   if (!toEmail && !body.data?.previewOnly) {
     res.status(400).json({ error: "No customer email address found — enter one manually." }); return;
   }

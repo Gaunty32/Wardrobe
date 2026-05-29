@@ -988,7 +988,8 @@ export function buildQuoteEmail(data: {
   }>;
 }): { subject: string; html: string; text: string } {
   const subject = `Your Quotation from Select Branding Solutions – ${data.quoteNumber}`;
-  const firstName = toFirstName(data.contactFirstName ?? data.customerName);
+  // Never use the company name as a first name — fall back to "there" when no contact name is set
+  const firstName = data.contactFirstName ? toFirstName(data.contactFirstName) : "there";
   const fmtDate = (d: Date | string | null | undefined) =>
     d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 
