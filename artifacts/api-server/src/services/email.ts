@@ -11,10 +11,18 @@ const SBS_LOGO_BUFFER: Buffer | null = (() => {
 })();
 
 // ── Logo fetch helpers ────────────────────────────────────────────────────────
+/** Resolve a potentially-relative storage path to an absolute URL the server can fetch. */
+function toAbsoluteUrl(url: string): string {
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  // Relative paths (e.g. /api/storage/objects/...) — prepend localhost base
+  const port = process.env.PORT ?? 8080;
+  return `http://localhost:${port}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
 export async function fetchLogoBuffer(url: string | null | undefined): Promise<Buffer | null> {
   if (!url) return null;
   try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const resp = await fetch(toAbsoluteUrl(url), { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
     return Buffer.from(await resp.arrayBuffer());
   } catch { return null; }
@@ -23,7 +31,7 @@ export async function fetchLogoBuffer(url: string | null | undefined): Promise<B
 export async function fetchLogoDataUrl(url: string | null | undefined): Promise<string | null> {
   if (!url) return null;
   try {
-    const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    const resp = await fetch(toAbsoluteUrl(url), { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
     const ct = resp.headers.get("content-type") ?? "image/png";
     return `data:${ct};base64,${Buffer.from(await resp.arrayBuffer()).toString("base64")}`;
@@ -1017,7 +1025,11 @@ export function buildQuoteEmail(data: {
       </td></tr>`
     : "";
 
+  // Resolve placeholders — also patch legacy literal phrases from old saved cover texts
   const resolvedCoverText = data.coverText
+    .replace(/^Hi there,/m, `Hi ${firstName},`)
+    .replace(/Thank you for your enquiry with Select Branding Solutions\./g,
+      `Thank you for the opportunity to quote for ${data.customerName ?? "your organisation"}.`)
     .replace(/\{firstName\}/g, firstName)
     .replace(/\{businessName\}/g, data.customerName ?? "your organisation");
 
