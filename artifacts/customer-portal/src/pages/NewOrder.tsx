@@ -1891,13 +1891,14 @@ const SHIPPING_OPTIONS = [
   },
 ] as const;
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {} }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) => void;
   submitting: boolean;
   portalRole: string;
   onAddMore?: () => void;
+  sizesMap?: Record<string, Record<string, string[]>>;
 }) {
   const { toast } = useToast();
   const [requiredDate, setRequiredDate] = useState(() => {
@@ -1993,6 +1994,30 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   };
   const removeItem = (idx: number) => setBasket(b => b.filter((_, i) => i !== idx));
 
+  const getItemSizeData = (item: OrderItem) => {
+    const pid = item.productId ? String(item.productId) : null;
+    if (!pid || !sizesMap[pid]) return null;
+    const productSizes = sizesMap[pid];
+    const colours = Object.keys(productSizes).filter(c => c !== "__any__");
+    const getSizes = (colour: string): string[] =>
+      productSizes[colour] ?? productSizes["__any__"] ?? [];
+    return { colours, getSizes, productSizes };
+  };
+
+  const updateColour = (idx: number, colour: string) => {
+    setBasket(b => b.map((item, i) => {
+      if (i !== idx) return item;
+      const data = getItemSizeData(item);
+      const availSizes = data ? data.getSizes(colour) : [];
+      const newSize = availSizes.includes(item.size) ? item.size : (availSizes[0] ?? "");
+      return { ...item, colour, size: newSize };
+    }));
+  };
+
+  const updateSize = (idx: number, size: string) => {
+    setBasket(b => b.map((item, i) => i === idx ? { ...item, size } : item));
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2 gap-4 flex-wrap">
@@ -2033,8 +2058,40 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                           <div className="text-[11px] text-primary/70 font-semibold mt-1">{item.finishName}</div>
                         )}
                       </TableCell>
-                      <TableCell className="text-sm text-muted-foreground align-top">
-                        {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
+                      <TableCell className="text-sm align-top">
+                        {(() => {
+                          const sd = getItemSizeData(item);
+                          if (!sd) return <span className="text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ") || "—"}</span>;
+                          const { colours, getSizes } = sd;
+                          const availSizes = getSizes(item.colour);
+                          return (
+                            <div className="flex flex-col gap-1.5 min-w-[110px]">
+                              {colours.length > 0 && (
+                                <Select value={item.colour || ""} onValueChange={v => updateColour(idx, v)}>
+                                  <SelectTrigger className="h-7 text-xs px-2">
+                                    <SelectValue placeholder="Colour…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {colours.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              {availSizes.length > 0 && (
+                                <Select value={item.size || ""} onValueChange={v => updateSize(idx, v)}>
+                                  <SelectTrigger className="h-7 text-xs px-2">
+                                    <SelectValue placeholder="Size…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {availSizes.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                              {colours.length === 0 && availSizes.length === 0 && (
+                                <span className="text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ") || "—"}</span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground align-top">
                         {item.recipientName || (item.recipientType === "stock" ? "Stock" : "—")}
@@ -2667,6 +2724,7 @@ export default function NewOrder() {
     notes: string | null;
     customerLogoUrl: string | null;
     items: OrderItem[];
+    sizesMap: Record<string, Record<string, string[]>>;
   }>({
     queryKey: ["portal-quote", quoteToken],
     queryFn: () => apiFetch(`/portal/quote/${quoteToken}`),
@@ -2921,6 +2979,7 @@ export default function NewOrder() {
           onSubmit={(d) => submitMutation.mutate(d)}
           submitting={submitMutation.isPending}
           portalRole={portalRole ?? "member"}
+          sizesMap={quoteData?.sizesMap ?? {}}
         />
       )}
 

@@ -3246,6 +3246,85 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
     unitPrice: parseFloat(String(item.unit_price ?? 0)),
   }));
 
+  // Build sizesMap so the customer can pick colour/size when converting a quote to an order
+  const sizesMap: Record<string, Record<string, string[]>> = {};
+  const productIds = [...new Set(items.map(i => i.productId).filter(Boolean) as number[])];
+
+  if (productIds.length > 0) {
+    const idsStr = productIds.map(id => parseInt(String(id), 10)).filter(n => !isNaN(n)).join(",");
+
+    // product_variants: colour-keyed sizes
+    const variantRows = await db.execute(sql.raw(`
+      SELECT DISTINCT pv.product_id, pv.colour, pv.size
+      FROM product_variants pv
+      WHERE pv.product_id IN (${idsStr})
+        AND pv.size IS NOT NULL AND pv.size != ''
+      ORDER BY pv.product_id, pv.colour, pv.size
+    `));
+    for (const row of variantRows.rows as any[]) {
+      const pid = String(row.product_id);
+      if (!sizesMap[pid]) sizesMap[pid] = {};
+      const col = row.colour ?? "__any__";
+      if (!sizesMap[pid][col]) sizesMap[pid][col] = [];
+      sizesMap[pid][col].push(row.size);
+    }
+
+    // product_attributes: fallback size list under __any__
+    try {
+      const attrRows = await db.execute(sql.raw(`
+        SELECT DISTINCT pa.product_id, pa.value AS size
+        FROM product_attributes pa
+        WHERE pa.type = 'size' AND pa.value IS NOT NULL AND pa.value != ''
+          AND pa.product_id IN (${idsStr})
+        ORDER BY pa.product_id, pa.value
+      `));
+      for (const row of attrRows.rows as any[]) {
+        const pid = String(row.product_id);
+        if (!sizesMap[pid]) sizesMap[pid] = {};
+        if (!sizesMap[pid]["__any__"]) sizesMap[pid]["__any__"] = [];
+        sizesMap[pid]["__any__"].push(row.size);
+      }
+    } catch { /* non-fatal */ }
+
+    // Sort sizes using the saved size_order setting
+    try {
+      const [sizeOrderRow] = await db.select().from(settingsTable).where(eq(settingsTable.key, "size_order"));
+      if (sizeOrderRow?.value) {
+        const sizeOrder: string[] = JSON.parse(sizeOrderRow.value);
+        const sortFn = (a: string, b: string) => {
+          const ai = sizeOrder.indexOf(a);
+          const bi = sizeOrder.indexOf(b);
+          if (ai !== -1 && bi !== -1) return ai - bi;
+          if (ai !== -1) return -1;
+          if (bi !== -1) return 1;
+          return a.localeCompare(b);
+        };
+        for (const pid of Object.keys(sizesMap)) {
+          for (const col of Object.keys(sizesMap[pid])) {
+            sizesMap[pid][col] = [...new Set(sizesMap[pid][col])].sort(sortFn);
+          }
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    // Also build available colours per product (all non-__any__ keys from product_variants)
+    try {
+      const colourRows = await db.execute(sql.raw(`
+        SELECT DISTINCT pv.product_id, pv.colour
+        FROM product_variants pv
+        WHERE pv.product_id IN (${idsStr})
+          AND pv.colour IS NOT NULL AND pv.colour != ''
+        ORDER BY pv.product_id, pv.colour
+      `));
+      for (const row of colourRows.rows as any[]) {
+        const pid = String(row.product_id);
+        if (!sizesMap[pid]) sizesMap[pid] = {};
+        // Ensure the colour key exists even if no size variants found
+        if (!sizesMap[pid][row.colour]) sizesMap[pid][row.colour] = [];
+      }
+    } catch { /* non-fatal */ }
+  }
+
   if (quote.status === "sent") {
     await db.execute(sql`UPDATE quotes SET status = 'viewed', updated_at = now() WHERE id = ${quote.id}`);
   }
@@ -3258,6 +3337,7 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
     expiresAt: quote.expires_at,
     customerLogoUrl: quote.customer_logo_url ?? null,
     items,
+    sizesMap,
   });
 });
 
