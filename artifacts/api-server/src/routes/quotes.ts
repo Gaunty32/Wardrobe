@@ -443,7 +443,10 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   }).safeParse(req.body);
 
   const quoteRows = await db.execute(sql`
-    SELECT q.*, c.contact_first_name, c.contact_last_name
+    SELECT q.*,
+           q.contact_first_name  AS quote_contact_first_name,
+           c.contact_first_name  AS customer_contact_first_name,
+           c.contact_last_name   AS customer_contact_last_name
     FROM quotes q
     LEFT JOIN customers c ON c.id = q.customer_id
     WHERE q.id = ${id}
@@ -493,8 +496,10 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
 
   // Resolve customer email
   let toEmail: string | undefined = body.success ? body.data.toEmail : undefined;
-  // Seed from the quote's own HL-synced contact name before falling back to lookups
-  let contactFirstName: string | null = quote.contact_first_name ?? null;
+  // Prefer the quote's own HL-synced name (quote_contact_first_name alias avoids
+  // being shadowed by c.contact_first_name in the SELECT above)
+  let contactFirstName: string | null =
+    quote.quote_contact_first_name ?? quote.customer_contact_first_name ?? null;
 
   if (!toEmail && quote.customer_id) {
     // Prefer manager/dept_manager portal users
