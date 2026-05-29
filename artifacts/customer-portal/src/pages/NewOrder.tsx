@@ -2699,10 +2699,10 @@ export default function NewOrder() {
 
   useEffect(() => {
     if (!quoteData?.items?.length || isPreview) return;
-    if (basket.length > 0 || step > 0) return;
+    // Quote URL always wins — override any saved basket/session state
     setBasket(quoteData.items);
     setMode("quote");
-    setStep(1);
+    setStep(0);
     toast({
       title: `Quote ${quoteData.quoteNumber} loaded`,
       description: `${quoteData.items.length} item${quoteData.items.length !== 1 ? "s" : ""} pre-filled. Review quantities and submit when ready.`,
@@ -2828,6 +2828,9 @@ export default function NewOrder() {
     ? ["Choose type", "Inspiration", "Done"]
     : ["Choose type", "Wardrobe", "Review", "Done"];
 
+  // Map step value → STEPS index for the stepper display
+  const stepsIndex = mode === "quote" ? (step === 0 ? 0 : 1) : step;
+
   const handleModeSelect = (m: "wardrobe" | "catalogue") => {
     if (m !== mode) {
       setBasket([]);
@@ -2871,12 +2874,12 @@ export default function NewOrder() {
         </div>
       )}
 
-      <Steps current={step} steps={STEPS} />
+      <Steps current={stepsIndex} steps={STEPS} />
 
       {/* Safety net: step > 0 with no valid mode → reset to step 0 */}
       {step > 0 && mode === null && <ModeStep onSelect={handleModeSelect} />}
 
-      {step === 0 && <ModeStep onSelect={handleModeSelect} />}
+      {step === 0 && mode !== "quote" && <ModeStep onSelect={handleModeSelect} />}
 
       {step === 1 && mode === "wardrobe" && (
         <div>
@@ -2911,7 +2914,7 @@ export default function NewOrder() {
         />
       )}
 
-      {step === 1 && mode === "quote" && (
+      {step === 0 && mode === "quote" && (
         <ReviewStep
           basket={basket}
           setBasket={setBasket}
