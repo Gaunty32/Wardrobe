@@ -1321,10 +1321,10 @@ export default function OrderDetail() {
                 )}
                 {Array.isArray((order as any).attachments) && (order as any).attachments.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {(order as any).attachments.map((att: { name: string; objectPath: string }, i: number) => (
+                    {(order as any).attachments.map((att: { name: string; objectPath?: string; url?: string }, i: number) => (
                       <a
                         key={i}
-                        href={`${API_BASE}/storage${att.objectPath}`}
+                        href={att.url ?? `${API_BASE}/storage${att.objectPath}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-white px-2 py-0.5 text-xs text-amber-800 hover:bg-amber-50 transition-colors"
@@ -1765,7 +1765,7 @@ export default function OrderDetail() {
                       <li key={i} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
                         <Paperclip className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                         <a
-                          href={`${API_BASE}/storage${att.objectPath}`}
+                          href={(att as any).url ?? `${API_BASE}/storage${att.objectPath}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm flex-1 min-w-0 truncate hover:underline text-foreground"
@@ -1773,7 +1773,7 @@ export default function OrderDetail() {
                           {att.name}
                         </a>
                         <a
-                          href={`${API_BASE}/storage${att.objectPath}`}
+                          href={(att as any).url ?? `${API_BASE}/storage${att.objectPath}`}
                           download={att.name}
                           className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
                           aria-label="Download"

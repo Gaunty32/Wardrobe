@@ -43,6 +43,7 @@ interface WooLineItem {
   price: string;
   total: string;
   metaData: { key: string; value: string }[];
+  fileUploads: { name: string; url: string }[];
 }
 
 interface WooOrder {
@@ -186,10 +187,21 @@ function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () =>
                       <td className="px-3 py-2 font-medium">{li.name}</td>
                       <td className="px-3 py-2 font-mono text-muted-foreground">{li.sku || "—"}</td>
                       <td className="px-3 py-2 text-muted-foreground">
-                        {li.metaData.length > 0
-                          ? li.metaData.map(m => `${m.key}: ${m.value}`).join(" · ")
-                          : "—"
-                        }
+                        {li.metaData.length > 0 && (
+                          <span>{li.metaData.map(m => `${m.key}: ${m.value}`).join(" · ")}</span>
+                        )}
+                        {li.fileUploads.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {li.fileUploads.map((f, fi) => (
+                              <a key={fi} href={f.url} target="_blank" rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs rounded border border-blue-200 bg-blue-50 px-2 py-0.5 text-blue-700 hover:bg-blue-100 transition-colors">
+                                <Download className="w-3 h-3 shrink-0" />
+                                {f.name}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                        {li.metaData.length === 0 && li.fileUploads.length === 0 && "—"}
                       </td>
                       <td className="px-3 py-2 text-right">{li.quantity}</td>
                       <td className="px-3 py-2 text-right font-medium">{formatCurrency(li.total)}</td>

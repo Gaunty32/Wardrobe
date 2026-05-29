@@ -4,6 +4,24 @@ import { sql } from "drizzle-orm";
 
 const router = Router();
 
+function extractFileUploads(metaData: any[]): { name: string; url: string }[] {
+  const uploads: { name: string; url: string }[] = [];
+  for (const m of metaData) {
+    const rawValue = String(m.value || "");
+    const displayValue = String(m.display_value || "");
+    const displayKey = String(m.display_key || m.key || "Uploaded file");
+    if (/^https?:\/\//i.test(rawValue)) {
+      uploads.push({ name: displayKey, url: rawValue });
+    } else if (/^https?:\/\//i.test(displayValue)) {
+      uploads.push({ name: displayKey, url: displayValue });
+    } else {
+      const match = displayValue.match(/href=["']([^"']+)["']/i);
+      if (match) uploads.push({ name: displayKey, url: match[1] });
+    }
+  }
+  return uploads;
+}
+
 interface WooSettings {
   baseUrl: string;
   ck: string;
@@ -48,12 +66,12 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
     const wooIds = wooOrders.map((o: any) => o.id);
     let importedIds = new Set<number>();
     if (wooIds.length > 0) {
-      const imported = await db.execute(sql`
-        SELECT woo_order_id, order_number FROM orders
-        WHERE woo_order_id = ANY(${wooIds}::integer[])
-      `);
+      // Build IN clause from integer IDs (safe — all are numbers from WooCommerce)
+      const imported = await db.execute(
+        sql.raw(`SELECT woo_order_id, order_number FROM orders WHERE woo_order_id IN (${wooIds.join(",")})`)
+      );
       for (const r of imported.rows as any[]) {
-        importedIds.add(r.woo_order_id);
+        importedIds.add(Number(r.woo_order_id));
       }
     }
 
@@ -80,17 +98,24 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
         postcode: o.shipping?.postcode ?? "",
         country: o.shipping?.country ?? "",
       },
-      lineItems: (o.line_items ?? []).map((li: any) => ({
-        id: li.id,
-        name: li.name,
-        sku: li.sku || null,
-        quantity: li.quantity,
-        price: li.price,
-        total: li.total,
-        metaData: (li.meta_data ?? []).filter((m: any) =>
-          !m.key.startsWith("_") && m.display_value
-        ).map((m: any) => ({ key: m.display_key || m.key, value: m.display_value })),
-      })),
+      lineItems: (o.line_items ?? []).map((li: any) => {
+        const fileUploads = extractFileUploads(li.meta_data ?? []);
+        const fileUrls = new Set(fileUploads.map(f => f.url));
+        return {
+          id: li.id,
+          name: li.name,
+          sku: li.sku || null,
+          quantity: li.quantity,
+          price: li.price,
+          total: li.total,
+          metaData: (li.meta_data ?? []).filter((m: any) =>
+            !m.key.startsWith("_") && m.display_value &&
+            !fileUrls.has(String(m.display_value)) &&
+            !/^https?:\/\//i.test(String(m.display_value))
+          ).map((m: any) => ({ key: m.display_key || m.key, value: m.display_value })),
+          fileUploads,
+        };
+      }),
       shippingLines: (o.shipping_lines ?? []).map((sl: any) => ({
         methodTitle: sl.method_title,
         total: sl.total,
@@ -170,16 +195,31 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
     const carriageAmount = (woo.shipping_lines ?? [])
       .reduce((sum: number, sl: any) => sum + parseFloat(sl.total || "0"), 0);
 
+    // Collect all file uploads from line items + order meta
+    const allFileUploads: { name: string; url: string }[] = [];
+    for (const li of woo.line_items ?? []) {
+      allFileUploads.push(...extractFileUploads(li.meta_data ?? []));
+    }
+    allFileUploads.push(...extractFileUploads(woo.meta_data ?? []));
+    // Deduplicate by URL
+    const seenUrls = new Set<string>();
+    const dedupedFiles = allFileUploads.filter(f => {
+      if (seenUrls.has(f.url)) return false;
+      seenUrls.add(f.url);
+      return true;
+    });
+
     // Build notes
     const notesParts: string[] = [];
     if (woo.customer_note?.trim()) notesParts.push(`Customer note: ${woo.customer_note.trim()}`);
     if (woo.payment_method_title) notesParts.push(`Payment: ${woo.payment_method_title}`);
 
     // Create the order
+    const attachmentsJson = dedupedFiles.length > 0 ? JSON.stringify(dedupedFiles) : null;
     const orderResult = await db.execute(sql`
       INSERT INTO orders (
         order_number, customer_id, customer_name, status, total_amount,
-        carriage_amount, notes, order_date, source, woo_order_id, created_at, updated_at
+        carriage_amount, notes, order_date, source, woo_order_id, attachments, created_at, updated_at
       ) VALUES (
         ${orderNumber},
         ${customerId},
@@ -191,6 +231,7 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
         ${woo.date_created ? new Date(woo.date_created).toISOString() : new Date().toISOString()},
         'woocommerce',
         ${wooId},
+        ${attachmentsJson}::jsonb,
         now(), now()
       )
       RETURNING id, order_number
