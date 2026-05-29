@@ -2241,7 +2241,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             id="reqdate"
             type="date"
             value={requiredDate}
-            min={new Date().toISOString().slice(0, 10)}
+            min={(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d.toISOString().slice(0, 10); })()}
             onChange={e => setRequiredDate(e.target.value)}
           />
         </div>
