@@ -3246,6 +3246,23 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
     unitPrice: parseFloat(String(item.unit_price ?? 0)),
   }));
 
+  // Resolve productId by product name for quote items that have no product_id linked.
+  // This allows sizesMap to include variant data for manually-entered quote lines.
+  const missingIdItems = items.filter(i => !i.productId && i.productName);
+  if (missingIdItems.length > 0) {
+    try {
+      const nameRows = await db.select({ id: productsTable.id, name: productsTable.name })
+        .from(productsTable);
+      const nameToId = new Map((nameRows as { id: number; name: string }[]).map(r => [r.name.toLowerCase(), r.id]));
+      for (const item of items) {
+        if (!item.productId && item.productName) {
+          const resolved = nameToId.get(item.productName.toLowerCase());
+          if (resolved) item.productId = resolved;
+        }
+      }
+    } catch { /* non-fatal */ }
+  }
+
   // Build sizesMap so the customer can pick colour/size when converting a quote to an order
   const sizesMap: Record<string, Record<string, string[]>> = {};
   const productIds = [...new Set(items.map(i => i.productId).filter(Boolean) as number[])];
@@ -3283,6 +3300,23 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
         if (!sizesMap[pid]) sizesMap[pid] = {};
         if (!sizesMap[pid]["__any__"]) sizesMap[pid]["__any__"] = [];
         sizesMap[pid]["__any__"].push(row.size);
+      }
+    } catch { /* non-fatal */ }
+
+    // product_attributes: colour list — ensures colour keys exist in sizesMap
+    // even when product_variants has no size entries for a colour.
+    try {
+      const colAttrRows = await db.execute(sql.raw(`
+        SELECT DISTINCT pa.product_id, pa.value AS colour
+        FROM product_attributes pa
+        WHERE pa.type = 'colour' AND pa.value IS NOT NULL AND pa.value != ''
+          AND pa.product_id IN (${idsStr})
+        ORDER BY pa.product_id, pa.value
+      `));
+      for (const row of colAttrRows.rows as any[]) {
+        const pid = String(row.product_id);
+        if (!sizesMap[pid]) sizesMap[pid] = {};
+        if (!sizesMap[pid][row.colour]) sizesMap[pid][row.colour] = [];
       }
     } catch { /* non-fatal */ }
 

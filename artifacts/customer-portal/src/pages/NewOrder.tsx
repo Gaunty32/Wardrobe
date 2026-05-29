@@ -1904,7 +1904,7 @@ const SHIPPING_OPTIONS = [
   },
 ] as const;
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {} }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, fromQuote = false }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) => void;
@@ -1912,6 +1912,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   portalRole: string;
   onAddMore?: () => void;
   sizesMap?: Record<string, Record<string, string[]>>;
+  fromQuote?: boolean;
 }) {
   const { toast } = useToast();
   const [requiredDate, setRequiredDate] = useState(() => {
@@ -2034,6 +2035,27 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
     setBasket(b => b.map((item, i) => i === idx ? { ...item, size } : item));
   };
 
+  const updateFor = (idx: number, val: string) => {
+    setBasket(b => b.map((item, i) => i !== idx ? item : {
+      ...item,
+      recipientName: val,
+      recipientType: "stock" as const,
+    }));
+  };
+
+  const addVariantLine = (idx: number) => {
+    const src = basket[idx];
+    const newLine: OrderItem = {
+      ...src,
+      colour: "",
+      size: "",
+      quantity: 1,
+      recipientName: "",
+      recipientEmployeeId: null,
+    };
+    setBasket(b => [...b.slice(0, idx + 1), newLine, ...b.slice(idx + 1)]);
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2 gap-4 flex-wrap">
@@ -2138,7 +2160,16 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                         })()}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground align-top">
-                        {item.recipientName || (item.recipientType === "stock" ? "Stock" : "—")}
+                        {fromQuote ? (
+                          <Input
+                            value={item.recipientName || ""}
+                            onChange={e => updateFor(idx, e.target.value)}
+                            placeholder="Stock / name…"
+                            className="h-7 text-xs px-2 min-w-[100px]"
+                          />
+                        ) : (
+                          item.recipientName || (item.recipientType === "stock" ? "Stock" : "—")
+                        )}
                       </TableCell>
                       <TableCell className="text-right align-top">
                         <div className="flex items-center justify-end gap-0.5">
@@ -2179,6 +2210,19 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                               </span>
                             ))}
                           </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {fromQuote && (
+                      <TableRow className="hover:bg-transparent">
+                        <TableCell colSpan={7} className="pt-0 pb-2 border-b border-dashed border-muted">
+                          <button
+                            type="button"
+                            onClick={() => addVariantLine(idx)}
+                            className="text-[11px] text-primary/60 hover:text-primary flex items-center gap-1 pl-1 transition-colors"
+                          >
+                            <Plus className="w-3 h-3" /> Add another size / colour
+                          </button>
                         </TableCell>
                       </TableRow>
                     )}
@@ -3024,6 +3068,7 @@ export default function NewOrder() {
           submitting={submitMutation.isPending}
           portalRole={portalRole ?? "member"}
           sizesMap={quoteData?.sizesMap ?? {}}
+          fromQuote={true}
         />
       )}
 
