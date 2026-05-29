@@ -1017,7 +1017,11 @@ export function buildQuoteEmail(data: {
       </td></tr>`
     : "";
 
-  const coverHtml = data.coverText.split(/\n\n+/).map(p =>
+  const resolvedCoverText = data.coverText
+    .replace(/\{firstName\}/g, firstName)
+    .replace(/\{businessName\}/g, data.customerName ?? "your organisation");
+
+  const coverHtml = resolvedCoverText.split(/\n\n+/).map(p =>
     `<p style="margin:0 0 14px;font-size:14px;color:#374151;line-height:1.7;">${p.replace(/\n/g, "<br>")}</p>`
   ).join("\n");
 
@@ -1137,7 +1141,7 @@ export function buildQuoteEmail(data: {
     subject,
     "=".repeat(60),
     "",
-    data.coverText,
+    resolvedCoverText,
     "",
     "─".repeat(40),
     `View your quote and place your order:`,

@@ -6,9 +6,9 @@ import { generateQuotePdf, fetchLogoBuffer, fetchLogoDataUrl, buildQuoteEmail, s
 
 const router = Router();
 
-const DEFAULT_COVER_TEXT = `Hi there,
+const DEFAULT_COVER_TEXT = `Hi {firstName},
 
-Thank you for your enquiry with Select Branding Solutions.
+Thank you for the opportunity to quote for {businessName}.
 
 We've put together a quote based on our initial conversation, featuring the products and quantities we discussed.
 
