@@ -2009,7 +2009,10 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
       if (i !== idx) return item;
       const data = getItemSizeData(item);
       const availSizes = data ? data.getSizes(colour) : [];
-      const newSize = availSizes.includes(item.size) ? item.size : (availSizes[0] ?? "");
+      // Only auto-reset size when we have structured dropdown data; free-text mode keeps existing value
+      const newSize = data
+        ? (availSizes.includes(item.size) ? item.size : (availSizes[0] ?? ""))
+        : item.size;
       return { ...item, colour, size: newSize };
     }));
   };
@@ -2061,12 +2064,29 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                       <TableCell className="text-sm align-top">
                         {(() => {
                           const sd = getItemSizeData(item);
-                          if (!sd) return <span className="text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ") || "—"}</span>;
+                          if (!sd) {
+                            return (
+                              <div className="flex flex-col gap-1.5 min-w-[120px]">
+                                <Input
+                                  value={item.colour || ""}
+                                  onChange={e => updateColour(idx, e.target.value)}
+                                  placeholder="Colour…"
+                                  className="h-7 text-xs px-2"
+                                />
+                                <Input
+                                  value={item.size || ""}
+                                  onChange={e => updateSize(idx, e.target.value)}
+                                  placeholder="Size…"
+                                  className="h-7 text-xs px-2"
+                                />
+                              </div>
+                            );
+                          }
                           const { colours, getSizes } = sd;
                           const availSizes = getSizes(item.colour);
                           return (
-                            <div className="flex flex-col gap-1.5 min-w-[110px]">
-                              {colours.length > 0 && (
+                            <div className="flex flex-col gap-1.5 min-w-[120px]">
+                              {colours.length > 0 ? (
                                 <Select value={item.colour || ""} onValueChange={v => updateColour(idx, v)}>
                                   <SelectTrigger className="h-7 text-xs px-2">
                                     <SelectValue placeholder="Colour…" />
@@ -2075,8 +2095,15 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                                     {colours.map(c => <SelectItem key={c} value={c} className="text-xs">{c}</SelectItem>)}
                                   </SelectContent>
                                 </Select>
+                              ) : (
+                                <Input
+                                  value={item.colour || ""}
+                                  onChange={e => updateColour(idx, e.target.value)}
+                                  placeholder="Colour…"
+                                  className="h-7 text-xs px-2"
+                                />
                               )}
-                              {availSizes.length > 0 && (
+                              {availSizes.length > 0 ? (
                                 <Select value={item.size || ""} onValueChange={v => updateSize(idx, v)}>
                                   <SelectTrigger className="h-7 text-xs px-2">
                                     <SelectValue placeholder="Size…" />
@@ -2085,9 +2112,13 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                                     {availSizes.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
                                   </SelectContent>
                                 </Select>
-                              )}
-                              {colours.length === 0 && availSizes.length === 0 && (
-                                <span className="text-muted-foreground">{[item.colour, item.size].filter(Boolean).join(" / ") || "—"}</span>
+                              ) : (
+                                <Input
+                                  value={item.size || ""}
+                                  onChange={e => updateSize(idx, e.target.value)}
+                                  placeholder="Size…"
+                                  className="h-7 text-xs px-2"
+                                />
                               )}
                             </div>
                           );
