@@ -253,7 +253,7 @@ function getPriceBreakSuggestion(
   };
 }
 
-function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleevesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole }: {
+function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleevesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole, isLoading }: {
   items: any[];
   employees: any[];
   lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
@@ -268,6 +268,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
   onEmployeeAdded: () => void;
   myEmployeeId: number | null;
   portalRole: string;
+  isLoading?: boolean;
 }) {
   const { toast } = useToast();
   const sizeOrder = useSizeOrder();
@@ -613,6 +614,19 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       unitPrice,
     };
   };
+
+  // ── Loading state ──────────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold mb-2">My Wardrobe</h2>
+        <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
+          <Loader2 className="w-8 h-8 animate-spin" />
+          <p className="text-sm">Loading your wardrobe…</p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Empty state ────────────────────────────────────────────────────────────
   if (finishGroups.length === 0) {
@@ -2880,7 +2894,7 @@ export default function NewOrder() {
     return () => { if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current); };
   }, [basket, mode, step]);
 
-  const { data: wardrobe } = useQuery<{
+  const { data: wardrobe, isLoading: wardrobeLoading } = useQuery<{
     items: any[];
     employees: any[];
     processes: any[];
@@ -3047,6 +3061,7 @@ export default function NewOrder() {
             onEmployeeAdded={() => queryClient.invalidateQueries({ queryKey: ["portal-wardrobe"] })}
             myEmployeeId={wardrobe?.myEmployeeId ?? null}
             portalRole={portalRole ?? "member"}
+            isLoading={wardrobeLoading}
           />
         </div>
       )}
