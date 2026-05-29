@@ -1103,4 +1103,8 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS woo_order_id integer;
     CREATE UNIQUE INDEX IF NOT EXISTS orders_woo_order_id_idx ON orders (woo_order_id) WHERE woo_order_id IS NOT NULL;
   `);
+
+  await db.execute(sql`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS is_service boolean NOT NULL DEFAULT false;
+  `);
 }

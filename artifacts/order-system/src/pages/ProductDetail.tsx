@@ -17,7 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler, Upload, Camera
+  Layers, Palette, Ruler, Upload, Camera, Wrench
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -586,6 +586,7 @@ export default function ProductDetail() {
     priceBreaks: { qty: number; price: number }[];
   } | null>(null);
   const [detailsDirty, setDetailsDirty] = useState(false);
+  const [isService, setIsService] = useState(false);
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
   const [generateMatrixOpen, setGenerateMatrixOpen] = useState(false);
@@ -596,6 +597,9 @@ export default function ProductDetail() {
   const [bulkPrice, setBulkPrice] = useState<string>("");
 
   useEffect(() => {
+    if (product) {
+      setIsService(!!(product as any).isService);
+    }
     if (product && !details) {
       setDetails({
         name: product.name,
@@ -678,6 +682,20 @@ export default function ProductDetail() {
       }
     );
   };
+
+  const toggleServiceMut = useMutation({
+    mutationFn: (val: boolean) => apiFetch(`/products/${productId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ isService: val }),
+    }),
+    onSuccess: (_data: any, val: boolean) => {
+      setIsService(val);
+      qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
+      qc.invalidateQueries({ queryKey: ["product", productId] });
+      toast({ title: val ? "Marked as service" : "Marked as physical product" });
+    },
+    onError: () => toast({ title: "Could not update product type", variant: "destructive" }),
+  });
 
   const generateMatrixMut = useMutation({
     mutationFn: () => apiFetch(`/products/${productId}/variants/generate-matrix`, { method: "POST" }),
@@ -781,6 +799,11 @@ export default function ProductDetail() {
                 <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{product.name}</h1>
                   {product.sku && <span className="font-mono text-sm text-muted-foreground bg-muted px-2 py-0.5 rounded">{product.sku}</span>}
+                  {isService && (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                      <Wrench className="w-3 h-3" /> Service
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
                   <span className="font-semibold text-foreground text-base">{formatCurrency(product.unitPrice)}</span>
@@ -819,12 +842,14 @@ export default function ProductDetail() {
           <Tabs defaultValue="details">
             <TabsList className="w-full justify-start bg-muted/50 p-1">
               <TabsTrigger value="details" className="flex items-center gap-1.5"><Package className="w-3.5 h-3.5" /> Details</TabsTrigger>
-              <TabsTrigger value="variants" className="flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5" /> Variants
-                {variants.length > 0 && (
-                  <span className="ml-1 bg-primary/10 text-primary text-xs font-medium px-1.5 py-0.5 rounded-full">{variants.length}</span>
-                )}
-              </TabsTrigger>
+              {!isService && (
+                <TabsTrigger value="variants" className="flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5" /> Variants
+                  {variants.length > 0 && (
+                    <span className="ml-1 bg-primary/10 text-primary text-xs font-medium px-1.5 py-0.5 rounded-full">{variants.length}</span>
+                  )}
+                </TabsTrigger>
+              )}
             </TabsList>
 
             {/* ── Details ── */}
@@ -882,6 +907,29 @@ export default function ProductDetail() {
                     )}
                   </div>
 
+                  {/* ── Service toggle ── */}
+                  <div className="border-t border-border/40 pt-5 mt-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                          <Wrench className="w-3.5 h-3.5 text-amber-500" /> Service product
+                        </h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">No stock, no variants, no purchasing. E.g. logo digitising, setup charges.</p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isService}
+                        onClick={() => toggleServiceMut.mutate(!isService)}
+                        disabled={toggleServiceMut.isPending}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isService ? "bg-amber-500" : "bg-muted-foreground/30"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform ${isService ? "translate-x-4" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {!isService && (
                   <div className="border-t border-border/40 pt-5 mt-1">
                     <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">Preferred Supplier</h4>
                     <div className="grid gap-2 mb-4">
@@ -940,6 +988,7 @@ export default function ProductDetail() {
                       </div>
                     )}
                   </div>
+                  )}
 
                   {/* ── Price Breaks ── */}
                   <div className="border-t border-border/40 pt-5 mt-1">

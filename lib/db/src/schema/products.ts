@@ -32,6 +32,8 @@ export const productsTable = pgTable("products", {
   customerId: integer("customer_id"),
   /** Bespoke products are hidden from WooCommerce sync */
   isBespoke: boolean("is_bespoke").notNull().default(false),
+  /** Service products (e.g. logo digitising) — no stock, no variants, no purchasing */
+  isService: boolean("is_service").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -66,7 +66,7 @@ export default function Products() {
   const [search, setSearch] = useState("");
   const [selectedTopCat, setSelectedTopCat] = useState<ProductCategory | null>(null);
   const [selectedSubCat, setSelectedSubCat] = useState<ProductCategory | null>(null);
-  const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal" | "bespoke">("all");
+  const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal" | "bespoke" | "service">("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
   const [viewMode, setViewMode] = useState<"catalogue" | "sales">("catalogue");
@@ -188,9 +188,10 @@ export default function Products() {
       return true;
     })
     .filter((p) => {
-      if (websiteFilter === "website") return !!(p as any).wooCommerceId;
-      if (websiteFilter === "internal") return !(p as any).wooCommerceId && !(p as any).isBespoke;
-      if (websiteFilter === "bespoke") return !!(p as any).isBespoke;
+      if (websiteFilter === "service") return !!(p as any).isService;
+      if (websiteFilter === "website") return !!(p as any).wooCommerceId && !(p as any).isService;
+      if (websiteFilter === "internal") return !(p as any).wooCommerceId && !(p as any).isBespoke && !(p as any).isService;
+      if (websiteFilter === "bespoke") return !!(p as any).isBespoke && !(p as any).isService;
       return true;
     });
 
@@ -445,7 +446,7 @@ export default function Products() {
             </div>
             {/* Website / Internal / Bespoke filter */}
             <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5">
-              {(["all", "website", "internal", "bespoke"] as const).map((f) => (
+              {(["all", "website", "internal", "bespoke", "service"] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => { setWebsiteFilter(f); setSelectedTopCat(null); setSelectedSubCat(null); }}
@@ -459,7 +460,8 @@ export default function Products() {
                   {f === "website" && <Globe className="w-3 h-3" />}
                   {f === "internal" && <Lock className="w-3 h-3" />}
                   {f === "bespoke" && <Package className="w-3 h-3" />}
-                  {f === "all" ? "All" : f === "website" ? "Website" : f === "internal" ? "Internal only" : "Bespoke"}
+                  {f === "service" && <Wrench className="w-3 h-3" />}
+                  {f === "all" ? "All" : f === "website" ? "Website" : f === "internal" ? "Internal only" : f === "bespoke" ? "Bespoke" : "Services"}
                 </button>
               ))}
             </div>
@@ -833,7 +835,11 @@ function ProductTable({
                 <TableCell className="font-medium text-foreground hover:text-primary transition-colors">
                   <div className="flex items-center gap-2 flex-wrap">
                     {product.name}
-                    {(product as any).isBespoke ? (
+                    {(product as any).isService ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
+                        <Wrench className="w-2.5 h-2.5" /> Service
+                      </span>
+                    ) : (product as any).isBespoke ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 flex-shrink-0">
                         <Package className="w-2.5 h-2.5" /> Bespoke{(product as any).customerName ? ` · ${(product as any).customerName}` : ""}
                       </span>

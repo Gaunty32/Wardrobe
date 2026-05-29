@@ -110,6 +110,7 @@ function fmtProduct(p: any) {
     supplierCurrency: p.supplierCurrency ?? "GBP",
     minOrderQty: p.minOrderQty ?? null,
     priceBreaks: p.priceBreaks ?? null,
+    isService: p.isService ?? false,
   };
 }
 
@@ -140,6 +141,7 @@ router.get("/products", async (req, res): Promise<void> => {
     secondarySupplierPrice: p.secondary_supplier_price != null ? parseFloat(p.secondary_supplier_price) : null,
     customerName: p.customer_name ?? null,
     isBespoke: p.is_bespoke ?? false,
+    isService: p.is_service ?? false,
     customerId: p.customer_id ?? null,
     wooCommerceId: p.woo_commerce_id ?? null,
     imageUrl: p.image_url ?? null,
@@ -161,9 +163,10 @@ router.post("/products", async (req, res): Promise<void> => {
   const category = typeof req.body.category === "string" ? req.body.category.trim() || null : null;
   const customerId = req.body.customerId != null ? Number(req.body.customerId) || null : null;
   const isBespoke = customerId != null ? true : (req.body.isBespoke === true);
+  const isService = req.body.isService === true;
   const [product] = await db
     .insert(productsTable)
-    .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice), customerId, isBespoke })
+    .values({ ...parsed.data, category, unitPrice: String(parsed.data.unitPrice), customerId, isBespoke, isService })
     .returning();
   if (category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku, product);
   res.status(201).json(fmtProduct(product));
@@ -317,6 +320,9 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   if ("isBespoke" in req.body) {
     updateData.isBespoke = req.body.isBespoke === true;
     if (req.body.isBespoke === false) updateData.customerId = null;
+  }
+  if ("isService" in req.body) {
+    updateData.isService = req.body.isService === true;
   }
   if ("supplierCurrency" in req.body) {
     updateData.supplierCurrency = typeof req.body.supplierCurrency === "string" ? req.body.supplierCurrency : "GBP";
