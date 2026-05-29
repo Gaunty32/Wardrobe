@@ -2027,8 +2027,11 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
     if (!pid || !sizesMap[pid]) return null;
     const productSizes = sizesMap[pid];
     const colours = Object.keys(productSizes).filter(c => c !== "__any__");
-    const getSizes = (colour: string): string[] =>
-      productSizes[colour] ?? productSizes["__any__"] ?? [];
+    const getSizes = (colour: string): string[] => {
+      const specific = colour ? productSizes[colour] : undefined;
+      if (specific && specific.length > 0) return specific;
+      return productSizes["__any__"] ?? [];
+    };
     return { colours, getSizes, productSizes };
   };
 
