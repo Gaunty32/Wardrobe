@@ -795,18 +795,14 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
       try { doc.image(SBS_LOGO_BUFFER, margin + 8, margin + 6, { fit: [110, 40], valign: "center" }); } catch {}
     }
     doc.font("Helvetica-Bold").fontSize(13).fillColor("#ffffff")
-      .text("Quotation", margin + 130, margin + 19, { width: contentW - 260, align: "center" });
-
-    // ── Customer logo + name + SBS contact ───────────────────────────────────
-    const addrY = margin + hdrH + 8;
-    let nameY = addrY;
-
+      .text("Quotation", margin + 130, margin + 19, { width: contentW - 360, align: "center" });
     if (data.customerLogoBuffer) {
-      try {
-        doc.image(data.customerLogoBuffer, margin, addrY, { fit: [110, 38] });
-        nameY = addrY + 42;
-      } catch {}
+      try { doc.image(data.customerLogoBuffer, margin + contentW - 108, margin + 6, { fit: [100, 40], valign: "center" }); } catch {}
     }
+
+    // ── Customer name + SBS contact ──────────────────────────────────────────
+    const addrY = margin + hdrH + 8;
+    const nameY = addrY;
 
     doc.font("Helvetica-Bold").fontSize(9).fillColor("#111827").text(data.customerName, margin, nameY);
 
