@@ -487,7 +487,8 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
 
   // Resolve customer email
   let toEmail: string | undefined = body.success ? body.data.toEmail : undefined;
-  let contactFirstName: string | null = null;
+  // Seed from the quote's own HL-synced contact name before falling back to lookups
+  let contactFirstName: string | null = quote.contact_first_name ?? null;
 
   if (!toEmail && quote.customer_id) {
     // Prefer manager/dept_manager portal users
