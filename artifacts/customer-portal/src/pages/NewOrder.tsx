@@ -282,6 +282,19 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
     portalRole === "member" && myEmployeeId ? String(myEmployeeId) : null
   );
 
+  // For managers/dept_managers: auto-select when there's only 1 employee (skip the picker)
+  // or default to "stock" when there are no employees at all.
+  useEffect(() => {
+    if (selectedRecipient !== null) return; // already chosen
+    if (portalRole === "member") return;    // member path handled by initial state
+    if (employees.length === 1) {
+      doSelectRecipient(String(employees[0].id));
+    } else if (employees.length === 0) {
+      doSelectRecipient("stock");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees]);
+
   // Auto-scroll the order summary to the bottom when items are added
   const summaryScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
