@@ -66,6 +66,10 @@ interface Quote {
   createdAt: string;
   updatedAt: string;
   items: QuoteItem[];
+  contactFirstName: string | null;
+  contactLastName: string | null;
+  customerPhone: string | null;
+  customerEmail: string | null;
 }
 
 type QuoteStatus = Quote["status"];
@@ -429,6 +433,32 @@ export default function QuoteDetail() {
                   placeholder="Customer name"
                 />
               </div>
+
+              {/* Contact info from HighLevel sync — read-only */}
+              {(quote.contactFirstName || quote.contactLastName || quote.customerPhone || quote.customerEmail) && (
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Contact (HL Sync)</p>
+                  {(quote.contactFirstName || quote.contactLastName) && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground w-16 shrink-0">Name</span>
+                      <span className="font-medium">{[quote.contactFirstName, quote.contactLastName].filter(Boolean).join(" ")}</span>
+                    </div>
+                  )}
+                  {quote.customerPhone && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground w-16 shrink-0">Phone</span>
+                      <a href={`tel:${quote.customerPhone}`} className="font-medium hover:underline">{quote.customerPhone}</a>
+                    </div>
+                  )}
+                  {quote.customerEmail && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-muted-foreground w-16 shrink-0">Email</span>
+                      <a href={`mailto:${quote.customerEmail}`} className="font-medium hover:underline truncate">{quote.customerEmail}</a>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <Label>Status</Label>
                 <Select value={status} onValueChange={(v) => { setStatus(v as QuoteStatus); setDirty(true); }}>

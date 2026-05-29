@@ -96,7 +96,13 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const quoteRows = await db.execute(sql`SELECT * FROM quotes WHERE id = ${id}`);
+  const quoteRows = await db.execute(sql`
+    SELECT q.*,
+      c.contact_first_name, c.contact_last_name, c.phone AS customer_phone, c.email AS customer_email
+    FROM quotes q
+    LEFT JOIN customers c ON c.id = q.customer_id
+    WHERE q.id = ${id}
+  `);
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
@@ -108,7 +114,14 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
     WHERE qi.quote_id = ${id}
     ORDER BY qi.sort_order, qi.id
   `);
-  res.json(quoteToCamel(quote, itemRows.rows as any[]));
+  const base = quoteToCamel(quote, itemRows.rows as any[]);
+  res.json({
+    ...base,
+    contactFirstName: quote.contact_first_name ?? null,
+    contactLastName:  quote.contact_last_name  ?? null,
+    customerPhone:    quote.customer_phone      ?? null,
+    customerEmail:    quote.customer_email      ?? null,
+  });
 });
 
 // ─── Update quote ─────────────────────────────────────────────────────────────
