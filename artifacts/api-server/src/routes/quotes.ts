@@ -362,7 +362,7 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
       p.permalink   AS product_permalink
     FROM quote_items qi
     LEFT JOIN LATERAL (
-      SELECT p2.sku, p2.description, p2.image_url, p2.permalink,
+      SELECT p2.sku, p2.description, p2.image_url, p2.permalink, p2.price_breaks,
              CASE
                WHEN p2.id = qi.product_id                                                              THEN 0
                WHEN qi.product_id IS NULL AND p2.sku IS NOT NULL
@@ -406,6 +406,7 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
     unitPrice:    Number(r.unit_price),
     vatRate:      Number(r.vat_rate ?? 0.20),
     imageBuffer:  r.product_image_url ? (imageMap.get(r.product_image_url) ?? null) : null,
+    priceBreaks:  r.price_breaks ?? null,
   }));
 
   // Resolve logo: use what's stored on the quote, otherwise fall back to the
@@ -458,7 +459,7 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
            p.permalink AS product_permalink
     FROM quote_items qi
     LEFT JOIN LATERAL (
-      SELECT p2.sku, p2.description, p2.image_url, p2.permalink,
+      SELECT p2.sku, p2.description, p2.image_url, p2.permalink, p2.price_breaks,
              CASE
                WHEN p2.id = qi.product_id                                                              THEN 0
                WHEN qi.product_id IS NULL AND p2.sku IS NOT NULL
@@ -489,6 +490,7 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
     quantity: Number(r.quantity),
     unitPrice: Number(r.unit_price),
     vatRate: Number(r.vat_rate ?? 0.20),
+    priceBreaks: r.price_breaks ?? null,
   }));
 
   // Resolve customer email
@@ -607,6 +609,7 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
       unitPrice:    Number(r.unit_price),
       vatRate:      Number(r.vat_rate ?? 0.20),
       imageBuffer:  r.product_image_url ? (imageMap.get(r.product_image_url) ?? null) : null,
+      priceBreaks:  r.price_breaks ?? null,
     }));
     let sendLogoUrl: string | null = quote.customer_logo_url ?? null;
     if (!sendLogoUrl && quote.customer_id) {

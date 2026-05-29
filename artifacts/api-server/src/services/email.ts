@@ -753,6 +753,7 @@ export interface QuotePdfItem {
   unitPrice: number;
   vatRate: number;
   imageBuffer: Buffer | null;
+  priceBreaks?: { qty: number; price: number }[] | null;
 }
 
 export interface QuotePdfData {
@@ -863,6 +864,13 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
       const lineTotal = item.quantity * item.unitPrice;
       const desc = stripHtml(item.description);
 
+      // Price-break savings: tiers above current qty that are cheaper
+      const applicableBreaks = (item.priceBreaks ?? [])
+        .filter(b => b.qty > item.quantity && b.price < item.unitPrice)
+        .sort((a, b) => a.qty - b.qty)
+        .slice(0, 3);
+      const STRIP_H = applicableBreaks.length > 0 ? 13 : 0;
+
       doc.rect(margin, y, contentW, ROW_H).fill(rowAlt ? "#f9fafb" : "#ffffff").stroke("#e5e7eb");
       rowAlt = !rowAlt;
 
@@ -910,6 +918,19 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
         .text(`£${lineTotal.toFixed(2)}`,  margin + imgW + productW + colourW + sizeW + qtyW + priceW + 2, midY, { width: totalW - 4, align: "right" });
 
       y += ROW_H;
+
+      // Savings strip — amber band showing higher price tiers
+      if (applicableBreaks.length > 0) {
+        const savingsText = applicableBreaks
+          .map(b => `Buy ${b.qty}+ for £${b.price.toFixed(2)}/unit (save £${(item.unitPrice - b.price).toFixed(2)} each)`)
+          .join("   ·   ");
+        doc.rect(margin, y, contentW, STRIP_H).fill("#fffbeb").stroke("#fde68a");
+        doc.fillColor("#92400e").fontSize(6).font("Helvetica-Bold")
+          .text(`\u26A1 Order more, save more:  ${savingsText}`, margin + imgW + 3, y + 3, {
+            width: contentW - imgW - 6, lineBreak: false, ellipsis: true,
+          });
+        y += STRIP_H;
+      }
 
       // Page break
       if (y > pageH - 140) {
@@ -987,6 +1008,7 @@ export function buildQuoteEmail(data: {
     quantity: number;
     unitPrice: number;
     vatRate?: number;
+    priceBreaks?: { qty: number; price: number }[] | null;
   }>;
 }): { subject: string; html: string; text: string } {
   const subject = `Your Quotation from Select Branding Solutions – ${data.quoteNumber}`;
@@ -999,15 +1021,22 @@ export function buildQuoteEmail(data: {
   const vatAmount = data.items.reduce((s, i) => s + i.unitPrice * i.quantity * (i.vatRate ?? 0.20), 0);
   const totalIncVat = subtotal + vatAmount;
 
-  const itemRows = data.items.map(i =>
-    `<tr>
+  const itemRows = data.items.map(i => {
+    const applicableBreaks = (i.priceBreaks ?? [])
+      .filter(b => b.qty > i.quantity && b.price < i.unitPrice)
+      .sort((a, b) => a.qty - b.qty)
+      .slice(0, 3);
+    const savingsRow = applicableBreaks.length > 0
+      ? `\n<tr><td colspan="5" style="padding:4px 14px 7px;background:#fffbeb;border-bottom:1px solid #fde68a;font-size:11.5px;color:#92400e;font-weight:600;">&#9889;&nbsp; Order more, save more: &nbsp;${applicableBreaks.map(b => `Buy ${b.qty}+ for <strong>£${b.price.toFixed(2)}/unit</strong> (save £${(i.unitPrice - b.price).toFixed(2)} each)`).join("&nbsp; &middot; &nbsp;")}</td></tr>`
+      : "";
+    return `<tr>
       <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;">${i.productName}${i.finishName ? `<br><span style="font-size:11px;color:#6366f1;font-weight:600;">Finish: ${i.finishName}</span>` : ""}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">${[i.colour, i.size].filter(Boolean).join(" / ") || "—"}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:13px;font-weight:600;color:#1e293b;">${i.quantity}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;color:#64748b;">£${i.unitPrice.toFixed(2)}</td>
       <td style="padding:10px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;font-weight:700;color:#1e293b;">£${(i.unitPrice * i.quantity).toFixed(2)}</td>
-    </tr>`
-  ).join("\n");
+    </tr>${savingsRow}`;
+  }).join("\n");
 
   const customerLogoBlock = data.customerLogoDataUrl
     ? `<td style="vertical-align:middle;text-align:right;">
