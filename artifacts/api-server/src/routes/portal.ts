@@ -3366,6 +3366,7 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
   res.json({
     id: quote.id,
     quoteNumber: quote.quote_number,
+    customerId: quote.customer_id ?? null,
     customerName: quote.customer_name,
     notes: quote.notes,
     expiresAt: quote.expires_at,

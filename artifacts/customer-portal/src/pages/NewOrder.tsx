@@ -2790,7 +2790,7 @@ function clearSession() {
 export default function NewOrder() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { portalRole, isPreview } = useAuth();
+  const { user, portalRole, isPreview } = useAuth();
   const queryClient = useQueryClient();
 
   const saved = readSession();
@@ -2825,6 +2825,7 @@ export default function NewOrder() {
   const { data: quoteData } = useQuery<{
     id: number;
     quoteNumber: string;
+    customerId: number | null;
     customerName: string;
     notes: string | null;
     customerLogoUrl: string | null;
@@ -2837,6 +2838,14 @@ export default function NewOrder() {
     staleTime: Infinity,
     retry: false,
   });
+
+  // Detect when a quote link belongs to a different customer than the logged-in user.
+  // The quote token is a public credential so unauthenticated access is fine, but a
+  // logged-in user should never see another customer's quote in their portal session.
+  const quoteMismatch =
+    !!quoteData?.customerId &&
+    !!user?.customer?.id &&
+    quoteData.customerId !== user.customer.id;
 
   // ── Server-side basket: restore on mount if session was empty ──────────────
   const { data: serverBasket } = useQuery<{ items: OrderItem[]; mode: string | null; step: number }>({
@@ -2862,6 +2871,7 @@ export default function NewOrder() {
 
   useEffect(() => {
     if (!quoteData?.items?.length) return;
+    if (quoteMismatch) return; // refuse to load another customer's quote into the basket
     // Quote URL always wins — override any saved basket/session state
     setBasket(quoteData.items);
     setMode("quote");
@@ -2870,7 +2880,7 @@ export default function NewOrder() {
       title: `Quote ${quoteData.quoteNumber} loaded`,
       description: `${quoteData.items.length} item${quoteData.items.length !== 1 ? "s" : ""} pre-filled. Review quantities and submit when ready.`,
     });
-  }, [quoteData]);
+  }, [quoteData, quoteMismatch]);
 
   // ── Auto-save basket to server (debounced 500 ms) ────────────────────────
   const flushBasketSave = () => {
@@ -3019,7 +3029,20 @@ export default function NewOrder() {
         <h1 className="text-2xl font-bold tracking-tight">New Order</h1>
       </div>
 
-      {quoteToken && quoteData && (
+      {quoteMismatch && (
+        <div className="mb-6 rounded-xl border border-destructive/40 bg-destructive/5 px-5 py-5 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+          <div>
+            <p className="font-semibold text-destructive">Wrong account</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              This quote link was sent to <strong>{quoteData!.customerName}</strong>, but you are logged in
+              as <strong>{user!.customer.name}</strong>. Please log in with the correct account to view this quote.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {quoteToken && quoteData && !quoteMismatch && (
         <div className="mb-6 rounded-xl border bg-muted/30 px-5 py-4 flex items-center gap-4">
           {quoteData.customerLogoUrl ? (
             <img
