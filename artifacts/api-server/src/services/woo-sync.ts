@@ -24,6 +24,8 @@ interface WooProduct {
   stock_quantity: number | null;
   manage_stock: boolean;
   type: "simple" | "variable" | "yith_bundle" | string;
+  /** WooCommerce virtual flag — true for services/setup fees with no physical fulfilment */
+  virtual: boolean;
   tax_status: "taxable" | "shipping" | "none" | string;
   tax_class: string;
   categories: { id: number; name: string; slug: string }[];
@@ -351,6 +353,9 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           : taxClass === "reduced-rate" ? "0.0500"
           : "0.2000";
 
+        // Virtual WooCommerce products (setup fees, digitising, etc.) map to service products
+        const isVirtual = wooProduct.virtual === true;
+
         if (existing.length > 0) {
           productId = existing[0].id;
           await db.execute(sql`
@@ -367,7 +372,8 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
               stock_quantity = COALESCE(${stockQty}, stock_quantity),
               tax_status   = ${taxStatus},
               tax_class    = ${taxClass},
-              vat_rate     = ${vatRate}
+              vat_rate     = ${vatRate},
+              is_service   = CASE WHEN ${isVirtual} THEN true ELSE is_service END
             WHERE id = ${productId}
           `);
           updated++;
@@ -384,6 +390,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
             taxStatus,
             taxClass,
             vatRate,
+            isService: isVirtual,
           } as any).returning();
           productId = inserted.id;
           created++;

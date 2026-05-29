@@ -1107,4 +1107,35 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE products ADD COLUMN IF NOT EXISTS is_service boolean NOT NULL DEFAULT false;
   `);
+
+  // Deduplicate service products: where the same product name exists as both a plain
+  // product (synced from WooCommerce) and a manually-created service product, mark the
+  // WooCommerce-linked record as is_service = true and delete the manual duplicate.
+  await db.execute(sql`
+    -- Step 1: promote WooCommerce-linked records to service where a service twin exists
+    UPDATE products p
+    SET is_service = true
+    WHERE p.is_service = false
+      AND p.woo_commerce_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM products p2
+        WHERE LOWER(p2.name) = LOWER(p.name)
+          AND p2.is_service = true
+          AND p2.id != p.id
+      );
+  `);
+
+  await db.execute(sql`
+    -- Step 2: delete the now-redundant manual (non-woo) duplicates
+    DELETE FROM products
+    WHERE is_service = true
+      AND woo_commerce_id IS NULL
+      AND EXISTS (
+        SELECT 1 FROM products p2
+        WHERE LOWER(p2.name) = LOWER(name)
+          AND p2.is_service = true
+          AND p2.woo_commerce_id IS NOT NULL
+          AND p2.id != id
+      );
+  `);
 }
