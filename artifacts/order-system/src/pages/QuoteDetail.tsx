@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useListProducts } from "@workspace/api-client-react";
 import { Link, useParams, useLocation } from "wouter";
@@ -15,11 +14,17 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover, PopoverContent, PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList,
+} from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Loader2, Trash2, Plus, Copy, Check, Send, Clock,
   Eye, CheckCircle2, ShoppingCart, X, Link as LinkIcon, FileText,
-  ChevronDown, Save, Upload, ImageOff, Download,
+  ChevronDown, Save, Upload, ImageOff, Download, ChevronsUpDown,
 } from "lucide-react";
 import { UploadedImage } from "@/components/UploadedImage";
 import { useUpload } from "@workspace/object-storage-web";
@@ -140,47 +145,18 @@ export default function QuoteDetail() {
     },
   });
 
-  // Product autocomplete — debounced server-side search (same as Products page)
+  // Product catalogue search — Popover + Command, catalogue-only (no free text)
   const [newItem, setNewItem] = useState({ ...EMPTY_ITEM });
   const [addFinishLine, setAddFinishLine] = useState(false);
   const [finishLine, setFinishLine] = useState({ ...EMPTY_FINISH });
-  const [showProductDropdown, setShowProductDropdown] = useState(false);
+  const [productOpen, setProductOpen] = useState(false);
   const [productSearchTerm, setProductSearchTerm] = useState("");
-  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
-  const productDropdownRef = useRef<HTMLDivElement>(null);
-  const productInputRef = useRef<HTMLInputElement>(null);
-  const productPortalRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const t = setTimeout(() => setProductSearchTerm(newItem.productName.trim()), 300);
-    return () => clearTimeout(t);
-  }, [newItem.productName]);
-
-  // Recompute portal position whenever dropdown opens
-  useEffect(() => {
-    if (showProductDropdown && productInputRef.current) {
-      const r = productInputRef.current.getBoundingClientRect();
-      setDropdownPos({ top: r.bottom + 4, left: r.left, width: r.width });
-    }
-  }, [showProductDropdown]);
 
   const { data: productResults = [] } = useListProducts(
     { search: productSearchTerm },
     { query: { enabled: productSearchTerm.length >= 2 } },
   );
-  const productSuggestions = productResults.slice(0, 8);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      const insideInput = productDropdownRef.current?.contains(e.target as Node);
-      const insidePortal = productPortalRef.current?.contains(e.target as Node);
-      if (!insideInput && !insidePortal) {
-        setShowProductDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
+  const productSuggestions = productResults.slice(0, 10);
 
   useEffect(() => {
     if (!quote) return;
@@ -545,65 +521,73 @@ export default function QuoteDetail() {
                 {/* Add row */}
                 <TableRow className="bg-muted/20">
                   <TableCell>
-                    <div ref={productDropdownRef}>
-                      <Input
-                        ref={productInputRef}
-                        value={newItem.productName}
-                        onChange={(e) => { setNewItem((p) => ({ ...p, productName: e.target.value, productUrl: "" })); setShowProductDropdown(true); }}
-                        onFocus={() => setShowProductDropdown(true)}
-                        placeholder="Product name *"
-                        className="h-8 text-sm"
-                        autoComplete="off"
-                      />
-                    </div>
-                    {showProductDropdown && (productSuggestions.length > 0 || productSearchTerm.length >= 2) && dropdownPos && createPortal(
-                      <div
-                        ref={productPortalRef}
-                        style={{ position: "fixed", top: dropdownPos.top, left: dropdownPos.left, minWidth: Math.max(dropdownPos.width, 420), maxWidth: 640, zIndex: 9999 }}
-                        className="bg-background border rounded-lg shadow-lg"
-                      >
-                        {productSuggestions.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            className="w-full text-left px-4 py-3 text-sm hover:bg-muted transition-colors border-b last:border-b-0 first:rounded-t-lg last:rounded-b-lg"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setNewItem((prev) => ({
-                                ...prev,
-                                productId: p.id,
-                                productName: p.sku ? `${p.sku} ${p.name}` : p.name,
-                                productUrl: (p as any).permalink ?? "",
-                                unitPrice: p.unitPrice != null ? Number(p.unitPrice) : prev.unitPrice,
-                              }));
-                              setShowProductDropdown(false);
-                            }}
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{p.name}</span>
-                              {(p as any).isService && (
-                                <span className="text-[10px] font-semibold uppercase tracking-wide bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">Service</span>
-                              )}
-                            </div>
-                            <div className="text-xs text-muted-foreground">{p.sku ?? ""}{p.unitPrice != null ? `${p.sku ? " · " : ""}£${Number(p.unitPrice).toFixed(2)}` : ""}</div>
-                          </button>
-                        ))}
-                        {newItem.productName.trim().length >= 2 && (
-                          <button
-                            type="button"
-                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-t text-muted-foreground italic rounded-b-lg flex items-center gap-2"
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setShowProductDropdown(false);
-                            }}
-                          >
-                            <Plus className="w-3.5 h-3.5 shrink-0" />
-                            Use &ldquo;{newItem.productName.trim()}&rdquo; as manual entry
-                          </button>
-                        )}
-                      </div>,
-                      document.body
-                    )}
+                    <Popover open={productOpen} onOpenChange={(open) => { setProductOpen(open); if (!open) setProductSearchTerm(""); }}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className="h-8 w-full justify-between font-normal text-sm px-2"
+                        >
+                          {newItem.productId
+                            ? <span className="truncate text-left">{newItem.productName}</span>
+                            : <span className="text-muted-foreground">Search product catalogue…</span>
+                          }
+                          <ChevronsUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[480px] p-0" align="start">
+                        <Command shouldFilter={false}>
+                          <CommandInput
+                            placeholder="Type to search products and services…"
+                            value={productSearchTerm}
+                            onValueChange={setProductSearchTerm}
+                          />
+                          <CommandList>
+                            {productSearchTerm.length < 2 ? (
+                              <CommandEmpty className="py-4 text-center text-sm text-muted-foreground">
+                                Type at least 2 characters to search.
+                              </CommandEmpty>
+                            ) : productSuggestions.length === 0 ? (
+                              <CommandEmpty>No products found.</CommandEmpty>
+                            ) : (
+                              <CommandGroup>
+                                {productSuggestions.map((p) => (
+                                  <CommandItem
+                                    key={p.id}
+                                    value={String(p.id)}
+                                    onSelect={() => {
+                                      setNewItem((prev) => ({
+                                        ...prev,
+                                        productId: p.id,
+                                        productName: p.sku ? `${p.sku} ${p.name}` : p.name,
+                                        productUrl: (p as any).permalink ?? "",
+                                        unitPrice: p.unitPrice != null ? Number(p.unitPrice) : prev.unitPrice,
+                                      }));
+                                      setProductSearchTerm("");
+                                      setProductOpen(false);
+                                    }}
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2">
+                                        <span className="font-medium truncate">{p.name}</span>
+                                        {(p as any).isService && (
+                                          <span className="text-[10px] font-semibold uppercase tracking-wide bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded shrink-0">Service</span>
+                                        )}
+                                      </div>
+                                      {(p.sku || p.unitPrice != null) && (
+                                        <div className="text-xs text-muted-foreground">
+                                          {p.sku ?? ""}{p.unitPrice != null ? `${p.sku ? " · " : ""}£${Number(p.unitPrice).toFixed(2)}` : ""}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            )}
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                   </TableCell>
                   {hasColour && (
                     <TableCell>
@@ -660,7 +644,7 @@ export default function QuoteDetail() {
                       size="sm"
                       className="h-8 w-8 p-0"
                       onClick={() => addItem.mutate()}
-                      disabled={!newItem.productName.trim() || addItem.isPending}
+                      disabled={!newItem.productId || addItem.isPending}
                       title="Add item"
                     >
                       {addItem.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
