@@ -441,7 +441,7 @@ export default function QuoteDetail() {
                   {(quote.contactFirstName || quote.contactLastName) && (
                     <div className="flex items-center gap-2 text-sm">
                       <span className="text-muted-foreground w-16 shrink-0">Name</span>
-                      <span className="font-medium">{[quote.contactFirstName, quote.contactLastName].filter(Boolean).join(" ")}</span>
+                      <span className="font-medium">{[quote.contactFirstName, quote.contactLastName].filter(Boolean).map(n => n!.replace(/\b\w/g, c => c.toUpperCase())).join(" ")}</span>
                     </div>
                   )}
                   {quote.customerPhone && (
