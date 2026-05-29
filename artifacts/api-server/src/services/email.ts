@@ -1031,7 +1031,7 @@ export function buildQuoteEmail(data: {
   // Resolve placeholders — also patch legacy literal phrases from old saved cover texts
   const greetingName = firstName ?? null;
   const resolvedCoverText = data.coverText
-    .replace(/^Hi there,/m, greetingName ? `Hi ${greetingName},` : "Hi there,")
+    .replace(/^Hi there,/m, greetingName ? `Hi ${greetingName},` : `Dear ${data.customerName ?? ""},`)
     .replace(/^Hi \{firstName\},/m, greetingName ? `Hi ${greetingName},` : "Hi,")
     .replace(/Thank you for your enquiry with Select Branding Solutions\./g,
       `Thank you for the opportunity to quote for ${data.customerName ?? "your organisation"}.`)
