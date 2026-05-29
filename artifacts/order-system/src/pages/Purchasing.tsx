@@ -603,7 +603,7 @@ function POEmailDialog({ po, open, onClose, onSent, onFileUploaded }: {
 
   const effectiveEmail = manualEmail.trim();
 
-  useEffect(() => { setManualEmail(po.supplierEmail ?? ""); }, [po.id]);
+  useEffect(() => { setManualEmail(po.supplierEmail ?? ""); }, [po.id, po.supplierEmail]);
 
   const handleSend = async () => {
     setSending(true);
