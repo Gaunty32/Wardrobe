@@ -176,11 +176,14 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
                 <p className="text-xs text-muted-foreground">Defaults to the customer's manager email. Separate multiple addresses with commas.</p>
               </div>
 
-              {/* Email preview */}
+              {/* Email preview — strip the "Subject\n====\n\n" header from the plain
+                  text since the subject is already shown in the heading above */}
               {emailSubject && (
                 <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
                   <p className="font-medium text-foreground mb-1 text-sm">{emailSubject}</p>
-                  <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-28 overflow-y-auto">{emailText}</pre>
+                  <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-28 overflow-y-auto">
+                    {emailText.replace(/^[^\n]*\n=+\n\n?/, "")}
+                  </pre>
                 </div>
               )}
             </>
