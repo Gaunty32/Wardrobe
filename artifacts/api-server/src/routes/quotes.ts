@@ -443,10 +443,7 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   }).safeParse(req.body);
 
   const quoteRows = await db.execute(sql`
-    SELECT q.*,
-           q.contact_first_name  AS quote_contact_first_name,
-           c.contact_first_name  AS customer_contact_first_name,
-           c.contact_last_name   AS customer_contact_last_name
+    SELECT q.*, c.contact_first_name, c.contact_last_name
     FROM quotes q
     LEFT JOIN customers c ON c.id = q.customer_id
     WHERE q.id = ${id}
@@ -496,10 +493,8 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
 
   // Resolve customer email
   let toEmail: string | undefined = body.success ? body.data.toEmail : undefined;
-  // Prefer the quote's own HL-synced name (quote_contact_first_name alias avoids
-  // being shadowed by c.contact_first_name in the SELECT above)
-  let contactFirstName: string | null =
-    quote.quote_contact_first_name ?? quote.customer_contact_first_name ?? null;
+  // Seed from the quote's own HL-synced contact name before falling back to lookups
+  let contactFirstName: string | null = quote.contact_first_name ?? null;
 
   if (!toEmail && quote.customer_id) {
     // Prefer manager/dept_manager portal users
@@ -530,6 +525,28 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
       LIMIT 1
     `);
     contactFirstName = (ccRows.rows[0] as any)?.first_name ?? null;
+  }
+  // Also check customer_portal_users by the target email (they have a real first_name)
+  if (!contactFirstName && toEmail) {
+    const firstEmail = toEmail.split(",")[0].trim();
+    const puRows = await db.execute(sql`
+      SELECT first_name FROM customer_portal_users
+      WHERE LOWER(email) = LOWER(${firstEmail}) AND first_name IS NOT NULL AND first_name <> ''
+      LIMIT 1
+    `);
+    contactFirstName = (puRows.rows[0] as any)?.first_name ?? null;
+  }
+  // Fallback: any active portal manager for this customer
+  if (!contactFirstName && quote.customer_id) {
+    const puRows2 = await db.execute(sql`
+      SELECT first_name FROM customer_portal_users
+      WHERE customer_id = ${quote.customer_id}
+        AND portal_role IN ('manager', 'dept_manager')
+        AND first_name IS NOT NULL AND first_name <> ''
+      ORDER BY portal_role = 'manager' DESC, status = 'active' DESC
+      LIMIT 1
+    `);
+    contactFirstName = (puRows2.rows[0] as any)?.first_name ?? null;
   }
   // Final fallback: customers.contact_first_name
   if (!contactFirstName && quote.customer_id) {
