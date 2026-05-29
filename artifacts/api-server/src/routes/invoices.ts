@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
 import { db, ordersTable, orderItemsTable, customersTable, settingsTable } from "@workspace/db";
-import { eq, desc, and, isNotNull, isNull, sql } from "drizzle-orm";
+import { eq, desc, and, isNotNull, isNull, sql, inArray } from "drizzle-orm";
 import {
   sendInvoiceEmail, getSmtpConfig, testSmtpConnection,
   buildInvoiceEmail, generateInvoicePDF, buildInvoiceDataForOrder,
-  fetchLogoDataUrl,
+  fetchLogoDataUrl, sendEmail,
 } from "../services/email";
 import { postInvoiceToXero } from "../services/xero";
 import { logOrderAction, getActor } from "../services/orderLog";
@@ -44,6 +44,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       customerPhone: customersTable.phone,
       invoiceScheduledSendAt: ordersTable.invoiceScheduledSendAt,
       customerHighLevelContactId: customersTable.highLevelContactId,
+      poNumber: ordersTable.poNumber,
     })
     .from(ordersTable)
     .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -180,6 +181,7 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
       trackingNumber: order.trackingNumber,
       paidAt: order.paidAt,
       stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+      poNumber: order.poNumber,
       items: items.map((i) => ({
         productName: i.productName,
         colour: i.colour,
@@ -229,6 +231,7 @@ router.get("/invoices/:orderId/preview-email", async (req, res): Promise<void> =
       notes: order.notes,
       paidAt: order.paidAt,
       stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+      poNumber: order.poNumber,
       items: mappedItems,
     });
     res.json({ subject, html });
@@ -262,6 +265,158 @@ router.get("/settings/email/status", async (_req, res): Promise<void> => {
   }
   const config = await getSmtpConfig();
   res.json({ configured: !!config, provider: "smtp", host: config?.host ?? null, fromEmail: config?.fromEmail ?? null });
+});
+
+// ─── Consolidated invoice (multiple orders → single PDF) ─────────────────────
+
+router.post("/invoices/consolidated/send-email", async (req, res): Promise<void> => {
+  const body = z.object({
+    orderIds: z.array(z.number().int().positive()).min(1),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "orderIds array required" }); return; }
+
+  try {
+    const { orderIds } = body.data;
+
+    // Fetch all orders with customer info
+    const orderRows = await db
+      .select({
+        id: ordersTable.id,
+        orderNumber: ordersTable.orderNumber,
+        customerName: ordersTable.customerName,
+        customerId: ordersTable.customerId,
+        totalAmount: ordersTable.totalAmount,
+        status: ordersTable.status,
+        poNumber: ordersTable.poNumber,
+        notes: ordersTable.notes,
+        customerEmail: customersTable.email,
+        contactFirstName: customersTable.contactFirstName,
+        customerLogoUrl: customersTable.logoUrl,
+        customerAddress: customersTable.address,
+        customerCity: customersTable.city,
+        customerPostcode: customersTable.postcode,
+      })
+      .from(ordersTable)
+      .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
+      .where(inArray(ordersTable.id, orderIds));
+
+    if (orderRows.length === 0) { res.status(404).json({ error: "No orders found" }); return; }
+
+    // Validate same customer
+    const uniqueCustomerIds = [...new Set(orderRows.map((o) => o.customerId))];
+    if (uniqueCustomerIds.length > 1) {
+      res.status(400).json({ error: "All orders must belong to the same customer" }); return;
+    }
+
+    const firstOrder = orderRows[0];
+    const customerEmail = firstOrder.customerEmail ?? null;
+    if (!customerEmail) { res.status(400).json({ error: "Customer has no email address on record" }); return; }
+
+    const poNumber = firstOrder.poNumber ?? null;
+    const invoiceRef = poNumber ? `PO/${poNumber}` : orderRows.map((o) => o.orderNumber).join("+");
+
+    const customerLogoDataUrl = firstOrder.customerLogoUrl
+      ? await fetchLogoDataUrl(firstOrder.customerLogoUrl).catch(() => null)
+      : null;
+
+    // Collect all items across orders, tagged with their orderRef
+    const allItems: Array<{
+      productName: string;
+      colour: string | null;
+      size: string | null;
+      finishName: string | null;
+      quantity: number;
+      unitPrice: string;
+      lineTotal: string;
+      vatRate: number;
+      orderRef: string;
+    }> = [];
+
+    for (const order of orderRows) {
+      const items = await db
+        .select()
+        .from(orderItemsTable)
+        .where(eq(orderItemsTable.orderId, order.id));
+
+      for (const item of items) {
+        allItems.push({
+          productName: item.productName,
+          colour: item.colour,
+          size: item.size,
+          finishName: item.finishName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice as string,
+          lineTotal: item.lineTotal as string,
+          vatRate: parseFloat(item.vatRate as string),
+          orderRef: order.orderNumber,
+        });
+      }
+    }
+
+    const totalAmount = orderRows.reduce((s, o) => s + parseFloat(String(o.totalAmount ?? "0")), 0);
+
+    // Generate consolidated PDF
+    const pdfBuffer = await generateInvoicePDF({
+      orderNumber: invoiceRef,
+      customerName: firstOrder.customerName ?? "Customer",
+      customerEmail,
+      customerAddress: firstOrder.customerAddress,
+      customerCity: firstOrder.customerCity,
+      customerPostcode: firstOrder.customerPostcode,
+      invoiceDate: new Date(),
+      poNumber,
+      items: allItems,
+      totalAmount: totalAmount.toFixed(2),
+      notes: null,
+    });
+
+    // Build email
+    const { subject, html, text } = buildInvoiceEmail({
+      orderNumber: invoiceRef,
+      customerName: firstOrder.customerName,
+      contactFirstName: firstOrder.contactFirstName,
+      customerLogoDataUrl,
+      invoiceDate: new Date(),
+      poNumber,
+      items: allItems.map((i) => ({
+        ...i,
+        unitPrice: parseFloat(i.unitPrice),
+        lineTotal: parseFloat(i.lineTotal),
+      })),
+    });
+
+    // Send email
+    const safeName = invoiceRef.replace(/[/\\]/g, "-");
+    const result = await sendEmail({
+      to: customerEmail,
+      subject,
+      html,
+      text,
+      attachments: [{ filename: `Invoice-${safeName}.pdf`, content: pdfBuffer, contentType: "application/pdf" }],
+    });
+
+    if (!result.sent) throw new Error(result.error ?? "Failed to send email");
+
+    // Mark all orders as invoiced
+    await db
+      .update(ordersTable)
+      .set({ invoiceEmailSentAt: new Date(), invoiceEmailSentTo: customerEmail, updatedAt: new Date() })
+      .where(inArray(ordersTable.id, orderIds));
+
+    // Log action on each order
+    for (const id of orderIds) {
+      await logOrderAction(
+        id,
+        "Consolidated invoice sent",
+        getActor(req),
+        `Combined invoice ${invoiceRef} emailed to ${customerEmail} covering ${orderIds.length} order(s)`
+      );
+    }
+
+    res.json({ ok: true, sentTo: customerEmail, invoiceRef });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to send consolidated invoice" });
+  }
 });
 
 // ─── Orders grouped by customer PO number ────────────────────────────────────

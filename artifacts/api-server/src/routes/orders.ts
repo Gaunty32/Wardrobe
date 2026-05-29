@@ -2357,6 +2357,7 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     { label: "Dispatched",  value: fmtDate(new Date()) },
     { label: "Order Ref",   value: order.orderNumber },
   ];
+  if (order.poNumber) infoCols.push({ label: "PO Number", value: order.poNumber });
   if (shippingLabel) infoCols.push({ label: "Delivery", value: shippingLabel });
   if (order.trackingNumber) infoCols.push({ label: "Tracking", value: order.trackingNumber });
 

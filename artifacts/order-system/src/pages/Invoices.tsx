@@ -51,6 +51,7 @@ interface InvoiceOrder {
   customerPhone: string | null;
   invoiceScheduledSendAt: string | null;
   customerHighLevelContactId: string | null;
+  poNumber?: string | null;
 }
 
 function toWhatsAppNumber(phone: string): string {
@@ -302,9 +303,16 @@ function OrderRow({
     <>
       <TableRow>
         <TableCell>
-          <Link href={`/orders/${order.id}`} className="font-medium text-primary hover:underline">
-            {order.orderNumber}
-          </Link>
+          <div className="flex flex-col gap-0.5">
+            <Link href={`/orders/${order.id}`} className="font-medium text-primary hover:underline">
+              {order.orderNumber}
+            </Link>
+            {order.poNumber && (
+              <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-mono bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit">
+                <Hash className="w-3 h-3" />{order.poNumber}
+              </span>
+            )}
+          </div>
         </TableCell>
         <TableCell className="text-sm">{order.customerName ?? "—"}</TableCell>
         <TableCell className="text-sm text-right font-medium">
@@ -841,13 +849,48 @@ export default function Invoices() {
 
 function PoGroupRow({ group }: { group: PoGroup }) {
   const [open, setOpen] = useState(false);
+  const [confirmConsolidated, setConfirmConsolidated] = useState(false);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const dispatchedUnsent = group.orders.filter(
+    (o) => ["shipped", "dispatched"].includes(o.status) && !o.invoiceEmailSentAt
+  );
+  const pendingOrders = group.orders.filter(
+    (o) => !["shipped", "dispatched"].includes(o.status)
+  );
+
+  const sendConsolidated = useMutation({
+    mutationFn: () =>
+      apiFetch<{ ok: boolean; sentTo: string; invoiceRef: string }>("/invoices/consolidated/send-email", {
+        method: "POST",
+        body: JSON.stringify({ orderIds: dispatchedUnsent.map((o) => o.id) }),
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["po-groups"] });
+      setConfirmConsolidated(false);
+      toast({
+        title: "Consolidated invoice sent",
+        description: `Invoice ${res.invoiceRef} emailed to ${res.sentTo} covering ${dispatchedUnsent.length} orders.`,
+      });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Failed to send", description: parseApiError(e), variant: "destructive" }),
+  });
+
   const statusColor: Record<string, string> = {
     dispatched: "bg-green-100 text-green-800 border-green-200",
+    shipped: "bg-green-100 text-green-800 border-green-200",
     in_production: "bg-blue-100 text-blue-800 border-blue-200",
     confirmed: "bg-indigo-100 text-indigo-800 border-indigo-200",
     draft: "bg-gray-100 text-gray-700 border-gray-200",
     cancelled: "bg-red-100 text-red-700 border-red-200",
   };
+
+  const allInvoiced = group.orders.every((o) => !!o.invoiceEmailSentAt);
+  const consolidatedTotal = dispatchedUnsent.reduce((s, o) => s + parseFloat(o.totalAmount ?? "0"), 0);
+
   return (
     <div className="rounded-xl border border-border overflow-hidden">
       {/* Header row */}
@@ -861,11 +904,47 @@ function PoGroupRow({ group }: { group: PoGroup }) {
         <span className="text-sm text-muted-foreground mx-1">·</span>
         <span className="text-sm text-muted-foreground">{group.customerName ?? "Unknown customer"}</span>
         <div className="ml-auto flex items-center gap-4">
+          {allInvoiced && (
+            <span className="inline-flex items-center gap-1 text-xs text-green-700 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" /> All invoiced
+            </span>
+          )}
+          {dispatchedUnsent.length > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
+              <Clock className="w-3.5 h-3.5" /> {dispatchedUnsent.length} to invoice
+            </span>
+          )}
           <span className="text-xs text-muted-foreground">{group.orders.length} order{group.orders.length !== 1 ? "s" : ""}</span>
           <span className="text-sm font-medium">{formatCurrency(group.totalEx)} ex VAT</span>
           <span className="text-xs text-muted-foreground">({formatCurrency(group.totalInc)} inc)</span>
         </div>
       </button>
+
+      {/* Send Combined Invoice action bar — shown when 2+ dispatched unsent orders */}
+      {dispatchedUnsent.length >= 1 && (
+        <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-200 flex items-center gap-3">
+          <div className="flex-1 text-sm text-amber-800">
+            <span className="font-semibold">{dispatchedUnsent.length} dispatched order{dispatchedUnsent.length !== 1 ? "s" : ""}</span>
+            {" "}ready to invoice
+            {pendingOrders.length > 0 && (
+              <span className="text-amber-600 ml-1">· {pendingOrders.length} order{pendingOrders.length !== 1 ? "s" : ""} still in production (to follow)</span>
+            )}
+            <span className="text-amber-600 ml-2 font-mono text-xs">
+              {formatCurrency(consolidatedTotal)} ex VAT · {formatCurrency(consolidatedTotal * 1.2)} inc VAT
+            </span>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={(e) => { e.stopPropagation(); setConfirmConsolidated(true); }}
+            disabled={sendConsolidated.isPending}
+          >
+            {sendConsolidated.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+            Send Combined Invoice
+          </Button>
+        </div>
+      )}
+
       {/* Expandable order list */}
       {open && (
         <Table>
@@ -882,7 +961,7 @@ function PoGroupRow({ group }: { group: PoGroup }) {
           </TableHeader>
           <TableBody>
             {group.orders.map((o) => (
-              <TableRow key={o.id}>
+              <TableRow key={o.id} className={dispatchedUnsent.some((d) => d.id === o.id) ? "bg-amber-50/50" : undefined}>
                 <TableCell className="text-xs font-mono">
                   <Link href={`/orders/${o.id}`} className="text-primary hover:underline">
                     {o.orderNumber}
@@ -918,6 +997,42 @@ function PoGroupRow({ group }: { group: PoGroup }) {
           </TableBody>
         </Table>
       )}
+
+      {/* Confirm consolidated send dialog */}
+      <Dialog open={confirmConsolidated} onOpenChange={setConfirmConsolidated}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Combined Invoice — PO {group.poNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              This will generate a single consolidated invoice PDF covering {dispatchedUnsent.length} dispatched order{dispatchedUnsent.length !== 1 ? "s" : ""} and email it to the customer.
+            </p>
+            <div className="rounded-lg bg-muted/50 border p-3 space-y-1.5">
+              <div><span className="text-muted-foreground">Customer:</span> <strong>{group.customerName}</strong></div>
+              <div><span className="text-muted-foreground">PO Ref:</span> <strong className="font-mono">{group.poNumber}</strong></div>
+              <div><span className="text-muted-foreground">Orders covered:</span> <strong>{dispatchedUnsent.map((o) => o.orderNumber).join(", ")}</strong></div>
+              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(consolidatedTotal * 1.2)} inc. VAT</strong></div>
+            </div>
+            {pendingOrders.length > 0 && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                <strong>{pendingOrders.length} order{pendingOrders.length !== 1 ? "s" : ""} still in production</strong> ({pendingOrders.map((o) => o.orderNumber).join(", ")}) will NOT be included in this invoice. They will appear as items to follow and be invoiced separately when dispatched.
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmConsolidated(false)}>Cancel</Button>
+            <Button
+              onClick={() => sendConsolidated.mutate()}
+              disabled={sendConsolidated.isPending}
+              className="gap-1.5 bg-amber-600 hover:bg-amber-700"
+            >
+              {sendConsolidated.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+              Send Combined Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

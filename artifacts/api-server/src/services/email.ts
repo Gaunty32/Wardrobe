@@ -1727,6 +1727,7 @@ export function buildInvoiceEmail(params: {
   notes?: string | null;
   paidAt?: Date | null;
   stripePaymentLinkUrl?: string | null;
+  poNumber?: string | null;
   items: Array<{
     productName: string;
     colour?: string | null;
@@ -1881,6 +1882,7 @@ export function buildInvoiceEmail(params: {
           <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
             <tr style="background:#f8fafc;"><td style="padding:10px 16px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Invoice Number</td><td style="padding:10px 16px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #e2e8f0;text-align:right;">${params.orderNumber}</td></tr>
             <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Invoice Date</td><td style="padding:10px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;text-align:right;">${invoiceDateStr}</td></tr>
+            ${params.poNumber ? `<tr style="background:#fffbeb;"><td style="padding:10px 16px;font-size:12px;color:#92400e;border-bottom:1px solid #fde68a;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Customer PO Ref</td><td style="padding:10px 16px;font-size:14px;font-weight:800;color:#92400e;border-bottom:1px solid #fde68a;text-align:right;font-family:monospace;">${params.poNumber}</td></tr>` : ""}
             ${statusRow}
           </table>
         </td></tr>
@@ -2058,6 +2060,18 @@ interface InvoiceLineItem {
   unitPrice: string;
   lineTotal: string;
   vatRate?: number;
+  /** Used in consolidated invoices to group rows under their originating order ref */
+  orderRef?: string | null;
+}
+
+interface InvoiceToFollowItem {
+  productName: string;
+  colour?: string | null;
+  size?: string | null;
+  finishName?: string | null;
+  quantity: number;
+  orderRef?: string | null;
+  estimatedDueDate?: string | null;
 }
 
 interface InvoiceData {
@@ -2075,6 +2089,10 @@ interface InvoiceData {
   items: InvoiceLineItem[];
   totalAmount: string;
   notes?: string | null;
+  /** Customer purchase-order reference — printed on the invoice */
+  poNumber?: string | null;
+  /** Items not yet dispatched — shown in an amber "To Follow" section, NOT included in totals */
+  toFollowItems?: InvoiceToFollowItem[];
 }
 
 export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
@@ -2171,6 +2189,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       ["Invoice Date", invoiceDateStr],
       isPaid ? ["Status", "PAID — for your records", true] : ["Payment Due", paymentDueStr],
     ];
+    if (data.poNumber) metaRows.push(["Customer PO Ref", data.poNumber]);
     if (data.trackingNumber) metaRows.push(["DPD Tracking", data.trackingNumber]);
     if (isCollection) metaRows.push(["Collection", "Ready to collect"]);
 
@@ -2204,11 +2223,25 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
     y += HDR_H;
 
     const ROW_H = 20;
+    const SECTION_H = 18;
     let rowAlt = false;
     let subtotalCalc = 0;
     let vatCalc = 0;
+    let lastOrderRef: string | null | undefined = undefined;
 
     for (const item of data.items) {
+      // Section header when items are grouped by order ref (consolidated invoices)
+      if (item.orderRef !== undefined && item.orderRef !== lastOrderRef) {
+        lastOrderRef = item.orderRef;
+        if (y + SECTION_H > PAGE_H - 120) { doc.addPage(); y = MARGIN; }
+        doc.rect(MARGIN, y, W, SECTION_H).fill("#f1f5f9");
+        doc.fillColor("#475569").fontSize(8).font("Helvetica-Bold")
+          .text(`Order: ${item.orderRef ?? "—"}`, MARGIN + 6, y + 5, { width: W - 12, lineBreak: false });
+        doc.rect(MARGIN, y + SECTION_H - 1, W, 1).fill(BORDER);
+        y += SECTION_H;
+        rowAlt = false;
+      }
+
       if (y + ROW_H > PAGE_H - 120) {
         doc.addPage();
         y = MARGIN;
@@ -2320,6 +2353,59 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       y += 44;
     }
 
+    // ── To Follow section (items not yet dispatched — shown for reference, not in totals) ──
+    if (data.toFollowItems && data.toFollowItems.length > 0) {
+      y += 12;
+      if (y + 60 > PAGE_H - 80) { doc.addPage(); y = MARGIN; }
+
+      const TF_HDR_H = 24;
+      doc.rect(MARGIN, y, W, TF_HDR_H).fill("#f59e0b");
+      doc.fillColor("white").fontSize(9).font("Helvetica-Bold")
+        .text("ITEMS TO FOLLOW", MARGIN + 8, y + 7, { width: W / 2, lineBreak: false });
+      doc.fillColor("white").fontSize(8).font("Helvetica")
+        .text("Outstanding items — not included in the above total. Will be invoiced upon dispatch.", MARGIN + 8, y + 8, { width: W - 16, align: "right", lineBreak: false });
+      y += TF_HDR_H;
+
+      // Column header for to-follow
+      const TF_COL_DESC = Math.floor(W * 0.42);
+      const TF_COL_CS   = Math.floor(W * 0.18);
+      const TF_COL_QTY  = Math.floor(W * 0.08);
+      const TF_COL_REF  = Math.floor(W * 0.18);
+      const TF_COL_DUE  = W - TF_COL_DESC - TF_COL_CS - TF_COL_QTY - TF_COL_REF;
+
+      doc.rect(MARGIN, y, W, 18).fill("#fffbeb");
+      doc.fillColor("#92400e").fontSize(7.5).font("Helvetica-Bold");
+      doc.text("Item",           MARGIN + 6, y + 5, { width: TF_COL_DESC - 6, lineBreak: false });
+      doc.text("Colour / Size",  MARGIN + 6 + TF_COL_DESC, y + 5, { width: TF_COL_CS, lineBreak: false });
+      doc.text("Qty",            MARGIN + 6 + TF_COL_DESC + TF_COL_CS, y + 5, { width: TF_COL_QTY, align: "right", lineBreak: false });
+      doc.text("Order Ref",      MARGIN + 6 + TF_COL_DESC + TF_COL_CS + TF_COL_QTY, y + 5, { width: TF_COL_REF, lineBreak: false });
+      doc.text("Est. Due",       MARGIN + 6 + TF_COL_DESC + TF_COL_CS + TF_COL_QTY + TF_COL_REF, y + 5, { width: TF_COL_DUE - 6, lineBreak: false });
+      y += 18;
+
+      let tfAlt = false;
+      const fmtTfDate = (d: string | null | undefined) =>
+        d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "TBC";
+
+      for (const tf of data.toFollowItems) {
+        if (y + ROW_H > PAGE_H - 80) { doc.addPage(); y = MARGIN; }
+        if (tfAlt) doc.rect(MARGIN, y, W, ROW_H).fill("#fffbeb");
+        const tfCs = [tf.colour, tf.size].filter(Boolean).join(" / ") || "—";
+        const tfDesc = tf.productName + (tf.finishName ? ` [${tf.finishName}]` : "");
+        doc.fillColor("#92400e").fontSize(8.5).font("Helvetica")
+          .text(tfDesc, MARGIN + 6, y + 6, { width: TF_COL_DESC - 6, lineBreak: false, ellipsis: true });
+        doc.text(tfCs, MARGIN + 6 + TF_COL_DESC, y + 6, { width: TF_COL_CS, lineBreak: false, ellipsis: true });
+        doc.font("Helvetica-Bold")
+          .text(String(tf.quantity), MARGIN + 6 + TF_COL_DESC + TF_COL_CS, y + 6, { width: TF_COL_QTY, align: "right", lineBreak: false });
+        doc.font("Helvetica")
+          .text(tf.orderRef ?? "—", MARGIN + 6 + TF_COL_DESC + TF_COL_CS + TF_COL_QTY, y + 6, { width: TF_COL_REF, lineBreak: false });
+        doc.text(fmtTfDate(tf.estimatedDueDate), MARGIN + 6 + TF_COL_DESC + TF_COL_CS + TF_COL_QTY + TF_COL_REF, y + 6, { width: TF_COL_DUE - 6, lineBreak: false });
+        doc.rect(MARGIN, y + ROW_H - 1, W, 1).fill("#fde68a");
+        y += ROW_H;
+        tfAlt = !tfAlt;
+      }
+      y += 8;
+    }
+
     // ── Footer ────────────────────────────────────────────────────────────────
     doc.rect(0, PAGE_H - 36, PAGE_W, 36).fill(DARK);
     // Zero the bottom margin so PDFKit doesn't auto-insert a new page for text
@@ -2400,6 +2486,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     notes: order.notes,
     paidAt: order.paidAt,
     stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+    poNumber: order.poNumber,
     items: mappedItems,
   });
 
@@ -2415,6 +2502,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     trackingNumber: order.trackingNumber,
     paidAt: order.paidAt,
     stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+    poNumber: order.poNumber,
     items: items.map((i) => ({
       productName: i.productName,
       colour: i.colour,
