@@ -111,7 +111,7 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
   );
 }
 
-const EMPTY_ITEM = { productId: null as number | null, productName: "", productUrl: "", colour: "", size: "", finishName: "", quantity: 1, unitPrice: 0 };
+const EMPTY_ITEM = { productId: null as number | null, productName: "", productUrl: "", colour: "", size: "", finishName: "", quantity: 1, unitPrice: 0, notes: "" };
 const EMPTY_FINISH = { finishName: "", unitPrice: 0 };
 
 export default function QuoteDetail() {
@@ -215,6 +215,7 @@ export default function QuoteDetail() {
           finishName: newItem.finishName || null,
           quantity: newItem.quantity,
           unitPrice: newItem.unitPrice,
+          notes: newItem.notes || null,
         }),
       });
       if (addFinishLine && finishLine.finishName.trim()) {
@@ -562,6 +563,7 @@ export default function QuoteDetail() {
                                         productName: p.sku ? `${p.sku} ${p.name}` : p.name,
                                         productUrl: (p as any).permalink ?? "",
                                         unitPrice: p.unitPrice != null ? Number(p.unitPrice) : prev.unitPrice,
+                                        notes: (p as any).description ?? "",
                                       }));
                                       setProductSearchTerm("");
                                       setProductOpen(false);
@@ -813,7 +815,7 @@ function ItemRow({
   showColour: boolean;
   showSize: boolean;
   onDelete: () => void;
-  onSave: (data: { productName?: string; colour?: string; size?: string; finishName?: string; quantity?: number; unitPrice?: number }) => void;
+  onSave: (data: { productName?: string; colour?: string | null; size?: string | null; finishName?: string | null; quantity?: number; unitPrice?: number; notes?: string | null }) => void;
 }) {
   const [productName, setProductName] = useState(item.productName);
   const [colour, setColour] = useState(item.colour ?? "");
@@ -821,37 +823,50 @@ function ItemRow({
   const [finishName, setFinishName] = useState(item.finishName ?? "");
   const [quantity, setQuantity] = useState(item.quantity);
   const [unitPrice, setUnitPrice] = useState(parseFloat(item.unitPrice));
+  const [notes, setNotes] = useState(item.notes ?? "");
 
   const save = () => {
-    onSave({ productName, colour: colour || null, size: size || null, finishName: finishName || null, quantity, unitPrice });
+    onSave({ productName, colour: colour || null, size: size || null, finishName: finishName || null, quantity, unitPrice, notes: notes || null });
   };
 
   return (
     <TableRow>
       <TableCell>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-start gap-1.5">
           {item.productSku && !item.productName.startsWith(item.productSku) && (
-            <span className="shrink-0 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded mt-1">
               {item.productSku}
             </span>
           )}
-          <Input
-            value={productName}
-            onChange={(e) => setProductName(e.target.value)}
-            onBlur={save}
-            className="h-8 text-sm border-transparent hover:border-input focus:border-input"
-          />
-          {item.productUrl && (
-            <a
-              href={item.productUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
-              title="View on website"
-            >
-              <LinkIcon className="w-3.5 h-3.5" />
-            </a>
-          )}
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <div className="flex items-center gap-1">
+              <Input
+                value={productName}
+                onChange={(e) => setProductName(e.target.value)}
+                onBlur={save}
+                className="h-8 text-sm border-transparent hover:border-input focus:border-input"
+              />
+              {item.productUrl && (
+                <a
+                  href={item.productUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+                  title="View on website"
+                >
+                  <LinkIcon className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              onBlur={save}
+              placeholder="Add description or notes…"
+              rows={notes ? Math.min(3, notes.split("\n").length + (notes.length > 80 ? 1 : 0)) : 1}
+              className="w-full text-xs text-muted-foreground bg-transparent border border-transparent hover:border-input focus:border-input focus:outline-none rounded px-2 py-1 resize-none leading-relaxed placeholder:text-muted-foreground/40"
+            />
+          </div>
         </div>
       </TableCell>
       {showColour && (
