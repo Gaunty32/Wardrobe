@@ -23,7 +23,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench } from "lucide-react";
@@ -205,7 +204,7 @@ export default function Products() {
       description: "", unitPrice: 0, stockQuantity: 0,
       supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
       customerId: "none", supplierCurrency: "GBP",
-      isService: false,
+      isService: websiteFilter === "service",
     });
     setIsCreateOpen(true);
   };
@@ -570,25 +569,6 @@ export default function Products() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
-            {/* ── Product Type ── */}
-            <div className="grid gap-2">
-              <Label>Product Type</Label>
-              <RadioGroup
-                value={formData.isService ? "service" : "physical"}
-                onValueChange={(v) => setFormData({ ...formData, isService: v === "service" })}
-                className="flex gap-6"
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="physical" id="type-physical" />
-                  <Label htmlFor="type-physical" className="font-normal cursor-pointer">Physical Product</Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="service" id="type-service" />
-                  <Label htmlFor="type-service" className="font-normal cursor-pointer">Service</Label>
-                </div>
-              </RadioGroup>
-            </div>
-
             {/* ── Product Name ── */}
             <div className="grid gap-2">
               <Label htmlFor="name">Product Name *</Label>
