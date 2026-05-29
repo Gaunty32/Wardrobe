@@ -107,39 +107,94 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
-  // If any contact field is missing but we have a High Level contact ID, fetch fresh from HL
-  const needsHlFetch = quote.customer_id && quote.high_level_contact_id &&
-    (!quote.contact_first_name || !quote.contact_last_name || !quote.customer_phone || !quote.customer_email);
+  // Fetch contact details from High Level if any field is missing.
+  // Strategy A: quote is linked to a customer that has a HL contact ID → fetch by ID.
+  // Strategy B: no HL contact ID (or quote is unlinked) → search HL by company name.
+  const missingContactFields =
+    !quote.contact_first_name || !quote.contact_last_name || !quote.customer_phone || !quote.customer_email;
 
-  if (needsHlFetch) {
+  const canFetchByHlId  = quote.high_level_contact_id && missingContactFields;
+  const canSearchByName = !quote.high_level_contact_id && missingContactFields && quote.customer_name;
+
+  if (canFetchByHlId || canSearchByName) {
     try {
       const settingsRows = await db.execute(sql`
-        SELECT key, value FROM settings WHERE key = 'high_level_api_key'
+        SELECT key, value FROM settings
+        WHERE key IN ('high_level_api_key', 'high_level_location_id')
       `);
-      const apiKey = (settingsRows.rows[0] as any)?.value as string | undefined;
+      const settingsMap = Object.fromEntries(
+        (settingsRows.rows as any[]).map((r: any) => [r.key, r.value])
+      );
+      const apiKey: string | undefined = settingsMap["high_level_api_key"];
+      const locationId: string | undefined = settingsMap["high_level_location_id"];
       if (apiKey) {
-        const hlRes = await fetch(
-          `https://services.leadconnectorhq.com/contacts/${quote.high_level_contact_id}`,
-          { headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" } }
-        );
-        if (hlRes.ok) {
-          const hlData = await hlRes.json() as any;
-          const c = hlData?.contact;
-          if (c) {
-            quote.contact_first_name = c.firstName ?? null;
-            quote.contact_last_name  = c.lastName  ?? null;
-            quote.customer_phone     = c.phone      ?? null;
-            quote.customer_email     = c.email      ?? null;
-            // Persist back so future loads are instant
+        let hlContact: any = null;
+        let foundHlContactId: string | null = null;
+
+        if (canFetchByHlId) {
+          // Strategy A: direct fetch by HL contact ID
+          const hlRes = await fetch(
+            `https://services.leadconnectorhq.com/contacts/${quote.high_level_contact_id}`,
+            { headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" } }
+          );
+          if (hlRes.ok) {
+            const hlData = await hlRes.json() as any;
+            hlContact = hlData?.contact ?? null;
+            foundHlContactId = hlContact?.id ?? null;
+          }
+        } else if (canSearchByName && locationId) {
+          // Strategy B: search HL by company/contact name using the same endpoint as enquiries
+          // First try the duplicate-search endpoint (faster, more precise)
+          const url1 = `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&name=${encodeURIComponent(quote.customer_name)}`;
+          const hlRes1 = await fetch(url1, {
+            headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" },
+          });
+          if (hlRes1.ok) {
+            const data1 = await hlRes1.json() as any;
+            if (data1?.contact) {
+              hlContact = data1.contact;
+              foundHlContactId = hlContact?.id ?? null;
+            }
+          }
+          // Fallback: general contacts query
+          if (!hlContact) {
+            const url2 = `https://services.leadconnectorhq.com/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(quote.customer_name)}&limit=5`;
+            const hlRes2 = await fetch(url2, {
+              headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" },
+            });
+            if (hlRes2.ok) {
+              const data2 = await hlRes2.json() as any;
+              const contacts: any[] = data2?.contacts ?? [];
+              // Pick the best match: prefer exact company name match, else first result
+              const nameLower = quote.customer_name.toLowerCase().trim();
+              hlContact =
+                contacts.find((c: any) => (c.companyName ?? "").toLowerCase().trim() === nameLower) ??
+                contacts[0] ??
+                null;
+              foundHlContactId = hlContact?.id ?? null;
+            }
+          }
+        }
+
+        if (hlContact) {
+          quote.contact_first_name = hlContact.firstName ?? null;
+          quote.contact_last_name  = hlContact.lastName  ?? null;
+          quote.customer_phone     = hlContact.phone      ?? null;
+          quote.customer_email     = hlContact.email      ?? null;
+
+          // Persist back to the linked customer record (if any), including the HL contact ID
+          if (quote.customer_id) {
             await db.execute(sql`
               UPDATE customers SET
-                contact_first_name = ${c.firstName ?? null},
-                contact_last_name  = ${c.lastName  ?? null},
-                phone              = ${c.phone      ?? null},
-                email              = COALESCE(email, ${c.email ?? null})
+                contact_first_name    = ${hlContact.firstName ?? null},
+                contact_last_name     = ${hlContact.lastName  ?? null},
+                phone                 = ${hlContact.phone      ?? null},
+                email                 = COALESCE(email, ${hlContact.email ?? null}),
+                high_level_contact_id = COALESCE(high_level_contact_id, ${foundHlContactId})
               WHERE id = ${quote.customer_id}
             `);
           }
+          console.log(`[quotes/:id] HL contact resolved for quote ${id} (${quote.customer_name}):`, hlContact.firstName, hlContact.lastName);
         }
       }
     } catch (err: any) {
