@@ -1,6 +1,6 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard, Bell, CheckCheck, Truck, ThumbsUp, AlertCircle, Info, Boxes, History, ArrowLeftRight } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useState, useRef, useEffect } from "react";
@@ -243,11 +243,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         {/* Desktop nav */}
         <nav className="hidden sm:flex items-center gap-1">
           {nav.map(({ label, icon: Icon, href, basketCount: bc }) => (
-            <button
+            <Link
               key={href}
-              onClick={() => setLocation(href)}
+              href={href}
               className={cn(
-                "relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+                "relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors no-underline",
                 location === href
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -260,7 +260,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                   {bc > 99 ? "99+" : bc}
                 </span>
               )}
-            </button>
+            </Link>
           ))}
         </nav>
 
@@ -292,11 +292,12 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
       {mobileOpen && (
         <div className="sm:hidden border-b bg-card px-4 py-3 flex flex-col gap-1">
           {nav.map(({ label, icon: Icon, href, basketCount: bc }) => (
-            <button
+            <Link
               key={href}
-              onClick={() => { setLocation(href); setMobileOpen(false); }}
+              href={href}
+              onClick={() => setMobileOpen(false)}
               className={cn(
-                "relative flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors text-left",
+                "relative flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors no-underline",
                 location === href
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
@@ -308,7 +309,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
                   {bc > 99 ? "99+" : bc}
                 </span>
               )}
-            </button>
+            </Link>
           ))}
           <div className="border-t mt-2 pt-2 flex flex-col gap-1">
             <span className="text-xs text-muted-foreground px-1">{user?.user?.email}</span>
