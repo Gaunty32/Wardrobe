@@ -17,7 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
   Truck, Clock, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
-  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap, Search, RefreshCw,
+  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap, Search, RefreshCw, Layers,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -192,10 +192,14 @@ function OrderRow({
   order,
   showSendEmail,
   showPostXero,
+  selected,
+  onToggle,
 }: {
   order: InvoiceOrder;
   showSendEmail?: boolean;
   showPostXero?: boolean;
+  selected?: boolean;
+  onToggle?: (id: number) => void;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -309,7 +313,17 @@ function OrderRow({
 
   return (
     <>
-      <TableRow>
+      <TableRow className={selected ? "bg-blue-50/60" : undefined}>
+        {onToggle && (
+          <TableCell className="w-8 pl-3 pr-0" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={() => onToggle(order.id)}
+              className="h-4 w-4 rounded border-gray-300 text-primary accent-primary cursor-pointer"
+            />
+          </TableCell>
+        )}
         <TableCell>
           <div className="flex flex-col gap-0.5">
             <Link href={`/orders/${order.id}`} className="font-medium text-primary hover:underline">
@@ -560,21 +574,131 @@ function OrderRow({
   );
 }
 
-const COLS = (
-  <TableRow className="bg-muted/40">
-    <TableHead className="text-xs">Order</TableHead>
-    <TableHead className="text-xs">Customer</TableHead>
-    <TableHead className="text-xs text-right">Amount</TableHead>
-    <TableHead className="text-xs">Dispatched</TableHead>
-    <TableHead className="text-xs">DPD Tracking</TableHead>
-    <TableHead className="text-xs">Email</TableHead>
-    <TableHead className="text-xs">Xero</TableHead>
-    <TableHead className="text-xs">Actions</TableHead>
-  </TableRow>
-);
+function makeCols(selectable: boolean) {
+  return (
+    <TableRow className="bg-muted/40">
+      {selectable && <TableHead className="w-8 pl-3 pr-0"></TableHead>}
+      <TableHead className="text-xs">Order</TableHead>
+      <TableHead className="text-xs">Customer</TableHead>
+      <TableHead className="text-xs text-right">Amount</TableHead>
+      <TableHead className="text-xs">Dispatched</TableHead>
+      <TableHead className="text-xs">DPD Tracking</TableHead>
+      <TableHead className="text-xs">Email</TableHead>
+      <TableHead className="text-xs">Xero</TableHead>
+      <TableHead className="text-xs">Actions</TableHead>
+    </TableRow>
+  );
+}
+const COLS = makeCols(false);
+
+function CombineBar({
+  orders,
+  onClear,
+  onSent,
+}: {
+  orders: InvoiceOrder[];
+  onClear: () => void;
+  onSent: () => void;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+
+  const totalEx = orders.reduce((s, o) => s + parseFloat(o.totalAmount), 0);
+  const customerName = orders[0]?.customerName ?? "customer";
+
+  const send = useMutation({
+    mutationFn: () =>
+      apiFetch<{ ok: boolean; sentTo: string; invoiceRef: string }>("/invoices/consolidated/send-email", {
+        method: "POST",
+        body: JSON.stringify({ orderIds: orders.map((o) => o.id) }),
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-by-customer"] });
+      setOpen(false);
+      onClear();
+      onSent();
+      toast({
+        title: orders.length === 1 ? "Invoice sent" : "Combined invoice sent",
+        description: `Invoice ${res.invoiceRef} emailed to ${res.sentTo}.`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Failed to send", description: parseApiError(e), variant: "destructive" }),
+  });
+
+  return (
+    <>
+      <div className="flex items-center gap-3 rounded-lg bg-blue-50 border border-blue-200 px-4 py-2.5">
+        <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+        <div className="flex-1 text-sm text-blue-800">
+          <span className="font-semibold">{orders.length} order{orders.length !== 1 ? "s" : ""}</span>
+          {" "}selected for <span className="font-semibold">{customerName}</span>
+          <span className="text-blue-600 ml-2 font-mono text-xs">
+            {formatCurrency(totalEx)} ex VAT · {formatCurrency(totalEx * 1.2)} inc VAT
+          </span>
+        </div>
+        <Button
+          size="sm"
+          className="h-8 gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+          onClick={() => setOpen(true)}
+        >
+          <Mail className="w-3 h-3" />
+          {orders.length === 1 ? "Send Invoice" : "Send Combined Invoice"}
+        </Button>
+        <button onClick={onClear} className="text-blue-500 hover:text-blue-800 ml-1">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {orders.length === 1 ? "Send Invoice" : `Send Combined Invoice — ${orders.length} orders`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              {orders.length === 1
+                ? "This will email the invoice to the customer."
+                : `This will generate a single invoice PDF covering all ${orders.length} orders and email it to the customer.`}
+            </p>
+            <div className="rounded-lg bg-muted/50 border p-3 space-y-1.5">
+              <div><span className="text-muted-foreground">Customer:</span> <strong>{customerName}</strong></div>
+              <div><span className="text-muted-foreground">Orders:</span> <strong>{orders.map((o) => o.orderNumber).join(", ")}</strong></div>
+              {orders.some((o) => o.poNumber) && (
+                <div><span className="text-muted-foreground">PO refs:</span> <strong className="font-mono">{[...new Set(orders.map((o) => o.poNumber).filter(Boolean))].join(", ")}</strong></div>
+              )}
+              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(totalEx * 1.2)} inc. VAT</strong></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => send.mutate()} disabled={send.isPending} className="gap-1.5">
+              {send.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+              {orders.length === 1 ? "Send Invoice" : "Send Combined Invoice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
 export default function Invoices() {
   const { toast } = useToast();
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
 
   const { data, isLoading, refetch: refetchInvoices, isFetching } = useQuery<InvoicesData>({
     queryKey: ["invoices"],
@@ -615,6 +739,17 @@ export default function Invoices() {
         (o.xeroInvoiceId?.toLowerCase().includes(searchTrimmed))
       )
     : null;
+
+  // Selection — orders the user has ticked in To Send or search results
+  const selectablePool = searchResults ?? toSend;
+  const selectedOrders = selectablePool.filter((o) => selectedIds.has(o.id));
+  const selectedCustomerKey = selectedOrders.length > 0
+    ? (selectedOrders[0].customerId ? String(selectedOrders[0].customerId) : selectedOrders[0].customerName ?? "")
+    : null;
+  const allSameCustomer = selectedOrders.length > 0 && selectedOrders.every(
+    (o) => (o.customerId ? String(o.customerId) : o.customerName ?? "") === selectedCustomerKey
+  );
+  const showCombineBar = selectedOrders.length >= 1 && allSameCustomer;
 
   return (
     <Layout>
@@ -705,16 +840,23 @@ export default function Invoices() {
 
         {/* Search results — shown only when a query is active */}
         {searchResults !== null && (
-          <div>
-            <p className="text-sm text-muted-foreground mb-3">
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
               {searchResults.length === 0
                 ? "No invoices matched your search."
-                : `${searchResults.length} result${searchResults.length !== 1 ? "s" : ""} found`}
+                : `${searchResults.length} result${searchResults.length !== 1 ? "s" : ""} found — tick orders to combine into one invoice`}
             </p>
+            {showCombineBar && (
+              <CombineBar
+                orders={selectedOrders}
+                onClear={clearSelection}
+                onSent={() => { refetchInvoices(); refetchCustomer(); }}
+              />
+            )}
             {searchResults.length > 0 && (
               <div className="rounded-xl border border-border overflow-hidden">
                 <Table>
-                  <TableHeader>{COLS}</TableHeader>
+                  <TableHeader>{makeCols(true)}</TableHeader>
                   <TableBody>
                     {searchResults.map((order) => (
                       <OrderRow
@@ -722,6 +864,8 @@ export default function Invoices() {
                         order={order}
                         showSendEmail={!order.invoiceEmailSentAt}
                         showPostXero={!!order.invoiceEmailSentAt && !order.xeroInvoiceId}
+                        selected={selectedIds.has(order.id)}
+                        onToggle={toggleSelect}
                       />
                     ))}
                   </TableBody>
@@ -777,15 +921,35 @@ export default function Invoices() {
                 <p className="text-sm mt-1">Dispatched orders will appear here waiting to be invoiced.</p>
               </div>
             ) : (
-              <div className="rounded-xl border border-border overflow-hidden">
-                <Table>
-                  <TableHeader>{COLS}</TableHeader>
-                  <TableBody>
-                    {toSend.map((order) => (
-                      <OrderRow key={order.id} order={order} showSendEmail />
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="space-y-3">
+                {showCombineBar && searchResults === null && (
+                  <CombineBar
+                    orders={selectedOrders}
+                    onClear={clearSelection}
+                    onSent={() => { refetchInvoices(); refetchCustomer(); }}
+                  />
+                )}
+                {!showCombineBar && toSend.length > 1 && (
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5" /> Tick multiple orders from the same customer to send a combined invoice
+                  </p>
+                )}
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <Table>
+                    <TableHeader>{makeCols(true)}</TableHeader>
+                    <TableBody>
+                      {toSend.map((order) => (
+                        <OrderRow
+                          key={order.id}
+                          order={order}
+                          showSendEmail
+                          selected={selectedIds.has(order.id)}
+                          onToggle={toggleSelect}
+                        />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             )}
           </TabsContent>
