@@ -236,7 +236,13 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
-  // Fetch items joined with products for image_url, description, sku
+  // Fetch items joined with products for image_url, description, sku.
+  // LATERAL JOIN with LIMIT 1 ensures exactly one product per item row and
+  // handles four naming conventions in priority order:
+  //   0 – direct product_id match
+  //   1 – quote item name starts with product SKU  ("UC122 Ladies Classic Polo")
+  //   2 – product name = SKU + " " + quote item name ("UC122" + " " + "Ladies Classic Polo")
+  //   3 – exact product name match
   const itemRows = await db.execute(sql`
     SELECT
       qi.id, qi.product_name, qi.product_url, qi.colour, qi.size, qi.finish_name,
@@ -246,8 +252,27 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
       p.image_url   AS product_image_url,
       p.permalink   AS product_permalink
     FROM quote_items qi
-    LEFT JOIN products p ON p.id = qi.product_id
-      OR (qi.product_id IS NULL AND p.sku IS NOT NULL AND qi.product_name LIKE (p.sku || ' %'))
+    LEFT JOIN LATERAL (
+      SELECT p2.sku, p2.description, p2.image_url, p2.permalink,
+             CASE
+               WHEN p2.id = qi.product_id                                                              THEN 0
+               WHEN qi.product_id IS NULL AND p2.sku IS NOT NULL
+                    AND qi.product_name ILIKE (p2.sku || ' %')                                         THEN 1
+               WHEN qi.product_id IS NULL AND p2.sku IS NOT NULL
+                    AND LOWER(p2.name) = LOWER(p2.sku || ' ' || qi.product_name)                      THEN 2
+               WHEN qi.product_id IS NULL
+                    AND LOWER(p2.name) = LOWER(qi.product_name)                                        THEN 3
+               ELSE 99
+             END AS match_rank
+      FROM products p2
+      WHERE p2.id = qi.product_id
+         OR (qi.product_id IS NULL AND p2.sku IS NOT NULL AND qi.product_name ILIKE (p2.sku || ' %'))
+         OR (qi.product_id IS NULL AND p2.sku IS NOT NULL
+             AND LOWER(p2.name) = LOWER(p2.sku || ' ' || qi.product_name))
+         OR (qi.product_id IS NULL AND LOWER(p2.name) = LOWER(qi.product_name))
+      ORDER BY match_rank ASC
+      LIMIT 1
+    ) p ON true
     WHERE qi.quote_id = ${id}
     ORDER BY qi.sort_order, qi.id
   `);
@@ -305,13 +330,32 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
-  // Fetch items joined with products
+  // Fetch items joined with products (same LATERAL match strategy as PDF route)
   const itemRows = await db.execute(sql`
     SELECT qi.product_name, qi.colour, qi.size, qi.finish_name, qi.quantity, qi.unit_price, qi.vat_rate,
            p.sku AS product_sku
     FROM quote_items qi
-    LEFT JOIN products p ON p.id = qi.product_id
-      OR (qi.product_id IS NULL AND p.sku IS NOT NULL AND qi.product_name LIKE (p.sku || ' %'))
+    LEFT JOIN LATERAL (
+      SELECT p2.sku,
+             CASE
+               WHEN p2.id = qi.product_id                                                              THEN 0
+               WHEN qi.product_id IS NULL AND p2.sku IS NOT NULL
+                    AND qi.product_name ILIKE (p2.sku || ' %')                                         THEN 1
+               WHEN qi.product_id IS NULL AND p2.sku IS NOT NULL
+                    AND LOWER(p2.name) = LOWER(p2.sku || ' ' || qi.product_name)                      THEN 2
+               WHEN qi.product_id IS NULL
+                    AND LOWER(p2.name) = LOWER(qi.product_name)                                        THEN 3
+               ELSE 99
+             END AS match_rank
+      FROM products p2
+      WHERE p2.id = qi.product_id
+         OR (qi.product_id IS NULL AND p2.sku IS NOT NULL AND qi.product_name ILIKE (p2.sku || ' %'))
+         OR (qi.product_id IS NULL AND p2.sku IS NOT NULL
+             AND LOWER(p2.name) = LOWER(p2.sku || ' ' || qi.product_name))
+         OR (qi.product_id IS NULL AND LOWER(p2.name) = LOWER(qi.product_name))
+      ORDER BY match_rank ASC
+      LIMIT 1
+    ) p ON true
     WHERE qi.quote_id = ${id}
     ORDER BY qi.sort_order, qi.id
   `);
