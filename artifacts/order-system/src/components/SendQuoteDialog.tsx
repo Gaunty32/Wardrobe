@@ -115,7 +115,7 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl w-full">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Mail className="w-5 h-5 text-blue-600" />
@@ -181,7 +181,7 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
               {emailSubject && (
                 <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
                   <p className="font-medium text-foreground mb-1 text-sm">{emailSubject}</p>
-                  <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-28 overflow-y-auto">
+                  <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-28 overflow-y-auto overflow-x-hidden">
                     {emailText.replace(/^[^\n]*\n=+\n\n?/, "")}
                   </pre>
                 </div>
@@ -190,12 +190,12 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
           )}
         </div>
 
-        <DialogFooter className="flex flex-row items-center justify-between gap-2">
+        <div className="flex flex-row flex-wrap items-center justify-between gap-2 pt-2 border-t">
           <Button variant="outline" onClick={() => handleClose(false)}>
             {sent ? "Close" : "Cancel"}
           </Button>
           {!sent && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center flex-wrap gap-2">
               <Button variant="outline" onClick={handlePreviewPdf} disabled={previewingPdf} className="gap-1.5">
                 {previewingPdf
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
@@ -219,7 +219,7 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
               )}
             </div>
           )}
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
