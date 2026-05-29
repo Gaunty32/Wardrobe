@@ -2708,11 +2708,12 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     .dl-addr-block{font-size:9pt;color:#000;font-weight:600;padding:0.06in 0.2in 0;line-height:1.4}
 
     @media print{
-      @page{size:4in 3in;margin:0}
+      @page{size:4in 3in;margin:0mm}
+      html,body{margin:0!important;padding:0!important}
       #toolbar{display:none}
       body{background:white}
-      #page{padding:0;gap:0}
-      .label{width:4in;height:3in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
+      #page{padding:0;gap:0;margin:0}
+      .label{width:100%;height:3in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
     }
   </style>
 </head>
@@ -2879,11 +2880,12 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
     .finish-sub{font-size:6pt;color:#000;font-style:italic}
     .company-name{font-size:8pt;font-weight:600;color:#000;text-align:center;margin-top:auto;padding-top:4px;border-top:0.5px solid #ccc;letter-spacing:.03em}
     @media print{
-      @page{size:4in 3in;margin:0}
+      @page{size:4in 3in;margin:0mm}
+      html,body{margin:0!important;padding:0!important}
       #toolbar{display:none}
       body{background:white}
-      #page{padding:0;gap:0}
-      .label{width:4in;height:3in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
+      #page{padding:0;gap:0;margin:0}
+      .label{width:100%;height:3in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
     }
   </style>
 </head>
