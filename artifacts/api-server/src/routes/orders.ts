@@ -504,6 +504,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           supplierId: productsTable.supplierId,
           supplierName: suppliersTable.name,
           supplierEmail: suppliersTable.email,
+          isService: productsTable.isService,
         })
         .from(productsTable)
         .leftJoin(suppliersTable, eq(productsTable.supplierId, suppliersTable.id))
@@ -535,6 +536,13 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
       for (const item of items) {
         if (!item.productId) continue;
         const sup = supplierMap.get(item.productId);
+
+        // Service products need no purchasing — treat as fully allocated
+        if (sup?.isService) {
+          allocatedLines++;
+          allocatedItemIds.push(item.id);
+          continue;
+        }
 
         // Look up stock for this exact colour+size variant first; fall back to plain product key
         const k = vKey(item.productId, item.colour ?? null, item.size ?? null);
