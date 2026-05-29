@@ -23,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench } from "lucide-react";
@@ -78,6 +79,7 @@ export default function Products() {
     name: "", sku: "", category: "", description: "", unitPrice: 0, stockQuantity: 0,
     supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
     customerId: "none" as string, supplierCurrency: "GBP",
+    isService: false,
   });
   const imageInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile, isUploading: isImageUploading } = useUpload({
@@ -203,6 +205,7 @@ export default function Products() {
       description: "", unitPrice: 0, stockQuantity: 0,
       supplierId: "none", supplierCode: "", supplierPrice: "", imageUrl: "",
       customerId: "none", supplierCurrency: "GBP",
+      isService: false,
     });
     setIsCreateOpen(true);
   };
@@ -221,6 +224,7 @@ export default function Products() {
       imageUrl: (product as any).imageUrl || "",
       customerId: (product as any).customerId ? String((product as any).customerId) : "none",
       supplierCurrency: (product as any).supplierCurrency || "GBP",
+      isService: (product as any).isService ?? false,
     });
     setEditingProduct(product);
   };
@@ -230,13 +234,17 @@ export default function Products() {
       toast({ title: "Validation Error", description: "Name and valid price are required", variant: "destructive" });
       return;
     }
-    const customerId = formData.customerId !== "none" ? Number(formData.customerId) : null;
+    const isService = formData.isService;
+    const customerId = !isService && formData.customerId !== "none" ? Number(formData.customerId) : null;
     const payload = {
       ...formData,
-      category: formData.category.trim() || null,
-      supplierId: formData.supplierId !== "none" ? Number(formData.supplierId) : null,
-      supplierCode: formData.supplierCode || null,
-      supplierPrice: formData.supplierPrice !== "" ? parseFloat(formData.supplierPrice) : null,
+      isService,
+      category: isService ? null : (formData.category.trim() || null),
+      sku: isService ? null : (formData.sku || null),
+      stockQuantity: isService ? 0 : formData.stockQuantity,
+      supplierId: isService ? null : (formData.supplierId !== "none" ? Number(formData.supplierId) : null),
+      supplierCode: isService ? null : (formData.supplierCode || null),
+      supplierPrice: isService ? null : (formData.supplierPrice !== "" ? parseFloat(formData.supplierPrice) : null),
       imageUrl: formData.imageUrl || null,
       customerId,
       isBespoke: customerId != null,
@@ -562,56 +570,91 @@ export default function Products() {
             </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            {/* ── Product Type ── */}
+            <div className="grid gap-2">
+              <Label>Product Type</Label>
+              <RadioGroup
+                value={formData.isService ? "service" : "physical"}
+                onValueChange={(v) => setFormData({ ...formData, isService: v === "service" })}
+                className="flex gap-6"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="physical" id="type-physical" />
+                  <Label htmlFor="type-physical" className="font-normal cursor-pointer">Physical Product</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="service" id="type-service" />
+                  <Label htmlFor="type-service" className="font-normal cursor-pointer">Service</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {/* ── Product Name ── */}
             <div className="grid gap-2">
               <Label htmlFor="name">Product Name *</Label>
-              <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Premium Polo Shirt" />
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder={formData.isService ? "e.g. Logo Conversion to Stitches" : "e.g. Premium Polo Shirt"}
+              />
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="sku">SKU</Label>
-                <div className="flex gap-2">
-                  <Input id="sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g. FCC5129" className="flex-1" />
-                  {formData.customerId === "none" && (
-                    <Button type="button" variant="outline" size="sm" onClick={autoFillFccSku} className="gap-1.5 text-xs whitespace-nowrap text-blue-700 border-blue-200 hover:bg-blue-50">
-                      <Wand2 className="w-3.5 h-3.5" /> Suggest FCC
-                    </Button>
-                  )}
-                  {formData.customerId !== "none" && (
-                    <Button type="button" variant="outline" size="sm" onClick={autoFillBspSku} className="gap-1.5 text-xs whitespace-nowrap text-purple-700 border-purple-200 hover:bg-purple-50">
-                      <Wand2 className="w-3.5 h-3.5" /> Auto BSP
-                    </Button>
-                  )}
+
+            {/* ── SKU + Category (physical only) ── */}
+            {!formData.isService && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="sku">SKU</Label>
+                  <div className="flex gap-2">
+                    <Input id="sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g. FCC5129" className="flex-1" />
+                    {formData.customerId === "none" && (
+                      <Button type="button" variant="outline" size="sm" onClick={autoFillFccSku} className="gap-1.5 text-xs whitespace-nowrap text-blue-700 border-blue-200 hover:bg-blue-50">
+                        <Wand2 className="w-3.5 h-3.5" /> Suggest FCC
+                      </Button>
+                    )}
+                    {formData.customerId !== "none" && (
+                      <Button type="button" variant="outline" size="sm" onClick={autoFillBspSku} className="gap-1.5 text-xs whitespace-nowrap text-purple-700 border-purple-200 hover:bg-purple-50">
+                        <Wand2 className="w-3.5 h-3.5" /> Auto BSP
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Input
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    placeholder="e.g. Polo Shirts"
+                    list="category-suggestions"
+                  />
+                  <datalist id="category-suggestions">
+                    {storedCategories.map((c) => (
+                      <option key={c.id} value={c.name} />
+                    ))}
+                    {internalOnlyCatNames.map((n) => (
+                      <option key={n} value={n} />
+                    ))}
+                  </datalist>
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="category">Category</Label>
-                <Input
-                  id="category"
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  placeholder="e.g. Polo Shirts"
-                  list="category-suggestions"
-                />
-                <datalist id="category-suggestions">
-                  {storedCategories.map((c) => (
-                    <option key={c.id} value={c.name} />
-                  ))}
-                  {internalOnlyCatNames.map((n) => (
-                    <option key={n} value={n} />
-                  ))}
-                </datalist>
-              </div>
-            </div>
+            )}
+
+            {/* ── Price + Stock ── */}
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="price">Unit Price (£) *</Label>
                 <Input id="price" type="number" min="0" step="0.01" value={formData.unitPrice || ""} onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })} />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="stock">Stock Quantity</Label>
-                <Input id="stock" type="number" value={formData.stockQuantity || ""} onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value, 10) || 0 })} />
-              </div>
+              {!formData.isService && (
+                <div className="grid gap-2">
+                  <Label htmlFor="stock">Stock Quantity</Label>
+                  <Input id="stock" type="number" value={formData.stockQuantity || ""} onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value, 10) || 0 })} />
+                </div>
+              )}
             </div>
+
+            {/* ── Description ── */}
             <div className="grid gap-2">
               <Label htmlFor="description">Description</Label>
               <Textarea id="description" className="resize-none" rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
@@ -619,7 +662,7 @@ export default function Products() {
 
             {/* ── Product image ── */}
             <div className="grid gap-2">
-              <Label>Product Image</Label>
+              <Label>Product Image <span className="text-muted-foreground font-normal">(optional)</span></Label>
               {formData.imageUrl ? (
                 <div className="flex items-start gap-3">
                   <UploadedImage
@@ -670,53 +713,59 @@ export default function Products() {
               />
             </div>
 
-            <div className="border-t border-border/40 pt-3 mt-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Bespoke Assignment</p>
-              <div className="grid gap-2">
-                <Label>Assign to Customer (Bespoke)</Label>
-                <Select value={formData.customerId} onValueChange={(v) => setFormData({ ...formData, customerId: v })}>
-                  <SelectTrigger><SelectValue placeholder="— Standard product (all customers) —" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— Standard product (all customers) —</SelectItem>
-                    {(customers as any[]).map((c: any) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {formData.customerId !== "none" && (
-                  <p className="text-xs text-purple-600">This product will be marked bespoke and only visible to this customer on their portal.</p>
-                )}
+            {/* ── Bespoke Assignment (physical only) ── */}
+            {!formData.isService && (
+              <div className="border-t border-border/40 pt-3 mt-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Bespoke Assignment</p>
+                <div className="grid gap-2">
+                  <Label>Assign to Customer (Bespoke)</Label>
+                  <Select value={formData.customerId} onValueChange={(v) => setFormData({ ...formData, customerId: v })}>
+                    <SelectTrigger><SelectValue placeholder="— Standard product (all customers) —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— Standard product (all customers) —</SelectItem>
+                      {(customers as any[]).map((c: any) => (
+                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {formData.customerId !== "none" && (
+                    <p className="text-xs text-purple-600">This product will be marked bespoke and only visible to this customer on their portal.</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="border-t border-border/40 pt-3 mt-1">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Supplier</p>
-              <div className="grid gap-2 mb-3">
-                <Label>Preferred Supplier</Label>
-                <Select value={formData.supplierId} onValueChange={(v) => {
-                  const sup = (suppliers as any[]).find((s: any) => String(s.id) === v);
-                  setFormData({ ...formData, supplierId: v, supplierCurrency: sup?.currency ?? "GBP" });
-                }}>
-                  <SelectTrigger><SelectValue placeholder="— None —" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— None —</SelectItem>
-                    {(suppliers as Supplier[]).map((s) => (
-                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Supplier Code</Label>
-                  <Input value={formData.supplierCode} onChange={(e) => setFormData({ ...formData, supplierCode: e.target.value })} placeholder="e.g. FCC2105" />
+            {/* ── Supplier (physical only) ── */}
+            {!formData.isService && (
+              <div className="border-t border-border/40 pt-3 mt-1">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Supplier</p>
+                <div className="grid gap-2 mb-3">
+                  <Label>Preferred Supplier</Label>
+                  <Select value={formData.supplierId} onValueChange={(v) => {
+                    const sup = (suppliers as any[]).find((s: any) => String(s.id) === v);
+                    setFormData({ ...formData, supplierId: v, supplierCurrency: sup?.currency ?? "GBP" });
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="— None —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None —</SelectItem>
+                      {(suppliers as Supplier[]).map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Supplier Price ({formData.supplierCurrency === "USD" ? "$" : formData.supplierCurrency === "EUR" ? "€" : "£"})</Label>
-                  <Input type="number" min="0" step="0.01" value={formData.supplierPrice} onChange={(e) => setFormData({ ...formData, supplierPrice: e.target.value })} placeholder="0.00" />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Supplier Code</Label>
+                    <Input value={formData.supplierCode} onChange={(e) => setFormData({ ...formData, supplierCode: e.target.value })} placeholder="e.g. FCC2105" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Supplier Price ({formData.supplierCurrency === "USD" ? "$" : formData.supplierCurrency === "EUR" ? "€" : "£"})</Label>
+                    <Input type="number" min="0" step="0.01" value={formData.supplierPrice} onChange={(e) => setFormData({ ...formData, supplierPrice: e.target.value })} placeholder="0.00" />
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setIsCreateOpen(false); setEditingProduct(null); }}>Cancel</Button>
