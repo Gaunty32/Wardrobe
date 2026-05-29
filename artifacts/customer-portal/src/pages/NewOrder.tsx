@@ -2634,7 +2634,7 @@ export default function NewOrder() {
   const saved = readSession();
   const savedHasItems = (saved?.basket?.length ?? 0) > 0;
   const [step, setStep] = useState<number>(savedHasItems ? (saved?.step ?? 0) : 0);
-  const [mode, setMode] = useState<"wardrobe" | "catalogue" | null>(savedHasItems ? (saved?.mode ?? null) : null);
+  const [mode, setMode] = useState<"wardrobe" | "catalogue" | "quote" | null>(savedHasItems ? (saved?.mode ?? null) : null);
   const [basket, setBasket] = useState<OrderItem[]>(saved?.basket ?? []);
   const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
   const [confirmedOrder, setConfirmedOrder] = useState<{
@@ -2689,7 +2689,7 @@ export default function NewOrder() {
     if (basket.length > 0 || step > 0) return; // local session takes priority
     if (!serverBasket.items?.length) return;
     setBasket(serverBasket.items);
-    const validMode = serverBasket.mode === "wardrobe" || serverBasket.mode === "catalogue" ? serverBasket.mode : null;
+    const validMode = (serverBasket.mode === "wardrobe" || serverBasket.mode === "catalogue" || serverBasket.mode === "quote") ? serverBasket.mode as "wardrobe" | "catalogue" | "quote" : null;
     if (validMode) {
       setMode(validMode);
       if (serverBasket.step > 0) setStep(serverBasket.step);
@@ -2701,7 +2701,7 @@ export default function NewOrder() {
     if (!quoteData?.items?.length || isPreview) return;
     if (basket.length > 0 || step > 0) return;
     setBasket(quoteData.items);
-    setMode("catalogue");
+    setMode("quote");
     setStep(1);
     toast({
       title: `Quote ${quoteData.quoteNumber} loaded`,
@@ -2822,7 +2822,9 @@ export default function NewOrder() {
     },
   });
 
-  const STEPS = mode === "catalogue"
+  const STEPS = mode === "quote"
+    ? ["Review Quote", "Done"]
+    : mode === "catalogue"
     ? ["Choose type", "Inspiration", "Done"]
     : ["Choose type", "Wardrobe", "Review", "Done"];
 
@@ -2906,6 +2908,16 @@ export default function NewOrder() {
           setWishlist={setWishlist}
           onSubmit={(d) => submitEnquiryMutation.mutate(d)}
           submitting={submitEnquiryMutation.isPending}
+        />
+      )}
+
+      {step === 1 && mode === "quote" && (
+        <ReviewStep
+          basket={basket}
+          setBasket={setBasket}
+          onSubmit={(d) => submitMutation.mutate(d)}
+          submitting={submitMutation.isPending}
+          portalRole={portalRole ?? "member"}
         />
       )}
 
