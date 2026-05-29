@@ -32,7 +32,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent } from "lucide-react";
+import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 import { Link } from "wouter";
@@ -337,6 +337,7 @@ export default function OrderDetail() {
 
   const { data: order, isLoading: isOrderLoading } = useGetOrder(orderId);
   const { data: products } = useListProducts();
+  const serviceProducts = products?.filter(p => (p as any).isService === true);
 
   const updateOrderMutation = useUpdateOrder();
   const addItemMutation = useAddOrderItem();
@@ -365,7 +366,8 @@ export default function OrderDetail() {
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
-  const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom">("wardrobe");
+  const [serviceProductSearchOpen, setServiceProductSearchOpen] = useState(false);
+  const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom" | "service">("wardrobe");
   const [item, setItem] = useState({ ...EMPTY_ITEM });
   const [sizeRows, setSizeRows] = useState<Array<{ size: string; qty: number }>>([{ size: "", qty: 1 }]);
   const [isAddingMulti, setIsAddingMulti] = useState(false);
@@ -854,6 +856,7 @@ export default function OrderDetail() {
     setWardrobeRecipient(null);
     setWardrobeItemSizes({});
     setWardrobeItemQtys({});
+    setServiceProductSearchOpen(false);
   };
 
   // Select a person (or stock) in the wardrobe tab — fetches last sizes and pre-fills
@@ -1090,7 +1093,12 @@ export default function OrderDetail() {
   };
 
   const handleAddItem = async () => {
-    if (!item.productId || !item.productName) return;
+    // Service tab: allow name-only (no catalog productId required)
+    if (dialogTab === "service") {
+      if (!item.productName.trim()) return;
+    } else {
+      if (!item.productId || !item.productName) return;
+    }
     const price = parseFloat(item.unitPrice);
     if (isNaN(price)) return;
 
@@ -2345,8 +2353,8 @@ export default function OrderDetail() {
               <DialogTitle className="font-display">Add Line Item</DialogTitle>
             </DialogHeader>
 
-            <Tabs value={dialogTab} onValueChange={(v) => { setDialogTab(v as "wardrobe" | "custom"); if (v === "custom") setItem({ ...EMPTY_ITEM }); }} className="flex flex-col flex-1 overflow-hidden">
-              <TabsList className="shrink-0 w-full grid grid-cols-2">
+            <Tabs value={dialogTab} onValueChange={(v) => { setDialogTab(v as "wardrobe" | "custom" | "service"); if (v !== "wardrobe") setItem({ ...EMPTY_ITEM }); }} className="flex flex-col flex-1 overflow-hidden">
+              <TabsList className="shrink-0 w-full grid grid-cols-3">
                 <TabsTrigger value="wardrobe" className="flex items-center gap-1.5">
                   <ShoppingBag className="w-3.5 h-3.5" /> Wardrobe
                   {(customerFinishedItems?.length ?? 0) > 0 && (
@@ -2357,6 +2365,14 @@ export default function OrderDetail() {
                 </TabsTrigger>
                 <TabsTrigger value="custom" className="flex items-center gap-1.5">
                   <Package className="w-3.5 h-3.5" /> Custom Item
+                </TabsTrigger>
+                <TabsTrigger value="service" className="flex items-center gap-1.5">
+                  <Wrench className="w-3.5 h-3.5" /> Service
+                  {(serviceProducts?.length ?? 0) > 0 && (
+                    <span className="ml-1 inline-flex items-center justify-center rounded-full bg-violet-500/15 px-1.5 text-[10px] font-semibold text-violet-700">
+                      {serviceProducts!.length}
+                    </span>
+                  )}
                 </TabsTrigger>
               </TabsList>
 
@@ -2925,6 +2941,100 @@ export default function OrderDetail() {
                   )}
                 </div>
               </TabsContent>
+
+              {/* ── SERVICE TAB ────────────────────────────────────────────── */}
+              <TabsContent value="service" className="flex-1 overflow-y-auto mt-0 pt-3 data-[state=inactive]:hidden">
+                <div className="grid gap-5">
+                  {/* Service product picker */}
+                  <div className="grid gap-2">
+                    <Label>Service</Label>
+                    {serviceProducts && serviceProducts.length > 0 ? (
+                      <Popover open={serviceProductSearchOpen} onOpenChange={setServiceProductSearchOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" role="combobox" className="w-full justify-between font-normal">
+                            {item.productId ? (serviceProducts.find(p => p.id === item.productId)?.name ?? item.productName) : item.productName || "Search service catalogue…"}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Type service name…" />
+                            <CommandList>
+                              <CommandEmpty>No matching service.</CommandEmpty>
+                              <CommandGroup>
+                                {serviceProducts.map(p => (
+                                  <CommandItem key={p.id} value={p.name} onSelect={() => { handleProductSelect(p.id); setServiceProductSearchOpen(false); }}>
+                                    <Check className={cn("mr-2 h-4 w-4", item.productId === p.id ? "opacity-100" : "opacity-0")} />
+                                    <span className="flex-1">{p.name}</span>
+                                    {p.unitPrice != null && <span className="text-xs font-semibold text-muted-foreground">{formatCurrency(p.unitPrice)}</span>}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <p className="text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2">
+                        No service products in catalogue yet — use the field below to add a free-text service line.
+                      </p>
+                    )}
+                    {/* Free-text name — always shown; clears catalog selection when edited */}
+                    <Input
+                      placeholder="Service name *"
+                      value={item.productName}
+                      onChange={e => setItem(i => ({ ...i, productName: e.target.value, productId: undefined as any }))}
+                    />
+                  </div>
+
+                  {/* Description / scope */}
+                  <div className="grid gap-2">
+                    <Label>Description <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+                    <Input
+                      placeholder="e.g. 50 logos, front + back, 2-colour"
+                      value={item.finishName ?? ""}
+                      onChange={e => setItem(i => ({ ...i, finishName: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* Qty + Price */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="svc-qty">Quantity</Label>
+                      <Input id="svc-qty" type="number" min="1" value={item.quantity} onChange={e => setItem(i => ({ ...i, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="svc-price">Unit Price (£)</Label>
+                      <Input id="svc-price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
+                    </div>
+                  </div>
+
+                  {/* VAT Rate */}
+                  <div className="grid gap-2">
+                    <Label className="text-sm">VAT Rate</Label>
+                    <RadioGroup value={String(item.vatRate)} onValueChange={(v) => setItem(i => ({ ...i, vatRate: parseFloat(v) }))} className="flex gap-4">
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="0.2" id="svc-vat-20" />
+                        <Label htmlFor="svc-vat-20" className="font-normal cursor-pointer">20% (standard)</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="0.05" id="svc-vat-5" />
+                        <Label htmlFor="svc-vat-5" className="font-normal cursor-pointer">5% (reduced)</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="0" id="svc-vat-0" />
+                        <Label htmlFor="svc-vat-0" className="font-normal cursor-pointer">0% (zero-rated)</Label>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  {item.unitPrice && (
+                    <div className="flex justify-end text-sm text-muted-foreground">
+                      Line total: <span className="font-semibold text-foreground ml-1">{formatCurrency((parseFloat(item.unitPrice) || 0) * item.quantity)}</span>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
             </Tabs>
 
             <DialogFooter className="shrink-0 border-t border-border/40 pt-4 mt-2">
@@ -2932,7 +3042,8 @@ export default function OrderDetail() {
               <Button
                 onClick={handleAddItem}
                 disabled={
-                  !item.productId || !item.unitPrice || addItemMutation.isPending || isAddingMulti ||
+                  addItemMutation.isPending || isAddingMulti || !item.unitPrice ||
+                  (dialogTab === "service" ? !item.productName.trim() : !item.productId) ||
                   (colours.length > 0 && dialogTab === "custom" && !item.colour) ||
                   (sizes.length > 0 && dialogTab === "custom" && sizeRows.some(r => !r.size))
                 }
