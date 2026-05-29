@@ -540,7 +540,7 @@ export default function QuoteDetail() {
                         className="h-8 text-sm"
                         autoComplete="off"
                       />
-                      {showProductDropdown && productSuggestions.length > 0 && (
+                      {showProductDropdown && (productSuggestions.length > 0 || productSearchTerm.length >= 2) && (
                         <div className="absolute z-50 left-0 top-full mt-1 min-w-[420px] w-max max-w-[640px] bg-background border rounded-lg shadow-lg">
                           {productSuggestions.map((p) => (
                             <button
@@ -559,10 +559,28 @@ export default function QuoteDetail() {
                                 setShowProductDropdown(false);
                               }}
                             >
-                              <div className="font-medium">{p.name}</div>
-                              <div className="text-xs text-muted-foreground">{p.sku}{p.unitPrice != null ? ` · £${Number(p.unitPrice).toFixed(2)}` : ""}</div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{p.name}</span>
+                                {(p as any).isService && (
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide bg-violet-100 text-violet-700 px-1.5 py-0.5 rounded">Service</span>
+                                )}
+                              </div>
+                              <div className="text-xs text-muted-foreground">{p.sku ?? ""}{p.unitPrice != null ? `${p.sku ? " · " : ""}£${Number(p.unitPrice).toFixed(2)}` : ""}</div>
                             </button>
                           ))}
+                          {newItem.productName.trim().length >= 2 && (
+                            <button
+                              type="button"
+                              className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-t text-muted-foreground italic rounded-b-lg flex items-center gap-2"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setShowProductDropdown(false);
+                              }}
+                            >
+                              <Plus className="w-3.5 h-3.5 shrink-0" />
+                              Use &ldquo;{newItem.productName.trim()}&rdquo; as manual entry
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
