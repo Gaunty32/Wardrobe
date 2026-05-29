@@ -299,7 +299,14 @@ router.get("/quotes/:id/pdf", async (req: Request, res: Response): Promise<void>
     imageBuffer:  r.product_image_url ? (imageMap.get(r.product_image_url) ?? null) : null,
   }));
 
-  const customerLogoBuffer = await fetchLogoBuffer(quote.customer_logo_url);
+  // Resolve logo: use what's stored on the quote, otherwise fall back to the
+  // customer's current logo (handles quotes created before logo was set).
+  let resolvedLogoUrl: string | null = quote.customer_logo_url ?? null;
+  if (!resolvedLogoUrl && quote.customer_id) {
+    const custLogo = await db.execute(sql`SELECT logo_url FROM customers WHERE id = ${quote.customer_id}`);
+    resolvedLogoUrl = (custLogo.rows[0] as any)?.logo_url ?? null;
+  }
+  const customerLogoBuffer = await fetchLogoBuffer(resolvedLogoUrl);
 
   const pdf = await generateQuotePdf({
     quoteNumber:        quote.quote_number,
@@ -433,7 +440,12 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
       vatRate: Number(r.vat_rate ?? 0.20),
       imageBuffer: null,
     }));
-    const customerLogoBuffer = await fetchLogoBuffer(quote.customer_logo_url);
+    let sendLogoUrl: string | null = quote.customer_logo_url ?? null;
+    if (!sendLogoUrl && quote.customer_id) {
+      const custLogo = await db.execute(sql`SELECT logo_url FROM customers WHERE id = ${quote.customer_id}`);
+      sendLogoUrl = (custLogo.rows[0] as any)?.logo_url ?? null;
+    }
+    const customerLogoBuffer = await fetchLogoBuffer(sendLogoUrl);
     const pdfBuffer = await generateQuotePdf({
       quoteNumber: quote.quote_number,
       customerName: quote.customer_name ?? "",
