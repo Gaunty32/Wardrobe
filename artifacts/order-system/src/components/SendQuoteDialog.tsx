@@ -187,12 +187,12 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
           )}
         </div>
 
-        <DialogFooter className="flex-wrap gap-2">
+        <DialogFooter className="flex flex-row items-center justify-between gap-2">
           <Button variant="outline" onClick={() => handleClose(false)}>
             {sent ? "Close" : "Cancel"}
           </Button>
           {!sent && (
-            <>
+            <div className="flex items-center gap-2">
               <Button variant="outline" onClick={handlePreviewPdf} disabled={previewingPdf} className="gap-1.5">
                 {previewingPdf
                   ? <><Loader2 className="w-4 h-4 animate-spin" /> Loading…</>
@@ -214,7 +214,7 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
                     : <><Mail className="w-4 h-4" /> Send Email</>}
                 </Button>
               )}
-            </>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>
