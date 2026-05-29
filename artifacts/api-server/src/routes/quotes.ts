@@ -442,7 +442,12 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
     previewOnly: z.boolean().optional(),
   }).safeParse(req.body);
 
-  const quoteRows = await db.execute(sql`SELECT * FROM quotes WHERE id = ${id}`);
+  const quoteRows = await db.execute(sql`
+    SELECT q.*, c.contact_first_name, c.contact_last_name
+    FROM quotes q
+    LEFT JOIN customers c ON c.id = q.customer_id
+    WHERE q.id = ${id}
+  `);
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
