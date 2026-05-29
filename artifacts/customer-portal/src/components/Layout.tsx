@@ -33,7 +33,7 @@ function useBasketCount(isPreview: boolean) {
     refetchOnWindowFocus: true,
   });
 
-  return isPreview ? lsCount : Math.max(lsCount, serverBasket?.itemCount ?? 0);
+  return isPreview ? 0 : Math.max(lsCount, serverBasket?.itemCount ?? 0);
 }
 
 interface PortalNotification {
