@@ -107,9 +107,9 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
 
-  // If contact fields are missing but we have a High Level contact ID, fetch fresh from HL
+  // If any contact field is missing but we have a High Level contact ID, fetch fresh from HL
   const needsHlFetch = quote.customer_id && quote.high_level_contact_id &&
-    (!quote.contact_first_name && !quote.contact_last_name && !quote.customer_phone && !quote.customer_email);
+    (!quote.contact_first_name || !quote.contact_last_name || !quote.customer_phone || !quote.customer_email);
 
   if (needsHlFetch) {
     try {
