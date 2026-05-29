@@ -454,10 +454,11 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   // Fetch items joined with products (same LATERAL match strategy as PDF route)
   const itemRows = await db.execute(sql`
     SELECT qi.product_name, qi.colour, qi.size, qi.finish_name, qi.quantity, qi.unit_price, qi.vat_rate,
-           p.sku AS product_sku
+           p.sku AS product_sku, p.description AS product_description, p.image_url AS product_image_url,
+           p.permalink AS product_permalink
     FROM quote_items qi
     LEFT JOIN LATERAL (
-      SELECT p2.sku,
+      SELECT p2.sku, p2.description, p2.image_url, p2.permalink,
              CASE
                WHEN p2.id = qi.product_id                                                              THEN 0
                WHEN qi.product_id IS NULL AND p2.sku IS NOT NULL
@@ -566,18 +567,24 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   // Generate PDF attachment
   let attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
   try {
-    const pdfItems: QuotePdfItem[] = (itemRows.rows as any[]).map(r => ({
-      productName: r.product_name,
-      productUrl: null,
-      sku: r.product_sku ?? null,
-      description: null,
-      colour: r.colour ?? null,
-      size: r.size ?? null,
-      finishName: r.finish_name ?? null,
-      quantity: Number(r.quantity),
-      unitPrice: Number(r.unit_price),
-      vatRate: Number(r.vat_rate ?? 0.20),
-      imageBuffer: null,
+    const pdfRows = itemRows.rows as any[];
+    const uniqueImageUrls = [...new Set(pdfRows.map(r => r.product_image_url).filter(Boolean))] as string[];
+    const imageMap = new Map<string, Buffer | null>();
+    await Promise.all(uniqueImageUrls.map(async (url) => {
+      imageMap.set(url, await fetchLogoBuffer(url));
+    }));
+    const pdfItems: QuotePdfItem[] = pdfRows.map(r => ({
+      productName:  r.product_name,
+      productUrl:   r.product_permalink ?? null,
+      sku:          r.product_sku ?? null,
+      description:  r.product_description ?? null,
+      colour:       r.colour ?? null,
+      size:         r.size ?? null,
+      finishName:   r.finish_name ?? null,
+      quantity:     Number(r.quantity),
+      unitPrice:    Number(r.unit_price),
+      vatRate:      Number(r.vat_rate ?? 0.20),
+      imageBuffer:  r.product_image_url ? (imageMap.get(r.product_image_url) ?? null) : null,
     }));
     let sendLogoUrl: string | null = quote.customer_logo_url ?? null;
     if (!sendLogoUrl && quote.customer_id) {
