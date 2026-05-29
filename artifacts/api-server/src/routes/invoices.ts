@@ -419,6 +419,54 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
   }
 });
 
+// ─── Orders grouped by customer ──────────────────────────────────────────────
+
+router.get("/invoices/by-customer", async (_req, res): Promise<void> => {
+  const orders = await db
+    .select({
+      id: ordersTable.id,
+      orderNumber: ordersTable.orderNumber,
+      customerName: ordersTable.customerName,
+      customerId: ordersTable.customerId,
+      totalAmount: ordersTable.totalAmount,
+      status: ordersTable.status,
+      poNumber: ordersTable.poNumber,
+      orderDate: ordersTable.orderDate,
+      dispatchedAt: ordersTable.dispatchedAt,
+      invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
+      xeroInvoiceId: ordersTable.xeroInvoiceId,
+    })
+    .from(ordersTable)
+    .where(sql`${ordersTable.status} IN ('shipped', 'dispatched')`)
+    .orderBy(desc(ordersTable.dispatchedAt));
+
+  const groupMap = new Map<string, {
+    customerId: number | null;
+    customerName: string | null;
+    orders: typeof orders;
+    totalEx: number;
+    totalInc: number;
+  }>();
+
+  for (const o of orders) {
+    const key = o.customerId ? String(o.customerId) : `name__${o.customerName ?? "unknown"}`;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, { customerId: o.customerId, customerName: o.customerName, orders: [], totalEx: 0, totalInc: 0 });
+    }
+    const g = groupMap.get(key)!;
+    g.orders.push(o);
+    const ex = parseFloat(String(o.totalAmount ?? 0));
+    g.totalEx += ex;
+    g.totalInc += ex * 1.2;
+  }
+
+  res.json([...groupMap.values()].map((g) => ({
+    ...g,
+    totalEx: Math.round(g.totalEx * 100) / 100,
+    totalInc: Math.round(g.totalInc * 100) / 100,
+  })));
+});
+
 // ─── Orders grouped by customer PO number ────────────────────────────────────
 
 router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {

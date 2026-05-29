@@ -90,6 +90,14 @@ interface PoGroup {
   totalInc: number;
 }
 
+interface CustomerGroup {
+  customerId: number | null;
+  customerName: string | null;
+  orders: PoGroupOrder[];
+  totalEx: number;
+  totalInc: number;
+}
+
 interface EmailStatus {
   configured: boolean;
   host: string | null;
@@ -580,6 +588,12 @@ export default function Invoices() {
     refetchInterval: 15_000,
   });
 
+  const { data: customerGroups, isLoading: customerLoading, refetch: refetchCustomer } = useQuery<CustomerGroup[]>({
+    queryKey: ["invoices-by-customer"],
+    queryFn: () => apiFetch("/invoices/by-customer"),
+    refetchInterval: 15_000,
+  });
+
   const { data: emailStatus } = useQuery<EmailStatus>({
     queryKey: ["email-status"],
     queryFn: () => apiFetch("/settings/email/status"),
@@ -736,6 +750,12 @@ export default function Invoices() {
             <TabsTrigger value="done" className="gap-2">
               <CheckCircle2 className="w-4 h-4" /> Complete
             </TabsTrigger>
+            <TabsTrigger value="by-customer" className="gap-2">
+              <Package className="w-4 h-4" /> By Customer
+              {(customerGroups?.filter(g => g.orders.some(o => !o.invoiceEmailSentAt)).length ?? 0) > 0 && (
+                <Badge className="ml-1 bg-amber-500 text-white text-xs px-1.5 py-0 h-5">{customerGroups!.filter(g => g.orders.some(o => !o.invoiceEmailSentAt)).length}</Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="by-po" className="gap-2">
               <Hash className="w-4 h-4" /> By PO #
               {groups.length > 0 && (
@@ -820,6 +840,30 @@ export default function Invoices() {
               </div>
             )}
           </TabsContent>
+          {/* By Customer */}
+          <TabsContent value="by-customer" className="mt-4">
+            {customerLoading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+              </div>
+            ) : (customerGroups ?? []).length === 0 ? (
+              <div className="py-16 text-center text-muted-foreground">
+                <Package className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p className="font-medium">No dispatched orders to invoice</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(customerGroups ?? []).map((g) => (
+                  <CustomerGroupRow
+                    key={g.customerId ?? g.customerName ?? "unknown"}
+                    group={g}
+                    onRefresh={() => { refetchInvoices(); refetchCustomer(); }}
+                  />
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
           {/* By PO # */}
           <TabsContent value="by-po" className="mt-4">
             {poLoading ? (
@@ -844,6 +888,187 @@ export default function Invoices() {
         )}
       </div>
     </Layout>
+  );
+}
+
+function CustomerGroupRow({ group, onRefresh }: { group: CustomerGroup; onRefresh: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [confirmConsolidated, setConfirmConsolidated] = useState(false);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const dispatchedUnsent = group.orders.filter(
+    (o) => ["shipped", "dispatched"].includes(o.status) && !o.invoiceEmailSentAt
+  );
+  const alreadyInvoiced = group.orders.filter((o) => !!o.invoiceEmailSentAt);
+  const consolidatedTotal = dispatchedUnsent.reduce((s, o) => s + parseFloat(o.totalAmount ?? "0"), 0);
+
+  const sendConsolidated = useMutation({
+    mutationFn: () =>
+      apiFetch<{ ok: boolean; sentTo: string; invoiceRef: string }>("/invoices/consolidated/send-email", {
+        method: "POST",
+        body: JSON.stringify({ orderIds: dispatchedUnsent.map((o) => o.id) }),
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-by-customer"] });
+      qc.invalidateQueries({ queryKey: ["invoices-by-po"] });
+      setConfirmConsolidated(false);
+      onRefresh();
+      toast({
+        title: "Consolidated invoice sent",
+        description: `Invoice ${res.invoiceRef} emailed to ${res.sentTo} covering ${dispatchedUnsent.length} order${dispatchedUnsent.length !== 1 ? "s" : ""}.`,
+      });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Failed to send", description: parseApiError(e), variant: "destructive" }),
+  });
+
+  const statusColor: Record<string, string> = {
+    dispatched: "bg-green-100 text-green-800 border-green-200",
+    shipped: "bg-green-100 text-green-800 border-green-200",
+    in_production: "bg-blue-100 text-blue-800 border-blue-200",
+    confirmed: "bg-indigo-100 text-indigo-800 border-indigo-200",
+    draft: "bg-gray-100 text-gray-700 border-gray-200",
+    cancelled: "bg-red-100 text-red-700 border-red-200",
+  };
+
+  return (
+    <div className="rounded-xl border border-border overflow-hidden">
+      {/* Header */}
+      <button
+        className="w-full flex items-center gap-3 px-4 py-3 bg-muted/40 hover:bg-muted/70 transition-colors text-left"
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground shrink-0" />}
+        <Package className="w-4 h-4 text-primary shrink-0" />
+        <span className="font-semibold text-sm">{group.customerName ?? "Unknown customer"}</span>
+        <div className="ml-auto flex items-center gap-4">
+          {dispatchedUnsent.length > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
+              <Clock className="w-3.5 h-3.5" /> {dispatchedUnsent.length} to invoice
+            </span>
+          )}
+          {alreadyInvoiced.length > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-green-700 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" /> {alreadyInvoiced.length} invoiced
+            </span>
+          )}
+          <span className="text-xs text-muted-foreground">{group.orders.length} order{group.orders.length !== 1 ? "s" : ""}</span>
+          <span className="text-sm font-medium">{formatCurrency(group.totalEx)} ex VAT</span>
+          <span className="text-xs text-muted-foreground">({formatCurrency(group.totalInc)} inc)</span>
+        </div>
+      </button>
+
+      {/* Action bar — shown when 1+ dispatched unsent orders */}
+      {dispatchedUnsent.length >= 1 && (
+        <div className="px-4 py-2.5 bg-amber-50 border-t border-amber-200 flex items-center gap-3">
+          <div className="flex-1 text-sm text-amber-800">
+            <span className="font-semibold">{dispatchedUnsent.length} dispatched order{dispatchedUnsent.length !== 1 ? "s" : ""}</span>
+            {" "}ready to invoice
+            <span className="text-amber-600 ml-2 font-mono text-xs">
+              {formatCurrency(consolidatedTotal)} ex VAT · {formatCurrency(consolidatedTotal * 1.2)} inc VAT
+            </span>
+            {dispatchedUnsent.some(o => o.poNumber) && (
+              <span className="text-amber-600 ml-2 text-xs">
+                · PO refs: {[...new Set(dispatchedUnsent.map(o => o.poNumber).filter(Boolean))].join(", ")}
+              </span>
+            )}
+          </div>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={(e) => { e.stopPropagation(); setConfirmConsolidated(true); }}
+            disabled={sendConsolidated.isPending}
+          >
+            {sendConsolidated.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+            {dispatchedUnsent.length === 1 ? "Send Invoice" : "Send Combined Invoice"}
+          </Button>
+        </div>
+      )}
+
+      {/* Expandable order list */}
+      {open && (
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/20">
+              <TableHead className="text-xs">Order #</TableHead>
+              <TableHead className="text-xs">PO #</TableHead>
+              <TableHead className="text-xs">Date</TableHead>
+              <TableHead className="text-xs">Status</TableHead>
+              <TableHead className="text-xs">Dispatched</TableHead>
+              <TableHead className="text-xs">Invoice Sent</TableHead>
+              <TableHead className="text-xs text-right">Total (ex)</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {group.orders.map((o) => (
+              <TableRow key={o.id} className={dispatchedUnsent.some((d) => d.id === o.id) ? "bg-amber-50/50" : undefined}>
+                <TableCell className="text-xs font-mono">
+                  <Link href={`/orders/${o.id}`} className="text-primary hover:underline">
+                    {o.orderNumber}
+                  </Link>
+                </TableCell>
+                <TableCell className="text-xs font-mono text-muted-foreground">{o.poNumber ?? "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{o.orderDate ? formatDate(o.orderDate) : "—"}</TableCell>
+                <TableCell className="text-xs">
+                  <span className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-semibold capitalize ${statusColor[o.status] ?? "bg-muted text-muted-foreground"}`}>
+                    {o.status.replace(/_/g, " ")}
+                  </span>
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{o.dispatchedAt ? formatDate(o.dispatchedAt) : "—"}</TableCell>
+                <TableCell className="text-xs">
+                  {o.invoiceEmailSentAt
+                    ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />{formatDate(o.invoiceEmailSentAt)}</span>
+                    : <span className="text-muted-foreground">Not sent</span>
+                  }
+                </TableCell>
+                <TableCell className="text-right text-xs font-medium">{formatCurrency(parseFloat(o.totalAmount ?? "0"))}</TableCell>
+              </TableRow>
+            ))}
+            <TableRow className="bg-muted/30 font-semibold">
+              <TableCell colSpan={6} className="text-xs text-right text-muted-foreground">Group total (ex VAT)</TableCell>
+              <TableCell className="text-right text-sm">{formatCurrency(group.totalEx)}</TableCell>
+            </TableRow>
+          </TableBody>
+        </Table>
+      )}
+
+      {/* Confirm dialog */}
+      <Dialog open={confirmConsolidated} onOpenChange={setConfirmConsolidated}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {dispatchedUnsent.length === 1 ? "Send Invoice" : "Send Combined Invoice"} — {group.customerName}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              This will generate a single invoice PDF covering {dispatchedUnsent.length} dispatched order{dispatchedUnsent.length !== 1 ? "s" : ""} and email it to the customer.
+            </p>
+            <div className="rounded-lg bg-muted/50 border p-3 space-y-1.5">
+              <div><span className="text-muted-foreground">Customer:</span> <strong>{group.customerName}</strong></div>
+              <div><span className="text-muted-foreground">Orders:</span> <strong>{dispatchedUnsent.map((o) => o.orderNumber).join(", ")}</strong></div>
+              {dispatchedUnsent.some(o => o.poNumber) && (
+                <div><span className="text-muted-foreground">PO refs:</span> <strong className="font-mono">{[...new Set(dispatchedUnsent.map(o => o.poNumber).filter(Boolean))].join(", ")}</strong></div>
+              )}
+              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(consolidatedTotal * 1.2)} inc. VAT</strong></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmConsolidated(false)}>Cancel</Button>
+            <Button
+              onClick={() => sendConsolidated.mutate()}
+              disabled={sendConsolidated.isPending}
+              className="gap-1.5 bg-amber-600 hover:bg-amber-700"
+            >
+              {sendConsolidated.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+              {dispatchedUnsent.length === 1 ? "Send Invoice" : "Send Combined Invoice"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 
