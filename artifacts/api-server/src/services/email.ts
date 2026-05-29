@@ -963,7 +963,7 @@ export function buildQuoteEmail(data: {
   quoteNumber: string;
   customerName: string | null;
   contactFirstName?: string | null;
-  customerLogoUrl?: string | null;
+  customerLogoDataUrl?: string | null;
   quoteDate: Date | string | null;
   expiresAt?: Date | string | null;
   notes?: string | null;
@@ -998,10 +998,10 @@ export function buildQuoteEmail(data: {
     </tr>`
   ).join("\n");
 
-  const customerLogoBlock = data.customerLogoUrl
+  const customerLogoBlock = data.customerLogoDataUrl
     ? `<td style="vertical-align:middle;text-align:right;">
         <p style="margin:0 0 6px;color:#64748b;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;">Prepared for</p>
-        <img src="${data.customerLogoUrl}" alt="${data.customerName ?? "Customer"}" height="38" style="display:block;height:38px;width:auto;max-width:130px;margin-left:auto;" />
+        <img src="${data.customerLogoDataUrl}" alt="${data.customerName ?? "Customer"}" height="38" style="display:block;height:38px;width:auto;max-width:130px;margin-left:auto;" />
       </td>`
     : `<td style="vertical-align:middle;text-align:right;">
         <p style="margin:0;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Quotation</p>

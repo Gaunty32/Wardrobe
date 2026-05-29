@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
-import { generateQuotePdf, fetchLogoBuffer, buildQuoteEmail, sendEmail, isEmailConfigured, type QuotePdfItem } from "../services/email.js";
+import { generateQuotePdf, fetchLogoBuffer, fetchLogoDataUrl, buildQuoteEmail, sendEmail, isEmailConfigured, type QuotePdfItem } from "../services/email.js";
 
 const router = Router();
 
@@ -411,11 +411,19 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
 
   const coverText = (quote.cover_text as string | null) ?? DEFAULT_COVER_TEXT;
 
+  // Resolve logo URL (quote's own field, else customer record fallback)
+  let emailLogoUrl: string | null = quote.customer_logo_url ?? null;
+  if (!emailLogoUrl && quote.customer_id) {
+    const custLogo = await db.execute(sql`SELECT logo_url FROM customers WHERE id = ${quote.customer_id}`);
+    emailLogoUrl = (custLogo.rows[0] as any)?.logo_url ?? null;
+  }
+  const customerLogoDataUrl = await fetchLogoDataUrl(emailLogoUrl);
+
   const { subject, html, text } = buildQuoteEmail({
     quoteNumber: quote.quote_number,
     customerName: quote.customer_name ?? null,
     contactFirstName,
-    customerLogoUrl: quote.customer_logo_url ?? null,
+    customerLogoDataUrl,
     quoteDate: quote.created_at,
     expiresAt: quote.expires_at ?? null,
     notes: null, // internal notes — not sent to customer
