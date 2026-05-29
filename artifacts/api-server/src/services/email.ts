@@ -796,13 +796,19 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
     }
     doc.font("Helvetica-Bold").fontSize(13).fillColor("#ffffff")
       .text("Quotation", margin + 130, margin + 19, { width: contentW - 260, align: "center" });
+
+    // ── Customer logo + name + SBS contact ───────────────────────────────────
+    const addrY = margin + hdrH + 8;
+    let nameY = addrY;
+
     if (data.customerLogoBuffer) {
-      try { doc.image(data.customerLogoBuffer, margin + contentW - 100, margin + 6, { fit: [92, 40], align: "right", valign: "center" }); } catch {}
+      try {
+        doc.image(data.customerLogoBuffer, margin, addrY, { fit: [110, 38] });
+        nameY = addrY + 42;
+      } catch {}
     }
 
-    // ── Customer name + SBS contact ───────────────────────────────────────────
-    const addrY = margin + hdrH + 8;
-    doc.font("Helvetica-Bold").fontSize(9).fillColor("#111827").text(data.customerName, margin, addrY);
+    doc.font("Helvetica-Bold").fontSize(9).fillColor("#111827").text(data.customerName, margin, nameY);
 
     const sbsX = margin + contentW - 170;
     doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827").text("Select Branding Solutions Ltd", sbsX, addrY, { width: 170, align: "right" });
@@ -811,7 +817,7 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
     doc.text("www.selectbranding.co.uk", sbsX, addrY + 21, { width: 170, align: "right" });
 
     // ── Divider ───────────────────────────────────────────────────────────────
-    const divY = addrY + 32;
+    const divY = Math.max(addrY + 32, nameY + 14);
     doc.moveTo(margin, divY).lineTo(margin + contentW, divY).strokeColor("#d1d5db").lineWidth(0.5).stroke();
 
     // ── Quote info strip ──────────────────────────────────────────────────────
