@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { sortSizesWithOrder } from "@/lib/sizeUtils";
+import { sortSizes, sortSizesWithOrder } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +70,7 @@ type OrderItem = {
   garmentBasePrice: number;
   processLines: ProcessLine[];
   unitPrice: number;
+  imageUrl?: string | null;
 };
 
 const EMPTY_ITEM: OrderItem = {
@@ -612,6 +613,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       garmentBasePrice: garmentPrice,
       processLines,
       unitPrice,
+      imageUrl: wi.variant_image_url ?? wi.product_image_url ?? null,
     };
   };
 
@@ -1918,7 +1920,7 @@ const SHIPPING_OPTIONS = [
   },
 ] as const;
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, fromQuote = false }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) => void;
@@ -1926,6 +1928,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   portalRole: string;
   onAddMore?: () => void;
   sizesMap?: Record<string, Record<string, string[]>>;
+  variantImagesMap?: Record<string, Record<string, string | null>>;
   fromQuote?: boolean;
 }) {
   const { toast } = useToast();
@@ -2105,6 +2108,20 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                   <React.Fragment key={idx}>
                     <TableRow>
                       <TableCell className="font-medium text-sm align-top">
+                        {/* Product / variant image — defaults to product image, switches to variant image on colour selection */}
+                        {(() => {
+                          const pid = item.productId ? String(item.productId) : null;
+                          const variantImg = pid && item.colour ? variantImagesMap[pid]?.[item.colour] : undefined;
+                          const src = variantImg ?? item.imageUrl;
+                          return src ? (
+                            <img
+                              src={src}
+                              alt={item.productName}
+                              className="w-10 h-10 rounded object-cover mb-1.5 bg-muted"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                            />
+                          ) : null;
+                        })()}
                         <div>{item.productName}</div>
                         {item.sku && (
                           <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{item.sku}</div>
@@ -2161,7 +2178,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                                     <SelectValue placeholder="Size…" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {availSizes.map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
+                                    {sortSizes(availSizes).map(s => <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>)}
                                   </SelectContent>
                                 </Select>
                               ) : (
@@ -2831,6 +2848,7 @@ export default function NewOrder() {
     customerLogoUrl: string | null;
     items: OrderItem[];
     sizesMap: Record<string, Record<string, string[]>>;
+    variantImagesMap: Record<string, Record<string, string | null>>;
   }>({
     queryKey: ["portal-quote", quoteToken],
     queryFn: () => apiFetch(`/portal/quote/${quoteToken}`),
@@ -3109,6 +3127,7 @@ export default function NewOrder() {
           submitting={submitMutation.isPending}
           portalRole={portalRole ?? "member"}
           sizesMap={quoteData?.sizesMap ?? {}}
+          variantImagesMap={quoteData?.variantImagesMap ?? {}}
           fromQuote={true}
         />
       )}

@@ -1523,6 +1523,8 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
         if (ai !== -1 && bi !== -1) return ai - bi;
         if (ai !== -1) return -1;
         if (bi !== -1) return 1;
+        const na = parseFloat(a), nb = parseFloat(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
         return a.localeCompare(b);
       };
       for (const pid of Object.keys(sizesMap)) {
@@ -3265,6 +3267,7 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
 
   // Build sizesMap so the customer can pick colour/size when converting a quote to an order
   const sizesMap: Record<string, Record<string, string[]>> = {};
+  const variantImagesMap: Record<string, Record<string, string | null>> = {};
   const productIds = [...new Set(items.map(i => i.productId).filter(Boolean) as number[])];
 
   if (productIds.length > 0) {
@@ -3331,6 +3334,8 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
           if (ai !== -1 && bi !== -1) return ai - bi;
           if (ai !== -1) return -1;
           if (bi !== -1) return 1;
+          const na = parseFloat(a), nb = parseFloat(b);
+          if (!isNaN(na) && !isNaN(nb)) return na - nb;
           return a.localeCompare(b);
         };
         for (const pid of Object.keys(sizesMap)) {
@@ -3357,6 +3362,37 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
         if (!sizesMap[pid][row.colour]) sizesMap[pid][row.colour] = [];
       }
     } catch { /* non-fatal */ }
+
+    // Product default images
+    try {
+      const imgRows = await db.execute(sql.raw(`
+        SELECT id, image_url FROM products WHERE id IN (${idsStr})
+      `));
+      const productImgMap = new Map<number, string | null>(
+        (imgRows.rows as any[]).map(r => [r.id, r.image_url ?? null])
+      );
+      for (const item of items) {
+        if (item.productId) {
+          (item as any).imageUrl = productImgMap.get(item.productId) ?? null;
+        }
+      }
+    } catch { /* non-fatal */ }
+
+    // Variant images: productId -> colour -> imageUrl
+    try {
+      const varImgRows = await db.execute(sql.raw(`
+        SELECT DISTINCT product_id, colour, image_url
+        FROM product_variants
+        WHERE product_id IN (${idsStr})
+          AND colour IS NOT NULL AND colour != ''
+          AND image_url IS NOT NULL AND image_url != ''
+      `));
+      for (const row of varImgRows.rows as any[]) {
+        const pid = String(row.product_id);
+        if (!variantImagesMap[pid]) variantImagesMap[pid] = {};
+        variantImagesMap[pid][row.colour] = row.image_url;
+      }
+    } catch { /* non-fatal */ }
   }
 
   if (quote.status === "sent") {
@@ -3373,6 +3409,7 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
     customerLogoUrl: quote.customer_logo_url ?? null,
     items,
     sizesMap,
+    variantImagesMap,
   });
 });
 
