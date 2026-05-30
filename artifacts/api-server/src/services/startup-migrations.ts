@@ -1162,4 +1162,11 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS parent_item_id integer REFERENCES quote_items(id) ON DELETE CASCADE;
   `);
+
+  // Store resolved contact name directly on the quote so it survives even for
+  // quotes not linked to a customer record.
+  await db.execute(sql`
+    ALTER TABLE quotes ADD COLUMN IF NOT EXISTS contact_first_name text;
+    ALTER TABLE quotes ADD COLUMN IF NOT EXISTS contact_last_name  text;
+  `);
 }

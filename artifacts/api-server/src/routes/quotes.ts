@@ -98,7 +98,8 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
 
   const quoteRows = await db.execute(sql`
     SELECT q.*,
-      c.contact_first_name, c.contact_last_name, c.phone AS customer_phone, c.email AS customer_email,
+      c.contact_first_name AS cust_first_name, c.contact_last_name AS cust_last_name,
+      c.phone AS customer_phone, c.email AS customer_email,
       c.high_level_contact_id
     FROM quotes q
     LEFT JOIN customers c ON c.id = q.customer_id
@@ -106,6 +107,11 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
   `);
   const quote = quoteRows.rows[0] as any;
   if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
+
+  // Merge: prefer the quote's own persisted name (from a previous HL sync),
+  // fall back to the linked customer's stored name.
+  quote.contact_first_name = (quote.contact_first_name as string | null) || (quote.cust_first_name as string | null) || null;
+  quote.contact_last_name  = (quote.contact_last_name  as string | null) || (quote.cust_last_name  as string | null) || null;
 
   // Fetch contact details from High Level if any field is missing.
   // Strategy A: quote is linked to a customer that has a HL contact ID → fetch by ID.
@@ -182,7 +188,16 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
           quote.customer_phone     = hlContact.phone      ?? null;
           quote.customer_email     = hlContact.email      ?? null;
 
-          // Persist back to the linked customer record (if any), including the HL contact ID
+          // Persist the resolved first/last name directly on the quote so the
+          // send endpoint can always find it, even for quotes with no customer_id.
+          await db.execute(sql`
+            UPDATE quotes SET
+              contact_first_name = ${hlContact.firstName ?? null},
+              contact_last_name  = ${hlContact.lastName  ?? null}
+            WHERE id = ${id}
+          `);
+
+          // Also persist back to the linked customer record (if any)
           if (quote.customer_id) {
             await db.execute(sql`
               UPDATE customers SET
@@ -445,7 +460,7 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   }).safeParse(req.body);
 
   const quoteRows = await db.execute(sql`
-    SELECT q.*, c.contact_first_name, c.contact_last_name
+    SELECT q.*, c.contact_first_name AS cust_first_name, c.contact_last_name AS cust_last_name
     FROM quotes q
     LEFT JOIN customers c ON c.id = q.customer_id
     WHERE q.id = ${id}
@@ -496,8 +511,12 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
 
   // Resolve customer email
   let toEmail: string | undefined = body.success ? body.data.toEmail : undefined;
-  // Seed from the quote's own HL-synced contact name before falling back to lookups
-  let contactFirstName: string | null = quote.contact_first_name ?? null;
+  // Prefer the quote's own persisted first name (written by GET /quotes/:id when HL
+  // contact is resolved), then fall back to the linked customer's stored name.
+  let contactFirstName: string | null =
+    (quote.contact_first_name as string | null) ||
+    (quote.cust_first_name   as string | null) ||
+    null;
 
   if (!toEmail && quote.customer_id) {
     // Prefer manager/dept_manager portal users
