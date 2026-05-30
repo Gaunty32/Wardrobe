@@ -1202,6 +1202,12 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
           <p className="font-semibold text-sm">{recipientName}</p>
           {selectedEmployee?.role_name && <p className="text-[11px] text-muted-foreground">{selectedEmployee.role_name}</p>}
         </div>
+        {selectedEmployee && parseFloat(selectedEmployee.spend_12m ?? "0") > 0 && (
+          <div className="text-right shrink-0 mr-2">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">12-month spend</p>
+            <p className="text-sm font-semibold text-foreground">{formatCurrency(parseFloat(selectedEmployee.spend_12m))}</p>
+          </div>
+        )}
         <span className="text-xs text-muted-foreground shrink-0">Change</span>
       </button>
 
