@@ -791,6 +791,19 @@ export async function runStartupMigrations(): Promise<void> {
       image_url = COALESCE(select_extra_offers.image_url, EXCLUDED.image_url)
   `);
 
+  // Auto-expire Select Extra offers from past months
+  {
+    const _now = new Date();
+    await db.execute(sql`
+      UPDATE select_extra_offers SET is_active = false
+      WHERE is_active = true
+        AND (
+          year < ${_now.getFullYear()}
+          OR (year = ${_now.getFullYear()} AND month < ${_now.getMonth() + 1})
+        )
+    `);
+  }
+
   // ── Auto-register staff email accounts from STAFF_EMAILS env var ──────────
   // Format: comma-separated emails, e.g. "chris@example.com,alice@example.com"
   // On each startup any listed addresses are merged into the staff_accounts

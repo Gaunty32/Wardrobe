@@ -112,6 +112,44 @@ router.post("/select-extra/offers", async (req: Request, res: Response) => {
   }
 });
 
+// ── Portal: library of past offers ───────────────────────────────────────────
+
+router.get("/portal/select-extra/library", portalAuth, async (req: Request, res: Response) => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, year, month, title, product_name, description, image_url, product_url, quantity, min_spend
+      FROM select_extra_offers
+      WHERE (year < ${year} OR (year = ${year} AND month < ${month}))
+        AND product_name IS NOT NULL AND product_name != ''
+      ORDER BY year DESC, month DESC
+      LIMIT 24
+    `);
+    res.json(rows.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Staff: toggle offer active/inactive ───────────────────────────────────────
+
+router.patch("/select-extra/offers/:id/active", async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  try {
+    const rows = await db.execute(sql`
+      UPDATE select_extra_offers SET is_active = NOT is_active WHERE id = ${id}
+      RETURNING id, is_active
+    `);
+    if (!rows.rows.length) { res.status(404).json({ error: "Not found" }); return; }
+    res.json(rows.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Staff: list claims (optionally filtered by year/month) ────────────────────
 
 router.get("/select-extra/claims", async (req: Request, res: Response) => {

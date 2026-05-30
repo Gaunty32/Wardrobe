@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Plus, Loader2, ShoppingBag, ArrowRight, Clock, CheckCircle2, XCircle, Package, AlertCircle, User,
-  Hash, Pencil, Check, X, Tags, Gift, Star,
+  Hash, Pencil, Check, X, Tags, Gift, Star, History, ChevronDown, ExternalLink,
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -582,6 +582,19 @@ export default function Dashboard() {
     enabled: isManager,
   });
 
+  const { data: selectExtraLibrary = [] } = useQuery<Array<{
+    id: number; year: number; month: number; title: string; product_name: string;
+    description: string | null; image_url: string | null; product_url: string | null;
+    quantity: number; min_spend: string;
+  }>>({
+    queryKey: ["portal-select-extra-library"],
+    queryFn: () => apiFetch("/portal/select-extra/library"),
+    enabled: isManager,
+    staleTime: 60_000,
+  });
+
+  const [libraryOpen, setLibraryOpen] = useState(false);
+
   // ── Batch PO assignment mode (managers only) ────────────────────────────────
   const [poMode, setPoMode] = useState(false);
   const [poSelected, setPoSelected] = useState<Set<number>>(new Set());
@@ -718,6 +731,56 @@ export default function Dashboard() {
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* Select Extra Library — past offers, visible to managers */}
+      {isManager && selectExtraLibrary.length > 0 && (
+        <div className="mb-6">
+          <button
+            onClick={() => setLibraryOpen(v => !v)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-3 transition-colors"
+          >
+            <History className="w-4 h-4" />
+            <span>Past Select Extra Offers</span>
+            <span className="text-xs bg-muted px-1.5 py-0.5 rounded-full">{selectExtraLibrary.length}</span>
+            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${libraryOpen ? "rotate-180" : ""}`} />
+          </button>
+          {libraryOpen && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {selectExtraLibrary.map((past) => (
+                <div key={past.id} className="rounded-xl border bg-card p-3 flex gap-3 items-start">
+                  {past.image_url ? (
+                    <img
+                      src={past.image_url}
+                      alt={past.product_name}
+                      className="w-12 h-12 rounded-lg object-contain shrink-0 bg-muted/30 p-0.5"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                      <Gift className="w-5 h-5 text-muted-foreground/40" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      {new Date(0, past.month - 1).toLocaleString("en-GB", { month: "long" })} {past.year}
+                    </p>
+                    <p className="text-xs font-semibold leading-tight mt-0.5 line-clamp-2">{past.product_name}</p>
+                    {past.product_url && (
+                      <a
+                        href={past.product_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-primary hover:underline flex items-center gap-0.5 mt-1"
+                      >
+                        Order at full price <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

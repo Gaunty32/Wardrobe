@@ -1,0 +1,89 @@
+We need to rethink how quotes work.
+
+When we create a quote for a new/prospect customer, we are NOT creating:
+- a full customer portal account
+- a wardrobe
+- production processes
+- decoration/process records
+- stock rules
+- supplier links
+
+At quote stage, the quote is basically headline commercial data.
+
+The “Finish / Decoration” field on a quote line should therefore be flexible quote text, not a required live production process.
+
+Example:
+Product: Ladies Classic Polo
+Finish / Decoration:
+- Left Chest Emb
+- Right Chest Name
+- Sleeve Logo
+- DTF Back Print
+
+We need to be able to edit this after quote creation.
+
+Requirements:
+
+1. Quote lines must be editable
+We should be able to go back into a quote and change:
+- Product
+- Finish / Decoration headline text
+- Quantity
+- Unit price
+- Line notes/description
+
+2. Multiple finish lines per product
+A quoted product should be able to have more than one finish/decoration line.
+
+Example:
+Ladies Classic Polo
+- Left Chest Emb
+- Sleeve Logo
+
+This can either be shown as multiple finish rows under the same product or as an “Add finish / decoration line” option on the product row.
+
+3. Customer quote review
+When the customer reviews the quote in the portal, they should also be able to add or request extra finish/decoration lines before submitting.
+
+Example:
+They may add:
+- “Can we also have names on the right chest?”
+
+4. Submitted quote becomes draft order
+When the customer submits the quote/order, it should become a Draft Order for us to review.
+
+At that point, internally, we then create or link:
+- customer account if required
+- wardrobe items if required
+- real production processes
+- finishes/decorations
+- logo files
+- supplier/product links
+- stock rules
+
+The customer submission should not automatically force all of this to exist beforehand.
+
+5. No reinputting the whole order
+The submitted draft order must preserve:
+- customer details
+- contact details
+- quote lines
+- products
+- headline finishes
+- quantities
+- prices
+- notes
+- requested variations
+
+Then staff can convert the draft into a proper live order by completing the missing operational data.
+
+Acceptance test:
+Create a quote for a new customer with Ladies Classic Polo.
+Add finish “Left Chest Emb”.
+Save quote.
+Reopen the quote.
+Add another finish line “Right Chest Name”.
+Save again.
+Send quote to customer.
+Customer can review and submit it.
+Submitted order appears internally as a Draft Order, ready for staff to complete production processes without retyping the quote.

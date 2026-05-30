@@ -87,6 +87,19 @@ export default function SelectExtra() {
 
   const currentOffer = offers.find(o => o.year === viewYear && o.month === viewMonth) ?? null;
 
+  // Next month relative to current view
+  const nextMonthView = viewMonth === 12 ? 1 : viewMonth + 1;
+  const nextYearView = viewMonth === 12 ? viewYear + 1 : viewYear;
+  const nextMonthOffer = offers.find(o => o.year === nextYearView && o.month === nextMonthView) ?? null;
+
+  // Most recent past offer — used as template for new ones
+  const latestOffer = [...offers]
+    .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month))
+    .find(o => o.year * 12 + o.month <= viewYear * 12 + viewMonth) ?? null;
+
+  // Is the viewed month the real current month?
+  const isCurrentRealMonth = viewYear === now.getFullYear() && viewMonth === (now.getMonth() + 1);
+
   const saveMutation = useMutation({
     mutationFn: (data: typeof form) => apiFetch("/select-extra/offers", {
       method: "POST",
@@ -98,6 +111,15 @@ export default function SelectExtra() {
       toast({ title: "Offer saved" });
     },
     onError: (e: any) => toast({ title: "Error saving offer", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/select-extra/offers/${id}/active`, { method: "PATCH" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["select-extra-offers"] });
+      toast({ title: "Offer updated" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
   function openNewOffer() {
@@ -132,6 +154,22 @@ export default function SelectExtra() {
     setOfferOpen(true);
   }
 
+  function openTemplateOffer(targetYear: number, targetMonth: number, template?: Offer | null) {
+    setForm({
+      year: targetYear,
+      month: targetMonth,
+      title: `Select Extra — ${MONTHS[targetMonth - 1]} ${targetYear}`,
+      productName: template?.product_name ?? "",
+      description: template?.description ?? "",
+      imageUrl: template?.image_url ?? "",
+      productUrl: template?.product_url ?? "",
+      quantity: template?.quantity ?? 1,
+      minSpend: template ? parseFloat(template.min_spend) : 250,
+      isActive: true,
+    });
+    setOfferOpen(true);
+  }
+
   function navigateMonth(delta: number) {
     let m = viewMonth + delta;
     let y = viewYear;
@@ -156,7 +194,32 @@ export default function SelectExtra() {
               <p className="text-sm text-muted-foreground">Monthly free gift programme for portal customers</p>
             </div>
           </div>
+          {/* "Plan next month" CTA — only shown when viewing the current real month and no next-month offer exists yet */}
+          {isCurrentRealMonth && !nextMonthOffer && (
+            <Button onClick={() => openTemplateOffer(nextYearView, nextMonthView, latestOffer)}>
+              <Plus className="w-4 h-4 mr-1.5" />
+              Plan {MONTHS[nextMonthView - 1]} {nextYearView}
+            </Button>
+          )}
         </div>
+
+        {/* Next-month draft notice */}
+        {isCurrentRealMonth && nextMonthOffer && !nextMonthOffer.is_active && (
+          <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/50 px-4 py-3 mb-6 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm text-amber-800">
+              <Calendar className="w-4 h-4 shrink-0" />
+              <span>
+                <strong>{MONTHS[nextMonthView - 1]} {nextYearView}</strong> offer is drafted
+                ({nextMonthOffer.product_name}) — activate it when the month begins.
+              </span>
+            </div>
+            <Button size="sm" variant="outline"
+              className="border-amber-400 text-amber-800 hover:bg-amber-100 shrink-0"
+              onClick={() => { setViewYear(nextYearView); setViewMonth(nextMonthView); }}>
+              View draft
+            </Button>
+          </div>
+        )}
 
         {/* Month navigator */}
         <div className="flex items-center gap-3 mb-6">
@@ -210,9 +273,21 @@ export default function SelectExtra() {
             </div>
             <div className="flex gap-2 shrink-0">
               {currentOffer ? (
-                <Button variant="outline" size="sm" onClick={() => openEditOffer(currentOffer)}>
-                  Edit offer
-                </Button>
+                <>
+                  <Button
+                    variant="outline" size="sm"
+                    disabled={toggleMutation.isPending}
+                    className={currentOffer.is_active
+                      ? "text-muted-foreground hover:text-destructive hover:border-destructive/50"
+                      : "text-emerald-700 border-emerald-300 hover:bg-emerald-50"}
+                    onClick={() => toggleMutation.mutate(currentOffer.id)}
+                  >
+                    {currentOffer.is_active ? "Deactivate" : "Activate"}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => openEditOffer(currentOffer)}>
+                    Edit
+                  </Button>
+                </>
               ) : (
                 <Button size="sm" onClick={openNewOffer}>
                   <Plus className="w-4 h-4 mr-1.5" /> Create offer
@@ -274,28 +349,66 @@ export default function SelectExtra() {
         </div>
 
         {/* All offers history */}
-        {offers.length > 1 && (
+        {offers.length > 0 && (
           <div className="mt-6">
-            <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">Offer History</h3>
+            <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">All Offers</h3>
             <div className="space-y-2">
-              {offers.map(offer => (
-                <button
-                  key={offer.id}
-                  onClick={() => { setViewYear(offer.year); setViewMonth(offer.month); }}
-                  className="w-full text-left rounded-lg border bg-card px-4 py-3 flex items-center justify-between hover:border-primary/50 transition-colors group"
-                >
-                  <div>
-                    <span className="text-sm font-medium">{MONTHS[offer.month - 1]} {offer.year}</span>
-                    <span className="text-xs text-muted-foreground ml-2">{offer.product_name}</span>
+              {offers.map(offer => {
+                const offerKey = offer.year * 12 + offer.month;
+                const nowKey = now.getFullYear() * 12 + (now.getMonth() + 1);
+                const isPast = offerKey < nowKey;
+                const isFuture = offerKey > nowKey;
+                const statusLabel = isPast
+                  ? (offer.is_active ? "Active" : "Expired")
+                  : isFuture
+                    ? (offer.is_active ? "Scheduled" : "Draft")
+                    : (offer.is_active ? "Active" : "Inactive");
+                const statusVariant: "default" | "secondary" | "outline" =
+                  isPast ? "secondary"
+                  : isFuture ? "outline"
+                  : offer.is_active ? "default" : "secondary";
+
+                return (
+                  <div
+                    key={offer.id}
+                    className="rounded-lg border bg-card px-4 py-3 flex items-center justify-between gap-3"
+                  >
+                    <button
+                      className="flex-1 min-w-0 text-left flex items-center gap-3"
+                      onClick={() => { setViewYear(offer.year); setViewMonth(offer.month); }}
+                    >
+                      <div className="min-w-0">
+                        <span className="text-sm font-medium">{MONTHS[offer.month - 1]} {offer.year}</span>
+                        <span className="text-xs text-muted-foreground ml-2 truncate">{offer.product_name}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">{offer.claim_count} claims</span>
+                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant={statusVariant} className={`text-xs ${isFuture && offer.is_active ? "border-emerald-400 text-emerald-700" : ""}`}>
+                        {statusLabel}
+                      </Badge>
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                        disabled={toggleMutation.isPending}
+                        onClick={() => toggleMutation.mutate(offer.id)}
+                      >
+                        {offer.is_active ? "Deactivate" : "Activate"}
+                      </Button>
+                      {isPast && (
+                        <Button
+                          variant="ghost" size="sm"
+                          className="h-7 px-2 text-xs text-muted-foreground hover:text-amber-700"
+                          onClick={() => openTemplateOffer(nextYearView, nextMonthView, offer)}
+                          title={`Use ${MONTHS[offer.month - 1]} offer as template for ${MONTHS[nextMonthView - 1]} ${nextYearView}`}
+                        >
+                          Use as template
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{offer.claim_count} claims</span>
-                    <Badge variant={offer.is_active ? "default" : "secondary"} className="text-xs">
-                      {offer.is_active ? "Active" : "Inactive"}
-                    </Badge>
-                  </div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
