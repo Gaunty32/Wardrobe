@@ -3250,22 +3250,39 @@ router.get("/portal/quote/:token", async (req: Request, res: Response) => {
     SELECT * FROM quote_items WHERE quote_id = ${quote.id} ORDER BY sort_order, id
   `);
 
-  const items = (itemRows.rows as any[]).map((item) => ({
-    productId: item.product_id ?? null,
-    productName: item.product_name,
-    sku: null,
-    colour: item.colour ?? "",
-    size: item.size ?? "",
-    finishId: item.finish_id ?? null,
-    finishName: item.finish_name ?? "",
-    recipientType: "stock" as const,
-    recipientName: "",
-    recipientEmployeeId: null,
-    quantity: item.quantity,
-    garmentBasePrice: parseFloat(String(item.unit_price ?? 0)),
-    processLines: [],
-    unitPrice: parseFloat(String(item.unit_price ?? 0)),
-  }));
+  // Separate parent rows (no parent_item_id) from child decoration rows, then
+  // combine all decoration finishNames onto the parent as a newline-joined string.
+  const allRawItems = itemRows.rows as any[];
+  const childrenByParent = new Map<number, string[]>();
+  for (const row of allRawItems) {
+    if (row.parent_item_id != null && row.finish_name) {
+      if (!childrenByParent.has(row.parent_item_id)) childrenByParent.set(row.parent_item_id, []);
+      childrenByParent.get(row.parent_item_id)!.push(row.finish_name);
+    }
+  }
+
+  const items = allRawItems
+    .filter((row) => row.parent_item_id == null)
+    .map((item) => {
+      const childFinishes = childrenByParent.get(item.id) ?? [];
+      const allFinishes = [item.finish_name, ...childFinishes].filter(Boolean);
+      return {
+        productId: item.product_id ?? null,
+        productName: item.product_name,
+        sku: null,
+        colour: item.colour ?? "",
+        size: item.size ?? "",
+        finishId: item.finish_id ?? null,
+        finishName: allFinishes.join("\n"),
+        recipientType: "stock" as const,
+        recipientName: "",
+        recipientEmployeeId: null,
+        quantity: item.quantity,
+        garmentBasePrice: parseFloat(String(item.unit_price ?? 0)),
+        processLines: [],
+        unitPrice: parseFloat(String(item.unit_price ?? 0)),
+      };
+    });
 
   // Resolve productId by product name for quote items that have no product_id linked.
   // This allows sizesMap to include variant data for manually-entered quote lines.

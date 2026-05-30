@@ -2134,7 +2134,11 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                           <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{item.sku}</div>
                         )}
                         {item.finishName && (
-                          <div className="text-[11px] text-primary/70 font-semibold mt-1">{item.finishName}</div>
+                          <div className="mt-1 space-y-0.5">
+                            {item.finishName.split("\n").filter(Boolean).map((fn, idx) => (
+                              <div key={idx} className="text-[11px] text-primary/70 font-semibold">{fn}</div>
+                            ))}
+                          </div>
                         )}
                       </TableCell>
                       <TableCell className="text-sm align-top">

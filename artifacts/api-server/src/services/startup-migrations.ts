@@ -1157,4 +1157,9 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS first_name text;
     ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS last_name  text;
   `);
+
+  // Multi-finish support: child decoration rows link back to a parent product row
+  await db.execute(sql`
+    ALTER TABLE quote_items ADD COLUMN IF NOT EXISTS parent_item_id integer REFERENCES quote_items(id) ON DELETE CASCADE;
+  `);
 }

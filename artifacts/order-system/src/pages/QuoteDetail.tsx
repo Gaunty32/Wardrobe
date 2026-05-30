@@ -44,6 +44,7 @@ async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<
 interface QuoteItem {
   id: number;
   quoteId: number;
+  parentItemId: number | null;
   productId: number | null;
   productName: string;
   productSku: string | null;
@@ -204,7 +205,7 @@ export default function QuoteDetail() {
 
   const addItem = useMutation({
     mutationFn: async () => {
-      await apiFetch(`/quotes/${quoteId}/items`, {
+      const parent = await apiFetch<{ id: number }>(`/quotes/${quoteId}/items`, {
         method: "POST",
         body: JSON.stringify({
           productId: newItem.productId ?? null,
@@ -222,9 +223,11 @@ export default function QuoteDetail() {
         await apiFetch(`/quotes/${quoteId}/items`, {
           method: "POST",
           body: JSON.stringify({
-            productName: finishLine.finishName.trim(),
-            quantity: newItem.quantity,
-            unitPrice: finishLine.unitPrice,
+            parentItemId: parent.id,
+            productName: newItem.productName,
+            finishName: finishLine.finishName.trim(),
+            quantity: 0,
+            unitPrice: 0,
           }),
         });
       }
@@ -251,6 +254,26 @@ export default function QuoteDetail() {
   const updateItem = useMutation({
     mutationFn: ({ itemId, data }: { itemId: number; data: Partial<typeof EMPTY_ITEM> }) =>
       apiFetch(`/quotes/${quoteId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["quote", quoteId] }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addFinishToItem = useMutation({
+    mutationFn: ({ parentItemId, productName }: { parentItemId: number; productName: string }) =>
+      apiFetch(`/quotes/${quoteId}/items`, {
+        method: "POST",
+        body: JSON.stringify({ parentItemId, productName, finishName: "", quantity: 0, unitPrice: 0 }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["quote", quoteId] }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updateDecoration = useMutation({
+    mutationFn: ({ itemId, finishName }: { itemId: number; finishName: string }) =>
+      apiFetch(`/quotes/${quoteId}/items/${itemId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ finishName }),
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quote", quoteId] }),
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -289,11 +312,13 @@ export default function QuoteDetail() {
   }
 
   const items = quote.items ?? [];
-  const hasColour = items.some((i) => i.colour);
-  const hasSize = items.some((i) => i.size);
+  const parentItems = items.filter((i) => !i.parentItemId);
+  const childrenByParent = new Map(parentItems.map((p) => [p.id, items.filter((c) => c.parentItemId === p.id)]));
+  const hasColour = parentItems.some((i) => i.colour);
+  const hasSize = parentItems.some((i) => i.size);
   const colSpan = 5 + (hasColour ? 1 : 0) + (hasSize ? 1 : 0) + 1;
-  const subtotal = items.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
-  const vat = items.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity * parseFloat(i.vatRate), 0);
+  const subtotal = parentItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
+  const vat = parentItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity * parseFloat(i.vatRate), 0);
   const total = subtotal + vat;
 
   const portalLink = `${window.location.origin}/customer-portal/orders/new?quote=${quote.token}`;
@@ -502,17 +527,21 @@ export default function QuoteDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((item) => (
+                {parentItems.map((item) => (
                   <ItemRow
                     key={item.id}
                     item={item}
                     showColour={hasColour}
                     showSize={hasSize}
+                    decorationItems={childrenByParent.get(item.id) ?? []}
                     onDelete={() => deleteItem.mutate(item.id)}
                     onSave={(data) => updateItem.mutate({ itemId: item.id, data })}
+                    onAddDecoration={() => addFinishToItem.mutate({ parentItemId: item.id, productName: item.productName })}
+                    onDeleteDecoration={(childId) => deleteItem.mutate(childId)}
+                    onSaveDecoration={(childId, finishName) => updateDecoration.mutate({ itemId: childId, finishName })}
                   />
                 ))}
-                {items.length === 0 && (
+                {parentItems.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={colSpan} className="text-center text-muted-foreground py-6 text-sm">
                       No items yet — add your first item below.
@@ -653,41 +682,22 @@ export default function QuoteDetail() {
                     </Button>
                   </TableCell>
                 </TableRow>
-                {/* Finish line row */}
+                {/* Finish line row (additional decoration for new item) */}
                 {addFinishLine && (
                   <TableRow className="bg-amber-50/40 dark:bg-amber-950/10">
-                    <TableCell>
+                    <TableCell colSpan={(hasColour ? 1 : 0) + (hasSize ? 1 : 0) + 2}>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground pl-1 whitespace-nowrap">↳ Finish:</span>
+                        <span className="text-xs text-muted-foreground pl-1 whitespace-nowrap">↳ Decoration:</span>
                         <Input
                           value={finishLine.finishName}
                           onChange={(e) => setFinishLine((p) => ({ ...p, finishName: e.target.value }))}
-                          placeholder="e.g. Logo Embroidery"
+                          placeholder="e.g. Right Chest Name"
                           className="h-8 text-sm"
                           autoFocus
                         />
                       </div>
                     </TableCell>
-                    {hasColour && <TableCell />}
-                    {hasSize && <TableCell />}
-                    <TableCell />
-                    <TableCell>
-                      <span className="text-xs text-muted-foreground text-right block">{newItem.quantity}×</span>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min={0}
-                        step={0.01}
-                        value={finishLine.unitPrice}
-                        onChange={(e) => setFinishLine((p) => ({ ...p, unitPrice: parseFloat(e.target.value) || 0 }))}
-                        className="h-8 text-sm text-right"
-                        placeholder="0.00"
-                      />
-                    </TableCell>
-                    <TableCell className="text-right text-sm text-muted-foreground">
-                      £{(newItem.quantity * finishLine.unitPrice).toFixed(2)}
-                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground text-center" colSpan={3}>included in price</TableCell>
                     <TableCell>
                       <Button
                         variant="ghost" size="sm"
@@ -808,14 +818,22 @@ function ItemRow({
   item,
   showColour,
   showSize,
+  decorationItems,
   onDelete,
   onSave,
+  onAddDecoration,
+  onDeleteDecoration,
+  onSaveDecoration,
 }: {
   item: QuoteItem;
   showColour: boolean;
   showSize: boolean;
+  decorationItems: QuoteItem[];
   onDelete: () => void;
   onSave: (data: { productName?: string; colour?: string | null; size?: string | null; finishName?: string | null; quantity?: number; unitPrice?: number; notes?: string | null }) => void;
+  onAddDecoration: () => void;
+  onDeleteDecoration: (childId: number) => void;
+  onSaveDecoration: (childId: number, finishName: string) => void;
 }) {
   const [productName, setProductName] = useState(item.productName);
   const [colour, setColour] = useState(item.colour ?? "");
@@ -892,13 +910,30 @@ function ItemRow({
         </TableCell>
       )}
       <TableCell>
-        <Input
-          value={finishName}
-          onChange={(e) => setFinishName(e.target.value)}
-          onBlur={save}
-          placeholder="—"
-          className="h-8 text-sm border-transparent hover:border-input focus:border-input"
-        />
+        <div className="space-y-1 py-0.5">
+          <Input
+            value={finishName}
+            onChange={(e) => setFinishName(e.target.value)}
+            onBlur={save}
+            placeholder="+ Add finish…"
+            className="h-8 text-sm border-transparent hover:border-input focus:border-input"
+          />
+          {decorationItems.map((deco) => (
+            <DecorationChip
+              key={deco.id}
+              deco={deco}
+              onDelete={() => onDeleteDecoration(deco.id)}
+              onSave={(fn) => onSaveDecoration(deco.id, fn)}
+            />
+          ))}
+          <button
+            type="button"
+            onClick={onAddDecoration}
+            className="flex items-center gap-0.5 text-[11px] text-muted-foreground/60 hover:text-primary transition-colors pl-2"
+          >
+            <Plus className="w-3 h-3" /> Add decoration
+          </button>
+        </div>
       </TableCell>
       <TableCell>
         <Input
@@ -934,5 +969,38 @@ function ItemRow({
         </Button>
       </TableCell>
     </TableRow>
+  );
+}
+
+function DecorationChip({
+  deco,
+  onDelete,
+  onSave,
+}: {
+  deco: QuoteItem;
+  onDelete: () => void;
+  onSave: (finishName: string) => void;
+}) {
+  const [value, setValue] = useState(deco.finishName ?? "");
+
+  return (
+    <div className="flex items-center gap-1 pl-1">
+      <span className="text-muted-foreground/40 text-xs shrink-0">↳</span>
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => onSave(value)}
+        placeholder="Decoration name…"
+        className="h-7 text-xs border-transparent hover:border-input focus:border-input flex-1"
+      />
+      <Button
+        variant="ghost" size="sm"
+        className="h-6 w-6 p-0 text-muted-foreground/50 hover:text-destructive shrink-0"
+        onClick={onDelete}
+        title="Remove decoration"
+      >
+        <X className="w-3 h-3" />
+      </Button>
+    </div>
   );
 }
