@@ -1151,4 +1151,10 @@ export async function runStartupMigrations(): Promise<void> {
           AND p2.id != id
       );
   `);
+
+  // Add first_name / last_name to customer_portal_users (used when personalising quote emails)
+  await db.execute(sql`
+    ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS first_name text;
+    ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS last_name  text;
+  `);
 }
