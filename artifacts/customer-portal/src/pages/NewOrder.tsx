@@ -1926,7 +1926,7 @@ const SHIPPING_OPTIONS = [
   },
 ] as const;
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false, disabled = false }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) => void;
@@ -1936,6 +1936,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   sizesMap?: Record<string, Record<string, string[]>>;
   variantImagesMap?: Record<string, Record<string, string | null>>;
   fromQuote?: boolean;
+  disabled?: boolean;
 }) {
   const { toast } = useToast();
   const [requiredDate, setRequiredDate] = useState(() => {
@@ -2579,7 +2580,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             }
             onSubmit(data);
           }}
-          disabled={submitting || basket.length === 0 || !shippingId}
+          disabled={submitting || basket.length === 0 || !shippingId || disabled}
           className="w-full sm:w-auto"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
@@ -2958,6 +2959,7 @@ export default function NewOrder() {
           shippingCost: data.shippingCost,
           paymentMethodId: data.paymentMethodId ?? null,
           claimSelectExtra: data.claimSelectExtra ?? false,
+          quoteToken: quoteToken || undefined,
           attachments: data.attachments.length ? data.attachments : undefined,
           items: basket.map(i => ({
             productId: i.productId,
@@ -3135,6 +3137,7 @@ export default function NewOrder() {
           sizesMap={quoteData?.sizesMap ?? {}}
           variantImagesMap={quoteData?.variantImagesMap ?? {}}
           fromQuote={true}
+          disabled={quoteMismatch}
         />
       )}
 

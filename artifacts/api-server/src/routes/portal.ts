@@ -924,6 +924,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     shippingCost: z.number().nonnegative().optional(),
     paymentMethodId: z.string().nullable().optional(),
     claimSelectExtra: z.boolean().optional(),
+    quoteToken: z.string().optional(),
     attachments: z.array(z.object({ name: z.string(), objectPath: z.string() })).optional(),
     items: z.array(z.object({
       productId: z.number().nullable().optional(),
@@ -944,6 +945,24 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     return;
   }
   const body = parsed.data;
+
+  // ── SECURITY: if a quoteToken is supplied, the quote's customer MUST match ──
+  // This is a hard server-side guard — it cannot be bypassed by the client.
+  if (body.quoteToken) {
+    const quoteRows = await db.execute(sql`
+      SELECT customer_id FROM quotes WHERE token = ${body.quoteToken} LIMIT 1
+    `);
+    if (!quoteRows.rows.length) {
+      res.status(400).json({ error: "Quote not found." });
+      return;
+    }
+    const quoteCustomerId = Number((quoteRows.rows[0] as any).customer_id);
+    if (quoteCustomerId !== customerId) {
+      console.warn(`[SECURITY] Order blocked: quote customer ${quoteCustomerId} ≠ portal customer ${customerId}`);
+      res.status(403).json({ error: "This quote does not belong to your account. Order not created." });
+      return;
+    }
+  }
 
   try {
 
