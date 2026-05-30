@@ -798,7 +798,11 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
     doc.font("Helvetica-Bold").fontSize(13).fillColor("#ffffff")
       .text("Quotation", margin + 130, margin + 19, { width: contentW - 360, align: "center" });
     if (data.customerLogoBuffer) {
-      try { doc.image(data.customerLogoBuffer, margin + contentW - 108, margin + 6, { fit: [100, 40], valign: "center" }); } catch {}
+      const lx = margin + contentW - 110;
+      const ly = margin + 6;
+      // White backing so dark logos remain visible on the dark header
+      doc.roundedRect(lx - 4, ly - 3, 110, 46, 3).fill("#ffffff");
+      try { doc.image(data.customerLogoBuffer, lx, ly, { fit: [102, 40], valign: "center" }); } catch {}
     }
 
     // ── Customer name + SBS contact ──────────────────────────────────────────
@@ -1060,7 +1064,7 @@ export function buildQuoteEmail(data: {
   // Resolve placeholders — also patch legacy literal phrases from old saved cover texts
   const greetingName = firstName ?? null;
   const resolvedCoverText = data.coverText
-    .replace(/^Hi there,/m, greetingName ? `Hi ${greetingName},` : `Dear ${data.customerName ?? ""},`)
+    .replace(/^Hi there,/m, greetingName ? `Hi ${greetingName},` : `Hi,`)
     .replace(/^Hi \{firstName\},/m, greetingName ? `Hi ${greetingName},` : "Hi,")
     .replace(/Thank you for your enquiry with Select Branding Solutions\./g,
       `Thank you for the opportunity to quote for ${data.customerName ?? "your organisation"}.`)
