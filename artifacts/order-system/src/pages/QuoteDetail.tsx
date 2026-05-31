@@ -24,7 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Loader2, Trash2, Plus, Copy, Check, Send, Clock,
   Eye, CheckCircle2, ShoppingCart, X, Link as LinkIcon, FileText,
-  ChevronDown, Save, Upload, ImageOff, Download, ChevronsUpDown,
+  ChevronDown, Save, Upload, ImageOff, Download, ChevronsUpDown, PackagePlus,
 } from "lucide-react";
 import { UploadedImage } from "@/components/UploadedImage";
 import { useUpload } from "@workspace/object-storage-web";
@@ -203,6 +203,18 @@ export default function QuoteDetail() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const createOrder = useMutation({
+    mutationFn: () => apiFetch<{ orderId: number; orderNumber: string }>(`/quotes/${quoteId}/create-order`, { method: "POST" }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["quote", quoteId] });
+      qc.invalidateQueries({ queryKey: ["quotes"] });
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      toast({ title: `Order ${data.orderNumber} created`, description: "Quote marked as ordered. Opening order…" });
+      setTimeout(() => setLocation(`/orders/${data.orderId}`), 600);
+    },
+    onError: (e: Error) => toast({ title: "Failed to create order", description: e.message, variant: "destructive" }),
+  });
+
   const addItem = useMutation({
     mutationFn: async () => {
       const parent = await apiFetch<{ id: number }>(`/quotes/${quoteId}/items`, {
@@ -357,6 +369,18 @@ export default function QuoteDetail() {
                 <Download className="w-3.5 h-3.5" /> Download PDF
               </Button>
             </a>
+            <Button
+              size="sm"
+              className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+              disabled={createOrder.isPending || quote.status === "ordered" || (quote.items ?? []).filter((i: QuoteItem) => !i.parentItemId).length === 0}
+              onClick={() => {
+                if (confirm(`Confirm order from ${quote.quoteNumber}? This will create a new order and mark the quote as ordered.`))
+                  createOrder.mutate();
+              }}
+            >
+              {createOrder.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PackagePlus className="w-3.5 h-3.5" />}
+              {quote.status === "ordered" ? "Already ordered" : "Confirm Order"}
+            </Button>
             <Button
               variant="outline" size="sm"
               className="gap-1.5 text-destructive hover:text-destructive"

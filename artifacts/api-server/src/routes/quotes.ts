@@ -681,4 +681,55 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   });
 });
 
+// ─── Create order from quote (staff shortcut) ─────────────────────────────────
+// Staff can confirm an order on behalf of a customer without going through the
+// customer portal, e.g. when the customer accepts verbally or by email.
+router.post("/quotes/:id/create-order", async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const quoteRows = await db.execute(sql`SELECT * FROM quotes WHERE id = ${id}`);
+  const quote = quoteRows.rows[0] as any;
+  if (!quote) { res.status(404).json({ error: "Quote not found" }); return; }
+
+  const itemRows = await db.execute(sql`
+    SELECT * FROM quote_items WHERE quote_id = ${id} AND parent_item_id IS NULL ORDER BY sort_order, id
+  `);
+  const items = itemRows.rows as any[];
+  if (items.length === 0) { res.status(400).json({ error: "Quote has no items" }); return; }
+
+  // Generate next O-series order number
+  const seqRows = await db.execute(sql`
+    SELECT order_number FROM orders
+    WHERE order_number ~ '^O[0-9]+$'
+    ORDER BY LENGTH(order_number) DESC, order_number DESC
+    LIMIT 1
+  `);
+  const lastNum = (seqRows.rows[0] as any)?.order_number as string | undefined;
+  const nextNum = lastNum ? parseInt(lastNum.slice(1), 10) + 1 : 100;
+  const orderNumber = `O${nextNum}`;
+
+  const itemsTotal = items.reduce((s: number, i: any) => s + parseFloat(i.unit_price ?? "0") * (i.quantity ?? 1), 0);
+
+  const orderResult = await db.execute(sql`
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, total_amount, notes, order_date, quote_id)
+    VALUES (${orderNumber}, ${quote.customer_id ?? null}, ${quote.customer_name}, 'new', 'quote', ${itemsTotal.toFixed(2)}, ${quote.notes ?? null}, now(), ${id})
+    RETURNING id
+  `);
+  const orderId = (orderResult.rows[0] as any).id as number;
+
+  for (const item of items) {
+    const lineTotal = parseFloat(item.unit_price ?? "0") * (item.quantity ?? 1);
+    await db.execute(sql`
+      INSERT INTO order_items (order_id, product_id, product_name, colour, size, finish_name, quantity, unit_price, line_total)
+      VALUES (${orderId}, ${item.product_id ?? null}, ${item.product_name}, ${item.colour ?? null}, ${item.size ?? null}, ${item.finish_name ?? null}, ${item.quantity ?? 1}, ${item.unit_price ?? "0"}, ${lineTotal.toFixed(2)})
+    `);
+  }
+
+  // Mark quote as ordered
+  await db.execute(sql`UPDATE quotes SET status = 'ordered', updated_at = now() WHERE id = ${id}`);
+
+  res.status(201).json({ orderId, orderNumber });
+});
+
 export default router;
