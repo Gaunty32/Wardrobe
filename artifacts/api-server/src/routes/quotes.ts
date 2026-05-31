@@ -518,6 +518,11 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
     (quote.cust_first_name   as string | null) ||
     null;
 
+  // Also seed from the HL-synced contact email stored directly on the quote
+  if (!toEmail && quote.customer_email) {
+    toEmail = quote.customer_email as string;
+  }
+
   if (!toEmail && quote.customer_id) {
     // Prefer manager/dept_manager portal users
     const managerRows = await db.execute(sql`
