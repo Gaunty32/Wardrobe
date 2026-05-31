@@ -460,7 +460,10 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
   }).safeParse(req.body);
 
   const quoteRows = await db.execute(sql`
-    SELECT q.*, c.contact_first_name AS cust_first_name, c.contact_last_name AS cust_last_name
+    SELECT q.*,
+      c.contact_first_name AS cust_first_name,
+      c.contact_last_name  AS cust_last_name,
+      c.email              AS customer_email
     FROM quotes q
     LEFT JOIN customers c ON c.id = q.customer_id
     WHERE q.id = ${id}
