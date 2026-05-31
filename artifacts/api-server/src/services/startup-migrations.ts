@@ -1169,4 +1169,17 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE quotes ADD COLUMN IF NOT EXISTS contact_first_name text;
     ALTER TABLE quotes ADD COLUMN IF NOT EXISTS contact_last_name  text;
   `);
+
+  // Stock bins + per-variant bin location and minimum stock level
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS stock_bins (
+      id         serial PRIMARY KEY,
+      bin_number text   NOT NULL UNIQUE,
+      notes      text,
+      max_qty    integer NOT NULL DEFAULT 15,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS bin_location  text;
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS min_stock_qty integer NOT NULL DEFAULT 5;
+  `);
 }

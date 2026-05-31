@@ -1,0 +1,95 @@
+The current Stock screen needs significant improvement. Stock management has always been a problem for us, both operationally and in terms of physical storage space.
+
+Please focus first on Plain Stock.
+
+When a new order is confirmed, the system should check stock in this order:
+
+Finished Stock – if the item is already branded/finished with the correct logo/processes, this should be flagged as immediately available.
+Plain Stock – if the plain garment is available, production should clearly show that stock is already available and does not need ordering.
+Supplier Order Required – only if neither finished nor plain stock is available.
+
+On production screens, it must be obvious whether stock is:
+
+Already available as finished stock
+Available as plain stock and ready for production
+Not available and needs ordering
+
+The stock screen should show:
+
+Product image from the product screen
+FCC product code
+Default supplier code
+Product name
+Colour
+Size
+Current stock quantity
+Minimum stock level
+Bin location
+Whether it is plain stock or finished stock
+Finish/customer details where applicable
+
+We need to be able to search by:
+
+FCC code
+Supplier code
+Product name
+Colour
+Size
+Bin number
+Customer name/finish, where applicable
+
+Stock levels need to be easy to amend during a stock take. Ideally this should be done from a simple editable stock table or quick-adjust modal.
+
+Physical stock storage will be based around numbered stacking bins. These bins should be recorded in the system.
+
+Rules for bins:
+
+Each bin has a unique bin number.
+Different products can be stored in the same bin.
+Plain stock and finished stock can be mixed only if the system clearly identifies each item, but my preference is to keep them logically separated where possible.
+Total quantity per bin should not exceed 15 items.
+When putting stock away, the system should suggest the most suitable bin number.
+The system should warn if adding stock would take a bin over 15 items.
+We should be able to browse stock by bin number using tile-style bin cards.
+
+Add a Bin View screen showing tiles/cards for each bin:
+
+Bin number
+Total quantity in the bin
+Whether it contains plain stock, finished stock, or mixed stock
+Warning if over capacity
+Click into the bin to see all stock inside it
+
+Labels:
+
+We already have a default 6x4 wearer label layout. Please use that same label printer setup.
+
+We need two label types:
+
+1. Bin Label
+
+For the front of the stacking box. This should show only:
+
+Bin number
+
+Nothing else.
+
+2. Garment/Stock Label
+
+Printed when stock is put into a bin. This should show:
+
+FCC code
+Supplier code
+Product name
+Colour
+Size
+Quantity in stock
+Plain or finished stock
+Finish/process, if applicable
+Customer name, if applicable
+Date stock amended
+Bin number
+
+The aim is that anyone can pick up a garment or look at a bin and know exactly what it is, where it belongs, and whether it is available for an order.
+
+Please improve the stock screen layout as the current expandable rows are difficult to use and create duplicate-looking size lines. The screen should be faster to search, easier to edit, and more visual. Product images and bin locations are essential.

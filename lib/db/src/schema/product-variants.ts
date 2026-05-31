@@ -13,6 +13,8 @@ export const productVariantsTable = pgTable("product_variants", {
   price: numeric("price", { precision: 10, scale: 2 }),
   imageUrl: text("image_url"),
   stockQuantity: integer("stock_quantity").default(0).notNull(),
+  minStockQty: integer("min_stock_qty").default(5).notNull(),
+  binLocation: text("bin_location"),
   primarySupplierId: integer("primary_supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),
   supplierCode: text("supplier_code"),
   supplierPrice: numeric("supplier_price", { precision: 10, scale: 2 }),
