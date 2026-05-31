@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { UploadedImage } from "@/components/UploadedImage";
@@ -11,17 +11,172 @@ import {
   getListCustomersQueryKey,
   Customer
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { toTitleCase } from "@/lib/utils";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail, Upload, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail, Upload, X, Download, Building2, User } from "lucide-react";
+
+const API_BASE = "/api";
+async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json", ...opts?.headers },
+    ...opts,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as any).error ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+interface HlContact { id: string; name: string; company: string | null; email: string | null; phone: string | null; }
+
+function ImportFromHlDialog({ open, onOpenChange, onImported }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImported: (customerId: number) => void;
+}) {
+  const { toast } = useToast();
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<HlContact[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [importing, setImporting] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) { setQuery(""); setResults([]); }
+  }, [open]);
+
+  useEffect(() => {
+    if (query.length < 2) { setResults([]); return; }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const data = await apiFetch<{ contacts: HlContact[] }>(
+          `/enquiries/search?q=${encodeURIComponent(query)}`
+        );
+        setResults(data.contacts ?? []);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const handleImport = async (contact: HlContact) => {
+    setImporting(contact.id);
+    try {
+      const res = await apiFetch<{ customerId: number; alreadyExisted: boolean }>(
+        "/customers/import-from-hl",
+        { method: "POST", body: JSON.stringify({ hlContactId: contact.id }) }
+      );
+      toast({
+        title: res.alreadyExisted ? "Customer already exists" : "Customer imported",
+        description: res.alreadyExisted
+          ? `${contact.name} was already in your customer list — opening their record.`
+          : `${contact.name} has been added as a customer.`,
+      });
+      onOpenChange(false);
+      onImported(res.customerId);
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Download className="w-4 h-4 text-primary" />
+            Import from High Level
+          </DialogTitle>
+          <DialogDescription>
+            Search for a contact in High Level by name or email and import them as a customer.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-1">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              autoFocus
+              placeholder="Search by name or email…"
+              className="pl-9"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+            {searching && (
+              <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+            )}
+          </div>
+
+          {results.length > 0 && (
+            <div className="rounded-lg border divide-y max-h-72 overflow-y-auto">
+              {results.map(contact => (
+                <div key={contact.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{contact.name}</p>
+                    {contact.company && contact.company !== contact.name && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                        <Building2 className="w-3 h-3 shrink-0" /> {contact.company}
+                      </p>
+                    )}
+                    {contact.email && (
+                      <p className="text-xs text-muted-foreground truncate">{contact.email}</p>
+                    )}
+                    {contact.phone && (
+                      <p className="text-xs text-muted-foreground">{contact.phone}</p>
+                    )}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 gap-1.5 h-7 text-xs"
+                    disabled={importing === contact.id}
+                    onClick={() => handleImport(contact)}
+                  >
+                    {importing === contact.id
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : <Download className="w-3 h-3" />
+                    }
+                    Import
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {query.length >= 2 && !searching && results.length === 0 && (
+            <p className="text-sm text-center text-muted-foreground py-4">
+              No contacts found in High Level for "{query}"
+            </p>
+          )}
+
+          {query.length < 2 && (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              Type at least 2 characters to search
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function formatUKPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
@@ -128,6 +283,7 @@ export default function Customers() {
   const [search, setSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [isHlImportOpen, setIsHlImportOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "tile">(() => {
     return (localStorage.getItem("customersViewMode") as "list" | "tile") ?? "tile";
   });
@@ -237,9 +393,14 @@ export default function Customers() {
             <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Customers</h1>
             <p className="text-muted-foreground mt-1">Manage your client relationships.</p>
           </div>
-          <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
-            <Plus className="w-4 h-4 mr-2" /> Add Customer
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setIsHlImportOpen(true)} className="gap-1.5">
+              <Download className="w-4 h-4" /> Import from HL
+            </Button>
+            <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
+              <Plus className="w-4 h-4 mr-2" /> Add Customer
+            </Button>
+          </div>
         </div>
 
         <Card className="shadow-sm border-border/50">
@@ -355,6 +516,15 @@ export default function Customers() {
             )}
           </CardContent>
         </Card>
+
+        <ImportFromHlDialog
+          open={isHlImportOpen}
+          onOpenChange={setIsHlImportOpen}
+          onImported={(customerId) => {
+            queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
+            navigate(`/customers/${customerId}`);
+          }}
+        />
 
         <Dialog open={isCreateOpen || !!editingCustomer} onOpenChange={(open) => {
           if (!open) { setIsCreateOpen(false); setEditingCustomer(null); }
