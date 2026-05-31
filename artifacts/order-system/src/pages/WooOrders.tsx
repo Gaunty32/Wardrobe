@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -75,6 +75,7 @@ const STATUS_COLOURS: Record<string, string> = {
 function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () => void }) {
   const [open, setOpen] = useState(false);
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const importMutation = useMutation({
     mutationFn: () =>
@@ -84,16 +85,11 @@ function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () =>
       ),
     onSuccess: (res) => {
       toast({
-        title: "Order imported",
-        description: (
-          <span>
-            WooCommerce #{order.number} imported as{" "}
-            <a href={`/orders/${res.orderId}`} className="underline font-medium">{res.orderNumber}</a>
-            {" "}for {res.customerName}.
-          </span>
-        ) as any,
+        title: "Draft order created",
+        description: `WooCommerce #${order.number} imported as ${res.orderNumber} — opening it now to add customer, processes and finishes.`,
       });
       onImported();
+      navigate(`/orders/${res.orderId}`);
     },
     onError: (e: Error) => {
       const msg = parseApiError(e);

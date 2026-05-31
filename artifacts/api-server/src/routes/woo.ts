@@ -214,7 +214,8 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
     if (woo.customer_note?.trim()) notesParts.push(`Customer note: ${woo.customer_note.trim()}`);
     if (woo.payment_method_title) notesParts.push(`Payment: ${woo.payment_method_title}`);
 
-    // Create the order
+    // Create the order as a draft so staff can add customer, processes and
+    // finishes before confirming.
     const attachmentsJson = dedupedFiles.length > 0 ? JSON.stringify(dedupedFiles) : null;
     const orderResult = await db.execute(sql`
       INSERT INTO orders (
@@ -224,7 +225,7 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
         ${orderNumber},
         ${customerId},
         ${customerName},
-        'confirmed',
+        'draft',
         ${woo.total},
         ${carriageAmount.toFixed(2)},
         ${notesParts.join("\n") || null},
