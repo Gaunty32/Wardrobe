@@ -4,6 +4,7 @@ import { db, settingsTable, ordersTable, orderItemsTable, customersTable } from 
 import { eq } from "drizzle-orm";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
 import { getResendClient } from "./resend-client.js";
+import { ObjectStorageService } from "../lib/objectStorage.js";
 
 // ── SBS logo buffer for PDFKit (extracted from data URL) ─────────────────────
 const SBS_LOGO_BUFFER: Buffer | null = (() => {
@@ -14,14 +15,41 @@ const SBS_LOGO_BUFFER: Buffer | null = (() => {
 /** Resolve a potentially-relative storage path to an absolute URL the server can fetch. */
 function toAbsoluteUrl(url: string): string {
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  // Relative paths (e.g. /api/storage/objects/...) — prepend localhost base
   const port = process.env.PORT ?? 8080;
   return `http://localhost:${port}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+/**
+ * Normalise a logo URL to the internal `/objects/…` form expected by
+ * ObjectStorageService.getObjectEntityFile(), or return null if the URL is
+ * not a Replit object-storage path.
+ */
+function toObjectStoragePath(url: string): string | null {
+  if (url.startsWith("/objects/")) return url;
+  if (url.startsWith("/api/storage/objects/")) return url.replace("/api/storage/objects/", "/objects/");
+  return null;
+}
+
+async function readObjectStorageBuffer(objectPath: string): Promise<Buffer | null> {
+  try {
+    const svc = new ObjectStorageService();
+    const file = await svc.getObjectEntityFile(objectPath);
+    const chunks: Buffer[] = [];
+    await new Promise<void>((resolve, reject) => {
+      const stream = file.createReadStream();
+      stream.on("data", (c: Buffer) => chunks.push(c));
+      stream.on("end", resolve);
+      stream.on("error", reject);
+    });
+    return Buffer.concat(chunks);
+  } catch { return null; }
 }
 
 export async function fetchLogoBuffer(url: string | null | undefined): Promise<Buffer | null> {
   if (!url) return null;
   try {
+    const objectPath = toObjectStoragePath(url);
+    if (objectPath) return await readObjectStorageBuffer(objectPath);
     const resp = await fetch(toAbsoluteUrl(url), { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
     return Buffer.from(await resp.arrayBuffer());
@@ -31,6 +59,15 @@ export async function fetchLogoBuffer(url: string | null | undefined): Promise<B
 export async function fetchLogoDataUrl(url: string | null | undefined): Promise<string | null> {
   if (!url) return null;
   try {
+    const objectPath = toObjectStoragePath(url);
+    if (objectPath) {
+      const buf = await readObjectStorageBuffer(objectPath);
+      if (!buf) return null;
+      const ext = url.split(".").pop()?.toLowerCase() ?? "png";
+      const mimeMap: Record<string, string> = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml" };
+      const mime = mimeMap[ext] ?? "image/png";
+      return `data:${mime};base64,${buf.toString("base64")}`;
+    }
     const resp = await fetch(toAbsoluteUrl(url), { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
     const ct = resp.headers.get("content-type") ?? "image/png";
