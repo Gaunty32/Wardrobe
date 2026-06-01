@@ -36,6 +36,7 @@ interface StockItem {
   colour: string | null;
   size: string | null;
   unit_price: string | null;
+  special_price: string | null;
   stock_quantity: number;
   min_quantity: number;
   location: string | null;
@@ -52,6 +53,24 @@ interface StockProcess {
   item_finish_name: string;
   process_type: string;
   placement: string | null;
+  price: string | null;
+}
+
+function resolveStockPrice(item: StockItem, processes: StockProcess[]): number {
+  // special_price = all-in agreed price — use directly
+  if (item.special_price != null && item.special_price !== "") {
+    return parseFloat(item.special_price);
+  }
+  const unitPrice = item.unit_price ? parseFloat(item.unit_price) : 0;
+  if (unitPrice <= 0) return 0;
+  // unit_price is the garment base; add decoration surcharges (all extras except cheapest)
+  const finishProcs = item.finish_id != null
+    ? processes.filter(p => p.finish_id === item.finish_id)
+    : [];
+  if (finishProcs.length === 0) return unitPrice;
+  const prices = finishProcs.map(p => parseFloat(p.price ?? "0") || 0).sort((a, b) => a - b);
+  const extras = prices.slice(1).reduce((s, p) => s + p, 0); // cheapest is included
+  return unitPrice + extras;
 }
 
 interface Movement {
@@ -499,23 +518,29 @@ export default function StockPage() {
     }
     const basketItems = items
       .filter(i => (orderQtys[i.id] ?? 0) > 0 && i.product_id != null)
-      .map(i => ({
-        productId: i.product_id,
-        productName: i.product_name ?? i.name,
-        sku: i.product_sku ?? null,
-        colour: i.colour ?? "",
-        size: i.size ?? "",
-        finishId: i.finish_id ?? null,
-        finishName: i.finish_name ?? "",
-        recipientType: "stock",
-        recipientName: "",
-        recipientEmployeeId: null,
-        quantity: orderQtys[i.id],
-        garmentBasePrice: parseFloat(i.unit_price ?? "0"),
-        processLines: [],
-        unitPrice: parseFloat(i.unit_price ?? "0"),
-        imageUrl: i.variant_image_url ?? i.product_image_url ?? null,
-      }));
+      .map(i => {
+        const resolvedPrice = resolveStockPrice(i, processes);
+        const garmentBase = i.special_price != null && i.special_price !== ""
+          ? parseFloat(i.special_price)
+          : parseFloat(i.unit_price ?? "0");
+        return {
+          productId: i.product_id,
+          productName: i.product_name ?? i.name,
+          sku: i.product_sku ?? null,
+          colour: i.colour ?? "",
+          size: i.size ?? "",
+          finishId: i.finish_id ?? null,
+          finishName: i.finish_name ?? "",
+          recipientType: "stock",
+          recipientName: "",
+          recipientEmployeeId: null,
+          quantity: orderQtys[i.id],
+          garmentBasePrice: garmentBase,
+          processLines: [],
+          unitPrice: resolvedPrice,
+          imageUrl: i.variant_image_url ?? i.product_image_url ?? null,
+        };
+      });
     try {
       localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify({ step: 2, mode: "wardrobe", basket: basketItems }));
     } catch {}
