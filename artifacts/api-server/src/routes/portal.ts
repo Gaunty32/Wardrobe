@@ -934,6 +934,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     shippingCost: z.number().nonnegative().optional(),
     paymentMethodId: z.string().nullable().optional(),
     claimSelectExtra: z.boolean().optional(),
+    addToStores: z.boolean().optional(),
     quoteToken: z.string().optional(),
     attachments: z.array(z.object({ name: z.string(), objectPath: z.string() })).optional(),
     items: z.array(z.object({
@@ -1147,7 +1148,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
 
   // Insert with a unique temp order number; update to P{id} after getting auto-generated id
   const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, carriage_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments)
+    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, carriage_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments, add_to_stores)
     VALUES (
       'P-' || gen_random_uuid()::text,
       ${customerId},
@@ -1169,7 +1170,8 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       ${submitterName},
       ${submitterEmployeeId},
       now(),
-      ${body.attachments?.length ? JSON.stringify(body.attachments) : null}
+      ${body.attachments?.length ? JSON.stringify(body.attachments) : null},
+      ${body.addToStores ?? false}
     )
     RETURNING id
   `);
@@ -1905,7 +1907,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
     SELECT id, order_number, customer_id, customer_name, order_date, required_date, notes, total_amount, carriage_amount,
            delivery_address_id, attention_of,
            portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id,
-           portal_approved_by_email, portal_approved_by_name
+           portal_approved_by_email, portal_approved_by_name, add_to_stores
     FROM orders WHERE id = ${orderId} AND source = 'portal'
   `);
   const ord = orderRows.rows[0] as any;
@@ -2151,6 +2153,55 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
           })
         );
       }
+    }
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ── If add_to_stores: auto-add bulk stock items to customer Stores ────────
+  if (ord.add_to_stores && ord.customer_id) {
+    const stockOrderItems = await db.execute(sql`
+      SELECT id, product_id, product_name, colour, size, quantity, unit_price, finish_id, finish_name
+      FROM order_items
+      WHERE order_id = ${orderId} AND recipient_type = 'stock' AND product_id IS NOT NULL
+    `);
+    for (const si of stockOrderItems.rows as any[]) {
+      const qty = Number(si.quantity ?? 0);
+      if (qty <= 0) continue;
+      const existing = await db.execute(sql`
+        SELECT id FROM customer_finished_items
+        WHERE customer_id = ${ord.customer_id}
+          AND product_id = ${si.product_id}
+          AND (colour IS NOT DISTINCT FROM ${si.colour ?? null})
+          AND (size IS NOT DISTINCT FROM ${si.size ?? null})
+        LIMIT 1
+      `);
+      let stockItemId: number;
+      if (existing.rows.length > 0) {
+        stockItemId = (existing.rows[0] as any).id;
+        await db.execute(sql`
+          UPDATE customer_finished_items
+          SET stock_quantity = stock_quantity + ${qty}, updated_at = now()
+          WHERE id = ${stockItemId}
+        `);
+      } else {
+        const inserted = await db.execute(sql`
+          INSERT INTO customer_finished_items
+            (customer_id, product_id, finish_id, name, colour, size, stock_quantity, unit_price, created_at, updated_at)
+          VALUES
+            (${ord.customer_id}, ${si.product_id}, ${si.finish_id ?? null}, ${si.product_name},
+             ${si.colour ?? null}, ${si.size ?? null}, ${qty},
+             ${si.unit_price ?? "0.00"}, now(), now())
+          RETURNING id
+        `);
+        stockItemId = (inserted.rows[0] as any).id;
+      }
+      await db.execute(sql`
+        INSERT INTO customer_stock_movements
+          (customer_id, stock_item_id, movement_type, quantity, reference, notes, created_by_name, created_at)
+        VALUES
+          (${ord.customer_id}, ${stockItemId}, 'in', ${qty}, ${ord.order_number},
+           'Received from bulk stock order', 'SBS', now())
+      `);
     }
   }
   // ─────────────────────────────────────────────────────────────────────────

@@ -1933,7 +1933,7 @@ const SHIPPING_OPTIONS = [
 function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false, disabled = false }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
-  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) => void;
+  onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean; addToStores?: boolean }) => void;
   submitting: boolean;
   portalRole: string;
   onAddMore?: () => void;
@@ -1959,6 +1959,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const [giftDialogOpen, setGiftDialogOpen] = useState(false);
   const giftDialogShownRef = useRef(false);
   const pendingSubmitRef = useRef<Parameters<typeof onSubmit>[0] | null>(null);
+  const [addToStores, setAddToStores] = useState(true);
 
   const { data: selectExtraData } = useQuery<{
     offer: { id: number; productName: string; description: string | null; productUrl: string | null; quantity: number; minSpend: number; title: string } | null;
@@ -2568,9 +2569,30 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
         </DialogContent>
       </Dialog>
 
+      {/* ── Add to Stores toggle (managers only, when basket has stock items) ── */}
+      {portalRole === "manager" && basket.some(i => i.recipientType === "stock") && (
+        <div className="mt-5 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={addToStores}
+              onChange={e => setAddToStores(e.target.checked)}
+              className="mt-0.5 accent-primary h-4 w-4 shrink-0"
+            />
+            <div>
+              <p className="text-sm font-medium text-blue-900">Add to Stores when delivered</p>
+              <p className="text-xs text-blue-700 mt-0.5">
+                When SBS confirms this order, the bulk stock items will automatically be added to your Stores so you can allocate them to your team.
+              </p>
+            </div>
+          </label>
+        </div>
+      )}
+
       <div className="flex flex-col gap-1 mt-6">
         <Button
           onClick={() => {
+            const hasStockItems = basket.some(i => i.recipientType === "stock");
             const data = {
               requiredDate,
               notes,
@@ -2580,6 +2602,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
               paymentMethodId: portalRole === "manager" && paymentChoice === "card" ? selectedPmId : null,
               attachments,
               claimSelectExtra: qualifiesForExtra && wantsSelectExtra,
+              addToStores: portalRole === "manager" && hasStockItems ? addToStores : undefined,
             };
             if (qualifiesForExtra && !wantsSelectExtra) {
               pendingSubmitRef.current = data;
@@ -2960,7 +2983,7 @@ export default function NewOrder() {
   });
 
   const submitMutation = useMutation({
-    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean }) =>
+    mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean; addToStores?: boolean }) =>
       apiFetch("/portal/orders", {
         method: "POST",
         body: JSON.stringify({
@@ -2971,6 +2994,7 @@ export default function NewOrder() {
           shippingCost: data.shippingCost,
           paymentMethodId: data.paymentMethodId ?? null,
           claimSelectExtra: data.claimSelectExtra ?? false,
+          addToStores: data.addToStores ?? false,
           quoteToken: quoteToken || undefined,
           attachments: data.attachments.length ? data.attachments : undefined,
           items: basket.map(i => ({

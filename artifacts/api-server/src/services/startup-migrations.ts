@@ -1211,4 +1211,9 @@ export async function runStartupMigrations(): Promise<void> {
       INSERT INTO _migration_flags (name) VALUES ('delete_erroneous_order_P51');
     `);
   }
+
+  // Bulk stock orders can optionally be added to the customer's Stores on confirmation
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS add_to_stores boolean NOT NULL DEFAULT false;
+  `);
 }
