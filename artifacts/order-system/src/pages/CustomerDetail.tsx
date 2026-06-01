@@ -64,6 +64,7 @@ function useSubResource<T>(customerId: number | null, key: string) {
     queryKey: ["customer", customerId, key],
     queryFn: () => apiFetch(`/customers/${customerId}/${key}`),
     enabled: !!customerId,
+    staleTime: 1000 * 60 * 5,
   });
 }
 

@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Shirt, Tag, Layers } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, Shirt, Tag, Layers, ShoppingBag } from "lucide-react";
 
 function ProcessBadge({ type }: { type: string }) {
   const colours: Record<string, string> = {
@@ -61,11 +63,19 @@ export default function Wardrobe() {
 
   return (
     <PortalLayout>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Wardrobe</h1>
-        <p className="text-muted-foreground text-sm mt-0.5">
-          Your preset garments, finishes and decoration processes set up by Select Branding Solutions.
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Wardrobe</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            Your preset garments, finishes and decoration processes set up by Select Branding Solutions.
+          </p>
+        </div>
+        <Link href="/orders/new?mode=wardrobe">
+          <Button className="shrink-0">
+            <ShoppingBag className="w-4 h-4 mr-2" />
+            Place an Order
+          </Button>
+        </Link>
       </div>
 
       {isLoading ? (

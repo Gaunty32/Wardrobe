@@ -563,17 +563,26 @@ router.get("/customers/:customerId/employees", async (req, res): Promise<void> =
 
   const filtered = showInactive ? allEmployees : allEmployees.filter(e => e.isActive);
 
-  const withMeta = await Promise.all(filtered.map(async (emp) => {
-    const sizes = await db.select().from(customerEmployeeSizesTable)
-      .where(eq(customerEmployeeSizesTable.employeeId, emp.id))
-      .orderBy(customerEmployeeSizesTable.label);
-    return {
-      ...emp,
-      roleName: emp.roleId ? (roleMap.get(emp.roleId) ?? null) : null,
-      teamName: emp.teamId ? (teamMap.get(emp.teamId) ?? null) : null,
-      managerName: emp.managerId ? (managerNameMap.get(emp.managerId) ?? null) : null,
-      sizes,
-    };
+  // Batch-fetch all sizes in one query instead of N+1 per employee
+  const employeeIds = filtered.map(e => e.id);
+  const allSizes = employeeIds.length > 0
+    ? await db.select().from(customerEmployeeSizesTable)
+        .where(inArray(customerEmployeeSizesTable.employeeId, employeeIds))
+        .orderBy(customerEmployeeSizesTable.label)
+    : [];
+  const sizesByEmployee = new Map<number, typeof allSizes>();
+  for (const s of allSizes) {
+    const arr = sizesByEmployee.get(s.employeeId) ?? [];
+    arr.push(s);
+    sizesByEmployee.set(s.employeeId, arr);
+  }
+
+  const withMeta = filtered.map((emp) => ({
+    ...emp,
+    roleName: emp.roleId ? (roleMap.get(emp.roleId) ?? null) : null,
+    teamName: emp.teamId ? (teamMap.get(emp.teamId) ?? null) : null,
+    managerName: emp.managerId ? (managerNameMap.get(emp.managerId) ?? null) : null,
+    sizes: sizesByEmployee.get(emp.id) ?? [],
   }));
 
   res.json(withMeta);

@@ -2823,8 +2823,12 @@ export default function NewOrder() {
 
   const saved = readSession();
   const savedHasItems = (saved?.basket?.length ?? 0) > 0;
-  const [step, setStep] = useState<number>(savedHasItems ? (saved?.step ?? 0) : 0);
-  const [mode, setMode] = useState<"wardrobe" | "catalogue" | "quote" | null>(savedHasItems ? (saved?.mode ?? null) : null);
+  const modeParam = useMemo(() => {
+    const p = new URLSearchParams(search).get("mode");
+    return (p === "wardrobe" || p === "catalogue") ? p as "wardrobe" | "catalogue" : null;
+  }, [search]);
+  const [step, setStep] = useState<number>(savedHasItems ? (saved?.step ?? 0) : modeParam ? 1 : 0);
+  const [mode, setMode] = useState<"wardrobe" | "catalogue" | "quote" | null>(savedHasItems ? (saved?.mode ?? null) : modeParam ?? null);
   const [basket, setBasket] = useState<OrderItem[]>(saved?.basket ?? []);
   const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
   const [confirmedOrder, setConfirmedOrder] = useState<{
