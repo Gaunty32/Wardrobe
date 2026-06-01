@@ -164,6 +164,7 @@ function StockCard({
   onHistory,
   onEdit,
   onDelete,
+  onReorder,
 }: {
   group: CardGroup;
   processes: StockProcess[];
@@ -171,6 +172,7 @@ function StockCard({
   onHistory: (item: StockItem) => void;
   onEdit: (item: StockItem) => void;
   onDelete: (item: StockItem) => void;
+  onReorder: (group: CardGroup) => void;
 }) {
   const groupProcesses = group.finishId != null
     ? processes.filter(p => p.finish_id === group.finishId)
@@ -309,6 +311,16 @@ function StockCard({
             );
           })}
         </div>
+
+        {/* Reorder button */}
+        {group.items.some(i => i.product_id != null) && (
+          <button
+            onClick={() => onReorder(group)}
+            className="mt-1 w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
+          >
+            <ShoppingCart className="w-3.5 h-3.5" /> Reorder
+          </button>
+        )}
       </div>
     </div>
   );
@@ -316,10 +328,13 @@ function StockCard({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
+const PORTAL_SESSION_KEY = "portal-new-order";
+
 export default function StockPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const sizeOrder = useSizeOrder();
+  const [, navigate] = useLocation();
 
   const { data, isLoading } = useQuery<{ items: StockItem[]; processes: StockProcess[] }>({
     queryKey: ["portal-stock"],
@@ -457,8 +472,65 @@ export default function StockPage() {
     enabled: !!historyItem,
   });
 
+  // ── Bulk order sheet ────────────────────────────────────────────────────────
+  const [bulkOrderOpen, setBulkOrderOpen] = useState(false);
+  const [bulkFocusKey, setBulkFocusKey] = useState<string | null>(null);
+  const [orderQtys, setOrderQtys] = useState<Record<number, number>>({});
+
+  function openBulkOrder(focusGroup?: CardGroup) {
+    setOrderQtys({});
+    setBulkFocusKey(focusGroup?.key ?? null);
+    setBulkOrderOpen(true);
+  }
+
+  const totalOrderLines = useMemo(
+    () => Object.values(orderQtys).filter(q => q > 0).length,
+    [orderQtys]
+  );
+  const totalOrderQty = useMemo(
+    () => Object.values(orderQtys).reduce((s, q) => s + (q > 0 ? q : 0), 0),
+    [orderQtys]
+  );
+
+  function handleContinueToOrder() {
+    if (totalOrderQty === 0) {
+      toast({ title: "No quantities entered", description: "Enter at least one quantity before continuing.", variant: "destructive" });
+      return;
+    }
+    const basketItems = items
+      .filter(i => (orderQtys[i.id] ?? 0) > 0 && i.product_id != null)
+      .map(i => ({
+        productId: i.product_id,
+        productName: i.product_name ?? i.name,
+        sku: i.product_sku ?? null,
+        colour: i.colour ?? "",
+        size: i.size ?? "",
+        finishId: i.finish_id ?? null,
+        finishName: i.finish_name ?? "",
+        recipientType: "stock",
+        recipientName: "",
+        recipientEmployeeId: null,
+        quantity: orderQtys[i.id],
+        garmentBasePrice: parseFloat(i.unit_price ?? "0"),
+        processLines: [],
+        unitPrice: parseFloat(i.unit_price ?? "0"),
+        imageUrl: i.variant_image_url ?? i.product_image_url ?? null,
+      }));
+    try {
+      localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify({ step: 2, mode: "wardrobe", basket: basketItems }));
+    } catch {}
+    navigate("/orders/new");
+  }
+
   const lowStockCount = items.filter(i => i.min_quantity > 0 && i.stock_quantity <= i.min_quantity).length;
   const cardGroups = groupItems(items, sizeOrder);
+
+  const bulkGroups = useMemo(() => {
+    if (!bulkFocusKey) return cardGroups;
+    const focused = cardGroups.find(g => g.key === bulkFocusKey);
+    if (!focused) return cardGroups;
+    return [focused, ...cardGroups.filter(g => g.key !== bulkFocusKey)];
+  }, [cardGroups, bulkFocusKey]);
 
   return (
     <PortalLayout>
@@ -471,9 +543,16 @@ export default function StockPage() {
               Manage your store cupboard — items are automatically deducted when you place an order.
             </p>
           </div>
-          <Button onClick={() => setAddOpen(true)} className="gap-2 shrink-0">
-            <Plus className="w-4 h-4" /> Add Item
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            {cardGroups.some(g => g.items.some(i => i.product_id != null)) && (
+              <Button variant="outline" onClick={() => openBulkOrder()} className="gap-2">
+                <ShoppingCart className="w-4 h-4" /> Bulk Order
+              </Button>
+            )}
+            <Button onClick={() => setAddOpen(true)} className="gap-2">
+              <Plus className="w-4 h-4" /> Add Item
+            </Button>
+          </div>
         </div>
 
         {/* Low stock alert */}
@@ -512,6 +591,7 @@ export default function StockPage() {
                 onHistory={setHistoryItem}
                 onEdit={openEdit}
                 onDelete={setDeleteItem}
+                onReorder={openBulkOrder}
               />
             ))}
           </div>
@@ -708,6 +788,118 @@ export default function StockPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* ── Bulk Order Sheet ─────────────────────────────────────────────── */}
+        <Sheet open={bulkOrderOpen} onOpenChange={v => { if (!v) setBulkOrderOpen(false); }}>
+          <SheetContent className="w-full sm:max-w-xl overflow-y-auto flex flex-col">
+            <SheetHeader className="mb-4 shrink-0">
+              <SheetTitle className="flex items-center gap-2">
+                <ShoppingCart className="w-5 h-5" /> Bulk Order from Stores
+              </SheetTitle>
+              <p className="text-sm text-muted-foreground">
+                Enter how many of each item you'd like to reorder. Current stock levels are shown for reference.
+              </p>
+            </SheetHeader>
+
+            <div className="flex-1 space-y-5 overflow-y-auto pb-24">
+              {bulkGroups.filter(g => g.items.some(i => i.product_id != null)).map(group => (
+                <div
+                  key={group.key}
+                  className={cn(
+                    "rounded-xl border p-4",
+                    bulkFocusKey === group.key ? "border-primary ring-1 ring-primary/20 bg-primary/5" : "bg-card"
+                  )}
+                >
+                  {/* Group header */}
+                  <div className="flex items-start gap-3 mb-3">
+                    {group.imageUrl && (
+                      <img
+                        src={group.imageUrl}
+                        alt={group.displayName}
+                        className="w-12 h-12 rounded-lg object-contain border bg-white p-1 shrink-0"
+                        onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-semibold text-sm leading-snug">{group.displayName}</p>
+                      {(group.colour || group.productSku) && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {[group.colour, group.productSku].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                      {group.finishName && (
+                        <p className="text-xs text-muted-foreground italic">{group.finishName}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Size rows */}
+                  <div className="space-y-2">
+                    {/* Column headers */}
+                    <div className="grid grid-cols-[80px_1fr_100px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-1">
+                      <span>Size</span>
+                      <span>In stock</span>
+                      <span>Order qty</span>
+                    </div>
+                    {group.items.filter(i => i.product_id != null).map(item => {
+                      const qty = orderQtys[item.id] ?? 0;
+                      const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
+                      return (
+                        <div key={item.id} className="grid grid-cols-[80px_1fr_100px] items-center gap-2">
+                          {/* Size */}
+                          <span className={cn(
+                            "rounded-md px-2 py-1 text-xs font-semibold text-center",
+                            isLow ? "bg-amber-100 text-amber-800" : "bg-muted text-foreground"
+                          )}>
+                            {item.size ?? "—"}
+                          </span>
+                          {/* Current stock */}
+                          <span className={cn(
+                            "text-sm tabular-nums font-medium flex items-center gap-1",
+                            isLow ? "text-amber-600" : "text-muted-foreground"
+                          )}>
+                            {item.stock_quantity}
+                            {isLow && <TrendingDown className="w-3 h-3" />}
+                          </span>
+                          {/* Quantity input */}
+                          <Input
+                            type="number"
+                            min="0"
+                            value={qty === 0 ? "" : qty}
+                            placeholder="0"
+                            className="h-8 text-sm text-center px-2 tabular-nums"
+                            onChange={e => {
+                              const v = parseInt(e.target.value) || 0;
+                              setOrderQtys(prev => ({ ...prev, [item.id]: v < 0 ? 0 : v }));
+                            }}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Sticky footer */}
+            <div className="shrink-0 border-t bg-background pt-4 pb-2 space-y-3">
+              {totalOrderQty > 0 && (
+                <p className="text-sm text-muted-foreground text-center">
+                  <span className="font-semibold text-foreground">{totalOrderQty}</span> item{totalOrderQty !== 1 ? "s" : ""} across{" "}
+                  <span className="font-semibold text-foreground">{totalOrderLines}</span> line{totalOrderLines !== 1 ? "s" : ""}
+                </p>
+              )}
+              <Button
+                className="w-full gap-2"
+                disabled={totalOrderQty === 0}
+                onClick={handleContinueToOrder}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                {totalOrderQty > 0 ? `Continue to Order (${totalOrderQty} items)` : "Enter quantities above"}
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
 
         {/* ── Movement History Sheet ───────────────────────────────────────── */}
         <Sheet open={!!historyItem} onOpenChange={v => !v && setHistoryItem(null)}>
