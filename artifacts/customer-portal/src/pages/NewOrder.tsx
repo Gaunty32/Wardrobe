@@ -286,7 +286,10 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
 
   // For managers/dept_managers: auto-select when there's only 1 employee (skip the picker)
   // or default to "stock" when there are no employees at all.
+  // Guard against isLoading — if employees fires while empty during load, "stock" would be
+  // auto-selected and then locked in even after real employees arrive.
   useEffect(() => {
+    if (isLoading) return;                  // wait until data is ready
     if (selectedRecipient !== null) return; // already chosen
     if (portalRole === "member") return;    // member path handled by initial state
     if (employees.length === 1) {
@@ -295,7 +298,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       doSelectRecipient("stock");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employees]);
+  }, [employees, isLoading]);
 
   // Auto-scroll the order summary to the bottom when items are added
   const summaryScrollRef = useRef<HTMLDivElement>(null);
