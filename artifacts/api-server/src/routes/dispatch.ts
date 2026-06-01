@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, inArray, and, notInArray, desc, or, ilike } from "drizzle-orm";
 import { z } from "zod";
 import {
-  db, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
+  db, sql, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
   customerEmployeesTable, customerDeliveryAddressesTable, customersTable, productsTable,
 } from "@workspace/db";
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
@@ -351,6 +351,62 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
       link: "/orders",
       type: "dispatched",
     }).catch(() => {});
+  }
+
+  // ── Auto-book stock into customer Stores when add_to_stores is set ─────────
+  try {
+    const orderMeta = await db.execute(sql`
+      SELECT add_to_stores, customer_id, order_number FROM orders WHERE id = ${updated.id} LIMIT 1
+    `);
+    const meta = orderMeta.rows[0] as any;
+    if (meta?.add_to_stores && meta?.customer_id) {
+      const stockOrderItems = await db.execute(sql`
+        SELECT id, product_id, product_name, colour, size, quantity, unit_price, finish_id
+        FROM order_items
+        WHERE order_id = ${updated.id} AND recipient_type = 'stock' AND product_id IS NOT NULL
+      `);
+      for (const si of stockOrderItems.rows as any[]) {
+        const qty = Number(si.quantity ?? 0);
+        if (qty <= 0) continue;
+        const existing = await db.execute(sql`
+          SELECT id FROM customer_finished_items
+          WHERE customer_id = ${meta.customer_id}
+            AND product_id = ${si.product_id}
+            AND (colour IS NOT DISTINCT FROM ${si.colour ?? null})
+            AND (size IS NOT DISTINCT FROM ${si.size ?? null})
+          LIMIT 1
+        `);
+        let stockItemId: number;
+        if (existing.rows.length > 0) {
+          stockItemId = (existing.rows[0] as any).id;
+          await db.execute(sql`
+            UPDATE customer_finished_items
+            SET stock_quantity = stock_quantity + ${qty}, updated_at = now()
+            WHERE id = ${stockItemId}
+          `);
+        } else {
+          const inserted = await db.execute(sql`
+            INSERT INTO customer_finished_items
+              (customer_id, product_id, finish_id, name, colour, size, stock_quantity, unit_price, created_at, updated_at)
+            VALUES
+              (${meta.customer_id}, ${si.product_id}, ${si.finish_id ?? null}, ${si.product_name},
+               ${si.colour ?? null}, ${si.size ?? null}, ${qty}, ${si.unit_price ?? "0.00"}, now(), now())
+            RETURNING id
+          `);
+          stockItemId = (inserted.rows[0] as any).id;
+        }
+        await db.execute(sql`
+          INSERT INTO customer_stock_movements
+            (customer_id, stock_item_id, movement_type, quantity, reference, notes, created_by_name, created_at)
+          VALUES
+            (${meta.customer_id}, ${stockItemId}, 'in', ${qty}, ${meta.order_number},
+             'Received — dispatched from SBS', 'SBS', now())
+        `);
+      }
+    }
+  } catch (err) {
+    console.error("add_to_stores dispatch hook failed:", err);
+    // Non-fatal — dispatch already succeeded
   }
 
   res.json({

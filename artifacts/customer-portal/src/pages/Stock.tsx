@@ -56,6 +56,28 @@ interface StockProcess {
   price: string | null;
 }
 
+function getSizesForGroup(
+  group: CardGroup,
+  sizesMap: Record<string, Record<string, string[]>>
+): string[] {
+  const productId = group.items[0]?.product_id;
+  if (!productId) return group.items.map(i => i.size ?? "—");
+  const byProduct = sizesMap[String(productId)];
+  if (!byProduct) return group.items.map(i => i.size ?? "—");
+  const colour = group.colour ?? "";
+  // Exact match
+  if (byProduct[colour]?.length) return byProduct[colour];
+  // Case-insensitive match
+  const lower = colour.toLowerCase();
+  for (const [k, v] of Object.entries(byProduct)) {
+    if (k !== "__any__" && k.toLowerCase() === lower && v.length) return v;
+  }
+  // Fallback to __any__
+  if (byProduct["__any__"]?.length) return byProduct["__any__"];
+  // Last resort: use stored items
+  return group.items.map(i => i.size ?? "—");
+}
+
 function resolveStockPrice(item: StockItem, processes: StockProcess[]): number {
   // special_price = all-in agreed price — use directly
   if (item.special_price != null && item.special_price !== "") {
@@ -355,13 +377,14 @@ export default function StockPage() {
   const sizeOrder = useSizeOrder();
   const [, navigate] = useLocation();
 
-  const { data, isLoading } = useQuery<{ items: StockItem[]; processes: StockProcess[] }>({
+  const { data, isLoading } = useQuery<{ items: StockItem[]; processes: StockProcess[]; sizesMap: Record<string, Record<string, string[]>> }>({
     queryKey: ["portal-stock"],
     queryFn: () => apiFetch("/portal/stock"),
   });
 
   const items = data?.items ?? [];
   const processes = data?.processes ?? [];
+  const sizesMap = data?.sizesMap ?? {};
 
   // ── Add item dialog ─────────────────────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
@@ -494,7 +517,8 @@ export default function StockPage() {
   // ── Bulk order sheet ────────────────────────────────────────────────────────
   const [bulkOrderOpen, setBulkOrderOpen] = useState(false);
   const [bulkFocusKey, setBulkFocusKey] = useState<string | null>(null);
-  const [orderQtys, setOrderQtys] = useState<Record<number, number>>({});
+  // Key = "groupKey:size", value = quantity
+  const [orderQtys, setOrderQtys] = useState<Record<string, number>>({});
 
   function openBulkOrder(focusGroup?: CardGroup) {
     setOrderQtys({});
@@ -516,31 +540,41 @@ export default function StockPage() {
       toast({ title: "No quantities entered", description: "Enter at least one quantity before continuing.", variant: "destructive" });
       return;
     }
-    const basketItems = items
-      .filter(i => (orderQtys[i.id] ?? 0) > 0 && i.product_id != null)
-      .map(i => {
-        const resolvedPrice = resolveStockPrice(i, processes);
-        const garmentBase = i.special_price != null && i.special_price !== ""
-          ? parseFloat(i.special_price)
-          : parseFloat(i.unit_price ?? "0");
-        return {
-          productId: i.product_id,
-          productName: i.product_name ?? i.name,
-          sku: i.product_sku ?? null,
-          colour: i.colour ?? "",
-          size: i.size ?? "",
-          finishId: i.finish_id ?? null,
-          finishName: i.finish_name ?? "",
-          recipientType: "stock",
-          recipientName: "",
-          recipientEmployeeId: null,
-          quantity: orderQtys[i.id],
-          garmentBasePrice: garmentBase,
-          processLines: [],
-          unitPrice: resolvedPrice,
-          imageUrl: i.variant_image_url ?? i.product_image_url ?? null,
-        };
+    const basketItems: object[] = [];
+    for (const [key, qty] of Object.entries(orderQtys)) {
+      if (qty <= 0) continue;
+      const colonIdx = key.lastIndexOf(":");
+      const groupKey = key.substring(0, colonIdx);
+      const size = key.substring(colonIdx + 1);
+      const group = cardGroups.find(g => g.key === groupKey);
+      if (!group) continue;
+      // Find matching store item (for price + metadata), fall back to first item in group
+      const refItem = group.items.find(
+        i => (i.size ?? "—").toLowerCase() === size.toLowerCase()
+      ) ?? group.items[0];
+      if (!refItem?.product_id) continue;
+      const resolvedPrice = resolveStockPrice(refItem, processes);
+      const garmentBase = refItem.special_price != null && refItem.special_price !== ""
+        ? parseFloat(refItem.special_price)
+        : parseFloat(refItem.unit_price ?? "0");
+      basketItems.push({
+        productId: refItem.product_id,
+        productName: refItem.product_name ?? refItem.name,
+        sku: refItem.product_sku ?? null,
+        colour: refItem.colour ?? "",
+        size,
+        finishId: refItem.finish_id ?? null,
+        finishName: refItem.finish_name ?? "",
+        recipientType: "stock",
+        recipientName: "",
+        recipientEmployeeId: null,
+        quantity: qty,
+        garmentBasePrice: garmentBase,
+        processLines: [],
+        unitPrice: resolvedPrice,
+        imageUrl: refItem.variant_image_url ?? refItem.product_image_url ?? null,
       });
+    }
     try {
       localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify({ step: 2, mode: "wardrobe", basket: basketItems }));
     } catch {}
@@ -858,50 +892,59 @@ export default function StockPage() {
                     </div>
                   </div>
 
-                  {/* Size rows */}
-                  <div className="space-y-2">
-                    {/* Column headers */}
-                    <div className="grid grid-cols-[80px_1fr_100px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-1">
-                      <span>Size</span>
-                      <span>In stock</span>
-                      <span>Order qty</span>
-                    </div>
-                    {group.items.filter(i => i.product_id != null).map(item => {
-                      const qty = orderQtys[item.id] ?? 0;
-                      const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
-                      return (
-                        <div key={item.id} className="grid grid-cols-[80px_1fr_100px] items-center gap-2">
-                          {/* Size */}
-                          <span className={cn(
-                            "rounded-md px-2 py-1 text-xs font-semibold text-center",
-                            isLow ? "bg-amber-100 text-amber-800" : "bg-muted text-foreground"
-                          )}>
-                            {item.size ?? "—"}
-                          </span>
-                          {/* Current stock */}
-                          <span className={cn(
-                            "text-sm tabular-nums font-medium flex items-center gap-1",
-                            isLow ? "text-amber-600" : "text-muted-foreground"
-                          )}>
-                            {item.stock_quantity}
-                            {isLow && <TrendingDown className="w-3 h-3" />}
-                          </span>
-                          {/* Quantity input */}
-                          <Input
-                            type="number"
-                            min="0"
-                            value={qty === 0 ? "" : qty}
-                            placeholder="0"
-                            className="h-8 text-sm text-center px-2 tabular-nums"
-                            onChange={e => {
-                              const v = parseInt(e.target.value) || 0;
-                              setOrderQtys(prev => ({ ...prev, [item.id]: v < 0 ? 0 : v }));
-                            }}
-                          />
+                  {/* Size rows — sourced from catalogue variants */}
+                  {(() => {
+                    const catalogueSizes = getSizesForGroup(group, sizesMap);
+                    const stockBySize = Object.fromEntries(
+                      group.items.map(i => [(i.size ?? "—").toLowerCase(), i])
+                    );
+                    return (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-[80px_1fr_100px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-1">
+                          <span>Size</span>
+                          <span>In stock</span>
+                          <span>Order qty</span>
                         </div>
-                      );
-                    })}
-                  </div>
+                        {catalogueSizes.map(size => {
+                          const qtyKey = `${group.key}:${size}`;
+                          const qty = orderQtys[qtyKey] ?? 0;
+                          const stockItem = stockBySize[size.toLowerCase()];
+                          const stockQty = stockItem?.stock_quantity ?? 0;
+                          const isLow = stockItem
+                            ? stockItem.min_quantity > 0 && stockQty <= stockItem.min_quantity
+                            : false;
+                          return (
+                            <div key={size} className="grid grid-cols-[80px_1fr_100px] items-center gap-2">
+                              <span className={cn(
+                                "rounded-md px-2 py-1 text-xs font-semibold text-center",
+                                isLow ? "bg-amber-100 text-amber-800" : "bg-muted text-foreground"
+                              )}>
+                                {size}
+                              </span>
+                              <span className={cn(
+                                "text-sm tabular-nums font-medium flex items-center gap-1",
+                                isLow ? "text-amber-600" : "text-muted-foreground"
+                              )}>
+                                {stockQty}
+                                {isLow && <TrendingDown className="w-3 h-3" />}
+                              </span>
+                              <Input
+                                type="number"
+                                min="0"
+                                value={qty === 0 ? "" : qty}
+                                placeholder="0"
+                                className="h-8 text-sm text-center px-2 tabular-nums"
+                                onChange={e => {
+                                  const v = parseInt(e.target.value) || 0;
+                                  setOrderQtys(prev => ({ ...prev, [qtyKey]: v < 0 ? 0 : v }));
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

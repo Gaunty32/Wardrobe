@@ -2157,55 +2157,6 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
   }
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ── If add_to_stores: auto-add bulk stock items to customer Stores ────────
-  if (ord.add_to_stores && ord.customer_id) {
-    const stockOrderItems = await db.execute(sql`
-      SELECT id, product_id, product_name, colour, size, quantity, unit_price, finish_id, finish_name
-      FROM order_items
-      WHERE order_id = ${orderId} AND recipient_type = 'stock' AND product_id IS NOT NULL
-    `);
-    for (const si of stockOrderItems.rows as any[]) {
-      const qty = Number(si.quantity ?? 0);
-      if (qty <= 0) continue;
-      const existing = await db.execute(sql`
-        SELECT id FROM customer_finished_items
-        WHERE customer_id = ${ord.customer_id}
-          AND product_id = ${si.product_id}
-          AND (colour IS NOT DISTINCT FROM ${si.colour ?? null})
-          AND (size IS NOT DISTINCT FROM ${si.size ?? null})
-        LIMIT 1
-      `);
-      let stockItemId: number;
-      if (existing.rows.length > 0) {
-        stockItemId = (existing.rows[0] as any).id;
-        await db.execute(sql`
-          UPDATE customer_finished_items
-          SET stock_quantity = stock_quantity + ${qty}, updated_at = now()
-          WHERE id = ${stockItemId}
-        `);
-      } else {
-        const inserted = await db.execute(sql`
-          INSERT INTO customer_finished_items
-            (customer_id, product_id, finish_id, name, colour, size, stock_quantity, unit_price, created_at, updated_at)
-          VALUES
-            (${ord.customer_id}, ${si.product_id}, ${si.finish_id ?? null}, ${si.product_name},
-             ${si.colour ?? null}, ${si.size ?? null}, ${qty},
-             ${si.unit_price ?? "0.00"}, now(), now())
-          RETURNING id
-        `);
-        stockItemId = (inserted.rows[0] as any).id;
-      }
-      await db.execute(sql`
-        INSERT INTO customer_stock_movements
-          (customer_id, stock_item_id, movement_type, quantity, reference, notes, created_by_name, created_at)
-        VALUES
-          (${ord.customer_id}, ${stockItemId}, 'in', ${qty}, ${ord.order_number},
-           'Received from bulk stock order', 'SBS', now())
-      `);
-    }
-  }
-  // ─────────────────────────────────────────────────────────────────────────
-
   // Send order acknowledgement emails
   if (isEmailConfigured) {
     // Fetch items for the email
@@ -3160,7 +3111,63 @@ router.get("/portal/stock", portalAuth, async (req: Request, res: Response) => {
     ORDER BY cp.name
   `);
 
-  res.json({ items: rows.rows, processes: processes.rows });
+  // Build sizesMap: { [productId]: { [colour]: string[] } } — same as wardrobe endpoint
+  const variantRows = await db.execute(sql`
+    SELECT DISTINCT pv.product_id, pv.colour, pv.size
+    FROM product_variants pv
+    WHERE pv.product_id IN (
+      SELECT DISTINCT fi2.product_id FROM customer_finished_items fi2
+      WHERE fi2.customer_id = ${customerId} AND fi2.product_id IS NOT NULL
+    )
+    AND pv.size IS NOT NULL AND pv.size != ''
+    ORDER BY pv.product_id, pv.colour, pv.size
+  `);
+  const sizesMap: Record<string, Record<string, string[]>> = {};
+  for (const row of variantRows.rows as any[]) {
+    const pid = String(row.product_id);
+    if (!sizesMap[pid]) sizesMap[pid] = {};
+    const col = row.colour ?? "__any__";
+    if (!sizesMap[pid][col]) sizesMap[pid][col] = [];
+    sizesMap[pid][col].push(row.size);
+  }
+  try {
+    const attrRows = await db.execute(sql`
+      SELECT DISTINCT pa.product_id, pa.value AS size
+      FROM product_attributes pa
+      WHERE pa.type = 'size' AND pa.value IS NOT NULL AND pa.value != ''
+        AND pa.product_id IN (
+          SELECT DISTINCT fi2.product_id FROM customer_finished_items fi2
+          WHERE fi2.customer_id = ${customerId} AND fi2.product_id IS NOT NULL
+        )
+      ORDER BY pa.product_id, pa.value
+    `);
+    for (const row of attrRows.rows as any[]) {
+      const pid = String(row.product_id);
+      if (!sizesMap[pid]) sizesMap[pid] = {};
+      if (!sizesMap[pid]["__any__"]) sizesMap[pid]["__any__"] = [];
+      sizesMap[pid]["__any__"].push(row.size);
+    }
+  } catch { /* not fatal */ }
+  try {
+    const [sizeOrderRow] = await db.select().from(settingsTable).where(eq(settingsTable.key, "size_order"));
+    if (sizeOrderRow?.value) {
+      const sizeOrder: string[] = JSON.parse(sizeOrderRow.value);
+      const sortFn = (a: string, b: string) => {
+        const ai = sizeOrder.indexOf(a), bi = sizeOrder.indexOf(b);
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return 1;
+        const na = parseFloat(a), nb = parseFloat(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.localeCompare(b);
+      };
+      for (const pid of Object.keys(sizesMap))
+        for (const col of Object.keys(sizesMap[pid]))
+          sizesMap[pid][col] = [...new Set(sizesMap[pid][col])].sort(sortFn);
+    }
+  } catch { /* size ordering is best-effort */ }
+
+  res.json({ items: rows.rows, processes: processes.rows, sizesMap });
 });
 
 // ─── POST /portal/stock ───────────────────────────────────────────────────────
