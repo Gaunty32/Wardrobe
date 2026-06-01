@@ -43,6 +43,7 @@ interface StockItem {
   notes: string | null;
   finish_id: number | null;
   finish_name: string | null;
+  reorder_quantity: number;
   movement_count: number;
   last_movement_at: string | null;
 }
@@ -310,6 +311,7 @@ function StockCard({
                 {item.min_quantity > 0 && (
                   <span className="text-[10px] text-muted-foreground shrink-0">
                     / {item.min_quantity} min
+                    {item.reorder_quantity > 0 && ` · reorder ${item.reorder_quantity}`}
                   </span>
                 )}
                 {isLow && <TrendingDown className="w-3 h-3 text-amber-500 shrink-0" />}
@@ -390,7 +392,7 @@ export default function StockPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [addForm, setAddForm] = useState({
     name: "", colour: "", size: "", initialQuantity: "0",
-    minQuantity: "0", location: "", notes: "", unitPrice: "0",
+    minQuantity: "0", reorderQuantity: "0", location: "", notes: "", unitPrice: "0",
   });
 
   const addMutation = useMutation({
@@ -398,7 +400,7 @@ export default function StockPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["portal-stock"] });
       setAddOpen(false);
-      setAddForm({ name: "", colour: "", size: "", initialQuantity: "0", minQuantity: "0", location: "", notes: "", unitPrice: "0" });
+      setAddForm({ name: "", colour: "", size: "", initialQuantity: "0", minQuantity: "0", reorderQuantity: "0", location: "", notes: "", unitPrice: "0" });
       toast({ title: "Item added" });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -412,6 +414,7 @@ export default function StockPage() {
       unitPrice: parseFloat(addForm.unitPrice) || 0,
       initialQuantity: parseInt(addForm.initialQuantity) || 0,
       minQuantity: parseInt(addForm.minQuantity) || 0,
+      reorderQuantity: parseInt(addForm.reorderQuantity) || 0,
       location: addForm.location.trim() || null,
       notes: addForm.notes.trim() || null,
     });
@@ -419,7 +422,7 @@ export default function StockPage() {
 
   // ── Edit item dialog ────────────────────────────────────────────────────────
   const [editItem, setEditItem] = useState<StockItem | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", colour: "", size: "", minQuantity: "0", location: "", notes: "" });
+  const [editForm, setEditForm] = useState({ name: "", colour: "", size: "", minQuantity: "0", reorderQuantity: "0", location: "", notes: "" });
 
   function openEdit(item: StockItem) {
     setEditItem(item);
@@ -428,6 +431,7 @@ export default function StockPage() {
       colour: item.colour ?? "",
       size: item.size ?? "",
       minQuantity: String(item.min_quantity),
+      reorderQuantity: String(item.reorder_quantity ?? 0),
       location: item.location ?? "",
       notes: item.notes ?? "",
     });
@@ -453,6 +457,7 @@ export default function StockPage() {
         colour: editForm.colour.trim() || null,
         size: editForm.size.trim() || null,
         minQuantity: parseInt(editForm.minQuantity) || 0,
+        reorderQuantity: parseInt(editForm.reorderQuantity) || 0,
         location: editForm.location.trim() || null,
         notes: editForm.notes.trim() || null,
       },
@@ -526,6 +531,26 @@ export default function StockPage() {
     setBulkOrderOpen(true);
   }
 
+  // Pre-fill bulk order sheet with reorder quantities for items below minimum
+  function handleGenerateReorderDraft() {
+    const preQtys: Record<string, number> = {};
+    for (const group of cardGroups) {
+      if (!group.items.some(i => i.product_id != null)) continue;
+      for (const item of group.items) {
+        const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
+        if (!isLow) continue;
+        const reorderQty = item.reorder_quantity > 0
+          ? item.reorder_quantity
+          : Math.max(item.min_quantity - item.stock_quantity, 1);
+        const key = `${group.key}:${item.size ?? "—"}`;
+        preQtys[key] = reorderQty;
+      }
+    }
+    setOrderQtys(preQtys);
+    setBulkFocusKey(null);
+    setBulkOrderOpen(true);
+  }
+
   const totalOrderLines = useMemo(
     () => Object.values(orderQtys).filter(q => q > 0).length,
     [orderQtys]
@@ -582,6 +607,9 @@ export default function StockPage() {
   }
 
   const lowStockCount = items.filter(i => i.min_quantity > 0 && i.stock_quantity <= i.min_quantity).length;
+  const reorderableCount = items.filter(i =>
+    i.min_quantity > 0 && i.stock_quantity <= i.min_quantity && i.product_id != null
+  ).length;
   const cardGroups = groupItems(items, sizeOrder);
 
   const bulkGroups = useMemo(() => {
@@ -603,6 +631,18 @@ export default function StockPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {reorderableCount > 0 && (
+              <Button
+                onClick={handleGenerateReorderDraft}
+                className="gap-2 bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                Generate Reorder Draft
+                <span className="ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[11px] font-bold">
+                  {reorderableCount}
+                </span>
+              </Button>
+            )}
             {cardGroups.some(g => g.items.some(i => i.product_id != null)) && (
               <Button variant="outline" onClick={() => openBulkOrder()} className="gap-2">
                 <ShoppingCart className="w-4 h-4" /> Bulk Order
@@ -690,6 +730,16 @@ export default function StockPage() {
                 </div>
               </div>
               <div className="space-y-1.5">
+                <Label>Reorder Quantity</Label>
+                <Input
+                  type="number" min="0"
+                  value={addForm.reorderQuantity}
+                  onChange={e => setAddForm(f => ({ ...f, reorderQuantity: e.target.value }))}
+                  placeholder="How many to order when restocking"
+                />
+                <p className="text-[11px] text-muted-foreground">When stock hits the minimum, a draft order will suggest this quantity.</p>
+              </div>
+              <div className="space-y-1.5">
                 <Label>Storage Location</Label>
                 <Input placeholder="e.g. Warehouse A, Shelf 3" value={addForm.location} onChange={e => setAddForm(f => ({ ...f, location: e.target.value }))} />
               </div>
@@ -726,9 +776,15 @@ export default function StockPage() {
                   <Input value={editForm.size} onChange={e => setEditForm(f => ({ ...f, size: e.target.value }))} />
                 </div>
               </div>
-              <div className="space-y-1.5">
-                <Label>Min Stock Level</Label>
-                <Input type="number" min="0" value={editForm.minQuantity} onChange={e => setEditForm(f => ({ ...f, minQuantity: e.target.value }))} />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Min Stock Level</Label>
+                  <Input type="number" min="0" value={editForm.minQuantity} onChange={e => setEditForm(f => ({ ...f, minQuantity: e.target.value }))} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Reorder Quantity</Label>
+                  <Input type="number" min="0" value={editForm.reorderQuantity} onChange={e => setEditForm(f => ({ ...f, reorderQuantity: e.target.value }))} placeholder="0" />
+                </div>
               </div>
               <div className="space-y-1.5">
                 <Label>Storage Location</Label>

@@ -3090,7 +3090,7 @@ router.get("/portal/stock", portalAuth, async (req: Request, res: Response) => {
                AND pv.image_url IS NOT NULL
              LIMIT 1
            ) AS variant_image_url,
-           fi.colour, fi.size, fi.unit_price, fi.special_price, fi.stock_quantity, fi.min_quantity,
+           fi.colour, fi.size, fi.unit_price, fi.special_price, fi.stock_quantity, fi.min_quantity, fi.reorder_quantity,
            fi.location, fi.notes, fi.finish_id, cf.name AS finish_name, fi.updated_at,
            (SELECT COUNT(*) FROM customer_stock_movements WHERE stock_item_id = fi.id) AS movement_count,
            (SELECT created_at FROM customer_stock_movements WHERE stock_item_id = fi.id ORDER BY created_at DESC LIMIT 1) AS last_movement_at
@@ -3185,6 +3185,7 @@ router.post("/portal/stock", portalAuth, async (req: Request, res: Response) => 
     unitPrice: z.number().nonnegative().optional().default(0),
     initialQuantity: z.number().int().min(0).default(0),
     minQuantity: z.number().int().min(0).default(0),
+    reorderQuantity: z.number().int().min(0).default(0),
     location: z.string().max(200).nullable().optional(),
     notes: z.string().nullable().optional(),
   }).parse(req.body);
@@ -3195,9 +3196,9 @@ router.post("/portal/stock", portalAuth, async (req: Request, res: Response) => 
   const mgrName: string = mgrEmail ? mgrEmail.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : "Manager";
 
   const result = await db.execute(sql`
-    INSERT INTO customer_finished_items (customer_id, name, product_id, colour, size, unit_price, stock_quantity, min_quantity, location, notes, created_at, updated_at)
+    INSERT INTO customer_finished_items (customer_id, name, product_id, colour, size, unit_price, stock_quantity, min_quantity, reorder_quantity, location, notes, created_at, updated_at)
     VALUES (${customerId}, ${body.name}, ${body.productId ?? null}, ${body.colour ?? null}, ${body.size ?? null},
-            ${body.unitPrice.toFixed(2)}, ${body.initialQuantity}, ${body.minQuantity}, ${body.location ?? null}, ${body.notes ?? null}, now(), now())
+            ${body.unitPrice.toFixed(2)}, ${body.initialQuantity}, ${body.minQuantity}, ${body.reorderQuantity}, ${body.location ?? null}, ${body.notes ?? null}, now(), now())
     RETURNING id
   `);
   const newId = (result.rows[0] as any).id as number;
@@ -3225,20 +3226,22 @@ router.patch("/portal/stock/:id", portalAuth, async (req: Request, res: Response
     size: z.string().max(50).nullable().optional(),
     unitPrice: z.number().nonnegative().optional(),
     minQuantity: z.number().int().min(0).optional(),
+    reorderQuantity: z.number().int().min(0).optional(),
     location: z.string().max(200).nullable().optional(),
     notes: z.string().nullable().optional(),
   }).parse(req.body);
 
   await db.execute(sql`
     UPDATE customer_finished_items
-    SET name         = COALESCE(${body.name ?? null}, name),
-        colour       = COALESCE(${body.colour !== undefined ? body.colour : null}, colour),
-        size         = COALESCE(${body.size !== undefined ? body.size : null}, size),
-        unit_price   = COALESCE(${body.unitPrice != null ? body.unitPrice.toFixed(2) : null}, unit_price),
-        min_quantity = COALESCE(${body.minQuantity ?? null}, min_quantity),
-        location     = ${body.location !== undefined ? (body.location ?? null) : sql`location`},
-        notes        = ${body.notes !== undefined ? (body.notes ?? null) : sql`notes`},
-        updated_at   = now()
+    SET name             = COALESCE(${body.name ?? null}, name),
+        colour           = COALESCE(${body.colour !== undefined ? body.colour : null}, colour),
+        size             = COALESCE(${body.size !== undefined ? body.size : null}, size),
+        unit_price       = COALESCE(${body.unitPrice != null ? body.unitPrice.toFixed(2) : null}, unit_price),
+        min_quantity     = COALESCE(${body.minQuantity ?? null}, min_quantity),
+        reorder_quantity = COALESCE(${body.reorderQuantity ?? null}, reorder_quantity),
+        location         = ${body.location !== undefined ? (body.location ?? null) : sql`location`},
+        notes            = ${body.notes !== undefined ? (body.notes ?? null) : sql`notes`},
+        updated_at       = now()
     WHERE id = ${id} AND customer_id = ${customerId}
   `);
   res.json({ ok: true });

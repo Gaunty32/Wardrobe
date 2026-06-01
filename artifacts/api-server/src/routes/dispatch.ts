@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq, inArray, and, notInArray, desc, or, ilike } from "drizzle-orm";
+import { eq, inArray, and, notInArray, desc, or, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  db, sql, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
+  db, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
   customerEmployeesTable, customerDeliveryAddressesTable, customersTable, productsTable,
 } from "@workspace/db";
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";

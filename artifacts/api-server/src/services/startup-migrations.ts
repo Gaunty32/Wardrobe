@@ -1216,4 +1216,9 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS add_to_stores boolean NOT NULL DEFAULT false;
   `);
+
+  // Minimum reorder quantity per stock item — how many to order when restocking
+  await db.execute(sql`
+    ALTER TABLE customer_finished_items ADD COLUMN IF NOT EXISTS reorder_quantity INTEGER NOT NULL DEFAULT 0;
+  `);
 }
