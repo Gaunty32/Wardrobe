@@ -1102,15 +1102,22 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
     const productName = wi.product_name ?? wi.name ?? "item";
 
     // Price-break suggestion (compute before updating basket)
+    // Not shown when a special (agreed) price is in effect — bulk tiers don't apply.
     const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
-    if (breaks.length > 0) {
+    if (breaks.length > 0 && !wi.special_price) {
       const existingQty = basket
         .filter((x: OrderItem) => x.productId === (wi.product_id ?? null))
         .reduce((s: number, x: OrderItem) => s + x.quantity, 0);
       const totalQty = existingQty + addedQty;
       const basePrice = parseFloat(wi.unit_price ?? "0") || 0;
       const suggestion = getPriceBreakSuggestion(productName, totalQty, existingQty, breaks, basePrice);
-      if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 400);
+      if (suggestion) {
+        const isTip = suggestion.title === "Bulk discount tip";
+        if (!isTip || !localStorage.getItem("sbs-bulk-tip-seen")) {
+          if (isTip) localStorage.setItem("sbs-bulk-tip-seen", "1");
+          setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 400);
+        }
+      }
     }
 
     setBasket(b => [...b, makeItem(wi, isStock ? "stock" : "person", size, addedQty, emp)]);
@@ -1131,8 +1138,9 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
     if (newItems.length === 0) return;
 
     // Price-break suggestion (compute before updating basket)
+    // Not shown when a special (agreed) price is in effect — bulk tiers don't apply.
     const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
-    if (breaks.length > 0) {
+    if (breaks.length > 0 && !wi.special_price) {
       const addedQty = newItems.reduce((s, x) => s + x.quantity, 0);
       const existingQty = basket
         .filter((x: OrderItem) => x.productId === (wi.product_id ?? null))
@@ -1141,7 +1149,13 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       const basePrice = parseFloat(wi.unit_price ?? "0") || 0;
       const productName = wi.product_name ?? wi.name ?? "item";
       const suggestion = getPriceBreakSuggestion(productName, totalQty, existingQty, breaks, basePrice);
-      if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 400);
+      if (suggestion) {
+        const isTip = suggestion.title === "Bulk discount tip";
+        if (!isTip || !localStorage.getItem("sbs-bulk-tip-seen")) {
+          if (isTip) localStorage.setItem("sbs-bulk-tip-seen", "1");
+          setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 400);
+        }
+      }
     }
 
     setBasket(b => [...b, ...newItems]);
