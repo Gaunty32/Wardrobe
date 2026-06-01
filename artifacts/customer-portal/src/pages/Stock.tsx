@@ -62,22 +62,13 @@ function getSizesForGroup(
   sizesMap: Record<string, Record<string, string[]>>
 ): string[] {
   const productId = group.items[0]?.product_id;
-  if (!productId) return group.items.map(i => i.size ?? "—");
+  if (!productId) return [...new Set(group.items.map(i => i.size ?? "—"))];
   const byProduct = sizesMap[String(productId)];
-  if (!byProduct) return group.items.map(i => i.size ?? "—");
-  const colour = group.colour ?? "";
-  // Exact match
-  if (byProduct[colour]?.length) return byProduct[colour];
-  // Case-insensitive match
-  const lower = colour.toLowerCase();
-  for (const [k, v] of Object.entries(byProduct)) {
-    if (k !== "__any__" && k.toLowerCase() === lower && v.length) return v;
-  }
-  // Fallback to __any__
-  if (byProduct["__any__"]?.length) return byProduct["__any__"];
-  // Broader fallback: any size for this product across all colour variants
-  const allSizes = [...new Set(Object.values(byProduct).flat())].filter(s => s !== "__any__");
-  if (allSizes.length) return allSizes;
+  // No catalogue data — fall back to stored sizes
+  if (!byProduct) return [...new Set(group.items.map(i => i.size ?? "—"))];
+  // Same logic as wardrobe: return all sizes across all colour variants, colour doesn't restrict ordering
+  const all = [...new Set(Object.values(byProduct).flat())];
+  if (all.length) return all;
   // Last resort: use the sizes actually stored (deduplicated)
   return [...new Set(group.items.map(i => i.size ?? "—"))];
 }
