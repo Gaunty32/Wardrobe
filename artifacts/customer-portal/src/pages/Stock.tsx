@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { apiFetch } from "@/lib/api";
 import PortalLayout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 import {
   AlertTriangle, Plus, ArrowUpCircle, ArrowDownCircle, History,
   Pencil, Trash2, Package, MapPin, TrendingDown, RefreshCw, Shirt,
+  ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sortBySizeWithOrder } from "@/lib/sizeUtils";
