@@ -254,7 +254,7 @@ function getPriceBreakSuggestion(
   };
 }
 
-function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleevesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole, isLoading }: {
+function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleevesMap, basket, setBasket, onNext, processes, isManager, onEmployeeAdded, myEmployeeId, portalRole, isLoading, canSeePricing }: {
   items: any[];
   employees: any[];
   lastSizes: Record<string, Record<string, { size: string; colour: string | null }>>;
@@ -270,6 +270,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
   myEmployeeId: number | null;
   portalRole: string;
   isLoading?: boolean;
+  canSeePricing?: boolean;
 }) {
   const { toast } = useToast();
   const sizeOrder = useSizeOrder();
@@ -3125,6 +3126,7 @@ export default function NewOrder() {
             myEmployeeId={wardrobe?.myEmployeeId ?? null}
             portalRole={portalRole ?? "member"}
             isLoading={wardrobeLoading}
+            canSeePricing={canSeePricing}
           />
         </div>
       )}
