@@ -635,6 +635,13 @@ function EmployeesTab() {
     onError: () => toast({ title: "Failed to update role", variant: "destructive" }),
   });
 
+  const portalPricingMutation = useMutation({
+    mutationFn: ({ id, showPricing }: { id: number; showPricing: boolean }) =>
+      apiFetch(`/portal/team/users/${id}/show-pricing`, { method: "PATCH", body: JSON.stringify({ showPricing }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["portal-team-users"] }),
+    onError: () => toast({ title: "Failed to update pricing access", variant: "destructive" }),
+  });
+
   const portalStatusMutation = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) =>
       apiFetch(`/portal/team/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
@@ -1073,6 +1080,17 @@ function EmployeesTab() {
                       <SelectItem value="manager">Admin — full access</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium">Show pricing</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Allow this user to see product and order prices</p>
+                  </div>
+                  <Switch
+                    checked={portalTarget.user.show_pricing === true}
+                    onCheckedChange={(v) => portalPricingMutation.mutate({ id: portalTarget.user.id, showPricing: v })}
+                    disabled={portalTarget.user.status === "inactive" || portalPricingMutation.isPending}
+                  />
                 </div>
                 <DialogFooter>
                   <Button variant="outline" className="mr-auto text-destructive border-destructive/30 hover:bg-destructive/5"

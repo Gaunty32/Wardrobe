@@ -2036,6 +2036,15 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     },
   });
 
+  const changePricing = useMutation({
+    mutationFn: ({ userId, showPricing }: { userId: number; showPricing: boolean }) =>
+      apiFetch(`/portal/admin/users/${userId}/show-pricing`, {
+        method: "PATCH",
+        body: JSON.stringify({ showPricing }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["portal-users", customerId] }),
+  });
+
   const changeEmail = useMutation({
     mutationFn: ({ userId, email }: { userId: number; email: string }) =>
       apiFetch(`/portal/admin/users/${userId}/email`, {
@@ -2317,6 +2326,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
             <TableHead>Email</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Role</TableHead>
+            <TableHead className="hidden md:table-cell">See Prices</TableHead>
             <TableHead className="hidden md:table-cell">Last Login</TableHead>
             <TableHead className="w-24 text-right">Actions</TableHead>
           </TableRow></TableHeader>
@@ -2339,6 +2349,13 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                       <SelectItem value="member" className="text-xs">Member</SelectItem>
                     </SelectContent>
                   </Select>
+                </TableCell>
+                <TableCell className="hidden md:table-cell">
+                  <Switch
+                    checked={u.show_pricing === true}
+                    onCheckedChange={(v) => changePricing.mutate({ userId: u.id, showPricing: v })}
+                    aria-label="Can see pricing"
+                  />
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                   {u.last_login_at ? formatDate(u.last_login_at) : <span className="text-muted-foreground/50">Never</span>}

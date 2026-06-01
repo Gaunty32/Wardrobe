@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +24,7 @@ function ProcessBadge({ type }: { type: string }) {
 }
 
 export default function Wardrobe() {
+  const { canSeePricing } = useAuth();
   const { data, isLoading } = useQuery<any>({
     queryKey: ["portal-wardrobe"],
     queryFn: () => apiFetch("/portal/wardrobe"),
@@ -152,7 +154,7 @@ export default function Wardrobe() {
                                 </p>
                               )}
                             </div>
-                            {price && (
+                            {price && canSeePricing && (
                               <span className="text-sm font-semibold tabular-nums shrink-0">
                                 {formatCurrency(price)}
                               </span>

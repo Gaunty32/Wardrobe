@@ -715,7 +715,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                         <p className="text-[11px] text-muted-foreground">
                           {[item.colour, item.size, item.quantity > 1 ? `×${item.quantity}` : null].filter(Boolean).join(" · ")}
                         </p>
-                        {item.unitPrice > 0 && (
+                        {item.unitPrice > 0 && canSeePricing && (
                           <p className="text-[11px] text-primary font-semibold">{formatCurrency(item.unitPrice * item.quantity)}</p>
                         )}
                       </div>
@@ -736,7 +736,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       )}
       {basket.length > 0 && (
         <div className="px-4 py-3 border-t bg-muted/20">
-          {summaryTotal > 0 && (
+          {summaryTotal > 0 && canSeePricing && (
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs text-muted-foreground">Estimated total</span>
               <span className="text-sm font-bold">{formatCurrency(summaryTotal)}</span>
@@ -2818,7 +2818,7 @@ function clearSession() {
 export default function NewOrder() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { user, portalRole, isPreview } = useAuth();
+  const { user, portalRole, isPreview, canSeePricing } = useAuth();
   const queryClient = useQueryClient();
 
   const saved = readSession();

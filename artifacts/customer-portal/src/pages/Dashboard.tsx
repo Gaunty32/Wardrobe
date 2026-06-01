@@ -385,9 +385,11 @@ function ManagerReviewPanel() {
                 <span className="w-20 text-right text-sm text-muted-foreground tabular-nums hidden sm:block">
                   {order.item_count} item{Number(order.item_count) !== 1 ? "s" : ""}
                 </span>
-                <span className="w-24 text-right font-semibold text-sm tabular-nums">
-                  {formatCurrency(order.total_amount)}
-                </span>
+                {canSeePricing && (
+                  <span className="w-24 text-right font-semibold text-sm tabular-nums">
+                    {formatCurrency(order.total_amount)}
+                  </span>
+                )}
                 <div className="w-16 flex justify-end">
                   <Button
                     size="sm"
@@ -408,7 +410,7 @@ function ManagerReviewPanel() {
               <div className="text-sm font-medium text-orange-900">
                 {selected.size} order{selected.size !== 1 ? "s" : ""} selected
                 <span className="mx-2 text-orange-300">|</span>
-                Total: <span className="font-bold">{formatCurrency(selectedTotal)}</span>
+                {canSeePricing && <>Total: <span className="font-bold">{formatCurrency(selectedTotal)}</span></>}
               </div>
               <div className="flex gap-2 sm:ml-auto shrink-0 flex-wrap">
                 <Button
@@ -464,15 +466,15 @@ function ManagerReviewPanel() {
                       <td className="px-3 py-2 font-medium text-primary">{o.order_number}</td>
                       <td className="px-3 py-2 text-muted-foreground">{o.portal_submitted_by_name ?? "—"}</td>
                       <td className="px-3 py-2 text-right tabular-nums hidden sm:table-cell">{o.item_count}</td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatCurrency(o.total_amount)}</td>
+                      {canSeePricing && <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatCurrency(o.total_amount)}</td>}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="bg-muted/30 border-t-2">
                   <tr>
-                    <td colSpan={2} className="px-3 py-2 font-semibold">Total</td>
+                    <td colSpan={canSeePricing ? 2 : 3} className="px-3 py-2 font-semibold">Total</td>
                     <td className="px-3 py-2 text-right tabular-nums font-semibold hidden sm:table-cell">{selectedItemCount} items</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-bold text-base">{formatCurrency(selectedTotal)}</td>
+                    {canSeePricing && <td className="px-3 py-2 text-right tabular-nums font-bold text-base">{formatCurrency(selectedTotal)}</td>}
                   </tr>
                 </tfoot>
               </table>
@@ -550,7 +552,7 @@ function ManagerReviewPanel() {
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const { isManager, isDeptManager, user } = useAuth();
+  const { isManager, isDeptManager, user, canSeePricing } = useAuth();
   const firstName = (user as any)?.firstName ?? "there";
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -885,7 +887,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="font-semibold tabular-nums">{formatCurrency(order.total_amount)}</span>
+                    {canSeePricing && <span className="font-semibold tabular-nums">{formatCurrency(order.total_amount)}</span>}
                     {!poMode && (
                       <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                     )}
@@ -907,8 +909,7 @@ export default function Dashboard() {
                 {poSelected.size > 0 ? (
                   <span className="text-sm font-medium">
                     {poSelected.size} order{poSelected.size !== 1 ? "s" : ""} selected
-                    <span className="mx-2 opacity-60">·</span>
-                    {formatCurrency(poSelectedTotal)}
+                    {canSeePricing && (<><span className="mx-2 opacity-60">·</span>{formatCurrency(poSelectedTotal)}</>)}
                   </span>
                 ) : (
                   <span className="text-sm text-muted-foreground">Tick orders above to assign a PO number to them</span>
@@ -958,14 +959,14 @@ export default function Dashboard() {
                       <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">
                         {o.po_number ? <span className="font-medium text-foreground/70">{o.po_number}</span> : <span className="italic opacity-50">None</span>}
                       </td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatCurrency(o.total_amount)}</td>
+                      {canSeePricing && <td className="px-3 py-2 text-right font-semibold tabular-nums">{formatCurrency(o.total_amount)}</td>}
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="bg-muted/30 border-t-2">
                   <tr>
-                    <td colSpan={2} className="px-3 py-2 font-semibold">Total</td>
-                    <td className="px-3 py-2 text-right font-bold tabular-nums">{formatCurrency(poSelectedTotal)}</td>
+                    <td colSpan={canSeePricing ? 2 : 3} className="px-3 py-2 font-semibold">Total</td>
+                    {canSeePricing && <td className="px-3 py-2 text-right font-bold tabular-nums">{formatCurrency(poSelectedTotal)}</td>}
                   </tr>
                 </tfoot>
               </table>

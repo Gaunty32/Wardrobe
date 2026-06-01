@@ -1186,4 +1186,14 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE quotes ADD COLUMN IF NOT EXISTS contact_email text;
   `);
+
+  // Pricing visibility per portal user. Default OFF; managers get ON automatically.
+  await db.execute(sql`
+    ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS show_pricing boolean NOT NULL DEFAULT false;
+  `);
+  // Backfill: existing managers should be able to see pricing.
+  await db.execute(sql`
+    UPDATE customer_portal_users SET show_pricing = true
+    WHERE portal_role = 'manager' AND show_pricing = false;
+  `);
 }

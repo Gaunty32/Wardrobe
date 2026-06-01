@@ -4,6 +4,7 @@ import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
 import { sizeRank } from "@/lib/sizeUtils";
+import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -135,6 +136,7 @@ function ColourChip({ colour, size = "sm", active = false, imageUrl, onClick }: 
 
 // ─── Product detail modal ─────────────────────────────────────────────────────
 function ProductModal({ product, onClose }: { product: PortalProduct; onClose: () => void }) {
+  const { canSeePricing } = useAuth();
   const { data: variants = [], isLoading } = useQuery<ProductVariant[]>({
     queryKey: ["portal-product-variants", product.id],
     queryFn: () => apiFetch(`/portal/products/${product.id}/variants`),
@@ -209,13 +211,13 @@ function ProductModal({ product, onClose }: { product: PortalProduct; onClose: (
             </div>
 
             {/* Price */}
-            {displayPrice != null ? (
+            {canSeePricing && (displayPrice != null ? (
               <p className="text-xl font-bold tabular-nums">
                 {variantPrices.length > 1 ? "from " : ""}{formatCurrency(displayPrice)}
               </p>
             ) : (
               <p className="text-sm text-muted-foreground">Price on application</p>
-            )}
+            ))}
 
             {/* Description */}
             {product.description && (
@@ -318,6 +320,7 @@ function ProductModal({ product, onClose }: { product: PortalProduct; onClose: (
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function Products() {
+  const { canSeePricing } = useAuth();
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<PortalProduct | null>(null);
@@ -509,11 +512,11 @@ export default function Products() {
                       {product.sku && <p className="text-xs text-muted-foreground font-mono mt-0.5">{product.sku}</p>}
 
                       <div className="flex items-center justify-between mt-2 gap-2">
-                        {product.unit_price ? (
+                        {canSeePricing && (product.unit_price ? (
                           <span className="text-sm font-semibold tabular-nums">{formatCurrency(product.unit_price)}</span>
                         ) : (
                           <span className="text-xs text-muted-foreground">POA</span>
-                        )}
+                        ))}
                         <div className="flex items-center gap-1.5">
                           {isSearching && product.category && (
                             <button

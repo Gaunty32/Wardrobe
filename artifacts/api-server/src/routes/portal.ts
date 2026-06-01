@@ -119,9 +119,10 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   // upsert: update if (email, customer_id) already exists
   // Only mark as 'invited' when an email is actually being sent; otherwise 'pending'
   const initialStatus = skipEmail ? 'pending' : 'invited';
+  const defaultShowPricing = portalRole === 'manager';
   await db.execute(sql`
-    INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
-    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, ${initialStatus}, ${portalRole})
+    INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role, show_pricing)
+    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, ${initialStatus}, ${portalRole}, ${defaultShowPricing})
     ON CONFLICT (email, customer_id) DO UPDATE
       SET invite_token = ${token},
           invite_expires_at = ${expires.toISOString()},
@@ -209,7 +210,7 @@ router.get("/portal/admin/customer-detail/:customerId", async (req: Request, res
 router.get("/portal/admin/users/:customerId", async (req: Request, res: Response) => {
   const customerId = parseInt(req.params.customerId, 10);
   const rows = await db.execute(sql`
-    SELECT id, email, status, portal_role, last_login_at, created_at,
+    SELECT id, email, status, portal_role, show_pricing, last_login_at, created_at,
            invite_expires_at,
            CASE WHEN invite_token IS NOT NULL THEN true ELSE false END as has_pending_invite
     FROM customer_portal_users
@@ -243,6 +244,15 @@ router.patch("/portal/admin/users/:userId/role", async (req: Request, res: Respo
     portalRole: z.enum(["manager", "dept_manager", "member"]),
   }).parse(req.body);
   await db.execute(sql`UPDATE customer_portal_users SET portal_role = ${portalRole}, updated_at = now() WHERE id = ${userId}`);
+  res.json({ ok: true });
+});
+
+// ─── admin: toggle pricing visibility for a portal user ───────────────────────
+
+router.patch("/portal/admin/users/:userId/show-pricing", async (req: Request, res: Response) => {
+  const userId = parseInt(req.params.userId, 10);
+  const { showPricing } = z.object({ showPricing: z.boolean() }).parse(req.body);
+  await db.execute(sql`UPDATE customer_portal_users SET show_pricing = ${showPricing}, updated_at = now() WHERE id = ${userId}`);
   res.json({ ok: true });
 });
 
@@ -508,7 +518,7 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
       firstName = raw.trim().split(/\s+/)[0];
     }
     res.json({
-      user: { id: userId ?? 0, email: previewEmail, status: "active", portal_role: previewRole },
+      user: { id: userId ?? 0, email: previewEmail, status: "active", portal_role: previewRole, show_pricing: previewRole === "manager" },
       customer,
       firstName,
       isPreview: true,
@@ -519,7 +529,7 @@ router.get("/portal/auth/me", portalAuth, async (req: Request, res: Response) =>
   }
 
   const userRows = await db.execute(sql`
-    SELECT id, email, status, portal_role, last_login_at FROM customer_portal_users WHERE id = ${userId}
+    SELECT id, email, status, portal_role, show_pricing, last_login_at FROM customer_portal_users WHERE id = ${userId}
   `);
   const portalUser = userRows.rows[0] as any;
 
@@ -2782,7 +2792,7 @@ router.get("/portal/team/users", portalAuth, async (req: Request, res: Response)
   if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
 
   const rows = await db.execute(sql`
-    SELECT u.id, u.email, u.status, u.portal_role, u.last_login_at, u.created_at,
+    SELECT u.id, u.email, u.status, u.portal_role, u.show_pricing, u.last_login_at, u.created_at,
            u.linked_employee_id,
            e.first_name AS linked_first_name, e.last_name AS linked_last_name
     FROM customer_portal_users u
@@ -2835,10 +2845,11 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
   const token = randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400_000);
 
+  const showPricingDefault = role === 'manager';
   try {
     await db.execute(sql`
-      INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role)
-      VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'pending', ${role})
+      INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role, show_pricing)
+      VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'pending', ${role}, ${showPricingDefault})
       ON CONFLICT (email, customer_id) DO UPDATE SET
         invite_token = ${token},
         invite_expires_at = ${expires.toISOString()},
@@ -2948,6 +2959,24 @@ router.patch("/portal/team/users/:id/role", portalAuth, async (req: Request, res
 
   await db.execute(sql`
     UPDATE customer_portal_users SET portal_role = ${body.data.role}, updated_at = now()
+    WHERE id = ${id} AND customer_id = ${customerId}
+  `);
+  res.json({ ok: true });
+});
+
+router.patch("/portal/team/users/:id/show-pricing", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({ showPricing: z.boolean() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  await db.execute(sql`
+    UPDATE customer_portal_users SET show_pricing = ${body.data.showPricing}, updated_at = now()
     WHERE id = ${id} AND customer_id = ${customerId}
   `);
   res.json({ ok: true });

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, AlertCircle, Hash, Pencil, Check, X, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 function PortalStatusBadge({ status, portalStatus }: { status: string; portalStatus?: string }) {
   if (portalStatus === "pending" || status === "portal_pending") {
@@ -28,6 +29,7 @@ function PortalStatusBadge({ status, portalStatus }: { status: string; portalSta
 }
 
 export default function OrderDetailPage() {
+  const { canSeePricing } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
@@ -175,12 +177,14 @@ export default function OrderDetailPage() {
             </CardContent>
           </Card>
         )}
-        <Card>
-          <CardContent className="py-4 px-5">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total (inc. VAT)</p>
-            <p className="font-semibold text-lg">{formatCurrency(grandTotal)}</p>
-          </CardContent>
-        </Card>
+        {canSeePricing && (
+          <Card>
+            <CardContent className="py-4 px-5">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total (inc. VAT)</p>
+              <p className="font-semibold text-lg">{formatCurrency(grandTotal)}</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Audit trail */}
@@ -256,8 +260,8 @@ export default function OrderDetailPage() {
                   <TableHead>Finish</TableHead>
                   <TableHead>For</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
-                  <TableHead className="text-right">Unit price</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                  {canSeePricing && <TableHead className="text-right">Unit price</TableHead>}
+                  {canSeePricing && <TableHead className="text-right">Total</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -272,43 +276,45 @@ export default function OrderDetailPage() {
                       {item.recipient_name || (item.recipient_type === "stock" ? "Stock" : "—")}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatCurrency(item.unit_price)}</TableCell>
-                    <TableCell className="text-right tabular-nums font-medium">{formatCurrency(item.line_total)}</TableCell>
+                    {canSeePricing && <TableCell className="text-right tabular-nums">{formatCurrency(item.unit_price)}</TableCell>}
+                    {canSeePricing && <TableCell className="text-right tabular-nums font-medium">{formatCurrency(item.line_total)}</TableCell>}
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-          <div className="border-t">
-            <div className="px-5 py-2 flex justify-end">
-              <div className="text-right space-y-1 min-w-[220px]">
-                {lineFilter.trim() && filteredItems.length !== items.length && (
-                  <div className="flex justify-between gap-8 text-sm font-medium">
-                    <span>Filtered subtotal</span>
-                    <span>{formatCurrency(filteredSubtotal)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between gap-8 text-sm text-muted-foreground">
-                  <span>Subtotal (exc. VAT)</span>
-                  <span>{formatCurrency(itemsSubtotal)}</span>
-                </div>
-                {carriageAmount > 0 && (
+          {canSeePricing && (
+            <div className="border-t">
+              <div className="px-5 py-2 flex justify-end">
+                <div className="text-right space-y-1 min-w-[220px]">
+                  {lineFilter.trim() && filteredItems.length !== items.length && (
+                    <div className="flex justify-between gap-8 text-sm font-medium">
+                      <span>Filtered subtotal</span>
+                      <span>{formatCurrency(filteredSubtotal)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between gap-8 text-sm text-muted-foreground">
-                    <span>Carriage</span>
-                    <span>{formatCurrency(carriageAmount)}</span>
+                    <span>Subtotal (exc. VAT)</span>
+                    <span>{formatCurrency(itemsSubtotal)}</span>
                   </div>
-                )}
-                <div className="flex justify-between gap-8 text-sm text-muted-foreground">
-                  <span>VAT (20%)</span>
-                  <span>{formatCurrency(vatAmount)}</span>
-                </div>
-                <div className="flex justify-between gap-8 pt-1.5 border-t font-bold text-base">
-                  <span>Total (inc. VAT)</span>
-                  <span>{formatCurrency(grandTotal)}</span>
+                  {carriageAmount > 0 && (
+                    <div className="flex justify-between gap-8 text-sm text-muted-foreground">
+                      <span>Carriage</span>
+                      <span>{formatCurrency(carriageAmount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between gap-8 text-sm text-muted-foreground">
+                    <span>VAT (20%)</span>
+                    <span>{formatCurrency(vatAmount)}</span>
+                  </div>
+                  <div className="flex justify-between gap-8 pt-1.5 border-t font-bold text-base">
+                    <span>Total (inc. VAT)</span>
+                    <span>{formatCurrency(grandTotal)}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </PortalLayout>

@@ -3,7 +3,7 @@ import { apiFetch } from "@/lib/api";
 import { useLocation } from "wouter";
 
 type AuthUser = {
-  user: { id: number; email: string; status: string; portal_role: string; last_login_at: string | null };
+  user: { id: number; email: string; status: string; portal_role: string; last_login_at: string | null; show_pricing?: boolean };
   customer: { id: number; name: string; logo_url?: string | null };
   firstName?: string;
   isPreview?: boolean;
@@ -19,6 +19,7 @@ type AuthContextType = {
   isDeptManager: boolean;
   isPreview: boolean;
   previewEmployeeName: string | null;
+  canSeePricing: boolean;
   logout: () => void;
   refetchUser: () => Promise<void>;
 };
@@ -67,9 +68,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isDeptManager = portalRole === "dept_manager";
   const isPreview = user?.isPreview === true;
   const previewEmployeeName = user?.previewEmployeeName ?? null;
+  // show_pricing is stored per user in the DB. For preview sessions the API
+  // derives it from the role (managers → true, others → false).
+  const canSeePricing = user?.user?.show_pricing === true;
 
   return (
-    <AuthContext.Provider value={{ user, loading, portalRole, isManager, isDeptManager, isPreview, previewEmployeeName, logout, refetchUser: fetchUser }}>
+    <AuthContext.Provider value={{ user, loading, portalRole, isManager, isDeptManager, isPreview, previewEmployeeName, canSeePricing, logout, refetchUser: fetchUser }}>
       {children}
     </AuthContext.Provider>
   );
