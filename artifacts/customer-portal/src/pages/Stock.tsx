@@ -139,6 +139,20 @@ function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+const SIZE_ABBREV: Record<string, string> = {
+  "extra small": "XS",
+  "small": "S",
+  "medium": "M",
+  "large": "L",
+  "extra large": "XL",
+  "extra-large": "XL",
+  "double extra large": "2XL",
+  "triple extra large": "3XL",
+};
+function abbrevSize(s: string): string {
+  return SIZE_ABBREV[s.toLowerCase()] ?? s;
+}
+
 function fmt(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
@@ -969,7 +983,7 @@ export default function StockPage() {
                                 "rounded-md px-2 py-1 text-xs font-semibold text-center",
                                 isLow ? "bg-amber-100 text-amber-800" : "bg-muted text-foreground"
                               )}>
-                                {size}
+                                {abbrevSize(size)}
                               </span>
                               <span className={cn(
                                 "text-sm tabular-nums font-medium flex items-center gap-1",
