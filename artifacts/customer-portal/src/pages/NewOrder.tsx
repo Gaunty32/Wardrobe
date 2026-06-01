@@ -2821,6 +2821,7 @@ export default function NewOrder() {
   const { user, portalRole, isPreview, canSeePricing } = useAuth();
   const queryClient = useQueryClient();
 
+  const search = useSearch();
   const saved = readSession();
   const savedHasItems = (saved?.basket?.length ?? 0) > 0;
   const modeParam = useMemo(() => {
@@ -2851,7 +2852,6 @@ export default function NewOrder() {
   }
 
   // ── Quote pre-fill: if URL has ?quote=TOKEN, load quote items ─────────────
-  const search = useSearch();
   const quoteToken = useMemo(() => new URLSearchParams(search).get("quote"), [search]);
 
   const { data: quoteData } = useQuery<{
