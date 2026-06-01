@@ -1196,4 +1196,19 @@ export async function runStartupMigrations(): Promise<void> {
     UPDATE customer_portal_users SET show_pricing = true
     WHERE portal_role = 'manager' AND show_pricing = false;
   `);
+
+  // One-time deletion of erroneously generated portal order P51.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS _migration_flags (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());
+  `);
+  const deleteP51Flag = await db.execute(sql`
+    SELECT 1 FROM _migration_flags WHERE name = 'delete_erroneous_order_P51'
+  `);
+  if (deleteP51Flag.rows.length === 0) {
+    await db.execute(sql`
+      DELETE FROM order_items WHERE order_id = (SELECT id FROM orders WHERE order_number = 'P51');
+      DELETE FROM orders WHERE order_number = 'P51';
+      INSERT INTO _migration_flags (name) VALUES ('delete_erroneous_order_P51');
+    `);
+  }
 }
