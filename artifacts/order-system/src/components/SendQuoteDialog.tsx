@@ -23,13 +23,13 @@ async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<
 interface SendQuoteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  quote: { id: number; quoteNumber: string; customerName: string | null };
+  quote: { id: number; quoteNumber: string; customerName: string | null; customerEmail?: string | null };
   onSent?: () => void;
 }
 
 export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuoteDialogProps) {
   const { toast } = useToast();
-  const [emailTo, setEmailTo] = useState("");
+  const [emailTo, setEmailTo] = useState(quote.customerEmail ?? "");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [emailText, setEmailText] = useState("");
@@ -41,7 +41,7 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
   const [previewingPdf, setPreviewingPdf] = useState(false);
 
   const reset = () => {
-    setEmailTo("");
+    setEmailTo(quote.customerEmail ?? "");
     setSending(false);
     setSent(false);
     setEmailText("");
@@ -73,7 +73,12 @@ export function SendQuoteDialog({ open, onOpenChange, quote, onSent }: SendQuote
   };
 
   useEffect(() => {
-    if (open) loadPreview();
+    if (open) {
+      // Seed the field immediately with the already-loaded email; the preview
+      // call below may refine it (e.g. with a manager email from the portal).
+      if (!emailTo && quote.customerEmail) setEmailTo(quote.customerEmail);
+      loadPreview();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 

@@ -827,7 +827,7 @@ export default function QuoteDetail() {
       <SendQuoteDialog
         open={sendOpen}
         onOpenChange={setSendOpen}
-        quote={{ id: quoteId, quoteNumber: quote.quoteNumber, customerName: quote.customerName ?? null }}
+        quote={{ id: quoteId, quoteNumber: quote.quoteNumber, customerName: quote.customerName ?? null, customerEmail: quote.customerEmail ?? null }}
         onSent={() => {
           setSendOpen(false);
           qc.invalidateQueries({ queryKey: ["quote", quoteId] });

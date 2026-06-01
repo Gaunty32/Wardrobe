@@ -193,7 +193,8 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
           await db.execute(sql`
             UPDATE quotes SET
               contact_first_name = ${hlContact.firstName ?? null},
-              contact_last_name  = ${hlContact.lastName  ?? null}
+              contact_last_name  = ${hlContact.lastName  ?? null},
+              contact_email      = COALESCE(contact_email, ${hlContact.email ?? null})
             WHERE id = ${id}
           `);
 
@@ -461,6 +462,7 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
 
   const quoteRows = await db.execute(sql`
     SELECT q.*,
+      q.contact_email      AS contact_email,
       c.contact_first_name AS cust_first_name,
       c.contact_last_name  AS cust_last_name,
       c.email              AS customer_email
@@ -521,7 +523,11 @@ router.post("/quotes/:id/send", async (req: Request, res: Response): Promise<voi
     (quote.cust_first_name   as string | null) ||
     null;
 
-  // Also seed from the HL-synced contact email stored directly on the quote
+  // 1. Quote's own persisted contact email (most reliable — written during HL sync)
+  if (!toEmail && quote.contact_email) {
+    toEmail = quote.contact_email as string;
+  }
+  // 2. Linked customer's email (from JOIN)
   if (!toEmail && quote.customer_email) {
     toEmail = quote.customer_email as string;
   }
