@@ -75,8 +75,11 @@ function getSizesForGroup(
   }
   // Fallback to __any__
   if (byProduct["__any__"]?.length) return byProduct["__any__"];
-  // Last resort: use stored items
-  return group.items.map(i => i.size ?? "—");
+  // Broader fallback: any size for this product across all colour variants
+  const allSizes = [...new Set(Object.values(byProduct).flat())].filter(s => s !== "__any__");
+  if (allSizes.length) return allSizes;
+  // Last resort: use the sizes actually stored (deduplicated)
+  return [...new Set(group.items.map(i => i.size ?? "—"))];
 }
 
 function resolveStockPrice(item: StockItem, processes: StockProcess[]): number {
