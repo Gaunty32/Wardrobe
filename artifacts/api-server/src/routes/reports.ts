@@ -197,4 +197,88 @@ router.get("/reports/gp-summary", async (_req: Request, res: Response) => {
   res.json({ orders });
 });
 
+// ─── Weekly sales ─────────────────────────────────────────────────────────────
+// Week = Monday 00:00 → Sunday 23:59 (UK local time via AT TIME ZONE).
+// Excludes: draft, portal_draft, cancelled, archived orders.
+
+router.get("/reports/weekly-sales", async (_req: Request, res: Response) => {
+  const rows = await db.execute(sql`
+    WITH
+      week_start AS (
+        SELECT date_trunc('week', NOW() AT TIME ZONE 'Europe/London')::date AS mon
+      ),
+      params AS (
+        SELECT
+          mon                     AS this_mon,
+          (mon - interval '7 days')::date  AS last_mon
+        FROM week_start
+      ),
+      -- this week per-day totals (Mon=0 … Sun=6)
+      this_days AS (
+        SELECT
+          (o.order_date AT TIME ZONE 'Europe/London')::date AS day,
+          COALESCE(SUM(o.total_amount), 0)::float           AS total,
+          COUNT(*)                                          AS cnt
+        FROM orders o, params
+        WHERE (o.order_date AT TIME ZONE 'Europe/London')::date
+              BETWEEN params.this_mon AND (params.this_mon + interval '6 days')::date
+          AND o.status NOT IN ('cancelled','draft','portal_draft','archived')
+        GROUP BY 1
+      ),
+      -- last week totals
+      last_week AS (
+        SELECT
+          COALESCE(SUM(o.total_amount), 0)::float AS total,
+          COUNT(*)                                AS cnt
+        FROM orders o, params
+        WHERE (o.order_date AT TIME ZONE 'Europe/London')::date
+              BETWEEN params.last_mon AND (params.last_mon + interval '6 days')::date
+          AND o.status NOT IN ('cancelled','draft','portal_draft','archived')
+      ),
+      -- 8-week rolling totals (oldest first)
+      trend AS (
+        SELECT
+          date_trunc('week', o.order_date AT TIME ZONE 'Europe/London')::date AS week_mon,
+          COALESCE(SUM(o.total_amount), 0)::float AS total,
+          COUNT(*) AS cnt
+        FROM orders o, params
+        WHERE o.order_date >= (params.this_mon - interval '7 weeks')
+          AND o.status NOT IN ('cancelled','draft','portal_draft','archived')
+        GROUP BY 1
+        ORDER BY 1
+      )
+    SELECT
+      (SELECT mon FROM week_start)                    AS this_mon,
+      (SELECT last_mon FROM params)                   AS last_mon,
+      (SELECT total FROM last_week)                   AS last_week_total,
+      (SELECT cnt   FROM last_week)                   AS last_week_cnt,
+      (SELECT json_agg(json_build_object('day', day, 'total', total, 'cnt', cnt) ORDER BY day)
+       FROM this_days)                                AS daily,
+      (SELECT json_agg(json_build_object('weekMon', week_mon, 'total', total, 'cnt', cnt) ORDER BY week_mon)
+       FROM trend)                                    AS trend
+  `);
+
+  const r = (rows.rows as any[])[0];
+
+  const daily: { day: string; total: number; cnt: number }[] = r.daily ?? [];
+  const trend: { weekMon: string; total: number; cnt: number }[] = r.trend ?? [];
+
+  // Compute this-week total from daily breakdown
+  const thisWeekTotal = daily.reduce((s: number, d: any) => s + (d.total ?? 0), 0);
+  const thisWeekCnt   = daily.reduce((s: number, d: any) => s + (d.cnt ?? 0), 0);
+  const lastWeekTotal = parseFloat(r.last_week_total ?? "0");
+  const lastWeekCnt   = parseInt(r.last_week_cnt ?? "0");
+
+  res.json({
+    thisWeekTotal,
+    thisWeekCnt,
+    lastWeekTotal,
+    lastWeekCnt,
+    thisWeekStart: r.this_mon,   // ISO date string e.g. "2025-06-02"
+    lastWeekStart: r.last_mon,
+    daily,
+    trend,
+  });
+});
+
 export default router;

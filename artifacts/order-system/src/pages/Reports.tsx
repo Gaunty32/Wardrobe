@@ -22,6 +22,7 @@ import {
 import {
   BarChart2, Mail, Phone, ChevronDown, ChevronRight, Clock, AlertCircle,
   ExternalLink, RefreshCw, ShoppingCart, Users, ShoppingBag, Package, TrendingUp,
+  TrendingDown, ArrowUp, ArrowDown, Calendar,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,180 @@ type GpOrder = {
 };
 
 type GpReportData = { orders: GpOrder[] };
+
+type DayTotal = { day: string; total: number; cnt: number };
+type WeekTrend = { weekMon: string; total: number; cnt: number };
+type WeeklySalesData = {
+  thisWeekTotal: number;
+  thisWeekCnt: number;
+  lastWeekTotal: number;
+  lastWeekCnt: number;
+  thisWeekStart: string;
+  lastWeekStart: string;
+  daily: DayTotal[];
+  trend: WeekTrend[];
+};
+
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function fmtShortDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function WeeklySalesCard({ data }: { data: WeeklySalesData }) {
+  const { thisWeekTotal, thisWeekCnt, lastWeekTotal, lastWeekCnt, thisWeekStart, daily, trend } = data;
+
+  const pctChange = lastWeekTotal > 0
+    ? ((thisWeekTotal - lastWeekTotal) / lastWeekTotal) * 100
+    : null;
+
+  // Build full Mon-Sun array (fill gaps with zero)
+  const weekStartDate = new Date(thisWeekStart + "T00:00:00");
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStartDate);
+    d.setDate(d.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    const found = daily.find(x => x.day?.slice(0, 10) === iso);
+    return { label: DAY_LABELS[i], iso, total: found?.total ?? 0, cnt: found?.cnt ?? 0 };
+  });
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const dayMax = Math.max(...days.map(d => d.total), 1);
+
+  // 8-week trend — fill any missing weeks with 0
+  const trendMax = Math.max(...(trend ?? []).map(w => w.total), 1);
+
+  return (
+    <Card className="mb-6">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-primary" />
+              Weekly Sales
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Mon–Sun · {fmtShortDate(thisWeekStart)} – {fmtShortDate(
+                new Date(new Date(thisWeekStart).getTime() + 6 * 86400000).toISOString()
+              )}
+            </CardDescription>
+          </div>
+
+          <div className="flex items-end gap-4">
+            <div className="text-right">
+              <p className="text-3xl font-bold tabular-nums tracking-tight">{formatCurrency(thisWeekTotal)}</p>
+              <div className="flex items-center justify-end gap-2 mt-0.5">
+                <span className="text-xs text-muted-foreground">{thisWeekCnt} order{thisWeekCnt !== 1 ? "s" : ""}</span>
+                {pctChange !== null && (
+                  <span className={cn(
+                    "inline-flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded",
+                    pctChange >= 0
+                      ? "text-green-700 bg-green-50"
+                      : "text-red-600 bg-red-50"
+                  )}>
+                    {pctChange >= 0
+                      ? <ArrowUp className="w-3 h-3" />
+                      : <ArrowDown className="w-3 h-3" />}
+                    {Math.abs(pctChange).toFixed(0)}% vs last week
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+
+      <CardContent className="pt-0">
+        {/* Day-by-day bars */}
+        <div className="flex items-end gap-1.5 h-20 mb-1">
+          {days.map(day => {
+            const isToday = day.iso === todayIso;
+            const heightPct = dayMax > 0 ? (day.total / dayMax) * 100 : 0;
+            const isFuture = day.iso > todayIso;
+            return (
+              <div key={day.iso} className="flex-1 flex flex-col items-center justify-end gap-1 h-full group relative">
+                {day.total > 0 && (
+                  <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-10 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="bg-popover border shadow-md rounded px-2 py-1 text-xs whitespace-nowrap text-center">
+                      <span className="font-semibold">{formatCurrency(day.total)}</span>
+                      <span className="text-muted-foreground ml-1">· {day.cnt} order{day.cnt !== 1 ? "s" : ""}</span>
+                    </div>
+                  </div>
+                )}
+                <div
+                  className={cn(
+                    "w-full rounded-t transition-all",
+                    isToday ? "bg-primary" : isFuture ? "bg-muted/40" : "bg-primary/40",
+                    day.total === 0 && "min-h-[3px]"
+                  )}
+                  style={{ height: day.total > 0 ? `${Math.max(heightPct, 6)}%` : "3px" }}
+                />
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-1.5">
+          {days.map(day => (
+            <div key={day.iso} className={cn(
+              "flex-1 text-center text-[10px]",
+              day.iso === todayIso ? "font-bold text-primary" : "text-muted-foreground"
+            )}>
+              {day.label}
+            </div>
+          ))}
+        </div>
+
+        {/* 8-week trend */}
+        {trend && trend.length > 1 && (
+          <div className="mt-4 pt-4 border-t">
+            <p className="text-[11px] text-muted-foreground font-medium mb-2 uppercase tracking-wide">8-week trend</p>
+            <div className="flex items-end gap-1 h-10">
+              {trend.map((w, i) => {
+                const isCurrentWeek = w.weekMon?.slice(0, 10) === thisWeekStart?.slice(0, 10);
+                const heightPct = trendMax > 0 ? (w.total / trendMax) * 100 : 0;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                    <div
+                      className={cn(
+                        "w-full rounded-t",
+                        isCurrentWeek ? "bg-primary" : "bg-primary/25"
+                      )}
+                      style={{ height: w.total > 0 ? `${Math.max(heightPct, 8)}%` : "2px" }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-1 mt-1">
+              {trend.map((w, i) => {
+                const isCurrentWeek = w.weekMon?.slice(0, 10) === thisWeekStart?.slice(0, 10);
+                return (
+                  <div key={i} className={cn(
+                    "flex-1 text-center text-[9px]",
+                    isCurrentWeek ? "font-bold text-primary" : "text-muted-foreground"
+                  )}>
+                    {isCurrentWeek ? "Now" : new Date(w.weekMon).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Last week comparison row */}
+        <div className="mt-4 pt-3 border-t flex items-center justify-between text-xs text-muted-foreground">
+          <span>Last week ({fmtShortDate(data.lastWeekStart)} – {fmtShortDate(
+            new Date(new Date(data.lastWeekStart).getTime() + 6 * 86400000).toISOString()
+          )})</span>
+          <span className="tabular-nums font-medium text-foreground">
+            {formatCurrency(lastWeekTotal)}
+            <span className="text-muted-foreground font-normal ml-1">· {lastWeekCnt} order{lastWeekCnt !== 1 ? "s" : ""}</span>
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function gpColor(gp: number) {
   if (gp >= 70) return { badge: "text-green-700 bg-green-50 border-green-200", row: "" };
@@ -327,6 +502,12 @@ export default function Reports() {
     staleTime: 1000 * 60 * 2,
   });
 
+  const { data: weeklySales, isLoading: weeklySalesLoading } = useQuery<WeeklySalesData>({
+    queryKey: ["reports-weekly-sales"],
+    queryFn: () => apiFetch("/reports/weekly-sales"),
+    staleTime: 1000 * 60 * 5,
+  });
+
   const customers = data?.customers ?? [];
   const totalOrders = data?.totalOrders ?? 0;
   const baskets = basketData?.baskets ?? [];
@@ -354,6 +535,17 @@ export default function Reports() {
           Refresh
         </Button>
       </div>
+
+      {/* ── Weekly Sales ────────────────────────────────────────────────────── */}
+      {weeklySalesLoading ? (
+        <Card className="mb-6">
+          <CardContent className="flex items-center justify-center py-16 text-muted-foreground text-sm gap-2">
+            <RefreshCw className="w-4 h-4 animate-spin" /> Loading weekly sales…
+          </CardContent>
+        </Card>
+      ) : weeklySales ? (
+        <WeeklySalesCard data={weeklySales} />
+      ) : null}
 
       {/* ── Portal Pending Orders ───────────────────────────────────────────── */}
       <Card>
