@@ -93,13 +93,35 @@ interface PendingOrder {
   items: PendingItem[];
 }
 
-interface ReadyOrder {
+interface ReadyItemSummary {
+  id: number;
+  productName: string;
+  colour: string | null;
+  size: string | null;
+  quantity: number;
+  finishName: string | null;
+  finishId: number | null;
+}
+
+interface AllReadyOrder {
   id: number;
   orderNumber: string;
+  customerId: number | null;
   customerName: string | null;
   requiredDate: string | null;
   totalAmount: number;
-  itemCount: number;
+  items: ReadyItemSummary[];
+}
+
+interface PartInStockOrder {
+  id: number;
+  orderNumber: string;
+  customerId: number | null;
+  customerName: string | null;
+  requiredDate: string | null;
+  totalAmount: number;
+  readyItems: ReadyItemSummary[];
+  pendingItems: PendingItem[];
 }
 
 interface PickingItem {
@@ -1217,6 +1239,247 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
             <ShoppingCart className="w-3.5 h-3.5" />
             Stock must be received in Purchasing before this order can move to production.
           </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ItemMatrix (reusable grid for ready items) ────────────────────────────────
+function ItemMatrix({ items, borderClass = "border-gray-200", headClass = "bg-gray-50 border-gray-200" }: {
+  items: ReadyItemSummary[];
+  borderClass?: string;
+  headClass?: string;
+}) {
+  const matrices = useMemo(() => {
+    const map = new Map<string, { colours: string[]; sizes: string[]; cells: Map<string, ReadyItemSummary>; finishName: string | null }>();
+    for (const item of items) {
+      if (!map.has(item.productName)) map.set(item.productName, { colours: [], sizes: [], cells: new Map(), finishName: item.finishName });
+      const m = map.get(item.productName)!;
+      const colour = item.colour ?? "";
+      const size = item.size ?? "";
+      if (!m.colours.includes(colour)) m.colours.push(colour);
+      if (!m.sizes.includes(size)) m.sizes.push(size);
+      m.cells.set(`${colour}||${size}`, item);
+    }
+    for (const m of map.values()) m.sizes = sortSizes(m.sizes);
+    return [...map.entries()].map(([productName, m]) => ({ productName, ...m }));
+  }, [items]);
+
+  return (
+    <div className="space-y-3">
+      {matrices.map((m) => {
+        const hasSizes = m.sizes.some(s => s !== "");
+        const hasColours = m.colours.some(c => c !== "");
+        return (
+          <div key={m.productName}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-semibold text-foreground">{m.productName}</span>
+              {m.finishName && <span className="text-xs text-muted-foreground flex items-center gap-1"><Sparkles className="w-3 h-3" />{m.finishName}</span>}
+            </div>
+            <div className={`overflow-x-auto rounded-lg border ${borderClass}`}>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className={`${headClass} border-b`}>
+                    {hasColours && <th className="text-left px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">Colour</th>}
+                    {hasSizes
+                      ? m.sizes.map(s => <th key={s} className="text-center px-3 py-2 font-medium text-muted-foreground whitespace-nowrap">{s || "—"}</th>)
+                      : <th className="text-center px-3 py-2 font-medium text-muted-foreground">Qty</th>}
+                    <th className="text-center px-3 py-2 font-medium text-muted-foreground">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {m.colours.map((colour, ci) => {
+                    const rowTotal = (hasSizes ? m.sizes : [""]).reduce((sum, s) => sum + (m.cells.get(`${colour}||${s}`)?.quantity ?? 0), 0);
+                    return (
+                      <tr key={colour} className={`border-b last:border-0 ${ci % 2 === 0 ? "bg-white/60" : "bg-muted/10"}`}>
+                        {hasColours && <td className="px-3 py-2 font-medium whitespace-nowrap">{colour || "—"}</td>}
+                        {hasSizes
+                          ? m.sizes.map(s => {
+                              const item = m.cells.get(`${colour}||${s}`);
+                              return <td key={s} className="text-center px-2 py-1.5">{item ? <span className="font-semibold">{item.quantity}</span> : <span className="text-muted-foreground/30">—</span>}</td>;
+                            })
+                          : <td className="text-center px-2 py-1.5 font-semibold">{rowTotal}</td>}
+                        <td className="text-center px-2 py-1.5 font-semibold text-foreground">{rowTotal}</td>
+                      </tr>
+                    );
+                  })}
+                  <tr className="border-t bg-muted/20 font-semibold text-xs">
+                    {hasColours && <td className="px-3 py-1.5 text-muted-foreground uppercase tracking-wide">Total</td>}
+                    {hasSizes
+                      ? m.sizes.map(s => {
+                          const colTotal = m.colours.reduce((sum, c) => sum + (m.cells.get(`${c}||${s}`)?.quantity ?? 0), 0);
+                          return <td key={s} className="text-center px-2 py-1.5">{colTotal > 0 ? colTotal : <span className="text-muted-foreground/30">—</span>}</td>;
+                        })
+                      : null}
+                    <td className="text-center px-2 py-1.5">{items.filter(i => i.productName === m.productName).reduce((s, i) => s + i.quantity, 0)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── ReadyOrderCard ─────────────────────────────────────────────────────────────
+function ReadyOrderCard({ order, onSendToProduction }: {
+  order: AllReadyOrder;
+  onSendToProduction: (order: AllReadyOrder) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const totalUnits = order.items.reduce((s, i) => s + i.quantity, 0);
+
+  return (
+    <div className="rounded-xl border border-green-300 bg-green-50/40 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-green-50 transition-colors" onClick={() => setExpanded(e => !e)}>
+        <div className="flex items-center gap-3 min-w-0">
+          {expanded ? <ChevronDown className="w-4 h-4 text-green-600 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-green-600 flex-shrink-0" />}
+          <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <a href={`/orders/${order.id}`} className="font-mono font-bold text-base hover:underline text-foreground" onClick={e => e.stopPropagation()}>{order.orderNumber}</a>
+              <Badge className="text-xs bg-green-100 text-green-800 border-green-400 gap-1"><CheckCircle2 className="w-3 h-3" />All stock in</Badge>
+            </div>
+            <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+              {order.customerName && <span>{order.customerName}</span>}
+              {order.requiredDate && <span>· Due {formatDate(order.requiredDate)}</span>}
+              <span>· {totalUnits} unit{totalUnits !== 1 ? "s" : ""}</span>
+              <span>· {formatCurrency(order.totalAmount)}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+          <a href={`/orders/${order.id}`}><Button size="sm" variant="ghost" className="text-muted-foreground h-8 w-8 p-0"><ExternalLink className="w-3.5 h-3.5" /></Button></a>
+          <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => onSendToProduction(order)}>
+            <ClipboardList className="w-3.5 h-3.5" /> Send to Production
+          </Button>
+        </div>
+      </div>
+      {expanded && (
+        <div className="border-t border-green-200 px-5 py-4">
+          <ItemMatrix items={order.items} borderClass="border-green-200" headClass="bg-green-50/80 border-green-200" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PartInStockOrderCard ───────────────────────────────────────────────────────
+function PartInStockOrderCard({ order, onSendToProduction }: {
+  order: PartInStockOrder;
+  onSendToProduction: (order: AllReadyOrder) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const readyUnits = order.readyItems.reduce((s, i) => s + i.quantity, 0);
+  const pendingUnits = order.pendingItems.reduce((s, i) => s + i.purchaseQuantity, 0);
+  const suppliers = [...new Set(order.pendingItems.map(i => i.supplierName).filter(Boolean))];
+
+  const pendingMatrices = useMemo(() => {
+    const map = new Map<string, { colours: string[]; sizes: string[]; cells: Map<string, PendingItem>; supplierName: string | null }>();
+    for (const item of order.pendingItems) {
+      if (!map.has(item.productName)) map.set(item.productName, { colours: [], sizes: [], cells: new Map(), supplierName: item.supplierName });
+      const m = map.get(item.productName)!;
+      const colour = item.colour ?? "";
+      const size = item.size ?? "";
+      if (!m.colours.includes(colour)) m.colours.push(colour);
+      if (!m.sizes.includes(size)) m.sizes.push(size);
+      m.cells.set(`${colour}||${size}`, item);
+    }
+    for (const m of map.values()) m.sizes = sortSizes(m.sizes);
+    return [...map.entries()].map(([productName, m]) => ({ productName, ...m }));
+  }, [order.pendingItems]);
+
+  return (
+    <div className="rounded-xl border border-blue-300 bg-blue-50/30 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-blue-50 transition-colors" onClick={() => setExpanded(e => !e)}>
+        <div className="flex items-center gap-3 min-w-0">
+          {expanded ? <ChevronDown className="w-4 h-4 text-blue-600 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-blue-600 flex-shrink-0" />}
+          <Layers className="w-4 h-4 text-blue-600 flex-shrink-0" />
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <a href={`/orders/${order.id}`} className="font-mono font-bold text-base hover:underline text-foreground" onClick={e => e.stopPropagation()}>{order.orderNumber}</a>
+              <Badge className="text-xs bg-blue-100 text-blue-800 border-blue-300 gap-1"><Layers className="w-3 h-3" />Part in stock</Badge>
+            </div>
+            <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+              {order.customerName && <span>{order.customerName}</span>}
+              {order.requiredDate && <span>· Due {formatDate(order.requiredDate)}</span>}
+              <span className="text-green-700 font-medium">· {readyUnits} ready</span>
+              <span className="text-amber-700 font-medium">· {pendingUnits} awaiting stock</span>
+              {suppliers.length > 0 && <span>· from {suppliers.join(", ")}</span>}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+          <a href={`/orders/${order.id}`}><Button size="sm" variant="ghost" className="text-muted-foreground h-8 w-8 p-0"><ExternalLink className="w-3.5 h-3.5" /></Button></a>
+          {order.readyItems.length > 0 && (
+            <Button size="sm" className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => onSendToProduction({ id: order.id, orderNumber: order.orderNumber, customerId: order.customerId, customerName: order.customerName, requiredDate: order.requiredDate, totalAmount: order.totalAmount, items: order.readyItems })}>
+              <ClipboardList className="w-3.5 h-3.5" /> Send Ready Items
+            </Button>
+          )}
+        </div>
+      </div>
+      {expanded && (
+        <div className="border-t border-blue-200 px-5 py-4 space-y-4">
+          {order.readyItems.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-green-700 flex items-center gap-1.5 mb-2"><CheckCircle2 className="w-3.5 h-3.5" />{readyUnits} unit{readyUnits !== 1 ? "s" : ""} in stock — ready to produce</p>
+              <ItemMatrix items={order.readyItems} borderClass="border-green-200" headClass="bg-green-50/80 border-green-200" />
+            </div>
+          )}
+          {order.pendingItems.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-amber-700 flex items-center gap-1.5 mb-2"><ShoppingCart className="w-3.5 h-3.5" />{pendingUnits} unit{pendingUnits !== 1 ? "s" : ""} still awaiting stock</p>
+              {pendingMatrices.map(m => {
+                const hasSizes = m.sizes.some(s => s !== "");
+                const hasColours = m.colours.some(c => c !== "");
+                return (
+                  <div key={m.productName} className="overflow-x-auto rounded-lg border border-amber-200 mb-2">
+                    <div className="px-3 py-1.5 bg-amber-50/80 border-b border-amber-100 text-xs font-semibold flex items-center justify-between">
+                      <span>{m.productName}</span>
+                      {m.supplierName && <span className="font-normal text-muted-foreground">{m.supplierName}</span>}
+                    </div>
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-amber-50/40 border-b border-amber-100">
+                          {hasColours && <th className="text-left px-3 py-1.5 font-medium text-muted-foreground whitespace-nowrap">Colour</th>}
+                          {hasSizes ? m.sizes.map(s => <th key={s} className="text-center px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap">{s || "—"}</th>) : <th className="text-center px-2 py-1.5 font-medium text-muted-foreground">Qty</th>}
+                          <th className="text-center px-2 py-1.5 font-medium text-muted-foreground">Total</th>
+                          <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">PO Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {m.colours.map(colour => {
+                          const existing = (hasSizes ? m.sizes : [""]).map(s => m.cells.get(`${colour}||${s}`)).filter(Boolean) as PendingItem[];
+                          const rowTotal = existing.reduce((s, i) => s + i.purchaseQuantity, 0);
+                          const po = existing.find(i => i.poStatus);
+                          const delivery = existing.find(i => i.estimatedDelivery)?.estimatedDelivery;
+                          return (
+                            <tr key={colour} className="border-b border-amber-50 last:border-0">
+                              {hasColours && <td className="px-3 py-1.5 font-medium whitespace-nowrap">{colour || "—"}</td>}
+                              {(hasSizes ? m.sizes : [""]).map(s => {
+                                const item = m.cells.get(`${colour}||${s}`);
+                                return <td key={s} className="text-center px-2 py-1.5">{item ? <span className="font-semibold">{item.purchaseQuantity}</span> : <span className="text-muted-foreground/30">—</span>}</td>;
+                              })}
+                              <td className="text-center px-2 py-1.5 font-semibold">{rowTotal}</td>
+                              <td className="px-2 py-1.5 text-xs whitespace-nowrap">
+                                {po?.poStatus === "ordered" ? <span className="text-green-700 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Ordered{delivery ? ` · ${new Date(delivery).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : ""}</span>
+                                : po?.poStatus === "draft" ? <span className="text-blue-700 flex items-center gap-1"><Clock className="w-3 h-3" />Draft PO</span>
+                                : <span className="text-amber-700 flex items-center gap-1"><AlertCircle className="w-3 h-3" />Not yet ordered</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2688,14 +2951,32 @@ export default function Production() {
   });
 
   const { data: pendingData, isLoading: pendingLoading } = useQuery<{
-    awaitingStock: PendingOrder[];
-    readyForProduction: ReadyOrder[];
+    allReady: AllReadyOrder[];
+    partInStock: PartInStockOrder[];
+    allAwaitingStock: PendingOrder[];
   }>({
     queryKey: ["production-pending"],
     queryFn: () => apiFetch("/production/pending"),
   });
-  const pendingOrders = pendingData?.awaitingStock ?? [];
-  const readyForProduction = pendingData?.readyForProduction ?? [];
+  const allReadyOrders    = pendingData?.allReady ?? [];
+  const partInStockOrders = pendingData?.partInStock ?? [];
+  const allAwaitingOrders = pendingData?.allAwaitingStock ?? [];
+
+  const [sendingOrder, setSendingOrder] = useState<AllReadyOrder | null>(null);
+  const [sendingNotes, setSendingNotes] = useState("");
+
+  const createWorksheetMutation = useMutation({
+    mutationFn: (data: { orderId: number; orderNumber: string; customerId: number | null; customerName: string | null; notes: string; itemIds: number[] }) =>
+      apiFetch("/worksheets", { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["production-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["worksheets"] });
+      toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Order added to Pre-Production." });
+      setSendingOrder(null);
+      setSendingNotes("");
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
 
   const { data: pickingOrders = [] } = useQuery<PickingOrder[]>({
     queryKey: ["picking-list"],
@@ -2764,28 +3045,24 @@ export default function Production() {
   const wip = filterWorksheets(allWorksheets.filter((w) => w.status === "wip"), filters);
   const complete = filterWorksheets(allWorksheets.filter((w) => w.status === "complete"), filters);
 
-  const filteredPendingOrders = pendingOrders.filter((o) => {
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      if (!o.customerName?.toLowerCase().includes(q) && !o.orderNumber.toLowerCase().includes(q)) return false;
-    }
-    if (!matchesDateFilters(o.requiredDate as unknown as string | null, filters.dateFrom, filters.dateTo)) return false;
-    return true;
-  });
+  const filterBySearchAndDate = <T extends { customerName: string | null; orderNumber: string; requiredDate: string | Date | null }>(arr: T[]): T[] =>
+    arr.filter((o) => {
+      if (filters.search) {
+        const q = filters.search.toLowerCase();
+        if (!o.customerName?.toLowerCase().includes(q) && !o.orderNumber.toLowerCase().includes(q)) return false;
+      }
+      if (!matchesDateFilters(o.requiredDate as unknown as string | null, filters.dateFrom, filters.dateTo)) return false;
+      return true;
+    });
 
-  const filteredReadyForProduction = readyForProduction.filter((o) => {
-    if (filters.search) {
-      const q = filters.search.toLowerCase();
-      if (!o.customerName?.toLowerCase().includes(q) && !o.orderNumber.toLowerCase().includes(q)) return false;
-    }
-    if (!matchesDateFilters(o.requiredDate as unknown as string | null, filters.dateFrom, filters.dateTo)) return false;
-    return true;
-  });
+  const filteredAllReady     = filterBySearchAndDate(allReadyOrders);
+  const filteredPartInStock  = filterBySearchAndDate(partInStockOrders);
+  const filteredAllAwaiting  = filterBySearchAndDate(allAwaitingOrders.map(o => ({ ...o, orderNumber: o.orderNumber, customerName: o.customerName, requiredDate: o.requiredDate })));
 
-  const preWipTotal = preWipWorksheets.length + filteredPendingOrders.length + filteredReadyForProduction.length;
+  const preWipTotal = preWipWorksheets.length + filteredAllReady.length + filteredPartInStock.length + filteredAllAwaiting.length;
 
   // Unfiltered counts for stat cards (show actual total, filtered shown inside tab)
-  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + pendingOrders.length + readyForProduction.length;
+  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + allReadyOrders.length + partInStockOrders.length + allAwaitingOrders.length;
   const rawWip = allWorksheets.filter((w) => w.status === "wip").length;
   const rawComplete = allWorksheets.filter((w) => w.status === "complete").length;
   const hasFilters = Object.values(filters).some(Boolean);
@@ -2866,7 +3143,7 @@ export default function Production() {
 
           {/* ── Today's Plan Tab ── */}
           <TabsContent value="plan">
-            <DailyPlanTab onNavigate={setActiveTab} pendingCount={pendingOrders.length} readyCount={readyForProduction.length} />
+            <DailyPlanTab onNavigate={setActiveTab} pendingCount={allAwaitingOrders.length + partInStockOrders.length} readyCount={allReadyOrders.length} />
           </TabsContent>
 
           {/* ── Pre-Production Tab ── */}
@@ -2885,65 +3162,47 @@ export default function Production() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredReadyForProduction.length > 0 && (
+                {filteredAllReady.length > 0 && (
                   <>
-                    <div className="flex items-center gap-2 text-sm font-medium text-green-700">
-                      <ClipboardList className="w-4 h-4" />
-                      Needs Production ({filteredReadyForProduction.length} order{filteredReadyForProduction.length !== 1 ? "s" : ""})
+                    <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
+                      <CheckCircle2 className="w-4 h-4" />
+                      All Stock In — Ready to Send ({filteredAllReady.length} order{filteredAllReady.length !== 1 ? "s" : ""})
                     </div>
-                    {filteredReadyForProduction.map((order) => (
-                      <div key={order.id} className="rounded-xl border border-green-200 bg-green-50/50 shadow-sm overflow-hidden">
-                        <div className="flex items-center justify-between px-5 py-4">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <ClipboardList className="w-4 h-4 text-green-700 flex-shrink-0" />
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <a
-                                  href={`/orders/${order.id}`}
-                                  className="font-mono font-bold text-base hover:underline text-foreground"
-                                >
-                                  {order.orderNumber}
-                                </a>
-                                <Badge className="text-xs bg-green-100 text-green-800 border-green-300">
-                                  Confirmed
-                                </Badge>
-                              </div>
-                              <div className="text-sm text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
-                                {order.customerName && <span>{order.customerName}</span>}
-                                {order.requiredDate && <span>· Due {formatDate(order.requiredDate)}</span>}
-                                <span>· {order.itemCount} item{order.itemCount !== 1 ? "s" : ""}</span>
-                                <span>· {formatCurrency(order.totalAmount)}</span>
-                              </div>
-                            </div>
-                          </div>
-                          <a href={`/orders/${order.id}`}>
-                            <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-                              <ExternalLink className="w-3.5 h-3.5" /> View &amp; Send to Production
-                            </Button>
-                          </a>
-                        </div>
-                      </div>
+                    {filteredAllReady.map((order) => (
+                      <ReadyOrderCard key={order.id} order={order} onSendToProduction={setSendingOrder} />
                     ))}
                   </>
                 )}
-                {filteredPendingOrders.length > 0 && (
+                {filteredPartInStock.length > 0 && (
                   <>
-                    {filteredReadyForProduction.length > 0 && <div className="pt-1" />}
-                    <div className="flex items-center gap-2 text-sm font-medium text-amber-700">
-                      <ShoppingCart className="w-4 h-4" />
-                      Awaiting Stock ({filteredPendingOrders.length} order{filteredPendingOrders.length !== 1 ? "s" : ""})
+                    {filteredAllReady.length > 0 && <div className="pt-1" />}
+                    <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
+                      <Layers className="w-4 h-4" />
+                      Part in Stock ({filteredPartInStock.length} order{filteredPartInStock.length !== 1 ? "s" : ""})
                     </div>
-                    {filteredPendingOrders.map((order) => (
+                    {filteredPartInStock.map((order) => (
+                      <PartInStockOrderCard key={order.id} order={order} onSendToProduction={setSendingOrder} />
+                    ))}
+                  </>
+                )}
+                {filteredAllAwaiting.length > 0 && (
+                  <>
+                    {(filteredAllReady.length > 0 || filteredPartInStock.length > 0) && <div className="pt-1" />}
+                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-700">
+                      <ShoppingCart className="w-4 h-4" />
+                      Awaiting Stock ({filteredAllAwaiting.length} order{filteredAllAwaiting.length !== 1 ? "s" : ""})
+                    </div>
+                    {filteredAllAwaiting.map((order) => (
                       <PendingOrderCard key={order.orderId} order={order} />
                     ))}
                   </>
                 )}
                 {preWipWorksheets.length > 0 && (
                   <>
-                    {(filteredPendingOrders.length > 0 || filteredReadyForProduction.length > 0) && (
-                      <div className="flex items-center gap-2 text-sm font-medium text-blue-700 pt-2">
-                        <Clock className="w-4 h-4" />
-                        Worksheets Ready ({preWipWorksheets.length})
+                    {(filteredAllAwaiting.length > 0 || filteredPartInStock.length > 0 || filteredAllReady.length > 0) && (
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600 pt-2">
+                        <FileText className="w-4 h-4" />
+                        Worksheets in Pre-Production ({preWipWorksheets.length})
                       </div>
                     )}
                     {preWipWorksheets.map((ws) => (
@@ -3021,6 +3280,54 @@ export default function Production() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {sendingOrder && (
+        <Dialog open onOpenChange={(open) => { if (!open) { setSendingOrder(null); setSendingNotes(""); } }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ClipboardList className="w-5 h-5" />
+                Send to Production — {sendingOrder.orderNumber}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                A pre-production worksheet will be created for the items below. Move it to <strong>Work in Progress</strong> once decoration begins.
+              </p>
+              <div className="rounded-lg border border-green-200 bg-green-50/30 px-4 py-3">
+                <ItemMatrix items={sendingOrder.items} borderClass="border-green-200" headClass="bg-green-50/80 border-green-200" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="ws-notes" className="text-sm">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input
+                  id="ws-notes"
+                  placeholder="Special instructions, artwork notes…"
+                  value={sendingNotes}
+                  onChange={e => setSendingNotes(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setSendingOrder(null); setSendingNotes(""); }}>Cancel</Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                disabled={createWorksheetMutation.isPending}
+                onClick={() => createWorksheetMutation.mutate({
+                  orderId: sendingOrder.id,
+                  orderNumber: sendingOrder.orderNumber,
+                  customerId: sendingOrder.customerId,
+                  customerName: sendingOrder.customerName,
+                  notes: sendingNotes,
+                  itemIds: sendingOrder.items.map(i => i.id),
+                })}
+              >
+                {createWorksheetMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ClipboardList className="w-3.5 h-3.5" />}
+                Create Worksheet
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {readyOrder && (
         <ReadyToDispatchModal order={readyOrder} onClose={() => setReadyOrder(null)} />

@@ -376,137 +376,152 @@ router.post("/picking-list/return", async (req, res): Promise<void> => {
 
 // ── Pending production: confirmed orders awaiting stock ───────────────────────
 router.get("/production/pending", async (req, res): Promise<void> => {
-  // 1. Items awaiting stock (purchase required)
-  const pendingItems = await db
-    .select({
-      orderId: ordersTable.id,
-      orderNumber: ordersTable.orderNumber,
-      customerName: ordersTable.customerName,
-      requiredDate: ordersTable.requiredDate,
-      itemId: orderItemsTable.id,
-      productName: orderItemsTable.productName,
-      catalogueName: productsTable.name,
-      colour: orderItemsTable.colour,
-      size: orderItemsTable.size,
-      purchaseQuantity: orderItemsTable.purchaseQuantity,
-      supplierName: orderItemsTable.supplierName,
-    })
-    .from(orderItemsTable)
-    .innerJoin(ordersTable, and(
-      eq(orderItemsTable.orderId, ordersTable.id),
-      eq(ordersTable.status, "confirmed"),
-    ))
-    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(eq(orderItemsTable.purchaseRequired, true))
-    .orderBy(ordersTable.requiredDate, ordersTable.id);
+  // Single query to get all confirmed orders with per-item counts and worksheet existence
+  const orderStatsRes = await db.execute(sql`
+    SELECT
+      o.id, o.order_number, o.customer_id, o.customer_name, o.required_date, o.total_amount,
+      COUNT(*) FILTER (WHERE oi.purchase_required = true)::integer  AS purchase_count,
+      COUNT(*) FILTER (WHERE oi.purchase_required = false)::integer AS ready_count,
+      EXISTS(SELECT 1 FROM worksheets WHERE order_id = o.id)        AS has_worksheet
+    FROM orders o
+    INNER JOIN order_items oi ON oi.order_id = o.id
+    WHERE o.status = 'confirmed'
+    GROUP BY o.id, o.order_number, o.customer_id, o.customer_name, o.required_date, o.total_amount
+    ORDER BY o.required_date NULLS LAST, o.id
+  `);
 
-  // Fetch PO status for each pending item (via direct FK or sourceOrderItemIds JSON array)
-  const itemIds = pendingItems.map((r) => r.itemId);
-  const poStatusMap = new Map<number, { poNumber: string; poStatus: string; estimatedDelivery: Date | null }>();
+  const stats = orderStatsRes.rows as Array<{
+    id: number; order_number: string; customer_id: number | null; customer_name: string | null;
+    required_date: Date | null; total_amount: string | null;
+    purchase_count: number; ready_count: number; has_worksheet: boolean;
+  }>;
 
-  if (itemIds.length > 0) {
-    const poRows = await db.execute(sql`
-      SELECT oi_id, po_number, po_status, estimated_delivery_date FROM (
-        SELECT poi.order_item_id::integer AS oi_id,
-               po.po_number,
-               po.status AS po_status,
-               po.estimated_delivery_date
-        FROM purchase_order_items poi
-        INNER JOIN purchase_orders po ON poi.po_id = po.id
-        WHERE po.status IN ('draft', 'ordered')
-          AND poi.order_item_id = ANY(ARRAY[${sql.raw(itemIds.join(","))}]::integer[])
-        UNION ALL
-        SELECT (elem.value)::integer AS oi_id,
-               po.po_number,
-               po.status AS po_status,
-               po.estimated_delivery_date
-        FROM purchase_order_items poi
-        INNER JOIN purchase_orders po ON poi.po_id = po.id,
-        jsonb_array_elements_text(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) AS elem(value)
-        WHERE po.status IN ('draft', 'ordered')
-          AND jsonb_array_length(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) > 0
-          AND (elem.value)::integer = ANY(ARRAY[${sql.raw(itemIds.join(","))}]::integer[])
-      ) t
+  // Categorise: allReady = all items in stock, no worksheet yet
+  //             partInStock = some items in stock, some still on purchase (with or without ws)
+  //             allAwaiting = every item still on purchase order
+  const allReadyStats    = stats.filter(o => Number(o.purchase_count) === 0 && Number(o.ready_count) > 0 && !o.has_worksheet);
+  const partInStockStats = stats.filter(o => Number(o.purchase_count) > 0  && Number(o.ready_count) > 0);
+  const allAwaitingStats = stats.filter(o => Number(o.purchase_count) > 0  && Number(o.ready_count) === 0);
+
+  // ── Ready items for allReady + partInStock orders ─────────────────────────
+  const readyOrderIds = [...allReadyStats, ...partInStockStats].map(o => Number(o.id));
+  const readyItemsByOrderId = new Map<number, any[]>();
+
+  if (readyOrderIds.length > 0) {
+    const rows = await db.execute(sql`
+      SELECT oi.id, oi.order_id, oi.product_name, oi.colour, oi.size, oi.quantity,
+             oi.finish_name, oi.finish_id, p.name AS catalogue_name
+      FROM order_items oi
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = ANY(ARRAY[${sql.raw(readyOrderIds.join(","))}]::integer[])
+        AND oi.purchase_required = false
+      ORDER BY oi.id
     `);
-    for (const row of poRows.rows as any[]) {
-      const id = Number(row.oi_id);
-      if (!poStatusMap.has(id)) {
-        poStatusMap.set(id, {
-          poNumber: row.po_number as string,
-          poStatus: row.po_status as string,
-          estimatedDelivery: row.estimated_delivery_date ? new Date(row.estimated_delivery_date) : null,
-        });
-      }
-    }
-  }
-
-  const orderMap = new Map<number, {
-    orderId: number; orderNumber: string; customerName: string | null;
-    requiredDate: Date | null;
-    items: Array<{
-      id: number; productName: string; colour: string | null; size: string | null;
-      purchaseQuantity: number; supplierName: string | null;
-      poNumber: string | null; poStatus: string | null; estimatedDelivery: Date | null;
-    }>;
-  }>();
-
-  for (const row of pendingItems) {
-    if (!orderMap.has(row.orderId)) {
-      orderMap.set(row.orderId, {
-        orderId: row.orderId,
-        orderNumber: row.orderNumber,
-        customerName: row.customerName,
-        requiredDate: row.requiredDate,
-        items: [],
+    for (const row of rows.rows as any[]) {
+      const oid = Number(row.order_id);
+      if (!readyItemsByOrderId.has(oid)) readyItemsByOrderId.set(oid, []);
+      readyItemsByOrderId.get(oid)!.push({
+        id: Number(row.id),
+        productName: (row.catalogue_name ?? row.product_name) as string,
+        colour: row.colour as string | null,
+        size: row.size as string | null,
+        quantity: Number(row.quantity),
+        finishName: row.finish_name as string | null,
+        finishId: row.finish_id ? Number(row.finish_id) : null,
       });
     }
-    const po = poStatusMap.get(row.itemId) ?? null;
-    orderMap.get(row.orderId)!.items.push({
-      id: row.itemId,
-      productName: row.catalogueName ?? row.productName,
-      colour: row.colour,
-      size: row.size,
-      purchaseQuantity: row.purchaseQuantity ?? 1,
-      supplierName: row.supplierName,
-      poNumber: po?.poNumber ?? null,
-      poStatus: po?.poStatus ?? null,
-      estimatedDelivery: po?.estimatedDelivery ?? null,
-    });
   }
 
-  // 2. Confirmed orders that have NO worksheets yet (need "Send to Production")
-  // Only include orders that have at least one item that is already stocked
-  // (purchaseRequired=false). Orders where every item still needs purchasing
-  // belong in the awaitingStock list, not here.
-  const readyRows = await db
-    .select({
-      id: ordersTable.id,
-      orderNumber: ordersTable.orderNumber,
-      customerName: ordersTable.customerName,
-      requiredDate: ordersTable.requiredDate,
-      totalAmount: ordersTable.totalAmount,
-      // Count only items that are ready for production (stock allocated, no purchase pending)
-      itemCount: sql<number>`(SELECT COUNT(*) FROM order_items WHERE order_id = ${ordersTable.id} AND purchase_required = false)`.as("itemCount"),
-    })
-    .from(ordersTable)
-    .where(
-      and(
-        eq(ordersTable.status, "confirmed"),
-        notExists(
-          db.select({ one: sql`1` }).from(worksheetsTable).where(eq(worksheetsTable.orderId, ordersTable.id))
-        ),
-        // Must have at least one item that doesn't need purchasing
-        sql`EXISTS (SELECT 1 FROM order_items WHERE order_id = ${ordersTable.id} AND purchase_required = false)`,
-      )
-    )
-    .orderBy(ordersTable.requiredDate, ordersTable.id);
+  // ── Pending items with PO status for partInStock + allAwaiting orders ─────
+  const pendingOrderIds = [...partInStockStats, ...allAwaitingStats].map(o => Number(o.id));
+  const pendingItemsByOrderId = new Map<number, any[]>();
+
+  if (pendingOrderIds.length > 0) {
+    const pendingRows = await db.execute(sql`
+      SELECT oi.id, oi.order_id, oi.product_name, oi.colour, oi.size,
+             oi.purchase_quantity, oi.supplier_name, p.name AS catalogue_name
+      FROM order_items oi
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = ANY(ARRAY[${sql.raw(pendingOrderIds.join(","))}]::integer[])
+        AND oi.purchase_required = true
+      ORDER BY oi.id
+    `);
+    const itemIds = (pendingRows.rows as any[]).map((r: any) => Number(r.id));
+
+    const poStatusMap = new Map<number, { poNumber: string; poStatus: string; estimatedDelivery: Date | null }>();
+    if (itemIds.length > 0) {
+      const poRows = await db.execute(sql`
+        SELECT oi_id, po_number, po_status, estimated_delivery_date FROM (
+          SELECT poi.order_item_id::integer AS oi_id,
+                 po.po_number, po.status AS po_status, po.estimated_delivery_date
+          FROM purchase_order_items poi INNER JOIN purchase_orders po ON poi.po_id = po.id
+          WHERE po.status IN ('draft','ordered')
+            AND poi.order_item_id = ANY(ARRAY[${sql.raw(itemIds.join(","))}]::integer[])
+          UNION ALL
+          SELECT (elem.value)::integer AS oi_id,
+                 po.po_number, po.status AS po_status, po.estimated_delivery_date
+          FROM purchase_order_items poi INNER JOIN purchase_orders po ON poi.po_id = po.id,
+          jsonb_array_elements_text(COALESCE(poi.source_order_item_ids,'[]'::jsonb)) AS elem(value)
+          WHERE po.status IN ('draft','ordered')
+            AND jsonb_array_length(COALESCE(poi.source_order_item_ids,'[]'::jsonb)) > 0
+            AND (elem.value)::integer = ANY(ARRAY[${sql.raw(itemIds.join(","))}]::integer[])
+        ) t
+      `);
+      for (const row of poRows.rows as any[]) {
+        const id = Number(row.oi_id);
+        if (!poStatusMap.has(id)) {
+          poStatusMap.set(id, {
+            poNumber: row.po_number as string,
+            poStatus: row.po_status as string,
+            estimatedDelivery: row.estimated_delivery_date ? new Date(row.estimated_delivery_date) : null,
+          });
+        }
+      }
+    }
+
+    for (const row of pendingRows.rows as any[]) {
+      const oid = Number(row.order_id);
+      if (!pendingItemsByOrderId.has(oid)) pendingItemsByOrderId.set(oid, []);
+      const po = poStatusMap.get(Number(row.id)) ?? null;
+      pendingItemsByOrderId.get(oid)!.push({
+        id: Number(row.id),
+        productName: (row.catalogue_name ?? row.product_name) as string,
+        colour: row.colour as string | null,
+        size: row.size as string | null,
+        purchaseQuantity: Number(row.purchase_quantity ?? 1),
+        supplierName: row.supplier_name as string | null,
+        poNumber: po?.poNumber ?? null,
+        poStatus: po?.poStatus ?? null,
+        estimatedDelivery: po?.estimatedDelivery ?? null,
+      });
+    }
+  }
+
+  const buildBase = (o: typeof stats[0]) => ({
+    id: Number(o.id),
+    orderNumber: o.order_number,
+    customerId: o.customer_id ? Number(o.customer_id) : null,
+    customerName: o.customer_name,
+    requiredDate: o.required_date,
+    totalAmount: o.total_amount ? parseFloat(o.total_amount) : 0,
+  });
 
   res.json({
-    awaitingStock: Array.from(orderMap.values()),
-    readyForProduction: readyRows.map(r => ({
-      ...r,
-      totalAmount: r.totalAmount ? parseFloat(r.totalAmount) : 0,
-      itemCount: Number(r.itemCount),
+    allReady: allReadyStats.map(o => ({
+      ...buildBase(o),
+      items: readyItemsByOrderId.get(Number(o.id)) ?? [],
+    })),
+    partInStock: partInStockStats.map(o => ({
+      ...buildBase(o),
+      readyItems: readyItemsByOrderId.get(Number(o.id)) ?? [],
+      pendingItems: pendingItemsByOrderId.get(Number(o.id)) ?? [],
+    })),
+    allAwaitingStock: allAwaitingStats.map(o => ({
+      orderId: Number(o.id),
+      orderNumber: o.order_number,
+      customerName: o.customer_name,
+      requiredDate: o.required_date,
+      items: pendingItemsByOrderId.get(Number(o.id)) ?? [],
     })),
   });
 });

@@ -29,7 +29,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { SendAcknowledgementDialog } from "@/components/SendAcknowledgementDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { sortSizesWithOrder } from "@/lib/sizeUtils";
+import { sortSizesWithOrder, sortSizes } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench } from "lucide-react";
@@ -703,10 +703,10 @@ export default function OrderDetail() {
         }),
       });
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["pack-status", orderId] });
       queryClient.invalidateQueries({ queryKey: ["order-logs", orderId] });
-      toast({ title: "Sent to Production", description: "Worksheet created in Pre-Production." });
+      toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Order added to Pre-Production." });
       setIsSendToProductionOpen(false);
       setProductionNotes("");
     },
@@ -3069,18 +3069,62 @@ export default function OrderDetail() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              This will create a production worksheet for all items that don't need purchasing. It will appear in <strong>Pre-Production</strong> until the garments arrive, then move to Work in Progress when decoration begins.
+              This will create a production worksheet for all items that don't need purchasing. It will appear in <strong>Pre-Production</strong> and move to Work in Progress when decoration begins.
             </p>
-            {order.items && (
-              <div className="rounded-lg border border-green-200 bg-green-50 divide-y divide-green-100 text-sm">
-                {order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).map((oi: { id: number; productName: string; colour?: string; size?: string; quantity: number }) => (
-                  <div key={oi.id} className="flex items-center justify-between px-3 py-2">
-                    <span className="font-medium">{oi.productName}</span>
-                    <span className="text-muted-foreground text-xs">{[oi.colour, oi.size].filter(Boolean).join(" / ")} × {oi.quantity}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {order.items && (() => {
+              const eligible = (order.items as any[]).filter((oi: any) => !oi.purchaseRequired);
+              // Group by productName → colour → size → qty
+              const productMap = new Map<string, Map<string, Map<string, number>>>();
+              for (const oi of eligible) {
+                if (!productMap.has(oi.productName)) productMap.set(oi.productName, new Map());
+                const cm = productMap.get(oi.productName)!;
+                const c = oi.colour ?? "";
+                if (!cm.has(c)) cm.set(c, new Map());
+                const sm = cm.get(c)!;
+                sm.set(oi.size ?? "", (sm.get(oi.size ?? "") ?? 0) + oi.quantity);
+              }
+              return (
+                <div className="space-y-3">
+                  {Array.from(productMap.entries()).map(([productName, colourMap]) => {
+                    const allSizes = sortSizes([...new Set(Array.from(colourMap.values()).flatMap(sm => [...sm.keys()]))]);
+                    const hasSizes = allSizes.some(s => s !== "");
+                    const hasColours = colourMap.size > 1 || [...colourMap.keys()][0] !== "";
+                    return (
+                      <div key={productName}>
+                        <p className="text-xs font-semibold text-foreground mb-1">{productName}</p>
+                        <div className="overflow-x-auto rounded-lg border border-green-200">
+                          <table className="w-full text-xs border-collapse">
+                            <thead>
+                              <tr className="bg-green-50 border-b border-green-200">
+                                {hasColours && <th className="text-left px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap">Colour</th>}
+                                {hasSizes
+                                  ? allSizes.map(s => <th key={s} className="text-center px-2 py-1.5 font-medium text-muted-foreground whitespace-nowrap">{s || "—"}</th>)
+                                  : <th className="text-center px-2 py-1.5 font-medium text-muted-foreground">Qty</th>}
+                                <th className="text-center px-2 py-1.5 font-medium text-muted-foreground">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {Array.from(colourMap.entries()).map(([colour, sizeMap]) => {
+                                const rowTotal = Array.from(sizeMap.values()).reduce((s, q) => s + q, 0);
+                                return (
+                                  <tr key={colour} className="border-b border-green-50 last:border-0">
+                                    {hasColours && <td className="px-2 py-1.5 font-medium whitespace-nowrap">{colour || "—"}</td>}
+                                    {hasSizes
+                                      ? allSizes.map(s => { const q = sizeMap.get(s); return <td key={s} className="text-center px-2 py-1.5">{q ? <span className="font-semibold">{q}</span> : <span className="text-muted-foreground/30">—</span>}</td>; })
+                                      : <td className="text-center px-2 py-1.5 font-semibold">{rowTotal}</td>}
+                                    <td className="text-center px-2 py-1.5 font-semibold">{rowTotal}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Production Notes (optional)</Label>
               <textarea
