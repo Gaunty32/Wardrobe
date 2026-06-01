@@ -190,19 +190,36 @@ router.post("/portal/admin/create-user", async (req: Request, res: Response) => 
 
 router.get("/portal/admin/customer-detail/:customerId", async (req: Request, res: Response) => {
   const customerId = parseInt(req.params.customerId, 10);
-  const employees = await db.execute(sql`
-    SELECT e.id,
-      TRIM(CONCAT(e.first_name, ' ', COALESCE(e.last_name, ''))) AS name,
-      e.first_name, e.last_name, e.email, e.job_title,
-      r.name AS role_name,
-      TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) AS manager_name
-    FROM customer_employees e
-    LEFT JOIN customer_roles r ON r.id = e.role_id
-    LEFT JOIN customer_employees m ON m.id = e.manager_id
-    WHERE e.customer_id = ${customerId} AND e.is_active = true
-    ORDER BY COALESCE(e.last_name, e.first_name), e.first_name
+  const [employees, custRow] = await Promise.all([
+    db.execute(sql`
+      SELECT e.id,
+        TRIM(CONCAT(e.first_name, ' ', COALESCE(e.last_name, ''))) AS name,
+        e.first_name, e.last_name, e.email, e.job_title,
+        r.name AS role_name,
+        TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))) AS manager_name
+      FROM customer_employees e
+      LEFT JOIN customer_roles r ON r.id = e.role_id
+      LEFT JOIN customer_employees m ON m.id = e.manager_id
+      WHERE e.customer_id = ${customerId} AND e.is_active = true
+      ORDER BY COALESCE(e.last_name, e.first_name), e.first_name
+    `),
+    db.execute(sql`SELECT default_shipping_option FROM customers WHERE id = ${customerId} LIMIT 1`),
+  ]);
+  const defaultShippingOption = (custRow.rows[0] as any)?.default_shipping_option ?? null;
+  res.json({ employees: employees.rows, defaultShippingOption });
+});
+
+// ─── admin: update customer default shipping option ────────────────────────────
+
+router.patch("/portal/admin/customers/:customerId/settings", async (req: Request, res: Response) => {
+  const customerId = parseInt(req.params.customerId, 10);
+  const body = z.object({
+    defaultShippingOption: z.string().nullable().optional(),
+  }).parse(req.body);
+  await db.execute(sql`
+    UPDATE customers SET default_shipping_option = ${body.defaultShippingOption ?? null} WHERE id = ${customerId}
   `);
-  res.json({ employees: employees.rows });
+  res.json({ ok: true });
 });
 
 // ─── admin: list portal users for a customer ──────────────────────────────
@@ -1657,6 +1674,10 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     // sleeve data is best-effort
   }
 
+  // Fetch customer's default shipping option
+  const custSettingsRow = await db.execute(sql`SELECT default_shipping_option FROM customers WHERE id = ${customerId} LIMIT 1`);
+  const defaultShippingOption = (custSettingsRow.rows[0] as any)?.default_shipping_option ?? null;
+
   res.json({
     items: finishes.rows,
     processes: processes.rows,
@@ -1666,6 +1687,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
     sizesMap,
     sleevesMap,
     myEmployeeId,
+    defaultShippingOption,
   });
 });
 

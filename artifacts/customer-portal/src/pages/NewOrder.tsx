@@ -1944,7 +1944,7 @@ const SHIPPING_OPTIONS = [
   },
 ] as const;
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false, disabled = false }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false, disabled = false, defaultShippingOption }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean; addToStores?: boolean }) => void;
@@ -1955,6 +1955,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   variantImagesMap?: Record<string, Record<string, string | null>>;
   fromQuote?: boolean;
   disabled?: boolean;
+  defaultShippingOption?: string | null;
 }) {
   const { toast } = useToast();
   const [requiredDate, setRequiredDate] = useState(() => {
@@ -1964,7 +1965,15 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   });
   const [notes, setNotes] = useState("");
   const [poNumber, setPoNumber] = useState("");
-  const [shippingId, setShippingId] = useState<string>("");
+  const [shippingId, setShippingId] = useState<string>(defaultShippingOption ?? "");
+  // Apply customer default once data arrives (wardrobe loads async)
+  const shippingInitialised = useRef(false);
+  useEffect(() => {
+    if (!shippingInitialised.current && defaultShippingOption && !shippingId) {
+      setShippingId(defaultShippingOption);
+      shippingInitialised.current = true;
+    }
+  }, [defaultShippingOption, shippingId]);
   const [paymentChoice, setPaymentChoice] = useState<"card" | "invoice">("invoice");
   const [selectedPmId, setSelectedPmId] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Array<{ name: string; objectPath: string }>>([]);
@@ -2990,6 +2999,7 @@ export default function NewOrder() {
     sizesMap: Record<string, Record<string, string[]>>;
     sleevesMap: Record<string, string[]>;
     myEmployeeId: number | null;
+    defaultShippingOption: string | null;
   }>({
     queryKey: ["portal-wardrobe"],
     queryFn: () => apiFetch("/portal/wardrobe"),
@@ -3189,6 +3199,7 @@ export default function NewOrder() {
           variantImagesMap={quoteData?.variantImagesMap ?? {}}
           fromQuote={true}
           disabled={quoteMismatch}
+          defaultShippingOption={wardrobe?.defaultShippingOption}
         />
       )}
 
@@ -3200,6 +3211,7 @@ export default function NewOrder() {
           submitting={submitMutation.isPending}
           portalRole={portalRole}
           onAddMore={() => setStep(1)}
+          defaultShippingOption={wardrobe?.defaultShippingOption}
         />
       )}
 

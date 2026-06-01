@@ -1221,4 +1221,9 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE customer_finished_items ADD COLUMN IF NOT EXISTS reorder_quantity INTEGER NOT NULL DEFAULT 0;
   `);
+
+  // Default shipping option pre-selected in the ordering portal
+  await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS default_shipping_option TEXT;
+  `);
 }

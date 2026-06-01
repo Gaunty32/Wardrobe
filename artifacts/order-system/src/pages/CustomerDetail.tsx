@@ -1991,6 +1991,24 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const existingEmails = new Set((portalUsers ?? []).map((u: any) => u.email));
   const suggestedEmployees = employees.filter(e => e.email && !existingEmails.has(e.email));
 
+  const [defaultShipping, setDefaultShipping] = useState<string>("");
+  useEffect(() => {
+    setDefaultShipping(customerDetail?.defaultShippingOption ?? "");
+  }, [customerDetail?.defaultShippingOption]);
+
+  const updateSettings = useMutation({
+    mutationFn: (defaultShippingOption: string | null) =>
+      apiFetch(`/portal/admin/customers/${customerId}/settings`, {
+        method: "PATCH",
+        body: JSON.stringify({ defaultShippingOption }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-customer-detail", customerId] });
+      toast({ title: "Default shipping saved" });
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const sendInvite = useMutation({
     mutationFn: () => apiFetch("/portal/admin/invite", {
       method: "POST",
@@ -2100,8 +2118,43 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">{u.status}</span>;
   };
 
+  const SHIPPING_OPTIONS = [
+    { id: "free_local", label: "Free local delivery" },
+    { id: "dpd_next_day", label: "DPD Next Day" },
+    { id: "warehouse_collection", label: "Warehouse collection" },
+    { id: "office_collection", label: "Office collection" },
+  ];
+
   return (
     <div className="space-y-4">
+      {/* Default shipping option */}
+      <div className="rounded-lg border bg-muted/30 p-4 flex items-center gap-4">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">Default shipping option</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Pre-selected when this customer places an order — they can still change it.</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select
+            className="rounded-md border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            value={defaultShipping}
+            onChange={e => setDefaultShipping(e.target.value)}
+          >
+            <option value="">(none — customer chooses)</option>
+            {SHIPPING_OPTIONS.map(o => (
+              <option key={o.id} value={o.id}>{o.label}</option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={updateSettings.isPending || defaultShipping === (customerDetail?.defaultShippingOption ?? "")}
+            onClick={() => updateSettings.mutate(defaultShipping || null)}
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-semibold flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Portal Access</h3>
