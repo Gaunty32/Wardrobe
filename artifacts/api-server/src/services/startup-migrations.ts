@@ -1246,4 +1246,39 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS absorbed_order_numbers text[];
   `);
+
+  // Re-queue order items that are stuck as stock-allocated but have no actual stock
+  // backing them and are not currently on any active purchase order or worksheet.
+  // This can happen when: (a) stock existed at confirmation but was later consumed,
+  // (b) an item was deleted from a PO but the restore logic didn't fire correctly.
+  // Safe to re-run: condition becomes a no-op once purchase_required is restored.
+  await db.execute(sql`
+    UPDATE order_items
+    SET purchase_required  = true,
+        purchase_quantity  = quantity,
+        stock_status       = NULL,
+        stock_allocated_at = NULL
+    FROM orders o
+    WHERE order_items.order_id = o.id
+      AND order_items.purchase_required = false
+      AND order_items.stock_status = 'allocated'
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+      AND EXISTS (
+        SELECT 1 FROM products p
+        WHERE p.id = order_items.product_id
+          AND COALESCE(p.is_service, false) = false
+          AND COALESCE(p.stock_quantity, 0) < order_items.quantity
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        JOIN purchase_orders po2 ON po2.id = poi.po_id
+        WHERE po2.status NOT IN ('cancelled')
+          AND (poi.order_item_id = order_items.id
+               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(order_items.id))
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = order_items.id
+      )
+  `);
+  console.log("[startup] Re-queued stock-phantom items for purchasing");
 }

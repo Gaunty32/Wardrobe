@@ -767,11 +767,25 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
   const newItemIds = parsed.data.itemIds.filter((id) => !alreadyCovered.has(id));
   if (newItemIds.length > 0) {
     const poItems = await buildPoItems(newItemIds, po.id);
-    if (poItems.length > 0) await db.insert(purchaseOrderItemsTable).values(poItems);
-    // Clear purchaseRequired on items now covered by this PO (consistent with create-PO behaviour)
-    await db.update(orderItemsTable)
-      .set({ purchaseRequired: false, purchaseQuantity: null })
-      .where(inArray(orderItemsTable.id, newItemIds));
+    if (poItems.length > 0) {
+      await db.insert(purchaseOrderItemsTable).values(poItems);
+      // Only clear purchaseRequired on items that were actually inserted into the PO.
+      // Collect the order item IDs that ended up in a real PO line (via direct FK or
+      // sourceOrderItemIds) so we don't silently drop items where buildPoItems returned
+      // nothing (e.g. product lookup failed).
+      const coveredIds = new Set<number>();
+      for (const pi of poItems) {
+        if (pi.orderItemId) coveredIds.add(pi.orderItemId);
+        const srcIds = (pi.sourceOrderItemIds as number[] | null) ?? [];
+        for (const id of srcIds) coveredIds.add(id);
+      }
+      const idsToClose = newItemIds.filter((id) => coveredIds.has(id));
+      if (idsToClose.length > 0) {
+        await db.update(orderItemsTable)
+          .set({ purchaseRequired: false, purchaseQuantity: null })
+          .where(inArray(orderItemsTable.id, idsToClose));
+      }
+    }
   }
 
   const result = await getPoWithItems(po.id);
@@ -1181,7 +1195,14 @@ router.delete("/purchasing/purchase-orders/:poId/items/:itemId", async (req, res
       .where(inArray(orderItemsTable.id, uniqueLinkedIds));
     for (const li of linkedItems) {
       await db.update(orderItemsTable)
-        .set({ purchaseRequired: true, purchaseQuantity: li.quantity ?? null })
+        .set({
+          purchaseRequired: true,
+          purchaseQuantity: li.quantity ?? null,
+          // Also clear any stale stock allocation so the item doesn't linger on
+          // the picking list as if it were fulfilled while also needing a PO.
+          stockStatus: null,
+          stockAllocatedAt: null,
+        })
         .where(eq(orderItemsTable.id, li.id));
     }
   }
