@@ -4218,6 +4218,38 @@ export default function CustomerDetail() {
   const [logoUrl, setLogoUrl] = useState<string>("");
   const [logoSaving, setLogoSaving] = useState(false);
   const { toast } = useToast();
+
+  // ── Edit customer details dialog ─────────────────────────────────────────
+  const [editInfoOpen, setEditInfoOpen] = useState(false);
+  const [editInfoForm, setEditInfoForm] = useState({
+    name: "", contactFirstName: "", contactLastName: "",
+    email: "", phone: "",
+    address: "", state: "", city: "", postcode: "",
+  });
+  const openEditInfo = () => {
+    setEditInfoForm({
+      name: (customer as any)?.name ?? "",
+      contactFirstName: (customer as any)?.contactFirstName ?? "",
+      contactLastName: (customer as any)?.contactLastName ?? "",
+      email: (customer as any)?.email ?? "",
+      phone: (customer as any)?.phone ?? "",
+      address: (customer as any)?.address ?? "",
+      state: (customer as any)?.state ?? "",
+      city: (customer as any)?.city ?? "",
+      postcode: (customer as any)?.postcode ?? "",
+    });
+    setEditInfoOpen(true);
+  };
+  const saveInfoMutation = useMutation({
+    mutationFn: (data: typeof editInfoForm) =>
+      apiFetch(`/customers/${customerId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+      setEditInfoOpen(false);
+      toast({ title: "Customer details updated" });
+    },
+    onError: () => toast({ title: "Failed to save", variant: "destructive" }),
+  });
   const logoFileInputRef = useRef<HTMLInputElement>(null);
 
   const { uploadFile: uploadLogoFile, isUploading: isLogoUploading } = useUpload({
@@ -4325,6 +4357,9 @@ export default function CustomerDetail() {
               <div className="flex items-center gap-3">
                 {!(customer as any).logoUrl && <Building2 className="w-6 h-6 text-muted-foreground shrink-0" />}
                 <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">{toTitleCase(customer.name)}</h1>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" onClick={openEditInfo} title="Edit customer details">
+                  <Edit2 className="w-3.5 h-3.5" />
+                </Button>
               </div>
               <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-muted-foreground">
                 {(customer.contactFirstName || customer.contactLastName) && (
@@ -4546,6 +4581,68 @@ export default function CustomerDetail() {
           </div>
         </Tabs>
       </div>
+
+      {/* ── Edit customer details dialog ──────────────────────────────────── */}
+      <Dialog open={editInfoOpen} onOpenChange={(v) => { if (!v) setEditInfoOpen(false); }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>Edit Customer Details</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label>Company Name</Label>
+              <Input value={editInfoForm.name} onChange={e => setEditInfoForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label>Contact First Name</Label>
+                <Input value={editInfoForm.contactFirstName} onChange={e => setEditInfoForm(f => ({ ...f, contactFirstName: e.target.value }))} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Contact Last Name</Label>
+                <Input value={editInfoForm.contactLastName} onChange={e => setEditInfoForm(f => ({ ...f, contactLastName: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-2">
+                <Label>Email</Label>
+                <Input type="email" value={editInfoForm.email} onChange={e => setEditInfoForm(f => ({ ...f, email: e.target.value }))} />
+              </div>
+              <div className="grid gap-2">
+                <Label>Phone</Label>
+                <Input value={editInfoForm.phone} onChange={e => setEditInfoForm(f => ({ ...f, phone: e.target.value }))} />
+              </div>
+            </div>
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Billing Address — shown on invoices</p>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label>Street Address</Label>
+                  <Input placeholder="e.g. 10 High Street" value={editInfoForm.address} onChange={e => setEditInfoForm(f => ({ ...f, address: e.target.value }))} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Address Line 2</Label>
+                  <Input placeholder="Estate, district, etc." value={editInfoForm.state} onChange={e => setEditInfoForm(f => ({ ...f, state: e.target.value }))} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>City / Town</Label>
+                    <Input value={editInfoForm.city} onChange={e => setEditInfoForm(f => ({ ...f, city: e.target.value }))} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Postcode</Label>
+                    <Input value={editInfoForm.postcode} onChange={e => setEditInfoForm(f => ({ ...f, postcode: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditInfoOpen(false)}>Cancel</Button>
+            <Button onClick={() => saveInfoMutation.mutate(editInfoForm)} disabled={saveInfoMutation.isPending || !editInfoForm.name}>
+              {saveInfoMutation.isPending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Saving…</> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Layout>
   );
 }

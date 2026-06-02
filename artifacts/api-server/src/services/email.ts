@@ -2528,6 +2528,9 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   customerEmail: string | null;
   contactFirstName: string | null;
   customerLogoDataUrl: string | null;
+  customerAddress: string | null;
+  customerCity: string | null;
+  customerPostcode: string | null;
 }> {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) throw new Error("Order not found.");
