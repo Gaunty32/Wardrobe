@@ -129,7 +129,7 @@ router.get("/products", async (req, res): Promise<void> => {
     FROM products p
     LEFT JOIN customers c ON c.id = p.customer_id
     ${searchTerm
-      ? sql`WHERE (p.name ILIKE ${searchTerm} OR p.sku ILIKE ${searchTerm} OR p.description ILIKE ${searchTerm})`
+      ? sql`WHERE (p.name ILIKE ${searchTerm} OR p.sku ILIKE ${searchTerm} OR p.description ILIKE ${searchTerm} OR p.supplier_code ILIKE ${searchTerm})`
       : sql``}
     ORDER BY p.name
   `);

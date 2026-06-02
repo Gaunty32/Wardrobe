@@ -445,7 +445,7 @@ export default function Products() {
             <div className="relative max-w-sm flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search products..."
+                placeholder="Search name, SKU, supplier code..."
                 className="pl-9 bg-background"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); }}
