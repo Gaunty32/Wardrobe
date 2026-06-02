@@ -337,10 +337,10 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                 <div className="grid gap-1.5">
                   <Label htmlFor="shipping-method" className="flex items-center gap-1.5">
                     <Truck className="w-4 h-4" />
-                    Shipping Method
+                    Shipping Method <span className="text-destructive">*</span>
                   </Label>
                   <Select value={shippingMethod} onValueChange={setShippingMethod}>
-                    <SelectTrigger id="shipping-method">
+                    <SelectTrigger id="shipping-method" className={!shippingMethod ? "border-destructive/50 ring-destructive/20" : ""}>
                       <SelectValue placeholder="Select shipping method…" />
                     </SelectTrigger>
                     <SelectContent>
@@ -349,6 +349,9 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                       ))}
                     </SelectContent>
                   </Select>
+                  {!shippingMethod && (
+                    <p className="text-[11px] text-destructive">A shipping method is required to confirm</p>
+                  )}
                 </div>
               </div>
 
@@ -358,7 +361,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
-              <Button onClick={handleConfirm} disabled={!requiredDate}>
+              <Button onClick={handleConfirm} disabled={!requiredDate || !shippingMethod}>
                 <Check className="w-4 h-4 mr-1.5" /> Confirm Order
               </Button>
             </DialogFooter>
