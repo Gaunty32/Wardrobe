@@ -1801,6 +1801,9 @@ export function buildInvoiceEmail(params: {
   customerName: string | null;
   contactFirstName?: string | null;
   customerLogoDataUrl?: string | null;
+  customerAddress?: string | null;
+  customerCity?: string | null;
+  customerPostcode?: string | null;
   invoiceDate: Date | null;
   shippingMethod?: string | null;
   trackingNumber?: string | null;
@@ -1958,7 +1961,15 @@ export function buildInvoiceEmail(params: {
           <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">Please find your invoice attached for order <strong style="color:#ffffff;">${params.orderNumber}</strong>.</p>
         </td></tr>
 
-        <tr><td style="padding:24px 32px 16px;">
+        <tr><td style="padding:20px 32px 0;">
+          <p style="margin:0 0 3px;font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:0.8px;">Billed To</p>
+          <p style="margin:0;font-size:14px;font-weight:700;color:#1e293b;">${params.customerName ?? ""}</p>
+          ${[params.customerAddress, params.customerCity, params.customerPostcode].filter(Boolean).length
+            ? `<p style="margin:4px 0 0;font-size:12px;color:#64748b;line-height:1.6;">${[params.customerAddress, params.customerCity, params.customerPostcode].filter(Boolean).join("<br>")}</p>`
+            : ""}
+        </td></tr>
+
+        <tr><td style="padding:16px 32px 16px;">
           <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:collapse;overflow:hidden;">
             <tr style="background:#f8fafc;"><td style="padding:10px 16px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Invoice Number</td><td style="padding:10px 16px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #e2e8f0;text-align:right;">${params.orderNumber}</td></tr>
             <tr><td style="padding:10px 16px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">Invoice Date</td><td style="padding:10px 16px;font-size:13px;color:#1e293b;border-bottom:1px solid #e2e8f0;text-align:right;">${invoiceDateStr}</td></tr>
@@ -2560,6 +2571,9 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     customerName: order.customerName,
     contactFirstName,
     customerLogoDataUrl,
+    customerAddress,
+    customerCity,
+    customerPostcode,
     invoiceDate: order.invoiceDate,
     shippingMethod: order.shippingMethod,
     trackingNumber: order.trackingNumber,

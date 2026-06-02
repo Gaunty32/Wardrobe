@@ -368,7 +368,7 @@ router.get("/invoices/:orderId/preview-email", async (req, res): Promise<void> =
   const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
   try {
-    const { order, items, contactFirstName, customerLogoDataUrl } = await buildInvoiceDataForOrder(idParse.data);
+    const { order, items, contactFirstName, customerLogoDataUrl, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(idParse.data);
     const mappedItems = items.map((i) => ({
       productName: i.productName,
       colour: i.colour,
@@ -384,6 +384,9 @@ router.get("/invoices/:orderId/preview-email", async (req, res): Promise<void> =
       customerName: order.customerName,
       contactFirstName,
       customerLogoDataUrl,
+      customerAddress,
+      customerCity,
+      customerPostcode,
       invoiceDate: order.invoiceDate,
       shippingMethod: order.shippingMethod,
       trackingNumber: order.trackingNumber,
