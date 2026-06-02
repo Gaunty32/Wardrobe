@@ -547,12 +547,18 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
     // ── Order info strip ──────────────────────────────────────────────────────
     const infoY = divY + 5;
+    const SHIP_LABELS_HDR: Record<string, string> = {
+      free_local: "Free Local", local_delivery: "Local Delivery",
+      office_collection: "Office Collection", warehouse_collection: "Warehouse Collection",
+      courier: "Courier", dpd: "DPD Courier",
+    };
     const infoCols = [
       { label: "Order Date", value: fmtDate(order.orderDate) },
       { label: "Account No", value: order.customerRef ?? "—" },
       { label: "Required By", value: fmtDate(order.requiredDate) },
       { label: "Cust PO Ref", value: order.poNumber ?? "—" },
-      { label: "Order Ref", value: order.orderNumber },
+      { label: "Order Ref",   value: order.orderNumber },
+      { label: "Shipping",    value: order.shippingMethod ? (SHIP_LABELS_HDR[order.shippingMethod] ?? order.shippingMethod) : "—" },
     ];
     const colW = contentW / infoCols.length;
     infoCols.forEach(({ label, value }, i) => {
