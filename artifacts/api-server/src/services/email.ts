@@ -172,6 +172,7 @@ export function buildAcknowledgementEmail(order: {
   requiredDate?: Date | null;
   notes?: string | null;
   totalAmount?: number | null;
+  carriageAmount?: number | null;
   stripePaymentLink?: string | null;
   items: Array<{
     productName: string;
@@ -202,8 +203,9 @@ export function buildAcknowledgementEmail(order: {
     .join("\n");
 
   const subtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
-  const vatAmount = order.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.20), 0);
-  const totalIncVat = subtotal + vatAmount;
+  const emailCarriage = order.carriageAmount ?? 0;
+  const vatAmount = order.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.20), 0) + emailCarriage * 0.20;
+  const totalIncVat = subtotal + emailCarriage + vatAmount;
   const uniqueVatRates = [...new Set(order.items.map(i => i.vatRate ?? 0.20))];
   const vatLabel = uniqueVatRates.length === 1
     ? `VAT (${Math.round(uniqueVatRates[0] * 100)}%)`
@@ -290,6 +292,10 @@ export function buildAcknowledgementEmail(order: {
                 <td colspan="4" style="padding:10px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">Subtotal (exc. VAT)</td>
                 <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;border-top:1px solid #e2e8f0;">£${subtotal.toFixed(2)}</td>
               </tr>
+              ${emailCarriage > 0 ? `<tr style="background:#f8fafc;">
+                <td colspan="4" style="padding:6px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">Shipping &amp; Handling</td>
+                <td style="padding:6px 12px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${emailCarriage.toFixed(2)}</td>
+              </tr>` : ""}
               <tr style="background:#f8fafc;">
                 <td colspan="4" style="padding:6px 12px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">${vatLabel}</td>
                 <td style="padding:6px 12px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${vatAmount.toFixed(2)}</td>

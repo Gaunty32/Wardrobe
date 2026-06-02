@@ -1037,6 +1037,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       deliveryAddressId: ordersTable.deliveryAddressId,
       stripePaymentLinkUrl: ordersTable.stripePaymentLinkUrl,
       shippingMethod: ordersTable.shippingMethod,
+      carriageAmount: ordersTable.carriageAmount,
       portalSubmittedByName: ordersTable.portalSubmittedByName,
       portalSubmittedByEmail: ordersTable.portalSubmittedByEmail,
     })
@@ -1157,6 +1158,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
     totalAmount: numericToFloat(order.totalAmount),
+    carriageAmount: numericToFloat(order.carriageAmount),
     items: mappedItems,
     stripePaymentLink: order.stripePaymentLinkUrl ?? null,
   });
@@ -1177,6 +1179,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       shippingMethod: order.shippingMethod ?? null,
       customerLogoBuffer,
       totalAmount: numericToFloat(order.totalAmount),
+      shippingAmount: numericToFloat(order.carriageAmount),
       items: mappedItems,
     });
     attachments = [{ filename: `Order-Acknowledgement-${order.orderNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" }];
@@ -1252,6 +1255,7 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
       poNumber: ordersTable.poNumber,
       deliveryAddressId: ordersTable.deliveryAddressId,
       shippingMethod: ordersTable.shippingMethod,
+      carriageAmount: ordersTable.carriageAmount,
     })
     .from(ordersTable)
     .where(eq(ordersTable.id, params.data.id));
@@ -1327,6 +1331,7 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
       shippingMethod: order.shippingMethod ?? null,
       customerLogoBuffer,
       totalAmount: numericToFloat(order.totalAmount),
+      shippingAmount: numericToFloat(order.carriageAmount),
       items,
     });
     res.setHeader("Content-Type", "application/pdf");
@@ -1349,6 +1354,8 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
       customerId: ordersTable.customerId, customerName: ordersTable.customerName,
       orderDate: ordersTable.orderDate, requiredDate: ordersTable.requiredDate,
       notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
+      carriageAmount: ordersTable.carriageAmount,
+      shippingMethod: ordersTable.shippingMethod,
       poNumber: ordersTable.poNumber,
       deliveryAddressId: ordersTable.deliveryAddressId,
     })
@@ -1432,6 +1439,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
     totalAmount: orderTotal,
+    carriageAmount: numericToFloat(order.carriageAmount),
     stripePaymentLink,
     items: mappedItems,
   });
@@ -1451,6 +1459,8 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
       customerPostcode,
       deliveryAddress: deliveryAddressText,
       totalAmount: numericToFloat(order.totalAmount),
+      shippingAmount: numericToFloat(order.carriageAmount),
+      shippingMethod: order.shippingMethod ?? null,
       items: mappedItems,
     });
     pdfBase64 = pdfBuffer.toString("base64");
@@ -1513,6 +1523,8 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
       customerId: ordersTable.customerId, customerName: ordersTable.customerName,
       orderDate: ordersTable.orderDate, requiredDate: ordersTable.requiredDate,
       notes: ordersTable.notes, totalAmount: ordersTable.totalAmount,
+      carriageAmount: ordersTable.carriageAmount,
+      shippingMethod: ordersTable.shippingMethod,
       poNumber: ordersTable.poNumber, deliveryAddressId: ordersTable.deliveryAddressId,
     })
     .from(ordersTable)
@@ -1595,6 +1607,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
     requiredDate: order.requiredDate ?? null,
     notes: order.notes ?? null,
     totalAmount: orderTotal2,
+    carriageAmount: numericToFloat(order.carriageAmount),
     stripePaymentLink: stripePaymentLink2,
     items: mappedItems,
   });
@@ -1613,6 +1626,8 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
       customerPostcode,
       deliveryAddress: deliveryAddressText,
       totalAmount: numericToFloat(order.totalAmount),
+      shippingAmount: numericToFloat(order.carriageAmount),
+      shippingMethod: order.shippingMethod ?? null,
       items: mappedItems,
     });
     pdfBase64 = pdfBuffer.toString("base64");

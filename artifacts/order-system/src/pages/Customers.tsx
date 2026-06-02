@@ -345,6 +345,10 @@ export default function Customers() {
       toast({ title: "Validation Error", description: "Customer name is required", variant: "destructive" });
       return;
     }
+    if (!formData.defaultShippingService) {
+      toast({ title: "Validation Error", description: "Default Shipping Service is required", variant: "destructive" });
+      return;
+    }
 
     if (editingCustomer) {
       updateMutation.mutate(
@@ -677,7 +681,7 @@ export default function Customers() {
                   value={formData.defaultShippingService || "none"}
                   onValueChange={(v) => setFormData({...formData, defaultShippingService: v === "none" ? "" : v})}
                 >
-                  <SelectTrigger id="defaultShippingService">
+                  <SelectTrigger id="defaultShippingService" className={!formData.defaultShippingService ? "border-destructive/60" : ""}>
                     <SelectValue placeholder="Select a carrier..." />
                   </SelectTrigger>
                   <SelectContent>

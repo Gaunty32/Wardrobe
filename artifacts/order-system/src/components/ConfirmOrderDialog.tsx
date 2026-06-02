@@ -106,6 +106,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
   const [copied, setCopied] = useState(false);
   const [requiredDate, setRequiredDate] = useState(defaultRequiredDate);
   const [shippingMethod, setShippingMethod] = useState<string>("");
+  const [carriageAmount, setCarriageAmount] = useState<string>("");
   const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null);
   const [paymentLinkLoading, setPaymentLinkLoading] = useState(false);
   const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
@@ -126,6 +127,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     setCopied(false);
     setRequiredDate(initialRequiredDate());
     setShippingMethod(initialShippingMethod());
+    setCarriageAmount(order.shippingMethod === "courier" ? "8.50" : "");
     setPaymentLinkUrl(null);
     setPaymentLinkLoading(false);
     setPaymentLinkError(null);
@@ -136,9 +138,16 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     if (open) {
       setRequiredDate(initialRequiredDate());
       setShippingMethod(initialShippingMethod());
+      setCarriageAmount(order.shippingMethod === "courier" ? "8.50" : "");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (shippingMethod === "courier") {
+      setCarriageAmount(prev => prev === "" ? "8.50" : prev);
+    }
+  }, [shippingMethod]);
 
   const handleClose = (open: boolean) => {
     if (!open) reset();
@@ -180,6 +189,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
           status: "confirmed",
           requiredDate: requiredDate || null,
           shippingMethod: shippingMethod || null,
+          carriageAmount: carriageAmount !== "" ? parseFloat(carriageAmount) : 0,
         }),
       });
       setResult(data);
@@ -351,6 +361,25 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
                   </Select>
                   {!shippingMethod && (
                     <p className="text-[11px] text-destructive">A shipping method is required to confirm</p>
+                  )}
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="carriage-amount">Shipping Charge</Label>
+                  <div className="relative flex items-center">
+                    <span className="absolute left-3 text-muted-foreground text-sm pointer-events-none">£</span>
+                    <Input
+                      id="carriage-amount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={carriageAmount}
+                      onChange={e => setCarriageAmount(e.target.value)}
+                      placeholder="0.00"
+                      className="pl-7"
+                    />
+                  </div>
+                  {shippingMethod === "courier" && (
+                    <p className="text-[11px] text-muted-foreground">Default £8.50 DPD charge — override if needed</p>
                   )}
                 </div>
               </div>
