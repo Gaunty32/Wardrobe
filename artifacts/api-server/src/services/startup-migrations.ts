@@ -189,6 +189,7 @@ export async function runStartupMigrations(): Promise<void> {
   // Add stock allocation tracking to order_items
   await db.execute(sql`
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS stock_status text;
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS notes text;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS stock_allocated_at timestamptz;
   `);
 

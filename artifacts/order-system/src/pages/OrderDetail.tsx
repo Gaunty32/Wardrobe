@@ -528,6 +528,14 @@ export default function OrderDetail() {
     onError: (e: Error) => toast({ title: "Failed to update size/colour", description: e.message, variant: "destructive" }),
   });
 
+  const [editingItemNotes, setEditingItemNotes] = useState<{ id: number; value: string } | null>(null);
+  const updateItemNotesMutation = useMutation({
+    mutationFn: ({ itemId, notes }: { itemId: number; notes: string | null }) =>
+      apiFetch(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ notes }) }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }); setEditingItemNotes(null); },
+    onError: (e: Error) => toast({ title: "Failed to update item notes", description: e.message, variant: "destructive" }),
+  });
+
   const updateAttachmentsMutation = useMutation({
     mutationFn: (attachments: Array<{ name: string; objectPath: string }>) =>
       apiFetch(`/orders/${orderId}/attachments`, { method: "PATCH", body: JSON.stringify({ attachments }) }),
@@ -1610,7 +1618,7 @@ export default function OrderDetail() {
                                   Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
                                 </Badge>
                               )}
-                              {orderItem.finishName ? (
+                                {orderItem.finishName ? (
                                 <Badge variant="secondary" className="text-xs gap-1 font-normal">
                                   <Sparkles className="w-3 h-3" />{orderItem.finishName}
                                 </Badge>
@@ -1625,6 +1633,52 @@ export default function OrderDetail() {
                                 </Badge>
                               )}
                             </div>
+                            {/* Item notes — shown for all items, editable inline */}
+                            {editingItemNotes?.id === orderItem.id ? (
+                              <div className="mt-2 flex flex-col gap-1">
+                                <textarea
+                                  className="w-full text-xs border rounded px-2 py-1.5 resize-none bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-h-[60px]"
+                                  value={editingItemNotes.value}
+                                  autoFocus
+                                  onChange={e => setEditingItemNotes(p => p && ({ ...p, value: e.target.value }))}
+                                  onKeyDown={e => {
+                                    if (e.key === "Escape") setEditingItemNotes(null);
+                                    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                      updateItemNotesMutation.mutate({ itemId: orderItem.id, notes: editingItemNotes.value.trim() || null });
+                                    }
+                                  }}
+                                  placeholder="Notes about this item (e.g. extra logo positions, artwork ref)…"
+                                />
+                                <div className="flex items-center gap-2">
+                                  <Button size="sm" className="h-6 text-xs px-2" disabled={updateItemNotesMutation.isPending} onClick={() => updateItemNotesMutation.mutate({ itemId: orderItem.id, notes: editingItemNotes.value.trim() || null })}>
+                                    {updateItemNotesMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Save"}
+                                  </Button>
+                                  <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setEditingItemNotes(null)}>Cancel</button>
+                                </div>
+                              </div>
+                            ) : (orderItem as any).notes ? (
+                              <div
+                                className="mt-1.5 group/notes cursor-pointer"
+                                onClick={() => setEditingItemNotes({ id: orderItem.id, value: (orderItem as any).notes ?? "" })}
+                                title="Click to edit item notes"
+                              >
+                                {((orderItem as any).notes as string).split("\n").map((line: string, i: number) => (
+                                  <p key={i} className="text-xs text-amber-700 leading-relaxed flex items-start gap-1">
+                                    <MessageSquare className="w-3 h-3 mt-0.5 shrink-0 text-amber-500" />
+                                    {line}
+                                  </p>
+                                ))}
+                                <span className="text-xs text-muted-foreground opacity-0 group-hover/notes:opacity-100 transition-opacity">Click to edit</span>
+                              </div>
+                            ) : (
+                              <button
+                                className="mt-1 text-xs text-muted-foreground/50 hover:text-muted-foreground flex items-center gap-1 opacity-0 hover:opacity-100 focus:opacity-100 transition-opacity"
+                                onClick={() => setEditingItemNotes({ id: orderItem.id, value: "" })}
+                                title="Add item notes"
+                              >
+                                <MessageSquare className="w-3 h-3" /> Add notes
+                              </button>
+                            )}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {editingItemPrice?.id === orderItem.id ? (

@@ -1903,6 +1903,7 @@ const UpdateOrderItemBodyExtended = z.object({
   colour: z.string().nullable().optional(),
   stockStatus: z.string().nullable().optional(),
   stockAllocatedAt: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 });
 
 router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
@@ -1943,6 +1944,7 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
   if (parsed.data.colour !== undefined) updateData.colour = parsed.data.colour;
   if (parsed.data.stockStatus !== undefined) updateData.stockStatus = parsed.data.stockStatus;
   if (parsed.data.stockAllocatedAt !== undefined) updateData.stockAllocatedAt = parsed.data.stockAllocatedAt ? new Date(parsed.data.stockAllocatedAt) : null;
+  if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
 
   const [item] = await db
     .update(orderItemsTable)

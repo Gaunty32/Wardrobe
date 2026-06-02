@@ -311,18 +311,27 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
       // Extract colour/size from meta_data
       let colour: string | null = null;
       let size: string | null = null;
+      const fileUploads = extractFileUploads(li.meta_data ?? []);
+      const fileUrls = new Set(fileUploads.map((f: { url: string }) => f.url));
+      const notesLines: string[] = [];
       for (const m of li.meta_data ?? []) {
-        const key = (m.key || m.display_key || "").toLowerCase();
-        const val = m.display_value || m.value || "";
-        if (key.includes("colour") || key.includes("color")) colour = String(val);
-        else if (key.includes("size")) size = String(val);
+        const key = (m.key || "").toLowerCase();
+        const displayKey = m.display_key || m.key || "";
+        const val = String(m.display_value || m.value || "").trim();
+        if (!val || key.startsWith("_")) continue;
+        if (key.includes("colour") || key.includes("color") || key.includes("pa_colour") || key.includes("pa_color")) { colour = val; continue; }
+        if (key.includes("size") || key.includes("pa_size")) { size = val; continue; }
+        if (fileUrls.has(val) || /^https?:\/\//i.test(val)) continue; // skip raw URLs
+        if (/<[a-z][\s\S]*>/i.test(val)) continue; // skip HTML blobs
+        notesLines.push(`${displayKey}: ${val}`);
       }
+      const itemNotes = notesLines.length > 0 ? notesLines.join("\n") : null;
 
       const unitPrice = li.quantity > 0 ? (parseFloat(li.total || "0") / li.quantity).toFixed(2) : "0.00";
       await db.execute(sql`
         INSERT INTO order_items (
           order_id, product_id, product_name, colour, size,
-          quantity, unit_price, line_total, recipient_type, created_at
+          quantity, unit_price, line_total, recipient_type, notes, created_at
         ) VALUES (
           ${order.id},
           ${productId},
@@ -333,6 +342,7 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
           ${unitPrice},
           ${li.total},
           'stock',
+          ${itemNotes},
           now()
         )
       `);
