@@ -153,7 +153,27 @@ router.get("/orders", async (req, res): Promise<void> => {
   } else {
     orders = await db.select().from(ordersTable).where(baseCondition).orderBy(...ORDER_NUM_SORT);
   }
-  res.json(orders.map((o) => ({ ...o, totalAmount: numericToFloat(o.totalAmount) })));
+  // Attach per-order GP margin using supplier_price from linked products
+  const orderIds = orders.map(o => o.id);
+  let costByOrderId = new Map<number, number>();
+  if (orderIds.length > 0) {
+    const costRows = await db.execute(sql`
+      SELECT oi.order_id, COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+      FROM order_items oi
+      LEFT JOIN products p ON oi.product_id = p.id
+      WHERE oi.order_id = ANY(${orderIds})
+      GROUP BY oi.order_id
+    `);
+    for (const row of costRows.rows as Array<{ order_id: number; cost: number }>) {
+      costByOrderId.set(row.order_id, row.cost);
+    }
+  }
+  res.json(orders.map((o) => {
+    const revenue = numericToFloat(o.totalAmount);
+    const cost = costByOrderId.get(o.id) ?? 0;
+    const gpMargin = revenue > 0 ? ((revenue - cost) / revenue) * 100 : null;
+    return { ...o, totalAmount: revenue, gpMargin };
+  }));
 });
 
 router.get("/orders/weekly-stats", async (req, res): Promise<void> => {

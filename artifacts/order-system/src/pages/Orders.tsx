@@ -690,8 +690,17 @@ export default function Orders() {
                           <TableCell className="font-medium text-foreground">{toTitleCase(order.customerName) || 'Unknown'}</TableCell>
                           <TableCell className="text-sm font-mono text-muted-foreground">{(order as any).poNumber ?? <span className="italic text-muted-foreground/50">—</span>}</TableCell>
                           <TableCell><StatusBadge status={order.status} /></TableCell>
-                          <TableCell className="text-right font-semibold text-foreground">
-                            {formatCurrency(order.totalAmount)}
+                          <TableCell className="text-right">
+                            <div className="font-semibold text-foreground">{formatCurrency(order.totalAmount)}</div>
+                            {(order as any).gpMargin != null && (
+                              <div className={`text-xs font-medium mt-0.5 ${
+                                (order as any).gpMargin >= 40 ? "text-green-600" :
+                                (order as any).gpMargin >= 20 ? "text-amber-600" :
+                                "text-red-500"
+                              }`}>
+                                {((order as any).gpMargin as number).toFixed(1)}% GM
+                              </div>
+                            )}
                           </TableCell>
                           <TableCell onClick={e => e.stopPropagation()}>
                             <Link href={`/orders/${order.id}`}>
