@@ -2537,7 +2537,7 @@ export default function OrderDetail() {
                             const pid = String(wi.product_id ?? "");
                             const byColour = wardrobeData?.sizesMap?.[pid];
                             const sizeOpts: string[] = byColour
-                              ? [...new Set(Object.values(byColour).flat())] as string[]
+                              ? sortSizesWithOrder([...new Set(Object.values(byColour).flat() as string[])], sizeOrder)
                               : [];
                             const sleeveOpts: string[] = wardrobeData?.sleevesMap?.[pid] ?? [];
                             const procs: any[] = (wardrobeData?.processes ?? []).filter((p: any) => p.finish_id === wi.finish_id);
@@ -2573,21 +2573,34 @@ export default function OrderDetail() {
                                       <p className="text-sm font-bold text-primary mt-1">{formatCurrency(effectivePrice)}</p>
                                     )}
                                   </div>
-                                  {/* Finish + processes */}
+                                  {/* Finish + processes — matches customer portal card style */}
                                   {(wi.finish_name || procs.length > 0) && (
-                                    <div className="space-y-1">
+                                    <div className="space-y-1.5">
                                       {wi.finish_name && (
-                                        <p className="text-xs font-bold leading-snug">{wi.finish_name}</p>
+                                        <p className="text-xs font-bold text-foreground leading-snug">{wi.finish_name}</p>
                                       )}
-                                      {procs.slice(0, 2).map((p: any) => (
-                                        <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5 text-[10px]">
-                                          <Sparkles className="w-2.5 h-2.5 text-amber-500 shrink-0" />
-                                          <span className="font-medium text-foreground/70 truncate">{p.item_finish_name}</span>
-                                          {p.placement && <span className="text-muted-foreground shrink-0">· {p.placement}</span>}
-                                        </div>
-                                      ))}
-                                      {procs.length > 2 && (
-                                        <p className="text-[10px] text-muted-foreground">+{procs.length - 2} more</p>
+                                      {procs.slice(0, 3).map((p: any) => {
+                                        const typeColours: Record<string, string> = {
+                                          embroidery: "bg-purple-100 text-purple-700 border-purple-200",
+                                          print: "bg-blue-100 text-blue-700 border-blue-200",
+                                          dtf: "bg-cyan-100 text-cyan-700 border-cyan-200",
+                                          badge: "bg-amber-100 text-amber-700 border-amber-200",
+                                          heat_transfer: "bg-orange-100 text-orange-700 border-orange-200",
+                                        };
+                                        const typeCls = typeColours[(p.process_type ?? "").toLowerCase()] ?? "bg-muted text-muted-foreground border-border";
+                                        const typeLabel = (p.process_type ?? "").replace(/_/g, " ").replace(/^\w/, (c: string) => c.toUpperCase());
+                                        return (
+                                          <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
+                                            {p.process_type && (
+                                              <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${typeCls}`}>{typeLabel}</span>
+                                            )}
+                                            {p.item_finish_name && <span className="text-[10px] font-medium text-foreground/70 truncate">{p.item_finish_name}</span>}
+                                            {p.placement && <span className="text-[10px] text-muted-foreground shrink-0">· {p.placement}</span>}
+                                          </div>
+                                        );
+                                      })}
+                                      {procs.length > 3 && (
+                                        <p className="text-[10px] text-primary cursor-default">+{procs.length - 3} more…</p>
                                       )}
                                     </div>
                                   )}
