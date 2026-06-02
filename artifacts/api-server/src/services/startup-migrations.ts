@@ -1122,6 +1122,20 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS is_service boolean NOT NULL DEFAULT false;
   `);
 
+  // Mark known service products as is_service = true (these have no physical stock)
+  await db.execute(sql`
+    UPDATE products
+    SET is_service = true
+    WHERE is_service = false
+      AND (
+        LOWER(name) LIKE '%logo conversion%'
+        OR LOWER(name) LIKE '%digitising%'
+        OR LOWER(name) LIKE '%digitizing%'
+        OR LOWER(name) LIKE '%artwork%'
+        OR LOWER(sku)  = 'svc-pkg'
+      );
+  `);
+
   // Deduplicate service products: where the same product name exists as both a plain
   // product (synced from WooCommerce) and a manually-created service product, mark the
   // WooCommerce-linked record as is_service = true and delete the manual duplicate.

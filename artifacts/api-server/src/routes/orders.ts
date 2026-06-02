@@ -514,8 +514,17 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     }> = [];
 
     // Items with no product link have no stock to allocate — they go straight to production
+    const noProductItemIds: number[] = [];
     for (const item of items) {
-      if (!item.productId) allocatedItemIds.push(item.id);
+      if (!item.productId) {
+        allocatedItemIds.push(item.id);
+        noProductItemIds.push(item.id);
+      }
+    }
+    if (noProductItemIds.length > 0) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: false, purchaseQuantity: null, stockStatus: "allocated", stockAllocatedAt: new Date() })
+        .where(inArray(orderItemsTable.id, noProductItemIds));
     }
 
     if (productIds.length > 0) {
@@ -563,6 +572,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         if (sup?.isService) {
           allocatedLines++;
           allocatedItemIds.push(item.id);
+          await db.update(orderItemsTable)
+            .set({ purchaseRequired: false, purchaseQuantity: null, stockStatus: "allocated", stockAllocatedAt: new Date() })
+            .where(eq(orderItemsTable.id, item.id));
           continue;
         }
 
