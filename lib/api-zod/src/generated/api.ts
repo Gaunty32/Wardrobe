@@ -54,6 +54,9 @@ export const CreateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+  defaultShippingService: zod.string().nullish(),
+  highLevelContactId: zod.string().nullish(),
 });
 
 /**
@@ -98,6 +101,8 @@ export const UpdateCustomerBody = zod.object({
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
   logoUrl: zod.string().nullish(),
+  defaultShippingService: zod.string().nullish(),
+  highLevelContactId: zod.string().nullish(),
   zeroVat: zod.boolean().optional(),
 });
 
