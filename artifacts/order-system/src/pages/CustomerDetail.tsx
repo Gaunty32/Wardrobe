@@ -347,6 +347,7 @@ function OrderHistoryTab({ customerId }: { customerId: number }) {
 // ─── Processes Tab ────────────────────────────────────────────────────────────
 
 const PROCESS_TYPES = ["embroidery", "print", "DTF", "other"] as const;
+const PROCESS_TYPE_LABELS: Record<string, string> = { embroidery: "Embroidery", print: "Print", DTF: "DTF", other: "Other" };
 
 interface ProcessStockItem { id: number; name: string; sku: string | null; unitCost: number; supplierId: number | null; stockQuantity: number; }
 
@@ -671,7 +672,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Not specified</SelectItem>
-                    {PROCESS_TYPES.map(t => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
+                    {PROCESS_TYPES.map(t => <SelectItem key={t} value={t}>{PROCESS_TYPE_LABELS[t] ?? t}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
