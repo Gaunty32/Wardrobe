@@ -2266,7 +2266,6 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
     if (data.customerAddress) billToLines.push(data.customerAddress);
     if (data.customerCity) billToLines.push(data.customerCity);
     if (data.customerPostcode) billToLines.push(data.customerPostcode);
-    if (data.customerEmail) billToLines.push(data.customerEmail);
 
     doc.fillColor(DIM).fontSize(8.5).font("Helvetica");
     billToLines.forEach((line, i) => {
@@ -2349,9 +2348,9 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
 
       cx = MARGIN + 6;
       doc.fillColor(TEXT).fontSize(8.5).font("Helvetica")
-        .text(desc, cx, y + 6, { width: COL_DESC_W - 6, lineBreak: false, ellipsis: true });
+        .text(desc, cx, y + 6, { width: COL_DESC_W - 6, lineBreak: false, ellipsis: true, height: ROW_H - 8 });
       doc.fillColor(DIM)
-        .text(cs, cx + COL_DESC_W, y + 6, { width: COL_CS_W, lineBreak: false, ellipsis: true });
+        .text(cs, cx + COL_DESC_W, y + 6, { width: COL_CS_W, lineBreak: false, ellipsis: true, height: ROW_H - 8 });
       doc.fillColor(TEXT).font("Helvetica-Bold")
         .text(String(qty), cx + COL_DESC_W + COL_CS_W, y + 6, { width: COL_QTY_W, align: "right", lineBreak: false });
       doc.font("Helvetica").fillColor(DIM)
