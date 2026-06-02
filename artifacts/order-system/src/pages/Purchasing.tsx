@@ -45,6 +45,7 @@ interface PurchaseRequirement {
   purchaseQuantity: number | null; supplierId: number | null; supplierName: string; supplierEmail: string | null;
   supplierCode: string | null; secondarySupplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
   supplierPrice: number | null;
+  orderCreatedAt: string | null;
 }
 interface SupplierGroup {
   supplierId: number | null; supplierName: string; supplierEmail: string | null; supplierCurrency: string; items: PurchaseRequirement[];
@@ -1666,28 +1667,35 @@ export default function Purchasing() {
   }, [purchaseOrders]);
 
   const draftTilesBySupplier = useMemo(() => {
-    const map = new Map<string, { name: string; reqLines: number; psLines: number; poCount: number; supplierId: number | null; totalValue: number | null }>();
+    const pickEarlier = (a: string | null, b: string | null): string | null => {
+      if (!a) return b;
+      if (!b) return a;
+      return a < b ? a : b;
+    };
+    const map = new Map<string, { name: string; reqLines: number; psLines: number; poCount: number; supplierId: number | null; totalValue: number | null; earliestCreatedAt: string | null }>();
     for (const g of groups) {
       const key = g.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null });
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, earliestCreatedAt: null });
       const tile = map.get(key)!;
       tile.reqLines += g.items.length;
       for (const item of g.items) {
         if (item.supplierPrice != null && item.purchaseQuantity != null) {
           tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * item.purchaseQuantity;
         }
+        tile.earliestCreatedAt = pickEarlier(tile.earliestCreatedAt, item.orderCreatedAt);
       }
     }
     for (const g of processReqsBySupplier) {
       const key = g.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null });
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, earliestCreatedAt: null });
       map.get(key)!.psLines += g.items.length;
     }
     for (const po of draftPos) {
       const key = po.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: po.supplierId, totalValue: null });
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: po.supplierId, totalValue: null, earliestCreatedAt: null });
       const tile = map.get(key)!;
       tile.poCount += 1;
+      tile.earliestCreatedAt = pickEarlier(tile.earliestCreatedAt, po.createdAt);
       for (const item of po.items) {
         if (item.supplierPrice != null) {
           tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * item.quantityOrdered;
@@ -1797,6 +1805,20 @@ export default function Purchasing() {
                           {tile.totalValue != null && (
                             <p className="text-xs text-muted-foreground font-medium">£{tile.totalValue.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           )}
+                          {tile.earliestCreatedAt != null && (() => {
+                            const days = Math.floor((Date.now() - new Date(tile.earliestCreatedAt).getTime()) / 86400000);
+                            const bg = days >= 7
+                              ? "bg-red-100 text-red-800 border-red-200"
+                              : days >= 4
+                              ? "bg-orange-100 text-orange-800 border-orange-200"
+                              : "bg-green-100 text-green-800 border-green-200";
+                            const label = days === 0 ? "Today" : days === 1 ? "Yesterday" : `${days}d ago`;
+                            return (
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${bg}`}>
+                                {label}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </button>
                     );
