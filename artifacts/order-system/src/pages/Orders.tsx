@@ -201,9 +201,10 @@ function PortalPendingOrders() {
   async function mergeGroup(orderIds: number[], groupKey: string) {
     setMergingIds(s => new Set([...s, groupKey]));
     try {
-      await apiFetch("/portal/admin/orders/merge", { method: "POST", body: JSON.stringify({ orderIds }) });
+      const result: any = await apiFetch("/portal/admin/orders/merge", { method: "POST", body: JSON.stringify({ orderIds }) });
       invalidate();
       toast({ title: "Orders merged", description: `${orderIds.length} orders combined into one.` });
+      if (result?.primary?.id) setLocation(`/orders/${result.primary.id}`);
     } catch (e: any) {
       toast({ title: "Could not merge", description: e.message, variant: "destructive" });
     } finally {
@@ -390,9 +391,10 @@ function ConfirmedMergeableBanner() {
   async function mergeGroup(orderIds: number[], groupKey: string) {
     setMergingIds(s => new Set([...s, groupKey]));
     try {
-      await apiFetch("/portal/admin/orders/merge", { method: "POST", body: JSON.stringify({ orderIds }) });
+      const result: any = await apiFetch("/portal/admin/orders/merge", { method: "POST", body: JSON.stringify({ orderIds }) });
       queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
       toast({ title: "Orders merged", description: `${orderIds.length} confirmed orders combined into one.` });
+      if (result?.primary?.id) setLocation(`/orders/${result.primary.id}`);
     } catch (e: any) {
       toast({ title: "Could not merge", description: e.message, variant: "destructive" });
     } finally {

@@ -1256,8 +1256,14 @@ export default function OrderDetail() {
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <h1 className="text-2xl sm:text-3xl font-display font-bold text-foreground tracking-tight">Order {order.orderNumber}</h1>
+                {(order as any).absorbedOrderNumbers?.length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2.5 py-0.5 mt-1" title={`Merged from: ${(order as any).absorbedOrderNumbers.join(", ")}`}>
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    +{(order as any).absorbedOrderNumbers.join(" + ")}
+                  </span>
+                )}
                 <StatusBadge status={order.status} className="mt-1" />
               </div>
               <p className="text-muted-foreground mt-1">{formatDate(order.orderDate)} &bull; {order.customerName}</p>

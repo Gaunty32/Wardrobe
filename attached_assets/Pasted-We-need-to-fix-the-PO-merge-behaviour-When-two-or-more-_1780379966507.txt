@@ -1,0 +1,60 @@
+We need to fix the PO merge behaviour.
+
+When two or more confirmed orders have the same PO number for the same customer, they should not just show as mergeable on the Sales Orders screen. They need to behave as one combined order all the way through the system.
+
+Example from screenshot:
+Customer: Premier Farnell Ltd
+PO Number: AVTP12701
+Orders: P52 and P39
+
+These should merge into one working order.
+
+Required behaviour:
+
+1. Same customer + same PO number = one combined order
+- Only merge orders where the customer is the same.
+- Only merge orders where the PO number is exactly the same.
+- Do not merge blank PO numbers.
+- Do not merge similar but different PO numbers.
+
+2. Once merged, the combined order should flow as one order through:
+- Sales Orders
+- picking
+- stock checks
+- pre-production
+- production
+- work in progress
+- delivery note
+- wearer labels
+- despatch
+- invoicing/reporting if applicable
+
+3. The original order numbers should still be traceable
+The merged order should clearly show:
+- master/merged order reference
+- original order numbers included, e.g. P52 + P39
+- combined total value
+- combined product lines
+- combined wearer lines if relevant
+
+4. After merging
+- The separate orders should no longer appear as separate active production jobs.
+- Staff should not be able to accidentally process P52 and P39 separately.
+- The merged order should be the only order pushed through the workflow.
+- The original orders should either be marked as merged or linked to the master order.
+
+5. Merge button
+The current “Merge into one order” button is fine, but after it is used, the merge must be applied across the full workflow, not just visually grouped on the Sales Orders screen.
+
+6. Safety rules
+Before merging, check:
+- same customer
+- same PO number
+- compatible order status
+- neither order has already been shipped/despatched
+- neither order has been invoiced if that would cause issues
+- no conflicting wearer/despatch data
+
+If there is a conflict, show a clear warning and do not merge automatically.
+
+The purpose is to allow customers who place multiple orders under the same PO number to be handled internally as one order, reducing duplicate picking, production, paperwork and despatch.

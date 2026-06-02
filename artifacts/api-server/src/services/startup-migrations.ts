@@ -1226,4 +1226,9 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS default_shipping_option TEXT;
   `);
+
+  // Track which secondary order numbers were absorbed into a merged primary order
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS absorbed_order_numbers text[];
+  `);
 }

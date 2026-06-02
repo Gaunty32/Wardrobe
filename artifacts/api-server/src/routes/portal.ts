@@ -6,7 +6,8 @@ import { Router, type IRouter, type Request, type Response, type NextFunction } 
 import {
   db, customersTable, orderItemsTable, productsTable, suppliersTable,
   worksheetsTable, worksheetItemsTable, customerProcessesTable, customerFinishProcessesTable,
-  purchaseOrdersTable, ordersTable, orderLogsTable, orderEmailLogsTable, settingsTable,
+  purchaseOrdersTable, purchaseOrderItemsTable, ordersTable, orderLogsTable, orderEmailLogsTable,
+  orderMessagesTable, settingsTable,
 } from "@workspace/db";
 import { sql, eq, inArray, asc } from "drizzle-orm";
 import jwt from "jsonwebtoken";
@@ -1825,7 +1826,7 @@ router.post("/portal/manager/orders/:id/reject", portalAuth, async (req: Request
   res.json({ ok: true });
 });
 
-// ─── admin: merge portal-pending orders with the same PO# ────────────────────
+// ─── admin: merge orders with the same customer + PO# ────────────────────────
 
 router.post("/portal/admin/orders/merge", async (req: Request, res: Response) => {
   const body = z.object({ orderIds: z.array(z.number().int().positive()).min(2) }).safeParse(req.body);
@@ -1841,6 +1842,10 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
       status: ordersTable.status,
       source: ordersTable.source,
       totalAmount: ordersTable.totalAmount,
+      poNumber: ordersTable.poNumber,
+      dispatchedAt: ordersTable.dispatchedAt,
+      invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
+      xeroInvoiceId: ordersTable.xeroInvoiceId,
     })
     .from(ordersTable)
     .where(inArray(ordersTable.id, orderIds))
@@ -1849,19 +1854,58 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
   if (orders.length !== orderIds.length) {
     res.status(404).json({ error: "One or more orders not found" }); return;
   }
+
+  // Safety: must all be portal_pending or confirmed — not shipped/cancelled/etc.
   const invalidStatus = orders.filter(o => !["portal_pending", "confirmed"].includes(o.status));
   if (invalidStatus.length > 0) {
-    res.status(400).json({ error: `Orders ${invalidStatus.map(o => o.orderNumber).join(", ")} cannot be merged (must be portal_pending or confirmed)` }); return;
+    res.status(400).json({ error: `Orders ${invalidStatus.map(o => o.orderNumber).join(", ")} cannot be merged (must be portal_pending or confirmed, not shipped or invoiced)` }); return;
   }
+
+  // Safety: none already despatched
+  const dispatched = orders.filter(o => o.dispatchedAt);
+  if (dispatched.length > 0) {
+    res.status(400).json({ error: `Cannot merge: ${dispatched.map(o => o.orderNumber).join(", ")} already dispatched` }); return;
+  }
+
+  // Safety: none already invoiced in Xero
+  const invoiced = orders.filter(o => o.xeroInvoiceId || o.invoiceEmailSentAt);
+  if (invoiced.length > 0) {
+    res.status(400).json({ error: `Cannot merge: ${invoiced.map(o => o.orderNumber).join(", ")} already invoiced` }); return;
+  }
+
+  // Safety: same customer
   const customerIds = [...new Set(orders.map(o => o.customerId))];
   if (customerIds.length > 1) {
     res.status(400).json({ error: "Cannot merge orders from different customers" }); return;
   }
 
-  // Primary = lowest id (earliest); the rest are absorbed into it
+  // Safety: same non-blank PO number
+  const poNumbers = [...new Set(orders.map(o => (o.poNumber ?? "").trim()))];
+  if (poNumbers.length > 1) {
+    res.status(400).json({ error: "Cannot merge orders with different PO numbers" }); return;
+  }
+  if (!poNumbers[0]) {
+    res.status(400).json({ error: "Cannot merge orders with a blank PO number" }); return;
+  }
+
+  // Primary = lowest id (earliest order); the rest are absorbed into it
   const [primary, ...secondary] = orders;
   const secondaryIds = secondary.map(o => o.id);
-  const secondaryNumbers = secondary.map(o => o.orderNumber).join(", ");
+  const secondaryNumbers = secondary.map(o => o.orderNumber);
+
+  // Collect any previously absorbed numbers from secondary orders (handles re-merges)
+  const existingAbsorbed = await db.execute(sql`
+    SELECT absorbed_order_numbers FROM orders WHERE id = ANY(${sql`ARRAY[${sql.join(secondaryIds.map(id => sql`${id}`), sql`, `)}]::int[]`})
+  `);
+  const previouslyAbsorbed: string[] = existingAbsorbed.rows
+    .flatMap((r: any) => r.absorbed_order_numbers ?? []);
+
+  // Combined set of all absorbed order numbers for the primary
+  const allAbsorbed = [...new Set([
+    ...((await db.execute(sql`SELECT absorbed_order_numbers FROM orders WHERE id = ${primary.id}`)).rows[0] as any)?.absorbed_order_numbers ?? [],
+    ...secondaryNumbers,
+    ...previouslyAbsorbed,
+  ])];
 
   // Move all items from secondary orders to primary
   await db.update(orderItemsTable)
@@ -1870,8 +1914,13 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
 
   // Move worksheets from secondary orders to primary
   await db.update(worksheetsTable)
-    .set({ orderId: primary.id })
+    .set({ orderId: primary.id, orderNumber: primary.orderNumber })
     .where(inArray(worksheetsTable.orderId, secondaryIds));
+
+  // Move purchase order line references to primary (prevents order_id going NULL on delete)
+  await db.update(purchaseOrderItemsTable)
+    .set({ orderId: primary.id, orderNumber: primary.orderNumber })
+    .where(inArray(purchaseOrderItemsTable.orderId, secondaryIds));
 
   // Move logs from secondary orders to primary
   await db.update(orderLogsTable)
@@ -1881,16 +1930,23 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
     .set({ orderId: primary.id })
     .where(inArray(orderEmailLogsTable.orderId, secondaryIds));
 
-  // Recalculate primary order total
+  // Move messages from secondary orders to primary (previously these were cascade-deleted!)
+  await db.update(orderMessagesTable)
+    .set({ orderId: primary.id, orderNumber: primary.orderNumber })
+    .where(inArray(orderMessagesTable.orderId, secondaryIds));
+
+  // Recalculate primary order total and store absorbed order numbers
   await db.execute(sql`
     UPDATE orders
     SET total_amount = (
       SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = ${primary.id}
-    ), updated_at = now()
+    ),
+    absorbed_order_numbers = ${sql`ARRAY[${sql.join(allAbsorbed.map(n => sql`${n}`), sql`, `)}]::text[]`},
+    updated_at = now()
     WHERE id = ${primary.id}
   `);
 
-  // Delete secondary orders
+  // Delete secondary orders (cascade deletes any remaining fk-linked rows)
   await db.delete(ordersTable).where(inArray(ordersTable.id, secondaryIds));
 
   // Log the merge on the primary
@@ -1898,7 +1954,7 @@ router.post("/portal/admin/orders/merge", async (req: Request, res: Response) =>
     orderId: primary.id,
     action: "Orders merged",
     actor: "System",
-    details: `Absorbed orders ${secondaryNumbers} into ${primary.orderNumber}`,
+    details: `Absorbed ${secondaryNumbers.join(", ")} into ${primary.orderNumber}. Combined order now contains all items.`,
   });
 
   const updatedRows = await db.execute(sql`SELECT * FROM orders WHERE id = ${primary.id}`);
