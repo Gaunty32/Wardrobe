@@ -90,7 +90,7 @@ router.patch("/products/:productId/variants/:id", async (req, res): Promise<void
   res.json(row);
 });
 
-// Bulk-update supplier + price across multiple variants of the same product
+// Bulk-update supplier + price + code across multiple variants of the same product
 router.patch("/products/:productId/variants/bulk", async (req, res): Promise<void> => {
   const p = productIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
@@ -98,6 +98,7 @@ router.patch("/products/:productId/variants/bulk", async (req, res): Promise<voi
     ids: z.array(z.number().int().positive()).min(1),
     primarySupplierId: z.number().int().positive().optional().nullable(),
     supplierPrice: z.number().optional().nullable(),
+    supplierCode: z.string().optional().nullable(),
   });
   const body = bodySchema.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
@@ -105,6 +106,7 @@ router.patch("/products/:productId/variants/bulk", async (req, res): Promise<voi
   const updates: Record<string, any> = { updatedAt: new Date() };
   if ("primarySupplierId" in req.body) updates.primarySupplierId = body.data.primarySupplierId ?? null;
   if ("supplierPrice" in req.body) updates.supplierPrice = body.data.supplierPrice != null ? body.data.supplierPrice : null;
+  if ("supplierCode" in req.body) updates.supplierCode = body.data.supplierCode ?? null;
 
   await db.update(productVariantsTable)
     .set(updates)

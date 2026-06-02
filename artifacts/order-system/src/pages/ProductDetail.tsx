@@ -595,6 +595,7 @@ export default function ProductDetail() {
   const [filterSleeve, setFilterSleeve] = useState<string>("all");
   const [bulkPrimaryId, setBulkPrimaryId] = useState<string>("none");
   const [bulkPrice, setBulkPrice] = useState<string>("");
+  const [bulkCode, setBulkCode] = useState<string>("");
 
   useEffect(() => {
     if (product) {
@@ -714,6 +715,7 @@ export default function ProductDetail() {
         ids,
         ...(bulkPrimaryId !== "none" ? { primarySupplierId: Number(bulkPrimaryId) } : { primarySupplierId: null }),
         ...(bulkPrice !== "" ? { supplierPrice: parseFloat(bulkPrice) } : {}),
+        ...(bulkCode !== "" ? { supplierCode: bulkCode } : {}),
       }),
     }),
     onSuccess: (_data: any, ids: number[]) => {
@@ -762,6 +764,7 @@ export default function ProductDetail() {
   // Attributes-based colour+size+sleeve lists (for matrix generation)
   const attrColours = (attributes as any[]).filter(a => a.type === "colour").map(a => a.value as string);
   const attrSizes = (attributes as any[]).filter(a => a.type === "size").map(a => a.value as string);
+  const attrSleeves = (attributes as any[]).filter(a => a.type === "sleeve").map(a => a.value as string);
   const canGenerateMatrix = attrColours.length > 0 && attrSizes.length > 0;
 
   return (
@@ -1183,15 +1186,21 @@ export default function ProductDetail() {
                   {variants.length > 0 && (() => {
                     const targetIds = filteredVariants.map((v: any) => v.id);
                     const isFiltered = filterColour !== "all" || filterSize !== "all" || filterSleeve !== "all";
-                    const canApply = targetIds.length > 0 && (bulkPrimaryId !== "none" || bulkPrice !== "");
+                    const canApply = targetIds.length > 0 && (bulkPrimaryId !== "none" || bulkPrice !== "" || bulkCode !== "");
                     const bulkSup = suppliers.find((s: any) => String(s.id) === bulkPrimaryId);
                     const currSym = (bulkSup as any)?.currency === "USD" ? "$" : (bulkSup as any)?.currency === "EUR" ? "€" : "£";
                     return (
                       <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 bg-muted/40 border-b border-border/40 text-sm">
                         <span className="text-muted-foreground font-medium shrink-0">
-                          Set supplier price{isFiltered ? ` (${targetIds.length} filtered)` : ` (all ${targetIds.length})`}:
+                          Set supplier{isFiltered ? ` (${targetIds.length} filtered)` : ` (all ${targetIds.length})`}:
                         </span>
                         <SupplierSelect value={bulkPrimaryId} onChange={setBulkPrimaryId} suppliers={suppliers} className="h-7 text-xs w-[160px]" />
+                        <Input
+                          value={bulkCode}
+                          onChange={e => setBulkCode(e.target.value)}
+                          placeholder="Supplier code"
+                          className="h-7 text-xs w-[120px]"
+                        />
                         <div className="relative flex items-center">
                           <span className="absolute left-2.5 text-muted-foreground text-xs pointer-events-none">{currSym}</span>
                           <Input
@@ -1211,10 +1220,10 @@ export default function ProductDetail() {
                           {bulkUpdateMut.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
                           Apply
                         </Button>
-                        {(bulkPrimaryId !== "none" || bulkPrice !== "") && (
+                        {(bulkPrimaryId !== "none" || bulkPrice !== "" || bulkCode !== "") && (
                           <button
                             className="text-xs text-muted-foreground hover:text-foreground underline"
-                            onClick={() => { setBulkPrimaryId("none"); setBulkPrice(""); }}
+                            onClick={() => { setBulkPrimaryId("none"); setBulkPrice(""); setBulkCode(""); }}
                           >
                             Clear
                           </button>
@@ -1306,14 +1315,23 @@ export default function ProductDetail() {
             </DialogHeader>
             <div className="py-2 space-y-3 text-sm text-muted-foreground">
               <p>
-                This will create <strong className="text-foreground">{attrColours.length} colours × {attrSizes.length} sizes = up to {attrColours.length * attrSizes.length} variants</strong> for this product.
+                This will create{" "}
+                <strong className="text-foreground">
+                  {attrColours.length} colour{attrColours.length !== 1 ? "s" : ""}
+                  {" × "}
+                  {attrSizes.length} size{attrSizes.length !== 1 ? "s" : ""}
+                  {attrSleeves.length > 0 && <> × {attrSleeves.length} fit{attrSleeves.length !== 1 ? "s" : ""}</>}
+                  {" = up to "}
+                  {attrColours.length * attrSizes.length * (attrSleeves.length || 1)} variants
+                </strong>{" "}for this product.
               </p>
               <p>
-                Existing colour-only variants (those with no size) that have zero stock will be removed once the new combinations are created.
+                Existing variants without a fit/sleeve value that have zero stock will be removed once the new combinations are created.
               </p>
               <div className="rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs space-y-1">
-                <p className="font-medium text-foreground">Sizes: {attrSizes.join(", ")}</p>
                 <p className="font-medium text-foreground">Colours: {attrColours.join(", ")}</p>
+                <p className="font-medium text-foreground">Sizes: {attrSizes.join(", ")}</p>
+                {attrSleeves.length > 0 && <p className="font-medium text-foreground">Fits: {attrSleeves.join(", ")}</p>}
               </div>
             </div>
             <DialogFooter>
