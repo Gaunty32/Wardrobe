@@ -2872,7 +2872,7 @@ export default function NewOrder() {
   const queryClient = useQueryClient();
 
   const search = useSearch();
-  const saved = readSession();
+  const saved = isPreview ? null : readSession();
   const savedHasItems = (saved?.basket?.length ?? 0) > 0;
   const modeParam = useMemo(() => {
     const p = new URLSearchParams(search).get("mode");
@@ -2897,7 +2897,7 @@ export default function NewOrder() {
   const persistedStep = step;
   const persistedMode = mode;
   const persistedBasket = basket;
-  if (persistedStep > 0 && persistedMode && !confirmedOrder) {
+  if (persistedStep > 0 && persistedMode && !confirmedOrder && !isPreview) {
     writeSession({ step: persistedStep, mode: persistedMode, basket: persistedBasket });
   }
 
