@@ -155,17 +155,19 @@ router.get("/orders", async (req, res): Promise<void> => {
   }
   // Attach per-order GP margin using supplier_price from linked products
   const orderIds = orders.map(o => o.id);
-  let costByOrderId = new Map<number, number>();
+  const costByOrderId = new Map<number, number>();
   if (orderIds.length > 0) {
-    const costRows = await db.execute(sql`
-      SELECT oi.order_id, COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
-      FROM order_items oi
-      LEFT JOIN products p ON oi.product_id = p.id
-      WHERE oi.order_id = ANY(${orderIds})
-      GROUP BY oi.order_id
-    `);
-    for (const row of costRows.rows as Array<{ order_id: number; cost: number }>) {
-      costByOrderId.set(row.order_id, row.cost);
+    const costRows = await db
+      .select({
+        orderId: orderItemsTable.orderId,
+        cost: sql<number>`COALESCE(SUM(${orderItemsTable.quantity} * ${productsTable.supplierPrice}), 0)::float`,
+      })
+      .from(orderItemsTable)
+      .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+      .where(inArray(orderItemsTable.orderId, orderIds))
+      .groupBy(orderItemsTable.orderId);
+    for (const row of costRows) {
+      if (row.orderId != null) costByOrderId.set(row.orderId, row.cost);
     }
   }
   res.json(orders.map((o) => {
