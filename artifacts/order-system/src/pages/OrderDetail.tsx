@@ -1977,7 +1977,7 @@ export default function OrderDetail() {
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Carriage (exc. VAT)</p>
                     {!editingCarriage && (
-                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setCarriageInput(parseFloat((order as any).carriageAmount ?? "0").toFixed(2)); setEditingCarriage(true); }}>
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { const current = parseFloat((order as any).carriageAmount ?? "0"); setCarriageInput((current === 0 ? 8.50 : current).toFixed(2)); setEditingCarriage(true); }}>
                         <Pencil className="w-3 h-3 text-muted-foreground" />
                       </Button>
                     )}
