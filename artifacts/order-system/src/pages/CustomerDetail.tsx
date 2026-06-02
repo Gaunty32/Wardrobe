@@ -380,7 +380,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   };
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { name: "", type: "", placement: "", price: "", processStockId: "", imageUrl: "", fileUrl: "", notes: "" };
+  const blank = { name: "", type: "", placement: "Left Chest", price: "", processStockId: "", imageUrl: "", fileUrl: "", notes: "" };
   const [form, setForm] = useState(blank);
   const [dtfForm, setDtfForm] = useState(blankDtf);
   const [isSaving, setIsSaving] = useState(false);
