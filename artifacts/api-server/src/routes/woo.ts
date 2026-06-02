@@ -28,7 +28,7 @@ interface WooSettings {
   cs: string;
 }
 
-async function getWooSettings(): Promise<WooSettings | null> {
+export async function getWooSettings(): Promise<WooSettings | null> {
   const rows = await db.execute(sql`
     SELECT key, value FROM settings
     WHERE key IN ('woo_url', 'woo_consumer_key', 'woo_consumer_secret')
@@ -45,6 +45,18 @@ async function wooFetch<T>(settings: WooSettings, path: string): Promise<T> {
   const res = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
   if (!res.ok) throw new Error(`WooCommerce API error ${res.status}: ${await res.text()}`);
   return res.json() as T;
+}
+
+export async function wooUpdateOrderStatus(settings: WooSettings, wooOrderId: number, status: string): Promise<void> {
+  const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/orders/${wooOrderId}`);
+  url.searchParams.set("consumer_key", settings.ck);
+  url.searchParams.set("consumer_secret", settings.cs);
+  const res = await fetch(url.toString(), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) throw new Error(`WooCommerce API error ${res.status}: ${await res.text()}`);
 }
 
 // ─── List recent WooCommerce orders ──────────────────────────────────────────
@@ -65,13 +77,14 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
     // Check which have already been imported
     const wooIds = wooOrders.map((o: any) => o.id);
     let importedIds = new Set<number>();
+    let importedMap = new Map<number, string>(); // wooId -> internal order number
     if (wooIds.length > 0) {
-      // Build IN clause from integer IDs (safe — all are numbers from WooCommerce)
       const imported = await db.execute(
         sql.raw(`SELECT woo_order_id, order_number FROM orders WHERE woo_order_id IN (${wooIds.join(",")})`)
       );
       for (const r of imported.rows as any[]) {
         importedIds.add(Number(r.woo_order_id));
+        importedMap.set(Number(r.woo_order_id), r.order_number);
       }
     }
 
@@ -124,6 +137,7 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
       currency: o.currency,
       paymentMethodTitle: o.payment_method_title || null,
       alreadyImported: importedIds.has(o.id),
+      importedOrderNumber: importedMap.get(o.id) ?? null,
     }));
 
     res.json({ orders, page, perPage });
@@ -131,6 +145,47 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
     console.error("[woo/orders] Error:", err.message);
     res.status(502).json({ error: err.message });
   }
+});
+
+// ─── Mark a WooCommerce order as Completed (dismiss from import queue) ────────
+router.post("/woo/orders/:wooId/mark-completed", async (req: Request, res: Response): Promise<void> => {
+  const wooId = parseInt(req.params.wooId);
+  if (isNaN(wooId)) { res.status(400).json({ error: "Invalid WooCommerce order ID" }); return; }
+
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
+
+  try {
+    await wooUpdateOrderStatus(settings, wooId, "completed");
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error(`[woo/orders/${wooId}/mark-completed] Error:`, err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Bulk mark WooCommerce orders as Completed ────────────────────────────────
+router.post("/woo/orders/bulk-mark-completed", async (req: Request, res: Response): Promise<void> => {
+  const body = req.body as { wooIds: number[] };
+  if (!Array.isArray(body?.wooIds) || body.wooIds.length === 0) {
+    res.status(400).json({ error: "wooIds array required" }); return;
+  }
+
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
+
+  const results: { wooId: number; ok: boolean; error?: string }[] = [];
+  for (const wooId of body.wooIds) {
+    try {
+      await wooUpdateOrderStatus(settings, wooId, "completed");
+      results.push({ wooId, ok: true });
+    } catch (err: any) {
+      results.push({ wooId, ok: false, error: err.message });
+    }
+  }
+
+  const failed = results.filter(r => !r.ok);
+  res.json({ results, failedCount: failed.length });
 });
 
 // ─── Import a WooCommerce order into the order system ────────────────────────
@@ -214,8 +269,12 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
     if (woo.customer_note?.trim()) notesParts.push(`Customer note: ${woo.customer_note.trim()}`);
     if (woo.payment_method_title) notesParts.push(`Payment: ${woo.payment_method_title}`);
 
-    // Create the order as a draft so staff can add customer, processes and
-    // finishes before confirming.
+    // Store the WooCommerce order number for reference
+    const wooOrderNumber = String(woo.number);
+    if (wooOrderNumber && wooOrderNumber !== String(wooId)) {
+      notesParts.push(`WooCommerce order #${wooOrderNumber}`);
+    }
+
     const attachmentsJson = dedupedFiles.length > 0 ? JSON.stringify(dedupedFiles) : null;
     const orderResult = await db.execute(sql`
       INSERT INTO orders (
@@ -296,7 +355,7 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
       VALUES (${order.id}, 'Order imported', 'WooCommerce', ${`Imported from WooCommerce order #${woo.number}`}, now())
     `);
 
-    res.status(201).json({ orderId: order.id, orderNumber: order.order_number, customerName });
+    res.status(201).json({ orderId: order.id, orderNumber: order.order_number, wooNumber: wooOrderNumber, customerName });
   } catch (err: any) {
     console.error("[woo/orders/:id/import] Error:", err.message);
     res.status(502).json({ error: err.message });

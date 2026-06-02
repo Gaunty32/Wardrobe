@@ -8,6 +8,7 @@ import {
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
 import { logOrderAction, getActor } from "../services/orderLog";
 import { notifyAllPortalUsers } from "../services/notifications.js";
+import { getWooSettings, wooUpdateOrderStatus } from "./woo.js";
 
 const router: IRouter = Router();
 
@@ -407,6 +408,20 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
   } catch (err) {
     console.error("add_to_stores dispatch hook failed:", err);
     // Non-fatal — dispatch already succeeded
+  }
+
+  // ── Auto-complete WooCommerce order when despatched from SBS ─────────────
+  if (updated.source === "woocommerce" && updated.wooOrderId) {
+    try {
+      const wooSettings = await getWooSettings();
+      if (wooSettings) {
+        await wooUpdateOrderStatus(wooSettings, updated.wooOrderId, "completed");
+        console.log(`[dispatch] Marked WooCommerce order #${updated.wooOrderId} as completed`);
+      }
+    } catch (err) {
+      console.error("WooCommerce auto-complete hook failed:", err);
+      // Non-fatal — dispatch already succeeded
+    }
   }
 
   res.json({

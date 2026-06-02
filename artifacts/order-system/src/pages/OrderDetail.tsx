@@ -1264,6 +1264,12 @@ export default function OrderDetail() {
                     +{(order as any).absorbedOrderNumbers.join(" + ")}
                   </span>
                 )}
+                {(order as any).source === "woocommerce" && (order as any).wooOrderId && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-full px-2.5 py-0.5 mt-1">
+                    <ShoppingBag className="w-3 h-3" />
+                    WC #{(order as any).wooOrderId}
+                  </span>
+                )}
                 <StatusBadge status={order.status} className="mt-1" />
               </div>
               <p className="text-muted-foreground mt-1">{formatDate(order.orderDate)} &bull; {order.customerName}</p>

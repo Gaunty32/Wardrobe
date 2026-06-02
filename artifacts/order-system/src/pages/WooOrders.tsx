@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   ShoppingBasket, Download, CheckCircle2, Clock, ChevronDown, ChevronRight,
-  Loader2, RefreshCw, AlertCircle, Package
+  Loader2, RefreshCw, AlertCircle, Package, XCircle
 } from "lucide-react";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -60,6 +60,7 @@ interface WooOrder {
   currency: string;
   paymentMethodTitle: string | null;
   alreadyImported: boolean;
+  importedOrderNumber: string | null;
 }
 
 const STATUS_COLOURS: Record<string, string> = {
@@ -102,6 +103,17 @@ function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () =>
     },
   });
 
+  const markCompletedMutation = useMutation({
+    mutationFn: () => apiFetch(`/woo/orders/${order.id}/mark-completed`, { method: "POST" }),
+    onSuccess: () => {
+      toast({ title: `WC #${order.number} marked completed`, description: "Order removed from active WooCommerce queue." });
+      onImported(); // refetch the list
+    },
+    onError: (e: Error) => {
+      toast({ title: "Could not mark completed", description: parseApiError(e), variant: "destructive" });
+    },
+  });
+
   const customerName = order.billing.company || [order.billing.firstName, order.billing.lastName].filter(Boolean).join(" ") || "Unknown";
   const shippingTotal = order.shippingLines.reduce((s, l) => s + parseFloat(l.total || "0"), 0);
 
@@ -140,22 +152,41 @@ function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () =>
           <span className="text-xs text-muted-foreground">{formatDate(order.dateCreated)}</span>
           <span className="text-sm font-semibold">{formatCurrency(order.total)}</span>
           {!order.alreadyImported ? (
-            <Button
-              size="sm"
-              className="h-8 gap-1.5 text-xs"
-              onClick={e => { e.stopPropagation(); importMutation.mutate(); }}
-              disabled={importMutation.isPending}
-            >
-              {importMutation.isPending
-                ? <Loader2 className="w-3 h-3 animate-spin" />
-                : <Download className="w-3 h-3" />
-              }
-              Import
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={e => { e.stopPropagation(); importMutation.mutate(); }}
+                disabled={importMutation.isPending || markCompletedMutation.isPending}
+              >
+                {importMutation.isPending
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <Download className="w-3 h-3" />
+                }
+                Import
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                title="Mark as Completed in WooCommerce (removes from import queue — does not create a production order)"
+                onClick={e => { e.stopPropagation(); markCompletedMutation.mutate(); }}
+                disabled={importMutation.isPending || markCompletedMutation.isPending}
+              >
+                {markCompletedMutation.isPending
+                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                  : <XCircle className="w-3.5 h-3.5" />
+                }
+                Dismiss
+              </Button>
+            </div>
           ) : (
-            <span className="text-xs text-green-600 flex items-center gap-1 font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5" /> Done
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-green-600 flex items-center gap-1 font-medium">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {order.importedOrderNumber ? `Imported as ${order.importedOrderNumber}` : "Done"}
+              </span>
+            </div>
           )}
         </div>
       </button>
