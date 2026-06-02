@@ -150,6 +150,7 @@ export const customerFinishedItemsTable = pgTable("customer_finished_items", {
   productId: integer("product_id").notNull(),
   finishId: integer("finish_id"),
   colour: text("colour"),
+  sleeve: text("sleeve"),
   size: text("size"),
   unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
   specialPrice: numeric("special_price", { precision: 10, scale: 2 }),

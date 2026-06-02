@@ -1918,6 +1918,7 @@ interface WardrobeGroup {
   finishId: number | null;
   finishName: string | null;
   colour: string | null;
+  sleeve: string | null;
   unitPrice: number;
   specialPrice: number | null;
   totalStock: number;
@@ -1936,6 +1937,7 @@ interface FinishedItem {
   finishId: number | null;
   finishName: string | null;
   colour: string | null;
+  sleeve: string | null;
   size: string | null;
   unitPrice: number;
   specialPrice: number | null;
@@ -2658,14 +2660,16 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [productSearch, setProductSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<number | null | "all">("all");
   const [variantColours, setVariantColours] = useState<string[]>([]);
+  const [variantSleeves, setVariantSleeves] = useState<string[]>([]);
   const [variantSizes, setVariantSizes] = useState<string[]>([]);
   const [selectedColours, setSelectedColours] = useState<string[]>([]);
+  const [selectedSleeves, setSelectedSleeves] = useState<string[]>([]);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [freeTextColours, setFreeTextColours] = useState<string[]>([""]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
-  const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", size: "", unitPrice: "", specialPrice: "", stockQuantity: "0", notes: "" };
+  const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", sleeve: "", size: "", unitPrice: "", specialPrice: "", stockQuantity: "0", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "finished-items"] });
@@ -2708,10 +2712,14 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     return next;
   });
 
-  const openAdd = () => { setForm(blank); setEditing(null); setEditingGroup(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSizes([]); setSelectedColours([]); setSelectedSizes([]); setFreeTextColours([""]); setOpen(true); };
+  const openAdd = () => { setForm(blank); setEditing(null); setEditingGroup(null); setProductSearchOpen(false); setProductSearch(""); setVariantColours([]); setVariantSleeves([]); setVariantSizes([]); setSelectedColours([]); setSelectedSleeves([]); setSelectedSizes([]); setFreeTextColours([""]); setOpen(true); };
 
   const toggleColour = (col: string) => {
     setSelectedColours(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+  };
+
+  const toggleSleeve = (sl: string) => {
+    setSelectedSleeves(prev => prev.includes(sl) ? prev.filter(s => s !== sl) : [...prev, sl]);
   };
 
   const toggleSize = (sz: string) => {
@@ -2724,6 +2732,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       productId: item.productId,
       finishId: item.finishId ?? null,
       colour: item.colour ?? "",
+      sleeve: item.sleeve ?? "",
       size: item.size ?? "",
       unitPrice: item.unitPrice.toFixed(2),
       specialPrice: item.specialPrice != null ? item.specialPrice.toFixed(2) : "",
@@ -2734,11 +2743,13 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setEditingGroup(null);
     setProductSearchOpen(false);
     setVariantColours([]);
+    setVariantSleeves([]);
     setVariantSizes([]);
     setSelectedColours([]);
+    setSelectedSleeves([]);
     setSelectedSizes([]);
     setFreeTextColours([""]);
-    // Load variant colours and sizes (also from attributes for products without size variants)
+    // Load variant colours, sleeves and sizes
     Promise.all([
       apiFetch<any[]>(`/products/${item.productId}/variants`),
       apiFetch<any[]>(`/products/${item.productId}/attributes`),
@@ -2746,8 +2757,11 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
       const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
       const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
+      const attrSleeves = attrs.filter((a: any) => a.type === "sleeve").map((a: any) => a.value as string).filter(Boolean);
+      const variantSleeveList = [...new Set(attrSleeves)];
       const sizes = sortSizesWithOrder([...new Set([...attrSizes, ...variantSizes])], sizeOrder);
       setVariantColours(colours);
+      setVariantSleeves(variantSleeveList);
       setVariantSizes(sizes);
     }).catch(() => {});
     setOpen(true);
@@ -2764,11 +2778,13 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setForm(f => {
       const newBase = prod.unitPrice;
       const newPrice = calcPriceForFinish(newBase, f.finishId);
-      return { ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", size: "", name: f.name || prod.name };
+      return { ...f, productId: prod.id, unitPrice: newPrice.toFixed(2), colour: "", sleeve: "", size: "", name: f.name || prod.name };
     });
     setVariantColours([]);
+    setVariantSleeves([]);
     setVariantSizes([]);
     setSelectedColours([]);
+    setSelectedSleeves([]);
     setSelectedSizes([]);
     Promise.all([
       apiFetch<any[]>(`/products/${prod.id}/variants`),
@@ -2777,10 +2793,14 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
       const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
       const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
+      const attrSleeves = attrs.filter((a: any) => a.type === "sleeve").map((a: any) => a.value as string).filter(Boolean);
+      const variantSleeveList = [...new Set(attrSleeves)];
       const sizes = sortSizesWithOrder([...new Set([...attrSizes, ...variantSizes])], sizeOrder);
       setVariantColours(colours);
+      setVariantSleeves(variantSleeveList);
       setVariantSizes(sizes);
       setSelectedColours([]);
+      setSelectedSleeves(variantSleeveList);
       setSelectedSizes(sizes);
     }).catch(() => {});
   };
@@ -2829,7 +2849,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
         await Promise.all(editingGroup.items.map(item =>
           apiFetch(`/customers/${customerId}/finished-items/${item.id}`, {
             method: "PATCH",
-            body: JSON.stringify({ ...base, colour: form.colour || null, size: item.size }),
+            body: JSON.stringify({ ...base, colour: form.colour || null, sleeve: form.sleeve || null, size: item.size }),
           })
         ));
         inv();
@@ -2843,7 +2863,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
 
     // Single item edit
     if (editing) {
-      save.mutate({ ...base, colour: form.colour || null, size: form.size || null });
+      save.mutate({ ...base, colour: form.colour || null, sleeve: form.sleeve || null, size: form.size || null });
       return;
     }
 
@@ -2855,20 +2875,21 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const free = freeTextColours.filter(Boolean);
       colours = free.length > 0 ? free : [form.colour || null];
     }
+    const sleevesForCombos: (string | null)[] = selectedSleeves.length > 0 ? selectedSleeves : [null as string | null];
     const sizes = selectedSizes.length > 0 ? selectedSizes : [null as string | null];
-    const combos = colours.flatMap(col => sizes.map(sz => ({ colour: col, size: sz })));
+    const combos = colours.flatMap(col => sleevesForCombos.flatMap(sl => sizes.map(sz => ({ colour: col, sleeve: sl, size: sz }))));
 
     if (combos.length === 1) {
-      save.mutate({ ...base, colour: combos[0].colour, size: combos[0].size });
+      save.mutate({ ...base, colour: combos[0].colour, sleeve: combos[0].sleeve, size: combos[0].size });
       return;
     }
 
     setSaving(true);
     try {
-      await Promise.all(combos.map(({ colour, size }) =>
+      await Promise.all(combos.map(({ colour, sleeve, size }) =>
         apiFetch(`/customers/${customerId}/finished-items`, {
           method: "POST",
-          body: JSON.stringify({ ...base, colour, size }),
+          body: JSON.stringify({ ...base, colour, sleeve, size }),
         })
       ));
       inv();
@@ -2891,9 +2912,9 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const groups = useMemo<WardrobeGroup[]>(() => {
     const map = new Map<string, WardrobeGroup>();
     for (const item of filteredItems) {
-      const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? "", item.colour ?? ""].join("|");
+      const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? "", item.colour ?? "", item.sleeve ?? ""].join("|");
       if (!map.has(key)) {
-        map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, unitPrice: item.unitPrice, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
+        map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, sleeve: item.sleeve ?? null, unitPrice: item.unitPrice, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
       }
       const g = map.get(key)!;
       g.items.push(item);
@@ -2905,16 +2926,18 @@ function WardrobeTab({ customerId }: { customerId: number }) {
 
   const openGroupEdit = (group: WardrobeGroup) => {
     const first = group.items[0];
-    setForm({ name: group.name, roleId: group.roleId ?? null, productId: group.productId, finishId: group.finishId ?? null, colour: group.colour ?? "", size: "", unitPrice: group.unitPrice.toFixed(2), specialPrice: group.specialPrice != null ? group.specialPrice.toFixed(2) : "", stockQuantity: "0", notes: first.notes ?? "" });
+    setForm({ name: group.name, roleId: group.roleId ?? null, productId: group.productId, finishId: group.finishId ?? null, colour: group.colour ?? "", sleeve: group.sleeve ?? "", size: "", unitPrice: group.unitPrice.toFixed(2), specialPrice: group.specialPrice != null ? group.specialPrice.toFixed(2) : "", stockQuantity: "0", notes: first.notes ?? "" });
     setEditing(first);
     setEditingGroup(group);
     setProductSearchOpen(false);
-    setVariantColours([]); setVariantSizes([]); setSelectedColours([]); setSelectedSizes([]);
+    setVariantColours([]); setVariantSleeves([]); setVariantSizes([]); setSelectedColours([]); setSelectedSleeves([]); setSelectedSizes([]);
     Promise.all([apiFetch<any[]>(`/products/${group.productId}/variants`), apiFetch<any[]>(`/products/${group.productId}/attributes`)]).then(([variants, attrs]) => {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
       const vs = variants.map((x: any) => x.size).filter(Boolean) as string[];
       const as2 = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
+      const attrSleeves = attrs.filter((a: any) => a.type === "sleeve").map((a: any) => a.value as string).filter(Boolean);
       setVariantColours(colours);
+      setVariantSleeves([...new Set(attrSleeves)]);
       setVariantSizes([...new Set([...as2, ...vs])]);
     }).catch(() => {});
     setOpen(true);
@@ -2938,7 +2961,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
           : <span className="text-muted-foreground/50">Plain</span>}
       </TableCell>
       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-        {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
+        {[item.colour, item.sleeve, item.size].filter(Boolean).join(" / ") || "—"}
       </TableCell>
       <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(item.unitPrice)}</TableCell>
       <TableCell className="text-right tabular-nums">
@@ -2947,7 +2970,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
           : <span className="text-muted-foreground/40 text-xs">—</span>}
       </TableCell>
       <TableCell className="text-right">
-        <WardrobeStockCell item={item} onSave={(qty) => save.mutate({ name: item.name, roleId: item.roleId, productId: item.productId, finishId: item.finishId, colour: item.colour, size: item.size, unitPrice: item.unitPrice, specialPrice: item.specialPrice, stockQuantity: qty, notes: item.notes })} />
+        <WardrobeStockCell item={item} onSave={(qty) => save.mutate({ name: item.name, roleId: item.roleId, productId: item.productId, finishId: item.finishId, colour: item.colour, sleeve: item.sleeve, size: item.size, unitPrice: item.unitPrice, specialPrice: item.specialPrice, stockQuantity: qty, notes: item.notes })} />
       </TableCell>
       <TableCell className="text-right">
         <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2995,7 +3018,9 @@ function WardrobeTab({ customerId }: { customerId: number }) {
           <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
             {isMulti ? (
               <div className="space-y-0.5">
-                {group.colour && <span className="text-foreground/70">{group.colour}</span>}
+                {[group.colour, group.sleeve].filter(Boolean).map((v, i) => (
+                  <span key={i} className="text-foreground/70">{v} </span>
+                ))}
                 <div className="flex flex-wrap gap-0.5">
                   {sortSizesWithOrder(group.sizes.filter(Boolean), sizeOrder).map((sz, i) => (
                     <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-muted border border-border font-medium text-foreground/60">{sz}</span>
@@ -3004,7 +3029,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
                 </div>
               </div>
             ) : (
-              [group.colour, group.items[0].size].filter(Boolean).join(" / ") || "—"
+              [group.colour, group.sleeve, group.items[0].size].filter(Boolean).join(" / ") || "—"
             )}
           </TableCell>
           <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(group.unitPrice)}</TableCell>
@@ -3017,7 +3042,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             {isMulti ? (
               <span className="tabular-nums text-sm text-muted-foreground">{group.totalStock}</span>
             ) : (
-              <WardrobeStockCell item={group.items[0]} onSave={(qty) => save.mutate({ name: group.name, roleId: group.roleId, productId: group.productId, finishId: group.finishId, colour: group.colour, size: group.items[0].size, unitPrice: group.unitPrice, specialPrice: group.specialPrice, stockQuantity: qty, notes: group.items[0].notes })} />
+              <WardrobeStockCell item={group.items[0]} onSave={(qty) => save.mutate({ name: group.name, roleId: group.roleId, productId: group.productId, finishId: group.finishId, colour: group.colour, sleeve: group.sleeve, size: group.items[0].size, unitPrice: group.unitPrice, specialPrice: group.specialPrice, stockQuantity: qty, notes: group.items[0].notes })} />
             )}
           </TableCell>
           <TableCell className="text-right">
@@ -3038,7 +3063,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             <TableCell className="hidden md:table-cell" />
             <TableCell colSpan={2} />
             <TableCell className="text-right">
-              <WardrobeStockCell item={item} onSave={(qty) => save.mutate({ name: item.name, roleId: item.roleId, productId: item.productId, finishId: item.finishId, colour: item.colour, size: item.size, unitPrice: item.unitPrice, specialPrice: item.specialPrice, stockQuantity: qty, notes: item.notes })} />
+              <WardrobeStockCell item={item} onSave={(qty) => save.mutate({ name: item.name, roleId: item.roleId, productId: item.productId, finishId: item.finishId, colour: item.colour, sleeve: item.sleeve, size: item.size, unitPrice: item.unitPrice, specialPrice: item.specialPrice, stockQuantity: qty, notes: item.notes })} />
             </TableCell>
             <TableCell className="text-right">
               <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -3251,6 +3276,41 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               )}
             </div>
 
+            {variantSleeves.length > 0 && (
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Fit / Length</Label>
+                {editing || editingGroup ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, sleeve: "" }))}
+                      className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", !form.sleeve ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                    >Any</button>
+                    {variantSleeves.map(sl => (
+                      <button key={sl} type="button"
+                        onClick={() => setForm(f => ({ ...f, sleeve: f.sleeve === sl ? "" : sl }))}
+                        className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", form.sleeve === sl ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                      >{sl}</button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {variantSleeves.map(sl => (
+                      <button key={sl} type="button"
+                        onClick={() => toggleSleeve(sl)}
+                        className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", selectedSleeves.includes(sl) ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                      >{sl}</button>
+                    ))}
+                    {variantSleeves.length > 1 && (
+                      <button type="button" onClick={() => setSelectedSleeves(selectedSleeves.length === variantSleeves.length ? [] : [...variantSleeves])}
+                        className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/50 transition-colors">
+                        {selectedSleeves.length === variantSleeves.length ? "None" : "All"}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {!editingGroup && <div className="grid gap-2">
               <Label className="flex items-center gap-1"><Ruler className="w-3 h-3" /> Size</Label>
               {editing ? (
@@ -3283,9 +3343,10 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               )}
               {!editing && !editingGroup && (() => {
                 const colCount = variantColours.length > 0 ? (selectedColours.length || 1) : (freeTextColours.filter(Boolean).length || 1);
+                const slCount = variantSleeves.length > 0 ? (selectedSleeves.length || 1) : 1;
                 const szCount = selectedSizes.length || 1;
-                const total = colCount * szCount;
-                return (colCount > 1 || szCount > 1) && (
+                const total = colCount * slCount * szCount;
+                return (total > 1) && (
                   <p className="text-xs text-muted-foreground">
                     Will create <strong>{total}</strong> wardrobe item{total > 1 ? "s" : ""}.
                   </p>

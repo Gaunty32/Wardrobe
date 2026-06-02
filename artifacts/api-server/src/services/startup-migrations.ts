@@ -1247,6 +1247,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS absorbed_order_numbers text[];
   `);
 
+  await db.execute(sql`
+    ALTER TABLE customer_finished_items ADD COLUMN IF NOT EXISTS sleeve text;
+  `);
+
   // Re-queue order items that are stuck as stock-allocated but have no actual stock
   // backing them and are not currently on any active purchase order or worksheet.
   // This can happen when: (a) stock existed at confirmation but was later consumed,
