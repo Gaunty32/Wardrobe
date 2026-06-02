@@ -691,16 +691,18 @@ export default function Orders() {
                           <TableCell className="text-sm font-mono text-muted-foreground">{(order as any).poNumber ?? <span className="italic text-muted-foreground/50">—</span>}</TableCell>
                           <TableCell><StatusBadge status={order.status} /></TableCell>
                           <TableCell className="text-right">
-                            <div className="font-semibold text-foreground">{formatCurrency(order.totalAmount)}</div>
-                            {(order as any).gpMargin != null && (
-                              <div className={`text-xs font-medium mt-0.5 ${
-                                (order as any).gpMargin >= 40 ? "text-green-600" :
-                                (order as any).gpMargin >= 20 ? "text-amber-600" :
-                                "text-red-500"
-                              }`}>
-                                {((order as any).gpMargin as number).toFixed(1)}% GM
-                              </div>
-                            )}
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="font-semibold text-foreground">{formatCurrency(order.totalAmount)}</span>
+                              {(order as any).gpMargin != null && (
+                                <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
+                                  (order as any).gpMargin >= 40 ? "bg-green-50 text-green-700" :
+                                  (order as any).gpMargin >= 20 ? "bg-amber-50 text-amber-700" :
+                                  "bg-red-50 text-red-600"
+                                }`}>
+                                  {((order as any).gpMargin as number).toFixed(1)}%
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell onClick={e => e.stopPropagation()}>
                             <Link href={`/orders/${order.id}`}>
