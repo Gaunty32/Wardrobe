@@ -37,7 +37,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { pdfToJpegBlob } from "@/lib/pdf-thumbnail";
-import { useGetCustomer, useListProducts } from "@workspace/api-client-react";
+import { useGetCustomer, useListProducts, useCreateOrder } from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
 import { Link } from "wouter";
 
@@ -4241,6 +4241,15 @@ export default function CustomerDetail() {
   const customerId = Number(id);
   const [, navigate] = useLocation();
 
+  const createOrderMutation = useCreateOrder({
+    mutation: {
+      onSuccess: (newOrder: any) => {
+        navigate(`/orders/${newOrder.id}`);
+      },
+      onError: () => toast({ title: "Failed to create order", variant: "destructive" }),
+    },
+  });
+
   const { data: customer, isLoading } = useGetCustomer(customerId);
 
   // Must be declared before any early returns to comply with React's Rules of Hooks.
@@ -4509,6 +4518,18 @@ export default function CustomerDetail() {
                   <span className="text-xs text-muted-foreground/60">Saved · shows on portal</span>
                 )}
               </div>
+            </div>
+
+            {/* Centre: New Order button */}
+            <div className="shrink-0 flex flex-col items-center justify-center self-center px-4">
+              <Button
+                className="gap-2 shadow-md shadow-primary/20 hover:shadow-primary/30 transition-shadow"
+                disabled={createOrderMutation.isPending}
+                onClick={() => createOrderMutation.mutate({ data: { customerId, orderDate: new Date().toISOString() } })}
+              >
+                {createOrderMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                New Order
+              </Button>
             </div>
 
             {/* Right: large logo preview */}
