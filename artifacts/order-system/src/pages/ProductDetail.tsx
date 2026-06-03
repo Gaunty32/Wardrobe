@@ -915,17 +915,37 @@ export default function ProductDetail() {
                 </div>
               </div>
               {/* Internal GP% badge — only shown when supplier cost is known */}
-              {product.supplierPrice != null && product.supplierPrice > 0 && product.unitPrice > 0 && (() => {
-                const gp = ((product.unitPrice - product.supplierPrice) / product.unitPrice) * 100;
-                const color = gp >= 70 ? "bg-green-50 text-green-700 border-green-200"
-                            : gp >= 30 ? "bg-amber-50 text-amber-700 border-amber-200"
+              {product.unitPrice > 0 && (() => {
+                // Collect all supplier prices: per-variant if set, else product-level fallback
+                const variantPrices: number[] = variants
+                  .map((v: any) => v.supplierPrice != null ? parseFloat(v.supplierPrice) : null)
+                  .filter((p): p is number => p != null && p > 0);
+                const productFallback = product.supplierPrice != null && parseFloat(String(product.supplierPrice)) > 0
+                  ? parseFloat(String(product.supplierPrice))
+                  : null;
+                const costs = variantPrices.length > 0 ? variantPrices : (productFallback ? [productFallback] : []);
+                if (costs.length === 0) return null;
+                const unitPrice = product.unitPrice;
+                const gps = costs.map(c => ((unitPrice - c) / unitPrice) * 100);
+                const minGp = Math.min(...gps);
+                const maxGp = Math.max(...gps);
+                const isRange = Math.abs(maxGp - minGp) > 0.05;
+                const displayGp = isRange ? maxGp : minGp; // use max for colouring when range
+                const color = displayGp >= 70 ? "bg-green-50 text-green-700 border-green-200"
+                            : displayGp >= 30 ? "bg-amber-50 text-amber-700 border-amber-200"
                             : "bg-red-50 text-red-700 border-red-200";
                 return (
                   <div className={`flex-shrink-0 flex flex-col items-center rounded-lg border px-4 py-2 ${color}`}>
                     <span className="text-xs font-medium uppercase tracking-wide opacity-70">GP</span>
-                    <span className="text-2xl font-bold leading-none">{gp.toFixed(1)}%</span>
+                    {isRange ? (
+                      <span className="text-xl font-bold leading-none whitespace-nowrap">
+                        {minGp.toFixed(1)}%–{maxGp.toFixed(1)}%
+                      </span>
+                    ) : (
+                      <span className="text-2xl font-bold leading-none">{minGp.toFixed(1)}%</span>
+                    )}
                     <span className="text-xs mt-0.5 opacity-60">
-                      cost {formatCurrency(product.supplierPrice)}
+                      {isRange ? `${costs.length} variant costs` : `cost ${formatCurrency(costs[0])}`}
                     </span>
                   </div>
                 );
