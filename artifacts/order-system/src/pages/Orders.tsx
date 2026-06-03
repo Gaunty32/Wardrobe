@@ -488,7 +488,7 @@ export default function Orders() {
   const [statusFilter, setStatusFilter] = useState<string>("active");
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("orderNumber");
+  const [sortKey, setSortKey] = useState<SortKey>("orderDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
   const [customerComboOpen, setCustomerComboOpen] = useState(false);

@@ -3339,6 +3339,7 @@ export default function OrderDetail() {
         }}
         onConfirmed={() => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+          queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
         }}
       />
 
