@@ -175,36 +175,6 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
       .where(inArray(orderItemsTable.id, plainItems.map((i) => i.id)));
   }
 
-  // ── Guard: all garments for these orders must have been received ──
-  // Any item with purchaseRequired=true and stockStatus IS NULL means garments
-  // are still outstanding (ordered from supplier but not yet delivered & received).
-  const pickOrderIds = [...new Set(items.map(i => i.orderId))];
-  if (pickOrderIds.length > 0) {
-    const unreceivedItems = await db
-      .select({
-        productName: orderItemsTable.productName,
-        colour: orderItemsTable.colour,
-        size: orderItemsTable.size,
-      })
-      .from(orderItemsTable)
-      .where(and(
-        inArray(orderItemsTable.orderId, pickOrderIds),
-        eq(orderItemsTable.purchaseRequired, true),
-        isNull(orderItemsTable.stockStatus),
-      ));
-
-    if (unreceivedItems.length > 0) {
-      const names = unreceivedItems
-        .map(r => [r.productName, r.colour, r.size].filter(Boolean).join(" / "))
-        .join(", ");
-      res.status(409).json({
-        error: `Cannot send to production — not all garments have been received. Still outstanding: ${names}`,
-        unreceivedItems,
-      });
-      return;
-    }
-  }
-
   // ── Guard: all required process stock must have been delivered (stockQuantity > 0) ──
   if (finishItems.length > 0) {
     const finishIds = [...new Set(finishItems.map(i => i.finishId!))] as number[];
