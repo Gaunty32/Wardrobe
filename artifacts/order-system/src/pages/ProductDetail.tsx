@@ -548,11 +548,13 @@ export default function ProductDetail() {
     enabled: !!productId,
   });
 
-  const { data: variants = [], refetch: refetchVariants } = useQuery({
+  const { data: variantsData, refetch: refetchVariants } = useQuery({
     queryKey: ["product", productId, "variants"],
     queryFn: () => apiFetch(`/products/${productId}/variants`),
     enabled: !!productId,
   });
+  // Stable reference: avoids creating a new [] on every render while loading
+  const variants = useMemo(() => (variantsData as any[]) ?? [], [variantsData]);
 
   // Upload one image and apply it to every variant that shares the same colour
   async function handleColourImageUpload(colour: string | null, imageUrl: string) {
@@ -727,20 +729,23 @@ export default function ProductDetail() {
   });
 
   // ── Must be computed before any early returns (React Rules of Hooks) ──────
-  // Group variants — colour-first (preserving API order), then size within each group
-  const colourOrder = [...new Set((variants as any[]).map((v: any) => v.colour ?? ""))];
-  const sortedVariants = [...(variants as any[])].sort((a, b) => {
-    const ca = a.colour ?? "", cb = b.colour ?? "";
-    const ci = colourOrder.indexOf(ca) - colourOrder.indexOf(cb);
-    if (ci !== 0) return ci;
-    const sa = a.size ?? "", sb = b.size ?? "";
-    const ia = sizeOrder.length ? sizeOrder.findIndex((o: string) => o.toLowerCase() === sa.toLowerCase()) : -1;
-    const ib = sizeOrder.length ? sizeOrder.findIndex((o: string) => o.toLowerCase() === sb.toLowerCase()) : -1;
-    const ra = ia !== -1 ? ia : 10000 + sizeRank(sa);
-    const rb = ib !== -1 ? ib : 10000 + sizeRank(sb);
-    return ra - rb || sa.localeCompare(sb);
-  });
-  const colours = colourOrder.filter(Boolean);
+  // Group variants — colour-first (preserving API order), then size within each group.
+  // Wrapped in useMemo so the array reference is stable, preventing useEffect dep loops.
+  const sortedVariants = useMemo(() => {
+    const colourOrder = [...new Set(variants.map((v: any) => v.colour ?? ""))];
+    return [...variants].sort((a: any, b: any) => {
+      const ca = a.colour ?? "", cb = b.colour ?? "";
+      const ci = colourOrder.indexOf(ca) - colourOrder.indexOf(cb);
+      if (ci !== 0) return ci;
+      const sa = a.size ?? "", sb = b.size ?? "";
+      const ia = sizeOrder.length ? sizeOrder.findIndex((o: string) => o.toLowerCase() === sa.toLowerCase()) : -1;
+      const ib = sizeOrder.length ? sizeOrder.findIndex((o: string) => o.toLowerCase() === sb.toLowerCase()) : -1;
+      const ra = ia !== -1 ? ia : 10000 + sizeRank(sa);
+      const rb = ib !== -1 ? ib : 10000 + sizeRank(sb);
+      return ra - rb || sa.localeCompare(sb);
+    });
+  }, [variants, sizeOrder]);
+  const colours = [...new Set(variants.map((v: any) => v.colour ?? ""))].filter(Boolean);
   const sizes = [...new Set(sortedVariants.map((v: any) => v.size).filter(Boolean))];
   const sleeves = [...new Set(sortedVariants.map((v: any) => v.sleeve).filter(Boolean))];
 
@@ -805,8 +810,7 @@ export default function ProductDetail() {
       }
       return next;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variants]);
+  }, [comboPricingGroups]);
 
   if (isLoading || !details) {
     return <Layout><div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
