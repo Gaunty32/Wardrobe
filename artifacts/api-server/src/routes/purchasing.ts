@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   db, orderItemsTable, ordersTable, productsTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable, processStockTable, customerProcessesTable,
+  productVariantsTable,
 } from "@workspace/db";
 import { sendEmail, generatePOPdf, buildPOEmail, isEmailConfigured } from "../services/email.js";
 import { allocatePODelivery } from "../services/allocation.js";
@@ -206,6 +207,8 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
 router.get("/purchasing/requirements", async (req, res): Promise<void> => {
   const itemSupplier = alias(suppliersTable, "item_supplier");
   const productSupplier = alias(suppliersTable, "product_supplier");
+  const variantAlias = alias(productVariantsTable, "pv");
+  const variantSupplier = alias(suppliersTable, "variant_supplier");
 
   const rows = await db
     .select({
@@ -218,22 +221,28 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
       purchaseQuantity: orderItemsTable.purchaseQuantity,
-      supplierId: sql<number | null>`COALESCE(${orderItemsTable.supplierId}, ${productsTable.supplierId})`,
+      supplierId: sql<number | null>`COALESCE(${orderItemsTable.supplierId}, ${variantAlias.primarySupplierId}, ${productsTable.supplierId})`,
       supplierName: orderItemsTable.supplierName,
-      resolvedSupplierName: sql<string | null>`COALESCE(${itemSupplier.name}, ${productSupplier.name})`,
-      supplierEmail: sql<string | null>`COALESCE(${itemSupplier.email}, ${productSupplier.email})`,
-      supplierCode: productsTable.supplierCode,
+      resolvedSupplierName: sql<string | null>`COALESCE(${itemSupplier.name}, ${variantSupplier.name}, ${productSupplier.name})`,
+      supplierEmail: sql<string | null>`COALESCE(${itemSupplier.email}, ${variantSupplier.email}, ${productSupplier.email})`,
+      supplierCode: sql<string | null>`COALESCE(${variantAlias.supplierCode}, ${productsTable.supplierCode})`,
       secondarySupplierCode: productsTable.secondarySupplierCode,
       productSku: productsTable.sku,
       canonicalProductName: productsTable.name,
-      supplierPrice: productsTable.supplierPrice,
-      supplierCurrency: sql<string | null>`COALESCE(${itemSupplier.currency}, ${productSupplier.currency})`,
+      supplierPrice: sql<string | null>`COALESCE(${variantAlias.supplierPrice}, ${productsTable.supplierPrice})`,
+      supplierCurrency: sql<string | null>`COALESCE(${itemSupplier.currency}, ${variantSupplier.currency}, ${productSupplier.currency})`,
       orderCreatedAt: ordersTable.createdAt,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .leftJoin(variantAlias, and(
+      eq(variantAlias.productId, orderItemsTable.productId),
+      sql`LOWER(TRIM(COALESCE(${variantAlias.colour}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))`,
+      sql`LOWER(TRIM(COALESCE(${variantAlias.size}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.size}, '')))`,
+    ))
     .leftJoin(itemSupplier, eq(orderItemsTable.supplierId, itemSupplier.id))
+    .leftJoin(variantSupplier, eq(variantAlias.primarySupplierId, variantSupplier.id))
     .leftJoin(productSupplier, eq(productsTable.supplierId, productSupplier.id))
     .where(and(
       eq(orderItemsTable.purchaseRequired, true),
@@ -459,16 +468,22 @@ async function getPoWithItems(poId: number) {
 }
 
 async function buildPoItems(orderItemIds: number[], poId: number, qtyOverrides?: Record<string, number>) {
+  const pvAlias = alias(productVariantsTable, "pv_po");
   const orderItems = await db
     .select({
       item: orderItemsTable,
       orderNumber: ordersTable.orderNumber,
-      supplierCode: productsTable.supplierCode,
-      supplierPrice: productsTable.supplierPrice,
+      supplierCode: sql<string | null>`COALESCE(${pvAlias.supplierCode}, ${productsTable.supplierCode})`,
+      supplierPrice: sql<string | null>`COALESCE(${pvAlias.supplierPrice}, ${productsTable.supplierPrice})`,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+    .leftJoin(pvAlias, and(
+      eq(pvAlias.productId, orderItemsTable.productId),
+      sql`LOWER(TRIM(COALESCE(${pvAlias.colour}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))`,
+      sql`LOWER(TRIM(COALESCE(${pvAlias.size}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.size}, '')))`,
+    ))
     .where(inArray(orderItemsTable.id, orderItemIds));
 
   // Consolidate lines by SKU: same product + colour + size + supplierCode → one PO line.
