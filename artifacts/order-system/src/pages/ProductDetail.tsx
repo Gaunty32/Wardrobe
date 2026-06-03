@@ -761,6 +761,18 @@ export default function ProductDetail() {
     return true;
   });
 
+  // Auto-populate the bulk strip with shared current values when the filter changes
+  useEffect(() => {
+    if (filteredVariants.length === 0) return;
+    const allSupplierId = filteredVariants.every((v: any) => v.primarySupplierId === filteredVariants[0].primarySupplierId);
+    const allCode = filteredVariants.every((v: any) => (v.supplierCode ?? "") === (filteredVariants[0].supplierCode ?? ""));
+    const allPrice = filteredVariants.every((v: any) => (v.supplierPrice ?? "") === (filteredVariants[0].supplierPrice ?? ""));
+    setBulkPrimaryId(allSupplierId && filteredVariants[0].primarySupplierId ? String(filteredVariants[0].primarySupplierId) : "none");
+    setBulkCode(allCode ? (filteredVariants[0].supplierCode ?? "") : "");
+    setBulkPrice(allPrice && filteredVariants[0].supplierPrice != null ? String(filteredVariants[0].supplierPrice) : "");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterColour, filterSize, filterSleeve, variants]);
+
   // Attributes-based colour+size+sleeve lists (for matrix generation)
   const attrColours = (attributes as any[]).filter(a => a.type === "colour").map(a => a.value as string);
   const attrSizes = (attributes as any[]).filter(a => a.type === "size").map(a => a.value as string);
@@ -1192,7 +1204,8 @@ export default function ProductDetail() {
                     return (
                       <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 bg-muted/40 border-b border-border/40 text-sm">
                         <span className="text-muted-foreground font-medium shrink-0">
-                          Set supplier{isFiltered ? ` (${targetIds.length} filtered)` : ` (all ${targetIds.length})`}:
+                          {(bulkPrimaryId !== "none" || bulkCode !== "" || bulkPrice !== "") ? "Edit" : "Set"} supplier{" "}
+                          <span className="font-normal">({isFiltered ? `${targetIds.length} filtered` : `all ${targetIds.length}`}):</span>
                         </span>
                         <SupplierSelect value={bulkPrimaryId} onChange={setBulkPrimaryId} suppliers={suppliers} className="h-7 text-xs w-[160px]" />
                         <Input
