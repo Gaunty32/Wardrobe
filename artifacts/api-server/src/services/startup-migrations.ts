@@ -1348,4 +1348,37 @@ export async function runStartupMigrations(): Promise<void> {
       )
   `);
   console.log("[startup] Re-queued allocated-but-outstanding PO items for purchasing");
+
+  // ── Archived products ────────────────────────────────────────────────────────
+  await db.execute(sql`
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;
+  `);
+
+  // Auto-archive all "10 x" bundle products (WooCommerce qty-pack listings).
+  // These are superseded by the native price-break system and should no longer
+  // appear in order entry, purchasing, or WooCommerce sync.
+  await db.execute(sql`
+    UPDATE products
+    SET is_archived = true
+    WHERE name ILIKE '10 x %'
+      AND is_archived = false
+  `);
+
+  // Apply a £2/item price break at qty ≥ 10 for all Olympic products that
+  // don't already have explicitly-set price breaks.  Matches either the product
+  // name ("Olympic Hoodie" etc.) or the SKU prefix ("OLYMPIC…").
+  await db.execute(sql`
+    UPDATE products
+    SET price_breaks = jsonb_build_array(
+          jsonb_build_object('qty', 10, 'price', (unit_price::numeric - 2))
+        )
+    WHERE (name ILIKE 'Olympic %' OR sku ILIKE 'OLYMPIC%')
+      AND is_archived = false
+      AND COALESCE(is_service, false) = false
+      AND (
+        price_breaks IS NULL
+        OR price_breaks = 'null'::jsonb
+        OR jsonb_array_length(price_breaks) = 0
+      )
+  `);
 }

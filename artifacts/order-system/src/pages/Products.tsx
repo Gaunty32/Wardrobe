@@ -5,7 +5,6 @@ import { useUpload } from "@workspace/object-storage-web";
 import Layout from "@/components/Layout";
 import { UploadedImage } from "@/components/UploadedImage";
 import {
-  useListProducts,
   useListSuppliers,
   useCreateProduct,
   useUpdateProduct,
@@ -25,7 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -66,7 +65,7 @@ export default function Products() {
   const [search, setSearch] = useState("");
   const [selectedTopCat, setSelectedTopCat] = useState<ProductCategory | null>(null);
   const [selectedSubCat, setSelectedSubCat] = useState<ProductCategory | null>(null);
-  const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal" | "bespoke" | "service">("all");
+  const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal" | "bespoke" | "service" | "archived">("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
   const [viewMode, setViewMode] = useState<"catalogue" | "sales">("catalogue");
@@ -89,7 +88,14 @@ export default function Products() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: products, isLoading: productsLoading } = useListProducts({ search });
+  const { data: products, isLoading: productsLoading } = useQuery<ProductWithCategory[]>({
+    queryKey: [...getListProductsQueryKey({ search }), { include_archived: true }],
+    queryFn: () => {
+      const params = new URLSearchParams({ include_archived: "true" });
+      if (search) params.set("search", search);
+      return apiFetch(`/products?${params}`);
+    },
+  });
   const { data: suppliers = [] } = useListSuppliers();
   const { data: customers = [] } = useListCustomers();
   const { data: storedCategories = [], isLoading: categoriesLoading } = useQuery<ProductCategory[]>({
@@ -179,16 +185,25 @@ export default function Products() {
 
   // ── Filtered product list ───────────────────────────────────────────────────
   const filteredProducts = allProducts
+    // Step 1: separate archived from live
     .filter((p) => {
+      const isArchived = !!(p as any).isArchived;
+      if (websiteFilter === "archived") return isArchived;
+      return !isArchived;
+    })
+    // Step 2: apply category navigation (skipped for archived tab)
+    .filter((p) => {
+      if (websiteFilter === "archived") return true;
       const pCat: string = (p as any).category ?? "";
       if (selectedSubCat) return pCat === selectedSubCat.name;
       if (selectedTopCat) {
-        // If drilling into a top cat that has subs, show all matching (websiteFilter shows this)
         return allNamesUnder(selectedTopCat).has(pCat);
       }
       return true;
     })
+    // Step 3: apply type filter
     .filter((p) => {
+      if (websiteFilter === "archived") return true;
       if (websiteFilter === "service") return !!(p as any).isService;
       if (websiteFilter === "website") return !!(p as any).wooCommerceId && !(p as any).isService;
       if (websiteFilter === "internal") return !(p as any).wooCommerceId && !(p as any).isBespoke && !(p as any).isService;
@@ -292,6 +307,15 @@ export default function Products() {
     } catch {
       toast({ title: "Duplicate failed", variant: "destructive" });
     }
+  };
+
+  const handleArchive = (id: number, archive: boolean) => {
+    updateMutation.mutate({ id, data: { isArchived: archive } as any }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
+        toast({ title: archive ? "Product archived" : "Product restored" });
+      },
+    });
   };
 
   const autoFillBspSku = async () => {
@@ -457,7 +481,7 @@ export default function Products() {
             </div>
             {/* Website / Internal / Bespoke filter */}
             <div className="flex items-center rounded-lg border border-border bg-muted/30 p-0.5 gap-0.5">
-              {(["all", "website", "internal", "bespoke", "service"] as const).map((f) => (
+              {(["all", "website", "internal", "bespoke", "service", "archived"] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => { setWebsiteFilter(f); setSelectedTopCat(null); setSelectedSubCat(null); }}
@@ -472,7 +496,8 @@ export default function Products() {
                   {f === "internal" && <Lock className="w-3 h-3" />}
                   {f === "bespoke" && <Package className="w-3 h-3" />}
                   {f === "service" && <Wrench className="w-3 h-3" />}
-                  {f === "all" ? "All" : f === "website" ? "Website" : f === "internal" ? "Internal only" : f === "bespoke" ? "Bespoke" : "Services"}
+                  {f === "archived" && <Archive className="w-3 h-3" />}
+                  {f === "all" ? "All" : f === "website" ? "Website" : f === "internal" ? "Internal only" : f === "bespoke" ? "Bespoke" : f === "service" ? "Services" : "Archived"}
                 </button>
               ))}
             </div>
@@ -555,6 +580,7 @@ export default function Products() {
                 onEdit={openEditDialog}
                 onDelete={handleDelete}
                 onDuplicate={handleDuplicate}
+                onArchive={handleArchive}
                 onNavigate={(id) => navigate(`/products/${id}`)}
               />
             </div>
@@ -791,12 +817,14 @@ function ProductTable({
   onEdit,
   onDelete,
   onDuplicate,
+  onArchive,
   onNavigate,
 }: {
   products: ProductWithCategory[];
   onEdit: (p: ProductWithCategory) => void;
   onDelete: (id: number) => void;
   onDuplicate: (id: number) => void;
+  onArchive: (id: number, archive: boolean) => void;
   onNavigate: (id: number) => void;
 }) {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null);
@@ -871,7 +899,11 @@ function ProductTable({
                 <TableCell className="font-medium text-foreground hover:text-primary transition-colors">
                   <div className="flex items-center gap-2 flex-wrap">
                     {product.name}
-                    {(product as any).isService ? (
+                    {(product as any).isArchived ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-zinc-100 text-zinc-500 border border-zinc-200 flex-shrink-0">
+                        <Archive className="w-2.5 h-2.5" /> Archived
+                      </span>
+                    ) : (product as any).isService ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
                         <Wrench className="w-2.5 h-2.5" /> Service
                       </span>
@@ -902,15 +934,30 @@ function ProductTable({
                 </TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Duplicate product" onClick={() => onDuplicate(product.id)}>
-                      <Copy className="w-4 h-4" />
+                    {!(product as any).isArchived && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Duplicate product" onClick={() => onDuplicate(product.id)}>
+                        <Copy className="w-4 h-4" />
+                      </Button>
+                    )}
+                    {!(product as any).isArchived && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => onEdit(product)}>
+                        <Edit2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn("h-8 w-8", (product as any).isArchived ? "text-green-600 hover:text-green-700 hover:bg-green-50" : "text-amber-600 hover:text-amber-700 hover:bg-amber-50")}
+                      title={(product as any).isArchived ? "Restore product" : "Archive product"}
+                      onClick={() => onArchive(product.id, !(product as any).isArchived)}
+                    >
+                      {(product as any).isArchived ? <ArchiveRestore className="w-4 h-4" /> : <Archive className="w-4 h-4" />}
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50" onClick={() => onEdit(product)}>
-                      <Edit2 className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onDelete(product.id)}>
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {!(product as any).isArchived && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => onDelete(product.id)}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

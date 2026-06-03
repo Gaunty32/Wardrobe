@@ -111,12 +111,14 @@ function fmtProduct(p: any) {
     minOrderQty: p.minOrderQty ?? null,
     priceBreaks: p.priceBreaks ?? null,
     isService: p.isService ?? false,
+    isArchived: p.isArchived ?? p.is_archived ?? false,
   };
 }
 
 router.get("/products", async (req, res): Promise<void> => {
   const query = ListProductsQueryParams.safeParse(req.query);
   const searchTerm = query.success && query.data.search ? `%${query.data.search}%` : null;
+  const includeArchived = req.query.include_archived === "true" || req.query.include_archived === "1";
 
   const rows = await db.execute(sql`
     SELECT p.*,
@@ -128,9 +130,10 @@ router.get("/products", async (req, res): Promise<void> => {
            END AS computed_stock
     FROM products p
     LEFT JOIN customers c ON c.id = p.customer_id
-    ${searchTerm
-      ? sql`WHERE (p.name ILIKE ${searchTerm} OR p.sku ILIKE ${searchTerm} OR p.description ILIKE ${searchTerm} OR p.supplier_code ILIKE ${searchTerm})`
-      : sql``}
+    WHERE (${includeArchived} OR COALESCE(p.is_archived, false) = false)
+      ${searchTerm
+        ? sql`AND (p.name ILIKE ${searchTerm} OR p.sku ILIKE ${searchTerm} OR p.description ILIKE ${searchTerm} OR p.supplier_code ILIKE ${searchTerm})`
+        : sql``}
     ORDER BY p.name
   `);
 
@@ -142,6 +145,7 @@ router.get("/products", async (req, res): Promise<void> => {
     customerName: p.customer_name ?? null,
     isBespoke: p.is_bespoke ?? false,
     isService: p.is_service ?? false,
+    isArchived: p.is_archived ?? false,
     customerId: p.customer_id ?? null,
     wooCommerceId: p.woo_commerce_id ?? null,
     imageUrl: p.image_url ?? null,
@@ -323,6 +327,9 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   }
   if ("isService" in req.body) {
     updateData.isService = req.body.isService === true;
+  }
+  if ("isArchived" in req.body) {
+    updateData.isArchived = req.body.isArchived === true;
   }
   if ("supplierCurrency" in req.body) {
     updateData.supplierCurrency = typeof req.body.supplierCurrency === "string" ? req.body.supplierCurrency : "GBP";

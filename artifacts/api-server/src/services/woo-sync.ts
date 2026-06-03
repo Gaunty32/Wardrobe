@@ -336,9 +336,15 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
           if (img.alt) galleryByAlt.set(img.alt.toLowerCase().trim(), img.src);
         }
 
-        const existing = await db.select({ id: productsTable.id }).from(productsTable)
-          .where(eq(productsTable.wooCommerceId, wooId))
-          .limit(1);
+        const existingRows = await db.execute(sql`
+          SELECT id, COALESCE(is_archived, false) AS is_archived
+          FROM products WHERE woo_commerce_id = ${wooId} LIMIT 1
+        `);
+        const existingRow = (existingRows.rows[0] as any) ?? null;
+
+        // Skip archived products entirely — preserve their archived state and
+        // do not overwrite any manually-entered data.
+        if (existingRow?.is_archived) continue;
 
         let productId: number;
 
@@ -356,8 +362,8 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
         // Virtual WooCommerce products (setup fees, digitising, etc.) map to service products
         const isVirtual = wooProduct.virtual === true;
 
-        if (existing.length > 0) {
-          productId = existing[0].id;
+        if (existingRow) {
+          productId = existingRow.id;
           await db.execute(sql`
             UPDATE products SET
               name         = ${wooProduct.name},
