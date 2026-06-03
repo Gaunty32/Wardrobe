@@ -49,8 +49,39 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
                   ELSE 0
              END
            ) AS available_stock,
-           p.supplier_id,
-           s.name AS supplier_name, s.email AS supplier_email
+           -- Prefer colour+size-specific variant supplier over the product-level default
+           COALESCE(
+             (SELECT pv2.primary_supplier_id
+              FROM product_variants pv2
+              WHERE pv2.product_id = oi.product_id
+                AND (pv2.colour IS NOT DISTINCT FROM oi.colour)
+                AND (pv2.size   IS NOT DISTINCT FROM oi.size)
+                AND pv2.primary_supplier_id IS NOT NULL
+              LIMIT 1),
+             p.supplier_id
+           ) AS supplier_id,
+           COALESCE(
+             (SELECT sv.name
+              FROM product_variants pv2
+              INNER JOIN suppliers sv ON sv.id = pv2.primary_supplier_id
+              WHERE pv2.product_id = oi.product_id
+                AND (pv2.colour IS NOT DISTINCT FROM oi.colour)
+                AND (pv2.size   IS NOT DISTINCT FROM oi.size)
+                AND pv2.primary_supplier_id IS NOT NULL
+              LIMIT 1),
+             s.name
+           ) AS supplier_name,
+           COALESCE(
+             (SELECT sv.email
+              FROM product_variants pv2
+              INNER JOIN suppliers sv ON sv.id = pv2.primary_supplier_id
+              WHERE pv2.product_id = oi.product_id
+                AND (pv2.colour IS NOT DISTINCT FROM oi.colour)
+                AND (pv2.size   IS NOT DISTINCT FROM oi.size)
+                AND pv2.primary_supplier_id IS NOT NULL
+              LIMIT 1),
+             s.email
+           ) AS supplier_email
     FROM order_items oi
     INNER JOIN orders o ON oi.order_id = o.id
     INNER JOIN products p ON p.id = oi.product_id
@@ -221,10 +252,10 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
       purchaseQuantity: orderItemsTable.purchaseQuantity,
-      supplierId: sql<number | null>`COALESCE(${orderItemsTable.supplierId}, ${variantAlias.primarySupplierId}, ${productsTable.supplierId})`,
+      supplierId: sql<number | null>`COALESCE(${variantAlias.primarySupplierId}, ${orderItemsTable.supplierId}, ${productsTable.supplierId})`,
       supplierName: orderItemsTable.supplierName,
-      resolvedSupplierName: sql<string | null>`COALESCE(${itemSupplier.name}, ${variantSupplier.name}, ${productSupplier.name})`,
-      supplierEmail: sql<string | null>`COALESCE(${itemSupplier.email}, ${variantSupplier.email}, ${productSupplier.email})`,
+      resolvedSupplierName: sql<string | null>`COALESCE(${variantSupplier.name}, ${itemSupplier.name}, ${productSupplier.name})`,
+      supplierEmail: sql<string | null>`COALESCE(${variantSupplier.email}, ${itemSupplier.email}, ${productSupplier.email})`,
       supplierCode: sql<string | null>`COALESCE(${variantAlias.supplierCode}, ${productsTable.supplierCode})`,
       secondarySupplierCode: productsTable.secondarySupplierCode,
       productSku: productsTable.sku,
