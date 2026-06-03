@@ -156,7 +156,7 @@ function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () =>
                 size="sm"
                 className="h-8 gap-1.5 text-xs"
                 onClick={e => { e.stopPropagation(); importMutation.mutate(); }}
-                disabled={importMutation.isPending || markCompletedMutation.isPending}
+                disabled={importMutation.isPending || dismissMutation.isPending}
               >
                 {importMutation.isPending
                   ? <Loader2 className="w-3 h-3 animate-spin" />
