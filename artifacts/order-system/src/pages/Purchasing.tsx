@@ -1882,6 +1882,26 @@ export default function Purchasing() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const [backorderDrafts, setBackorderDrafts] = useState<Record<number, string>>({});
+
+  const bookInBackorderMutation = useMutation({
+    mutationFn: ({ poId, itemId, quantity }: { poId: number; itemId: number; quantity: number; remaining: number }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantity }) }),
+    onSuccess: (_data, { itemId, quantity, remaining }) => {
+      setBackorderDrafts(prev => { const next = { ...prev }; delete next[itemId]; return next; });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      const isComplete = quantity >= remaining;
+      toast({
+        title: isComplete ? "Backorder cleared" : "Delivery booked",
+        description: isComplete
+          ? "Line fully received and allocated to orders."
+          : `${quantity} unit${quantity !== 1 ? "s" : ""} received — ${remaining - quantity} still outstanding.`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Error booking in", description: e.message, variant: "destructive" }),
+  });
+
   const toggleGroup = (name: string) => setExpandedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
   const totalItems = groups.reduce((s, g) => s + g.items.length, 0);
 
@@ -2421,28 +2441,35 @@ export default function Purchasing() {
                           {b.customerName && <span>{b.customerName}</span>}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-1 text-right flex-shrink-0">
-                        <div className="flex items-center gap-2">
+                      <div className="flex flex-col items-end gap-2 text-right flex-shrink-0">
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
                           {b.daysOverdue != null && b.daysOverdue > 0 && (
                             <Badge className="bg-red-100 text-red-800 border border-red-300 text-xs font-semibold">
                               {b.daysOverdue} day{b.daysOverdue !== 1 ? "s" : ""} overdue
                             </Badge>
                           )}
-                          <Badge className="bg-amber-100 text-amber-800 border border-amber-300 text-xs font-semibold">
-                            {b.remaining} still pending
-                          </Badge>
-                          <button
-                            title="Mark as fully received"
-                            className="text-red-400 hover:text-red-600 hover:bg-red-50 rounded p-1 transition-colors"
-                            disabled={clearBackorderMutation.isPending}
+                          <span className="text-xs text-muted-foreground">{b.remaining} remaining</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={1}
+                            value={backorderDrafts[b.id] ?? b.remaining}
+                            onChange={(e) => setBackorderDrafts(prev => ({ ...prev, [b.id]: e.target.value }))}
+                            className="h-7 w-14 rounded border border-input bg-background px-2 text-center text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                          />
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white gap-1"
+                            disabled={bookInBackorderMutation.isPending}
                             onClick={() => {
-                              if (confirm(`Mark ${b.productName}${b.colour ? ` (${b.colour})` : ""} as fully received? This will clear it from the backorders list.`)) {
-                                clearBackorderMutation.mutate({ poId: b.poId, itemId: b.id, quantityOrdered: b.quantityOrdered });
-                              }
+                              const qty = parseInt(String(backorderDrafts[b.id] ?? b.remaining), 10);
+                              if (!qty || qty < 1) return;
+                              bookInBackorderMutation.mutate({ poId: b.poId, itemId: b.id, quantity: qty, remaining: b.remaining });
                             }}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            <PackageCheck className="w-3 h-3" /> Book In
+                          </Button>
                         </div>
                         {b.estimatedDueDate && (
                           <span className="text-xs text-muted-foreground flex items-center gap-1">
