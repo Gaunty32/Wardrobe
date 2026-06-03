@@ -3,7 +3,53 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useVersionCheck } from "@/hooks/use-version-check";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, AlertTriangle } from "lucide-react";
+import React from "react";
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[ErrorBoundary]", error, info.componentStack);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background p-6">
+          <div className="max-w-lg w-full bg-card border border-destructive/30 rounded-xl shadow-md p-6 space-y-4">
+            <div className="flex items-center gap-3 text-destructive">
+              <AlertTriangle className="w-6 h-6 shrink-0" />
+              <h2 className="text-lg font-semibold">Something went wrong</h2>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              The page crashed. The error below can help diagnose the issue.
+            </p>
+            <pre className="text-xs bg-muted rounded-lg p-3 overflow-auto max-h-48 text-foreground whitespace-pre-wrap">
+              {this.state.error.message}
+              {"\n\n"}
+              {this.state.error.stack}
+            </pre>
+            <button
+              onClick={() => { this.setState({ error: null }); window.location.reload(); }}
+              className="flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Reload page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 import Dashboard from "@/pages/Dashboard";
 import Orders from "@/pages/Orders";
@@ -122,7 +168,9 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <UpdateBanner />
-          <Router />
+          <ErrorBoundary>
+            <Router />
+          </ErrorBoundary>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>
