@@ -1223,7 +1223,7 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .where(and(
-      eq(purchaseOrdersTable.status, "ordered"),
+      inArray(purchaseOrdersTable.status, ["ordered", "delivered"]),
       lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
       // Only flag as backorder once the PO has been outstanding for more than 5 days
       sql`${purchaseOrdersTable.sentAt} < NOW() - INTERVAL '5 days'`,
