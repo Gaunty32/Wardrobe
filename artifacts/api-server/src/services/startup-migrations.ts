@@ -1034,6 +1034,9 @@ export async function runStartupMigrations(): Promise<void> {
   // the system (Fast Lane Club print/embroidery materials PS0006–PS0016). Set
   // stock_quantity to the total required by confirmed orders so they no longer
   // appear as outstanding purchasing requirements.
+  // IMPORTANT: restricted to PS0006–PS0016 only — without the SKU filter this
+  // migration fires for every process stock item on every boot and incorrectly
+  // marks newly-created items as "in stock".
   await db.execute(sql`
     UPDATE process_stock ps
     SET stock_quantity = sub.total_needed
@@ -1050,7 +1053,36 @@ export async function runStartupMigrations(): Promise<void> {
       GROUP BY cp.process_stock_id
     ) sub
     WHERE ps.id = sub.ps_id
+      AND ps.sku IN ('PS0006','PS0007','PS0008','PS0009','PS0010','PS0011','PS0012','PS0013','PS0014','PS0015','PS0016')
       AND ps.stock_quantity < sub.total_needed
+  `);
+
+  // Data fix: PS0035 (and any other non-Fast-Lane-Club items) had their
+  // stock_quantity incorrectly inflated to "total needed" by the unfiltered
+  // version of the migration above.  Reset any process stock item whose SKU is
+  // not in the Fast Lane Club range and whose stock_quantity was set by the
+  // buggy migration (i.e. it exactly equals the sum of confirmed order quantities
+  // and has no actual deliveries recorded against it).
+  await db.execute(sql`
+    UPDATE process_stock ps
+    SET stock_quantity = 0
+    WHERE ps.sku NOT IN ('PS0006','PS0007','PS0008','PS0009','PS0010','PS0011','PS0012','PS0013','PS0014','PS0015','PS0016')
+      AND ps.stock_quantity > 0
+      AND ps.stock_quantity = (
+        SELECT COALESCE(SUM(oi.quantity), 0)
+        FROM order_items oi
+        JOIN orders o               ON o.id  = oi.order_id
+        JOIN customer_finish_processes cfp ON cfp.finish_id = oi.finish_id
+        JOIN customer_processes cp  ON cp.id = cfp.process_id
+        WHERE o.status = 'confirmed'
+          AND oi.finish_id IS NOT NULL
+          AND cp.process_stock_id = ps.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        WHERE poi.process_stock_id = ps.id
+          AND poi.quantity_delivered > 0
+      )
   `);
 
   await db.execute(sql`
