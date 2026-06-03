@@ -161,21 +161,21 @@ router.get("/orders", async (req, res): Promise<void> => {
   type CostRow = { orderId: number; cost: number; missingCost: number };
   const costByOrderId = new Map<number, CostRow>();
   if (orderIds.length > 0) {
-    const costRows = await db.execute(sql`
-      SELECT
-        oi.order_id                                                     AS "orderId",
-        COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float        AS cost,
-        COUNT(*) FILTER (
-          WHERE p.is_service IS NOT TRUE
-            AND (p.supplier_price IS NULL OR p.supplier_price = 0)
-        )::int                                                          AS "missingCost"
-      FROM order_items oi
-      LEFT JOIN products p ON p.id = oi.product_id
-      WHERE oi.order_id = ANY(${orderIds})
-      GROUP BY oi.order_id
-    `);
-    for (const row of costRows.rows as CostRow[]) {
-      if (row.orderId != null) costByOrderId.set(row.orderId, row);
+    const costRows = await db
+      .select({
+        orderId: orderItemsTable.orderId,
+        cost: sql<number>`COALESCE(SUM(${orderItemsTable.quantity} * ${productsTable.supplierPrice}), 0)::float`,
+        missingCost: sql<number>`COUNT(*) FILTER (
+          WHERE ${productsTable.isService} IS NOT TRUE
+            AND (${productsTable.supplierPrice} IS NULL OR ${productsTable.supplierPrice} = 0)
+        )::int`,
+      })
+      .from(orderItemsTable)
+      .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
+      .where(inArray(orderItemsTable.orderId, orderIds))
+      .groupBy(orderItemsTable.orderId);
+    for (const row of costRows) {
+      if (row.orderId != null) costByOrderId.set(row.orderId, row as CostRow);
     }
   }
   res.json(orders.map((o) => {

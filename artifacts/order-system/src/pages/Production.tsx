@@ -160,6 +160,29 @@ const STATUS_CONFIG = {
   complete: { label: "Complete", color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle2 },
 };
 
+const PROCESS_COLOURS: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  dtf:        { bg: "bg-cyan-100",   text: "text-cyan-700",   border: "border-cyan-200",   label: "DTF" },
+  embroidery: { bg: "bg-purple-100", text: "text-purple-700", border: "border-purple-200", label: "Embroidery" },
+  print:      { bg: "bg-blue-100",   text: "text-blue-700",   border: "border-blue-200",   label: "Print" },
+  screen:     { bg: "bg-orange-100", text: "text-orange-700", border: "border-orange-200", label: "Screen" },
+  vinyl:      { bg: "bg-pink-100",   text: "text-pink-700",   border: "border-pink-200",   label: "Vinyl" },
+};
+
+function computeProcessQty(worksheets: Worksheet[]): { total: number; byType: Record<string, number> } {
+  const byType: Record<string, number> = {};
+  let total = 0;
+  for (const ws of worksheets) {
+    for (const item of ws.items) {
+      total += item.quantity;
+      for (const proc of item.processes) {
+        const t = (proc.type ?? "").toLowerCase().trim();
+        if (t) byType[t] = (byType[t] ?? 0) + item.quantity;
+      }
+    }
+  }
+  return { total, byType };
+}
+
 // ─── Filter types & utilities ──────────────────────────────────────────────────
 
 interface Filters {
@@ -3205,6 +3228,12 @@ export default function Production() {
   const rawComplete = allWorksheets.filter((w) => w.status === "complete").length;
   const hasFilters = Object.values(filters).some(Boolean);
 
+  // Process quantity breakdowns for stat cards
+  const wipQty      = computeProcessQty(allWorksheets.filter((w) => w.status === "wip"));
+  const preWipQty   = computeProcessQty(allWorksheets.filter((w) => w.status === "pre_wip"));
+  const completeQty = computeProcessQty(allWorksheets.filter((w) => w.status === "complete"));
+  const pickingQtyTotal = pickingOrders.reduce((s, o) => s + o.items.reduce((si, i) => si + (i.quantity ?? 1), 0), 0);
+
   const { data: dailyPlan } = useQuery<DailyPlan>({
     queryKey: ["daily-plan"],
     queryFn: () => apiFetch("/production/daily-plan"),
@@ -3212,13 +3241,14 @@ export default function Production() {
   });
 
   const urgentPlanCount = dailyPlan?.summary.urgentCount ?? 0;
+  const planQtyTotal    = dailyPlan?.summary.totalItems ?? urgentPlanCount;
 
   const TAB_COUNTS = [
-    { key: "plan",         label: "Today's Plan",      count: urgentPlanCount,                                  icon: Zap,         color: "text-primary" },
-    { key: "picking_list", label: "Picking List",       count: pickingCount,                                     icon: ListChecks,  color: "text-purple-600" },
-    { key: "pre_wip",      label: "Pre-Production",      count: hasFilters ? preWipTotal : rawPreWip,             icon: Clock,       color: "text-blue-600" },
-    { key: "wip",          label: "Work in Progress",   count: hasFilters ? wip.length : rawWip,                 icon: ClipboardList, color: "text-amber-600" },
-    { key: "complete",     label: "Complete",           count: hasFilters ? complete.length : rawComplete,       icon: CheckCircle2, color: "text-green-600" },
+    { key: "plan",         label: "Today's Plan",      count: urgentPlanCount,                            qty: planQtyTotal,        byType: {} as Record<string,number>, icon: Zap,          color: "text-primary" },
+    { key: "picking_list", label: "Picking List",       count: pickingCount,                               qty: pickingQtyTotal,     byType: {} as Record<string,number>, icon: ListChecks,   color: "text-purple-600" },
+    { key: "pre_wip",      label: "Pre-Production",     count: hasFilters ? preWipTotal : rawPreWip,       qty: preWipQty.total,    byType: preWipQty.byType,           icon: Clock,         color: "text-blue-600" },
+    { key: "wip",          label: "Work in Progress",   count: hasFilters ? wip.length : rawWip,           qty: wipQty.total,       byType: wipQty.byType,              icon: ClipboardList,  color: "text-amber-600" },
+    { key: "complete",     label: "Complete",           count: hasFilters ? complete.length : rawComplete, qty: completeQty.total,  byType: completeQty.byType,         icon: CheckCircle2,   color: "text-green-600" },
   ];
 
   const handleRefresh = () => {
@@ -3247,6 +3277,7 @@ export default function Production() {
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
           {TAB_COUNTS.map((t) => {
             const Icon = t.icon;
+            const processEntries = Object.entries(t.byType).sort(([a], [b]) => a.localeCompare(b));
             return (
               <div
                 key={t.key}
@@ -3257,7 +3288,19 @@ export default function Production() {
                   <Icon className={`w-5 h-5 ${t.color}`} />
                   <span className="font-medium text-sm">{t.label}</span>
                 </div>
-                <div className={`text-3xl font-bold mt-1 ${t.color}`}>{t.count}</div>
+                <div className={`text-3xl font-bold mt-1 ${t.color}`}>{t.qty}</div>
+                {processEntries.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {processEntries.map(([type, qty]) => {
+                      const col = PROCESS_COLOURS[type] ?? { bg: "bg-muted", text: "text-muted-foreground", border: "border-border", label: type };
+                      return (
+                        <span key={type} className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${col.bg} ${col.text} ${col.border}`}>
+                          {col.label} {qty}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
