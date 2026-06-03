@@ -92,11 +92,15 @@ export default function Products() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  const isArchivedTab = websiteFilter === "archived";
   const { data: products, isLoading: productsLoading } = useQuery<ProductWithCategory[]>({
-    queryKey: [...getListProductsQueryKey({ search }), { include_archived: true }],
+    queryKey: isArchivedTab
+      ? [...getListProductsQueryKey({ search }), { include_archived: true }]
+      : getListProductsQueryKey({ search }),
     queryFn: () => {
-      const params = new URLSearchParams({ include_archived: "true" });
+      const params = new URLSearchParams();
       if (search) params.set("search", search);
+      if (isArchivedTab) params.set("include_archived", "true");
       return apiFetch(`/products?${params}`);
     },
   });
