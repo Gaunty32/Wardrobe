@@ -238,8 +238,80 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
 router.get("/purchasing/requirements", async (req, res): Promise<void> => {
   const itemSupplier = alias(suppliersTable, "item_supplier");
   const productSupplier = alias(suppliersTable, "product_supplier");
-  const variantAlias = alias(productVariantsTable, "pv");
-  const variantSupplier = alias(suppliersTable, "variant_supplier");
+
+  // Correlated subquery helpers: try exact colour+size match first, then colour-only
+  // (handles order items with no size stored, or products where supplier is set at colour level)
+  const variantSupplierIdSql = sql<number | null>`COALESCE(
+    (SELECT pv.primary_supplier_id FROM product_variants pv
+     WHERE pv.product_id = ${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
+    (SELECT pv.primary_supplier_id FROM product_variants pv
+     WHERE pv.product_id = ${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
+  )`;
+
+  const variantSupplierNameSql = sql<string | null>`COALESCE(
+    (SELECT sv.name FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
+    (SELECT sv.name FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
+  )`;
+
+  const variantSupplierEmailSql = sql<string | null>`COALESCE(
+    (SELECT sv.email FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
+    (SELECT sv.email FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
+  )`;
+
+  const variantSupplierCurrencySql = sql<string | null>`COALESCE(
+    (SELECT sv.currency FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
+    (SELECT sv.currency FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
+  )`;
+
+  const variantSupplierCodeSql = sql<string | null>`COALESCE(
+    (SELECT pv.supplier_code FROM product_variants pv
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
+       AND pv.supplier_code IS NOT NULL LIMIT 1),
+    (SELECT pv.supplier_code FROM product_variants pv
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND pv.supplier_code IS NOT NULL LIMIT 1)
+  )`;
+
+  const variantSupplierPriceSql = sql<string | null>`COALESCE(
+    (SELECT pv.supplier_price::text FROM product_variants pv
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
+       AND pv.supplier_price IS NOT NULL LIMIT 1),
+    (SELECT pv.supplier_price::text FROM product_variants pv
+     WHERE pv.product_id=${orderItemsTable.productId}
+       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
+       AND pv.supplier_price IS NOT NULL LIMIT 1)
+  )`;
 
   const rows = await db
     .select({
@@ -252,28 +324,22 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       colour: orderItemsTable.colour,
       size: orderItemsTable.size,
       purchaseQuantity: orderItemsTable.purchaseQuantity,
-      supplierId: sql<number | null>`COALESCE(${variantAlias.primarySupplierId}, ${orderItemsTable.supplierId}, ${productsTable.supplierId})`,
+      supplierId: sql<number | null>`COALESCE(${variantSupplierIdSql}, ${orderItemsTable.supplierId}, ${productsTable.supplierId})`,
       supplierName: orderItemsTable.supplierName,
-      resolvedSupplierName: sql<string | null>`COALESCE(${variantSupplier.name}, ${itemSupplier.name}, ${productSupplier.name})`,
-      supplierEmail: sql<string | null>`COALESCE(${variantSupplier.email}, ${itemSupplier.email}, ${productSupplier.email})`,
-      supplierCode: sql<string | null>`COALESCE(${variantAlias.supplierCode}, ${productsTable.supplierCode})`,
+      resolvedSupplierName: sql<string | null>`COALESCE(${variantSupplierNameSql}, ${itemSupplier.name}, ${productSupplier.name})`,
+      supplierEmail: sql<string | null>`COALESCE(${variantSupplierEmailSql}, ${itemSupplier.email}, ${productSupplier.email})`,
+      supplierCode: sql<string | null>`COALESCE(${variantSupplierCodeSql}, ${productsTable.supplierCode})`,
       secondarySupplierCode: productsTable.secondarySupplierCode,
       productSku: productsTable.sku,
       canonicalProductName: productsTable.name,
-      supplierPrice: sql<string | null>`COALESCE(${variantAlias.supplierPrice}, ${productsTable.supplierPrice})`,
-      supplierCurrency: sql<string | null>`COALESCE(${itemSupplier.currency}, ${variantSupplier.currency}, ${productSupplier.currency})`,
+      supplierPrice: sql<string | null>`COALESCE(${variantSupplierPriceSql}, ${productsTable.supplierPrice})`,
+      supplierCurrency: sql<string | null>`COALESCE(${variantSupplierCurrencySql}, ${itemSupplier.currency}, ${productSupplier.currency})`,
       orderCreatedAt: ordersTable.createdAt,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .leftJoin(variantAlias, and(
-      eq(variantAlias.productId, orderItemsTable.productId),
-      sql`LOWER(TRIM(COALESCE(${variantAlias.colour}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))`,
-      sql`LOWER(TRIM(COALESCE(${variantAlias.size}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.size}, '')))`,
-    ))
     .leftJoin(itemSupplier, eq(orderItemsTable.supplierId, itemSupplier.id))
-    .leftJoin(variantSupplier, eq(variantAlias.primarySupplierId, variantSupplier.id))
     .leftJoin(productSupplier, eq(productsTable.supplierId, productSupplier.id))
     .where(and(
       eq(orderItemsTable.purchaseRequired, true),

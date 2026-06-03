@@ -1,4 +1,4 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -110,6 +110,13 @@ function UpdateBanner() {
   );
 }
 
+// Resets the error boundary on every route change so a crash on page A
+// doesn't keep showing the error card when the user navigates to page B.
+function RouteErrorBoundary({ children }: { children: React.ReactNode }) {
+  const [location] = useLocation();
+  return <ErrorBoundary key={location}>{children}</ErrorBoundary>;
+}
+
 function Router() {
   return (
     <Switch>
@@ -168,9 +175,9 @@ function App() {
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
           <UpdateBanner />
-          <ErrorBoundary>
+          <RouteErrorBoundary>
             <Router />
-          </ErrorBoundary>
+          </RouteErrorBoundary>
         </WouterRouter>
         <Toaster />
       </TooltipProvider>
