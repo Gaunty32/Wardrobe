@@ -1193,6 +1193,200 @@ function DeliveryRow({ line, onSave }: {
 }
 
 
+function BookInMatrix({ items, poId, onSave }: {
+  items: POItem[];
+  poId: number;
+  onSave: (poId: number, itemId: number, data: { quantityDelivered?: number }) => void;
+}) {
+  const { groupKeys, groups, allSizes } = useMemo(() => buildPOMatrix(items), [items]);
+
+  const [localQtys, setLocalQtys] = useState<Map<number, number>>(() => {
+    const m = new Map<number, number>();
+    items.forEach(i => m.set(i.id, i.quantityDelivered ?? 0));
+    return m;
+  });
+  const [hiddenRows, setHiddenRows] = useState<Set<string>>(new Set());
+  const [fadingRows, setFadingRows] = useState<Set<string>>(new Set());
+  const scheduledRows = useRef<Set<string>>(new Set());
+  const saveTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Sync upward values when items change (e.g. after "Receive All")
+  useEffect(() => {
+    setLocalQtys(prev => {
+      const next = new Map(prev);
+      items.forEach(i => {
+        const cur = next.get(i.id) ?? 0;
+        if (i.quantityDelivered > cur) next.set(i.id, i.quantityDelivered);
+      });
+      return next;
+    });
+  }, [items]);
+
+  const handleQtyChange = useCallback((itemId: number, value: number) => {
+    setLocalQtys(prev => new Map(prev).set(itemId, value));
+    const existing = saveTimers.current.get(itemId);
+    if (existing) clearTimeout(existing);
+    const t = setTimeout(() => {
+      onSave(poId, itemId, { quantityDelivered: value });
+      saveTimers.current.delete(itemId);
+    }, 400);
+    saveTimers.current.set(itemId, t);
+  }, [poId, onSave]);
+
+  // Detect completed rows and fade them out
+  useEffect(() => {
+    for (const gk of groupKeys) {
+      const g = groups.get(gk)!;
+      for (const colour of g.colours) {
+        const rowKey = `${gk}||${colour}`;
+        if (scheduledRows.current.has(rowKey)) continue;
+        let complete = true;
+        let hasAny = false;
+        for (const sz of allSizes) {
+          const cellItemId = g.cellItemId.get(colour)?.get(sz);
+          if (!cellItemId) continue;
+          const ordQty = g.qty.get(colour)?.get(sz) ?? 0;
+          if (ordQty === 0) continue;
+          hasAny = true;
+          if ((localQtys.get(cellItemId) ?? 0) < ordQty) { complete = false; break; }
+        }
+        if (complete && hasAny) {
+          scheduledRows.current.add(rowKey);
+          setFadingRows(prev => new Set([...prev, rowKey]));
+          setTimeout(() => {
+            setHiddenRows(prev => new Set([...prev, rowKey]));
+            setFadingRows(prev => { const n = new Set(prev); n.delete(rowKey); return n; });
+          }, 700);
+        }
+      }
+    }
+  }, [localQtys, groupKeys, groups, allSizes]);
+
+  const totalOrdered = items.reduce((s, i) => s + i.quantityOrdered, 0);
+  const totalReceived = [...localQtys.entries()].reduce((s, [id, qty]) => {
+    const item = items.find(i => i.id === id);
+    return s + (item ? Math.min(qty, item.quantityOrdered) : 0);
+  }, 0);
+  const totalRowCount = groupKeys.reduce((count, gk) => count + groups.get(gk)!.colours.length, 0);
+  const completedRowCount = hiddenRows.size + fadingRows.size;
+  const allDone = totalRowCount > 0 && completedRowCount >= totalRowCount;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+          <div
+            className="h-full bg-green-500 transition-all duration-500"
+            style={{ width: totalOrdered > 0 ? `${Math.min(100, Math.round((totalReceived / totalOrdered) * 100))}%` : "0%" }}
+          />
+        </div>
+        <span className="text-xs text-muted-foreground flex-shrink-0">{totalReceived}/{totalOrdered} units</span>
+      </div>
+
+      {allDone ? (
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 border border-green-200 px-3 py-2.5 text-sm text-green-800">
+          <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
+          All lines fully received — click <strong className="mx-1">Complete Delivery</strong> above to allocate stock to orders.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-800 text-white">
+                <TableHead className="font-semibold text-white">Code</TableHead>
+                <TableHead className="font-semibold text-white">Colour</TableHead>
+                {allSizes.map(s => (
+                  <TableHead key={s} className="text-center font-semibold text-white px-2 py-2.5">{s}</TableHead>
+                ))}
+                <TableHead className="text-center font-semibold text-white">Rcvd/Ord</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupKeys.map(gk => {
+                const g = groups.get(gk)!;
+                return g.colours.map((colour, ci) => {
+                  const rowKey = `${gk}||${colour}`;
+                  if (hiddenRows.has(rowKey)) return null;
+                  const isFading = fadingRows.has(rowKey);
+                  const rowOrdered = allSizes.reduce((s, sz) => s + (g.qty.get(colour)?.get(sz) ?? 0), 0);
+                  const rowReceived = allSizes.reduce((s, sz) => {
+                    const id = g.cellItemId.get(colour)?.get(sz);
+                    return s + (id ? Math.min(localQtys.get(id) ?? 0, g.qty.get(colour)?.get(sz) ?? 0) : 0);
+                  }, 0);
+                  return (
+                    <TableRow
+                      key={rowKey}
+                      className={`transition-all duration-700 ${
+                        isFading ? "opacity-0 bg-green-50" : ci % 2 === 0 ? "bg-white" : "bg-muted/30"
+                      }`}
+                    >
+                      {ci === 0 ? (
+                        <TableCell className="font-mono font-bold text-sm text-indigo-700 align-top pt-3">
+                          <div>{g.code ?? "—"}</div>
+                          <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
+                        </TableCell>
+                      ) : <TableCell />}
+                      <TableCell className="font-medium text-sm">{colour}</TableCell>
+                      {allSizes.map(sz => {
+                        const ordQty = g.qty.get(colour)?.get(sz) ?? 0;
+                        const cellItemId = g.cellItemId.get(colour)?.get(sz);
+                        if (ordQty === 0 || !cellItemId) {
+                          return <TableCell key={sz} className="text-center p-1"><span className="text-muted-foreground text-xs">—</span></TableCell>;
+                        }
+                        const rcvd = localQtys.get(cellItemId) ?? 0;
+                        const cellFull = rcvd >= ordQty;
+                        const cellPartial = rcvd > 0 && rcvd < ordQty;
+                        return (
+                          <TableCell key={sz} className="p-1 text-center">
+                            <div className="flex flex-col items-center gap-0.5">
+                              <input
+                                type="number"
+                                min={0}
+                                value={rcvd === 0 ? "" : rcvd}
+                                placeholder="0"
+                                onChange={e => {
+                                  const v = parseInt(e.target.value);
+                                  handleQtyChange(cellItemId, isNaN(v) ? 0 : Math.max(0, v));
+                                }}
+                                className={`w-12 h-7 text-center text-sm rounded border focus:outline-none focus:ring-1 focus:ring-primary transition-colors ${
+                                  cellFull
+                                    ? "border-green-400 bg-green-50 text-green-700 font-semibold"
+                                    : cellPartial
+                                    ? "border-amber-300 bg-amber-50 text-amber-800"
+                                    : "border-input bg-background text-foreground"
+                                }`}
+                              />
+                              <span className="text-[10px] text-muted-foreground">/{ordQty}</span>
+                            </div>
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="text-center text-sm">
+                        <span className={rowReceived >= rowOrdered ? "text-green-700 font-bold" : rowReceived > 0 ? "text-amber-700 font-semibold" : "text-muted-foreground"}>
+                          {rowReceived}
+                        </span>
+                        <span className="text-muted-foreground text-xs">/{rowOrdered}</span>
+                      </TableCell>
+                    </TableRow>
+                  );
+                });
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      {completedRowCount > 0 && !allDone && (
+        <p className="text-xs text-green-700 flex items-center gap-1.5">
+          <CheckCircle className="w-3.5 h-3.5" />
+          {completedRowCount} of {totalRowCount} {completedRowCount === 1 ? "line" : "lines"} fully received — remaining lines will become backorders on completion.
+        </p>
+      )}
+      <p className="text-xs text-muted-foreground">Enter received quantities in each cell. Completed lines disappear automatically. Any undelivered lines become backorders when you click <strong>Complete Delivery</strong>.</p>
+    </div>
+  );
+}
+
 function MarkOrderedDialog({ po, open, onClose, onConfirm }: {
   po: PurchaseOrder;
   open: boolean;
@@ -1382,18 +1576,14 @@ function POCard({
 
               {po.status === "ordered" && (
                 <div className="space-y-3 pt-3 border-t border-border">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                      <Truck className="w-3.5 h-3.5" /> Book In Delivery
-                    </h4>
-                    <span className="text-xs text-muted-foreground">{totalDelivered}/{totalOrdered} received</span>
-                  </div>
-                  <div className="space-y-2">
-                    {po.items.map((line) => (
-                      <DeliveryRow key={line.id} line={line} onSave={(lineId, data) => onLineUpdate(po.id, lineId, data)} />
-                    ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground">Quantities and dates save automatically when you click away. Use <strong>Receive All</strong> to mark everything delivered at once. When done, click <strong>Complete Delivery</strong> (or <strong>Book Partial Delivery</strong> if some lines are on backorder) to allocate stock to orders.</p>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Truck className="w-3.5 h-3.5" /> Book In Delivery
+                  </h4>
+                  <BookInMatrix
+                    items={po.items}
+                    poId={po.id}
+                    onSave={(poId, itemId, data) => onLineUpdate(poId, itemId, data)}
+                  />
                 </div>
               )}
             </>
