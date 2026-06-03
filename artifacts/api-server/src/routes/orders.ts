@@ -155,27 +155,36 @@ router.get("/orders", async (req, res): Promise<void> => {
   } else {
     orders = await db.select().from(ordersTable).where(baseCondition).orderBy(...ORDER_NUM_SORT);
   }
-  // Attach per-order GP margin using supplier_price from linked products
+  // Attach per-order GP margin — only when EVERY non-service line item has a supplier price.
+  // If any item is missing a cost we return null so the UI shows "—" rather than a false 100%.
   const orderIds = orders.map(o => o.id);
-  const costByOrderId = new Map<number, number>();
+  type CostRow = { orderId: number; cost: number; missingCost: number };
+  const costByOrderId = new Map<number, CostRow>();
   if (orderIds.length > 0) {
-    const costRows = await db
-      .select({
-        orderId: orderItemsTable.orderId,
-        cost: sql<number>`COALESCE(SUM(${orderItemsTable.quantity} * ${productsTable.supplierPrice}), 0)::float`,
-      })
-      .from(orderItemsTable)
-      .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-      .where(inArray(orderItemsTable.orderId, orderIds))
-      .groupBy(orderItemsTable.orderId);
-    for (const row of costRows) {
-      if (row.orderId != null) costByOrderId.set(row.orderId, row.cost);
+    const costRows = await db.execute(sql`
+      SELECT
+        oi.order_id                                                     AS "orderId",
+        COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float        AS cost,
+        COUNT(*) FILTER (
+          WHERE p.is_service IS NOT TRUE
+            AND (p.supplier_price IS NULL OR p.supplier_price = 0)
+        )::int                                                          AS "missingCost"
+      FROM order_items oi
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id = ANY(${orderIds})
+      GROUP BY oi.order_id
+    `);
+    for (const row of costRows.rows as CostRow[]) {
+      if (row.orderId != null) costByOrderId.set(row.orderId, row);
     }
   }
   res.json(orders.map((o) => {
     const revenue = numericToFloat(o.totalAmount);
-    const cost = costByOrderId.get(o.id) ?? 0;
-    const gpMargin = revenue > 0 ? ((revenue - cost) / revenue) * 100 : null;
+    const row = costByOrderId.get(o.id);
+    // Only compute GP when all non-service items have a supplier price
+    const gpMargin = (revenue > 0 && row && row.missingCost === 0)
+      ? ((revenue - row.cost) / revenue) * 100
+      : null;
     return { ...o, totalAmount: revenue, gpMargin };
   }));
 });
