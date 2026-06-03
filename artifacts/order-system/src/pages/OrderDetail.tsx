@@ -543,6 +543,16 @@ export default function OrderDetail() {
     onError: (e: Error) => toast({ title: "Error saving attachments", description: e.message, variant: "destructive" }),
   });
 
+  const requeueForPurchaseMutation = useMutation({
+    mutationFn: (itemIds: number[]) =>
+      apiFetch("/purchasing/requeue-items", { method: "POST", body: JSON.stringify({ itemIds }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Re-queued for purchase", description: "The item will appear in Purchasing on the next refresh." });
+    },
+    onError: () => toast({ title: "Failed to re-queue", variant: "destructive" }),
+  });
+
   const currentAttachments: Array<{ name: string; objectPath: string }> =
     Array.isArray((order as any)?.attachments) ? (order as any).attachments : [];
 
@@ -1617,6 +1627,17 @@ export default function OrderDetail() {
                                   <ShoppingBag className="w-3 h-3" />
                                   Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
                                 </Badge>
+                              )}
+                              {!(orderItem as any).purchaseRequired && (orderItem as any).stockStatus === 'allocated' && (
+                                <button
+                                  className="opacity-0 group-hover/badges:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-amber-700 hover:text-amber-900 hover:bg-amber-50 border border-amber-200"
+                                  title="Item is marked as allocated but may have no real stock — click to re-queue for purchasing"
+                                  onClick={() => requeueForPurchaseMutation.mutate([orderItem.id])}
+                                  disabled={requeueForPurchaseMutation.isPending}
+                                >
+                                  <ShoppingBag className="w-3 h-3" />
+                                  Re-queue for Purchase
+                                </button>
                               )}
                                 {orderItem.finishName ? (
                                 <Badge variant="secondary" className="text-xs gap-1 font-normal">

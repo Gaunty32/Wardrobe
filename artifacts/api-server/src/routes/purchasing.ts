@@ -1220,10 +1220,53 @@ router.delete("/purchasing/purchase-orders/:poId/items/:itemId", async (req, res
         })
         .where(eq(orderItemsTable.id, li.id));
     }
+  } else if (poItem.productName) {
+    // Fallback: no linked order item IDs (older consolidated PO lines).
+    // Try to find matching active order items by product + colour + size and restore them.
+    const fallbackItems = await db
+      .select({ id: orderItemsTable.id, quantity: orderItemsTable.quantity })
+      .from(orderItemsTable)
+      .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+      .where(and(
+        eq(orderItemsTable.productName, poItem.productName),
+        poItem.colour
+          ? eq(orderItemsTable.colour, poItem.colour)
+          : sql`${orderItemsTable.colour} IS NULL`,
+        poItem.size
+          ? eq(orderItemsTable.size, poItem.size)
+          : sql`${orderItemsTable.size} IS NULL`,
+        sql`COALESCE(${ordersTable.status}, '') NOT IN ('cancelled', 'archived', 'completed', 'delivered', 'shipped', 'invoiced')`,
+      ));
+    for (const li of fallbackItems) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: true, purchaseQuantity: li.quantity ?? null, stockStatus: null, stockAllocatedAt: null })
+        .where(eq(orderItemsTable.id, li.id));
+    }
   }
 
   await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.id, itemId));
   res.sendStatus(204);
+});
+
+// ─── Re-queue stuck order items for purchasing ────────────────────────────────
+// Fixes items that ended up with purchaseRequired=false + stockStatus='allocated'
+// but no actual stock (e.g. after a PO line was deleted with no linked order item IDs).
+router.post("/purchasing/requeue-items", async (req, res): Promise<void> => {
+  const parsed = z.object({ itemIds: z.array(z.number().int().positive()) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { itemIds } = parsed.data;
+  for (const itemId of itemIds) {
+    const [item] = await db
+      .select({ quantity: orderItemsTable.quantity })
+      .from(orderItemsTable)
+      .where(eq(orderItemsTable.id, itemId));
+    if (item) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: true, purchaseQuantity: item.quantity ?? null, stockStatus: null, stockAllocatedAt: null })
+        .where(eq(orderItemsTable.id, itemId));
+    }
+  }
+  res.json({ ok: true, count: itemIds.length });
 });
 
 export default router;
