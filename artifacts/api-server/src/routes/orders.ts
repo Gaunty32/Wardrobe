@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, asc, sql, inArray, and, ne, isNotNull, lt } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, orderLogsTable, orderEmailLogsTable, customersTable, productsTable,
@@ -7,6 +8,7 @@ import {
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
   customerProcessesTable, customerFinishProcessesTable, processStockTable,
+  productVariantsTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data.js";
@@ -552,6 +554,28 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         FROM product_variants pv
         WHERE pv.product_id IN (${sql.join(productIds.map(id => sql`${id}`), sql`, `)})
       `);
+
+      // Fetch variant-level supplier overrides so colour-specific suppliers are respected
+      const variantSupplierAlias = alias(suppliersTable, "vs");
+      const variantSupplierRows = await db
+        .select({
+          productId: productVariantsTable.productId,
+          colour: productVariantsTable.colour,
+          size: productVariantsTable.size,
+          supplierId: productVariantsTable.primarySupplierId,
+          supplierName: variantSupplierAlias.name,
+          supplierEmail: variantSupplierAlias.email,
+        })
+        .from(productVariantsTable)
+        .innerJoin(variantSupplierAlias, eq(productVariantsTable.primarySupplierId, variantSupplierAlias.id))
+        .where(inArray(productVariantsTable.productId, productIds));
+      // Key: "productId|colour|size" — colour/size normalised to lower-case for matching
+      const variantSupplierMap = new Map(
+        variantSupplierRows.map(r => [
+          `${r.productId}|${(r.colour ?? "").toLowerCase()}|${(r.size ?? "").toLowerCase()}`,
+          { supplierId: r.supplierId!, supplierName: r.supplierName, supplierEmail: r.supplierEmail },
+        ])
+      );
       const plainStockRows = await db.execute(sql`
         SELECT p.id AS product_id, NULL::text AS colour, NULL::text AS size, p.stock_quantity
         FROM products p
@@ -594,11 +618,18 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
         remainingStock.set(activeKey, available - allocatedQty);
 
+        // Prefer colour+size-specific variant supplier; fall back to product-level supplier
+        const varSupKey = `${item.productId}|${(item.colour ?? "").toLowerCase()}|${(item.size ?? "").toLowerCase()}`;
+        const varSup = variantSupplierMap.get(varSupKey);
+        const resolvedSupplierId = varSup?.supplierId ?? sup?.supplierId ?? null;
+        const resolvedSupplierName = varSup?.supplierName ?? sup?.supplierName ?? null;
+        const resolvedSupplierEmail = varSup?.supplierEmail ?? sup?.supplierEmail ?? null;
+
         await db.update(orderItemsTable).set({
           purchaseRequired: shortfall > 0,
           purchaseQuantity: shortfall > 0 ? shortfall : null,
-          supplierId: shortfall > 0 ? (sup?.supplierId ?? null) : null,
-          supplierName: shortfall > 0 ? (sup?.supplierName ?? null) : null,
+          supplierId: shortfall > 0 ? resolvedSupplierId : null,
+          supplierName: shortfall > 0 ? resolvedSupplierName : null,
         }).where(eq(orderItemsTable.id, item.id));
 
         if (shortfall > 0) {
@@ -606,7 +637,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           shortfallDetails.push({
             id: item.id, productName: item.productName, colour: item.colour ?? null,
             size: item.size ?? null, purchaseQuantity: shortfall,
-            supplierId: sup?.supplierId ?? null, supplierName: sup?.supplierName ?? null, supplierEmail: sup?.supplierEmail ?? null,
+            supplierId: resolvedSupplierId, supplierName: resolvedSupplierName, supplierEmail: resolvedSupplierEmail,
           });
         } else {
           allocatedLines++;
