@@ -1717,6 +1717,17 @@ export default function Purchasing() {
     refetchInterval: 15_000,
   });
 
+  const [isRechecking, setIsRechecking] = useState(false);
+
+  async function recheckAndRefresh() {
+    setIsRechecking(true);
+    try {
+      await apiFetch("/purchasing/recheck-stock", { method: "POST" });
+    } catch { /* best-effort */ }
+    await Promise.all([refetchReqs(), refetchPos()]);
+    setIsRechecking(false);
+  }
+
   // On mount, run a rescan to restore any requirements lost due to PO deletion
   // bugs. Fires once when the Purchasing page is opened.
   useEffect(() => {
@@ -2033,10 +2044,10 @@ export default function Purchasing() {
             variant="outline"
             size="sm"
             className="gap-1.5 shrink-0"
-            onClick={() => { refetchReqs(); refetchPos(); }}
-            disabled={reqFetching || posFetching}
+            onClick={recheckAndRefresh}
+            disabled={isRechecking || reqFetching || posFetching}
           >
-            <RefreshCw className={`w-4 h-4 ${reqFetching || posFetching ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${isRechecking || reqFetching || posFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
         </div>

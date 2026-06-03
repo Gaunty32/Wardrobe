@@ -72,25 +72,8 @@ router.post("/products/:productId/variants", async (req, res): Promise<void> => 
   res.status(201).json(row);
 });
 
-// Update a variant (stock, suppliers)
-router.patch("/products/:productId/variants/:id", async (req, res): Promise<void> => {
-  const p = subIdParam.safeParse(req.params);
-  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
-  const body = variantBody.partial().safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const [row] = await db.update(productVariantsTable)
-    .set({ ...body.data, updatedAt: new Date() })
-    .where(and(
-      eq(productVariantsTable.id, p.data.id),
-      eq(productVariantsTable.productId, p.data.productId),
-    ))
-    .returning();
-  if (!row) { res.status(404).json({ error: "Variant not found" }); return; }
-  await rollupProductStock(p.data.productId);
-  res.json(row);
-});
-
 // Bulk-update supplier + price + code across multiple variants of the same product
+// IMPORTANT: this must be registered BEFORE the /:id route so Express doesn't match "bulk" as an id param
 router.patch("/products/:productId/variants/bulk", async (req, res): Promise<void> => {
   const p = productIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
@@ -116,6 +99,24 @@ router.patch("/products/:productId/variants/bulk", async (req, res): Promise<voi
     ));
 
   res.json({ updated: body.data.ids.length });
+});
+
+// Update a single variant (stock, suppliers)
+router.patch("/products/:productId/variants/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = variantBody.partial().safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.update(productVariantsTable)
+    .set({ ...body.data, updatedAt: new Date() })
+    .where(and(
+      eq(productVariantsTable.id, p.data.id),
+      eq(productVariantsTable.productId, p.data.productId),
+    ))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Variant not found" }); return; }
+  await rollupProductStock(p.data.productId);
+  res.json(row);
 });
 
 // POST /products/:productId/variants/generate-matrix

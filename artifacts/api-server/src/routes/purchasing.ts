@@ -461,6 +461,53 @@ router.delete("/purchasing/requirements", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+// POST /purchasing/recheck-stock
+// Re-evaluates all draft purchase requirements against current variant stock levels.
+// Any order item where the variant now has enough stock to cover the purchase_quantity
+// has purchase_required cleared and stock_status set to 'allocated'.
+router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
+  // Find all active order items that still need purchasing and have a variant linked
+  const result = await db.execute(sql`
+    WITH covered AS (
+      SELECT
+        oi.id AS item_id,
+        oi.variant_id,
+        oi.purchase_quantity,
+        pv.stock_quantity
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      JOIN product_variants pv ON oi.variant_id = pv.id
+      WHERE oi.purchase_required = true
+        AND oi.variant_id IS NOT NULL
+        AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived')
+        AND COALESCE(pv.stock_quantity, 0) >= COALESCE(oi.purchase_quantity, 1)
+    )
+    UPDATE order_items oi
+    SET purchase_required = false,
+        purchase_quantity = NULL,
+        stock_status = 'allocated',
+        stock_allocated_at = NOW()
+    FROM covered
+    WHERE oi.id = covered.item_id
+    RETURNING oi.id
+  `);
+  const promoted = (result.rows as any[]).length;
+
+  // Also promote stock-covered items that have no stock_status yet
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET stock_status = 'allocated',
+        stock_allocated_at = NOW()
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.purchase_required = false
+      AND oi.stock_status IS NULL
+      AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived')
+  `);
+
+  res.json({ ok: true, promoted });
+});
+
 router.get("/purchasing/stock-check", async (req, res): Promise<void> => {
   const parsed = z.object({
     productId: z.coerce.number().int().positive(),
