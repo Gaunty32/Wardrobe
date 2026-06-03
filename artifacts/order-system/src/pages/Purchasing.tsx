@@ -237,18 +237,22 @@ function RowTooltip({ infos }: { infos: POCellInfo[] }) {
   );
 }
 
+type ReqOrderEntry = { orderNumber: string | null; customerName: string | null; qty: number };
+
 function buildReqMatrix(items: PurchaseRequirement[]) {
   const groupKeys: string[] = [];
   const groups = new Map<string, {
     code: string | null; productName: string; productSku: string | null; colours: string[]; sizes: string[];
     qty: Map<string, Map<string, { total: number; cellKey: string }>>;
     rowItemIds: Map<string, number[]>;
+    cellOrders: Map<string, Map<string, ReqOrderEntry[]>>;
+    rowOrders: Map<string, ReqOrderEntry[]>;
   }>();
   for (const item of items) {
     const effectiveCode = item.supplierCode ?? item.secondarySupplierCode ?? null;
     const gk = effectiveCode ?? item.canonicalProductName ?? item.productName;
     if (!groups.has(gk)) groupKeys.push(gk);
-    if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map() });
+    if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellOrders: new Map(), rowOrders: new Map() });
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
     const cellKey = [item.productName, item.colour ?? "", item.size ?? "", effectiveCode ?? ""].join("|");
@@ -259,11 +263,53 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
     g.qty.get(c)!.set(s, { total: (existing?.total ?? 0) + (item.purchaseQuantity ?? 1), cellKey });
     if (!g.rowItemIds.has(c)) g.rowItemIds.set(c, []);
     g.rowItemIds.get(c)!.push(item.itemId);
+    // track per-cell order breakdown
+    if (!g.cellOrders.has(c)) g.cellOrders.set(c, new Map());
+    if (!g.cellOrders.get(c)!.has(s)) g.cellOrders.get(c)!.set(s, []);
+    g.cellOrders.get(c)!.get(s)!.push({ orderNumber: item.orderNumber, customerName: item.customerName, qty: item.purchaseQuantity ?? 1 });
+    // track per-row order breakdown (deduplicate by orderId)
+    if (!g.rowOrders.has(c)) g.rowOrders.set(c, []);
+    const rowList = g.rowOrders.get(c)!;
+    const existingRow = rowList.find(e => e.orderNumber === item.orderNumber);
+    if (existingRow) existingRow.qty += item.purchaseQuantity ?? 1;
+    else rowList.push({ orderNumber: item.orderNumber, customerName: item.customerName, qty: item.purchaseQuantity ?? 1 });
   }
   const allSizesSet = new Set<string>();
   for (const gk of groupKeys) for (const s of groups.get(gk)!.sizes) allSizesSet.add(s);
   const allSizes = sortSizes([...allSizesSet]);
   return { groupKeys, groups, allSizes };
+}
+
+function ReqCellTooltip({ entries }: { entries: ReqOrderEntry[] }) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5 shadow-xl pointer-events-none min-w-max whitespace-nowrap">
+      {entries.map((e, i) => (
+        <div key={i} className={i > 0 ? "mt-1 pt-1 border-t border-slate-600" : ""}>
+          <span className="font-semibold">{e.orderNumber ?? "No order #"}</span>
+          {e.customerName && <span className="text-slate-300 ml-1.5">{e.customerName}</span>}
+          <span className="ml-2 text-emerald-300 font-bold">×{e.qty}</span>
+        </div>
+      ))}
+      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800" />
+    </div>
+  );
+}
+
+function ReqRowTooltip({ entries }: { entries: ReqOrderEntry[] }) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="absolute bottom-full left-0 mb-2 z-50 bg-slate-800 text-white text-xs rounded-lg px-2.5 py-1.5 shadow-xl pointer-events-none min-w-max whitespace-nowrap">
+      {entries.map((e, i) => (
+        <div key={i} className={i > 0 ? "mt-1 pt-1 border-t border-slate-600" : ""}>
+          <span className="font-semibold">{e.orderNumber ?? "No order #"}</span>
+          {e.customerName && <span className="text-slate-300 ml-1.5">{e.customerName}</span>}
+          <span className="ml-2 text-emerald-300 font-bold">×{e.qty}</span>
+        </div>
+      ))}
+      <div className="absolute top-full left-4 border-4 border-transparent border-t-slate-800" />
+    </div>
+  );
 }
 
 function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
@@ -273,6 +319,9 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
   onDeleteRow: (itemIds: number[]) => void;
 }) {
   const { groupKeys, groups, allSizes } = buildReqMatrix(items);
+  const [hoveredCell, setHoveredCell] = useState<string | null>(null);
+  const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table>
@@ -290,6 +339,8 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
             const g = groups.get(gk)!;
             return g.colours.map((colour, ci) => {
               const rowItemIds = g.rowItemIds.get(colour) ?? [];
+              const rowOrders = g.rowOrders.get(colour) ?? [];
+              const rowKey = `${gk}||${colour}`;
               const rowTotal = allSizes.reduce((s, sz) => {
                 const cell = g.qty.get(colour)?.get(sz);
                 return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
@@ -305,18 +356,36 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
                       <div className="text-xs font-mono text-indigo-400 truncate max-w-[90px]">{g.productSku}</div>
                     )}
                   </TableCell>
-                  <TableCell className="font-medium text-sm">{colour}</TableCell>
+                  <TableCell className="font-medium text-sm">
+                    <div
+                      className="relative inline-block cursor-default"
+                      onMouseEnter={() => setHoveredRow(rowKey)}
+                      onMouseLeave={() => setHoveredRow(null)}
+                    >
+                      {colour}
+                      {hoveredRow === rowKey && <ReqRowTooltip entries={rowOrders} />}
+                    </div>
+                  </TableCell>
                   {allSizes.map((sz) => {
                     const cell = g.qty.get(colour)?.get(sz);
+                    const cellOrders = g.cellOrders.get(colour)?.get(sz) ?? [];
+                    const cellKey = `${gk}||${colour}||${sz}`;
                     if (!cell) return <TableCell key={sz} className="text-center p-1"><span className="text-muted-foreground text-xs">—</span></TableCell>;
                     const val = overrides[cell.cellKey] ?? cell.total;
                     return (
                       <TableCell key={sz} className="text-center p-1">
-                        <Input
-                          type="number" min={0} value={val}
-                          onChange={(e) => onQtyChange(cell.cellKey, Math.max(0, parseInt(e.target.value) || 0))}
-                          className="w-14 h-7 text-center text-sm px-1 font-semibold text-primary"
-                        />
+                        <div
+                          className="relative inline-block"
+                          onMouseEnter={() => setHoveredCell(cellKey)}
+                          onMouseLeave={() => setHoveredCell(null)}
+                        >
+                          <Input
+                            type="number" min={0} value={val}
+                            onChange={(e) => onQtyChange(cell.cellKey, Math.max(0, parseInt(e.target.value) || 0))}
+                            className="w-14 h-7 text-center text-sm px-1 font-semibold text-primary"
+                          />
+                          {hoveredCell === cellKey && <ReqCellTooltip entries={cellOrders} />}
+                        </div>
                       </TableCell>
                     );
                   })}
