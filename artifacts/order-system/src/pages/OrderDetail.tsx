@@ -385,6 +385,7 @@ export default function OrderDetail() {
   // CustomerEmployee = ordering for a specific person
   const [wardrobeRecipient, setWardrobeRecipient] = useState<null | "stock" | CustomerEmployee>(null);
   const [wardrobeItemSizes, setWardrobeItemSizes] = useState<Record<number, string>>({});
+  const [empSearch, setEmpSearch] = useState("");
   const [wardrobeItemSleeves, setWardrobeItemSleeves] = useState<Record<number, string>>({});
   const [wardrobeItemQtys, setWardrobeItemQtys] = useState<Record<number, number>>({});
   const [wardrobeBulkModes, setWardrobeBulkModes] = useState<Record<number, boolean>>({});
@@ -874,6 +875,7 @@ export default function OrderDetail() {
     setWardrobeRecipient(null);
     setWardrobeItemSizes({});
     setWardrobeItemQtys({});
+    setEmpSearch("");
     setServiceProductSearchOpen(false);
   };
 
@@ -2475,19 +2477,38 @@ export default function OrderDetail() {
                 ) : wardrobeRecipient === null ? (
                   /* ── Step 1: Pick a person ── */
                   <div className="space-y-3 pb-2">
-                    <p className="text-sm text-muted-foreground">Who is this order for?</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-muted-foreground shrink-0">Who is this order for?</p>
+                      <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                        <input
+                          type="text"
+                          value={empSearch}
+                          onChange={e => setEmpSearch(e.target.value)}
+                          placeholder="Search by name…"
+                          className="w-full h-8 pl-8 pr-3 text-sm rounded-md border border-input bg-background outline-none focus:ring-1 focus:ring-primary"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      <button
-                        onClick={() => handleWardrobePersonSelect("stock")}
-                        className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
-                      >
-                        <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/70 transition-colors">
-                          <Archive className="w-4 h-4 text-muted-foreground" />
-                        </div>
-                        <p className="font-semibold text-sm">Bulk Stock</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">No specific recipient</p>
-                      </button>
-                      {customerEmployees?.map(emp => {
+                      {!empSearch && (
+                        <button
+                          onClick={() => handleWardrobePersonSelect("stock")}
+                          className="rounded-xl border bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-muted/70 transition-colors">
+                            <Archive className="w-4 h-4 text-muted-foreground" />
+                          </div>
+                          <p className="font-semibold text-sm">Bulk Stock</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">No specific recipient</p>
+                        </button>
+                      )}
+                      {customerEmployees?.filter(emp => {
+                        if (!empSearch.trim()) return true;
+                        const full = [emp.firstName, emp.lastName].filter(Boolean).join(" ").toLowerCase();
+                        return full.includes(empSearch.trim().toLowerCase());
+                      }).map(emp => {
                         const initials = [emp.firstName?.[0], emp.lastName?.[0]].filter(Boolean).join("").toUpperCase();
                         return (
                           <button
@@ -2505,6 +2526,12 @@ export default function OrderDetail() {
                           </button>
                         );
                       })}
+                      {empSearch.trim() && customerEmployees?.filter(emp => {
+                        const full = [emp.firstName, emp.lastName].filter(Boolean).join(" ").toLowerCase();
+                        return full.includes(empSearch.trim().toLowerCase());
+                      }).length === 0 && (
+                        <p className="col-span-3 text-sm text-muted-foreground text-center py-6">No employees match "{empSearch}"</p>
+                      )}
                     </div>
                   </div>
                 ) : (
