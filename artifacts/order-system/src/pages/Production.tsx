@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
@@ -2309,6 +2309,21 @@ function PickingListTab({ filters }: { filters: Filters }) {
     onError: () => toast({ title: "Error returning items", variant: "destructive" }),
   });
 
+  // ── Auto-pick: when items appear in the picking list with stock available,
+  //    automatically print the combined slip and confirm all items as picked.
+  const autoPickedRef = useRef(new Set<number>());
+  useEffect(() => {
+    if (isLoading || pickMutation.isPending) return;
+    const newItems = rawPickingOrders
+      .flatMap((o) => o.items)
+      .filter((i) => !autoPickedRef.current.has(i.itemId));
+    if (newItems.length === 0) return;
+    newItems.forEach((i) => autoPickedRef.current.add(i.itemId));
+    printCombinedPickingSlip(newItems, rawPickingOrders);
+    pickMutation.mutate(newItems.map((i) => i.itemId));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rawPickingOrders, isLoading]);
+
   function toggleReturning(id: number) {
     setReturning((prev) => {
       const next = new Set(prev);
@@ -3011,6 +3026,22 @@ export default function Production() {
     },
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
+
+  // ── Auto-advance: worksheets that arrive in pre_wip with stock already
+  //    allocated automatically move to WIP so decoration can begin immediately.
+  const autoAdvancedRef = useRef(new Set<number>());
+  useEffect(() => {
+    if (wsLoading) return;
+    const toAdvance = allWorksheets.filter(
+      (w) => w.status === "pre_wip" && !autoAdvancedRef.current.has(w.id),
+    );
+    if (toAdvance.length === 0) return;
+    toAdvance.forEach((ws) => {
+      autoAdvancedRef.current.add(ws.id);
+      statusMutation.mutate({ id: ws.id, status: "wip" });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allWorksheets, wsLoading]);
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/worksheets/${id}`, { method: "DELETE" }),

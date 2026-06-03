@@ -554,6 +554,21 @@ export default function OrderDetail() {
     onError: () => toast({ title: "Failed to re-queue", variant: "destructive" }),
   });
 
+  const [editingBackorderDate, setEditingBackorderDate] = useState<{ id: number; poId: number; date: string } | null>(null);
+  const updateBackorderDateMutation = useMutation({
+    mutationFn: ({ id, poId, date }: { id: number; poId: number; date: string }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/items/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ estimatedDueDate: date || null }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order-backorders", orderId] });
+      setEditingBackorderDate(null);
+      toast({ title: "Due date updated" });
+    },
+    onError: () => toast({ title: "Failed to update due date", variant: "destructive" }),
+  });
+
   const currentAttachments: Array<{ name: string; objectPath: string }> =
     Array.isArray((order as any)?.attachments) ? (order as any).attachments : [];
 
@@ -1532,7 +1547,7 @@ export default function OrderDetail() {
                   <TriangleAlert className="w-4 h-4 flex-shrink-0" />
                   Part-shipped — {orderBackorders.length} item{orderBackorders.length !== 1 ? "s" : ""} on backorder
                 </div>
-                <p className="text-xs text-amber-700">This order will be part-shipped. The following items are awaiting stock and will be dispatched separately — the customer should be notified.</p>
+                <p className="text-xs text-amber-700">Items awaiting stock — dispatched separately when received. Click a due date to edit it, or go to <a href="/purchasing?tab=ordered" className="underline font-medium hover:text-amber-900">Purchasing</a> to book in deliveries.</p>
                 <div className="space-y-1.5">
                   {orderBackorders.map((b) => (
                     <div key={b.id} className="flex items-center justify-between gap-3 text-xs bg-white/70 rounded px-3 py-1.5 border border-amber-200">
@@ -1543,13 +1558,41 @@ export default function OrderDetail() {
                       </span>
                       <div className="flex items-center gap-2 flex-shrink-0 text-amber-700">
                         <span className="font-semibold">{b.remaining} pending</span>
-                        {b.estimatedDueDate && (
-                          <span className="flex items-center gap-1">
+                        {editingBackorderDate?.id === b.id ? (
+                          <form
+                            className="flex items-center gap-1"
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              updateBackorderDateMutation.mutate({ id: b.id, poId: b.poId, date: editingBackorderDate.date });
+                            }}
+                          >
+                            <input
+                              type="date"
+                              className="border border-amber-400 rounded px-1.5 py-0.5 text-xs bg-white text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
+                              value={editingBackorderDate.date}
+                              onChange={(e) => setEditingBackorderDate(prev => prev ? { ...prev, date: e.target.value } : prev)}
+                              autoFocus
+                            />
+                            <button type="submit" disabled={updateBackorderDateMutation.isPending} className="text-green-700 hover:text-green-900 font-semibold px-1">✓</button>
+                            <button type="button" onClick={() => setEditingBackorderDate(null)} className="text-muted-foreground hover:text-foreground px-1">✕</button>
+                          </form>
+                        ) : (
+                          <button
+                            className="flex items-center gap-1 hover:bg-amber-100 rounded px-1 py-0.5 transition-colors group"
+                            title="Click to set due date"
+                            onClick={() => setEditingBackorderDate({
+                              id: b.id,
+                              poId: b.poId,
+                              date: b.estimatedDueDate ? new Date(b.estimatedDueDate).toISOString().slice(0, 10) : "",
+                            })}
+                          >
                             <Calendar className="w-3 h-3" />
-                            {new Date(b.estimatedDueDate).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
-                          </span>
+                            {b.estimatedDueDate
+                              ? new Date(b.estimatedDueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                              : <span className="text-amber-500 group-hover:text-amber-700 italic">set due date</span>}
+                          </button>
                         )}
-                        <span className="text-muted-foreground">via {b.poNumber}</span>
+                        <a href="/purchasing?tab=ordered" className="text-muted-foreground hover:text-foreground underline">via {b.poNumber}</a>
                       </div>
                     </div>
                   ))}

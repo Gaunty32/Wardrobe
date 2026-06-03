@@ -725,18 +725,7 @@ export default function ProductDetail() {
     onError: () => toast({ title: "Bulk update failed", variant: "destructive" }),
   });
 
-  if (isLoading || !details) {
-    return <Layout><div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
-  }
-  if (!product) {
-    return <Layout><div className="text-center py-20"><p className="text-muted-foreground">Product not found.</p><Button variant="outline" className="mt-4" onClick={() => navigate("/products")}>Back</Button></div></Layout>;
-  }
-
-  const totalStock = variants.reduce((sum: number, v: any) => sum + (v.stockQuantity || 0), 0);
-  const lowStockCount = variants.filter((v: any) => v.stockQuantity <= 5).length;
-  const defaultPrimaryId = details.supplierId !== "none" ? Number(details.supplierId) : null;
-  const defaultSecondaryId = details.secondarySupplierId !== "none" ? Number(details.secondarySupplierId) : null;
-
+  // ── Must be computed before any early returns (React Rules of Hooks) ──────
   // Group variants — colour-first (preserving API order), then size within each group
   const colourOrder = [...new Set((variants as any[]).map((v: any) => v.colour ?? ""))];
   const sortedVariants = [...(variants as any[])].sort((a, b) => {
@@ -772,6 +761,18 @@ export default function ProductDetail() {
     setBulkPrice(allPrice && filteredVariants[0].supplierPrice != null ? String(filteredVariants[0].supplierPrice) : "");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterColour, filterSize, filterSleeve, variants]);
+
+  if (isLoading || !details) {
+    return <Layout><div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
+  }
+  if (!product) {
+    return <Layout><div className="text-center py-20"><p className="text-muted-foreground">Product not found.</p><Button variant="outline" className="mt-4" onClick={() => navigate("/products")}>Back</Button></div></Layout>;
+  }
+
+  const totalStock = variants.reduce((sum: number, v: any) => sum + (v.stockQuantity || 0), 0);
+  const lowStockCount = variants.filter((v: any) => v.stockQuantity <= 5).length;
+  const defaultPrimaryId = details.supplierId !== "none" ? Number(details.supplierId) : null;
+  const defaultSecondaryId = details.secondarySupplierId !== "none" ? Number(details.secondarySupplierId) : null;
 
   // Attributes-based colour+size+sleeve lists (for matrix generation)
   const attrColours = (attributes as any[]).filter(a => a.type === "colour").map(a => a.value as string);
