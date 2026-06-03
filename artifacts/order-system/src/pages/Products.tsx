@@ -233,6 +233,10 @@ export default function Products() {
       toast({ title: "Validation Error", description: "Name and valid price are required", variant: "destructive" });
       return;
     }
+    if (!formData.isService && formData.customerId === "none" && websiteFilter === "bespoke") {
+      toast({ title: "Customer required for bespoke product", description: "Select a customer in the Bespoke Assignment section, or change the filter to create a standard product.", variant: "destructive" });
+      return;
+    }
     const isService = formData.isService;
     const customerId = !isService && formData.customerId !== "none" ? Number(formData.customerId) : null;
     const payload = {
@@ -710,6 +714,9 @@ export default function Products() {
                   </Select>
                   {formData.customerId !== "none" && (
                     <p className="text-xs text-purple-600">This product will be marked bespoke and only visible to this customer on their portal.</p>
+                  )}
+                  {formData.customerId === "none" && websiteFilter === "bespoke" && (
+                    <p className="text-xs text-amber-600 font-medium">⚠ You're on the Bespoke tab — select a customer above or this product will be saved as Internal only.</p>
                   )}
                 </div>
               </div>
