@@ -1285,4 +1285,35 @@ export async function runStartupMigrations(): Promise<void> {
       )
   `);
   console.log("[startup] Re-queued stock-phantom items for purchasing");
+
+  // Re-queue order items that are marked as allocated (stockStatus='allocated') but
+  // are still covered by an OUTSTANDING purchase order line (quantity_delivered <
+  // quantity_ordered).  This happens when stock was incorrectly recorded as present
+  // at confirmation time, a PO was later raised for the same item, and the earlier
+  // phantom-requeue migration skipped it because "a PO exists".  The item ends up
+  // showing as "All stock in" in Production even though it hasn't arrived.
+  // Safe to re-run: becomes a no-op once the PO is fully delivered.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required  = true,
+        purchase_quantity  = oi.quantity,
+        stock_status       = NULL,
+        stock_allocated_at = NULL
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.stock_status = 'allocated'
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+      AND NOT EXISTS (
+        SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
+      )
+      AND EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        JOIN purchase_orders po2 ON po2.id = poi.po_id
+        WHERE po2.status NOT IN ('cancelled')
+          AND poi.quantity_delivered < poi.quantity_ordered
+          AND (poi.order_item_id = oi.id
+               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
+      )
+  `);
+  console.log("[startup] Re-queued allocated-but-outstanding PO items for purchasing");
 }
