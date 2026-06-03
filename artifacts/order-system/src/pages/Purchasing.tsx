@@ -160,6 +160,9 @@ function sortSizes(sizes: string[]): string[] {
     const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b);
     if (ai !== -1 && bi !== -1) return ai - bi;
     if (ai !== -1) return -1; if (bi !== -1) return 1;
+    // Numeric sizes (shoe sizes, inches, etc.) — sort numerically not lexicographically
+    const an = parseFloat(a); const bn = parseFloat(b);
+    if (!isNaN(an) && !isNaN(bn)) return an - bn;
     return a.localeCompare(b);
   });
 }
