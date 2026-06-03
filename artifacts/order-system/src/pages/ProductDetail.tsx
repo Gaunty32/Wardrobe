@@ -1076,60 +1076,79 @@ export default function ProductDetail() {
                           <thead className="bg-muted/50">
                             <tr>
                               <th className="text-left px-3 py-2 font-medium text-muted-foreground">Min. Qty</th>
-                              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Unit Price (£)</th>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Discount (%)</th>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-nowrap">Unit Price</th>
                               <th className="w-10 px-2 py-2" />
                             </tr>
                           </thead>
                           <tbody>
                             {[...details.priceBreaks]
                               .sort((a, b) => a.qty - b.qty)
-                              .map((pb, idx) => (
-                                <tr key={idx} className="border-t border-border/30 hover:bg-muted/20">
-                                  <td className="px-3 py-1.5">
-                                    <Input
-                                      type="number"
-                                      min="1"
-                                      step="1"
-                                      className="h-7 w-24 text-sm"
-                                      value={pb.qty || ""}
-                                      onChange={e => {
-                                        const updated = [...details.priceBreaks];
-                                        updated[idx] = { ...pb, qty: parseInt(e.target.value, 10) || 0 };
-                                        handleDetailChange("priceBreaks", updated);
-                                      }}
-                                    />
-                                  </td>
-                                  <td className="px-3 py-1.5">
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-muted-foreground">£</span>
+                              .map((pb, idx) => {
+                                const basePrice = details.unitPrice ?? 0;
+                                const discountPct = basePrice > 0
+                                  ? parseFloat(((1 - pb.price / basePrice) * 100).toFixed(4))
+                                  : 0;
+                                return (
+                                  <tr key={idx} className="border-t border-border/30 hover:bg-muted/20">
+                                    <td className="px-3 py-1.5">
                                       <Input
                                         type="number"
-                                        min="0"
-                                        step="0.01"
+                                        min="1"
+                                        step="1"
                                         className="h-7 w-24 text-sm"
-                                        value={pb.price || ""}
+                                        value={pb.qty || ""}
                                         onChange={e => {
                                           const updated = [...details.priceBreaks];
-                                          updated[idx] = { ...pb, price: parseFloat(e.target.value) || 0 };
+                                          updated[idx] = { ...pb, qty: parseInt(e.target.value, 10) || 0 };
                                           handleDetailChange("priceBreaks", updated);
                                         }}
                                       />
-                                    </div>
-                                  </td>
-                                  <td className="px-2 py-1.5">
-                                    <button
-                                      type="button"
-                                      className="text-muted-foreground hover:text-destructive transition-colors"
-                                      onClick={() => {
-                                        const updated = details.priceBreaks.filter((_, i) => i !== idx);
-                                        handleDetailChange("priceBreaks", updated);
-                                      }}
-                                    >
-                                      <X className="w-4 h-4" />
-                                    </button>
-                                  </td>
-                                </tr>
-                              ))}
+                                    </td>
+                                    <td className="px-3 py-1.5">
+                                      <div className="flex items-center gap-1">
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="0.5"
+                                          className="h-7 w-20 text-sm"
+                                          value={discountPct || ""}
+                                          placeholder="0"
+                                          onFocus={e => e.target.select()}
+                                          onChange={e => {
+                                            const pct = parseFloat(e.target.value) || 0;
+                                            const newPrice = basePrice > 0
+                                              ? parseFloat((basePrice * (1 - pct / 100)).toFixed(2))
+                                              : pb.price;
+                                            const updated = [...details.priceBreaks];
+                                            updated[idx] = { ...pb, price: newPrice };
+                                            handleDetailChange("priceBreaks", updated);
+                                          }}
+                                        />
+                                        <span className="text-muted-foreground">%</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-1.5">
+                                      <span className="text-sm font-medium text-muted-foreground">
+                                        {pb.price > 0 ? formatCurrency(pb.price) : <span className="italic text-xs">—</span>}
+                                      </span>
+                                    </td>
+                                    <td className="px-2 py-1.5">
+                                      <button
+                                        type="button"
+                                        className="text-muted-foreground hover:text-destructive transition-colors"
+                                        onClick={() => {
+                                          const updated = details.priceBreaks.filter((_, i) => i !== idx);
+                                          handleDetailChange("priceBreaks", updated);
+                                        }}
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                           </tbody>
                         </table>
                       </div>
