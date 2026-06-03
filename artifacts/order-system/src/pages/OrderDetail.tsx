@@ -3281,6 +3281,7 @@ export default function OrderDetail() {
           customerName: order.customerName ?? null,
           totalAmount: order.totalAmount,
           status: order.status,
+          customerEmail: (order as any).customerEmail ?? null,
         }}
         onSent={() => {
           queryClient.invalidateQueries({ queryKey: ["order-email-logs", orderId] });

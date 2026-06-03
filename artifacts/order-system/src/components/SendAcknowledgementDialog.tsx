@@ -29,13 +29,14 @@ interface SendAcknowledgementDialogProps {
     customerName: string | null;
     totalAmount?: number | null;
     status: string;
+    customerEmail?: string | null;
   };
   onSent?: () => void;
 }
 
 export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }: SendAcknowledgementDialogProps) {
   const { toast } = useToast();
-  const [emailTo, setEmailTo] = useState("");
+  const [emailTo, setEmailTo] = useState(order.customerEmail ?? "");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
   const [previewingPdf, setPreviewingPdf] = useState(false);
 
   const reset = () => {
-    setEmailTo("");
+    setEmailTo(order.customerEmail ?? "");
     setSending(false);
     setSent(false);
     setPaymentLinkUrl(null);
@@ -115,6 +116,7 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
 
   useEffect(() => {
     if (open) {
+      setEmailTo(order.customerEmail ?? "");
       generatePaymentLink();
       loadPreview();
     }
