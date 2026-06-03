@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUpload } from "@workspace/object-storage-web";
@@ -709,16 +709,17 @@ export default function ProductDetail() {
   });
 
   const bulkUpdateMut = useMutation({
-    mutationFn: (ids: number[]) => apiFetch(`/products/${productId}/variants/bulk`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        ids,
-        ...(bulkPrimaryId !== "none" ? { primarySupplierId: Number(bulkPrimaryId) } : { primarySupplierId: null }),
-        ...(bulkPrice !== "" ? { supplierPrice: parseFloat(bulkPrice) } : {}),
-        ...(bulkCode !== "" ? { supplierCode: bulkCode } : {}),
+    mutationFn: ({ ids, supplierId, code, price }: { ids: number[]; supplierId: string; code: string; price: string }) =>
+      apiFetch(`/products/${productId}/variants/bulk`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          ids,
+          ...(supplierId !== "none" ? { primarySupplierId: Number(supplierId) } : { primarySupplierId: null }),
+          ...(price !== "" ? { supplierPrice: parseFloat(price) } : {}),
+          ...(code !== "" ? { supplierCode: code } : {}),
+        }),
       }),
-    }),
-    onSuccess: (_data: any, ids: number[]) => {
+    onSuccess: (_data: any, { ids }) => {
       refetchVariants();
       toast({ title: `Updated ${ids.length} variant${ids.length !== 1 ? "s" : ""}` });
     },
@@ -761,6 +762,51 @@ export default function ProductDetail() {
     setBulkPrice(allPrice && filteredVariants[0].supplierPrice != null ? String(filteredVariants[0].supplierPrice) : "");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterColour, filterSize, filterSleeve, variants]);
+
+  // ── Combination pricing (colour + sleeve groups) ──────────────────────────
+  type ComboDraft = { supplierId: string; code: string; price: string };
+
+  const comboPricingGroups = useMemo(() => {
+    if (sortedVariants.length === 0) return [];
+    const seen = new Set<string>();
+    const groups: {
+      key: string; colour: string | null; sleeve: string | null;
+      variantIds: number[]; sharedSupplierId: string; sharedCode: string; sharedPrice: string;
+    }[] = [];
+    for (const v of sortedVariants) {
+      const colour = v.colour ?? "";
+      const sleeve = v.sleeve ?? "";
+      const key = `${colour}||${sleeve}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const members = sortedVariants.filter((v2: any) => (v2.colour ?? "") === colour && (v2.sleeve ?? "") === sleeve);
+      const suppIds = [...new Set(members.map((v2: any) => v2.primarySupplierId ? String(v2.primarySupplierId) : "none"))];
+      const codes = [...new Set(members.map((v2: any) => v2.supplierCode ?? ""))];
+      const rawPrices = members.map((v2: any) => v2.supplierPrice != null ? String(parseFloat(String(v2.supplierPrice))) : "");
+      const prices = [...new Set(rawPrices)];
+      groups.push({
+        key, colour: v.colour, sleeve: v.sleeve,
+        variantIds: members.map((v2: any) => v2.id),
+        sharedSupplierId: suppIds.length === 1 ? suppIds[0] : "none",
+        sharedCode: codes.length === 1 ? codes[0] : "",
+        sharedPrice: prices.length === 1 ? prices[0] : "",
+      });
+    }
+    return groups;
+  }, [sortedVariants]);
+
+  const [comboDrafts, setComboDrafts] = useState<Record<string, ComboDraft>>({});
+
+  useEffect(() => {
+    setComboDrafts(() => {
+      const next: Record<string, ComboDraft> = {};
+      for (const g of comboPricingGroups) {
+        next[g.key] = { supplierId: g.sharedSupplierId, code: g.sharedCode, price: g.sharedPrice };
+      }
+      return next;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variants]);
 
   if (isLoading || !details) {
     return <Layout><div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
@@ -1143,6 +1189,111 @@ export default function ProductDetail() {
                   </div>
                 </div>
 
+                {/* ── Supplier by Combination ── */}
+                {comboPricingGroups.length > 1 && (
+                  <div className="bg-card border border-border/50 rounded-lg shadow-sm">
+                    <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40">
+                      <Layers className="w-4 h-4 text-primary" />
+                      <div>
+                        <h3 className="font-semibold text-foreground text-sm">Supplier by Combination</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Set a different supplier, code, and cost for each {colours.length > 0 ? "colour" : ""}{colours.length > 0 && sleeves.length > 0 ? " + " : ""}{sleeves.length > 0 ? "fit" : ""} combination — applies to all sizes in that group.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="hover:bg-transparent text-xs">
+                            {colours.length > 0 && <TableHead>Colour</TableHead>}
+                            {sleeves.length > 0 && <TableHead>Fit / Length</TableHead>}
+                            <TableHead>Supplier</TableHead>
+                            <TableHead>Code</TableHead>
+                            <TableHead>Cost</TableHead>
+                            <TableHead className="text-right w-24" />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {comboPricingGroups.map(g => {
+                            const draft: ComboDraft = comboDrafts[g.key] ?? { supplierId: g.sharedSupplierId, code: g.sharedCode, price: g.sharedPrice };
+                            const isDirty = draft.supplierId !== g.sharedSupplierId || draft.code !== g.sharedCode || draft.price !== g.sharedPrice;
+                            const bulkSup = (suppliers as any[]).find((s: any) => String(s.id) === draft.supplierId);
+                            const currSym = bulkSup?.currency === "USD" ? "$" : bulkSup?.currency === "EUR" ? "€" : "£";
+                            const setDraft = (field: keyof ComboDraft, val: string) =>
+                              setComboDrafts(prev => ({ ...prev, [g.key]: { ...draft, [field]: val } }));
+                            const canApply = draft.supplierId !== "none" || draft.code !== "" || draft.price !== "";
+                            return (
+                              <TableRow key={g.key} className={isDirty ? "bg-primary/5" : ""}>
+                                {colours.length > 0 && (
+                                  <TableCell>
+                                    {g.colour
+                                      ? <span className="font-medium text-sm">{g.colour}</span>
+                                      : <span className="text-muted-foreground text-sm">—</span>}
+                                  </TableCell>
+                                )}
+                                {sleeves.length > 0 && (
+                                  <TableCell>
+                                    {g.sleeve
+                                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">{g.sleeve}</span>
+                                      : <span className="text-muted-foreground text-sm">—</span>}
+                                  </TableCell>
+                                )}
+                                <TableCell>
+                                  <SupplierSelect
+                                    value={draft.supplierId}
+                                    onChange={v => setDraft("supplierId", v)}
+                                    suppliers={suppliers}
+                                    className="h-7 text-xs w-[150px]"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Input
+                                    value={draft.code}
+                                    onChange={e => setDraft("code", e.target.value)}
+                                    placeholder={g.sharedCode || "e.g. FCC1001"}
+                                    className="h-7 text-xs w-[110px]"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <div className="relative flex items-center">
+                                    <span className="absolute left-2 text-muted-foreground text-xs pointer-events-none">{currSym}</span>
+                                    <Input
+                                      type="number" min="0" step="0.01"
+                                      value={draft.price}
+                                      onChange={e => setDraft("price", e.target.value)}
+                                      placeholder="0.00"
+                                      className="h-7 text-xs w-24 pl-4"
+                                    />
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    size="sm"
+                                    variant={isDirty ? "default" : "outline"}
+                                    className="h-7 text-xs gap-1"
+                                    disabled={!canApply || bulkUpdateMut.isPending}
+                                    onClick={() => bulkUpdateMut.mutate({
+                                      ids: g.variantIds,
+                                      supplierId: draft.supplierId,
+                                      code: draft.code,
+                                      price: draft.price,
+                                    })}
+                                  >
+                                    {bulkUpdateMut.isPending
+                                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                                      : <Save className="w-3 h-3" />}
+                                    Apply
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+
                 {/* Variant table */}
                 <div className="bg-card border border-border/50 rounded-lg shadow-sm">
                   <div className="flex items-center justify-between p-4 border-b border-border/40">
@@ -1229,7 +1380,7 @@ export default function ProductDetail() {
                           size="sm"
                           className="h-7 text-xs"
                           disabled={!canApply || bulkUpdateMut.isPending}
-                          onClick={() => bulkUpdateMut.mutate(targetIds)}
+                          onClick={() => bulkUpdateMut.mutate({ ids: targetIds, supplierId: bulkPrimaryId, code: bulkCode, price: bulkPrice })}
                         >
                           {bulkUpdateMut.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
                           Apply
