@@ -302,12 +302,12 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
   )`;
 
   const variantSupplierPriceSql = sql<string | null>`COALESCE(
-    (SELECT pv.supplier_price::text FROM product_variants pv
+    (SELECT pv.supplier_price FROM product_variants pv
      WHERE pv.product_id=${orderItemsTable.productId}
        AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
        AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
        AND pv.supplier_price IS NOT NULL LIMIT 1),
-    (SELECT pv.supplier_price::text FROM product_variants pv
+    (SELECT pv.supplier_price FROM product_variants pv
      WHERE pv.product_id=${orderItemsTable.productId}
        AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
        AND pv.supplier_price IS NOT NULL LIMIT 1)
