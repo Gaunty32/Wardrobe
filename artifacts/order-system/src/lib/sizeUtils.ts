@@ -29,9 +29,9 @@ function baseRank(token: string): number {
   const n = normalise(token);
   const idx = SIZE_ORDER.findIndex(r => normalise(r) === n);
   if (idx !== -1) return idx;
-  // Pure numeric sizes (shoe sizes, waist sizes, etc.) — sort numerically after text sizes
+  // Pure numeric sizes (shoe sizes, collar sizes like 14.0, waist sizes, etc.) — sort numerically
   const num = parseFloat(n);
-  if (!isNaN(num) && String(num) === n) return 500 + num;
+  if (!isNaN(num) && /^\d+(\.\d+)?$/.test(n)) return 500 + num;
   return 9999;
 }
 

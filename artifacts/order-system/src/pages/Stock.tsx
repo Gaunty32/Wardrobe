@@ -111,6 +111,7 @@ function InlineQty({ value, onSave, low }: { value: number; onSave: (qty: number
         type="number" min={0} value={draft}
         onChange={e => setDraft(e.target.value)}
         onBlur={commit}
+        onFocus={e => e.currentTarget.select()}
         onKeyDown={e => {
           if (e.key === "Enter") commit();
           if (e.key === "Escape") { setDraft(String(value)); setEditing(false); }
@@ -386,6 +387,7 @@ function QuickAdjustModal({
                       <input
                         type="number" min={0} value={row.draft}
                         onChange={e => update(idx, "draft", e.target.value)}
+                        onFocus={e => e.currentTarget.select()}
                         className="w-16 text-right border border-border rounded px-2 py-1 text-sm font-mono focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
                       />
                     </TableCell>
@@ -393,6 +395,7 @@ function QuickAdjustModal({
                       <input
                         type="number" min={0} value={row.minDraft}
                         onChange={e => update(idx, "minDraft", e.target.value)}
+                        onFocus={e => e.currentTarget.select()}
                         className="w-14 text-right border border-border rounded px-2 py-1 text-sm font-mono focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
                       />
                     </TableCell>
