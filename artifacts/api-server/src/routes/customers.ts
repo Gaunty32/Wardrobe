@@ -4,6 +4,7 @@ import { db, customersTable, ordersTable, customerEmployeesTable } from "@worksp
 import { z } from "zod";
 import { randomBytes } from "crypto";
 import { pushCustomerToXero } from "../services/xero.js";
+import { syncCustomerToPhoneDirectory } from "../services/contacts-sync.js";
 import {
   CreateCustomerBody,
   UpdateCustomerBody,
@@ -46,8 +47,9 @@ router.post("/customers", async (req, res): Promise<void> => {
   const [customer] = await db.insert(customersTable).values(parsed.data).returning();
   res.status(201).json(customer);
 
-  // Best-effort push to Xero — don't await so the response is immediate
+  // Best-effort push to Xero + phone directory — don't await so response is immediate
   pushCustomerToXero(customer.id).catch(() => {});
+  syncCustomerToPhoneDirectory(customer.id).catch(() => {});
 
   // Auto-create default employee + portal user from primary contact details
   const { contactFirstName, contactLastName, email, phone } = parsed.data;
@@ -231,8 +233,9 @@ router.patch("/customers/:id", async (req, res): Promise<void> => {
     return;
   }
   res.json(customer);
-  // Best-effort sync to Xero — don't await so the response is immediate
+  // Best-effort sync to Xero + phone directory — don't await so response is immediate
   pushCustomerToXero(params.data.id).catch(() => {});
+  syncCustomerToPhoneDirectory(params.data.id).catch(() => {});
 });
 
 router.delete("/customers/:id", async (req, res): Promise<void> => {

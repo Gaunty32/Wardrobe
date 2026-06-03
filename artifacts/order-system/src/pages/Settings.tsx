@@ -4,7 +4,7 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck, Zap
+  UserPlus, Trash2, UserCheck, Zap, Phone
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -309,6 +309,126 @@ function StaffAccountsCard() {
           <UserPlus className="w-4 h-4" /> Add staff member
         </Button>
       )}
+    </div>
+  );
+}
+
+function InvocoTab({ rawSettings }: { rawSettings: Record<string, string> | undefined }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [apiUrl, setApiUrl]     = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [loaded, setLoaded]     = useState(false);
+
+  useEffect(() => {
+    if (rawSettings && !loaded) {
+      setUsername(rawSettings["invoco_username"] ?? "");
+      setPassword(rawSettings["invoco_password"] ?? "");
+      setApiUrl(rawSettings["invoco_api_url"] ?? "");
+      setLoaded(true);
+    }
+  }, [rawSettings, loaded]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          invoco_username: username || null,
+          invoco_password: password || null,
+          invoco_api_url:  apiUrl  || null,
+        }),
+      }).then((r) => { if (!r.ok) throw new Error("Save failed"); return r.json(); }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["settings-raw"] });
+      toast({ title: "Invoco settings saved" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const isConfigured = !!(username && password && apiUrl);
+
+  return (
+    <div className="grid gap-6 max-w-2xl">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Phone className="w-4 h-4 text-blue-500" />
+          <h2 className="font-semibold text-base">Invoco Phonebook Sync</h2>
+          {isConfigured && (
+            <span className="ml-auto inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-0.5">
+              <CheckCircle className="w-3 h-3" /> Configured
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Whenever a customer is created or updated, their name and phone number are automatically pushed to your Invoco phonebook — so incoming calls display the customer's name on your handsets.
+        </p>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="invocoApiUrl">API Endpoint URL</Label>
+            <Input
+              id="invocoApiUrl"
+              placeholder="https://api.invoco.net/contacts/..."
+              value={apiUrl}
+              onChange={(e) => setApiUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              The URL Invoco give you for adding/updating phonebook contacts. Check their API documentation or ask Invoco support.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="invocoUsername">Username</Label>
+            <Input
+              id="invocoUsername"
+              placeholder="your-invoco-username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="invocoPassword">Password</Label>
+            <div className="relative">
+              <Input
+                id="invocoPassword"
+                type={showPass ? "text" : "password"}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                className="pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <Button size="sm" className="gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          {saveMutation.isPending
+            ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+            : <><CheckCircle className="w-4 h-4" />Save</>}
+        </Button>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5 space-y-2">
+        <h2 className="font-semibold text-sm">How it works</h2>
+        <ul className="text-sm text-muted-foreground space-y-1.5 list-disc list-inside">
+          <li>Every time you save a customer, their <strong>phone number</strong> and <strong>contact name</strong> are pushed to Invoco in the background.</li>
+          <li>Uses <strong>HTTP Basic Auth</strong> (username + password) as supplied by Invoco.</li>
+          <li>If the customer has no phone number, the sync is skipped for that record.</li>
+          <li>Errors are logged server-side but won't interrupt saving the customer.</li>
+        </ul>
+      </div>
     </div>
   );
 }
@@ -826,6 +946,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="highlevel" className="gap-2">
               <Zap className="w-4 h-4" /> High Level
+            </TabsTrigger>
+            <TabsTrigger value="invoco" className="gap-2">
+              <Phone className="w-4 h-4" /> Invoco
             </TabsTrigger>
             <TabsTrigger value="sizes" className="gap-2">
               <Ruler className="w-4 h-4" /> Sizes
@@ -1363,6 +1486,11 @@ export default function Settings() {
           {/* ─── High Level Tab ────────────────────────────────────── */}
           <TabsContent value="highlevel" className="mt-6">
             <HighLevelTab rawSettings={rawSettings} />
+          </TabsContent>
+
+          {/* ─── Invoco Tab ────────────────────────────────────────── */}
+          <TabsContent value="invoco" className="mt-6">
+            <InvocoTab rawSettings={rawSettings} />
           </TabsContent>
 
           {/* ─── Sizes Tab ─────────────────────────────────────────── */}
