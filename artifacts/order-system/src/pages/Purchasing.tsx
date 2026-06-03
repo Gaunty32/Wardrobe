@@ -1902,6 +1902,19 @@ export default function Purchasing() {
     onError: (e: Error) => toast({ title: "Error booking in", description: e.message, variant: "destructive" }),
   });
 
+  const undoBookInMutation = useMutation({
+    mutationFn: ({ poId, itemId }: { poId: number; itemId: number }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}/set-delivered`, { method: "PATCH", body: JSON.stringify({ quantityDelivered: 0 }) }),
+    onSuccess: (_data, { itemId }) => {
+      setBackorderDrafts(prev => { const next = { ...prev }; delete next[itemId]; return next; });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      toast({ title: "Book-in undone", description: "Delivered quantity reset to 0." });
+    },
+    onError: (e: Error) => toast({ title: "Error undoing book-in", description: e.message, variant: "destructive" }),
+  });
+
   const toggleGroup = (name: string) => setExpandedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
   const totalItems = groups.reduce((s, g) => s + g.items.length, 0);
 
@@ -2461,7 +2474,7 @@ export default function Purchasing() {
                           <Button
                             size="sm"
                             className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white gap-1"
-                            disabled={bookInBackorderMutation.isPending}
+                            disabled={bookInBackorderMutation.isPending || undoBookInMutation.isPending}
                             onClick={() => {
                               const qty = parseInt(String(backorderDrafts[b.id] ?? b.remaining), 10);
                               if (!qty || qty < 1) return;
@@ -2471,6 +2484,18 @@ export default function Purchasing() {
                             <PackageCheck className="w-3 h-3" /> Book In
                           </Button>
                         </div>
+                        {b.quantityDelivered > 0 && (
+                          <div className="flex items-center gap-1.5 justify-end">
+                            <span className="text-xs text-muted-foreground">{b.quantityDelivered} already received</span>
+                            <button
+                              className="text-xs text-red-600 hover:text-red-800 underline underline-offset-2 disabled:opacity-50"
+                              disabled={undoBookInMutation.isPending}
+                              onClick={() => undoBookInMutation.mutate({ poId: b.poId, itemId: b.id })}
+                            >
+                              Undo
+                            </button>
+                          </div>
+                        )}
                         {b.estimatedDueDate && (
                           <span className="text-xs text-muted-foreground flex items-center gap-1">
                             <CalendarDays className="w-3 h-3" />

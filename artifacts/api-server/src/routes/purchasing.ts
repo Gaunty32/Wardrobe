@@ -1195,6 +1195,63 @@ router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Pro
   res.json({ ...result, allocation });
 });
 
+// ── Correct a book-in: set quantity_delivered to an exact value (can be 0 to undo) ────
+router.patch("/purchasing/purchase-orders/:id/items/:itemId/set-delivered", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const body = z.object({ quantityDelivered: z.number().int().min(0) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [existing] = await db.select().from(purchaseOrderItemsTable)
+    .where(and(eq(purchaseOrderItemsTable.id, params.data.itemId), eq(purchaseOrderItemsTable.poId, params.data.id)));
+  if (!existing) { res.status(404).json({ error: "PO line not found" }); return; }
+
+  const newDelivered = body.data.quantityDelivered;
+  const wasOverDelivered = existing.quantityDelivered > existing.quantityOrdered;
+  const willBeOverDelivered = newDelivered > existing.quantityOrdered;
+
+  await db.update(purchaseOrderItemsTable)
+    .set({ quantityDelivered: newDelivered, updatedAt: new Date() })
+    .where(eq(purchaseOrderItemsTable.id, params.data.itemId));
+
+  // Collect all linked order item IDs
+  const linkedIds: number[] = [
+    ...(existing.orderItemId != null ? [existing.orderItemId] : []),
+    ...((existing.sourceOrderItemIds as number[] | null) ?? []),
+  ];
+
+  if (linkedIds.length > 0) {
+    if (newDelivered >= existing.quantityOrdered) {
+      // Fully received — clear purchaseRequired
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: false, purchaseQuantity: null })
+        .where(inArray(orderItemsTable.id, linkedIds));
+    } else {
+      // Not fully received — restore purchaseRequired and undo allocation if still just 'allocated'
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: true, purchaseQuantity: sql`quantity`, stockStatus: null, stockAllocatedAt: null })
+        .where(and(
+          inArray(orderItemsTable.id, linkedIds),
+          sql`COALESCE(${orderItemsTable.stockStatus}, 'allocated') = 'allocated'`,
+        ));
+    }
+  }
+
+  // Adjust surplus stock: if we previously credited surplus and are now reducing, reverse it
+  if (wasOverDelivered && !willBeOverDelivered && existing.orderItemId) {
+    const oldSurplus = existing.quantityDelivered - existing.quantityOrdered;
+    const newSurplus = Math.max(0, newDelivered - existing.quantityOrdered);
+    const stockAdjust = newSurplus - oldSurplus; // negative = deduct
+    const [oi] = await db.select({ productId: orderItemsTable.productId }).from(orderItemsTable).where(eq(orderItemsTable.id, existing.orderItemId));
+    if (oi?.productId) {
+      await db.execute(sql`UPDATE products SET stock_quantity = GREATEST(0, COALESCE(stock_quantity, 0) + ${stockAdjust}) WHERE id = ${oi.productId}`);
+    }
+  }
+
+  const allocation = await allocatePODelivery(params.data.id);
+  res.json({ ok: true, quantityDelivered: newDelivered, allocation });
+});
+
 // ── Book in a backorder line: add received quantity, run allocation ────────────
 router.post("/purchasing/purchase-orders/:id/items/:itemId/receive", async (req, res): Promise<void> => {
   const params = z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).safeParse(req.params);
