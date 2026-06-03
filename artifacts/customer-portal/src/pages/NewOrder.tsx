@@ -1329,22 +1329,6 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                       {/* Controls block — always pinned to bottom of card */}
                       <div className="mt-auto flex flex-col gap-2">
 
-                      {/* Bulk / single toggle — only for multi-size products */}
-                      {!oneSize && (sizeOptions.length > 1 || sleeveOptions.length > 1) && (
-                        <button
-                          type="button"
-                          onClick={() => setBulkModes(m => ({ ...m, [key]: !m[key] }))}
-                          className={cn(
-                            "w-full py-1.5 rounded-md text-xs font-semibold transition-colors border",
-                            bulkModes[key]
-                              ? "bg-muted text-muted-foreground border-border hover:bg-muted/80"
-                              : "bg-[hsl(218,45%,19%)] text-white border-[hsl(218,45%,19%)] hover:bg-[hsl(218,45%,24%)]"
-                          )}
-                        >
-                          {bulkModes[key] ? "← Single item" : "Bulk Order"}
-                        </button>
-                      )}
-
                       {oneSize ? (
                         /* ── No WooCommerce sizes — one size fits all ── */
                         <div className="flex items-center gap-1.5">
@@ -1404,6 +1388,9 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                                 <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0} onClick={() => handleBulkAdd(wi, key, bulkComboOptions)}>
                                   Add {total > 0 ? `${total} ` : ""}to basket
                                 </Button>
+                                <button type="button" onClick={() => setBulkModes(m => ({ ...m, [key]: false }))} className="w-full py-1.5 rounded-md text-xs font-semibold transition-colors border bg-muted text-muted-foreground border-border hover:bg-muted/80">
+                                  ← Single item
+                                </button>
                               </div>
                             );
                           }
@@ -1433,6 +1420,9 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                               <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0} onClick={() => handleBulkAdd(wi, key, sizeOptions)}>
                                 Add {total > 0 ? `${total} ` : ""}to basket
                               </Button>
+                              <button type="button" onClick={() => setBulkModes(m => ({ ...m, [key]: false }))} className="w-full py-1.5 rounded-md text-xs font-semibold transition-colors border bg-muted text-muted-foreground border-border hover:bg-muted/80">
+                                ← Single item
+                              </button>
                             </div>
                           );
                         })()
@@ -1446,7 +1436,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                           )}
                           <Select value={state.size} onValueChange={v => setItemState(key, { size: v })}>
                             <SelectTrigger className="h-8 text-sm w-full">
-                              <SelectValue placeholder={sleeveOptions.length > 0 ? "Waist" : "Select size"} />
+                              <SelectValue placeholder="Select size" />
                             </SelectTrigger>
                             <SelectContent>
                               {sizeOptions.map(s => (
@@ -1463,7 +1453,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                           {sleeveOptions.length > 0 && (
                             <Select value={state.sleeve} onValueChange={v => setItemState(key, { sleeve: v })}>
                               <SelectTrigger className="h-8 text-sm w-full">
-                                <SelectValue placeholder="Fit / Length" />
+                                <SelectValue placeholder="Select size" />
                               </SelectTrigger>
                               <SelectContent>
                                 {sleeveOptions.map(sl => (
@@ -1471,6 +1461,16 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                                 ))}
                               </SelectContent>
                             </Select>
+                          )}
+                          {/* Bulk / single toggle — sits between size selects and qty row */}
+                          {!oneSize && (sizeOptions.length > 1 || sleeveOptions.length > 1) && (
+                            <button
+                              type="button"
+                              onClick={() => setBulkModes(m => ({ ...m, [key]: !m[key] }))}
+                              className="w-full py-1.5 rounded-md text-xs font-semibold transition-colors border bg-[hsl(218,45%,19%)] text-white border-[hsl(218,45%,19%)] hover:bg-[hsl(218,45%,24%)]"
+                            >
+                              Bulk Order
+                            </button>
                           )}
                           <div className="flex items-center gap-1.5">
                             <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
