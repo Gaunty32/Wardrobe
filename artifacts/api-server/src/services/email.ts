@@ -111,13 +111,19 @@ const SBS_FROM = "Select Branding Solutions <info@selectbranding.co.uk>";
 const DEFAULT_FROM = process.env.SMTP_FROM ?? SBS_FROM;
 
 export async function sendEmail(opts: {
-  to: string;
+  to: string | string[];
   cc?: string | string[];
   subject: string;
   html: string;
   text: string;
   attachments?: Array<{ filename: string; content: Buffer; contentType: string }>;
 }): Promise<{ sent: boolean; messageId?: string; provider?: string; error?: string }> {
+
+  // Normalise `to` into a clean array (handles "a@b.com, c@d.com" or arrays)
+  const toArr = (Array.isArray(opts.to)
+    ? opts.to
+    : opts.to.split(",").map(e => e.trim())
+  ).filter(Boolean);
 
   // ── Resend (preferred) ──────────────────────────────────────────────────────
   if (isResendAvailable) {
@@ -129,7 +135,7 @@ export async function sendEmail(opts: {
         : undefined;
       const { data, error } = await client.emails.send({
         from,
-        to: [opts.to],
+        to: toArr,
         ...(ccArr?.length ? { cc: ccArr } : {}),
         subject: opts.subject,
         html: opts.html,

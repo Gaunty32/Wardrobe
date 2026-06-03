@@ -1110,7 +1110,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   const items = itemRows2.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
 
   // Resolve customer email and address
-  const body = z.object({ toEmail: z.string().email().optional(), previewOnly: z.boolean().optional() }).safeParse(req.body);
+  const body = z.object({ toEmail: z.string().optional(), previewOnly: z.boolean().optional() }).safeParse(req.body);
   let toEmail = body.success ? body.data.toEmail : undefined;
   let contactFirstName: string | null = null;
   let customerAddress: string | null = null;
