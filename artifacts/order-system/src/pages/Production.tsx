@@ -2979,6 +2979,7 @@ export default function Production() {
 
   const [sendingOrder, setSendingOrder] = useState<AllReadyOrder | null>(null);
   const [sendingNotes, setSendingNotes] = useState("");
+  const [sendingExcluded, setSendingExcluded] = useState<Set<number>>(new Set());
 
   const createWorksheetMutation = useMutation({
     mutationFn: (data: { orderId: number; orderNumber: string; customerId: number | null; customerName: string | null; notes: string; itemIds: number[] }) =>
@@ -2989,6 +2990,7 @@ export default function Production() {
       toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Order added to Pre-Production." });
       setSendingOrder(null);
       setSendingNotes("");
+      setSendingExcluded(new Set());
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -3312,53 +3314,86 @@ export default function Production() {
         </Tabs>
       </div>
 
-      {sendingOrder && (
-        <Dialog open onOpenChange={(open) => { if (!open) { setSendingOrder(null); setSendingNotes(""); } }}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <ClipboardList className="w-5 h-5" />
-                Send to Production — {sendingOrder.orderNumber}
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <p className="text-sm text-muted-foreground">
-                A pre-production worksheet will be created for the items below. Move it to <strong>Work in Progress</strong> once decoration begins.
-              </p>
-              <div className="rounded-lg border border-green-200 bg-green-50/30 px-4 py-3">
-                <ItemMatrix items={sendingOrder.items} borderClass="border-green-200" headClass="bg-green-50/80 border-green-200" />
+      {sendingOrder && (() => {
+        const includedItems = sendingOrder.items.filter(i => !sendingExcluded.has(i.id));
+        const closeSendingDialog = () => { setSendingOrder(null); setSendingNotes(""); setSendingExcluded(new Set()); };
+        return (
+          <Dialog open onOpenChange={(open) => { if (!open) closeSendingDialog(); }}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <ClipboardList className="w-5 h-5" />
+                  Send to Production — {sendingOrder.orderNumber}
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <p className="text-sm text-muted-foreground">
+                  Tick the items to include in the worksheet. Untick any that aren't ready yet — they'll stay on the picking list.
+                </p>
+                <div className="rounded-lg border border-border divide-y divide-border">
+                  {sendingOrder.items.map(item => {
+                    const included = !sendingExcluded.has(item.id);
+                    return (
+                      <label key={item.id} className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors ${included ? "" : "opacity-50"}`}>
+                        <input
+                          type="checkbox"
+                          checked={included}
+                          onChange={() => setSendingExcluded(prev => {
+                            const next = new Set(prev);
+                            if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+                            return next;
+                          })}
+                          className="h-4 w-4 rounded border-gray-300 accent-green-600"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium">{item.productName}</span>
+                          {(item.colour || item.size) && (
+                            <span className="text-xs text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
+                          )}
+                          {item.finishName && (
+                            <span className="text-xs text-blue-600 ml-2">✦ {item.finishName}</span>
+                          )}
+                        </div>
+                        <span className="text-sm font-semibold tabular-nums">×{item.quantity}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {includedItems.length === 0 && (
+                  <p className="text-sm text-amber-600 font-medium text-center">Select at least one item to create a worksheet.</p>
+                )}
+                <div className="space-y-1.5">
+                  <Label htmlFor="ws-notes" className="text-sm">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input
+                    id="ws-notes"
+                    placeholder="Special instructions, artwork notes…"
+                    value={sendingNotes}
+                    onChange={e => setSendingNotes(e.target.value)}
+                  />
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="ws-notes" className="text-sm">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <Input
-                  id="ws-notes"
-                  placeholder="Special instructions, artwork notes…"
-                  value={sendingNotes}
-                  onChange={e => setSendingNotes(e.target.value)}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setSendingOrder(null); setSendingNotes(""); }}>Cancel</Button>
-              <Button
-                className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
-                disabled={createWorksheetMutation.isPending}
-                onClick={() => createWorksheetMutation.mutate({
-                  orderId: sendingOrder.id,
-                  orderNumber: sendingOrder.orderNumber,
-                  customerId: sendingOrder.customerId,
-                  customerName: sendingOrder.customerName,
-                  notes: sendingNotes,
-                  itemIds: sendingOrder.items.map(i => i.id),
-                })}
-              >
-                {createWorksheetMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ClipboardList className="w-3.5 h-3.5" />}
-                Create Worksheet
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+              <DialogFooter>
+                <Button variant="outline" onClick={closeSendingDialog}>Cancel</Button>
+                <Button
+                  className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                  disabled={createWorksheetMutation.isPending || includedItems.length === 0}
+                  onClick={() => createWorksheetMutation.mutate({
+                    orderId: sendingOrder.id,
+                    orderNumber: sendingOrder.orderNumber,
+                    customerId: sendingOrder.customerId,
+                    customerName: sendingOrder.customerName,
+                    notes: sendingNotes,
+                    itemIds: includedItems.map(i => i.id),
+                  })}
+                >
+                  {createWorksheetMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ClipboardList className="w-3.5 h-3.5" />}
+                  Create Worksheet{includedItems.length < sendingOrder.items.length ? ` (${includedItems.length} of ${sendingOrder.items.length})` : ""}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
 
       {readyOrder && (
         <ReadyToDispatchModal order={readyOrder} onClose={() => setReadyOrder(null)} />
