@@ -201,11 +201,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
           : "new";
       }
       setPoActions(initial);
-      if ((data.shortfallGroups ?? []).length > 0) {
-        setStep("purchase_orders");
-      } else {
-        setStep("email");
-      }
+      setStep("email");
       onConfirmed();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
