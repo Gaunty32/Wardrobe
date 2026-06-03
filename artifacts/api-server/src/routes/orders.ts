@@ -834,12 +834,27 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           })
           .returning();
 
-        const wsOrderItems = await db
+        const wsOrderItemsRaw = await db
           .select()
           .from(orderItemsTable)
           .where(inArray(orderItemsTable.id, allocatedItemIds));
 
-        await Promise.all(
+        // Exclude service items — they don't go through production
+        const serviceProductIdSet = new Set<number>();
+        const linkedProductIds = wsOrderItemsRaw.map(i => i.productId).filter((id): id is number => id != null);
+        if (linkedProductIds.length > 0) {
+          const serviceRows = await db
+            .select({ id: productsTable.id })
+            .from(productsTable)
+            .where(and(eq(productsTable.isService, true), inArray(productsTable.id, linkedProductIds)));
+          serviceRows.forEach(r => serviceProductIdSet.add(r.id));
+        }
+        const wsOrderItems = wsOrderItemsRaw.filter(oi => !oi.productId || !serviceProductIdSet.has(oi.productId));
+
+        // Nothing left to produce — remove the worksheet and skip
+        if (wsOrderItems.length === 0) {
+          await db.delete(worksheetsTable).where(eq(worksheetsTable.id, ws.id));
+        } else await Promise.all(
           wsOrderItems.map(async (oi) => {
             let processesSnapshot: string | null = null;
             if (oi.finishId && order.customerId) {
