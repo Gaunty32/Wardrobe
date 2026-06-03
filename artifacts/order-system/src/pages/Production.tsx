@@ -929,6 +929,157 @@ function WorksheetCardMatrix({ ws }: { ws: Worksheet }) {
   );
 }
 
+// ─── Standalone worksheet print (no DOM dependency, usable before card renders) ──
+function printWorksheetFromData(ws: Worksheet) {
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
+  const finishMap = new Map<string, WorksheetItem[]>();
+  for (const item of ws.items) {
+    const fk = item.finishName ?? "Plain (No Finish)";
+    if (!finishMap.has(fk)) finishMap.set(fk, []);
+    finishMap.get(fk)!.push(item);
+  }
+  const sortedFinishes = Array.from(finishMap.keys()).sort((a, b) => {
+    if (a === "Plain (No Finish)") return 1;
+    if (b === "Plain (No Finish)") return -1;
+    return a.localeCompare(b);
+  });
+
+  const finishSections = sortedFinishes.map((finishName) => {
+    const fItems = finishMap.get(finishName)!;
+    const repProcesses = fItems.find((i) => i.processes.length > 0)?.processes ?? [];
+
+    const matMap = new Map<string, { productName: string; colour: string | null; sizes: Map<string, number> }>();
+    const allSizes = new Set<string>();
+    for (const item of fItems) {
+      const key = `${item.productName}||${item.colour ?? ""}`;
+      if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, sizes: new Map() });
+      const sk = item.size ?? "—";
+      allSizes.add(sk);
+      matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
+    }
+    const sortedSizes = sortSizes(Array.from(allSizes));
+    const matRows = Array.from(matMap.values());
+    const finishTotal = fItems.reduce((s, i) => s + i.quantity, 0);
+
+    const processRows = repProcesses.map((p) => `
+      <tr style="border-bottom:1px solid #e5e7eb">
+        <td style="padding:3px 6px;font-weight:600">${p.name}</td>
+        <td style="padding:3px 6px;color:#555">${p.type ?? "—"}</td>
+        <td style="padding:3px 6px;color:#555">${p.placement ?? "—"}</td>
+        <td style="padding:3px 6px;color:#777;font-style:italic">${p.notes ?? "—"}</td>
+        <td style="padding:3px 6px;text-align:center"><span style="display:inline-block;width:18px;height:18px;border:1.5px solid #999;border-radius:3px"></span></td>
+      </tr>`).join("");
+
+    const processTable = repProcesses.length > 0 ? `
+      <div style="padding:5px 10px;background:#f0f4ff;border-bottom:1px solid #dbeafe">
+        <div style="font-size:9px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Decoration Processes</div>
+        <table style="width:100%;border-collapse:collapse;font-size:10px">
+          <thead><tr style="background:#dbeafe">
+            <th style="padding:2px 6px;text-align:left;font-weight:600">Process</th>
+            <th style="padding:2px 6px;text-align:left;font-weight:600">Type</th>
+            <th style="padding:2px 6px;text-align:left;font-weight:600">Placement</th>
+            <th style="padding:2px 6px;text-align:left;font-weight:600">Notes</th>
+            <th style="padding:2px 6px;text-align:center;font-weight:600">Done ✓</th>
+          </tr></thead>
+          <tbody>${processRows}</tbody>
+        </table>
+      </div>` : "";
+
+    const sizeHeaders = sortedSizes.map((s) => `<th style="padding:4px 8px;text-align:center;font-size:10px;white-space:nowrap">${s}</th>`).join("");
+    const matrixRows = matRows.map(({ productName, colour, sizes }, i) => {
+      const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+      const sizeCells = sortedSizes.map((s) => {
+        const qty = sizes.get(s) ?? 0;
+        return `<td style="padding:4px 8px;text-align:center;font-weight:${qty > 0 ? "bold" : "normal"};color:${qty > 0 ? "#111" : "#ccc"}">${qty > 0 ? qty : "—"}</td>`;
+      }).join("");
+      return `<tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"};border-bottom:1px solid #e5e7eb">
+        <td style="padding:4px 8px;font-weight:600">${productName}</td>
+        <td style="padding:4px 8px;color:#555">${colour ?? "—"}</td>
+        ${sizeCells}
+        <td style="padding:4px 8px;text-align:center;font-weight:bold;background:#f0f4ff">${rowTotal}</td>
+        <td style="padding:4px 8px;text-align:center"><span style="display:inline-block;width:20px;height:20px;border:1.5px solid #999;border-radius:3px"></span></td>
+      </tr>`;
+    }).join("");
+
+    return `
+      <div style="margin-bottom:6mm;page-break-inside:avoid;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden">
+        <div style="background:#e8edf5;color:#1e3a5f;border-left:5px solid #1e3a5f;padding:5px 10px;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-weight:800;font-size:13px">${finishName}</span>
+          <span style="font-size:11px;color:#374151">${matRows.length} style${matRows.length !== 1 ? "s" : ""} · ${finishTotal} unit${finishTotal !== 1 ? "s" : ""}</span>
+        </div>
+        ${processTable}
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="background:#374151;color:white">
+            <th style="padding:4px 8px;text-align:left;font-size:10px">Product</th>
+            <th style="padding:4px 8px;text-align:left;font-size:10px">Colour</th>
+            ${sizeHeaders}
+            <th style="padding:4px 8px;text-align:center;font-size:10px;background:#1e3a5f">Total</th>
+            <th style="padding:4px 8px;text-align:center;font-size:10px">Done ✓</th>
+          </tr></thead>
+          <tbody>${matrixRows}</tbody>
+        </table>
+      </div>`;
+  }).join("");
+
+  const notesHtml = ws.notes ? `
+    <div style="margin-top:3mm;padding:3mm;background:#fff9c4;border:1px solid #f59e0b;border-radius:4px;font-size:11px">
+      <strong>Notes:</strong> ${ws.notes}
+    </div>` : "";
+
+  const html = `<!DOCTYPE html><html><head><title>Worksheet ${ws.worksheetNumber}</title>
+    <style>
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
+      #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+      #toolbar span{flex:1;font-size:14px;font-weight:600;letter-spacing:.5px}
+      #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+      #btn-print{background:#22c55e;color:white}#btn-print:hover{background:#16a34a}
+      #btn-close{background:rgba(255,255,255,.15);color:white}#btn-close:hover{background:rgba(255,255,255,.25)}
+      #page{display:flex;justify-content:center;padding:24px 0 40px}
+      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
+      @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none;padding:0}@page{size:A4 portrait;margin:12mm}}
+    </style>
+  </head><body>
+    <div id="toolbar">
+      <span>📋 ${ws.worksheetNumber} — ${ws.customerName ?? ws.orderNumber ?? "Worksheet"}</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print</button>
+      <button id="btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+    <div id="page"><div id="sheet">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5mm;border-bottom:2px solid #1e3a5f;padding-bottom:4mm">
+        <div>
+          ${ws.customerName ? `<div style="font-size:26px;font-weight:900;color:#1e3a5f;margin-bottom:1mm">${ws.customerName}</div>` : ""}
+          <div style="font-size:16px;font-weight:700;color:#1e3a5f;letter-spacing:1px">PRODUCTION WORKSHEET</div>
+          <div style="font-size:12px;color:#555;margin-top:1mm">${ws.worksheetNumber} · Order ${ws.orderNumber ?? "—"}</div>
+        </div>
+        <div style="text-align:right;font-size:11px;color:#555">
+          <div style="font-weight:bold;font-size:13px">Select Branding Solutions</div>
+          <div>Printed: ${dateStr}</div>
+          <div style="margin-top:1mm">${ws.items.length} item${ws.items.length !== 1 ? "s" : ""} · ${sortedFinishes.length} finish${sortedFinishes.length !== 1 ? "es" : ""}</div>
+        </div>
+      </div>
+      ${finishSections}
+      ${notesHtml}
+      <div style="margin-top:6mm;display:flex;gap:20px">
+        <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Produced by: ___________________________</div>
+        <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Date completed: ___________________________</div>
+        <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:10px;color:#666">Checked by: ___________________________</div>
+      </div>
+      <div style="margin-top:6mm;padding-top:3mm;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between;font-size:9px;color:#aaa">
+        <span>Select Branding Solutions — Internal Use Only</span>
+        <span>${ws.worksheetNumber} · ${dateStr}</span>
+      </div>
+    </div></div>
+  </body></html>`;
+
+  const win = window.open("", "_blank", "width=1100,height=800");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+}
+
 function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   ws: Worksheet;
   onStatusChange: (id: number, status: string) => void;
@@ -939,51 +1090,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   const cfg = STATUS_CONFIG[ws.status];
   const StatusIcon = cfg.icon;
 
-  const handlePrint = () => {
-    const el = document.getElementById(`ws-print-${ws.id}`);
-    if (!el) return;
-    const win = window.open("", "_blank", "width=960,height=800");
-    if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>Worksheet ${ws.worksheetNumber}</title>
-      <style>
-        *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-        body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif}
-        #toolbar{
-          position:sticky;top:0;z-index:10;
-          display:flex;align-items:center;gap:10px;
-          padding:10px 20px;background:#1e3a5f;color:white;
-          box-shadow:0 2px 6px rgba(0,0,0,.3);
-        }
-        #toolbar span{flex:1;font-size:14px;font-weight:600;letter-spacing:.5px}
-        #toolbar button{
-          padding:6px 18px;border:none;border-radius:5px;
-          font-size:13px;font-weight:600;cursor:pointer;
-        }
-        #btn-print{background:#22c55e;color:white}
-        #btn-print:hover{background:#16a34a}
-        #btn-close{background:rgba(255,255,255,.15);color:white}
-        #btn-close:hover{background:rgba(255,255,255,.25)}
-        #page{display:flex;justify-content:center;padding:24px 0 40px}
-        #sheet{background:white;box-shadow:0 4px 24px rgba(0,0,0,.15)}
-        @media print{
-          #toolbar{display:none}
-          body{background:white}
-          #page{padding:0}
-          #sheet{box-shadow:none}
-          @page{size:A4;margin:15mm}
-        }
-      </style>
-    </head><body>
-      <div id="toolbar">
-        <span>📋 ${ws.worksheetNumber} — ${ws.customerName ?? ws.orderNumber ?? "Worksheet"}</span>
-        <button id="btn-print" onclick="window.print()">🖨 Print</button>
-        <button id="btn-close" onclick="window.close()">✕ Close</button>
-      </div>
-      <div id="page"><div id="sheet">${el.innerHTML}</div></div>
-    </body></html>`);
-    win.document.close();
-    win.focus();
-  };
+  const handlePrint = () => printWorksheetFromData(ws);
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -1060,10 +1167,6 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
       {expanded && (
         <WorksheetCardMatrix ws={ws} />
       )}
-
-      <div id={`ws-print-${ws.id}`} style={{ display: "none" }}>
-        <PrintWorksheet ws={ws} />
-      </div>
     </div>
   );
 }
@@ -2987,10 +3090,12 @@ export default function Production() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["production-pending"] });
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
-      toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Order added to Pre-Production." });
+      toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Printing worksheet now…" });
       setSendingOrder(null);
       setSendingNotes("");
       setSendingExcluded(new Set());
+      // Auto-print the worksheet immediately after creation
+      printWorksheetFromData(data as Worksheet);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -3253,7 +3358,7 @@ export default function Production() {
             )}
           </TabsContent>
 
-          {/* ── WIP Tab ── */}
+          {/* ── WIP Tab — grouped by order/job number ── */}
           <TabsContent value="wip">
             {isLoading ? (
               <div className="flex items-center justify-center py-16 text-muted-foreground">
@@ -3265,19 +3370,64 @@ export default function Production() {
                 <p className="text-lg font-medium">No active worksheets</p>
                 <p className="text-sm text-center max-w-xs">Move items here from Pre-Production when the garments have arrived and decoration can begin.</p>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {wip.map((ws) => (
-                  <WorksheetCard
-                    key={ws.id}
-                    ws={ws}
-                    onStatusChange={(id, s) => statusMutation.mutate({ id, status: s, orderId: ws.orderId })}
-                    onDelete={handleDelete}
-                    onReturnToPicking={handleReturnToPicking}
-                  />
-                ))}
-              </div>
-            )}
+            ) : (() => {
+              // Group WIP worksheets by order
+              type WipGroup = { orderNumber: string; customerName: string | null; requiredDate: string | null; orderId: number | null; worksheets: Worksheet[] };
+              const wipGroupMap = new Map<string, WipGroup>();
+              for (const ws of wip) {
+                const key = ws.orderNumber ?? `ws-${ws.id}`;
+                if (!wipGroupMap.has(key)) {
+                  wipGroupMap.set(key, { orderNumber: ws.orderNumber ?? "—", customerName: ws.customerName, requiredDate: ws.requiredDate, orderId: ws.orderId, worksheets: [] });
+                }
+                wipGroupMap.get(key)!.worksheets.push(ws);
+              }
+              const wipGroups = Array.from(wipGroupMap.values());
+              return (
+                <div className="space-y-4">
+                  {wipGroups.map((group) => (
+                    <div key={group.orderNumber} className="rounded-xl border border-amber-200 bg-amber-50/30 shadow-sm overflow-hidden">
+                      {/* Order header */}
+                      <div className="flex items-center justify-between px-5 py-3 bg-amber-50 border-b border-amber-200">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <ClipboardList className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {group.orderId ? (
+                                <a href={`/orders/${group.orderId}`} className="font-mono font-bold text-base hover:underline text-foreground">
+                                  {group.orderNumber}
+                                </a>
+                              ) : (
+                                <span className="font-mono font-bold text-base">{group.orderNumber}</span>
+                              )}
+                              <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300">
+                                {group.worksheets.length} worksheet{group.worksheets.length !== 1 ? "s" : ""}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
+                              {group.customerName && <span>{group.customerName}</span>}
+                              {group.requiredDate && <span>· Due {formatDate(group.requiredDate)}</span>}
+                              <span className="text-amber-700 font-medium">· {group.worksheets.map(w => w.worksheetNumber).join(", ")}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Worksheets list */}
+                      <div className="divide-y divide-amber-100">
+                        {group.worksheets.map((ws) => (
+                          <WorksheetCard
+                            key={ws.id}
+                            ws={ws}
+                            onStatusChange={(id, s) => statusMutation.mutate({ id, status: s, orderId: ws.orderId })}
+                            onDelete={handleDelete}
+                            onReturnToPicking={handleReturnToPicking}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </TabsContent>
 
           {/* ── Picking List Tab ── */}
