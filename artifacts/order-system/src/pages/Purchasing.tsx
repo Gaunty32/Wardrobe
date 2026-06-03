@@ -1979,7 +1979,7 @@ export default function Purchasing() {
       const key = g.supplierName;
       if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, earliestCreatedAt: null });
       const tile = map.get(key)!;
-      tile.reqLines += g.items.length;
+      tile.reqLines += g.items.reduce((s, item) => s + (item.purchaseQuantity ?? 1), 0);
       for (const item of g.items) {
         if (item.supplierPrice != null && item.purchaseQuantity != null) {
           tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * item.purchaseQuantity;
@@ -1990,7 +1990,7 @@ export default function Purchasing() {
     for (const g of processReqsBySupplier) {
       const key = g.supplierName;
       if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, earliestCreatedAt: null });
-      map.get(key)!.psLines += g.items.length;
+      map.get(key)!.psLines += g.items.reduce((s, item) => s + (item.shortfall ?? 1), 0);
     }
     for (const po of draftPos) {
       const key = po.supplierName;
