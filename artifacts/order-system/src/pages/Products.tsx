@@ -664,7 +664,7 @@ export default function Products() {
                 <Label htmlFor="price">Unit Price (£) *</Label>
                 <Input id="price" type="number" min="0" step="0.01" value={formData.unitPrice || ""} onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })} />
               </div>
-              {!formData.isService && (
+              {!formData.isService && !editingProduct && (
                 <div className="grid gap-2">
                   <Label htmlFor="stock">Stock Quantity</Label>
                   <Input id="stock" type="number" value={formData.stockQuantity || ""} onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value, 10) || 0 })} />
