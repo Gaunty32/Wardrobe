@@ -255,6 +255,22 @@ function QuickAdjustModal({
   const sizeOrder = useSizeOrder();
   const sorted = sortBySizeWithOrder(variants, v => v.size, sizeOrder);
 
+  const [colourFilter, setColourFilter] = useState<string>("");
+  const [sizeFilter, setSizeFilter] = useState<string>("");
+
+  const uniqueColours = useMemo(
+    () => Array.from(new Set(sorted.map(v => v.colour ?? "")).values()).filter(Boolean).sort(),
+    [sorted],
+  );
+  const uniqueSizes = useMemo(
+    () => sortBySizeWithOrder(
+      Array.from(new Set(sorted.map(v => v.size ?? "")).values()).filter(Boolean),
+      s => s,
+      sizeOrder,
+    ),
+    [sorted, sizeOrder],
+  );
+
   const [rows, setRows] = useState<QuickAdjustRow[]>(
     sorted.map(v => ({
       variantId: v.variantId,
@@ -293,6 +309,14 @@ function QuickAdjustModal({
 
   const changedCount = rows.filter(r => r.changed).length;
 
+  const visibleRows = useMemo(
+    () => rows.filter(r =>
+      (!colourFilter || r.colour === colourFilter) &&
+      (!sizeFilter || r.size === sizeFilter)
+    ),
+    [rows, colourFilter, sizeFilter],
+  );
+
   return (
     <Dialog open onOpenChange={() => onClose()}>
       <DialogContent className="sm:max-w-2xl flex flex-col max-h-[85vh]" onInteractOutside={e => e.preventDefault()}>
@@ -302,6 +326,44 @@ function QuickAdjustModal({
             {productSku && <span className="text-sm font-mono text-muted-foreground ml-2">{productSku}</span>}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Filters */}
+        {(uniqueColours.length > 1 || uniqueSizes.length > 1) && (
+          <div className="flex items-center gap-2 flex-wrap -mt-1 mb-1">
+            {uniqueColours.length > 1 && (
+              <select
+                value={colourFilter}
+                onChange={e => setColourFilter(e.target.value)}
+                className="border border-border rounded px-2 py-1 text-sm bg-background focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
+              >
+                <option value="">All colours</option>
+                {uniqueColours.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+            {uniqueSizes.length > 1 && (
+              <select
+                value={sizeFilter}
+                onChange={e => setSizeFilter(e.target.value)}
+                className="border border-border rounded px-2 py-1 text-sm bg-background focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
+              >
+                <option value="">All sizes</option>
+                {uniqueSizes.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            )}
+            {(colourFilter || sizeFilter) && (
+              <button
+                onClick={() => { setColourFilter(""); setSizeFilter(""); }}
+                className="text-xs text-muted-foreground hover:text-foreground underline"
+              >
+                Clear
+              </button>
+            )}
+            <span className="text-xs text-muted-foreground ml-auto">
+              {visibleRows.length} of {rows.length} variant{rows.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+        )}
+
         <div className="overflow-y-auto flex-1 -mx-6 px-6">
           <Table>
             <TableHeader>
@@ -314,34 +376,44 @@ function QuickAdjustModal({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row, idx) => (
-                <TableRow key={row.variantId} className={cn(row.changed && "bg-primary/5")}>
-                  <TableCell className="text-sm">{row.colour ?? "—"}</TableCell>
-                  <TableCell className="text-sm font-medium">{row.size ?? "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <input
-                      type="number" min={0} value={row.draft}
-                      onChange={e => update(idx, "draft", e.target.value)}
-                      className="w-16 text-right border border-border rounded px-2 py-1 text-sm font-mono focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <input
-                      type="number" min={0} value={row.minDraft}
-                      onChange={e => update(idx, "minDraft", e.target.value)}
-                      className="w-14 text-right border border-border rounded px-2 py-1 text-sm font-mono focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <input
-                      type="text" value={row.binDraft}
-                      onChange={e => update(idx, "binDraft", e.target.value)}
-                      placeholder="e.g. A-001"
-                      className="w-20 border border-border rounded px-2 py-1 text-sm font-mono uppercase focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
-                    />
+              {visibleRows.map((row) => {
+                const idx = rows.findIndex(r => r.variantId === row.variantId);
+                return (
+                  <TableRow key={row.variantId} className={cn(row.changed && "bg-primary/5")}>
+                    <TableCell className="text-sm">{row.colour ?? "—"}</TableCell>
+                    <TableCell className="text-sm font-medium">{row.size ?? "—"}</TableCell>
+                    <TableCell className="text-right">
+                      <input
+                        type="number" min={0} value={row.draft}
+                        onChange={e => update(idx, "draft", e.target.value)}
+                        className="w-16 text-right border border-border rounded px-2 py-1 text-sm font-mono focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <input
+                        type="number" min={0} value={row.minDraft}
+                        onChange={e => update(idx, "minDraft", e.target.value)}
+                        className="w-14 text-right border border-border rounded px-2 py-1 text-sm font-mono focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <input
+                        type="text" value={row.binDraft}
+                        onChange={e => update(idx, "binDraft", e.target.value)}
+                        placeholder="e.g. A-001"
+                        className="w-20 border border-border rounded px-2 py-1 text-sm font-mono uppercase focus:border-primary focus:ring-1 focus:ring-primary focus:outline-none"
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              {visibleRows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                    No variants match the current filters.
                   </TableCell>
                 </TableRow>
-              ))}
+              )}
             </TableBody>
           </Table>
         </div>
