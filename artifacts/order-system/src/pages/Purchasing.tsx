@@ -1540,7 +1540,12 @@ function POCard({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono font-bold">{po.poNumber}</span>
               <Badge className={`text-xs gap-1 ${cfg.color}`}><StatusIcon className="w-3 h-3" />{cfg.label}</Badge>
-              {deliveryLabel && po.status === "ordered" && (
+              {po.status === "draft" && someDelivered && (
+                <Badge className="text-xs gap-1 bg-amber-100 text-amber-800 border-amber-300 border">
+                  <Loader2 className="w-3 h-3" /> Booking in progress
+                </Badge>
+              )}
+              {deliveryLabel && (po.status === "ordered" || someDelivered) && (
                 <span className="flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
                   <CalendarDays className="w-3 h-3" /> Due {deliveryLabel}
                 </span>
@@ -1580,13 +1585,13 @@ function POCard({
               <Send className="w-3.5 h-3.5" /> Mark Ordered
             </Button>
           )}
-          {po.status === "ordered" && (
+          {(po.status === "ordered" || (po.status === "draft" && someDelivered)) && (
             <Button size="sm" variant="outline" className="gap-1.5 text-xs border-green-400 text-green-700 hover:bg-green-50"
               onClick={() => { if (confirm("Receive full delivery? All lines will be marked as fully delivered.")) onReceiveAll(po.id); }}>
               <PackageCheck className="w-3.5 h-3.5" /> Receive All
             </Button>
           )}
-          {po.status === "ordered" && (allDelivered || someDelivered) && (
+          {(po.status === "ordered" || (po.status === "draft" && someDelivered)) && (allDelivered || someDelivered) && (
             <Button
               size="sm"
               className={`gap-1.5 text-xs text-white ${allDelivered ? "bg-green-600 hover:bg-green-700" : "bg-amber-600 hover:bg-amber-700"}`}
@@ -1903,10 +1908,12 @@ export default function Purchasing() {
       }, {} as Record<string, { supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] }>)
   );
 
-  const draftPos = purchaseOrders.filter((po) => po.status === "draft");
-  const filteredPos = purchaseOrders.filter((po) => po.status === "ordered");
-  const draftCount = purchaseOrders.filter((p) => p.status === "draft").length;
-  const orderedCount = purchaseOrders.filter((p) => p.status === "ordered").length;
+  const draftPos = purchaseOrders.filter((po) => po.status === "draft" && !po.items.some(i => i.quantityDelivered > 0));
+  const filteredPos = purchaseOrders.filter((po) =>
+    po.status === "ordered" || (po.status === "draft" && po.items.some(i => i.quantityDelivered > 0))
+  );
+  const draftCount = draftPos.length;
+  const orderedCount = filteredPos.length;
   const deliveredCount = purchaseOrders.filter((p) => p.status === "delivered").length;
 
   const orderedBySupplier = useMemo(() => {
