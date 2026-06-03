@@ -699,7 +699,7 @@ export default function Orders() {
                                   (order as any).gpMargin >= 20 ? "bg-amber-50 text-amber-700" :
                                   "bg-red-50 text-red-600"
                                 }`}>
-                                  {((order as any).gpMargin as number).toFixed(1)}%
+                                  {((order as any).gpMargin as number).toFixed(0)}%
                                 </span>
                               )}
                             </div>

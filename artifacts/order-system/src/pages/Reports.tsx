@@ -711,7 +711,7 @@ export default function Reports() {
                         <TableCell className="py-2.5 text-right">
                           {order.gp != null && colors ? (
                             <span className={`inline-block text-xs font-semibold tabular-nums px-2 py-0.5 rounded border ${colors.badge}`}>
-                              {order.gp.toFixed(1)}%
+                              {order.gp.toFixed(0)}%
                             </span>
                           ) : (
                             <span className="text-xs text-muted-foreground/40">—</span>
@@ -737,7 +737,7 @@ export default function Reports() {
                     {overallGp != null && colors && (
                       <span className="text-muted-foreground">Overall GP:
                         <span className={`ml-2 inline-block text-sm font-bold tabular-nums px-2 py-0.5 rounded border ${colors.badge}`}>
-                          {overallGp.toFixed(1)}%
+                          {overallGp.toFixed(0)}%
                         </span>
                       </span>
                     )}

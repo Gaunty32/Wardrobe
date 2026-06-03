@@ -847,7 +847,7 @@ function GpBadge({ gp }: { gp: number }) {
               : "text-red-700 bg-red-50 border-red-200";
   return (
     <span className={`inline-block text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded border ${color}`}>
-      {gp.toFixed(1)}%
+      {gp.toFixed(0)}%
     </span>
   );
 }

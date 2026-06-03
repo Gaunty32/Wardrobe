@@ -94,7 +94,7 @@ function fmtMonth(dateStr: string) {
 }
 function fmtPct(v: number | null) {
   if (v == null) return "—";
-  return `${v.toFixed(1)}%`;
+  return `${v.toFixed(0)}%`;
 }
 function gpColor(gp: number) {
   return gp >= 0 ? "text-emerald-700" : "text-red-600";

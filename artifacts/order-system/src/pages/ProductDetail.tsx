@@ -939,10 +939,10 @@ export default function ProductDetail() {
                     <span className="text-xs font-medium uppercase tracking-wide opacity-70">GP</span>
                     {isRange ? (
                       <span className="text-xl font-bold leading-none whitespace-nowrap">
-                        {minGp.toFixed(1)}%–{maxGp.toFixed(1)}%
+                        {minGp.toFixed(0)}%–{maxGp.toFixed(0)}%
                       </span>
                     ) : (
-                      <span className="text-2xl font-bold leading-none">{minGp.toFixed(1)}%</span>
+                      <span className="text-2xl font-bold leading-none">{minGp.toFixed(0)}%</span>
                     )}
                     <span className="text-xs mt-0.5 opacity-60">
                       {isRange ? `${costs.length} variant costs` : `cost ${formatCurrency(costs[0])}`}

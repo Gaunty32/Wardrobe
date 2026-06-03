@@ -1816,7 +1816,7 @@ export default function OrderDetail() {
                               return (
                                 <span className={`inline-block text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded border ${color}`}
                                   title={`Garment: ${formatCurrency(garmentCost)}${processCost > 0 ? ` · Process: ${formatCurrency(processCost)}` : ""} · Total cost: ${formatCurrency(totalCost)}`}>
-                                  {gp.toFixed(1)}%
+                                  {gp.toFixed(0)}%
                                 </span>
                               );
                             })()}
