@@ -19,6 +19,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Check, ChevronsUpDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,6 +71,7 @@ export default function Products() {
   const [websiteFilter, setWebsiteFilter] = useState<"all" | "website" | "internal" | "bespoke" | "service" | "archived">("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
+  const [customerComboOpen, setCustomerComboOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"catalogue" | "sales">("catalogue");
   const [salesDateFrom, setSalesDateFrom] = useState("");
   const [salesDateTo, setSalesDateTo] = useState("");
@@ -729,15 +733,50 @@ export default function Products() {
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Bespoke Assignment</p>
                 <div className="grid gap-2">
                   <Label>Assign to Customer (Bespoke)</Label>
-                  <Select value={formData.customerId} onValueChange={(v) => setFormData({ ...formData, customerId: v })}>
-                    <SelectTrigger><SelectValue placeholder="— Standard product (all customers) —" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">— Standard product (all customers) —</SelectItem>
-                      {(customers as any[]).map((c: any) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={customerComboOpen} onOpenChange={setCustomerComboOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={customerComboOpen}
+                        className="w-full justify-between font-normal"
+                      >
+                        <span className="truncate">
+                          {formData.customerId === "none"
+                            ? "— Standard product (all customers) —"
+                            : (customers as any[]).find((c: any) => String(c.id) === formData.customerId)?.name ?? "Unknown customer"}
+                        </span>
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Search customers..." />
+                        <CommandList>
+                          <CommandEmpty>No customers found.</CommandEmpty>
+                          <CommandGroup>
+                            <CommandItem
+                              value="none"
+                              onSelect={() => { setFormData({ ...formData, customerId: "none" }); setCustomerComboOpen(false); }}
+                            >
+                              <Check className={cn("mr-2 h-4 w-4", formData.customerId === "none" ? "opacity-100" : "opacity-0")} />
+                              — Standard product (all customers) —
+                            </CommandItem>
+                            {(customers as any[]).map((c: any) => (
+                              <CommandItem
+                                key={c.id}
+                                value={c.name}
+                                onSelect={() => { setFormData({ ...formData, customerId: String(c.id) }); setCustomerComboOpen(false); }}
+                              >
+                                <Check className={cn("mr-2 h-4 w-4", formData.customerId === String(c.id) ? "opacity-100" : "opacity-0")} />
+                                {c.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                   {formData.customerId !== "none" && (
                     <p className="text-xs text-purple-600">This product will be marked bespoke and only visible to this customer on their portal.</p>
                   )}
