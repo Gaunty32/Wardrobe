@@ -466,21 +466,33 @@ router.delete("/purchasing/requirements", async (req, res): Promise<void> => {
 // Any order item where the variant now has enough stock to cover the purchase_quantity
 // has purchase_required cleared and stock_status set to 'allocated'.
 router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
-  // Find all active order items that still need purchasing and have a variant linked
+  // Find all active order items that still need purchasing.
+  // Match variant stock via variant_id when set, or via product_id+colour+size fallback.
   const result = await db.execute(sql`
     WITH covered AS (
-      SELECT
-        oi.id AS item_id,
-        oi.variant_id,
-        oi.purchase_quantity,
-        pv.stock_quantity
+      SELECT oi.id AS item_id
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
-      JOIN product_variants pv ON oi.variant_id = pv.id
       WHERE oi.purchase_required = true
-        AND oi.variant_id IS NOT NULL
         AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived')
-        AND COALESCE(pv.stock_quantity, 0) >= COALESCE(oi.purchase_quantity, 1)
+        AND COALESCE(
+          -- Prefer explicit variant_id link
+          CASE WHEN oi.variant_id IS NOT NULL THEN
+            (SELECT pv.stock_quantity FROM product_variants pv WHERE pv.id = oi.variant_id)
+          ELSE NULL END,
+          -- Fall back to colour+size match on the product
+          (SELECT pv.stock_quantity
+           FROM product_variants pv
+           WHERE pv.product_id = oi.product_id
+             AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+             AND (pv.size   IS NOT DISTINCT FROM oi.size)
+           LIMIT 1),
+          -- Last resort: plain product stock (no variants at all)
+          CASE WHEN NOT EXISTS (
+            SELECT 1 FROM product_variants pv WHERE pv.product_id = oi.product_id
+          ) THEN (SELECT p.stock_quantity FROM products p WHERE p.id = oi.product_id)
+          ELSE 0 END
+        ) >= COALESCE(oi.purchase_quantity, oi.quantity, 1)
     )
     UPDATE order_items oi
     SET purchase_required = false,
