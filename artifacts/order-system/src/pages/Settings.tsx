@@ -316,14 +316,17 @@ function StaffAccountsCard() {
 function InvocoTab({ rawSettings }: { rawSettings: Record<string, string> | undefined }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [apiKey, setApiKey]     = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [apiUrl, setApiUrl]     = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [loaded, setLoaded]     = useState(false);
 
   useEffect(() => {
     if (rawSettings && !loaded) {
+      setApiKey(rawSettings["invoco_api_key"] ?? "");
       setUsername(rawSettings["invoco_username"] ?? "");
       setPassword(rawSettings["invoco_password"] ?? "");
       setApiUrl(rawSettings["invoco_api_url"] ?? "");
@@ -337,9 +340,10 @@ function InvocoTab({ rawSettings }: { rawSettings: Record<string, string> | unde
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          invoco_api_key:  apiKey   || null,
           invoco_username: username || null,
           invoco_password: password || null,
-          invoco_api_url:  apiUrl  || null,
+          invoco_api_url:  apiUrl   || null,
         }),
       }).then((r) => { if (!r.ok) throw new Error("Save failed"); return r.json(); }),
     onSuccess: () => {
@@ -349,7 +353,7 @@ function InvocoTab({ rawSettings }: { rawSettings: Record<string, string> | unde
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const isConfigured = !!(username && password && apiUrl);
+  const isConfigured = !!((apiKey || (username && password)) && apiUrl);
 
   return (
     <div className="grid gap-6 max-w-2xl">
@@ -372,43 +376,72 @@ function InvocoTab({ rawSettings }: { rawSettings: Record<string, string> | unde
             <Label htmlFor="invocoApiUrl">API Endpoint URL</Label>
             <Input
               id="invocoApiUrl"
-              placeholder="https://api.invoco.net/contacts/..."
+              placeholder="https://api.invoco.net/phonebook/contacts"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              The URL Invoco give you for adding/updating phonebook contacts. Check their API documentation or ask Invoco support.
+              The Invoco API endpoint for adding/updating phonebook contacts.
             </p>
           </div>
+
           <div className="space-y-1.5">
-            <Label htmlFor="invocoUsername">Username</Label>
-            <Input
-              id="invocoUsername"
-              placeholder="your-invoco-username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="invocoPassword">Password</Label>
+            <Label htmlFor="invocoApiKey">API Key</Label>
             <div className="relative">
               <Input
-                id="invocoPassword"
-                type={showPass ? "text" : "password"}
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="new-password"
+                id="invocoApiKey"
+                type={showApiKey ? "text" : "password"}
+                placeholder="Your Invoco API key"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                autoComplete="off"
                 className="pr-10"
               />
               <button
                 type="button"
-                onClick={() => setShowPass((v) => !v)}
+                onClick={() => setShowApiKey((v) => !v)}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Sent as <code className="bg-muted px-1 rounded text-xs">Authorization: Bearer &lt;key&gt;</code>. If set, username/password below are ignored.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-3">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Basic Auth (fallback if no API key)</p>
+            <div className="space-y-1.5">
+              <Label htmlFor="invocoUsername">Username</Label>
+              <Input
+                id="invocoUsername"
+                placeholder="your-invoco-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="invocoPassword">Password</Label>
+              <div className="relative">
+                <Input
+                  id="invocoPassword"
+                  type={showPass ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -424,7 +457,7 @@ function InvocoTab({ rawSettings }: { rawSettings: Record<string, string> | unde
         <h2 className="font-semibold text-sm">How it works</h2>
         <ul className="text-sm text-muted-foreground space-y-1.5 list-disc list-inside">
           <li>Every time you save a customer, their <strong>phone number</strong> and <strong>contact name</strong> are pushed to Invoco in the background.</li>
-          <li>Uses <strong>HTTP Basic Auth</strong> (username + password) as supplied by Invoco.</li>
+          <li>Uses your <strong>API key</strong> (Bearer token) if set; falls back to <strong>HTTP Basic Auth</strong> if not.</li>
           <li>If the customer has no phone number, the sync is skipped for that record.</li>
           <li>Errors are logged server-side but won't interrupt saving the customer.</li>
         </ul>

@@ -104,15 +104,20 @@ export async function pushCustomerToHighLevel(customerId: number): Promise<void>
 // ─── Invoco ───────────────────────────────────────────────────────────────────
 // Pushes a customer's phone number + name to the Invoco phonebook so incoming
 // calls show the customer name on the handset display.
-// Auth: Basic (username:password), endpoint TBD — stored in settings as
-//   invoco_username, invoco_password, invoco_api_url
-// The API URL can be updated once Invoco supply the correct write endpoint.
+// Auth priority:
+//   1. Bearer token  — if invoco_api_key is set
+//   2. HTTP Basic    — if invoco_username + invoco_password are set (legacy)
+// Endpoint stored in settings as invoco_api_url.
 
 export async function pushCustomerToInvoco(customerId: number): Promise<void> {
+  const apiKey   = await getSetting("invoco_api_key");
   const username = await getSetting("invoco_username");
   const password = await getSetting("invoco_password");
   const apiUrl   = await getSetting("invoco_api_url");
-  if (!username || !password || !apiUrl) return; // Not configured — skip silently
+
+  const hasApiKey   = !!apiKey;
+  const hasBasicAuth = !!(username && password);
+  if ((!hasApiKey && !hasBasicAuth) || !apiUrl) return; // Not configured — skip silently
 
   const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, customerId));
   if (!customer) return;
@@ -123,7 +128,9 @@ export async function pushCustomerToInvoco(customerId: number): Promise<void> {
   const contactName = [customer.contactFirstName, customer.contactLastName]
     .filter(Boolean).join(" ") || customer.name;
 
-  const basicAuth = Buffer.from(`${username}:${password}`).toString("base64");
+  const authHeader = hasApiKey
+    ? `Bearer ${apiKey}`
+    : `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
 
   const body = JSON.stringify({
     Number: phone,
@@ -134,7 +141,7 @@ export async function pushCustomerToInvoco(customerId: number): Promise<void> {
   const res = await fetch(apiUrl, {
     method: "POST",
     headers: {
-      "Authorization": `Basic ${basicAuth}`,
+      "Authorization": authHeader,
       "Content-Type": "application/json",
     },
     body,
