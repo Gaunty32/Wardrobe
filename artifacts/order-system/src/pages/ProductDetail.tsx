@@ -10,6 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler, Upload, Camera, Wrench
+  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -108,16 +110,43 @@ function TagInput({
 function SupplierSelect({ value, onChange, suppliers, placeholder = "Select supplier…", className }: {
   value: string; onChange: (v: string) => void; suppliers: any[]; placeholder?: string; className?: string;
 }) {
+  const [open, setOpen] = useState(false);
+  const selected = suppliers.find((s) => String(s.id) === value);
+  const triggerClass = className ?? "h-8 text-sm";
   return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className={className ?? "h-8 text-sm"}>
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="none">— None —</SelectItem>
-        {suppliers.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
-      </SelectContent>
-    </Select>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={`${triggerClass} justify-between font-normal gap-1 px-3`}
+        >
+          <span className="truncate">{selected ? selected.name : "— None —"}</span>
+          <ChevronsUpDown className="w-3.5 h-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[220px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search supplier…" className="h-8 text-sm" />
+          <CommandList className="max-h-56">
+            <CommandEmpty>No supplier found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem value="none" onSelect={() => { onChange("none"); setOpen(false); }}>
+                <Check className={`mr-2 w-3.5 h-3.5 ${value === "none" ? "opacity-100" : "opacity-0"}`} />
+                — None —
+              </CommandItem>
+              {suppliers.map((s) => (
+                <CommandItem key={s.id} value={s.name} onSelect={() => { onChange(String(s.id)); setOpen(false); }}>
+                  <Check className={`mr-2 w-3.5 h-3.5 ${String(s.id) === value ? "opacity-100" : "opacity-0"}`} />
+                  {s.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
