@@ -59,6 +59,23 @@ export async function wooUpdateOrderStatus(settings: WooSettings, wooOrderId: nu
   if (!res.ok) throw new Error(`WooCommerce API error ${res.status}: ${await res.text()}`);
 }
 
+// ─── Local dismiss helpers ────────────────────────────────────────────────────
+async function getDismissedIds(): Promise<Set<number>> {
+  const row = await db.execute(sql`SELECT value FROM settings WHERE key = 'woo_dismissed_ids' LIMIT 1`);
+  if (row.rows.length === 0) return new Set();
+  try { return new Set((JSON.parse((row.rows[0] as any).value) as number[])); } catch { return new Set(); }
+}
+
+async function addDismissedIds(ids: number[]): Promise<void> {
+  const existing = await getDismissedIds();
+  for (const id of ids) existing.add(id);
+  const value = JSON.stringify([...existing]);
+  await db.execute(sql`
+    INSERT INTO settings (key, value) VALUES ('woo_dismissed_ids', ${value})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+  `);
+}
+
 // ─── List recent WooCommerce orders ──────────────────────────────────────────
 router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => {
   const settings = await getWooSettings();
@@ -74,8 +91,12 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
     const path = `/orders?status=${status}&per_page=${perPage}&page=${page}&orderby=date&order=desc`;
     const wooOrders = await wooFetch<any[]>(settings, path);
 
+    // Filter out locally dismissed orders
+    const dismissedIds = await getDismissedIds();
+    const filteredOrders = wooOrders.filter((o: any) => !dismissedIds.has(o.id));
+
     // Check which have already been imported
-    const wooIds = wooOrders.map((o: any) => o.id);
+    const wooIds = filteredOrders.map((o: any) => o.id);
     let importedIds = new Set<number>();
     let importedMap = new Map<number, string>(); // wooId -> internal order number
     if (wooIds.length > 0) {
@@ -88,7 +109,7 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
       }
     }
 
-    const orders = wooOrders.map((o: any) => ({
+    const orders = filteredOrders.map((o: any) => ({
       id: o.id,
       number: o.number,
       status: o.status,
@@ -147,45 +168,22 @@ router.get("/woo/orders", async (req: Request, res: Response): Promise<void> => 
   }
 });
 
-// ─── Mark a WooCommerce order as Completed (dismiss from import queue) ────────
-router.post("/woo/orders/:wooId/mark-completed", async (req: Request, res: Response): Promise<void> => {
+// ─── Dismiss a single WooCommerce order locally (no WooCommerce write needed) ─
+router.post("/woo/orders/:wooId/dismiss", async (req: Request, res: Response): Promise<void> => {
   const wooId = parseInt(req.params.wooId);
   if (isNaN(wooId)) { res.status(400).json({ error: "Invalid WooCommerce order ID" }); return; }
-
-  const settings = await getWooSettings();
-  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
-
-  try {
-    await wooUpdateOrderStatus(settings, wooId, "completed");
-    res.json({ ok: true });
-  } catch (err: any) {
-    console.error(`[woo/orders/${wooId}/mark-completed] Error:`, err.message);
-    res.status(502).json({ error: err.message });
-  }
+  await addDismissedIds([wooId]);
+  res.json({ ok: true });
 });
 
-// ─── Bulk mark WooCommerce orders as Completed ────────────────────────────────
-router.post("/woo/orders/bulk-mark-completed", async (req: Request, res: Response): Promise<void> => {
+// ─── Bulk dismiss WooCommerce orders locally ──────────────────────────────────
+router.post("/woo/orders/dismiss-all", async (req: Request, res: Response): Promise<void> => {
   const body = req.body as { wooIds: number[] };
   if (!Array.isArray(body?.wooIds) || body.wooIds.length === 0) {
     res.status(400).json({ error: "wooIds array required" }); return;
   }
-
-  const settings = await getWooSettings();
-  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
-
-  const results: { wooId: number; ok: boolean; error?: string }[] = [];
-  for (const wooId of body.wooIds) {
-    try {
-      await wooUpdateOrderStatus(settings, wooId, "completed");
-      results.push({ wooId, ok: true });
-    } catch (err: any) {
-      results.push({ wooId, ok: false, error: err.message });
-    }
-  }
-
-  const failed = results.filter(r => !r.ok);
-  res.json({ results, failedCount: failed.length });
+  await addDismissedIds(body.wooIds);
+  res.json({ ok: true, dismissed: body.wooIds.length });
 });
 
 // ─── Import a WooCommerce order into the order system ────────────────────────

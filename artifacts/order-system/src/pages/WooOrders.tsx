@@ -103,14 +103,13 @@ function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () =>
     },
   });
 
-  const markCompletedMutation = useMutation({
-    mutationFn: () => apiFetch(`/woo/orders/${order.id}/mark-completed`, { method: "POST" }),
+  const dismissMutation = useMutation({
+    mutationFn: () => apiFetch(`/woo/orders/${order.id}/dismiss`, { method: "POST" }),
     onSuccess: () => {
-      toast({ title: `WC #${order.number} marked completed`, description: "Order removed from active WooCommerce queue." });
       onImported(); // refetch the list
     },
     onError: (e: Error) => {
-      toast({ title: "Could not mark completed", description: parseApiError(e), variant: "destructive" });
+      toast({ title: "Dismiss failed", description: parseApiError(e), variant: "destructive" });
     },
   });
 
@@ -169,11 +168,11 @@ function WooOrderRow({ order, onImported }: { order: WooOrder; onImported: () =>
                 size="sm"
                 variant="ghost"
                 className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-red-600 hover:bg-red-50"
-                title="Mark as Completed in WooCommerce (removes from import queue — does not create a production order)"
-                onClick={e => { e.stopPropagation(); markCompletedMutation.mutate(); }}
-                disabled={importMutation.isPending || markCompletedMutation.isPending}
+                title="Hide from import queue (does not create a production order)"
+                onClick={e => { e.stopPropagation(); dismissMutation.mutate(); }}
+                disabled={importMutation.isPending || dismissMutation.isPending}
               >
-                {markCompletedMutation.isPending
+                {dismissMutation.isPending
                   ? <Loader2 className="w-3 h-3 animate-spin" />
                   : <XCircle className="w-3.5 h-3.5" />
                 }
@@ -296,7 +295,21 @@ export default function WooOrders() {
   });
 
   const orders = data?.orders ?? [];
-  const pendingCount = orders.filter(o => !o.alreadyImported).length;
+  const pendingOrders = orders.filter(o => !o.alreadyImported);
+  const pendingCount = pendingOrders.length;
+
+  const dismissAllMutation = useMutation({
+    mutationFn: () =>
+      apiFetch("/woo/orders/dismiss-all", {
+        method: "POST",
+        body: JSON.stringify({ wooIds: pendingOrders.map(o => o.id) }),
+      }),
+    onSuccess: (res: any) => {
+      toast({ title: `${res.dismissed} order${res.dismissed !== 1 ? "s" : ""} dismissed` });
+      refetch();
+    },
+    onError: (e: Error) => toast({ title: "Dismiss all failed", description: parseApiError(e), variant: "destructive" }),
+  });
 
   return (
     <Layout>
@@ -320,6 +333,23 @@ export default function WooOrders() {
                 <Clock className="w-3 h-3 mr-1" />
                 {pendingCount} to import
               </Badge>
+            )}
+            {pendingCount > 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => {
+                  if (confirm(`Dismiss all ${pendingCount} orders on this page from the import queue?`))
+                    dismissAllMutation.mutate();
+                }}
+                disabled={dismissAllMutation.isPending || isFetching}
+              >
+                {dismissAllMutation.isPending
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <XCircle className="w-3.5 h-3.5" />}
+                Dismiss All ({pendingCount})
+              </Button>
             )}
             <Button
               variant="outline"
