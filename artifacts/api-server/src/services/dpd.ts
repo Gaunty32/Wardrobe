@@ -6,6 +6,8 @@
  *   DPD_USERNAME        – DPD account username (email)
  *   DPD_PASSWORD        – DPD account password
  *   DPD_ACCOUNT_NUMBER  – DPD account / Fin number
+ *
+ * Optional env vars (default to empty — DPD uses account defaults):
  *   DPD_SENDER_NAME     – Business name shown on labels
  *   DPD_SENDER_LINE1    – Collection address street
  *   DPD_SENDER_TOWN     – Collection town / city
@@ -20,10 +22,6 @@ function getConfig() {
     "DPD_USERNAME",
     "DPD_PASSWORD",
     "DPD_ACCOUNT_NUMBER",
-    "DPD_SENDER_NAME",
-    "DPD_SENDER_LINE1",
-    "DPD_SENDER_TOWN",
-    "DPD_SENDER_POSTCODE",
   ] as const;
 
   const missing = required.filter((k) => !process.env[k]);
@@ -35,10 +33,10 @@ function getConfig() {
     username: process.env.DPD_USERNAME!,
     password: process.env.DPD_PASSWORD!,
     accountNumber: process.env.DPD_ACCOUNT_NUMBER!,
-    senderName: process.env.DPD_SENDER_NAME!,
-    senderLine1: process.env.DPD_SENDER_LINE1!,
-    senderTown: process.env.DPD_SENDER_TOWN!,
-    senderPostcode: process.env.DPD_SENDER_POSTCODE!,
+    senderName: process.env.DPD_SENDER_NAME ?? "",
+    senderLine1: process.env.DPD_SENDER_LINE1 ?? "",
+    senderTown: process.env.DPD_SENDER_TOWN ?? "",
+    senderPostcode: process.env.DPD_SENDER_POSTCODE ?? "",
     networkCode: process.env.DPD_NETWORK_CODE ?? "1^12",
   };
 }
@@ -223,6 +221,5 @@ export async function reprrintDpdLabel(jobId: number): Promise<string | null> {
 }
 
 export function isDpdConfigured(): boolean {
-  const required = ["DPD_USERNAME", "DPD_PASSWORD", "DPD_ACCOUNT_NUMBER", "DPD_SENDER_NAME", "DPD_SENDER_LINE1", "DPD_SENDER_TOWN", "DPD_SENDER_POSTCODE"];
-  return required.every((k) => !!process.env[k]);
+  return ["DPD_USERNAME", "DPD_PASSWORD", "DPD_ACCOUNT_NUMBER"].every((k) => !!process.env[k]);
 }
