@@ -213,6 +213,8 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
   }
 
   // Finish items → create/append production worksheet per order
+  const touchedWorksheetIds: number[] = [];
+
   if (finishItems.length > 0) {
     const byOrder = new Map<number, typeof finishItems>();
     for (const item of finishItems) {
@@ -247,6 +249,7 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
           .returning();
         worksheetId = ws.id;
       }
+      touchedWorksheetIds.push(worksheetId);
 
       for (const item of orderItems) {
         // Avoid duplicates — but still ensure stockStatus is updated even if the
@@ -309,7 +312,26 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
     }
   }
 
-  res.json({ ok: true, plainPicked: plainItems.length, worksheetItems: finishItems.length });
+  // Build full worksheet payloads for the frontend to auto-print
+  const worksheetPayloads = await Promise.all(
+    touchedWorksheetIds.map(async (wsId) => {
+      const [ws] = await db.select().from(worksheetsTable).where(eq(worksheetsTable.id, wsId));
+      const wsItems = await db.select().from(worksheetItemsTable).where(eq(worksheetItemsTable.worksheetId, wsId));
+      const order = ws?.orderId
+        ? (await db.select({ requiredDate: ordersTable.requiredDate }).from(ordersTable).where(eq(ordersTable.id, ws.orderId)))[0]
+        : null;
+      return {
+        ...ws,
+        requiredDate: order?.requiredDate ? order.requiredDate.toISOString() : null,
+        items: wsItems.map((i) => ({
+          ...i,
+          processes: i.processesSnapshot ? JSON.parse(i.processesSnapshot) : [],
+        })),
+      };
+    })
+  );
+
+  res.json({ ok: true, plainPicked: plainItems.length, worksheetItems: finishItems.length, worksheets: worksheetPayloads });
 });
 
 // Return picking list items back to purchasing requirements.

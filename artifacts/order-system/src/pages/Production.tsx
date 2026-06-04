@@ -2577,7 +2577,7 @@ function PickingListTab({ filters }: { filters: Filters }) {
         }),
       });
     },
-    onSuccess: (data: { ok: boolean; plainPicked: number; worksheetItems: number }) => {
+    onSuccess: (data: { ok: boolean; plainPicked: number; worksheetItems: number; worksheets?: Worksheet[] }) => {
       queryClient.invalidateQueries({ queryKey: ["picking-list"] });
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
       queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
@@ -2587,6 +2587,10 @@ function PickingListTab({ filters }: { filters: Filters }) {
       if (data.plainPicked > 0) parts.push(`${data.plainPicked} ready for dispatch`);
       if (data.worksheetItems > 0) parts.push(`${data.worksheetItems} sent to production`);
       toast({ title: "Picked", description: parts.join(" · ") || "Items confirmed" });
+      // Auto-print worksheets created by this pick
+      if (data.worksheets && data.worksheets.length > 0) {
+        data.worksheets.forEach((ws) => printWorksheetFromData(ws));
+      }
     },
     onError: (err: any) => {
       let title = "Cannot send to production";
