@@ -156,26 +156,32 @@ router.get("/orders", async (req, res): Promise<void> => {
     orders = await db.select().from(ordersTable).where(baseCondition).orderBy(...ORDER_NUM_SORT);
   }
   // Attach per-order GP margin — only when EVERY non-service line item has a supplier price.
+  // Variant-level supplier_price takes precedence over product-level (COALESCE pv → p).
   // If any item is missing a cost we return null so the UI shows "—" rather than a false 100%.
   const orderIds = orders.map(o => o.id);
   type CostRow = { orderId: number; cost: number; missingCost: number };
   const costByOrderId = new Map<number, CostRow>();
   if (orderIds.length > 0) {
-    const costRows = await db
-      .select({
-        orderId: orderItemsTable.orderId,
-        cost: sql<number>`COALESCE(SUM(${orderItemsTable.quantity} * ${productsTable.supplierPrice}), 0)::float`,
-        missingCost: sql<number>`COUNT(*) FILTER (
-          WHERE ${productsTable.isService} IS NOT TRUE
-            AND (${productsTable.supplierPrice} IS NULL OR ${productsTable.supplierPrice} = 0)
-        )::int`,
-      })
-      .from(orderItemsTable)
-      .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-      .where(inArray(orderItemsTable.orderId, orderIds))
-      .groupBy(orderItemsTable.orderId);
-    for (const row of costRows) {
-      if (row.orderId != null) costByOrderId.set(row.orderId, row as CostRow);
+    const costRows = await db.execute(sql`
+      SELECT
+        oi.order_id AS "orderId",
+        COALESCE(SUM(oi.quantity * COALESCE(pv.supplier_price, p.supplier_price)), 0)::float AS cost,
+        COUNT(*) FILTER (
+          WHERE p.is_service IS NOT TRUE
+            AND (COALESCE(pv.supplier_price, p.supplier_price) IS NULL
+                 OR COALESCE(pv.supplier_price, p.supplier_price) = 0)
+        )::int AS "missingCost"
+      FROM order_items oi
+      LEFT JOIN products p ON p.id = oi.product_id
+      LEFT JOIN product_variants pv
+        ON pv.product_id = oi.product_id
+        AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+        AND (pv.size IS NOT DISTINCT FROM oi.size)
+      WHERE oi.order_id = ANY(${orderIds})
+      GROUP BY oi.order_id
+    `);
+    for (const row of costRows.rows as CostRow[]) {
+      if (row.orderId != null) costByOrderId.set(Number(row.orderId), row);
     }
   }
   res.json(orders.map((o) => {
@@ -228,10 +234,14 @@ router.get("/dashboard/profit-stats", async (_req, res): Promise<void> => {
     LEFT JOIN (
       SELECT
         date_trunc('week', o.order_date AT TIME ZONE 'UTC')::date AS week_start,
-        COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+        COALESCE(SUM(oi.quantity * COALESCE(pv.supplier_price, p.supplier_price)), 0)::float AS cost
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id
+      LEFT JOIN product_variants pv
+        ON pv.product_id = oi.product_id
+        AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+        AND (pv.size IS NOT DISTINCT FROM oi.size)
       WHERE o.order_date >= NOW() - INTERVAL '13 weeks'
         AND o.status NOT IN ('cancelled', 'portal_draft')
       GROUP BY week_start
@@ -258,10 +268,14 @@ router.get("/dashboard/profit-stats", async (_req, res): Promise<void> => {
     LEFT JOIN (
       SELECT
         date_trunc('month', o.order_date AT TIME ZONE 'UTC')::date AS month_start,
-        COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+        COALESCE(SUM(oi.quantity * COALESCE(pv.supplier_price, p.supplier_price)), 0)::float AS cost
       FROM orders o
       LEFT JOIN order_items oi ON oi.order_id = o.id
       LEFT JOIN products p ON p.id = oi.product_id
+      LEFT JOIN product_variants pv
+        ON pv.product_id = oi.product_id
+        AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+        AND (pv.size IS NOT DISTINCT FROM oi.size)
       WHERE o.order_date >= NOW() - INTERVAL '12 months'
         AND o.status NOT IN ('cancelled', 'portal_draft')
       GROUP BY month_start
@@ -277,10 +291,14 @@ router.get("/dashboard/profit-stats", async (_req, res): Promise<void> => {
       o.order_date,
       o.status,
       COALESCE(o.total_amount, 0)::float AS revenue,
-      COALESCE(SUM(oi.quantity * p.supplier_price), 0)::float AS cost
+      COALESCE(SUM(oi.quantity * COALESCE(pv.supplier_price, p.supplier_price)), 0)::float AS cost
     FROM orders o
     LEFT JOIN order_items oi ON oi.order_id = o.id
     LEFT JOIN products p ON p.id = oi.product_id
+    LEFT JOIN product_variants pv
+      ON pv.product_id = oi.product_id
+      AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+      AND (pv.size IS NOT DISTINCT FROM oi.size)
     WHERE o.status NOT IN ('cancelled', 'portal_draft')
     GROUP BY o.id, o.order_number, o.customer_name, o.order_date, o.status, o.total_amount
     ORDER BY o.order_date DESC
