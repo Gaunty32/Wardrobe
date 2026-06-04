@@ -900,6 +900,33 @@ router.patch("/worksheets/:id", async (req, res): Promise<void> => {
   res.json(ws);
 });
 
+// PATCH /worksheets/:wsId/items/:itemId — adjust quantity on a single worksheet item.
+// If qty reaches 0 the item is deleted from the worksheet.
+router.patch("/worksheets/:wsId/items/:itemId", async (req, res): Promise<void> => {
+  const params = z.object({
+    wsId: z.coerce.number().int().positive(),
+    itemId: z.coerce.number().int().positive(),
+  }).safeParse(req.params);
+  const body = z.object({ quantity: z.number().int().min(0) }).safeParse(req.body);
+  if (!params.success || !body.success) { res.status(400).json({ error: "Invalid parameters" }); return; }
+
+  const { wsId, itemId } = params.data;
+  const { quantity } = body.data;
+
+  if (quantity <= 0) {
+    await db.delete(worksheetItemsTable)
+      .where(and(eq(worksheetItemsTable.id, itemId), eq(worksheetItemsTable.worksheetId, wsId)));
+  } else {
+    const [updated] = await db.update(worksheetItemsTable)
+      .set({ quantity })
+      .where(and(eq(worksheetItemsTable.id, itemId), eq(worksheetItemsTable.worksheetId, wsId)))
+      .returning();
+    if (!updated) { res.status(404).json({ error: "Worksheet item not found" }); return; }
+  }
+
+  res.json({ ok: true });
+});
+
 // Return all items in a worksheet back to the picking list (stockStatus → 'allocated')
 // then delete the worksheet.
 router.post("/worksheets/:id/return-to-picking", async (req, res): Promise<void> => {

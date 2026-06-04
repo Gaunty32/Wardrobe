@@ -4,7 +4,7 @@ import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
   RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
   ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square, RotateCcw, AlertCircle,
-  Search, Calendar, X, FileText, Zap, AlertTriangle, Play, Layers, TrendingUp,
+  Search, Calendar, X, FileText, Zap, AlertTriangle, Play, Layers, TrendingUp, Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -836,7 +836,12 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
   );
 }
 
-function WorksheetCardMatrix({ ws }: { ws: Worksheet }) {
+function WorksheetCardMatrix({ ws, editMode = false, qtyEdits, onQtyChange }: {
+  ws: Worksheet;
+  editMode?: boolean;
+  qtyEdits?: Map<number, number>;
+  onQtyChange?: (itemId: number, qty: number) => void;
+}) {
   const finishMap = useMemo(() => {
     const map = new Map<string, WorksheetItem[]>();
     for (const item of ws.items) {
@@ -858,22 +863,32 @@ function WorksheetCardMatrix({ ws }: { ws: Worksheet }) {
 
   return (
     <div className="border-t border-border px-5 py-4 space-y-3">
+      {editMode && (
+        <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          Edit quantities to match what was physically picked. Set to 0 to remove a size from this worksheet.
+        </div>
+      )}
       {sortedFinishes.map((finishName) => {
         const fItems = finishMap.get(finishName)!;
         const repProcesses = fItems.find((i) => i.processes.length > 0)?.processes ?? [];
 
-        const matMap = new Map<string, { productName: string; colour: string | null; sizes: Map<string, number> }>();
+        const matMap = new Map<string, { productName: string; colour: string | null; sizes: Map<string, { qty: number; itemId: number }> }>();
         const allSizes = new Set<string>();
         for (const item of fItems) {
           const key = `${item.productName}||${item.colour ?? ""}`;
           if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, sizes: new Map() });
           const sk = item.size ?? "—";
           allSizes.add(sk);
-          matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
+          const existing = matMap.get(key)!.sizes.get(sk);
+          matMap.get(key)!.sizes.set(sk, { qty: (existing?.qty ?? 0) + item.quantity, itemId: item.id });
         }
         const sortedSizes = sortSizes(Array.from(allSizes));
         const matRows = Array.from(matMap.values());
-        const finishTotal = fItems.reduce((s, i) => s + i.quantity, 0);
+        const finishTotal = fItems.reduce((s, i) => {
+          const edited = qtyEdits?.get(i.id);
+          return s + (edited !== undefined ? edited : i.quantity);
+        }, 0);
         const isPlain = finishName === "Plain (No Finish)";
 
         return (
@@ -921,16 +936,37 @@ function WorksheetCardMatrix({ ws }: { ws: Worksheet }) {
                 </thead>
                 <tbody>
                   {matRows.map(({ productName, colour, sizes }, ri) => {
-                    const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+                    const rowTotal = sortedSizes.reduce((s, sk) => {
+                      const cell = sizes.get(sk);
+                      if (!cell) return s;
+                      const editedQty = qtyEdits?.get(cell.itemId);
+                      return s + (editedQty !== undefined ? editedQty : cell.qty);
+                    }, 0);
                     return (
                       <tr key={ri} className={`border-b border-border last:border-0 ${ri % 2 === 0 ? "bg-background" : "bg-muted/20"}`}>
                         <td className="px-3 py-2 font-medium text-foreground whitespace-nowrap">{productName}</td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{colour ?? "—"}</td>
-                        {sortedSizes.map((s) => {
-                          const qty = sizes.get(s) ?? 0;
+                        {sortedSizes.map((sk) => {
+                          const cell = sizes.get(sk);
+                          const originalQty = cell?.qty ?? 0;
+                          const editedQty = cell ? (qtyEdits?.get(cell.itemId) ?? originalQty) : 0;
+                          const displayQty = editMode ? editedQty : originalQty;
+                          const changed = editMode && cell && (qtyEdits?.get(cell.itemId) !== undefined) && qtyEdits!.get(cell.itemId) !== originalQty;
                           return (
-                            <td key={s} className={`text-center px-3 py-2 ${qty > 0 ? "font-bold text-foreground" : "text-muted-foreground/30 select-none"}`}>
-                              {qty > 0 ? qty : "—"}
+                            <td key={sk} className="text-center px-2 py-1.5">
+                              {editMode && cell ? (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={editedQty}
+                                  onChange={(e) => onQtyChange?.(cell.itemId, Math.max(0, parseInt(e.target.value) || 0))}
+                                  className={`w-16 text-center text-xs font-bold rounded border px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-amber-400 ${changed ? "border-amber-400 bg-amber-50 text-amber-800" : "border-border bg-background"}`}
+                                />
+                              ) : (
+                                <span className={`${displayQty > 0 ? "font-bold text-foreground" : "text-muted-foreground/30 select-none"}`}>
+                                  {displayQty > 0 ? displayQty : "—"}
+                                </span>
+                              )}
                             </td>
                           );
                         })}
@@ -1110,26 +1146,66 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   onReturnToPicking: (id: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [qtyEdits, setQtyEdits] = useState<Map<number, number>>(new Map());
+  const [saving, setSaving] = useState(false);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
   const cfg = STATUS_CONFIG[ws.status];
   const StatusIcon = cfg.icon;
+  const canEdit = ws.status === "pre_wip" || ws.status === "wip";
 
   const handlePrint = () => printWorksheetFromData(ws);
+
+  function startEditing() {
+    setQtyEdits(new Map());
+    setEditing(true);
+    setExpanded(true);
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setQtyEdits(new Map());
+  }
+
+  async function saveEdits() {
+    if (qtyEdits.size === 0) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      for (const [itemId, qty] of qtyEdits) {
+        await apiFetch(`/worksheets/${ws.id}/items/${itemId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ quantity: qty }),
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["worksheets"] });
+      setEditing(false);
+      setQtyEdits(new Map());
+      toast({ title: "Quantities updated", description: `${qtyEdits.size} item${qtyEdits.size !== 1 ? "s" : ""} adjusted` });
+    } catch {
+      toast({ title: "Failed to save", description: "Could not update worksheet quantities", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
       <div
         className="flex items-center justify-between px-5 py-4 cursor-pointer hover:bg-muted/20 transition-colors"
-        onClick={() => setExpanded((e) => !e)}
+        onClick={() => !editing && setExpanded((e) => !e)}
       >
         <div className="flex items-center gap-3 min-w-0">
           {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono font-bold text-base">{ws.worksheetNumber}</span>
               <Badge className={`text-xs ${cfg.color} gap-1`}>
                 <StatusIcon className="w-3 h-3" />
                 {cfg.label}
               </Badge>
+              {editing && <Badge className="text-xs bg-amber-100 text-amber-800 border border-amber-300">Editing quantities</Badge>}
             </div>
             <div className="text-sm text-muted-foreground mt-0.5">
               {ws.orderNumber && <span>Order {ws.orderNumber} · </span>}
@@ -1141,54 +1217,83 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          {ws.status === "pre_wip" && (
+          {editing ? (
             <>
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
-                <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
+              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={cancelEditing} disabled={saving}>
+                Cancel
               </Button>
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
-                <Printer className="w-3.5 h-3.5" /> Print Worksheet
+              <Button size="sm" className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={saveEdits} disabled={saving || qtyEdits.size === 0}>
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                {saving ? "Saving…" : `Save${qtyEdits.size > 0 ? ` (${qtyEdits.size})` : ""}`}
               </Button>
-              <Button size="sm" className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={() => onStatusChange(ws.id, "wip")}>
-                <ArrowRight className="w-3.5 h-3.5" /> Move to WIP
+            </>
+          ) : (
+            <>
+              {ws.status === "pre_wip" && (
+                <>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
+                    <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
+                  </Button>
+                  {canEdit && (
+                    <Button size="sm" variant="outline" className="gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" onClick={startEditing}>
+                      <Pencil className="w-3.5 h-3.5" /> Edit Qtys
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
+                    <Printer className="w-3.5 h-3.5" /> Print Worksheet
+                  </Button>
+                  <Button size="sm" className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={() => onStatusChange(ws.id, "wip")}>
+                    <ArrowRight className="w-3.5 h-3.5" /> Move to WIP
+                  </Button>
+                </>
+              )}
+              {ws.status === "wip" && (
+                <>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
+                    <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
+                  </Button>
+                  {canEdit && (
+                    <Button size="sm" variant="outline" className="gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" onClick={startEditing}>
+                      <Pencil className="w-3.5 h-3.5" /> Edit Qtys
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
+                    <Printer className="w-3.5 h-3.5" /> Print
+                  </Button>
+                  <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => onStatusChange(ws.id, "complete")}>
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Mark Complete
+                  </Button>
+                </>
+              )}
+              {ws.status === "complete" && (
+                <>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
+                    <Printer className="w-3.5 h-3.5" /> Print
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => { window.location.href = "/dispatch"; }}
+                  >
+                    <ArrowRight className="w-3.5 h-3.5" /> Go to Dispatch
+                  </Button>
+                </>
+              )}
+              <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => onDelete(ws.id)}>
+                <Trash2 className="w-4 h-4" />
               </Button>
             </>
           )}
-          {ws.status === "wip" && (
-            <>
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
-                <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
-              </Button>
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
-                <Printer className="w-3.5 h-3.5" /> Print
-              </Button>
-              <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => onStatusChange(ws.id, "complete")}>
-                <CheckCircle2 className="w-3.5 h-3.5" /> Mark Complete
-              </Button>
-            </>
-          )}
-          {ws.status === "complete" && (
-            <>
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
-                <Printer className="w-3.5 h-3.5" /> Print
-              </Button>
-              <Button
-                size="sm"
-                className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
-                onClick={() => { window.location.href = "/dispatch"; }}
-              >
-                <ArrowRight className="w-3.5 h-3.5" /> Go to Dispatch
-              </Button>
-            </>
-          )}
-          <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => onDelete(ws.id)}>
-            <Trash2 className="w-4 h-4" />
-          </Button>
         </div>
       </div>
 
       {expanded && (
-        <WorksheetCardMatrix ws={ws} />
+        <WorksheetCardMatrix
+          ws={ws}
+          editMode={editing}
+          qtyEdits={qtyEdits}
+          onQtyChange={(itemId, qty) => setQtyEdits((prev) => { const next = new Map(prev); next.set(itemId, qty); return next; })}
+        />
       )}
     </div>
   );
