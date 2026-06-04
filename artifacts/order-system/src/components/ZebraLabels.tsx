@@ -259,6 +259,8 @@ interface ZebraLabelsProps {
 
 type PrinterStatus = "idle" | "loading" | "ready" | "printing" | "done" | "error";
 
+const SAVED_PRINTER_KEY = "sbs_zebra_printer_uid";
+
 export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }: ZebraLabelsProps) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<PrinterStatus>("idle");
@@ -268,6 +270,11 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
   const [labelData, setLabelData] = useState<LabelData | null>(null);
   const [printQueue, setPrintQueue] = useState<string[]>([]);
   const [printedCount, setPrintedCount] = useState(0);
+
+  function savePrinter(device: ZebraDevice) {
+    setPrinter(device);
+    try { localStorage.setItem(SAVED_PRINTER_KEY, device.uid); } catch {}
+  }
 
   const connectPrinter = useCallback(async () => {
     setStatus("loading");
@@ -281,14 +288,19 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
       const available = printers.length > 0 ? printers : (defaultDevice ? [defaultDevice] : []);
       if (available.length === 0) throw new Error("No Zebra printers found.");
       setAllPrinters(available);
-      setPrinter(defaultDevice ?? available[0]);
+
+      // Restore previously saved printer if it's still available
+      const savedUid = (() => { try { return localStorage.getItem(SAVED_PRINTER_KEY); } catch { return null; } })();
+      const restored = savedUid ? available.find(d => d.uid === savedUid) : null;
+      const chosen = restored ?? defaultDevice ?? available[0];
+      setPrinter(chosen);
 
       const resp = await fetch(`${API_BASE}/orders/${orderId}/label-data`);
       if (!resp.ok) throw new Error(await resp.text());
       const data: LabelData = await resp.json();
       setLabelData(data);
       setStatus("ready");
-      setStatusMsg(`Connected to ${(defaultDevice ?? available[0]).name}`);
+      setStatusMsg(`Connected to ${chosen.name}`);
     } catch (err: unknown) {
       setStatus("error");
       setStatusMsg(err instanceof Error ? err.message : String(err));
@@ -428,7 +440,7 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
                   value={printer.uid}
                   onChange={(e) => {
                     const p = allPrinters.find(d => d.uid === e.target.value);
-                    if (p) setPrinter(p);
+                    if (p) savePrinter(p);
                   }}
                 >
                   {allPrinters.map(p => <option key={p.uid} value={p.uid}>{p.name}</option>)}

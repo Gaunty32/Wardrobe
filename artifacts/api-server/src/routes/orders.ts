@@ -2731,12 +2731,12 @@ router.get("/orders/:id/shipping-label", async (req, res): Promise<void> => {
     .dl-tracking{font-family:monospace;font-size:10pt}
     .dl-addr-block{font-size:9pt;color:#000;font-weight:600;padding:0.06in 0.2in 0;line-height:1.4}
     @media print{
-      @page{size:4in 3in;margin:0mm}
-      html,body{margin:0!important;padding:0!important}
+      @page{size:4in 3in landscape;margin:0mm}
+      html,body{margin:0!important;padding:0!important;width:4in}
       #toolbar{display:none}
       body{background:white}
-      #page{padding:0;gap:0;margin:0}
-      .label{width:100%;min-height:3in;height:auto;border:none;border-radius:0;box-shadow:none;page-break-after:always;overflow:visible}
+      #page{padding:0;gap:0;margin:0;align-items:flex-start}
+      .label{width:4in;min-height:3in;height:auto;border:none;border-radius:0;box-shadow:none;page-break-after:always;overflow:visible}
     }
   </style>
 </head>
@@ -2974,11 +2974,11 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     .dl-addr-block{font-size:8.5pt;color:#000;font-weight:600;padding:0.04in 0.18in 0;line-height:1.35}
 
     @media print{
-      @page{size:4in 3in;margin:0mm}
-      html,body{margin:0!important;padding:0!important}
+      @page{size:4in 3in landscape;margin:0mm}
+      html,body{margin:0!important;padding:0!important;width:4in}
       #toolbar{display:none}
       body{background:white}
-      #page{padding:0;gap:0;margin:0}
+      #page{padding:0;gap:0;margin:0;align-items:flex-start}
       .label{width:4in;height:3in;border:none;border-radius:0;box-shadow:none;overflow:hidden;page-break-after:always;break-after:page}
     }
   </style>
@@ -2987,7 +2987,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   <div id="toolbar">
     <div id="toolbar-text">
       <div id="toolbar-title">🏷️ ${totalCount} Label${totalCount !== 1 ? "s" : ""} · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")}</div>
-      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: None (GC420d)</div>
+      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: <strong>None</strong> (GC420d)</div>
     </div>
     <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
     <button id="btn-dl" onclick="downloadPdf()">💾 Download PDF</button>
@@ -3148,11 +3148,11 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
     .footer-customer{font-size:8pt;font-weight:700;color:#000;letter-spacing:.02em}
     .footer-order{font-size:8pt;font-weight:600;color:#555;font-family:monospace}
     @media print{
-      @page{size:4in 3in;margin:0mm}
-      html,body{margin:0!important;padding:0!important}
+      @page{size:4in 3in landscape;margin:0mm}
+      html,body{margin:0!important;padding:0!important;width:4in}
       #toolbar{display:none}
       body{background:white}
-      #page{padding:0;gap:0;margin:0}
+      #page{padding:0;gap:0;margin:0;align-items:flex-start}
       .label{width:4in;height:3in;border:none;border-radius:0;box-shadow:none;overflow:hidden;page-break-after:always;break-after:page}
     }
   </style>
@@ -3161,7 +3161,7 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
   <div id="toolbar">
     <div id="toolbar-text">
       <div id="toolbar-title">🏷️ ${totalCount} Label${totalCount !== 1 ? "s" : ""} · ${titleText}</div>
-      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: None &nbsp;·&nbsp; ${summaryText}</div>
+      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: <strong>None</strong> &nbsp;·&nbsp; ${summaryText}</div>
     </div>
     <button id="btn-print" onclick="window.print()">🖨 Print All Labels</button>
     <button id="btn-close" onclick="window.close()">✕ Close</button>
