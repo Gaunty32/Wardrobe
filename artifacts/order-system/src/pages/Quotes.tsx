@@ -187,14 +187,21 @@ export default function Quotes() {
     return !s || q.quoteNumber.toLowerCase().includes(s) || q.customerName.toLowerCase().includes(s);
   });
 
-  const filteredCustomers = customers.filter((c) =>
-    !customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase())
-  );
+  const filteredCustomers = customers.filter((c) => {
+    if (!customerSearch) return true;
+    const s = customerSearch.toLowerCase();
+    const contactName = [(c as any).contactFirstName, (c as any).contactLastName].filter(Boolean).join(' ').toLowerCase();
+    return c.name.toLowerCase().includes(s)
+      || contactName.includes(s)
+      || (c as any).email?.toLowerCase().includes(s);
+  });
 
   const filteredEnquiries = enquiries.filter((e) => {
     if (!customerSearch) return true;
     const s = customerSearch.toLowerCase();
-    return e.name.toLowerCase().includes(s) || (e.email ?? "").toLowerCase().includes(s);
+    return e.name.toLowerCase().includes(s)
+      || (e.email ?? "").toLowerCase().includes(s)
+      || (e.company ?? "").toLowerCase().includes(s);
   });
 
   // HL live results — exclude IDs already shown in cached enquiries

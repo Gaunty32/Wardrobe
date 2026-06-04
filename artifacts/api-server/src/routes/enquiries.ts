@@ -37,8 +37,13 @@ router.get("/enquiries/search", async (req: any, res: Response): Promise<void> =
   });
 
   try {
-    // Run name/email/phone query and company-name search in parallel
-    const [nameRes, companyRes] = await Promise.all([
+    const words = q.split(/\s+/).filter(Boolean);
+    const firstWord = words[0];
+    const isMultiWord = words.length > 1;
+
+    // Always: full-query name search + company-name search
+    // Multi-word extra: first-word-only name search so "Sarah H" still finds "Sarah Harvey"
+    const requests: Promise<Response>[] = [
       fetch(
         `https://services.leadconnectorhq.com/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(q)}&limit=10`,
         { headers }
@@ -55,7 +60,19 @@ router.get("/enquiries/search", async (req: any, res: Response): Promise<void> =
           }),
         }
       ),
-    ]);
+    ];
+
+    if (isMultiWord) {
+      // Also search by first word alone — catches "Sarah H" → "Sarah Harvey"
+      requests.push(
+        fetch(
+          `https://services.leadconnectorhq.com/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(firstWord)}&limit=10`,
+          { headers }
+        )
+      );
+    }
+
+    const results = await Promise.all(requests);
 
     const seen = new Set<string>();
     const contacts: ReturnType<typeof mapContact>[] = [];
@@ -66,16 +83,24 @@ router.get("/enquiries/search", async (req: any, res: Response): Promise<void> =
       }
     };
 
-    if (nameRes.ok) {
-      const d = await nameRes.json();
-      addContacts(d.contacts ?? []);
-    }
-    if (companyRes.ok) {
-      const d = await companyRes.json();
+    for (const r of results) {
+      if (!r.ok) continue;
+      const d = await r.json();
+      // GET /contacts returns { contacts: [...] }, POST /contacts/search returns { contacts: [...] }
       addContacts(d.contacts ?? []);
     }
 
-    res.json({ contacts: contacts.slice(0, 12) });
+    // For multi-word queries, filter the first-word results down to contacts whose
+    // name/company actually contains the full query (avoids flooding results with "Sarah Smith" etc.)
+    const finalContacts = isMultiWord
+      ? contacts.filter(c => {
+          const haystack = [c.name, c.company, c.email].filter(Boolean).join(' ').toLowerCase();
+          // Must match all words individually (e.g. "sarah h" → name contains "sarah" AND starts with "h")
+          return words.every(w => haystack.includes(w.toLowerCase()));
+        })
+      : contacts;
+
+    res.json({ contacts: finalContacts.slice(0, 12) });
   } catch (err: any) {
     console.error("[enquiries/search] HL error:", err.message);
     res.json({ contacts: [] });
