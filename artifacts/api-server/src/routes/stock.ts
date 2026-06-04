@@ -52,7 +52,7 @@ router.patch("/stock/plain/:id", async (req, res): Promise<void> => {
     updatedAt: new Date(),
   };
   if (parsed.stockQuantity !== undefined) updateData.stockQuantity = parsed.stockQuantity;
-  if (parsed.binLocation !== undefined) updateData.binLocation = parsed.binLocation;
+  if (parsed.binLocation !== undefined) updateData.binLocation = parsed.binLocation?.toUpperCase() ?? null;
   if (parsed.minStockQty !== undefined) updateData.minStockQty = parsed.minStockQty;
 
   const [row] = await db
@@ -67,6 +67,15 @@ router.patch("/stock/plain/:id", async (req, res): Promise<void> => {
       productId: productVariantsTable.productId,
     });
   if (!row) { res.status(404).json({ error: "Variant not found" }); return; }
+
+  // Auto-create the bin in stock_bins if a new bin location was assigned
+  if (parsed.binLocation) {
+    await db.execute(sql`
+      INSERT INTO stock_bins (bin_number, max_qty)
+      VALUES (${parsed.binLocation.toUpperCase()}, 15)
+      ON CONFLICT (bin_number) DO NOTHING
+    `);
+  }
 
   if (parsed.stockQuantity !== undefined) {
     await db.execute(sql`

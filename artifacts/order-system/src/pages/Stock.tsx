@@ -1227,9 +1227,9 @@ export default function Stock() {
               <Box className="w-4 h-4" /> Bin View
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="plain"><PlainStockTab variants={variants} isLoading={loadingPlain} /></TabsContent>
-          <TabsContent value="finish"><FinishStockTab items={items} isLoading={loadingFinished} /></TabsContent>
-          <TabsContent value="bins"><BinViewTab bins={bins} isLoading={loadingBins} /></TabsContent>
+          <TabsContent value="plain" forceMount className="data-[state=inactive]:hidden"><PlainStockTab variants={variants} isLoading={loadingPlain} /></TabsContent>
+          <TabsContent value="finish" forceMount className="data-[state=inactive]:hidden"><FinishStockTab items={items} isLoading={loadingFinished} /></TabsContent>
+          <TabsContent value="bins" forceMount className="data-[state=inactive]:hidden"><BinViewTab bins={bins} isLoading={loadingBins} /></TabsContent>
         </Tabs>
       </div>
     </Layout>
