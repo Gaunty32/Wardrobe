@@ -32,4 +32,5 @@ export interface CreateCustomerBody {
   defaultShippingService?: string | null;
   /** @nullable */
   highLevelContactId?: string | null;
+  poNumberRequired?: boolean;
 }

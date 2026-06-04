@@ -45,6 +45,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       invoiceScheduledSendAt: ordersTable.invoiceScheduledSendAt,
       customerHighLevelContactId: customersTable.highLevelContactId,
       poNumber: ordersTable.poNumber,
+      poNumberRequired: customersTable.poNumberRequired,
     })
     .from(ordersTable)
     .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -123,6 +124,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
         customerAddress: customersTable.address,
         customerCity: customersTable.city,
         customerPostcode: customersTable.postcode,
+        poNumberRequired: customersTable.poNumberRequired,
       })
       .from(ordersTable)
       .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -139,6 +141,12 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
     const firstOrder = orderRows[0];
     const customerEmail = firstOrder.customerEmail ?? null;
     if (!customerEmail) { res.status(400).json({ error: "Customer has no email address on record" }); return; }
+
+    // Block if customer requires a PO number but none is set on any order
+    if (firstOrder.poNumberRequired && orderRows.every((o) => !o.poNumber)) {
+      res.status(400).json({ error: "This customer requires a PO number before an invoice can be sent. Please add a PO number to the order(s) first." });
+      return;
+    }
 
     const poNumber = firstOrder.poNumber ?? null;
     // For multi-order consolidated invoices always join all order numbers so the
@@ -259,6 +267,17 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
 
   try {
+    // Block invoice send if customer requires a PO number but none is set
+    const [orderCheck] = await db
+      .select({ poNumber: ordersTable.poNumber, poNumberRequired: customersTable.poNumberRequired })
+      .from(ordersTable)
+      .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
+      .where(eq(ordersTable.id, idParse.data));
+    if (orderCheck?.poNumberRequired && !orderCheck?.poNumber) {
+      res.status(400).json({ error: "This customer requires a PO number before an invoice can be sent. Please add a PO number to the order first." });
+      return;
+    }
+
     const result = await sendInvoiceEmail(idParse.data);
 
     await logOrderAction(idParse.data, "Invoice sent", getActor(req), `Invoice emailed to ${result.sentTo}`);

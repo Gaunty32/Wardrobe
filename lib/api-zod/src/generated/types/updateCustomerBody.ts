@@ -32,4 +32,5 @@ export interface UpdateCustomerBody {
   highLevelContactId?: string | null;
   requiresPrepayment?: boolean;
   zeroVat?: boolean;
+  poNumberRequired?: boolean;
 }

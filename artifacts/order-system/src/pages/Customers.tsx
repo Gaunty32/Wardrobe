@@ -288,7 +288,7 @@ export default function Customers() {
     return (localStorage.getItem("customersViewMode") as "list" | "tile") ?? "tile";
   });
   
-  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "", logoUrl: "", highLevelContactId: "" };
+  const initialForm = { name: "", contactFirstName: "", contactLastName: "", email: "", phone: "", address: "", city: "", state: "", postcode: "", notes: "", defaultShippingService: "", logoUrl: "", highLevelContactId: "", poNumberRequired: false };
   const [formData, setFormData] = useState(initialForm);
   const logoFileInputRef = useRef<HTMLInputElement>(null);
   const { uploadFile, isUploading } = useUpload({
@@ -336,6 +336,7 @@ export default function Customers() {
       defaultShippingService: (customer as any).defaultShippingService || "",
       logoUrl: (customer as any).logoUrl || "",
       highLevelContactId: (customer as any).highLevelContactId || "",
+      poNumberRequired: (customer as any).poNumberRequired ?? false,
     });
     setEditingCustomer(customer);
   };
@@ -670,6 +671,23 @@ export default function Customers() {
                 />
                 <p className="text-xs text-muted-foreground">Used to trigger High Level automation when sending collection order invoices. Find this in the contact's URL in High Level.</p>
               </div>
+
+              <div className="grid gap-2 mt-2">
+                <h4 className="text-sm font-semibold text-muted-foreground tracking-wide">Billing</h4>
+              </div>
+
+              <label className="flex items-start gap-3 rounded-lg border p-3 cursor-pointer hover:bg-muted/30 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={formData.poNumberRequired}
+                  onChange={(e) => setFormData({...formData, poNumberRequired: e.target.checked})}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary accent-primary cursor-pointer flex-shrink-0"
+                />
+                <div>
+                  <p className="text-sm font-medium leading-tight">PO Number Required</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Invoice cannot be sent until a PO number is added to the order.</p>
+                </div>
+              </label>
 
               <div className="grid gap-2 mt-2">
                 <h4 className="text-sm font-semibold text-muted-foreground tracking-wide">Shipping</h4>

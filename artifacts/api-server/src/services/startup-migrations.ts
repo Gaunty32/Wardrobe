@@ -1349,6 +1349,11 @@ export async function runStartupMigrations(): Promise<void> {
   `);
   console.log("[startup] Re-queued allocated-but-outstanding PO items for purchasing");
 
+  // PO Number Required flag on customers — blocks invoice send until PO is set
+  await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS po_number_required boolean NOT NULL DEFAULT false;
+  `);
+
   // ── Archived products ────────────────────────────────────────────────────────
   await db.execute(sql`
     ALTER TABLE products ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;

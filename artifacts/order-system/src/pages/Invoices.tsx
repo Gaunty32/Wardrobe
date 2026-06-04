@@ -52,6 +52,7 @@ interface InvoiceOrder {
   invoiceScheduledSendAt: string | null;
   customerHighLevelContactId: string | null;
   poNumber?: string | null;
+  poNumberRequired?: boolean | null;
 }
 
 function toWhatsAppNumber(phone: string): string {
@@ -219,6 +220,7 @@ function OrderRow({
   );
 
   const isCollection = ["office_collection", "warehouse_collection"].includes(order.shippingMethod ?? "");
+  const poMissing = !!(order.poNumberRequired && !order.poNumber);
 
   const saveInvoiceDate = useMutation({
     mutationFn: (d: string) => apiFetch(`/invoices/${order.id}/invoice-date`, { method: "PATCH", body: JSON.stringify({ invoiceDate: d }) }),
@@ -334,6 +336,11 @@ function OrderRow({
                 <Hash className="w-3 h-3" />{order.poNumber}
               </span>
             )}
+            {poMissing && (
+              <span className="inline-flex items-center gap-1 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 w-fit">
+                <AlertTriangle className="w-3 h-3" />PO required
+              </span>
+            )}
           </div>
         </TableCell>
         <TableCell className="text-sm">{order.customerName ?? "—"}</TableCell>
@@ -388,15 +395,23 @@ function OrderRow({
         <TableCell>
           <div className="flex items-center gap-2">
             {showSendEmail && (
-              <Button
-                size="sm"
-                className="h-7 gap-1 text-xs"
-                onClick={() => setConfirmOpen(true)}
-                disabled={sendEmail.isPending}
-              >
-                {sendEmail.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                Send Invoice
-              </Button>
+              <div className="flex flex-col items-start gap-1">
+                <Button
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  onClick={() => setConfirmOpen(true)}
+                  disabled={sendEmail.isPending || poMissing}
+                  title={poMissing ? "Add a PO number to this order before sending the invoice" : undefined}
+                >
+                  {sendEmail.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                  Send Invoice
+                </Button>
+                {poMissing && (
+                  <span className="text-xs text-red-600 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />Add PO number first
+                  </span>
+                )}
+              </div>
             )}
             {showPostXero && !order.xeroInvoiceId && (
               <Button
