@@ -4,7 +4,7 @@ import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
   RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
   ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square, RotateCcw, AlertCircle,
-  Search, Calendar, X, FileText, Zap, AlertTriangle, Play, Layers, TrendingUp, Pencil,
+  Search, Calendar, X, FileText, Zap, AlertTriangle, Play, Layers, TrendingUp, Pencil, Box,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -147,6 +147,7 @@ interface PickingItem {
   finishName: string | null;
   stockStatus: string;
   stockAllocatedAt: string | null;
+  binLocation: string | null;
 }
 
 interface PickingOrder {
@@ -2881,7 +2882,17 @@ function PickingListTab({ filters }: { filters: Filters }) {
                                 </span>
                               )}
                             </div>
-                            <div className="flex flex-wrap gap-1.5 mt-0.5">
+                            <div className="flex flex-wrap gap-1.5 mt-1">
+                              {/* SBS Stock + Bin indicator — always shown on picking list */}
+                              <span className="inline-flex items-center gap-1.5 text-xs font-bold bg-emerald-600 text-white rounded px-2 py-0.5 tracking-wide uppercase">
+                                <Box className="w-3 h-3" />
+                                SBS Stock
+                                {item.binLocation && (
+                                  <span className="ml-0.5 bg-white/20 rounded px-1.5 py-px font-black tracking-wider">
+                                    BIN {item.binLocation}
+                                  </span>
+                                )}
+                              </span>
                               {item.colour && (
                                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                                   <Palette className="w-3 h-3" />{item.colour}

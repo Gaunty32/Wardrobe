@@ -56,10 +56,15 @@ router.get("/picking-list", async (req, res): Promise<void> => {
       oi.finish_id   AS "finishId",
       oi.finish_name AS "finishName",
       oi.stock_status AS "stockStatus",
-      oi.stock_allocated_at AS "stockAllocatedAt"
+      oi.stock_allocated_at AS "stockAllocatedAt",
+      pv.bin_location AS "binLocation"
     FROM order_items oi
     INNER JOIN orders o ON o.id = oi.order_id
     LEFT  JOIN products p ON p.id = oi.product_id
+    LEFT  JOIN product_variants pv
+           ON  pv.product_id = oi.product_id
+           AND (pv.colour = oi.colour OR (pv.colour IS NULL AND oi.colour IS NULL))
+           AND (pv.size   = oi.size   OR (pv.size   IS NULL AND oi.size   IS NULL))
     WHERE oi.stock_status = 'allocated'
       AND NOT EXISTS (
         -- Exclude items still waiting for PO delivery (direct link)
@@ -88,6 +93,7 @@ router.get("/picking-list", async (req, res): Promise<void> => {
     quantity: number; recipientType: string | null; recipientName: string | null;
     finishId: number | null; finishName: string | null;
     stockStatus: string | null; stockAllocatedAt: Date | null;
+    binLocation: string | null;
   }>;
 
   const orderMap = new Map<number, {
