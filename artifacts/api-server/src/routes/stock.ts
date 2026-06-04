@@ -420,16 +420,22 @@ router.get("/stock/bins/:id/label", async (req, res): Promise<void> => {
   <meta charset="UTF-8">
   <title>Bin Label — ${bin.binNumber}</title>
   <style>
+    @page{size:4in 3in landscape;margin:0mm}
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;display:flex;flex-direction:column;align-items:center;padding:20px;gap:16px}
-    #toolbar{width:6in;display:flex;align-items:center;gap:12px;padding:10px 16px;background:#1e3a5f;color:white;border-radius:6px}
-    #toolbar span{flex:1;font-size:13px;font-weight:700}
-    #toolbar button{padding:6px 18px;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;background:#22c55e;color:white}
-    .label{width:6in;height:4in;background:white;border:1px solid #aaa;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.15);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.2in}
-    .bin-label{font-size:7pt;font-weight:900;text-transform:uppercase;letter-spacing:.25em;color:#555}
-    .bin-number{font-size:72pt;font-weight:900;color:#000;line-height:1;letter-spacing:-.02em}
-    .bin-notes{font-size:12pt;color:#555;font-weight:400;margin-top:0.1in}
-    @media print{body{background:white;padding:0}#toolbar{display:none}.label{box-shadow:none;border:none;page-break-after:always}}
+    html,body{width:4in}
+    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;display:flex;flex-direction:column;align-items:flex-start;padding:16px;gap:12px}
+    #toolbar{width:4in;display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1e3a5f;color:white;border-radius:6px}
+    #toolbar span{flex:1;font-size:11px;font-weight:700}
+    #toolbar button{padding:5px 14px;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;background:#22c55e;color:white}
+    #page{width:4in;height:3in;background:white;border:1px solid #aaa;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.15);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0}
+    .lbl{font-size:9pt;font-weight:900;text-transform:uppercase;letter-spacing:.3em;color:#888;margin-bottom:0.06in}
+    .num{font-size:80pt;font-weight:900;color:#000;line-height:1;letter-spacing:-.03em}
+    @media print{
+      @page{size:4in 3in landscape;margin:0mm}
+      html,body{width:4in;background:white;padding:0}
+      #toolbar{display:none}
+      #page{box-shadow:none;border:none;border-radius:0;width:4in;height:3in}
+    }
   </style>
 </head>
 <body>
@@ -437,13 +443,210 @@ router.get("/stock/bins/:id/label", async (req, res): Promise<void> => {
     <span>Bin Label — ${bin.binNumber}</span>
     <button onclick="window.print()">Print</button>
   </div>
-  <div class="label">
-    <div class="bin-label">Bin</div>
-    <div class="bin-number">${bin.binNumber}</div>
-    ${bin.notes ? `<div class="bin-notes">${bin.notes}</div>` : ""}
+  <div id="page">
+    <div class="lbl">Bin</div>
+    <div class="num">${bin.binNumber}</div>
   </div>
 </body>
 </html>`;
+  res.setHeader("Content-Type", "text/html");
+  res.send(html);
+});
+
+// ─── GET /stock/bins/:id/report — printable stock report for one bin ──────────
+
+router.get("/stock/bins/:id/report", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  const [bin] = await db.select().from(stockBinsTable).where(eq(stockBinsTable.id, id));
+  if (!bin) { res.status(404).send("Bin not found"); return; }
+
+  const variants = await db
+    .select({
+      variantId: productVariantsTable.id,
+      productName: productsTable.name,
+      productSku: productsTable.sku,
+      colour: productVariantsTable.colour,
+      size: productVariantsTable.size,
+      supplierCode: productVariantsTable.supplierCode,
+      stockQuantity: productVariantsTable.stockQuantity,
+      minStockQty: productVariantsTable.minStockQty,
+    })
+    .from(productVariantsTable)
+    .innerJoin(productsTable, eq(productVariantsTable.productId, productsTable.id))
+    .where(eq(productVariantsTable.binLocation, bin.binNumber))
+    .orderBy(asc(productsTable.name), asc(productVariantsTable.colour), asc(productVariantsTable.size));
+
+  const dateStr = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date());
+  const totalQty = variants.reduce((s, v) => s + (v.stockQuantity ?? 0), 0);
+
+  const rows = variants.map(v => {
+    const low = (v.stockQuantity ?? 0) <= (v.minStockQty ?? 0);
+    return `<tr${low ? ' class="low"' : ''}>
+      <td>${v.productName}</td>
+      <td class="mono">${v.productSku ?? "—"}</td>
+      <td>${v.colour ?? "—"}</td>
+      <td>${v.size ?? "—"}</td>
+      <td class="mono">${v.supplierCode ?? "—"}</td>
+      <td class="num${low ? " low-num" : ""}">${low ? "⚠ " : ""}${v.stockQuantity ?? 0}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>Bin ${bin.binNumber} Stock Report</title>
+<style>
+  @page{size:A4 landscape;margin:12mm}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#111;padding:20px}
+  #toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:10px 16px;background:#1e3a5f;color:white;border-radius:6px}
+  #toolbar span{flex:1;font-size:12px;font-weight:700}
+  #toolbar button{padding:6px 18px;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;background:#22c55e;color:white}
+  .report-header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2pt solid #1e3a5f;padding-bottom:6px;margin-bottom:12px}
+  .bin-title{font-size:28pt;font-weight:900;color:#1e3a5f;line-height:1}
+  .bin-sub{font-size:9pt;color:#555;margin-top:3px}
+  .meta{text-align:right;font-size:8.5pt;color:#555}
+  table{width:100%;border-collapse:collapse;margin-top:4px}
+  th{background:#1e3a5f;color:white;text-align:left;padding:6px 8px;font-size:8pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  td{padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:9.5pt;vertical-align:middle}
+  tr:nth-child(even) td{background:#f9fafb}
+  tr.low td{background:#fff7ed}
+  .num{text-align:right;font-weight:700;font-family:monospace}
+  .low-num{color:#b45309}
+  .mono{font-family:monospace;font-size:8.5pt;color:#444}
+  .footer{margin-top:10px;font-size:8pt;color:#888;display:flex;justify-content:space-between}
+  @media print{#toolbar{display:none}body{padding:0}}
+</style>
+</head><body>
+<div id="toolbar">
+  <span>Bin ${bin.binNumber} — Stock Report</span>
+  <button onclick="window.print()">Print</button>
+</div>
+<div class="report-header">
+  <div>
+    <div class="bin-title">Bin ${bin.binNumber}</div>
+    <div class="bin-sub">Stock Report${bin.notes ? ` · ${bin.notes}` : ""} · ${variants.length} SKU${variants.length !== 1 ? "s" : ""} · ${totalQty} unit${totalQty !== 1 ? "s" : ""}</div>
+  </div>
+  <div class="meta">Select Branding Solutions<br>Printed: ${dateStr}</div>
+</div>
+${variants.length === 0 ? '<p style="color:#888;padding:20px 0;text-align:center">This bin is empty.</p>' : `
+<table>
+  <thead><tr>
+    <th>Product</th><th>FCC Code</th><th>Colour</th><th>Size</th><th>Supplier Code</th><th style="text-align:right">Qty</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>`}
+<div class="footer">
+  <span>Bin capacity: ${totalQty}/${bin.maxQty}${bin.isOverCapacity ? " ⚠ OVER CAPACITY" : ""}</span>
+  <span>Select Branding Solutions — Bin ${bin.binNumber} Stock Report</span>
+</div>
+</body></html>`;
+  res.setHeader("Content-Type", "text/html");
+  res.send(html);
+});
+
+// ─── GET /stock/bins/report — printable stock report for ALL bins ─────────────
+
+router.get("/stock/bins/report", async (req, res): Promise<void> => {
+  const bins = await db.select().from(stockBinsTable).orderBy(asc(stockBinsTable.binNumber));
+
+  const allVariants = await db
+    .select({
+      variantId: productVariantsTable.id,
+      productName: productsTable.name,
+      productSku: productsTable.sku,
+      colour: productVariantsTable.colour,
+      size: productVariantsTable.size,
+      supplierCode: productVariantsTable.supplierCode,
+      stockQuantity: productVariantsTable.stockQuantity,
+      minStockQty: productVariantsTable.minStockQty,
+      binLocation: productVariantsTable.binLocation,
+    })
+    .from(productVariantsTable)
+    .innerJoin(productsTable, eq(productVariantsTable.productId, productsTable.id))
+    .where(sql`${productVariantsTable.binLocation} IS NOT NULL AND ${productVariantsTable.binLocation} <> ''`)
+    .orderBy(asc(productVariantsTable.binLocation), asc(productsTable.name), asc(productVariantsTable.colour));
+
+  const byBin = new Map<string, typeof allVariants>();
+  for (const v of allVariants) {
+    const b = v.binLocation!;
+    if (!byBin.has(b)) byBin.set(b, []);
+    byBin.get(b)!.push(v);
+  }
+
+  const dateStr = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date());
+
+  const binSections = bins.map((bin, i) => {
+    const variants = byBin.get(bin.binNumber) ?? [];
+    const totalQty = variants.reduce((s, v) => s + (v.stockQuantity ?? 0), 0);
+    const isLast = i === bins.length - 1;
+    const rows = variants.map(v => {
+      const low = (v.stockQuantity ?? 0) <= (v.minStockQty ?? 0);
+      return `<tr${low ? ' class="low"' : ''}>
+        <td>${v.productName}</td>
+        <td class="mono">${v.productSku ?? "—"}</td>
+        <td>${v.colour ?? "—"}</td>
+        <td>${v.size ?? "—"}</td>
+        <td class="mono">${v.supplierCode ?? "—"}</td>
+        <td class="num${low ? " low-num" : ""}">${low ? "⚠ " : ""}${v.stockQuantity ?? 0}</td>
+      </tr>`;
+    }).join("");
+    return `<div class="bin-section${isLast ? "" : " page-break"}">
+      <div class="bin-header">
+        <span class="bin-num">Bin ${bin.binNumber}</span>
+        <span class="bin-meta">${variants.length} SKU${variants.length !== 1 ? "s" : ""} · ${totalQty}/${bin.maxQty} units${bin.isOverCapacity ? " ⚠ OVER" : ""}</span>
+        ${bin.notes ? `<span class="bin-note">${bin.notes}</span>` : ""}
+      </div>
+      ${variants.length === 0 ? '<p class="empty">Empty bin</p>' : `
+      <table>
+        <thead><tr><th>Product</th><th>FCC Code</th><th>Colour</th><th>Size</th><th>Supplier Code</th><th style="text-align:right">Qty</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`}
+    </div>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<title>All Bins Stock Report</title>
+<style>
+  @page{size:A4 landscape;margin:12mm}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#111;padding:20px}
+  #toolbar{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding:10px 16px;background:#1e3a5f;color:white;border-radius:6px}
+  #toolbar span{flex:1;font-size:12px;font-weight:700}
+  #toolbar button{padding:6px 18px;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;background:#22c55e;color:white}
+  .cover{border-bottom:3pt solid #1e3a5f;padding-bottom:8px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end}
+  .cover-title{font-size:22pt;font-weight:900;color:#1e3a5f}
+  .cover-sub{font-size:9pt;color:#555;margin-top:2px}
+  .meta{text-align:right;font-size:8.5pt;color:#555}
+  .bin-section{margin-bottom:12px}
+  .page-break{page-break-after:always}
+  .bin-header{display:flex;align-items:baseline;gap:16px;background:#f1f5f9;border-left:4px solid #1e3a5f;padding:5px 10px;margin-bottom:4px;border-radius:0 4px 4px 0}
+  .bin-num{font-size:16pt;font-weight:900;color:#1e3a5f;line-height:1}
+  .bin-meta{font-size:8.5pt;color:#555}
+  .bin-note{font-size:8pt;color:#888;margin-left:auto;font-style:italic}
+  .empty{color:#aaa;font-size:9pt;padding:4px 10px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#1e3a5f;color:white;text-align:left;padding:5px 8px;font-size:7.5pt;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+  td{padding:4px 8px;border-bottom:1px solid #e5e7eb;font-size:9pt;vertical-align:middle}
+  tr:nth-child(even) td{background:#f9fafb}
+  tr.low td{background:#fff7ed}
+  .num{text-align:right;font-weight:700;font-family:monospace}
+  .low-num{color:#b45309}
+  .mono{font-family:monospace;font-size:8pt;color:#444}
+  @media print{#toolbar{display:none}body{padding:0}}
+</style>
+</head><body>
+<div id="toolbar">
+  <span>All Bins — Stock Report (${bins.length} bins)</span>
+  <button onclick="window.print()">Print</button>
+</div>
+<div class="cover">
+  <div>
+    <div class="cover-title">All Bins Stock Report</div>
+    <div class="cover-sub">${bins.length} bin${bins.length !== 1 ? "s" : ""} · ${allVariants.length} SKU${allVariants.length !== 1 ? "s" : ""} in bins · ${allVariants.reduce((s, v) => s + (v.stockQuantity ?? 0), 0)} total units</div>
+  </div>
+  <div class="meta">Select Branding Solutions<br>Printed: ${dateStr}</div>
+</div>
+${binSections}
+</body></html>`;
   res.setHeader("Content-Type", "text/html");
   res.send(html);
 });

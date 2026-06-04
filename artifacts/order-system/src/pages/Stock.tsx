@@ -876,11 +876,18 @@ function BinDetailDialog({ binId, onClose }: { binId: number; onClose: () => voi
         )}
         <DialogFooter>
           {data && (
-            <Button variant="outline" size="sm" className="gap-1.5 mr-auto"
-              onClick={() => window.open(`/api/stock/bins/${binId}/label`, "_blank")}
-            >
-              <Tag className="w-3.5 h-3.5" /> Print Bin Label
-            </Button>
+            <div className="flex gap-2 mr-auto">
+              <Button variant="outline" size="sm" className="gap-1.5"
+                onClick={() => window.open(`/api/stock/bins/${binId}/label`, "_blank")}
+              >
+                <Tag className="w-3.5 h-3.5" /> Bin Label
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5"
+                onClick={() => window.open(`/api/stock/bins/${binId}/report`, "_blank")}
+              >
+                <Printer className="w-3.5 h-3.5" /> Stock Report
+              </Button>
+            </div>
           )}
           <Button variant="outline" onClick={onClose}>Close</Button>
         </DialogFooter>
@@ -950,7 +957,13 @@ function BinViewTab({ bins, isLoading }: { bins: StockBin[]; isLoading: boolean 
             </Badge>
           )}
         </div>
-        <Button size="sm" className="gap-1.5 ml-auto" onClick={() => setCreateOpen(true)}>
+        <Button size="sm" variant="outline" className="gap-1.5 ml-auto"
+          onClick={() => window.open("/api/stock/bins/report", "_blank")}
+          title="Print stock report for all bins"
+        >
+          <Printer className="w-4 h-4" /> All Bins Report
+        </Button>
+        <Button size="sm" className="gap-1.5" onClick={() => setCreateOpen(true)}>
           <Plus className="w-4 h-4" /> New Bin
         </Button>
       </div>
