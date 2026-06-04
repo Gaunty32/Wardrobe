@@ -1558,7 +1558,7 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
       const { groupKeys, groups } = buildMatrix(matrixItems);
       const ROW_H = 20;
       const PROD_HDR_H = 24;
-      const COL_HDR_H = 18;
+      const COL_HDR_H = 28;
       let grandTotal = 0;
       let grandValue = 0;
 
@@ -1602,13 +1602,13 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
         // ── Column header row ──
         doc.rect(tX, y, TABLE_W, COL_HDR_H).fill("#334155");
         doc.fillColor("#e2e8f0").fontSize(8).font("Helvetica-Bold");
-        doc.text("Colour / Style", tX + 6, y + 5, { width: COLOUR_W - 6, lineBreak: false });
+        doc.text("Colour / Style", tX + 6, y + 9, { width: COLOUR_W - 6, lineBreak: false });
         let sx = tX + COLOUR_W;
         for (const sz of productSizes) {
-          doc.text(sz, sx, y + 5, { width: SIZE_W, align: "center", lineBreak: false });
+          doc.text(sz, sx, y + 3, { width: SIZE_W, align: "center" });
           sx += SIZE_W;
         }
-        doc.text("Total", sx, y + 5, { width: TOTAL_W, align: "center", lineBreak: false });
+        doc.text("Total", sx, y + 9, { width: TOTAL_W, align: "center", lineBreak: false });
         y += COL_HDR_H;
 
         // ── Colour rows ──

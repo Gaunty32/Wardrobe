@@ -624,22 +624,41 @@ async function getPoWithItems(poId: number) {
 }
 
 async function buildPoItems(orderItemIds: number[], poId: number, qtyOverrides?: Record<string, number>) {
-  const pvAlias = alias(productVariantsTable, "pv_po");
   const orderItems = await db
     .select({
       item: orderItemsTable,
       orderNumber: ordersTable.orderNumber,
-      supplierCode: sql<string | null>`COALESCE(${pvAlias.supplierCode}, ${productsTable.supplierCode})`,
-      supplierPrice: sql<string | null>`COALESCE(${pvAlias.supplierPrice}, ${productsTable.supplierPrice})`,
+      supplierCode: sql<string | null>`COALESCE(
+        (SELECT pv.supplier_code FROM product_variants pv
+         WHERE pv.product_id = ${orderItemsTable.productId}
+           AND LOWER(TRIM(COALESCE(pv.colour, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))
+           AND LOWER(TRIM(COALESCE(pv.size, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.size}, '')))
+           AND pv.supplier_code IS NOT NULL LIMIT 1),
+        (SELECT pv.supplier_code FROM product_variants pv
+         WHERE pv.product_id = ${orderItemsTable.productId}
+           AND LOWER(TRIM(COALESCE(pv.colour, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))
+           AND pv.supplier_code IS NOT NULL LIMIT 1),
+        (SELECT pv.supplier_code FROM product_variants pv
+         WHERE pv.product_id = ${orderItemsTable.productId}
+           AND pv.supplier_code IS NOT NULL LIMIT 1),
+        ${productsTable.supplierCode}
+      )`,
+      supplierPrice: sql<string | null>`COALESCE(
+        (SELECT pv.supplier_price FROM product_variants pv
+         WHERE pv.product_id = ${orderItemsTable.productId}
+           AND LOWER(TRIM(COALESCE(pv.colour, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))
+           AND LOWER(TRIM(COALESCE(pv.size, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.size}, '')))
+           AND pv.supplier_price IS NOT NULL LIMIT 1),
+        (SELECT pv.supplier_price FROM product_variants pv
+         WHERE pv.product_id = ${orderItemsTable.productId}
+           AND LOWER(TRIM(COALESCE(pv.colour, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))
+           AND pv.supplier_price IS NOT NULL LIMIT 1),
+        ${productsTable.supplierPrice}
+      )`,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .leftJoin(pvAlias, and(
-      eq(pvAlias.productId, orderItemsTable.productId),
-      sql`LOWER(TRIM(COALESCE(${pvAlias.colour}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))`,
-      sql`LOWER(TRIM(COALESCE(${pvAlias.size}, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.size}, '')))`,
-    ))
     .where(inArray(orderItemsTable.id, orderItemIds));
 
   // Consolidate lines by SKU: same product + colour + size + supplierCode → one PO line.
