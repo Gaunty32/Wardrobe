@@ -178,36 +178,69 @@ interface ZebraDevice {
   send(data: string, success?: () => void, error?: (err: string) => void): void;
 }
 
+const ZBP_NOT_FOUND = "Zebra Browser Print not found at localhost:9100. Is the app installed and running?";
+
+function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
+  ]);
+}
+
 function loadBrowserPrintScript(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (window.BrowserPrint) { resolve(); return; }
-    const existing = document.getElementById("zebra-browser-print-sdk");
-    if (existing) { existing.addEventListener("load", () => resolve()); return; }
+
+    // Remove a stale/failed script element so we can try again cleanly
+    const existing = document.getElementById("zebra-browser-print-sdk") as HTMLScriptElement | null;
+    if (existing) {
+      // If the script is still loading, wait for it; if it already errored, replace it
+      if (!existing.dataset.failed) {
+        existing.addEventListener("load", () => resolve());
+        existing.addEventListener("error", () => reject(new Error(ZBP_NOT_FOUND)));
+        return;
+      }
+      existing.remove();
+    }
+
     const script = document.createElement("script");
     script.id = "zebra-browser-print-sdk";
     script.src = "http://127.0.0.1:9100/BrowserPrint-3.1.250.min.js";
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Zebra Browser Print not found at localhost:9100. Is the app installed and running?"));
+    script.onerror = () => {
+      script.dataset.failed = "1";
+      reject(new Error(ZBP_NOT_FOUND));
+    };
     document.head.appendChild(script);
   });
 }
 
 function sendZpl(device: ZebraDevice, zpl: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    device.send(zpl, resolve, reject);
-  });
+  return withTimeout(
+    new Promise((resolve, reject) => { device.send(zpl, resolve, reject); }),
+    10_000,
+    "Print timed out — is the printer switched on and connected?",
+  );
 }
 
-function getDefaultPrinter(): Promise<ZebraDevice> {
-  return new Promise((resolve, reject) => {
-    window.BrowserPrint!.getDefaultDevice("printer", resolve, reject);
-  });
+function getDefaultPrinter(): Promise<ZebraDevice | null> {
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      window.BrowserPrint!.getDefaultDevice("printer", resolve, reject);
+    }),
+    6_000,
+    "Timed out waiting for default printer",
+  ).catch(() => null);
 }
 
 function getAllPrinters(): Promise<ZebraDevice[]> {
-  return new Promise((resolve, reject) => {
-    window.BrowserPrint!.getLocalDevices((devices) => resolve(devices ?? []), reject, "printer");
-  });
+  return withTimeout(
+    new Promise((resolve, reject) => {
+      window.BrowserPrint!.getLocalDevices((devices) => resolve(devices ?? []), reject, "printer");
+    }),
+    6_000,
+    "Timed out listing printers",
+  ).catch(() => [] as ZebraDevice[]);
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
