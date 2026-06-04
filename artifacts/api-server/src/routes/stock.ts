@@ -116,26 +116,33 @@ router.get("/stock/plain/:id/label", async (req, res): Promise<void> => {
   <meta charset="UTF-8">
   <title>Stock Label — ${v.productSku ?? ""} ${v.colour ?? ""} ${v.size ?? ""}</title>
   <style>
+    @page{size:4in 3in landscape;margin:0mm}
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;display:flex;flex-direction:column;align-items:center;padding:20px;gap:16px}
-    #toolbar{width:6in;display:flex;align-items:center;gap:12px;padding:10px 16px;background:#1e3a5f;color:white;border-radius:6px}
-    #toolbar span{flex:1;font-size:13px;font-weight:700}
-    #toolbar button{padding:6px 18px;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;background:#22c55e;color:white}
-    .label{width:6in;height:4in;background:white;border:1px solid #aaa;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.15);padding:0.25in 0.3in;display:flex;flex-direction:column;gap:0}
-    .header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2pt solid #000;padding-bottom:0.1in;margin-bottom:0.1in}
-    .fcc{font-size:22pt;font-weight:900;color:#000;letter-spacing:-.02em;line-height:1}
-    .bin-badge{background:#1e3a5f;color:white;font-size:11pt;font-weight:900;padding:4px 12px;border-radius:4px;letter-spacing:.04em;white-space:nowrap}
-    .product-name{font-size:16pt;font-weight:700;color:#000;line-height:1.2;margin-bottom:0.06in}
-    .row{display:flex;gap:0.3in;align-items:baseline;margin-bottom:0.06in}
+    html,body{width:4in}
+    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;display:flex;flex-direction:column;align-items:flex-start;padding:16px;gap:12px}
+    #toolbar{width:4in;display:flex;align-items:center;gap:10px;padding:8px 12px;background:#1e3a5f;color:white;border-radius:6px}
+    #toolbar span{flex:1;font-size:11px;font-weight:700}
+    #toolbar button{padding:5px 14px;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;background:#22c55e;color:white}
+    #page{width:4in;height:3in;background:white;border:1px solid #aaa;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.15);padding:0.18in 0.22in;display:flex;flex-direction:column;gap:0}
+    .header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2pt solid #000;padding-bottom:0.07in;margin-bottom:0.07in}
+    .fcc{font-size:18pt;font-weight:900;color:#000;letter-spacing:-.02em;line-height:1}
+    .bin-badge{background:#1e3a5f;color:white;font-size:8.5pt;font-weight:900;padding:3px 9px;border-radius:3px;letter-spacing:.04em;white-space:nowrap}
+    .product-name{font-size:11pt;font-weight:700;color:#000;line-height:1.2;margin-bottom:0.05in}
+    .row{display:flex;gap:0.22in;align-items:baseline;margin-bottom:0.05in}
     .field{display:flex;flex-direction:column}
-    .field-label{font-size:6pt;color:#555;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:1px}
-    .field-value{font-size:12pt;font-weight:700;color:#000}
-    .divider{border-top:1px solid #ccc;margin:0.08in 0}
-    .footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:0.08in;border-top:1px solid #ccc}
-    .footer-label{font-size:7pt;color:#555;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
-    .footer-value{font-size:9pt;font-weight:600;color:#000}
-    .type-badge{font-size:9pt;font-weight:900;color:white;background:#1e3a5f;padding:3px 10px;border-radius:3px;letter-spacing:.06em;text-transform:uppercase}
-    @media print{body{background:white;padding:0}#toolbar{display:none}.label{box-shadow:none;border:none;page-break-after:always}}
+    .field-label{font-size:5pt;color:#555;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:1px}
+    .field-value{font-size:9.5pt;font-weight:700;color:#000}
+    .divider{border-top:1px solid #ccc;margin:0.06in 0}
+    .footer-row{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:0.06in;border-top:1px solid #ccc}
+    .footer-label{font-size:5.5pt;color:#555;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+    .footer-value{font-size:7.5pt;font-weight:600;color:#000}
+    .type-badge{font-size:7pt;font-weight:900;color:white;background:#1e3a5f;padding:2px 7px;border-radius:3px;letter-spacing:.06em;text-transform:uppercase}
+    @media print{
+      @page{size:4in 3in landscape;margin:0mm}
+      html,body{width:4in;background:white;padding:0}
+      #toolbar{display:none}
+      #page{box-shadow:none;border:none;border-radius:0;width:4in;height:3in}
+    }
   </style>
 </head>
 <body>
@@ -143,7 +150,7 @@ router.get("/stock/plain/:id/label", async (req, res): Promise<void> => {
     <span>Stock Label — ${v.productSku ?? ""} ${v.colour ?? ""} ${v.size ?? ""}</span>
     <button onclick="window.print()">Print</button>
   </div>
-  <div class="label">
+  <div id="page">
     <div class="header">
       <div class="fcc">${v.productSku ?? "—"}</div>
       ${v.binLocation ? `<div class="bin-badge">BIN ${v.binLocation}</div>` : ""}
@@ -167,7 +174,7 @@ router.get("/stock/plain/:id/label", async (req, res): Promise<void> => {
     <div class="row">
       <div class="field">
         <div class="field-label">Quantity in Stock</div>
-        <div class="field-value" style="font-size:18pt">${v.stockQuantity}</div>
+        <div class="field-value" style="font-size:14pt">${v.stockQuantity}</div>
       </div>
       <div class="field" style="margin-left:auto">
         <div class="field-label">Stock Type</div>
