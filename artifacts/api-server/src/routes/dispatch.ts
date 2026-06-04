@@ -436,6 +436,52 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
   });
 });
 
+// ── Return an order from the dispatch queue back to purchasing ─────────────────
+// Resets plain items (stockStatus='complete', no completed worksheet) so they
+// leave dispatch and re-enter the purchasing/production flow.
+router.post("/dispatch/orders/:id/return", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const orderId = parsed.data.id;
+
+  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+  const worksheets = await db.select().from(worksheetsTable).where(eq(worksheetsTable.orderId, orderId));
+  const wsIds = worksheets.map(w => w.id);
+  const wsItems = wsIds.length > 0
+    ? await db.select().from(worksheetItemsTable).where(inArray(worksheetItemsTable.worksheetId, wsIds))
+    : [];
+
+  const wsCompleteItemIds = new Set(
+    worksheets.filter(w => w.status === "complete")
+      .flatMap(w => wsItems.filter(wi => wi.worksheetId === w.id).map(wi => wi.orderItemId))
+  );
+
+  // Only reset items that are "complete" without a completed worksheet backing them
+  const itemsToReset = items.filter(i =>
+    i.stockStatus === "complete" && !wsCompleteItemIds.has(i.id)
+  );
+
+  if (itemsToReset.length === 0) {
+    res.status(400).json({ error: "All complete items are backed by completed worksheets — nothing to return." });
+    return;
+  }
+
+  for (const item of itemsToReset) {
+    await db.update(orderItemsTable)
+      .set({ stockStatus: null, purchaseRequired: true, stockAllocatedAt: null })
+      .where(eq(orderItemsTable.id, item.id));
+    if (item.productId != null) {
+      await db.execute(sql`
+        UPDATE products SET stock_quantity = GREATEST(0, COALESCE(stock_quantity, 0) - ${item.quantity})
+        WHERE id = ${item.productId}
+      `);
+    }
+  }
+
+  res.json({ returned: itemsToReset.length });
+});
+
 // ── Reprint DPD label for a dispatched order ──────────────────────────────────
 router.get("/dispatch/orders/:id/dpd-label", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);

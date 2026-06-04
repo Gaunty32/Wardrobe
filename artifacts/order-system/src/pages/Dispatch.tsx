@@ -171,6 +171,16 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
     setDispatchOpen(true);
   }
 
+  const returnMutation = useMutation({
+    mutationFn: () => apiFetch(`/dispatch/orders/${order.id}/return`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      toast({ title: "Returned to purchasing", description: `${data.returned} item line${data.returned !== 1 ? "s" : ""} reset` });
+    },
+    onError: (e: Error) => toast({ title: "Cannot return", description: e.message, variant: "destructive" }),
+  });
+
   const dispatchMutation = useMutation({
     mutationFn: () => apiFetch<DispatchResponse>(`/dispatch/orders/${order.id}/dispatch`, {
       method: "PATCH",
@@ -245,6 +255,19 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           </Button>
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id, order.shippingMethod)}>
             <FileText className="w-3.5 h-3.5" /> Delivery Note
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50"
+            disabled={returnMutation.isPending}
+            onClick={() => {
+              if (confirm(`Return ${order.orderNumber} from dispatch? Items without a completed worksheet will be sent back to purchasing.`)) {
+                returnMutation.mutate();
+              }
+            }}
+          >
+            <RotateCcw className="w-3.5 h-3.5" /> Return
           </Button>
           <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={openDispatchModal}>
             <Send className="w-3.5 h-3.5" /> Dispatch
