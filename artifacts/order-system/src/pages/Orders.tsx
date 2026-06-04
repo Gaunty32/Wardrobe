@@ -485,7 +485,7 @@ export default function Orders() {
     );
   }
 
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("active");
   const [customerSearch, setCustomerSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey>("orderDate");
