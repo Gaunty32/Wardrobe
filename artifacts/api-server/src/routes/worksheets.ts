@@ -806,7 +806,7 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     .insert(worksheetsTable)
     .values({
       worksheetNumber,
-      status: "pre_wip",
+      status: "wip",
       orderId: parsed.data.orderId,
       orderNumber: parsed.data.orderNumber,
       customerId: parsed.data.customerId ?? null,
