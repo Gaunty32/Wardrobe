@@ -753,10 +753,27 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     customerName: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     itemIds: z.array(z.number().int().positive()),
+    returnItemIds: z.array(z.number().int().positive()).optional(),
   });
 
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  // Return excluded items to purchasing (de-allocate from stock)
+  if (parsed.data.returnItemIds && parsed.data.returnItemIds.length > 0) {
+    const returnItems = await db.select().from(orderItemsTable)
+      .where(inArray(orderItemsTable.id, parsed.data.returnItemIds));
+    for (const item of returnItems) {
+      await db.update(orderItemsTable)
+        .set({ stockStatus: null, purchaseRequired: true, stockAllocatedAt: null })
+        .where(eq(orderItemsTable.id, item.id));
+      if (item.productId != null) {
+        await db.execute(
+          sql`UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) - ${item.quantity} WHERE id = ${item.productId}`
+        );
+      }
+    }
+  }
 
   const orderItems = await db
     .select()
@@ -765,6 +782,22 @@ router.post("/worksheets", async (req, res): Promise<void> => {
 
   if (orderItems.length === 0) {
     res.status(400).json({ error: "No valid order items found" });
+    return;
+  }
+
+  // Plain items (no finish) go straight to dispatch — no worksheet needed
+  const plainItems = orderItems.filter(oi => oi.finishId == null);
+  const decoratedItems = orderItems.filter(oi => oi.finishId != null);
+
+  if (plainItems.length > 0) {
+    await db.update(orderItemsTable)
+      .set({ stockStatus: "complete" })
+      .where(inArray(orderItemsTable.id, plainItems.map(i => i.id)));
+  }
+
+  // If nothing needs decoration, skip worksheet creation entirely
+  if (decoratedItems.length === 0) {
+    res.status(200).json({ worksheetNumber: null, plainCompleted: plainItems.length, items: [] });
     return;
   }
 
@@ -783,7 +816,7 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     .returning();
 
   const wsItems = await Promise.all(
-    orderItems.map(async (oi) => {
+    decoratedItems.map(async (oi) => {
       let processesSnapshot: string | null = null;
 
       if (oi.finishId && parsed.data.customerId) {
@@ -828,14 +861,11 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     })
   );
 
-  // Move the linked order items to in_production so they leave the picking list
-  const linkedItemIds = orderItems.map((oi) => oi.id);
-  if (linkedItemIds.length > 0) {
-    await db
-      .update(orderItemsTable)
-      .set({ stockStatus: "in_production" })
-      .where(inArray(orderItemsTable.id, linkedItemIds));
-  }
+  // Move decorated items to in_production
+  await db
+    .update(orderItemsTable)
+    .set({ stockStatus: "in_production" })
+    .where(inArray(orderItemsTable.id, decoratedItems.map(i => i.id)));
 
   if (ws.orderId) {
     await logOrderAction(ws.orderId, "Production worksheet created", getActor(req),

@@ -1567,12 +1567,14 @@ function ItemMatrix({ items, borderClass = "border-gray-200", headClass = "bg-gr
 }
 
 // ─── ReadyOrderCard ─────────────────────────────────────────────────────────────
-function ReadyOrderCard({ order, onSendToProduction }: {
+function ReadyOrderCard({ order, onSendToProduction, onReturnToPurchasing }: {
   order: AllReadyOrder;
   onSendToProduction: (order: AllReadyOrder) => void;
+  onReturnToPurchasing: (order: AllReadyOrder) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const totalUnits = order.items.reduce((s, i) => s + i.quantity, 0);
+  const hasDecoration = order.items.some(i => i.finishId != null);
 
   return (
     <div className="rounded-xl border border-green-300 bg-green-50/40 shadow-sm overflow-hidden">
@@ -1595,8 +1597,11 @@ function ReadyOrderCard({ order, onSendToProduction }: {
         </div>
         <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
           <a href={`/orders/${order.id}`}><Button size="sm" variant="ghost" className="text-muted-foreground h-8 w-8 p-0"><ExternalLink className="w-3.5 h-3.5" /></Button></a>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs text-amber-700 border-amber-300 hover:bg-amber-50" onClick={() => onReturnToPurchasing(order)}>
+            <RotateCcw className="w-3.5 h-3.5" /> Return to Purchasing
+          </Button>
           <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={() => onSendToProduction(order)}>
-            <ClipboardList className="w-3.5 h-3.5" /> Send to Production
+            <ClipboardList className="w-3.5 h-3.5" /> {hasDecoration ? "Send to Production" : "Send to Dispatch"}
           </Button>
         </div>
       </div>
@@ -3209,18 +3214,33 @@ export default function Production() {
   const [sendingNotes, setSendingNotes] = useState("");
   const [sendingExcluded, setSendingExcluded] = useState<Set<number>>(new Set());
 
+  const returnReadyOrderMutation = useMutation({
+    mutationFn: (itemIds: number[]) =>
+      apiFetch("/picking-list/return", { method: "POST", body: JSON.stringify({ itemIds }) }),
+    onSuccess: (_data: any, itemIds: number[]) => {
+      queryClient.invalidateQueries({ queryKey: ["production-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      toast({ title: "Returned to Awaiting Stock", description: `${itemIds.length} item line${itemIds.length !== 1 ? "s" : ""} returned to purchasing` });
+    },
+    onError: () => toast({ title: "Error returning items", variant: "destructive" }),
+  });
+
   const createWorksheetMutation = useMutation({
-    mutationFn: (data: { orderId: number; orderNumber: string; customerId: number | null; customerName: string | null; notes: string; itemIds: number[] }) =>
+    mutationFn: (data: { orderId: number; orderNumber: string; customerId: number | null; customerName: string | null; notes: string; itemIds: number[]; returnItemIds: number[] }) =>
       apiFetch("/worksheets", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["production-pending"] });
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
-      toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Printing worksheet now…" });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      if (data.worksheetNumber) {
+        toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Printing worksheet now…" });
+        printWorksheetFromData(data as Worksheet);
+      } else {
+        toast({ title: "Sent to dispatch", description: `${data.plainCompleted ?? 0} plain item line${(data.plainCompleted ?? 0) !== 1 ? "s" : ""} marked ready — no decoration required` });
+      }
       setSendingOrder(null);
       setSendingNotes("");
       setSendingExcluded(new Set());
-      // Auto-print the worksheet immediately after creation
-      printWorksheetFromData(data as Worksheet);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -3452,7 +3472,12 @@ export default function Production() {
                       All Stock In — Ready to Send ({filteredAllReady.length} order{filteredAllReady.length !== 1 ? "s" : ""})
                     </div>
                     {filteredAllReady.map((order) => (
-                      <ReadyOrderCard key={order.id} order={order} onSendToProduction={setSendingOrder} />
+                      <ReadyOrderCard
+                        key={order.id}
+                        order={order}
+                        onSendToProduction={setSendingOrder}
+                        onReturnToPurchasing={(o) => returnReadyOrderMutation.mutate(o.items.map(i => i.id))}
+                      />
                     ))}
                   </>
                 )}
@@ -3611,6 +3636,8 @@ export default function Production() {
 
       {sendingOrder && (() => {
         const includedItems = sendingOrder.items.filter(i => !sendingExcluded.has(i.id));
+        const excludedItems = sendingOrder.items.filter(i => sendingExcluded.has(i.id));
+        const hasDecoration = includedItems.some(i => i.finishId != null);
         const closeSendingDialog = () => { setSendingOrder(null); setSendingNotes(""); setSendingExcluded(new Set()); };
         return (
           <Dialog open onOpenChange={(open) => { if (!open) closeSendingDialog(); }}>
@@ -3618,12 +3645,12 @@ export default function Production() {
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <ClipboardList className="w-5 h-5" />
-                  Send to Production — {sendingOrder.orderNumber}
+                  {hasDecoration ? "Send to Production" : "Confirm Stock"} — {sendingOrder.orderNumber}
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 py-2">
                 <p className="text-sm text-muted-foreground">
-                  Tick the items to include in the worksheet. Untick any that aren't ready yet — they'll stay on the picking list.
+                  Tick the items that are physically in stock and ready. Unticked items will be <strong>returned to purchasing</strong>.
                 </p>
                 <div className="rounded-lg border border-border divide-y divide-border">
                   {sendingOrder.items.map(item => {
@@ -3655,17 +3682,24 @@ export default function Production() {
                   })}
                 </div>
                 {includedItems.length === 0 && (
-                  <p className="text-sm text-amber-600 font-medium text-center">Select at least one item to create a worksheet.</p>
+                  <p className="text-sm text-amber-600 font-medium text-center">Select at least one item to continue.</p>
                 )}
-                <div className="space-y-1.5">
-                  <Label htmlFor="ws-notes" className="text-sm">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                  <Input
-                    id="ws-notes"
-                    placeholder="Special instructions, artwork notes…"
-                    value={sendingNotes}
-                    onChange={e => setSendingNotes(e.target.value)}
-                  />
-                </div>
+                {excludedItems.length > 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    ⚠️ {excludedItems.length} unticked item{excludedItems.length !== 1 ? "s" : ""} will be returned to purchasing and removed from stock allocation.
+                  </p>
+                )}
+                {hasDecoration && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ws-notes" className="text-sm">Notes <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                    <Input
+                      id="ws-notes"
+                      placeholder="Special instructions, artwork notes…"
+                      value={sendingNotes}
+                      onChange={e => setSendingNotes(e.target.value)}
+                    />
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={closeSendingDialog}>Cancel</Button>
@@ -3679,10 +3713,14 @@ export default function Production() {
                     customerName: sendingOrder.customerName,
                     notes: sendingNotes,
                     itemIds: includedItems.map(i => i.id),
+                    returnItemIds: excludedItems.map(i => i.id),
                   })}
                 >
                   {createWorksheetMutation.isPending ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <ClipboardList className="w-3.5 h-3.5" />}
-                  Create Worksheet{includedItems.length < sendingOrder.items.length ? ` (${includedItems.length} of ${sendingOrder.items.length})` : ""}
+                  {hasDecoration
+                    ? `Create Worksheet${includedItems.length < sendingOrder.items.length ? ` (${includedItems.length} of ${sendingOrder.items.length})` : ""}`
+                    : `Confirm — Send to Dispatch${includedItems.length < sendingOrder.items.length ? ` (${includedItems.length} of ${sendingOrder.items.length})` : ""}`
+                  }
                 </Button>
               </DialogFooter>
             </DialogContent>
