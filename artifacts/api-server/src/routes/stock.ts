@@ -94,7 +94,7 @@ router.get("/stock/plain/:id/label", async (req, res): Promise<void> => {
       productSku: productsTable.sku,
       colour: productVariantsTable.colour,
       size: productVariantsTable.size,
-      supplierCode: productVariantsTable.supplierCode,
+      supplierCode: sql<string | null>`COALESCE(${productVariantsTable.supplierCode}, ${productsTable.supplierCode})`,
       stockQuantity: productVariantsTable.stockQuantity,
       binLocation: productVariantsTable.binLocation,
       updatedAt: productVariantsTable.updatedAt,
