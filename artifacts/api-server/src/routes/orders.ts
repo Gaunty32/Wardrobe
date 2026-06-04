@@ -2476,7 +2476,7 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
   ];
   if (order.poNumber) infoCols.push({ label: "PO Number", value: order.poNumber });
   if (shippingLabel) infoCols.push({ label: "Delivery", value: shippingLabel });
-  if (order.trackingNumber) infoCols.push({ label: "Tracking", value: order.trackingNumber });
+  if (order.trackingNumber && order.shippingMethod === "dpd") infoCols.push({ label: "Tracking", value: order.trackingNumber });
 
   const infoStripCols = infoCols.map(col =>
     `<div style="flex:1;padding:0 10px;border-right:1px solid rgba(255,255,255,.15);">
