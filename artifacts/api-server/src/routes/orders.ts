@@ -2620,7 +2620,7 @@ const WEARER_LOGO_HTML = `<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg
 
 function renderWearerItemTable(items: Array<{
   productName: string; colour: string | null; size: string | null;
-  quantity: number; finishName: string | null; supplierCode?: string | null;
+  quantity: number; finishName: string | null; productSku?: string | null;
 }>) {
   return `
     <table class="items-table">
@@ -2634,7 +2634,7 @@ function renderWearerItemTable(items: Array<{
       <tbody>
         ${items.map(item => `<tr>
           <td class="col-product">${item.productName}${item.finishName ? `<br><span class="finish-sub">${item.finishName}</span>` : ""}</td>
-          <td class="col-code">${item.supplierCode ?? "\u2014"}</td>
+          <td class="col-code">${item.productSku ?? "\u2014"}</td>
           <td class="col-colour">${item.colour ?? "\u2014"}</td>
           <td class="col-size">${item.size ?? "\u2014"}</td>
           <td class="col-qty">${item.quantity}</td>
@@ -2776,9 +2776,10 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   if (!order) { res.status(404).send("Order not found"); return; }
 
   const itemRows = await db
-    .select({ item: orderItemsTable, employee: customerEmployeesTable })
+    .select({ item: orderItemsTable, employee: customerEmployeesTable, productSku: productsTable.sku })
     .from(orderItemsTable)
     .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(eq(orderItemsTable.orderId, orderId));
 
   const allItems = itemRows.map(r => ({
@@ -2786,6 +2787,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     unitPrice: parseFloat(String(r.item.unitPrice ?? "0")),
     lineTotal:  parseFloat(String(r.item.lineTotal ?? "0")),
     employee: r.employee ?? null,
+    productSku: r.productSku ?? null,
   }));
 
   const dispatchedItems = dispatchedIds ? allItems.filter(i => dispatchedIds.includes(i.id)) : allItems;
@@ -3053,9 +3055,10 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
 
   for (const order of orderRows) {
     const itemRows = await db
-      .select({ item: orderItemsTable, employee: customerEmployeesTable })
+      .select({ item: orderItemsTable, employee: customerEmployeesTable, productSku: productsTable.sku })
       .from(orderItemsTable)
       .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+      .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
       .where(eq(orderItemsTable.orderId, order.id));
 
     const allItems = itemRows.map(r => ({
@@ -3063,6 +3066,7 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
       unitPrice: parseFloat(String(r.item.unitPrice ?? "0")),
       lineTotal:  parseFloat(String(r.item.lineTotal ?? "0")),
       employee: r.employee ?? null,
+      productSku: r.productSku ?? null,
     }));
 
     const empName = (item: typeof allItems[0]) => {
