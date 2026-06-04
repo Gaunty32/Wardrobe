@@ -1086,6 +1086,10 @@ function printWorksheetFromData(ws: Worksheet) {
       <strong>Notes:</strong> ${ws.notes}
     </div>` : "";
 
+  const dueDateStr = ws.requiredDate
+    ? new Date(ws.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+    : null;
+
   const html = `<!DOCTYPE html><html><head><title>Worksheet ${ws.worksheetNumber}</title>
     <style>
       *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -1115,6 +1119,7 @@ function printWorksheetFromData(ws: Worksheet) {
         <div style="text-align:right;font-size:11px;color:#555">
           <div style="font-weight:bold;font-size:13px">Select Branding Solutions</div>
           <div>Printed: ${dateStr}</div>
+          ${dueDateStr ? `<div style="margin-top:1mm;font-weight:700;color:#be123c">Due: ${dueDateStr}</div>` : ""}
           <div style="margin-top:1mm">${ws.items.length} item${ws.items.length !== 1 ? "s" : ""} · ${sortedFinishes.length} finish${sortedFinishes.length !== 1 ? "es" : ""}</div>
         </div>
       </div>
@@ -1213,6 +1218,12 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
               <span>{ws.items.length} item{ws.items.length !== 1 ? "s" : ""}</span>
               <span className="ml-2 text-xs">{formatDate(ws.createdAt)}</span>
             </div>
+            {ws.requiredDate && (
+              <div className="flex items-center gap-1 mt-1 text-xs font-medium text-rose-700">
+                <Calendar className="w-3 h-3" />
+                Due {formatDate(ws.requiredDate)}
+              </div>
+            )}
           </div>
         </div>
 
