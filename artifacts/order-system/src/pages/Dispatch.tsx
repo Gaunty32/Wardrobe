@@ -787,6 +787,7 @@ export default function Dispatch() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"queue" | "history">("queue");
   const [bulkLabelsOpen, setBulkLabelsOpen] = useState(false);
+  const [queueFilter, setQueueFilter] = useState<"all" | "ready" | "pending" | "urgent">("all");
 
   const { data: orders = [], isLoading, refetch } = useQuery<DispatchOrder[]>({
     queryKey: ["dispatch-orders"],
@@ -797,6 +798,13 @@ export default function Dispatch() {
   const readyCount = orders.filter((o) => o.productionComplete).length;
   const pendingCount = orders.filter((o) => !o.productionComplete).length;
   const urgentCount = orders.filter((o) => !o.productionComplete && (isToday(o.requiredDate) || isPast(o.requiredDate))).length;
+
+  const filteredOrders = orders.filter((o) => {
+    if (queueFilter === "ready") return o.productionComplete;
+    if (queueFilter === "pending") return !o.productionComplete;
+    if (queueFilter === "urgent") return !o.productionComplete && (isToday(o.requiredDate) || isPast(o.requiredDate));
+    return true;
+  });
 
   return (
     <Layout>
@@ -854,18 +862,27 @@ export default function Dispatch() {
           <>
             {orders.length > 0 && (
               <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
+                <button
+                  onClick={() => setQueueFilter(f => f === "ready" ? "all" : "ready")}
+                  className={`rounded-lg border px-4 py-3 text-center transition-all cursor-pointer ${queueFilter === "ready" ? "border-green-500 bg-green-50 ring-1 ring-green-500" : "border-border bg-card hover:border-green-300 hover:bg-green-50/40"}`}
+                >
                   <div className="text-2xl font-bold text-green-600">{readyCount}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">Ready to dispatch</div>
-                </div>
-                <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
+                </button>
+                <button
+                  onClick={() => setQueueFilter(f => f === "pending" ? "all" : "pending")}
+                  className={`rounded-lg border px-4 py-3 text-center transition-all cursor-pointer ${queueFilter === "pending" ? "border-amber-500 bg-amber-50 ring-1 ring-amber-500" : "border-border bg-card hover:border-amber-300 hover:bg-amber-50/40"}`}
+                >
                   <div className="text-2xl font-bold text-amber-600">{pendingCount}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">Awaiting production</div>
-                </div>
-                <div className="rounded-lg border border-border bg-card px-4 py-3 text-center">
+                </button>
+                <button
+                  onClick={() => setQueueFilter(f => f === "urgent" ? "all" : "urgent")}
+                  className={`rounded-lg border px-4 py-3 text-center transition-all cursor-pointer ${queueFilter === "urgent" ? "border-red-500 bg-red-50 ring-1 ring-red-500" : "border-border bg-card hover:border-red-300 hover:bg-red-50/40"}`}
+                >
                   <div className={`text-2xl font-bold ${urgentCount > 0 ? "text-red-600" : "text-muted-foreground"}`}>{urgentCount}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">Urgent / overdue</div>
-                </div>
+                </button>
               </div>
             )}
 
@@ -879,9 +896,14 @@ export default function Dispatch() {
                 <p className="text-lg font-medium">Nothing to dispatch</p>
                 <p className="text-sm">Orders will appear here once production worksheets are marked complete.</p>
               </div>
+            ) : filteredOrders.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+                <p className="text-sm">No orders match this filter.</p>
+                <button className="text-xs text-primary underline" onClick={() => setQueueFilter("all")}>Show all</button>
+              </div>
             ) : (
               <div className="space-y-3">
-                {orders.map((order) => (
+                {filteredOrders.map((order) => (
                   <DispatchCard key={order.id} order={order} onDispatched={() => {}} />
                 ))}
               </div>
