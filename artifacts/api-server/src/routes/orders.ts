@@ -2647,6 +2647,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     ? dispatchedIdsRaw.split(",").map(Number).filter(n => !isNaN(n) && n > 0)
     : null;
   const includeDeliveryLabel = req.query.includeDeliveryLabel === "1";
+  const recipientFilter = req.query.recipient ? String(req.query.recipient).trim() : null;
 
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) { res.status(404).send("Order not found"); return; }
@@ -2712,6 +2713,17 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     const name = empName(item) ?? "Unknown";
     if (!pendingWearerMap.has(name)) pendingWearerMap.set(name, []);
     pendingWearerMap.get(name)!.push(item);
+  }
+
+  // Filter to a single recipient when ?recipient= is provided
+  if (recipientFilter) {
+    for (const key of wearerMap.keys()) {
+      if (key !== recipientFilter) wearerMap.delete(key);
+    }
+    if (wearerMap.size === 0) {
+      res.status(400).send(`No label found for recipient "${recipientFilter}".`);
+      return;
+    }
   }
 
   if (wearerMap.size === 0) {

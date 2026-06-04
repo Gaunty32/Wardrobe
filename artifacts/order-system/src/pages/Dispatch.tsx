@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Truck, Package, CheckCircle, AlertTriangle, Clock, Printer,
+  Truck, Package, CheckCircle, AlertTriangle, Clock, Printer, User,
   RefreshCw, ChevronDown, ChevronRight, FileText, Tag, Send,
   History, Search, X, ExternalLink,
 } from "lucide-react";
@@ -105,9 +105,10 @@ function isPast(dateStr: string | null): boolean {
   return new Date(dateStr) < new Date();
 }
 
-function openWearerLabels(orderId: number, opts?: { includeDeliveryLabel?: boolean }) {
+function openWearerLabels(orderId: number, opts?: { includeDeliveryLabel?: boolean; recipient?: string }) {
   const params = new URLSearchParams();
   if (opts?.includeDeliveryLabel) params.set("includeDeliveryLabel", "1");
+  if (opts?.recipient) params.set("recipient", opts.recipient);
   window.open(`/api/orders/${orderId}/wearer-labels?${params}`, "_blank");
 }
 
@@ -306,6 +307,38 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               ))}
             </div>
           </div>
+
+          {(() => {
+            const recipientMap = new Map<string, number>();
+            for (const item of order.items) {
+              if (item.recipientType === "person" && (item.recipientName || item.employee)) {
+                const name = recipientFullName(item);
+                recipientMap.set(name, (recipientMap.get(name) ?? 0) + item.quantity);
+              }
+            }
+            const recipients = Array.from(recipientMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+            if (recipients.length === 0) return null;
+            return (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Wearer Labels</h4>
+                <div className="space-y-1">
+                  {recipients.map(([name, qty]) => (
+                    <div key={name} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="font-medium truncate">{name}</span>
+                        <span className="text-muted-foreground text-xs">{qty} item{qty !== 1 ? "s" : ""}</span>
+                      </div>
+                      <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs shrink-0"
+                        onClick={() => openWearerLabels(order.id, { recipient: name })}>
+                        <Printer className="w-3 h-3" /> Print Label
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {order.deliveryAddress && (
             <div>
@@ -540,6 +573,38 @@ function ShippedRow({ order }: { order: ShippedOrder }) {
               ))}
             </div>
           </div>
+
+          {(() => {
+            const recipientMap = new Map<string, number>();
+            for (const item of order.items) {
+              if (item.recipientType === "person" && (item.recipientName || item.employee)) {
+                const name = recipientFullName(item);
+                recipientMap.set(name, (recipientMap.get(name) ?? 0) + item.quantity);
+              }
+            }
+            const recipients = Array.from(recipientMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+            if (recipients.length === 0) return null;
+            return (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Wearer Labels</h4>
+                <div className="space-y-1">
+                  {recipients.map(([name, qty]) => (
+                    <div key={name} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                        <span className="font-medium truncate">{name}</span>
+                        <span className="text-muted-foreground text-xs">{qty} item{qty !== 1 ? "s" : ""}</span>
+                      </div>
+                      <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs shrink-0"
+                        onClick={() => openWearerLabels(order.id, { recipient: name })}>
+                        <Printer className="w-3 h-3" /> Print Label
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
