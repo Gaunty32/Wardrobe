@@ -1579,16 +1579,15 @@ export async function generatePOPdf(po: POData): Promise<Buffer> {
         if (y + sectionH > CONTENT_BOTTOM) y = newPage(y);
 
         // ── Product heading band ──
-        const code        = g.code ?? g.sbsCode ?? null;
-        const sbsCodeNote = g.sbsCode && g.code && g.sbsCode !== g.code ? `  (SBS: ${g.sbsCode})` : "";
-        const priceLabel  = g.price != null ? `£${g.price.toFixed(2)} / unit` : null;
+        const code       = g.code ?? null; // supplier's product code only — never show our internal FCC/SKU
+        const priceLabel = g.price != null ? `£${g.price.toFixed(2)} / unit` : null;
         const PRICE_LBL_W = priceLabel ? 88 : 0;
         doc.rect(MARGIN, y, W, PROD_HDR_H).fill("#0f172a");
         if (code) {
           doc.fillColor("#fbbf24").fontSize(10).font("Helvetica-Bold")
             .text(code, MARGIN + 8, y + 7, { width: 120, lineBreak: false });
           doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
-            .text(`  ${g.productName}${sbsCodeNote}`, MARGIN + 10 + 120, y + 7, { width: W - 148 - PRICE_LBL_W, lineBreak: false });
+            .text(`  ${g.productName}`, MARGIN + 10 + 120, y + 7, { width: W - 148 - PRICE_LBL_W, lineBreak: false });
         } else {
           doc.fillColor("#f1f5f9").fontSize(10).font("Helvetica-Bold")
             .text(g.productName, MARGIN + 8, y + 7, { width: W - 16 - PRICE_LBL_W, lineBreak: false });
