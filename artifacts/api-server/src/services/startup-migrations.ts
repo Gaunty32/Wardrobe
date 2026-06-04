@@ -1386,4 +1386,20 @@ export async function runStartupMigrations(): Promise<void> {
         OR jsonb_array_length(price_breaks) = 0
       )
   `);
+
+  // Remove worksheet items that are linked to service products — services don't
+  // go through production.  Then delete any worksheets that become empty as a result.
+  await db.execute(sql`
+    DELETE FROM worksheet_items wi
+    USING order_items oi
+    JOIN products p ON p.id = oi.product_id
+    WHERE wi.order_item_id = oi.id
+      AND p.is_service = true
+  `);
+  await db.execute(sql`
+    DELETE FROM worksheets w
+    WHERE NOT EXISTS (
+      SELECT 1 FROM worksheet_items wi WHERE wi.worksheet_id = w.id
+    )
+  `);
 }
