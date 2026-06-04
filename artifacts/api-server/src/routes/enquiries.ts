@@ -26,42 +26,56 @@ router.get("/enquiries/search", async (req: any, res: Response): Promise<void> =
     return;
   }
 
+  const headers = { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" };
+
+  const mapContact = (c: any) => ({
+    id: c.id as string,
+    name: [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Unknown",
+    company: c.companyName ?? null,
+    email: c.email ?? null,
+    phone: c.phone ?? null,
+  });
+
   try {
-    const url = `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&name=${encodeURIComponent(q)}`;
-    const hlRes = await fetch(url, {
-      headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" },
-    });
+    // Run name/email/phone query and company-name search in parallel
+    const [nameRes, companyRes] = await Promise.all([
+      fetch(
+        `https://services.leadconnectorhq.com/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(q)}&limit=10`,
+        { headers }
+      ),
+      fetch(
+        "https://services.leadconnectorhq.com/contacts/search",
+        {
+          method: "POST",
+          headers: { ...headers, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            locationId,
+            filters: [{ field: "companyName", operator: "contains", value: q }],
+            pageSize: 10,
+          }),
+        }
+      ),
+    ]);
 
-    if (!hlRes.ok) {
-      res.json({ contacts: [] });
-      return;
+    const seen = new Set<string>();
+    const contacts: ReturnType<typeof mapContact>[] = [];
+
+    const addContacts = (list: any[]) => {
+      for (const c of list) {
+        if (!seen.has(c.id)) { seen.add(c.id); contacts.push(mapContact(c)); }
+      }
+    };
+
+    if (nameRes.ok) {
+      const d = await nameRes.json();
+      addContacts(d.contacts ?? []);
+    }
+    if (companyRes.ok) {
+      const d = await companyRes.json();
+      addContacts(d.contacts ?? []);
     }
 
-    const data = await hlRes.json();
-    // duplicate-search returns { contact: {...} } for a single match
-    // Fall back to a general contacts query if the duplicate endpoint returns nothing
-    if (data.contact) {
-      const c = data.contact;
-      const name = [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Unknown";
-      res.json({ contacts: [{ id: c.id, name, email: c.email ?? null, phone: c.phone ?? null }] });
-      return;
-    }
-
-    // General contacts search by query
-    const url2 = `https://services.leadconnectorhq.com/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(q)}&limit=10`;
-    const hlRes2 = await fetch(url2, {
-      headers: { "Authorization": `Bearer ${apiKey}`, "Version": "2021-07-28" },
-    });
-    if (!hlRes2.ok) { res.json({ contacts: [] }); return; }
-    const data2 = await hlRes2.json();
-    const contacts = (data2.contacts ?? []).slice(0, 8).map((c: any) => ({
-      id: c.id,
-      name: [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email || c.phone || "Unknown",
-      company: c.companyName ?? null,
-      email: c.email ?? null,
-      phone: c.phone ?? null,
-    }));
-    res.json({ contacts });
+    res.json({ contacts: contacts.slice(0, 12) });
   } catch (err: any) {
     console.error("[enquiries/search] HL error:", err.message);
     res.json({ contacts: [] });

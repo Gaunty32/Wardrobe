@@ -102,7 +102,7 @@ function ImportFromHlDialog({ open, onOpenChange, onImported }: {
             Import from High Level
           </DialogTitle>
           <DialogDescription>
-            Search for a contact in High Level by name or email and import them as a customer.
+            Search for a contact in High Level by name, company, or email and import them as a customer.
           </DialogDescription>
         </DialogHeader>
 
@@ -111,7 +111,7 @@ function ImportFromHlDialog({ open, onOpenChange, onImported }: {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               autoFocus
-              placeholder="Search by name or email…"
+              placeholder="Search by name, company or email…"
               className="pl-9"
               value={query}
               onChange={e => setQuery(e.target.value)}
