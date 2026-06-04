@@ -398,20 +398,40 @@ router.post("/picking-list/return", async (req, res): Promise<void> => {
 
 // ── Pending production: confirmed orders awaiting stock ───────────────────────
 router.get("/production/pending", async (req, res): Promise<void> => {
-  // Single query to get all confirmed orders with per-item counts and worksheet existence.
-  // Exclusions:
-  //   purchase_count: ignore service products (they don't need a stock PO)
-  //   ready_count:    ignore items already in production or complete (they belong in WIP/Complete tabs)
+  // CTE identifies order_items that are allocated but still on an outstanding PO
+  // (quantity_delivered < quantity_ordered on any non-cancelled/delivered PO line).
+  // These must be counted as "still purchasing" even though purchase_required = false.
   const orderStatsRes = await db.execute(sql`
+    WITH outstanding_po_items AS (
+      SELECT DISTINCT item_id FROM (
+        SELECT poi.order_item_id::integer AS item_id
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.po_id
+        WHERE po.status NOT IN ('cancelled', 'delivered')
+          AND poi.quantity_delivered < poi.quantity_ordered
+          AND poi.order_item_id IS NOT NULL
+        UNION ALL
+        SELECT (elem.value)::integer AS item_id
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.po_id,
+        jsonb_array_elements_text(COALESCE(poi.source_order_item_ids,'[]'::jsonb)) AS elem(value)
+        WHERE po.status NOT IN ('cancelled', 'delivered')
+          AND poi.quantity_delivered < poi.quantity_ordered
+      ) sub
+    )
     SELECT
       o.id, o.order_number, o.customer_id, o.customer_name, o.required_date, o.total_amount,
       COUNT(*) FILTER (
-        WHERE oi.purchase_required = true
-          AND COALESCE(p.is_service, false) = false
+        WHERE (
+          oi.purchase_required = true
+          OR oi.id IN (SELECT item_id FROM outstanding_po_items)
+        )
+        AND COALESCE(p.is_service, false) = false
       )::integer AS purchase_count,
       COUNT(*) FILTER (
         WHERE oi.purchase_required = false
           AND oi.stock_status NOT IN ('in_production', 'complete')
+          AND oi.id NOT IN (SELECT item_id FROM outstanding_po_items)
       )::integer AS ready_count,
       EXISTS(SELECT 1 FROM worksheets WHERE order_id = o.id) AS has_worksheet
     FROM orders o
@@ -448,6 +468,20 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(readyOrderIds.join(","))}]::integer[])
         AND oi.purchase_required = false
         AND oi.stock_status NOT IN ('in_production', 'complete')
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po ON po.id = poi.po_id
+          WHERE po.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND poi.order_item_id = oi.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po ON po.id = poi.po_id
+          WHERE po.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+        )
       ORDER BY oi.id
     `);
     for (const row of rows.rows as any[]) {
@@ -472,12 +506,34 @@ router.get("/production/pending", async (req, res): Promise<void> => {
   if (pendingOrderIds.length > 0) {
     const pendingRows = await db.execute(sql`
       SELECT oi.id, oi.order_id, oi.product_name, oi.colour, oi.size,
-             oi.purchase_quantity, oi.supplier_name, p.name AS catalogue_name
+             oi.purchase_quantity, oi.supplier_name, p.name AS catalogue_name,
+             oi.quantity
       FROM order_items oi
       LEFT JOIN products p ON p.id = oi.product_id
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(pendingOrderIds.join(","))}]::integer[])
-        AND oi.purchase_required = true
         AND COALESCE(p.is_service, false) = false
+        AND (
+          oi.purchase_required = true
+          OR (
+            oi.stock_status = 'allocated'
+            AND (
+              EXISTS (
+                SELECT 1 FROM purchase_order_items poi
+                JOIN purchase_orders po ON po.id = poi.po_id
+                WHERE po.status NOT IN ('cancelled', 'delivered')
+                  AND poi.quantity_delivered < poi.quantity_ordered
+                  AND poi.order_item_id = oi.id
+              )
+              OR EXISTS (
+                SELECT 1 FROM purchase_order_items poi
+                JOIN purchase_orders po ON po.id = poi.po_id
+                WHERE po.status NOT IN ('cancelled', 'delivered')
+                  AND poi.quantity_delivered < poi.quantity_ordered
+                  AND COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+              )
+            )
+          )
+        )
       ORDER BY oi.id
     `);
     const itemIds = (pendingRows.rows as any[]).map((r: any) => Number(r.id));
@@ -522,7 +578,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
         productName: (row.catalogue_name ?? row.product_name) as string,
         colour: row.colour as string | null,
         size: row.size as string | null,
-        purchaseQuantity: Number(row.purchase_quantity ?? 1),
+        purchaseQuantity: Number(row.purchase_quantity ?? row.quantity ?? 1),
         supplierName: row.supplier_name as string | null,
         poNumber: po?.poNumber ?? null,
         poStatus: po?.poStatus ?? null,
