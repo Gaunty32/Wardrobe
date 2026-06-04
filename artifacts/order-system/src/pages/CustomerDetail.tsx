@@ -1423,7 +1423,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const { data: roles } = useSubResource<any>(customerId, "roles");
   const { data: teams } = useSubResource<any>(customerId, "teams");
-  const { data: addresses } = useSubResource<any>(customerId, "delivery-addresses");
+  const { data: addresses } = useSubResource<any>(customerId, "addresses");
 
   const { data: employees, isLoading } = useQuery<any[]>({
     queryKey: ["customer", customerId, "employees", showInactive],
