@@ -9,6 +9,7 @@ import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../servic
 import { logOrderAction, getActor } from "../services/orderLog";
 import { notifyAllPortalUsers } from "../services/notifications.js";
 import { getWooSettings, wooUpdateOrderStatus } from "./woo.js";
+import { sendInvoiceEmail } from "../services/email.js";
 
 const router: IRouter = Router();
 
@@ -423,6 +424,21 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
       // Non-fatal — dispatch already succeeded
     }
   }
+
+  // ── Auto-send dispatch/invoice email with tracking number ─────────────────
+  // Fire-and-forget — a send failure must not fail the dispatch response.
+  sendInvoiceEmail(updated.id)
+    .then((r) => {
+      logOrderAction(updated.id, "Invoice email sent", "system", `Auto-sent on dispatch to ${r.sentTo}`).catch(() => {});
+      console.log(`[dispatch] Invoice email auto-sent to ${r.sentTo} for ${updated.orderNumber}`);
+    })
+    .catch((err: unknown) => {
+      // Silently skip if customer has no email or email not configured
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("no email") && !msg.includes("not configured")) {
+        console.error(`[dispatch] Auto invoice email failed for ${updated.orderNumber}:`, err);
+      }
+    });
 
   res.json({
     order: updated,
