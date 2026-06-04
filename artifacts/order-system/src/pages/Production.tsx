@@ -1157,17 +1157,31 @@ function printWorksheetFromData(ws: Worksheet) {
       <button id="btn-close" onclick="window.close()">✕ Close</button>
     </div>
     <div id="page"><div id="sheet">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5mm;border-bottom:2px solid #1e3a5f;padding-bottom:4mm">
-        <div>
-          ${ws.customerName ? `<div style="font-size:26px;font-weight:900;color:#1e3a5f;margin-bottom:1mm">${ws.customerName}</div>` : ""}
-          <div style="font-size:16px;font-weight:700;color:#1e3a5f;letter-spacing:1px">PRODUCTION WORKSHEET</div>
-          <div style="font-size:12px;color:#555;margin-top:1mm">${ws.worksheetNumber} · Order ${ws.orderNumber ?? "—"}</div>
+      <div style="margin-bottom:5mm;border-bottom:2px solid #1e3a5f;padding-bottom:4mm">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3mm">
+          <div>
+            ${ws.customerName ? `<div style="font-size:26px;font-weight:900;color:#1e3a5f;margin-bottom:1mm">${ws.customerName}</div>` : ""}
+            <div style="font-size:16px;font-weight:700;color:#1e3a5f;letter-spacing:1px">PRODUCTION WORKSHEET</div>
+          </div>
+          <div style="text-align:right;font-size:11px;color:#555">
+            <div style="font-weight:bold;font-size:13px">Select Branding Solutions</div>
+            <div>Printed: ${dateStr}</div>
+            <div style="margin-top:1mm">${ws.items.length} item${ws.items.length !== 1 ? "s" : ""} · ${sortedFinishes.length} finish${sortedFinishes.length !== 1 ? "es" : ""}</div>
+          </div>
         </div>
-        <div style="text-align:right;font-size:11px;color:#555">
-          <div style="font-weight:bold;font-size:13px">Select Branding Solutions</div>
-          <div>Printed: ${dateStr}</div>
-          ${dueDateStr ? `<div style="margin-top:1mm;font-weight:700;color:#be123c">Due: ${dueDateStr}</div>` : ""}
-          <div style="margin-top:1mm">${ws.items.length} item${ws.items.length !== 1 ? "s" : ""} · ${sortedFinishes.length} finish${sortedFinishes.length !== 1 ? "es" : ""}</div>
+        <div style="display:flex;gap:0;border:2px solid #1e3a5f;border-radius:6px;overflow:hidden;font-family:Arial,sans-serif">
+          <div style="flex:1;padding:5px 10px;border-right:1px solid #1e3a5f;background:#1e3a5f">
+            <div style="font-size:9px;font-weight:700;color:#93c5fd;text-transform:uppercase;letter-spacing:.8px;margin-bottom:1px">Worksheet</div>
+            <div style="font-size:20px;font-weight:900;color:white;letter-spacing:.5px">${ws.worksheetNumber}</div>
+          </div>
+          <div style="flex:1;padding:5px 10px;border-right:1px solid #1e3a5f;background:#e8edf5">
+            <div style="font-size:9px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:.8px;margin-bottom:1px">Order</div>
+            <div style="font-size:20px;font-weight:900;color:#1e3a5f">${ws.orderNumber ?? "—"}</div>
+          </div>
+          <div style="flex:1;padding:5px 10px;background:${dueDateStr ? "#fef2f2" : "#e8edf5"}">
+            <div style="font-size:9px;font-weight:700;color:${dueDateStr ? "#be123c" : "#1e3a5f"};text-transform:uppercase;letter-spacing:.8px;margin-bottom:1px">Date Required</div>
+            <div style="font-size:20px;font-weight:900;color:${dueDateStr ? "#be123c" : "#9ca3af"}">${dueDateStr ?? "—"}</div>
+          </div>
         </div>
       </div>
       ${finishSections}
