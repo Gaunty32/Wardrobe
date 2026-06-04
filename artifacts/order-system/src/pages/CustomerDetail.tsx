@@ -1423,6 +1423,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const { data: roles } = useSubResource<any>(customerId, "roles");
   const { data: teams } = useSubResource<any>(customerId, "teams");
+  const { data: addresses } = useSubResource<any>(customerId, "delivery-addresses");
 
   const { data: employees, isLoading } = useQuery<any[]>({
     queryKey: ["customer", customerId, "employees", showInactive],
@@ -1491,7 +1492,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
     onError: (err: any) => toast({ title: "Could not create team", description: err?.message, variant: "destructive" }),
   });
 
-  const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, teamId: null as number | null, managerId: null as number | null, email: "", phone: "", notes: "" };
+  const blank = { firstName: "", lastName: "", employeeNumber: "", jobTitle: "", roleId: null as number | null, teamId: null as number | null, managerId: null as number | null, deliveryAddressId: null as number | null, email: "", phone: "", notes: "" };
   const [form, setForm] = useState<typeof blank>(blank);
 
   const inv = () => {
@@ -1541,6 +1542,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
       firstName: e.firstName || "", lastName: e.lastName || "",
       employeeNumber: e.employeeNumber || "",
       jobTitle: e.jobTitle || "", roleId: e.roleId ?? null, teamId: e.teamId ?? null, managerId: e.managerId ?? null,
+      deliveryAddressId: e.deliveryAddressId ?? null,
       email: e.email || "", phone: e.phone || "",
       notes: e.notes || "",
     });
@@ -1851,6 +1853,30 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                 value={form.managerId}
                 onChange={v => setForm({ ...form, managerId: v })}
               />
+            </div>
+            <div className="grid gap-2">
+              <Label>Delivery Address</Label>
+              <Select
+                value={form.deliveryAddressId != null ? String(form.deliveryAddressId) : "none"}
+                onValueChange={v => setForm({ ...form, deliveryAddressId: v === "none" ? null : Number(v) })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Use order default">
+                    {form.deliveryAddressId != null
+                      ? ((addresses as any[])?.find((a: any) => String(a.id) === String(form.deliveryAddressId))?.label ?? "Unknown address")
+                      : "Use order default"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Use order default</SelectItem>
+                  {(addresses as any[])?.map((a: any) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.label || [a.line1, a.city, a.postcode].filter(Boolean).join(", ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">When set, orders for this employee default to this address.</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
