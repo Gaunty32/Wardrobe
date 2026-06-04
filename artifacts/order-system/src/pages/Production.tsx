@@ -55,6 +55,7 @@ interface WorksheetItem {
   finishName: string | null;
   processes: ProcessStep[];
   notes: string | null;
+  supplierCode: string | null;
 }
 
 interface Worksheet {
@@ -720,11 +721,11 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
         const repProcesses = fItems.find(i => i.processes.length > 0)?.processes ?? [];
 
         // Build matrix: rows = product+colour, columns = sizes
-        const matMap = new Map<string, { productName: string; colour: string | null; sizes: Map<string, number> }>();
+        const matMap = new Map<string, { productName: string; colour: string | null; supplierCode: string | null; sizes: Map<string, number> }>();
         const allSizes = new Set<string>();
         for (const item of fItems) {
           const key = `${item.productName}||${item.colour ?? ""}`;
-          if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, sizes: new Map() });
+          if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, supplierCode: item.supplierCode ?? null, sizes: new Map() });
           const sk = item.size ?? "—";
           allSizes.add(sk);
           matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
@@ -779,6 +780,7 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
               <thead>
                 <tr style={{ backgroundColor: "#374151", color: "white" }}>
                   <th style={{ padding: "4px 8px", textAlign: "left", fontSize: "10px" }}>Product</th>
+                  <th style={{ padding: "4px 8px", textAlign: "left", fontSize: "10px", whiteSpace: "nowrap" }}>FCC Code</th>
                   <th style={{ padding: "4px 8px", textAlign: "left", fontSize: "10px" }}>Colour</th>
                   {sortedSizes.map(s => (
                     <th key={s} style={{ padding: "4px 8px", textAlign: "center", fontSize: "10px", whiteSpace: "nowrap" }}>{s}</th>
@@ -788,11 +790,12 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
                 </tr>
               </thead>
               <tbody>
-                {matRows.map(({ productName, colour, sizes }, i) => {
+                {matRows.map(({ productName, colour, supplierCode, sizes }, i) => {
                   const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
                   return (
                     <tr key={i} style={{ backgroundColor: i % 2 === 0 ? "#f9fafb" : "white", borderBottom: "1px solid #e5e7eb" }}>
                       <td style={{ padding: "4px 8px", fontWeight: "600" }}>{productName}</td>
+                      <td style={{ padding: "4px 8px", fontFamily: "monospace", fontSize: "10px", color: "#1e3a5f", fontWeight: "600", whiteSpace: "nowrap" }}>{supplierCode ?? "—"}</td>
                       <td style={{ padding: "4px 8px", color: "#555" }}>{colour ?? "—"}</td>
                       {sortedSizes.map(s => {
                         const qty = sizes.get(s) ?? 0;
@@ -1008,11 +1011,11 @@ function printWorksheetFromData(ws: Worksheet) {
     const fItems = finishMap.get(finishName)!;
     const repProcesses = fItems.find((i) => i.processes.length > 0)?.processes ?? [];
 
-    const matMap = new Map<string, { productName: string; colour: string | null; sizes: Map<string, number> }>();
+    const matMap = new Map<string, { productName: string; colour: string | null; supplierCode: string | null; sizes: Map<string, number> }>();
     const allSizes = new Set<string>();
     for (const item of fItems) {
       const key = `${item.productName}||${item.colour ?? ""}`;
-      if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, sizes: new Map() });
+      if (!matMap.has(key)) matMap.set(key, { productName: item.productName, colour: item.colour, supplierCode: item.supplierCode ?? null, sizes: new Map() });
       const sk = item.size ?? "—";
       allSizes.add(sk);
       matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
@@ -1046,7 +1049,7 @@ function printWorksheetFromData(ws: Worksheet) {
       </div>` : "";
 
     const sizeHeaders = sortedSizes.map((s) => `<th style="padding:4px 8px;text-align:center;font-size:10px;white-space:nowrap">${s}</th>`).join("");
-    const matrixRows = matRows.map(({ productName, colour, sizes }, i) => {
+    const matrixRows = matRows.map(({ productName, colour, supplierCode, sizes }, i) => {
       const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
       const sizeCells = sortedSizes.map((s) => {
         const qty = sizes.get(s) ?? 0;
@@ -1054,6 +1057,7 @@ function printWorksheetFromData(ws: Worksheet) {
       }).join("");
       return `<tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"};border-bottom:1px solid #e5e7eb">
         <td style="padding:4px 8px;font-weight:600">${productName}</td>
+        <td style="padding:4px 8px;font-family:monospace;font-size:10px;color:#1e3a5f;font-weight:600;white-space:nowrap">${supplierCode ?? "—"}</td>
         <td style="padding:4px 8px;color:#555">${colour ?? "—"}</td>
         ${sizeCells}
         <td style="padding:4px 8px;text-align:center;font-weight:bold;background:#f0f4ff">${rowTotal}</td>
@@ -1071,6 +1075,7 @@ function printWorksheetFromData(ws: Worksheet) {
         <table style="width:100%;border-collapse:collapse;font-size:11px">
           <thead><tr style="background:#374151;color:white">
             <th style="padding:4px 8px;text-align:left;font-size:10px">Product</th>
+            <th style="padding:4px 8px;text-align:left;font-size:10px;white-space:nowrap">FCC Code</th>
             <th style="padding:4px 8px;text-align:left;font-size:10px">Colour</th>
             ${sizeHeaders}
             <th style="padding:4px 8px;text-align:center;font-size:10px;background:#1e3a5f">Total</th>

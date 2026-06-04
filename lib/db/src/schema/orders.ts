@@ -144,6 +144,7 @@ export const worksheetItemsTable = pgTable("worksheet_items", {
   finishName: text("finish_name"),
   processesSnapshot: text("processes_snapshot"),
   notes: text("notes"),
+  supplierCode: text("supplier_code"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

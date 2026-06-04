@@ -1402,4 +1402,8 @@ export async function runStartupMigrations(): Promise<void> {
       SELECT 1 FROM worksheet_items wi WHERE wi.worksheet_id = w.id
     )
   `);
+
+  await db.execute(sql`
+    ALTER TABLE worksheet_items ADD COLUMN IF NOT EXISTS supplier_code text;
+  `);
 }

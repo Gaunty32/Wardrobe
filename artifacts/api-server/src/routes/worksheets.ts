@@ -796,6 +796,14 @@ router.post("/worksheets", async (req, res): Promise<void> => {
   const plainItems = orderItems.filter(oi => oi.finishId == null);
   const decoratedItems = orderItems.filter(oi => oi.finishId != null);
 
+  // Look up supplier codes (FCC codes) for decorated items
+  const productIds = decoratedItems.map(i => i.productId).filter((id): id is number => id != null);
+  const productRows = productIds.length > 0
+    ? await db.select({ id: productsTable.id, supplierCode: productsTable.supplierCode })
+        .from(productsTable).where(inArray(productsTable.id, productIds))
+    : [];
+  const supplierCodeMap = new Map(productRows.map(p => [p.id, p.supplierCode ?? null]));
+
   if (plainItems.length > 0) {
     await db.update(orderItemsTable)
       .set({ stockStatus: "complete" })
@@ -864,6 +872,7 @@ router.post("/worksheets", async (req, res): Promise<void> => {
         finishId: oi.finishId ?? null,
         finishName: oi.finishName ?? null,
         processesSnapshot,
+        supplierCode: oi.productId != null ? (supplierCodeMap.get(oi.productId) ?? null) : null,
       }).returning();
     })
   );
