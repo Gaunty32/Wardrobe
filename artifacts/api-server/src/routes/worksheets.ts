@@ -368,15 +368,25 @@ router.post("/picking-list/return", async (req, res): Promise<void> => {
 
 // ── Pending production: confirmed orders awaiting stock ───────────────────────
 router.get("/production/pending", async (req, res): Promise<void> => {
-  // Single query to get all confirmed orders with per-item counts and worksheet existence
+  // Single query to get all confirmed orders with per-item counts and worksheet existence.
+  // Exclusions:
+  //   purchase_count: ignore service products (they don't need a stock PO)
+  //   ready_count:    ignore items already in production or complete (they belong in WIP/Complete tabs)
   const orderStatsRes = await db.execute(sql`
     SELECT
       o.id, o.order_number, o.customer_id, o.customer_name, o.required_date, o.total_amount,
-      COUNT(*) FILTER (WHERE oi.purchase_required = true)::integer  AS purchase_count,
-      COUNT(*) FILTER (WHERE oi.purchase_required = false)::integer AS ready_count,
-      EXISTS(SELECT 1 FROM worksheets WHERE order_id = o.id)        AS has_worksheet
+      COUNT(*) FILTER (
+        WHERE oi.purchase_required = true
+          AND COALESCE(p.is_service, false) = false
+      )::integer AS purchase_count,
+      COUNT(*) FILTER (
+        WHERE oi.purchase_required = false
+          AND oi.stock_status NOT IN ('in_production', 'complete')
+      )::integer AS ready_count,
+      EXISTS(SELECT 1 FROM worksheets WHERE order_id = o.id) AS has_worksheet
     FROM orders o
     INNER JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN products p ON p.id = oi.product_id
     WHERE o.status = 'confirmed'
     GROUP BY o.id, o.order_number, o.customer_id, o.customer_name, o.required_date, o.total_amount
     ORDER BY o.required_date NULLS LAST, o.id
@@ -407,6 +417,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       LEFT JOIN products p ON p.id = oi.product_id
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(readyOrderIds.join(","))}]::integer[])
         AND oi.purchase_required = false
+        AND oi.stock_status NOT IN ('in_production', 'complete')
       ORDER BY oi.id
     `);
     for (const row of rows.rows as any[]) {
@@ -436,6 +447,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       LEFT JOIN products p ON p.id = oi.product_id
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(pendingOrderIds.join(","))}]::integer[])
         AND oi.purchase_required = true
+        AND COALESCE(p.is_service, false) = false
       ORDER BY oi.id
     `);
     const itemIds = (pendingRows.rows as any[]).map((r: any) => Number(r.id));
