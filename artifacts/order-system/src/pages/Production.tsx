@@ -3275,19 +3275,31 @@ export default function Production() {
   const createWorksheetMutation = useMutation({
     mutationFn: (data: { orderId: number; orderNumber: string; customerId: number | null; customerName: string | null; notes: string; itemIds: number[]; returnItemIds: number[] }) =>
       apiFetch("/worksheets", { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: (data: any) => {
+    onSuccess: async (data: any, variables) => {
       queryClient.invalidateQueries({ queryKey: ["production-pending"] });
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
       queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      setSendingOrder(null);
+      setSendingNotes("");
+      setSendingExcluded(new Set());
       if (data.worksheetNumber) {
         toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Printing worksheet now…" });
         printWorksheetFromData(data as Worksheet);
       } else {
-        toast({ title: "Sent to dispatch", description: `${data.plainCompleted ?? 0} plain item line${(data.plainCompleted ?? 0) !== 1 ? "s" : ""} marked ready — no decoration required` });
+        // Plain items — no worksheet created. Check if the order is now fully ready for dispatch.
+        try {
+          const result = await apiFetch<{ isComplete: boolean; incompleteItemIds: number[]; order: DocOrder }>(
+            `/dispatch/orders/${variables.orderId}/ready`,
+          );
+          if (result.isComplete) {
+            setReadyOrder(result.order);
+          } else {
+            toast({ title: "Items sent to dispatch", description: `${data.plainCompleted ?? 0} plain item line${(data.plainCompleted ?? 0) !== 1 ? "s" : ""} marked ready` });
+          }
+        } catch {
+          toast({ title: "Items sent to dispatch", description: `${data.plainCompleted ?? 0} plain item line${(data.plainCompleted ?? 0) !== 1 ? "s" : ""} marked ready` });
+        }
       }
-      setSendingOrder(null);
-      setSendingNotes("");
-      setSendingExcluded(new Set());
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
