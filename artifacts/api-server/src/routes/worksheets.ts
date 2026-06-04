@@ -507,7 +507,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
     const pendingRows = await db.execute(sql`
       SELECT oi.id, oi.order_id, oi.product_name, oi.colour, oi.size,
              oi.purchase_quantity, oi.supplier_name, p.name AS catalogue_name,
-             oi.quantity
+             oi.quantity, p.sku AS product_sku, p.supplier_code AS supplier_code
       FROM order_items oi
       LEFT JOIN products p ON p.id = oi.product_id
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(pendingOrderIds.join(","))}]::integer[])
@@ -580,6 +580,8 @@ router.get("/production/pending", async (req, res): Promise<void> => {
         size: row.size as string | null,
         purchaseQuantity: Number(row.purchase_quantity ?? row.quantity ?? 1),
         supplierName: row.supplier_name as string | null,
+        supplierCode: (row.supplier_code as string | null) ?? null,
+        productSku: (row.product_sku as string | null) ?? null,
         poNumber: po?.poNumber ?? null,
         poStatus: po?.poStatus ?? null,
         estimatedDelivery: po?.estimatedDelivery ?? null,

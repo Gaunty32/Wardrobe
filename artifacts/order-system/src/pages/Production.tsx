@@ -81,6 +81,8 @@ interface PendingItem {
   size: string | null;
   purchaseQuantity: number;
   supplierName: string | null;
+  supplierCode: string | null;
+  productSku: string | null;
   poNumber: string | null;
   poStatus: string | null;
   estimatedDelivery: string | null;
@@ -1382,6 +1384,8 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
     type Matrix = {
       productName: string;
       supplierName: string | null;
+      supplierCode: string | null;
+      productSku: string | null;
       colours: string[];
       sizes: string[];
       cells: Map<string, PendingItem>; // key: "colour||size"
@@ -1389,7 +1393,7 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
     const map = new Map<string, Matrix>();
     for (const item of order.items) {
       if (!map.has(item.productName)) {
-        map.set(item.productName, { productName: item.productName, supplierName: item.supplierName, colours: [], sizes: [], cells: new Map() });
+        map.set(item.productName, { productName: item.productName, supplierName: item.supplierName, supplierCode: item.supplierCode, productSku: item.productSku, colours: [], sizes: [], cells: new Map() });
       }
       const m = map.get(item.productName)!;
       const colour = item.colour ?? "";
@@ -1450,10 +1454,18 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
             const hasColours = m.colours.some(c => c !== "");
             return (
               <div key={m.productName}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-foreground">{m.productName}</span>
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <span className="text-sm font-semibold text-foreground">{m.productName}</span>
+                    {m.supplierCode && (
+                      <span className="font-mono text-xs font-bold text-primary">{m.supplierCode}</span>
+                    )}
+                    {m.productSku && (
+                      <span className="text-xs font-mono bg-indigo-50 text-indigo-700 border border-indigo-200 rounded px-1.5 py-0.5">{m.productSku}</span>
+                    )}
+                  </div>
                   {m.supplierName && (
-                    <span className="text-xs text-muted-foreground">{m.supplierName}</span>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">{m.supplierName}</span>
                   )}
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-amber-100">
@@ -1686,9 +1698,9 @@ function PartInStockOrderCard({ order, onSendToProduction }: {
   const suppliers = [...new Set(order.pendingItems.map(i => i.supplierName).filter(Boolean))];
 
   const pendingMatrices = useMemo(() => {
-    const map = new Map<string, { colours: string[]; sizes: string[]; cells: Map<string, PendingItem>; supplierName: string | null }>();
+    const map = new Map<string, { colours: string[]; sizes: string[]; cells: Map<string, PendingItem>; supplierName: string | null; supplierCode: string | null; productSku: string | null }>();
     for (const item of order.pendingItems) {
-      if (!map.has(item.productName)) map.set(item.productName, { colours: [], sizes: [], cells: new Map(), supplierName: item.supplierName });
+      if (!map.has(item.productName)) map.set(item.productName, { colours: [], sizes: [], cells: new Map(), supplierName: item.supplierName, supplierCode: item.supplierCode, productSku: item.productSku });
       const m = map.get(item.productName)!;
       const colour = item.colour ?? "";
       const size = item.size ?? "";
@@ -1746,9 +1758,17 @@ function PartInStockOrderCard({ order, onSendToProduction }: {
                 const hasColours = m.colours.some(c => c !== "");
                 return (
                   <div key={m.productName} className="overflow-x-auto rounded-lg border border-amber-200 mb-2">
-                    <div className="px-3 py-1.5 bg-amber-50/80 border-b border-amber-100 text-xs font-semibold flex items-center justify-between">
-                      <span>{m.productName}</span>
-                      {m.supplierName && <span className="font-normal text-muted-foreground">{m.supplierName}</span>}
+                    <div className="px-3 py-1.5 bg-amber-50/80 border-b border-amber-100 text-xs font-semibold flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span>{m.productName}</span>
+                        {m.supplierCode && (
+                          <span className="font-mono font-bold text-primary">{m.supplierCode}</span>
+                        )}
+                        {m.productSku && (
+                          <span className="font-mono font-normal bg-indigo-50 text-indigo-700 border border-indigo-200 rounded px-1 py-0.5">{m.productSku}</span>
+                        )}
+                      </div>
+                      {m.supplierName && <span className="font-normal text-muted-foreground flex-shrink-0">{m.supplierName}</span>}
                     </div>
                     <table className="w-full text-xs border-collapse">
                       <thead>
