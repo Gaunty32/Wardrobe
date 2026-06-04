@@ -2792,7 +2792,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   const pendingItems    = dispatchedIds ? allItems.filter(i => !dispatchedIds.includes(i.id)) : [];
 
   let deliveryAddress: { line1: string | null; line2: string | null; city: string | null; postcode: string | null; country: string | null; notes: string | null } | null = null;
-  let customerContact: { contactFirstName: string | null; contactLastName: string | null; phone: string | null } | null = null;
+  let customerContact: { contactFirstName: string | null; contactLastName: string | null; phone: string | null; address: string | null; city: string | null; postcode: string | null } | null = null;
   if (includeDeliveryLabel && order.deliveryAddressId) {
     const [addr] = await db.select().from(customerDeliveryAddressesTable)
       .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
@@ -2803,6 +2803,9 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
       contactFirstName: customersTable.contactFirstName,
       contactLastName: customersTable.contactLastName,
       phone: customersTable.phone,
+      address: customersTable.address,
+      city: customersTable.city,
+      postcode: customersTable.postcode,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     customerContact = cust ?? null;
   }
@@ -2864,7 +2867,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   if (includeDeliveryLabel) {
     const addrLines = deliveryAddress
       ? [deliveryAddress.line1, deliveryAddress.line2, deliveryAddress.city, deliveryAddress.postcode, deliveryAddress.country].filter(Boolean)
-      : [];
+      : [customerContact?.address, customerContact?.city, customerContact?.postcode].filter(Boolean);
     const contactName = [customerContact?.contactFirstName, customerContact?.contactLastName].filter(Boolean).join(" ") || null;
     const contactPhone = customerContact?.phone || null;
     labels.push(`<div class="label delivery-label">
@@ -2893,7 +2896,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
       : "";
     labels.push(`<div class="label wearer-label">
       <div class="wearer-name-row">
-        <div class="wearer-name" data-autofit>${name}</div>
+        <div class="wearer-name">${name}</div>
       </div>
       <div class="label-sub-row">
         ${logoHtml}
@@ -2934,7 +2937,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     /* ── Wearer label inner layout ── */
     .wearer-label{display:flex;flex-direction:column;padding:0.12in 0.18in 0.1in}
     .wearer-name-row{border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px;width:100%}
-    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:normal;word-break:break-word;display:block;width:100%}
+    .wearer-name{font-size:12pt;font-weight:900;color:#000;line-height:1.2;white-space:normal;word-break:break-word;display:block;width:100%}
     .label-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
     .sbs-logo{height:0.42in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
     .job-title{font-size:8pt;color:#333}
@@ -2991,14 +2994,6 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   <div id="page">${labels.join("\n")}</div>
   <script>
     document.getElementById('btn-print').focus();
-    document.querySelectorAll('.wearer-name[data-autofit]').forEach(function(el) {
-      var fs = 32;
-      el.style.fontSize = fs + 'pt';
-      while (el.scrollWidth > el.parentElement.clientWidth && fs > 9) {
-        fs -= 0.5;
-        el.style.fontSize = fs + 'pt';
-      }
-    });
     function downloadPdf() {
       var hint = document.createElement('div');
       hint.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e3a5f;color:white;padding:12px 24px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.35);white-space:nowrap';
@@ -3091,7 +3086,7 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
     for (const [, wearer] of wearerMap) {
       allLabels.push(`<div class="label wearer-label">
       <div class="wearer-name-row">
-        <div class="wearer-name" data-autofit>${wearer.name}</div>
+        <div class="wearer-name">${wearer.name}</div>
       </div>
       <div class="label-sub-row">
         ${WEARER_LOGO_HTML}
@@ -3134,7 +3129,7 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
     .label{width:4in;min-height:3in;background:white;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
     .wearer-label{display:flex;flex-direction:column;padding:0.12in 0.18in 0.1in}
     .wearer-name-row{border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px;width:100%}
-    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:normal;word-break:break-word;display:block;width:100%}
+    .wearer-name{font-size:12pt;font-weight:900;color:#000;line-height:1.2;white-space:normal;word-break:break-word;display:block;width:100%}
     .label-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
     .sbs-logo{height:0.42in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
     .job-title{font-size:8pt;color:#333}
@@ -3170,11 +3165,6 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
   <div id="page">${allLabels.join("\n")}</div>
   <script>
     document.getElementById('btn-print').focus();
-    document.querySelectorAll('.wearer-name[data-autofit]').forEach(function(el) {
-      var fs = 32;
-      el.style.fontSize = fs + 'pt';
-      while (el.scrollWidth > el.parentElement.clientWidth && fs > 9) { fs -= 0.5; el.style.fontSize = fs + 'pt'; }
-    });
   </script>
 </body>
 </html>`;
