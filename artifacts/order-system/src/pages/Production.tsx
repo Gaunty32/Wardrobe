@@ -290,6 +290,48 @@ function filterPickingOrders(orders: PickingOrder[], f: Filters): PickingOrder[]
     .filter(Boolean) as PickingOrder[];
 }
 
+// ── Send-to-Production matrix helpers ─────────────────────────────────────────
+const SEND_SIZE_ORDER = [
+  "one size","os","xs","extra small","s","small","m","medium","l","large",
+  "xl","extra large","2xl","xxl","3xl","xxxl","4xl","5xl",
+];
+function sortSendSizes(sizes: string[]): string[] {
+  return [...sizes].sort((a, b) => {
+    const ai = SEND_SIZE_ORDER.indexOf(a.toLowerCase());
+    const bi = SEND_SIZE_ORDER.indexOf(b.toLowerCase());
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+interface SendMatrixCell { itemId: number; qty: number }
+interface SendMatrixGroup {
+  key: string;
+  productName: string;
+  finishName: string | null;
+  colours: string[];
+  sizes: string[];
+  cells: Map<string, SendMatrixCell>; // "colour|size"
+}
+function buildSendMatrix(items: { id: number; productName: string; colour?: string | null; size?: string | null; finishName?: string | null; finishId?: number | null; quantity: number }[]): SendMatrixGroup[] {
+  const groups = new Map<string, SendMatrixGroup>();
+  for (const item of items) {
+    const key = `${item.productName}|||${item.finishId ?? ""}`;
+    if (!groups.has(key)) {
+      groups.set(key, { key, productName: item.productName, finishName: item.finishName ?? null, colours: [], sizes: [], cells: new Map() });
+    }
+    const g = groups.get(key)!;
+    const c = item.colour ?? "—";
+    const s = item.size ?? "—";
+    if (!g.colours.includes(c)) g.colours.push(c);
+    if (!g.sizes.includes(s)) g.sizes.push(s);
+    g.cells.set(`${c}|${s}`, { itemId: item.id, qty: item.quantity });
+  }
+  for (const g of groups.values()) g.sizes = sortSendSizes(g.sizes);
+  return [...groups.values()];
+}
+
 function FiltersBar({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
   const set = (key: keyof Filters, val: string) => onChange({ ...filters, [key]: val });
   const hasFilters = Object.values(filters).some(Boolean);
@@ -3657,32 +3699,91 @@ export default function Production() {
                 <p className="text-sm text-muted-foreground">
                   Tick the items that are physically in stock and ready. Unticked items will be <strong>returned to purchasing</strong>.
                 </p>
-                <div className="rounded-lg border border-border divide-y divide-border">
-                  {sendingOrder.items.map(item => {
-                    const included = !sendingExcluded.has(item.id);
+                <div className="space-y-3">
+                  {buildSendMatrix(sendingOrder.items).map(group => {
+                    const getRowCells = (colour: string) =>
+                      group.sizes.map(s => group.cells.get(`${colour}|${s}`)).filter(Boolean) as SendMatrixCell[];
+                    const rowAllIncluded = (colour: string) =>
+                      getRowCells(colour).every(c => !sendingExcluded.has(c.itemId));
+                    const rowSomeIncluded = (colour: string) =>
+                      getRowCells(colour).some(c => !sendingExcluded.has(c.itemId));
+                    const toggleRow = (colour: string) => {
+                      const cells = getRowCells(colour);
+                      const allIn = cells.every(c => !sendingExcluded.has(c.itemId));
+                      setSendingExcluded(prev => {
+                        const next = new Set(prev);
+                        cells.forEach(c => allIn ? next.add(c.itemId) : next.delete(c.itemId));
+                        return next;
+                      });
+                    };
                     return (
-                      <label key={item.id} className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/40 transition-colors ${included ? "" : "opacity-50"}`}>
-                        <input
-                          type="checkbox"
-                          checked={included}
-                          onChange={() => setSendingExcluded(prev => {
-                            const next = new Set(prev);
-                            if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
-                            return next;
-                          })}
-                          className="h-4 w-4 rounded border-gray-300 accent-green-600"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium">{item.productName}</span>
-                          {(item.colour || item.size) && (
-                            <span className="text-xs text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
-                          )}
-                          {item.finishName && (
-                            <span className="text-xs text-blue-600 ml-2">✦ {item.finishName}</span>
-                          )}
+                      <div key={group.key} className="rounded-lg border border-border overflow-hidden">
+                        <div className="px-3 py-2 bg-slate-800 flex items-center gap-2">
+                          <span className="text-sm font-semibold text-white">{group.productName}</span>
+                          {group.finishName && <span className="text-xs text-blue-300">✦ {group.finishName}</span>}
                         </div>
-                        <span className="text-sm font-semibold tabular-nums">×{item.quantity}</span>
-                      </label>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100 border-b border-border">
+                                <th className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">Colour</th>
+                                {group.sizes.map(s => (
+                                  <th key={s} className="px-2 py-1.5 text-center text-xs font-semibold text-muted-foreground whitespace-nowrap min-w-[56px]">{s}</th>
+                                ))}
+                                <th className="px-2 py-1.5 text-center text-xs font-semibold text-muted-foreground">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.colours.map((colour, ri) => {
+                                const allIn = rowAllIncluded(colour);
+                                const someIn = rowSomeIncluded(colour);
+                                const rowTotal = group.sizes.reduce((sum, s) => sum + (group.cells.get(`${colour}|${s}`)?.qty ?? 0), 0);
+                                return (
+                                  <tr key={colour} className={`border-b border-border last:border-0 ${ri % 2 === 0 ? "bg-white" : "bg-slate-50/60"} ${!someIn ? "opacity-40" : ""}`}>
+                                    <td className="px-3 py-2 whitespace-nowrap">
+                                      <label className="flex items-center gap-2 cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={allIn}
+                                          ref={el => { if (el) el.indeterminate = someIn && !allIn; }}
+                                          onChange={() => toggleRow(colour)}
+                                          className="h-4 w-4 rounded border-gray-300 accent-green-600"
+                                        />
+                                        <span className="font-medium text-sm">{colour}</span>
+                                      </label>
+                                    </td>
+                                    {group.sizes.map(s => {
+                                      const cell = group.cells.get(`${colour}|${s}`);
+                                      if (!cell) return (
+                                        <td key={s} className="px-2 py-2 text-center text-muted-foreground/40 text-xs">—</td>
+                                      );
+                                      const included = !sendingExcluded.has(cell.itemId);
+                                      return (
+                                        <td key={s} className="px-2 py-2 text-center">
+                                          <label className="flex flex-col items-center gap-0.5 cursor-pointer">
+                                            <input
+                                              type="checkbox"
+                                              checked={included}
+                                              onChange={() => setSendingExcluded(prev => {
+                                                const next = new Set(prev);
+                                                if (next.has(cell.itemId)) next.delete(cell.itemId); else next.add(cell.itemId);
+                                                return next;
+                                              })}
+                                              className="h-3.5 w-3.5 rounded border-gray-300 accent-green-600"
+                                            />
+                                            <span className={`text-xs font-semibold tabular-nums ${included ? "" : "line-through text-muted-foreground"}`}>×{cell.qty}</span>
+                                          </label>
+                                        </td>
+                                      );
+                                    })}
+                                    <td className="px-2 py-2 text-center font-bold text-sm tabular-nums text-slate-700">×{rowTotal}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
