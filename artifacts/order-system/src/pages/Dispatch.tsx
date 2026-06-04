@@ -112,8 +112,13 @@ function openWearerLabels(orderId: number, opts?: { includeDeliveryLabel?: boole
   window.open(`/api/orders/${orderId}/wearer-labels?${params}`, "_blank");
 }
 
-function openDeliveryNote(orderId: number) {
+const LOCAL_DELIVERY_METHODS = new Set(["free_local", "local_delivery"]);
+
+function openDeliveryNote(orderId: number, shippingMethod?: string | null) {
   window.open(`/api/orders/${orderId}/delivery-note`, "_blank");
+  if (shippingMethod && LOCAL_DELIVERY_METHODS.has(shippingMethod)) {
+    setTimeout(() => window.open(`/api/orders/${orderId}/shipping-label`, "_blank"), 300);
+  }
 }
 
 function RequiredDateBadge({ requiredDate }: { requiredDate: string | null }) {
@@ -238,7 +243,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openWearerLabels(order.id, { includeDeliveryLabel: true })} disabled={namedCount === 0}>
             <Tag className="w-3.5 h-3.5" /> Wearer Labels
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id)}>
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id, order.shippingMethod)}>
             <FileText className="w-3.5 h-3.5" /> Delivery Note
           </Button>
           <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={openDispatchModal}>
@@ -508,7 +513,7 @@ function ShippedRow({ order }: { order: ShippedOrder }) {
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-3" onClick={(e) => e.stopPropagation()}>
-          <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id)}>
+          <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id, order.shippingMethod)}>
             <FileText className="w-3 h-3" /> Delivery Note
           </Button>
           <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => openWearerLabels(order.id, { includeDeliveryLabel: true })}

@@ -2592,6 +2592,13 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
           <div style="flex:1;border-top:1px solid #999;padding-top:5px;font-size:9pt;color:#555;">Date: ______________________</div>
         </div>
 
+        ${shippingLabel ? `
+        <!-- Delivery method banner -->
+        <div style="margin-top:18px;background:#0f172a;border-radius:6px;padding:10px 18px;display:flex;align-items:center;gap:16px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+          <span style="font-size:7pt;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#64748b;flex-shrink:0;">Delivery Method</span>
+          <span style="font-size:15pt;font-weight:900;color:#fff;letter-spacing:.02em;">${shippingLabel}</span>
+        </div>` : ""}
+
         <!-- Footer -->
         <div style="margin-top:14px;margin-bottom:20px;font-size:8pt;color:#aaa;border-top:1px solid #e5e7eb;padding-top:8px;text-align:center;">
           Please check contents carefully. Any discrepancies should be reported within 48 hours of receipt.${pendingItems.length > 0 ? " Outstanding items will be dispatched as soon as they become available." : ""}<br>
@@ -2635,6 +2642,122 @@ function renderWearerItemTable(items: Array<{
       </tbody>
     </table>`;
 }
+
+// ── Standalone box / shipping label (4×3 in) ─────────────────────────────────
+router.get("/orders/:id/shipping-label", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).send("Bad request"); return; }
+
+  const orderId = parsed.data.id;
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!order) { res.status(404).send("Order not found"); return; }
+
+  const SHIPPING_LABELS: Record<string, string> = {
+    free_local: "Free Local Delivery", local_delivery: "Local Delivery",
+    office_collection: "Office Collection", warehouse_collection: "Warehouse Collection",
+    courier: "Courier", dpd: "DPD Courier",
+  };
+  const shippingMethodLabel = order.shippingMethod ? (SHIPPING_LABELS[order.shippingMethod] ?? order.shippingMethod) : "Not specified";
+  const isDpd = !!order.shippingMethod?.toLowerCase().includes("dpd");
+
+  let deliveryAddress: { line1: string | null; line2: string | null; city: string | null; postcode: string | null; country: string | null; notes: string | null } | null = null;
+  let customerContact: { contactFirstName: string | null; contactLastName: string | null; phone: string | null; address: string | null; city: string | null; postcode: string | null } | null = null;
+
+  if (order.deliveryAddressId) {
+    const [addr] = await db.select().from(customerDeliveryAddressesTable)
+      .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    deliveryAddress = addr ?? null;
+  }
+  if (order.customerId) {
+    const [cust] = await db.select({
+      contactFirstName: customersTable.contactFirstName,
+      contactLastName: customersTable.contactLastName,
+      phone: customersTable.phone,
+      address: customersTable.address,
+      city: customersTable.city,
+      postcode: customersTable.postcode,
+    }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    customerContact = cust ?? null;
+  }
+
+  const addrLines = deliveryAddress
+    ? [deliveryAddress.line1, deliveryAddress.line2, deliveryAddress.city, deliveryAddress.postcode, deliveryAddress.country].filter(Boolean)
+    : [customerContact?.address, customerContact?.city, customerContact?.postcode].filter(Boolean);
+
+  const contactName = [customerContact?.contactFirstName, customerContact?.contactLastName].filter(Boolean).join(" ") || null;
+  const contactPhone = customerContact?.phone || null;
+
+  const labelHtml = `<div class="label delivery-label">
+    <div class="dl-header">
+      <span class="dl-badge">BOX LABEL</span>
+      <span class="dl-order">${order.orderNumber}</span>
+    </div>
+    <div class="dl-customer">${order.customerName ?? ""}</div>
+    <div class="dl-divider"></div>
+    <div class="dl-row"><span class="dl-key">Delivery</span><span class="dl-val">${shippingMethodLabel}</span></div>
+    ${isDpd && order.trackingNumber ? `<div class="dl-row"><span class="dl-key">DPD</span><span class="dl-val dl-tracking">${order.trackingNumber}</span></div>` : ""}
+    ${order.poNumber ? `<div class="dl-row"><span class="dl-key">PO Ref</span><span class="dl-val">${order.poNumber}</span></div>` : ""}
+    ${contactName ? `<div class="dl-row"><span class="dl-key">Contact</span><span class="dl-val">${contactName}</span></div>` : ""}
+    ${contactPhone ? `<div class="dl-row"><span class="dl-key">Phone</span><span class="dl-val">${contactPhone}</span></div>` : ""}
+    ${addrLines.length > 0 ? `<div class="dl-addr-block">${addrLines.map(l => `<div>${l}</div>`).join("")}</div>` : ""}
+  </div>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Box Label — ${order.orderNumber}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,Helvetica,sans-serif;background:#e5e7eb;color:#000}
+    #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:16px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+    #toolbar-text{flex:1}
+    #toolbar-title{font-size:14px;font-weight:700}
+    #toolbar-sub{font-size:12px;opacity:.8;margin-top:2px}
+    #toolbar button{padding:7px 20px;border:none;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer}
+    #btn-print{background:#22c55e;color:white}
+    #btn-close{background:rgba(255,255,255,.15);color:white;margin-left:4px}
+    #page{padding:20px;display:flex;flex-direction:column;gap:16px;align-items:center}
+    .label{width:4in;height:3in;background:white;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
+    .delivery-label{display:flex;flex-direction:column;padding:0}
+    .dl-header{background:white;color:#000;padding:0.1in 0.2in 0.08in;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000}
+    .dl-badge{font-size:8pt;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+    .dl-order{font-size:11pt;font-weight:900;font-family:monospace}
+    .dl-customer{font-size:18pt;font-weight:900;color:#000;padding:0.08in 0.2in 0.04in;line-height:1.1}
+    .dl-divider{border-top:1.5px solid #000;margin:0 0.2in 0.06in}
+    .dl-row{display:flex;align-items:baseline;gap:8px;padding:0.03in 0.2in}
+    .dl-key{font-size:7pt;color:#000;text-transform:uppercase;letter-spacing:.06em;width:0.7in;flex-shrink:0;font-weight:700}
+    .dl-val{font-size:10pt;font-weight:600;color:#000}
+    .dl-tracking{font-family:monospace;font-size:10pt}
+    .dl-addr-block{font-size:9pt;color:#000;font-weight:600;padding:0.06in 0.2in 0;line-height:1.4}
+    @media print{
+      @page{size:4in 3in;margin:0mm}
+      html,body{margin:0!important;padding:0!important}
+      #toolbar{display:none}
+      body{background:white}
+      #page{padding:0;gap:0;margin:0}
+      .label{width:100%;min-height:3in;height:auto;border:none;border-radius:0;box-shadow:none;page-break-after:always;overflow:visible}
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <div id="toolbar-text">
+      <div id="toolbar-title">📦 Box Label · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")} · ${order.orderNumber}</div>
+      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: None (GC420d)</div>
+    </div>
+    <button id="btn-print" onclick="window.print()">🖨 Print Label</button>
+    <button id="btn-close" onclick="window.close()">✕ Close</button>
+  </div>
+  <div id="page">${labelHtml}</div>
+  <script>document.getElementById('btn-print').focus();</script>
+</body>
+</html>`;
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
+  res.send(html);
+});
 
 // ── Wearer Labels HTML ────────────────────────────────────────────────────────
 router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
