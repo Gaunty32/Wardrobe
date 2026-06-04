@@ -2551,7 +2551,8 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
 
   if (order.customerId) {
     const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
-    customerEmail = customer?.email ?? null;
+    // billingEmail overrides the general contact email for all invoice sends
+    customerEmail = customer?.billingEmail ?? customer?.email ?? null;
     contactFirstName = customer?.contactFirstName ?? null;
     customerAddress = customer?.address ?? null;
     customerCity = customer?.city ?? null;

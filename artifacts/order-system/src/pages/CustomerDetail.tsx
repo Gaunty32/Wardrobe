@@ -4293,7 +4293,7 @@ export default function CustomerDetail() {
   const [editInfoOpen, setEditInfoOpen] = useState(false);
   const [editInfoForm, setEditInfoForm] = useState({
     name: "", contactFirstName: "", contactLastName: "",
-    email: "", phone: "",
+    email: "", billingEmail: "", phone: "",
     address: "", state: "", city: "", postcode: "",
   });
   const openEditInfo = () => {
@@ -4302,6 +4302,7 @@ export default function CustomerDetail() {
       contactFirstName: (customer as any)?.contactFirstName ?? "",
       contactLastName: (customer as any)?.contactLastName ?? "",
       email: (customer as any)?.email ?? "",
+      billingEmail: (customer as any)?.billingEmail ?? "",
       phone: (customer as any)?.phone ?? "",
       address: (customer as any)?.address ?? "",
       state: (customer as any)?.state ?? "",
@@ -4692,6 +4693,11 @@ export default function CustomerDetail() {
                 <Label>Phone</Label>
                 <Input value={editInfoForm.phone} onChange={e => setEditInfoForm(f => ({ ...f, phone: e.target.value }))} />
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Billing / Invoice Email</Label>
+              <Input type="email" placeholder="Leave blank to use the email above" value={editInfoForm.billingEmail} onChange={e => setEditInfoForm(f => ({ ...f, billingEmail: e.target.value }))} />
+              <p className="text-xs text-muted-foreground">When set, all invoices go here instead — use this for a shared finance inbox.</p>
             </div>
             <div className="border-t pt-3">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Billing Address — shown on invoices</p>

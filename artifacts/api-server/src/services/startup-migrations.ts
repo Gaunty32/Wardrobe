@@ -1373,6 +1373,11 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS po_number_required boolean NOT NULL DEFAULT false;
   `);
 
+  // Billing email — overrides general contact email for all invoice sends
+  await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS billing_email text;
+  `);
+
   // ── Archived products ────────────────────────────────────────────────────────
   await db.execute(sql`
     ALTER TABLE products ADD COLUMN IF NOT EXISTS is_archived boolean NOT NULL DEFAULT false;
