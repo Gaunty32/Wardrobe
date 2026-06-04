@@ -3,8 +3,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Truck, Package, CheckCircle, AlertTriangle, Clock, Printer, User,
   RefreshCw, ChevronDown, ChevronRight, FileText, Tag, Send,
-  History, Search, X, ExternalLink,
+  History, Search, X, ExternalLink, RotateCcw,
 } from "lucide-react";
+import ZebraLabels from "@/components/ZebraLabels";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -250,9 +251,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openWearerLabels(order.id, { includeDeliveryLabel: true })} disabled={namedCount === 0}>
-            <Tag className="w-3.5 h-3.5" /> Wearer Labels
-          </Button>
+          <ZebraLabels orderId={order.id} orderNumber={order.orderNumber} hasNamedRecipients={namedCount > 0} />
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id, order.shippingMethod)}>
             <FileText className="w-3.5 h-3.5" /> Delivery Note
           </Button>
@@ -348,22 +347,17 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             if (recipients.length === 0) return null;
             return (
               <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Wearer Labels</h4>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Named Recipients</h4>
                 <div className="space-y-1">
                   {recipients.map(([name, qty]) => (
-                    <div key={name} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="font-medium truncate">{name}</span>
-                        <span className="text-muted-foreground text-xs">{qty} item{qty !== 1 ? "s" : ""}</span>
-                      </div>
-                      <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs shrink-0"
-                        onClick={() => openWearerLabels(order.id, { recipient: name })}>
-                        <Printer className="w-3 h-3" /> Print Label
-                      </Button>
+                    <div key={name} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
+                      <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="font-medium truncate flex-1">{name}</span>
+                      <span className="text-muted-foreground text-xs">{qty} item{qty !== 1 ? "s" : ""}</span>
                     </div>
                   ))}
                 </div>
+                <p className="text-xs text-muted-foreground mt-1.5">Use the <strong>Labels</strong> button above to print wearer labels directly to the Zebra printer.</p>
               </div>
             );
           })()}
@@ -539,10 +533,7 @@ function ShippedRow({ order }: { order: ShippedOrder }) {
           <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id, order.shippingMethod)}>
             <FileText className="w-3 h-3" /> Delivery Note
           </Button>
-          <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs" onClick={() => openWearerLabels(order.id, { includeDeliveryLabel: true })}
-            disabled={!order.items.some((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId))}>
-            <Tag className="w-3 h-3" /> Wearer Labels
-          </Button>
+          <ZebraLabels orderId={order.id} orderNumber={order.orderNumber} hasNamedRecipients={order.items.some((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId))} />
         </div>
       </div>
 
@@ -614,22 +605,17 @@ function ShippedRow({ order }: { order: ShippedOrder }) {
             if (recipients.length === 0) return null;
             return (
               <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Wearer Labels</h4>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Named Recipients</h4>
                 <div className="space-y-1">
                   {recipients.map(([name, qty]) => (
-                    <div key={name} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                        <span className="font-medium truncate">{name}</span>
-                        <span className="text-muted-foreground text-xs">{qty} item{qty !== 1 ? "s" : ""}</span>
-                      </div>
-                      <Button size="sm" variant="outline" className="h-7 gap-1.5 text-xs shrink-0"
-                        onClick={() => openWearerLabels(order.id, { recipient: name })}>
-                        <Printer className="w-3 h-3" /> Print Label
-                      </Button>
+                    <div key={name} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
+                      <User className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="font-medium truncate flex-1">{name}</span>
+                      <span className="text-muted-foreground text-xs">{qty} item{qty !== 1 ? "s" : ""}</span>
                     </div>
                   ))}
                 </div>
+                <p className="text-xs text-muted-foreground mt-1.5">Use the <strong>Labels</strong> button above to reprint wearer labels.</p>
               </div>
             );
           })()}

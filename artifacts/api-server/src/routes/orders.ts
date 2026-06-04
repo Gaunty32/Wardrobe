@@ -3188,4 +3188,91 @@ router.get("/orders/:id/logs", async (req, res): Promise<void> => {
   res.json(logs);
 });
 
+// ── Label data JSON (for Zebra Browser Print / ZPL generation) ───────────────
+router.get("/orders/:id/label-data", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: "Bad request" }); return; }
+
+  const orderId = parsed.data.id;
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+
+  const SHIPPING_LABELS: Record<string, string> = {
+    free_local: "Free Local Delivery", local_delivery: "Local Delivery",
+    office_collection: "Office Collection", warehouse_collection: "Warehouse Collection",
+    courier: "Courier", dpd: "DPD Courier",
+  };
+
+  let deliveryAddress: { line1: string | null; line2: string | null; city: string | null; postcode: string | null; country: string | null } | null = null;
+  let customerContact: { contactFirstName: string | null; contactLastName: string | null; phone: string | null; address: string | null; city: string | null; postcode: string | null } | null = null;
+
+  if (order.deliveryAddressId) {
+    const [addr] = await db.select().from(customerDeliveryAddressesTable)
+      .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    deliveryAddress = addr ?? null;
+  }
+  if (order.customerId) {
+    const [cust] = await db.select({
+      contactFirstName: customersTable.contactFirstName,
+      contactLastName: customersTable.contactLastName,
+      phone: customersTable.phone,
+      address: customersTable.address,
+      city: customersTable.city,
+      postcode: customersTable.postcode,
+    }).from(customersTable).where(eq(customersTable.id, order.customerId));
+    customerContact = cust ?? null;
+  }
+
+  const addrLines = deliveryAddress
+    ? [deliveryAddress.line1, deliveryAddress.line2, deliveryAddress.city, deliveryAddress.postcode, deliveryAddress.country].filter(Boolean) as string[]
+    : [customerContact?.address, customerContact?.city, customerContact?.postcode].filter(Boolean) as string[];
+
+  const contactName = [customerContact?.contactFirstName, customerContact?.contactLastName].filter(Boolean).join(" ") || null;
+
+  // Wearer labels data
+  const itemRows = await db
+    .select({ item: orderItemsTable, employee: customerEmployeesTable })
+    .from(orderItemsTable)
+    .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+    .where(eq(orderItemsTable.orderId, orderId));
+
+  const allItems = itemRows.map(r => ({
+    ...r.item,
+    employee: r.employee ?? null,
+  }));
+
+  const empName = (item: typeof allItems[0]) => {
+    if (item.employee) return [item.employee.firstName, item.employee.lastName].filter(Boolean).join(" ");
+    return item.recipientName ?? null;
+  };
+  const isNamed = (item: typeof allItems[0]) =>
+    item.recipientType === "person" && !!(item.recipientName || item.recipientEmployeeId);
+
+  const wearerMap = new Map<string, { name: string; jobTitle: string | null; items: Array<{ productName: string; colour: string | null; size: string | null; quantity: number; finishName: string | null }> }>();
+  for (const item of allItems.filter(isNamed)) {
+    const name = empName(item) ?? "Unknown";
+    if (!wearerMap.has(name)) wearerMap.set(name, { name, jobTitle: item.employee?.jobTitle ?? null, items: [] });
+    wearerMap.get(name)!.items.push({
+      productName: item.productName,
+      colour: item.colour ?? null,
+      size: item.size ?? null,
+      quantity: item.quantity,
+      finishName: item.finishName ?? null,
+    });
+  }
+
+  res.json({
+    orderNumber: order.orderNumber,
+    customerName: order.customerName ?? "",
+    shippingMethod: SHIPPING_LABELS[order.shippingMethod ?? ""] ?? order.shippingMethod ?? "",
+    isDpd: !!order.shippingMethod?.toLowerCase().includes("dpd"),
+    trackingNumber: order.trackingNumber ?? null,
+    poNumber: order.poNumber ?? null,
+    contactName,
+    phone: customerContact?.phone ?? null,
+    addressLines: addrLines,
+    wearers: Array.from(wearerMap.values()),
+  });
+});
+
 export default router;
