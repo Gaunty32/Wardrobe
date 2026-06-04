@@ -785,6 +785,13 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     return;
   }
 
+  // Duplicate guard — reject if any items are already in production
+  const alreadyInProduction = orderItems.filter(oi => oi.stockStatus === "in_production");
+  if (alreadyInProduction.length > 0) {
+    res.status(409).json({ error: "These items already have a worksheet in progress. Refresh the page to see it." });
+    return;
+  }
+
   // Plain items (no finish) go straight to dispatch — no worksheet needed
   const plainItems = orderItems.filter(oi => oi.finishId == null);
   const decoratedItems = orderItems.filter(oi => oi.finishId != null);
