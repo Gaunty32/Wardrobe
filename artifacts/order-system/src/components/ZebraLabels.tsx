@@ -178,7 +178,14 @@ interface ZebraDevice {
   send(data: string, success?: () => void, error?: (err: string) => void): void;
 }
 
-const ZBP_NOT_FOUND = "Zebra Browser Print not found at localhost:9100. Is the app installed and running?";
+// Zebra BrowserPrint listens on :9100 (HTTP) and :9101 (HTTPS).
+// When the site is served over HTTPS browsers block mixed-content HTTP, so we
+// must use the HTTPS port.  Users need to visit https://127.0.0.1:9101 once
+// in their browser to trust Zebra's self-signed certificate.
+const ZBP_HTTPS_ORIGIN = "https://127.0.0.1:9101";
+const ZBP_SCRIPT_URL = `${ZBP_HTTPS_ORIGIN}/BrowserPrint-3.1.250.min.js`;
+const ZBP_NOT_FOUND = "Zebra Browser Print not found. Is the app installed and running?";
+const ZBP_CERT_HINT = "cert";
 
 function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
   return Promise.race([
@@ -194,10 +201,9 @@ function loadBrowserPrintScript(): Promise<void> {
     // Remove a stale/failed script element so we can try again cleanly
     const existing = document.getElementById("zebra-browser-print-sdk") as HTMLScriptElement | null;
     if (existing) {
-      // If the script is still loading, wait for it; if it already errored, replace it
       if (!existing.dataset.failed) {
         existing.addEventListener("load", () => resolve());
-        existing.addEventListener("error", () => reject(new Error(ZBP_NOT_FOUND)));
+        existing.addEventListener("error", () => reject(new Error(ZBP_CERT_HINT)));
         return;
       }
       existing.remove();
@@ -205,11 +211,11 @@ function loadBrowserPrintScript(): Promise<void> {
 
     const script = document.createElement("script");
     script.id = "zebra-browser-print-sdk";
-    script.src = "http://127.0.0.1:9100/BrowserPrint-3.1.250.min.js";
+    script.src = ZBP_SCRIPT_URL;
     script.onload = () => resolve();
     script.onerror = () => {
       script.dataset.failed = "1";
-      reject(new Error(ZBP_NOT_FOUND));
+      reject(new Error(ZBP_CERT_HINT));
     };
     document.head.appendChild(script);
   });
@@ -384,10 +390,32 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
               )}
             </div>
 
-            {status === "error" && statusMsg.includes("not found") && (
+            {status === "error" && statusMsg === ZBP_CERT_HINT && (
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-900 space-y-2">
+                <p className="font-semibold">One-time browser trust required</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>
+                    Open{" "}
+                    <a
+                      href={ZBP_HTTPS_ORIGIN}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline font-medium"
+                    >
+                      https://127.0.0.1:9101
+                    </a>{" "}
+                    in a new tab
+                  </li>
+                  <li>Click <strong>Advanced</strong> → <strong>Proceed to 127.0.0.1</strong></li>
+                  <li>Come back here and click <strong>Retry</strong></li>
+                </ol>
+                <p className="text-amber-700">If Zebra Browser Print isn't installed yet, download it from <a href="https://www.zebra.com/us/en/software/printer-software/browser-print.html" target="_blank" rel="noopener" className="underline">zebra.com</a>.</p>
+              </div>
+            )}
+            {status === "error" && statusMsg === ZBP_NOT_FOUND && (
               <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5 text-xs text-blue-800 space-y-1">
-                <p className="font-semibold">Zebra Browser Print not detected</p>
-                <p>Download and install from <a href="https://www.zebra.com/us/en/software/printer-software/browser-print.html" target="_blank" rel="noopener" className="underline">zebra.com</a>, then click Retry.</p>
+                <p className="font-semibold">No Zebra printer found</p>
+                <p>Make sure the printer is switched on and connected, then click Retry.</p>
               </div>
             )}
 
