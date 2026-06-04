@@ -433,18 +433,13 @@ function QuickAdjustModal({
 
 // ─── Plain stock tab ──────────────────────────────────────────────────────────
 
-function PlainStockTab() {
+function PlainStockTab({ variants, isLoading }: { variants: PlainVariant[]; isLoading: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const sizeOrder = useSizeOrder();
   const [search, setSearch] = useState("");
   const [collapsedProducts, setCollapsedProducts] = useState<Set<number>>(new Set());
   const [adjustingProduct, setAdjustingProduct] = useState<{ productId: number; productName: string; productSku: string | null } | null>(null);
-
-  const { data: variants = [], isLoading } = useQuery<PlainVariant[]>({
-    queryKey: ["stock-plain"],
-    queryFn: () => apiFetch("/stock/plain"),
-  });
 
   const updateMut = useMutation({
     mutationFn: (body: { variantId: number; stockQuantity?: number; binLocation?: string | null; minStockQty?: number }) =>
@@ -894,17 +889,12 @@ function BinDetailDialog({ binId, onClose }: { binId: number; onClose: () => voi
   );
 }
 
-function BinViewTab() {
+function BinViewTab({ bins, isLoading }: { bins: StockBin[]; isLoading: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [viewBinId, setViewBinId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
-
-  const { data: bins = [], isLoading } = useQuery<StockBin[]>({
-    queryKey: ["stock-bins"],
-    queryFn: () => apiFetch("/stock/bins"),
-  });
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => apiFetch(`/stock/bins/${id}`, { method: "DELETE" }),
@@ -1068,15 +1058,10 @@ function BinViewTab() {
 
 // ─── Finish stock tab ─────────────────────────────────────────────────────────
 
-function FinishStockTab() {
+function FinishStockTab({ items, isLoading }: { items: FinishedItem[]; isLoading: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
-
-  const { data: items = [], isLoading } = useQuery<FinishedItem[]>({
-    queryKey: ["stock-finished"],
-    queryFn: () => apiFetch("/stock/finished"),
-  });
 
   const updateMut = useMutation({
     mutationFn: ({ id, stockQuantity }: { id: number; stockQuantity: number }) =>
@@ -1191,6 +1176,22 @@ function FinishStockTab() {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Stock() {
+  const { data: variants = [], isLoading: loadingPlain } = useQuery<PlainVariant[]>({
+    queryKey: ["stock-plain"],
+    queryFn: () => apiFetch("/stock/plain"),
+    staleTime: 60_000,
+  });
+  const { data: bins = [], isLoading: loadingBins } = useQuery<StockBin[]>({
+    queryKey: ["stock-bins"],
+    queryFn: () => apiFetch("/stock/bins"),
+    staleTime: 60_000,
+  });
+  const { data: items = [], isLoading: loadingFinished } = useQuery<FinishedItem[]>({
+    queryKey: ["stock-finished"],
+    queryFn: () => apiFetch("/stock/finished"),
+    staleTime: 60_000,
+  });
+
   return (
     <Layout>
       <div className="flex flex-col space-y-6">
@@ -1213,9 +1214,9 @@ export default function Stock() {
               <Box className="w-4 h-4" /> Bin View
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="plain"><PlainStockTab /></TabsContent>
-          <TabsContent value="finish"><FinishStockTab /></TabsContent>
-          <TabsContent value="bins"><BinViewTab /></TabsContent>
+          <TabsContent value="plain"><PlainStockTab variants={variants} isLoading={loadingPlain} /></TabsContent>
+          <TabsContent value="finish"><FinishStockTab items={items} isLoading={loadingFinished} /></TabsContent>
+          <TabsContent value="bins"><BinViewTab bins={bins} isLoading={loadingBins} /></TabsContent>
         </Tabs>
       </div>
     </Layout>
