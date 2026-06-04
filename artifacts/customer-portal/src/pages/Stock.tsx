@@ -574,18 +574,22 @@ export default function StockPage() {
       return;
     }
     const basketItems: object[] = [];
+    let skipped = 0;
     for (const [key, qty] of Object.entries(orderQtys)) {
       if (qty <= 0) continue;
       const colonIdx = key.lastIndexOf(":");
       const groupKey = key.substring(0, colonIdx);
       const size = key.substring(colonIdx + 1);
       const group = cardGroups.find(g => g.key === groupKey);
-      if (!group) continue;
+      if (!group) { skipped++; continue; }
       // Find matching store item (for price + metadata), fall back to first item in group
       const refItem = group.items.find(
         i => (i.size ?? "—").toLowerCase() === size.toLowerCase()
       ) ?? group.items[0];
-      if (!refItem?.product_id) continue;
+      if (!refItem?.product_id) {
+        skipped++;
+        continue;
+      }
       const resolvedPrice = resolveStockPrice(refItem, processes);
       const garmentBase = refItem.special_price != null && refItem.special_price !== ""
         ? parseFloat(refItem.special_price)
@@ -608,9 +612,29 @@ export default function StockPage() {
         imageUrl: refItem.variant_image_url ?? refItem.product_image_url ?? null,
       });
     }
+    if (basketItems.length === 0) {
+      toast({
+        title: "Can't create order",
+        description: skipped > 0
+          ? `${skipped} item line${skipped !== 1 ? "s" : ""} could not be added because they are not linked to catalogue products. Please contact SBS to link these stock items.`
+          : "No valid items found. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (skipped > 0) {
+      toast({
+        title: `${skipped} item${skipped !== 1 ? "s" : ""} skipped`,
+        description: `${skipped} line${skipped !== 1 ? "s" : ""} could not be added as they are not linked to catalogue products.`,
+        variant: "destructive",
+      });
+    }
     try {
       localStorage.setItem(PORTAL_SESSION_KEY, JSON.stringify({ step: 2, mode: "wardrobe", basket: basketItems }));
-    } catch {}
+    } catch {
+      toast({ title: "Storage error", description: "Could not save your basket. Please try again or reduce the number of items.", variant: "destructive" });
+      return;
+    }
     navigate("/orders/new");
   }
 
