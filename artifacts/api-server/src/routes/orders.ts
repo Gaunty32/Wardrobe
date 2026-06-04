@@ -2960,16 +2960,16 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
 
     /* ── Delivery label ── */
     .delivery-label{display:flex;flex-direction:column;padding:0}
-    .dl-header{background:white;color:#000;padding:0.1in 0.2in 0.08in;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000}
-    .dl-badge{font-size:8pt;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
-    .dl-order{font-size:11pt;font-weight:900;font-family:monospace}
-    .dl-customer{font-size:18pt;font-weight:900;color:#000;padding:0.08in 0.2in 0.04in;line-height:1.1}
-    .dl-divider{border-top:1.5px solid #000;margin:0 0.2in 0.06in}
-    .dl-row{display:flex;align-items:baseline;gap:8px;padding:0.03in 0.2in}
-    .dl-key{font-size:7pt;color:#000;text-transform:uppercase;letter-spacing:.06em;width:1in;flex-shrink:0;font-weight:700}
-    .dl-val{font-size:10pt;font-weight:600;color:#000}
-    .dl-tracking{font-family:monospace;font-size:10pt;color:#000}
-    .dl-addr-block{font-size:9pt;color:#000;font-weight:600;padding:0.06in 0.2in 0;line-height:1.4}
+    .dl-header{background:white;color:#000;padding:0.07in 0.18in 0.06in;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000}
+    .dl-badge{font-size:7.5pt;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+    .dl-order{font-size:10pt;font-weight:900;font-family:monospace}
+    .dl-customer{font-size:15pt;font-weight:900;color:#000;padding:0.05in 0.18in 0.03in;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dl-divider{border-top:1.5px solid #000;margin:0 0.18in 0.04in}
+    .dl-row{display:flex;align-items:baseline;gap:8px;padding:0.025in 0.18in}
+    .dl-key{font-size:6.5pt;color:#000;text-transform:uppercase;letter-spacing:.06em;width:0.9in;flex-shrink:0;font-weight:700}
+    .dl-val{font-size:9.5pt;font-weight:600;color:#000}
+    .dl-tracking{font-family:monospace;font-size:9.5pt;color:#000}
+    .dl-addr-block{font-size:8.5pt;color:#000;font-weight:600;padding:0.04in 0.18in 0;line-height:1.35}
 
     @media print{
       @page{size:4in 3in;margin:0mm}
@@ -2977,7 +2977,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
       #toolbar{display:none}
       body{background:white}
       #page{padding:0;gap:0;margin:0}
-      .label{width:100%;min-height:3in;height:auto;border:none;border-radius:0;box-shadow:none;page-break-after:always;overflow:visible}
+      .label{width:4in;height:3in;border:none;border-radius:0;box-shadow:none;overflow:hidden;page-break-after:always;break-after:page}
     }
   </style>
 </head>
@@ -3149,7 +3149,7 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
       #toolbar{display:none}
       body{background:white}
       #page{padding:0;gap:0;margin:0}
-      .label{width:100%;min-height:3in;height:auto;border:none;border-radius:0;box-shadow:none;page-break-after:always;overflow:visible}
+      .label{width:4in;height:3in;border:none;border-radius:0;box-shadow:none;overflow:hidden;page-break-after:always;break-after:page}
     }
   </style>
 </head>
