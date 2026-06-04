@@ -2435,20 +2435,6 @@ function PickingListTab({ filters }: { filters: Filters }) {
     onError: () => toast({ title: "Error returning items", variant: "destructive" }),
   });
 
-  // ── Auto-pick: when items appear in the picking list with stock available,
-  //    automatically print the combined slip and confirm all items as picked.
-  const autoPickedRef = useRef(new Set<number>());
-  useEffect(() => {
-    if (isLoading || pickMutation.isPending) return;
-    const newItems = rawPickingOrders
-      .flatMap((o) => o.items)
-      .filter((i) => !autoPickedRef.current.has(i.itemId));
-    if (newItems.length === 0) return;
-    newItems.forEach((i) => autoPickedRef.current.add(i.itemId));
-    printCombinedPickingSlip(newItems, rawPickingOrders);
-    pickMutation.mutate(newItems.map((i) => i.itemId));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawPickingOrders, isLoading]);
 
   function toggleReturning(id: number) {
     setReturning((prev) => {
@@ -2566,22 +2552,22 @@ function PickingListTab({ filters }: { filters: Filters }) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1.5 text-xs border-purple-400 text-purple-700 hover:bg-purple-50"
-                  onClick={() => printCombinedPickingSlip(checkedItems, rawPickingOrders)}
-                  title="Print a single combined picking slip for all selected items"
+                  className="gap-1.5 text-xs border-indigo-500 text-indigo-700 hover:bg-indigo-50 font-semibold"
+                  onClick={() => printPerCustomerPickingSlips(checkedItems, rawPickingOrders)}
+                  title="Print one picking slip per customer — one page per customer, sorted by required date"
                 >
-                  <FileText className="w-3.5 h-3.5" />
-                  Combined Slip
+                  <Printer className="w-3.5 h-3.5" />
+                  Print Picking Slips ({new Set(checkedItems.map(i => i.customerName ?? String(i.orderId))).size} customer{new Set(checkedItems.map(i => i.customerName ?? String(i.orderId))).size !== 1 ? "s" : ""})
                 </Button>
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1.5 text-xs border-indigo-400 text-indigo-700 hover:bg-indigo-50"
-                  onClick={() => printPerCustomerPickingSlips(checkedItems, rawPickingOrders)}
-                  title="Print one picking slip per customer/order"
+                  className="gap-1.5 text-xs border-gray-300 text-gray-500 hover:bg-gray-50"
+                  onClick={() => printCombinedPickingSlip(checkedItems, rawPickingOrders)}
+                  title="Print one combined picking slip across all selected items"
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  Per Customer ({new Set(checkedItems.map(i => i.customerName ?? String(i.orderId))).size})
+                  Combined
                 </Button>
                 <Button
                   size="sm"
