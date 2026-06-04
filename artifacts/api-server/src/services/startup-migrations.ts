@@ -482,42 +482,8 @@ export async function runStartupMigrations(): Promise<void> {
             await db.execute(sql`UPDATE products SET stock_quantity = ${rem} WHERE id = ${productId}`);
           }
         }
-
-        // Auto-create worksheet for the order if none exists and there are allocated items
-        const allocatedItemIds = (await db.execute(sql`
-          SELECT id FROM order_items WHERE order_id = ${orderId} AND purchase_required = false
-        `)).rows.map((r: any) => r.id);
-
-        if (allocatedItemIds.length > 0) {
-          const existing = await db.execute(sql`SELECT id FROM worksheets WHERE order_id = ${orderId} LIMIT 1`);
-          if (existing.rows.length === 0) {
-            const orderRow = (await db.execute(sql`
-              SELECT order_number, customer_id, customer_name FROM orders WHERE id = ${orderId}
-            `)).rows[0] as any;
-            const lastWs = (await db.execute(sql`
-              SELECT worksheet_number FROM worksheets WHERE worksheet_number ~ '^F[0-9]+$'
-              ORDER BY LENGTH(worksheet_number) DESC, worksheet_number DESC LIMIT 1
-            `)).rows[0] as any;
-            const wsNum = `F${(lastWs?.worksheet_number ? parseInt(lastWs.worksheet_number.slice(1), 10) : 99) + 1}`;
-            const wsRow = (await db.execute(sql`
-              INSERT INTO worksheets (worksheet_number, status, order_id, order_number, customer_id, customer_name)
-              VALUES (${wsNum}, 'pre_wip', ${orderId}, ${orderRow?.order_number ?? null}, ${orderRow?.customer_id ?? null}, ${orderRow?.customer_name ?? null})
-              RETURNING id
-            `)).rows[0] as any;
-            const wsItems = (await db.execute(sql`
-              SELECT id, product_name, colour, size, quantity, recipient_type, recipient_name, finish_id, finish_name
-              FROM order_items WHERE id = ANY(${allocatedItemIds}::int[])
-            `)).rows as any[];
-            for (const oi of wsItems) {
-              await db.execute(sql`
-                INSERT INTO worksheet_items (worksheet_id, order_item_id, product_name, colour, size, quantity, recipient_type, recipient_name, finish_id, finish_name)
-                VALUES (${wsRow.id}, ${oi.id}, ${oi.product_name}, ${oi.colour ?? null}, ${oi.size ?? null},
-                  ${Number(oi.quantity ?? 1)}, ${oi.recipient_type ?? 'stock'}, ${oi.recipient_name ?? null},
-                  ${oi.finish_id ?? null}, ${oi.finish_name ?? null})
-              `);
-            }
-          }
-        }
+        // NOTE: worksheets are NOT created here. The correct flow is:
+        //   picking list → user confirms picked → worksheet created automatically.
       } catch (_) {
         // Non-fatal — skip this order and continue
       }
@@ -1406,4 +1372,32 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE worksheet_items ADD COLUMN IF NOT EXISTS supplier_code text;
   `);
+
+  // ── Clean up phantom pre_wip worksheets created by the old backfill ────────
+  // The backfill (now removed) used to auto-create worksheets for any confirmed
+  // order with allocated items — bypassing the picking flow. These phantom
+  // worksheets are identifiable because their order items are still
+  // stock_status='allocated' (the real picking flow sets them to 'in_production'
+  // before creating the worksheet). Delete them so the items correctly appear in
+  // the Picking List instead of being stranded in Pre-Production.
+  {
+    const phantomRows = await db.execute(sql`
+      SELECT DISTINCT w.id
+      FROM worksheets w
+      WHERE w.status = 'pre_wip'
+        AND EXISTS (SELECT 1 FROM worksheet_items wi WHERE wi.worksheet_id = w.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM worksheet_items wi
+          JOIN order_items oi ON oi.id = wi.order_item_id
+          WHERE wi.worksheet_id = w.id
+            AND oi.stock_status = 'in_production'
+        )
+    `);
+    const phantomIds = (phantomRows.rows as any[]).map((r) => r.id as number);
+    if (phantomIds.length > 0) {
+      await db.execute(sql`DELETE FROM worksheet_items WHERE worksheet_id = ANY(${phantomIds}::int[])`);
+      await db.execute(sql`DELETE FROM worksheets WHERE id = ANY(${phantomIds}::int[])`);
+      console.log(`[startup] Removed ${phantomIds.length} phantom pre-production worksheet(s) — items returned to picking list`);
+    }
+  }
 }
