@@ -20,7 +20,7 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { sortBySizeWithOrder } from "@/lib/sizeUtils";
+import { sortBySizeWithOrder, sortSizes } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -62,15 +62,15 @@ function getSizesForGroup(
   sizesMap: Record<string, Record<string, string[]>>
 ): string[] {
   const productId = group.items[0]?.product_id;
-  if (!productId) return [...new Set(group.items.map(i => i.size ?? "—"))];
+  if (!productId) return sortSizes([...new Set(group.items.map(i => i.size ?? "—"))]);
   const byProduct = sizesMap[String(productId)];
   // No catalogue data — fall back to stored sizes
-  if (!byProduct) return [...new Set(group.items.map(i => i.size ?? "—"))];
+  if (!byProduct) return sortSizes([...new Set(group.items.map(i => i.size ?? "—"))]);
   // Same logic as wardrobe: return all sizes across all colour variants, colour doesn't restrict ordering
   const all = [...new Set(Object.values(byProduct).flat())];
-  if (all.length) return all;
+  if (all.length) return sortSizes(all);
   // Last resort: use the sizes actually stored (deduplicated)
-  return [...new Set(group.items.map(i => i.size ?? "—"))];
+  return sortSizes([...new Set(group.items.map(i => i.size ?? "—"))]);
 }
 
 function resolveStockPrice(item: StockItem, processes: StockProcess[]): number {
