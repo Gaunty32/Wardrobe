@@ -31,34 +31,64 @@ async function generateWorksheetNumber(): Promise<string> {
 
 // ── Picking list: items allocated from stock, ready to be picked ──────────────
 router.get("/picking-list", async (req, res): Promise<void> => {
-  const rows = await db
-    .select({
-      itemId: orderItemsTable.id,
-      orderId: ordersTable.id,
-      orderNumber: ordersTable.orderNumber,
-      customerName: ordersTable.customerName,
-      customerId: ordersTable.customerId,
-      requiredDate: ordersTable.requiredDate,
-      productName: orderItemsTable.productName,
-      productId: orderItemsTable.productId,
-      productSku: productsTable.sku,
-      supplierCode: productsTable.supplierCode,
-      supplierName: orderItemsTable.supplierName,
-      colour: orderItemsTable.colour,
-      size: orderItemsTable.size,
-      quantity: orderItemsTable.quantity,
-      recipientType: orderItemsTable.recipientType,
-      recipientName: orderItemsTable.recipientName,
-      finishId: orderItemsTable.finishId,
-      finishName: orderItemsTable.finishName,
-      stockStatus: orderItemsTable.stockStatus,
-      stockAllocatedAt: orderItemsTable.stockAllocatedAt,
-    })
-    .from(orderItemsTable)
-    .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(eq(orderItemsTable.stockStatus, "allocated"))
-    .orderBy(ordersTable.requiredDate, ordersTable.id);
+  // Defensive filter: exclude items still linked to an outstanding PO
+  // (quantity_delivered < quantity_ordered on any non-cancelled PO line).
+  // These items may have been marked 'allocated' by a migration or edge-case
+  // but the physical stock hasn't arrived yet.
+  const rawRows = await db.execute(sql`
+    SELECT
+      oi.id          AS "itemId",
+      o.id           AS "orderId",
+      o.order_number AS "orderNumber",
+      o.customer_name AS "customerName",
+      o.customer_id  AS "customerId",
+      o.required_date AS "requiredDate",
+      oi.product_name AS "productName",
+      oi.product_id  AS "productId",
+      p.sku          AS "productSku",
+      p.supplier_code AS "supplierCode",
+      oi.supplier_name AS "supplierName",
+      oi.colour,
+      oi.size,
+      oi.quantity,
+      oi.recipient_type AS "recipientType",
+      oi.recipient_name AS "recipientName",
+      oi.finish_id   AS "finishId",
+      oi.finish_name AS "finishName",
+      oi.stock_status AS "stockStatus",
+      oi.stock_allocated_at AS "stockAllocatedAt"
+    FROM order_items oi
+    INNER JOIN orders o ON o.id = oi.order_id
+    LEFT  JOIN products p ON p.id = oi.product_id
+    WHERE oi.stock_status = 'allocated'
+      AND NOT EXISTS (
+        -- Exclude items still waiting for PO delivery (direct link)
+        SELECT 1 FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON po.id = poi.po_id
+        WHERE po.status NOT IN ('cancelled', 'delivered')
+          AND poi.quantity_delivered < poi.quantity_ordered
+          AND poi.order_item_id = oi.id
+      )
+      AND NOT EXISTS (
+        -- Exclude items still waiting for PO delivery (consolidated source link)
+        SELECT 1 FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON po.id = poi.po_id
+        WHERE po.status NOT IN ('cancelled', 'delivered')
+          AND poi.quantity_delivered < poi.quantity_ordered
+          AND COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+      )
+    ORDER BY o.required_date NULLS LAST, o.id
+  `);
+
+  const rows = rawRows.rows as Array<{
+    itemId: number; orderId: number; orderNumber: string; customerName: string | null;
+    customerId: number | null; requiredDate: Date | null; productName: string;
+    productId: number | null; productSku: string | null; supplierCode: string | null;
+    supplierName: string | null; colour: string | null; size: string | null;
+    quantity: number; recipientType: string | null; recipientName: string | null;
+    finishId: number | null; finishName: string | null;
+    stockStatus: string | null; stockAllocatedAt: Date | null;
+  }>;
 
   const orderMap = new Map<number, {
     orderId: number; orderNumber: string; customerName: string | null;

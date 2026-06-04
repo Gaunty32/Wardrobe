@@ -1315,6 +1315,46 @@ export async function runStartupMigrations(): Promise<void> {
   `);
   console.log("[startup] Re-queued allocated-but-outstanding PO items for purchasing");
 
+  // Broader re-queue pass: catch any allocated item still linked to an
+  // outstanding PO regardless of product stock_quantity (the earlier pass above
+  // only fires when stock_quantity is already low; this catches cases where the
+  // stock figure looks OK but the PO hasn't been delivered yet).
+  {
+    const { rowCount: broaderCount } = await db.execute(sql`
+      UPDATE order_items oi
+      SET purchase_required  = true,
+          purchase_quantity  = oi.quantity,
+          stock_status       = NULL,
+          stock_allocated_at = NULL
+      FROM orders o
+      WHERE oi.order_id = o.id
+        AND oi.stock_status = 'allocated'
+        AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+        AND NOT EXISTS (
+          SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
+        )
+        AND (
+          EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            JOIN purchase_orders po2 ON po2.id = poi.po_id
+            WHERE po2.status NOT IN ('cancelled', 'delivered')
+              AND poi.quantity_delivered < poi.quantity_ordered
+              AND poi.order_item_id = oi.id
+          )
+          OR EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            JOIN purchase_orders po2 ON po2.id = poi.po_id
+            WHERE po2.status NOT IN ('cancelled', 'delivered')
+              AND poi.quantity_delivered < poi.quantity_ordered
+              AND COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+          )
+        )
+    `);
+    if ((broaderCount ?? 0) > 0) {
+      console.log(`[startup] Re-queued ${broaderCount} allocated item(s) still on outstanding POs`);
+    }
+  }
+
   // PO Number Required flag on customers — blocks invoice send until PO is set
   await db.execute(sql`
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS po_number_required boolean NOT NULL DEFAULT false;
