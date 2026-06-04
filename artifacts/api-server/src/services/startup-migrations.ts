@@ -1225,6 +1225,19 @@ export async function runStartupMigrations(): Promise<void> {
     `);
   }
 
+  // Reset min_stock_qty default from 5 → 0 (no minimum by default)
+  const minStockDefaultFlag = await db.execute(sql`
+    SELECT 1 FROM _migration_flags WHERE name = 'reset_min_stock_qty_default_to_zero'
+  `);
+  if (minStockDefaultFlag.rows.length === 0) {
+    await db.execute(sql`
+      UPDATE product_variants SET min_stock_qty = 0 WHERE min_stock_qty = 5;
+      ALTER TABLE product_variants ALTER COLUMN min_stock_qty SET DEFAULT 0;
+      INSERT INTO _migration_flags (name) VALUES ('reset_min_stock_qty_default_to_zero');
+    `);
+    console.log("[startup] Reset min_stock_qty default to 0 and cleared all variant minimums seeded by old default of 5");
+  }
+
   // Bulk stock orders can optionally be added to the customer's Stores on confirmation
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS add_to_stores boolean NOT NULL DEFAULT false;
