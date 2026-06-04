@@ -2799,7 +2799,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     /* ── Wearer label inner layout ── */
     .wearer-label{display:flex;flex-direction:column;padding:0.12in 0.18in 0.1in}
     .wearer-name-row{border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px;width:100%}
-    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:nowrap;overflow:hidden;display:block;width:100%}
+    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:normal;word-break:break-word;display:block;width:100%}
     .label-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
     .sbs-logo{height:0.42in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
     .job-title{font-size:8pt;color:#333}
@@ -2999,7 +2999,7 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
     .label{width:4in;min-height:3in;background:white;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
     .wearer-label{display:flex;flex-direction:column;padding:0.12in 0.18in 0.1in}
     .wearer-name-row{border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px;width:100%}
-    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:nowrap;overflow:hidden;display:block;width:100%}
+    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:normal;word-break:break-word;display:block;width:100%}
     .label-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
     .sbs-logo{height:0.42in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
     .job-title{font-size:8pt;color:#333}
