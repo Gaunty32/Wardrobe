@@ -2757,14 +2757,19 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
         </div>`
       : "";
     labels.push(`<div class="label wearer-label">
-      <div class="label-top">
+      <div class="wearer-name-row">
         <div class="wearer-name" data-autofit>${name}</div>
-        ${logoHtml}
       </div>
-      ${wearer.jobTitle ? `<div class="job-title">${wearer.jobTitle}</div>` : ""}
+      <div class="label-sub-row">
+        ${logoHtml}
+        ${wearer.jobTitle ? `<span class="job-title">${wearer.jobTitle}</span>` : ""}
+      </div>
       ${renderItemTable(wearer.items)}
       ${followSection}
-      <div class="company-name">${order.customerName ?? ""}</div>
+      <div class="label-footer">
+        <span class="footer-customer">${order.customerName ?? ""}</span>
+        <span class="footer-order">${order.orderNumber}</span>
+      </div>
     </div>`);
   }
 
@@ -2792,16 +2797,17 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     .label{width:4in;height:3in;background:white;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
 
     /* ── Wearer label inner layout ── */
-    .wearer-label{display:flex;flex-direction:column;padding:0.14in 0.18in 0.12in}
-    .label-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;border-bottom:1.5px solid #000;padding-bottom:4px}
-    .wearer-name{font-size:22pt;font-weight:900;color:#000;flex:1;line-height:1.1;white-space:nowrap;overflow:hidden}
-    .follow-section{margin-top:4px}
-    .follow-heading{font-size:6.5pt;font-weight:700;color:#000;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;border-top:1px dashed #000;padding-top:3px}
-    .sbs-logo{height:0.45in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
-    .job-title{font-size:8pt;color:#333;margin-bottom:4px}
+    .wearer-label{display:flex;flex-direction:column;padding:0.12in 0.18in 0.1in}
+    .wearer-name-row{border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px;width:100%}
+    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:nowrap;overflow:hidden;display:block;width:100%}
+    .label-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+    .sbs-logo{height:0.42in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
+    .job-title{font-size:8pt;color:#333}
+    .follow-section{margin-top:3px}
+    .follow-heading{font-size:6pt;font-weight:700;color:#000;text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px;border-top:1px dashed #000;padding-top:3px}
 
     /* ── Items table ── */
-    .items-table{width:100%;border-collapse:collapse;margin-top:4px}
+    .items-table{width:100%;border-collapse:collapse}
     .items-table thead tr{border-bottom:1.5px solid #000}
     .items-table th{color:#000;font-size:6pt;text-transform:uppercase;letter-spacing:.04em;padding:2px 4px;text-align:left;font-weight:700}
     .items-table td{padding:2px 4px;border-bottom:0.5px solid #ccc;font-size:8pt;vertical-align:middle;color:#000}
@@ -2809,8 +2815,10 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     .col-qty{width:9%;text-align:center;font-weight:700}
     .finish-sub{font-size:6pt;color:#000;font-style:italic}
 
-    /* ── Company name (bottom) ── */
-    .company-name{font-size:9pt;font-weight:600;color:#000;text-align:center;margin-top:auto;padding-top:4px;border-top:0.5px solid #ccc;letter-spacing:.03em}
+    /* ── Label footer (customer + order number) ── */
+    .label-footer{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:4px;border-top:1px solid #ccc}
+    .footer-customer{font-size:8pt;font-weight:700;color:#000;letter-spacing:.02em}
+    .footer-order{font-size:8pt;font-weight:600;color:#555;font-family:monospace}
 
     /* ── Delivery label ── */
     .delivery-label{display:flex;flex-direction:column;padding:0}
@@ -2831,7 +2839,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
       #toolbar{display:none}
       body{background:white}
       #page{padding:0;gap:0;margin:0}
-      .label{width:100%;height:3in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
+      .label{width:100%;min-height:3in;height:auto;border:none;border-radius:0;box-shadow:none;page-break-after:always;overflow:visible}
     }
   </style>
 </head>
@@ -2839,7 +2847,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   <div id="toolbar">
     <div id="toolbar-text">
       <div id="toolbar-title">🏷️ ${totalCount} Label${totalCount !== 1 ? "s" : ""} · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")}</div>
-      <div id="toolbar-sub">⚠️ Please select your LABEL PRINTER in the print dialog &nbsp;·&nbsp; 4 × 3 inch label format (GC420d)</div>
+      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: None (GC420d)</div>
     </div>
     <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
     <button id="btn-dl" onclick="downloadPdf()">💾 Download PDF</button>
@@ -2849,9 +2857,9 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   <script>
     document.getElementById('btn-print').focus();
     document.querySelectorAll('.wearer-name[data-autofit]').forEach(function(el) {
-      var fs = 28;
+      var fs = 32;
       el.style.fontSize = fs + 'pt';
-      while (el.scrollWidth > el.clientWidth && fs > 9) {
+      while (el.scrollWidth > el.parentElement.clientWidth && fs > 9) {
         fs -= 0.5;
         el.style.fontSize = fs + 'pt';
       }
@@ -2947,13 +2955,18 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
 
     for (const [, wearer] of wearerMap) {
       allLabels.push(`<div class="label wearer-label">
-      <div class="label-top">
+      <div class="wearer-name-row">
         <div class="wearer-name" data-autofit>${wearer.name}</div>
-        ${WEARER_LOGO_HTML}
       </div>
-      ${wearer.jobTitle ? `<div class="job-title">${wearer.jobTitle}</div>` : ""}
+      <div class="label-sub-row">
+        ${WEARER_LOGO_HTML}
+        ${wearer.jobTitle ? `<span class="job-title">${wearer.jobTitle}</span>` : ""}
+      </div>
       ${renderWearerItemTable(wearer.items as any)}
-      <div class="company-name">${order.customerName ?? ""} · ${order.orderNumber}</div>
+      <div class="label-footer">
+        <span class="footer-customer">${order.customerName ?? ""}</span>
+        <span class="footer-order">${order.orderNumber}</span>
+      </div>
     </div>`);
     }
   }
@@ -2983,27 +2996,30 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
     #btn-print{background:#22c55e;color:white}
     #btn-close{background:rgba(255,255,255,.15);color:white;margin-left:4px}
     #page{padding:20px;display:flex;flex-direction:column;gap:16px;align-items:center}
-    .label{width:4in;height:3in;background:white;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
-    .wearer-label{display:flex;flex-direction:column;padding:0.14in 0.18in 0.12in}
-    .label-top{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:3px;border-bottom:1.5px solid #000;padding-bottom:4px}
-    .wearer-name{font-size:22pt;font-weight:900;color:#000;flex:1;line-height:1.1;white-space:nowrap;overflow:hidden}
-    .sbs-logo{height:0.45in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
-    .job-title{font-size:8pt;color:#333;margin-bottom:4px}
-    .items-table{width:100%;border-collapse:collapse;margin-top:4px}
+    .label{width:4in;min-height:3in;background:white;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.15);overflow:hidden}
+    .wearer-label{display:flex;flex-direction:column;padding:0.12in 0.18in 0.1in}
+    .wearer-name-row{border-bottom:2px solid #000;padding-bottom:3px;margin-bottom:4px;width:100%}
+    .wearer-name{font-size:28pt;font-weight:900;color:#000;line-height:1.05;white-space:nowrap;overflow:hidden;display:block;width:100%}
+    .label-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+    .sbs-logo{height:0.42in;width:auto;flex-shrink:0;filter:grayscale(100%) contrast(200%)}
+    .job-title{font-size:8pt;color:#333}
+    .items-table{width:100%;border-collapse:collapse}
     .items-table thead tr{border-bottom:1.5px solid #000}
     .items-table th{color:#000;font-size:6pt;text-transform:uppercase;letter-spacing:.04em;padding:2px 4px;text-align:left;font-weight:700}
     .items-table td{padding:2px 4px;border-bottom:0.5px solid #ccc;font-size:8pt;vertical-align:middle;color:#000}
     .col-product{width:42%}.col-code{width:13%}.col-colour{width:19%}.col-size{width:13%}
     .col-qty{width:9%;text-align:center;font-weight:700}
     .finish-sub{font-size:6pt;color:#000;font-style:italic}
-    .company-name{font-size:8pt;font-weight:600;color:#000;text-align:center;margin-top:auto;padding-top:4px;border-top:0.5px solid #ccc;letter-spacing:.03em}
+    .label-footer{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:4px;border-top:1px solid #ccc}
+    .footer-customer{font-size:8pt;font-weight:700;color:#000;letter-spacing:.02em}
+    .footer-order{font-size:8pt;font-weight:600;color:#555;font-family:monospace}
     @media print{
       @page{size:4in 3in;margin:0mm}
       html,body{margin:0!important;padding:0!important}
       #toolbar{display:none}
       body{background:white}
       #page{padding:0;gap:0;margin:0}
-      .label{width:100%;height:3in;border:none;border-radius:0;box-shadow:none;page-break-after:always}
+      .label{width:100%;min-height:3in;height:auto;border:none;border-radius:0;box-shadow:none;page-break-after:always;overflow:visible}
     }
   </style>
 </head>
@@ -3011,7 +3027,7 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
   <div id="toolbar">
     <div id="toolbar-text">
       <div id="toolbar-title">🏷️ ${totalCount} Label${totalCount !== 1 ? "s" : ""} · ${titleText}</div>
-      <div id="toolbar-sub">${summaryText} &nbsp;·&nbsp; 4 × 3 inch (GC420d)</div>
+      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: None &nbsp;·&nbsp; ${summaryText}</div>
     </div>
     <button id="btn-print" onclick="window.print()">🖨 Print All Labels</button>
     <button id="btn-close" onclick="window.close()">✕ Close</button>
@@ -3020,9 +3036,9 @@ h1{color:#1e3a5f;font-size:1.2rem}p{color:#555}button{margin-top:1rem;background
   <script>
     document.getElementById('btn-print').focus();
     document.querySelectorAll('.wearer-name[data-autofit]').forEach(function(el) {
-      var fs = 22;
+      var fs = 32;
       el.style.fontSize = fs + 'pt';
-      while (el.scrollWidth > el.clientWidth && fs > 9) { fs -= 0.5; el.style.fontSize = fs + 'pt'; }
+      while (el.scrollWidth > el.parentElement.clientWidth && fs > 9) { fs -= 0.5; el.style.fontSize = fs + 'pt'; }
     });
   </script>
 </body>
