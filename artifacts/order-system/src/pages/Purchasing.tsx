@@ -46,6 +46,7 @@ interface PurchaseRequirement {
   supplierCode: string | null; secondarySupplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
   supplierPrice: number | null;
   orderCreatedAt: string | null;
+  queuedAt: string | null;
 }
 interface SupplierGroup {
   supplierId: number | null; supplierName: string; supplierEmail: string | null; supplierCurrency: string; items: PurchaseRequirement[];
@@ -1995,7 +1996,7 @@ export default function Purchasing() {
         if (item.supplierPrice != null && item.purchaseQuantity != null) {
           tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * item.purchaseQuantity;
         }
-        tile.earliestCreatedAt = pickEarlier(tile.earliestCreatedAt, item.orderCreatedAt);
+        tile.earliestCreatedAt = pickEarlier(tile.earliestCreatedAt, item.queuedAt ?? item.orderCreatedAt);
       }
     }
     for (const g of processReqsBySupplier) {

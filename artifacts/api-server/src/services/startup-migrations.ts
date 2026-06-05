@@ -8,6 +8,11 @@ import { db } from "@workspace/db";
  * without requiring a manual migration step during deployment.
  */
 export async function runStartupMigrations(): Promise<void> {
+  // purchasing_queued_at — must be added before any re-queue updates reference it
+  await db.execute(sql`
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS purchasing_queued_at timestamptz
+  `);
+
   // Add columns introduced in the product-variants schema update
   await db.execute(sql`
     ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS woo_variation_id integer;
@@ -467,7 +472,8 @@ export async function runStartupMigrations(): Promise<void> {
           if (shortfall > 0) {
             await db.execute(sql`
               UPDATE order_items SET purchase_required = true, purchase_quantity = ${shortfall},
-                supplier_id = ${stock.supplierId}, supplier_name = ${stock.supplierName}
+                supplier_id = ${stock.supplierId}, supplier_name = ${stock.supplierName},
+                purchasing_queued_at = COALESCE(purchasing_queued_at, now())
               WHERE id = ${item.id}
             `);
           } else {
@@ -671,7 +677,8 @@ export async function runStartupMigrations(): Promise<void> {
   const { rowCount } = await db.execute(sql`
     UPDATE order_items oi
     SET purchase_required = true,
-        purchase_quantity  = oi.quantity
+        purchase_quantity  = oi.quantity,
+        purchasing_queued_at = COALESCE(oi.purchasing_queued_at, now())
     FROM orders o
     WHERE oi.order_id  = o.id
       AND o.status NOT IN ('cancelled', 'archived', 'draft')
@@ -1272,7 +1279,8 @@ export async function runStartupMigrations(): Promise<void> {
     SET purchase_required  = true,
         purchase_quantity  = quantity,
         stock_status       = NULL,
-        stock_allocated_at = NULL
+        stock_allocated_at = NULL,
+        purchasing_queued_at = COALESCE(purchasing_queued_at, now())
     FROM orders o
     WHERE order_items.order_id = o.id
       AND order_items.purchase_required = false
@@ -1309,7 +1317,8 @@ export async function runStartupMigrations(): Promise<void> {
     SET purchase_required  = true,
         purchase_quantity  = oi.quantity,
         stock_status       = NULL,
-        stock_allocated_at = NULL
+        stock_allocated_at = NULL,
+        purchasing_queued_at = COALESCE(oi.purchasing_queued_at, now())
     FROM orders o
     WHERE oi.order_id = o.id
       AND oi.stock_status = 'allocated'
@@ -1338,7 +1347,8 @@ export async function runStartupMigrations(): Promise<void> {
       SET purchase_required  = true,
           purchase_quantity  = oi.quantity,
           stock_status       = NULL,
-          stock_allocated_at = NULL
+          stock_allocated_at = NULL,
+          purchasing_queued_at = COALESCE(oi.purchasing_queued_at, now())
       FROM orders o
       WHERE oi.order_id = o.id
         AND oi.stock_status = 'allocated'
@@ -1367,6 +1377,20 @@ export async function runStartupMigrations(): Promise<void> {
       console.log(`[startup] Re-queued ${broaderCount} allocated item(s) still on outstanding POs`);
     }
   }
+
+  // Track when an order item first enters the purchasing queue
+  await db.execute(sql`
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS purchasing_queued_at timestamptz
+  `);
+  // Backfill existing items: use the parent order's created_at as best available proxy
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET purchasing_queued_at = o.created_at
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.purchase_required = true
+      AND oi.purchasing_queued_at IS NULL
+  `);
 
   // PO Number Required flag on customers — blocks invoice send until PO is set
   await db.execute(sql`

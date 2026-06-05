@@ -335,6 +335,7 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       supplierPrice: sql<string | null>`COALESCE(${variantSupplierPriceSql}, ${productsTable.supplierPrice})`,
       supplierCurrency: sql<string | null>`COALESCE(${variantSupplierCurrencySql}, ${itemSupplier.currency}, ${productSupplier.currency})`,
       orderCreatedAt: ordersTable.createdAt,
+      queuedAt: orderItemsTable.purchasingQueuedAt,
     })
     .from(orderItemsTable)
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))

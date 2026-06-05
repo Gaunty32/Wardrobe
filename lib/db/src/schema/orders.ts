@@ -77,6 +77,8 @@ export const orderItemsTable = pgTable("order_items", {
   vatRate: numeric("vat_rate", { precision: 5, scale: 4 }).notNull().default("0.2000"),
   /** Free-text notes on this item, e.g. extra logo positions imported from WooCommerce */
   notes: text("notes"),
+  /** Timestamp when this item first entered the purchasing queue (purchase_required set to true) */
+  purchasingQueuedAt: timestamp("purchasing_queued_at", { withTimezone: true }),
 });
 
 export const purchaseOrdersTable = pgTable("purchase_orders", {
