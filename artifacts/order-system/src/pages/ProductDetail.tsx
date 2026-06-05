@@ -1690,7 +1690,7 @@ export default function ProductDetail() {
                       {([
                         { label: "Value for Money", field: "valueRating", value: guidance.valueRating },
                         { label: "Durability",       field: "durabilityRating", value: guidance.durabilityRating },
-                        { label: "Smarts / Tech",    field: "smartRating", value: guidance.smartRating },
+                        { label: "Technical Features", field: "smartRating", value: guidance.smartRating },
                       ] as { label: string; field: string; value: number | null }[]).map(({ label, field, value }) => (
                         <div key={field} className="grid gap-2">
                           <Label>{label}</Label>
