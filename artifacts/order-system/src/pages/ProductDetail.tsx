@@ -1661,7 +1661,7 @@ export default function ProductDetail() {
                   <div className="grid gap-2">
                     <Label>Badge</Label>
                     <div className="flex flex-wrap gap-2">
-                      {([null, "Most Popular", "Best Value", "Premium Choice", "Staff Pick"] as (string | null)[]).map((b) => (
+                      {([null, "Most Popular", "Best Value", "Premium Choice", "Staff Pick", "Bulk Buy Discount"] as (string | null)[]).map((b) => (
                         <button
                           key={b ?? "none"}
                           type="button"
