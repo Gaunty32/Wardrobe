@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
@@ -1201,81 +1201,354 @@ function ManagerCombobox({ employees, value, onChange }: {
 
 // ─── Teams Tab ────────────────────────────────────────────────────────────────
 
+const TEAM_CHIP_COLORS = [
+  "bg-blue-100 text-blue-700 ring-blue-200",
+  "bg-violet-100 text-violet-700 ring-violet-200",
+  "bg-emerald-100 text-emerald-700 ring-emerald-200",
+  "bg-orange-100 text-orange-700 ring-orange-200",
+  "bg-rose-100 text-rose-700 ring-rose-200",
+  "bg-teal-100 text-teal-700 ring-teal-200",
+  "bg-indigo-100 text-indigo-700 ring-indigo-200",
+  "bg-amber-100 text-amber-700 ring-amber-200",
+  "bg-cyan-100 text-cyan-700 ring-cyan-200",
+  "bg-fuchsia-100 text-fuchsia-700 ring-fuchsia-200",
+];
+const teamChipColor = (id: number) => TEAM_CHIP_COLORS[Math.abs(id) % TEAM_CHIP_COLORS.length];
+
+function TeamExplosion({ x, y, onDone }: { x: number; y: number; onDone: () => void }) {
+  const particles = useMemo(() =>
+    Array.from({ length: 16 }, (_, i) => ({
+      angle: (i / 16) * Math.PI * 2,
+      dist: 40 + Math.random() * 60,
+      color: ["#ef4444","#f97316","#eab308","#22c55e","#3b82f6","#8b5cf6"][i % 6],
+      size: 5 + Math.random() * 6,
+    })), []);
+  useEffect(() => { const t = setTimeout(onDone, 700); return () => clearTimeout(t); }, [onDone]);
+  return (
+    <div className="fixed inset-0 pointer-events-none z-[9999]">
+      {particles.map((p, i) => (
+        <div key={i} className="absolute rounded-full animate-ping"
+          style={{
+            left: x, top: y, width: p.size, height: p.size,
+            background: p.color, opacity: 0,
+            transform: `translate(${Math.cos(p.angle) * p.dist}px, ${Math.sin(p.angle) * p.dist}px)`,
+            animation: `team-explode 600ms ease-out ${i * 20}ms forwards`,
+          }}
+        />
+      ))}
+      <style>{`@keyframes team-explode { 0%{opacity:1;transform:translate(0,0) scale(1)} 100%{opacity:0;transform:translate(${Math.cos(Math.PI / 4) * 80}px,${Math.sin(Math.PI / 4) * 80}px) scale(0)} }`}</style>
+    </div>
+  );
+}
+
+function TeamMemberChip({ emp, onDragStart, onDragEnd, isDragging }: {
+  emp: any;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  isDragging: boolean;
+}) {
+  const col = teamChipColor(emp.id);
+  return (
+    <div
+      draggable
+      onDragStart={(e) => { onDragStart(); e.dataTransfer.effectAllowed = "move"; }}
+      onDragEnd={onDragEnd}
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-2.5 py-2 bg-background select-none transition-all",
+        isDragging ? "opacity-30 border-dashed scale-95" : "hover:border-primary/40 hover:shadow-sm cursor-grab active:cursor-grabbing"
+      )}
+    >
+      <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ring-1", col)}>
+        {(emp.firstName?.[0] ?? "")}{(emp.lastName?.[0] ?? "")}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-xs leading-tight truncate">
+          {[emp.firstName, emp.lastName].filter(Boolean).join(" ")}
+        </p>
+        <p className="text-[10px] text-muted-foreground truncate">
+          {[emp.employeeNumber && `#${emp.employeeNumber}`, emp.roleName].filter(Boolean).join(" · ")}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function TeamsTab({ customerId }: { customerId: number }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: teams, isLoading } = useSubResource<any>(customerId, "teams");
-  const { data: employees } = useSubResource<any>(customerId, "employees");
-  const activeEmployees: any[] = (employees ?? []).filter((e: any) => e.isActive !== false);
+
+  const { data: teams = [], isLoading: teamsLoading } = useSubResource<any>(customerId, "teams");
+  const { data: employees = [], isLoading: empsLoading } = useQuery<any[]>({
+    queryKey: ["customer", customerId, "employees", false],
+    queryFn: () => apiFetch(`/customers/${customerId}/employees`),
+    enabled: !!customerId,
+  });
+
+  const activeEmployees = useMemo(() => (employees as any[]).filter((e: any) => e.isActive !== false), [employees]);
+
+  // Group by teamId; null = unassigned
+  const groups = useMemo(() => {
+    const m = new Map<number | null, any[]>();
+    for (const e of activeEmployees) {
+      const key = e.teamId != null ? Number(e.teamId) : null;
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(e);
+    }
+    return m;
+  }, [activeEmployees]);
+
+  const unassigned = groups.get(null) ?? [];
+
+  // Drag state
+  const [dragEmpId, setDragEmpId] = useState<number | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<number | null | undefined>(undefined);
+  const [dragOverBin, setDragOverBin] = useState(false);
+  const [explosionPos, setExplosionPos] = useState<{ x: number; y: number } | null>(null);
+
+  const invEmps = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["customer", customerId, "employees"] });
+  }, [qc, customerId]);
+
+  const reassign = useMutation({
+    mutationFn: ({ id, teamId }: { id: number; teamId: number | null }) =>
+      apiFetch(`/customers/${customerId}/employees/${id}`, { method: "PATCH", body: JSON.stringify({ teamId }) }),
+    onSuccess: () => { invEmps(); toast({ title: "Employee reassigned" }); },
+    onError: () => toast({ title: "Failed to reassign", variant: "destructive" }),
+  });
+
+  const deactivate = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/customers/${customerId}/employees/${id}`, { method: "PATCH", body: JSON.stringify({ isActive: false }) }),
+    onSuccess: () => { invEmps(); toast({ title: "Employee deactivated" }); },
+    onError: () => toast({ title: "Failed to deactivate", variant: "destructive" }),
+  });
+
+  const handleDrop = (newTeamId: number | null) => {
+    if (dragEmpId == null) return;
+    const emp = activeEmployees.find((e: any) => e.id === dragEmpId);
+    if (!emp) return;
+    const currentTeamId = emp.teamId != null ? Number(emp.teamId) : null;
+    if (currentTeamId === newTeamId) { setDragEmpId(null); setDragOverKey(undefined); return; }
+    reassign.mutate({ id: dragEmpId, teamId: newTeamId });
+    setDragEmpId(null);
+    setDragOverKey(undefined);
+  };
+
+  const handleBinDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    if (dragEmpId == null) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const empId = dragEmpId;
+    setDragEmpId(null);
+    setDragOverKey(undefined);
+    setDragOverBin(false);
+    setExplosionPos({ x, y });
+    deactivate.mutate(empId);
+  }, [dragEmpId, deactivate]);
+
+  // Team CRUD
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const blank = { name: "", description: "", managerId: null as number | null };
   const [form, setForm] = useState(blank);
 
-  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "teams"] });
+  const invTeams = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "teams"] });
 
   const save = useMutation({
     mutationFn: (data: any) => editing
       ? apiFetch(`/customers/${customerId}/teams/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
       : apiFetch(`/customers/${customerId}/teams`, { method: "POST", body: JSON.stringify(data) }),
-    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onSuccess: () => { invTeams(); invEmps(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
     onError: () => toast({ title: "Error", description: "Could not save team", variant: "destructive" }),
   });
 
   const del = useMutation({
     mutationFn: (id: number) => apiFetch(`/customers/${customerId}/teams/${id}`, { method: "DELETE" }),
-    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+    onSuccess: () => { invTeams(); invEmps(); toast({ title: "Deleted" }); },
   });
 
   const openAdd = () => { setForm(blank); setEditing(null); setOpen(true); };
-  const openEdit = (t: any) => { setForm({ name: t.name || "", description: t.description || "", managerId: t.managerId ?? null }); setEditing(t); setOpen(true); };
+  const openEdit = (t: any) => {
+    setForm({ name: t.name || "", description: t.description || "", managerId: t.managerId ?? null });
+    setEditing(t);
+    setOpen(true);
+  };
+
+  const teamsList: any[] = teams as any[];
+  const isDropTarget = (key: number | null) => dragEmpId != null && dragOverKey === key;
+
+  const isDragging = dragEmpId != null;
+
+  if (teamsLoading || empsLoading) {
+    return <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
+  }
 
   return (
     <>
       <div className="flex justify-between items-center mb-4">
-        <p className="text-sm text-muted-foreground">Teams group employees — each team can have a designated manager.</p>
+        <p className="text-sm text-muted-foreground">
+          {isDragging
+            ? "Drop onto a team tile to reassign, or the bin to deactivate →"
+            : "Drag employees between team tiles to reassign them."}
+        </p>
         <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Team</Button>
       </div>
 
-      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-        : !teams?.length ? <EmptyState icon={Users} label="teams" onAdd={openAdd} />
-        : <SubTable>
-          <TableHeader><TableRow className="hover:bg-transparent">
-            <TableHead>Team Name</TableHead>
-            <TableHead className="hidden sm:table-cell">Team Manager</TableHead>
-            <TableHead className="hidden md:table-cell">Description</TableHead>
-            <TableHead className="w-20 text-right">Actions</TableHead>
-          </TableRow></TableHeader>
-          <TableBody>
-            {teams.map((t: any) => (
-              <TableRow key={t.id} className="group hover:bg-muted/30">
-                <TableCell className="font-medium">{t.name}</TableCell>
-                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                  {t.managerName ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <UserCheck className="w-3.5 h-3.5 text-indigo-500" />{t.managerName}
-                    </span>
-                  ) : <span className="text-muted-foreground/50">—</span>}
-                </TableCell>
-                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{t.description || '—'}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(t)}><Edit2 className="w-3 h-3" /></Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this team?") && del.mutate(t.id)}><Trash2 className="w-3 h-3" /></Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </SubTable>}
+      <div className="flex gap-4 items-start">
+        {/* Tile grid */}
+        <div className="flex-1 min-w-0">
+          {teamsList.length === 0 ? (
+            <EmptyState icon={Users} label="teams" onAdd={openAdd} />
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {/* Named team tiles */}
+              {teamsList.map((team: any) => {
+                const members = groups.get(Number(team.id)) ?? [];
+                const dropTarget = isDropTarget(Number(team.id));
+                const col = teamChipColor(team.id);
 
+                return (
+                  <div
+                    key={team.id}
+                    className={cn(
+                      "flex flex-col rounded-2xl border bg-card overflow-hidden transition-all duration-150",
+                      dropTarget ? "border-primary ring-2 ring-primary/30 shadow-xl" : "shadow-sm hover:shadow-md"
+                    )}
+                    onDragOver={(e) => { if (isDragging) { e.preventDefault(); setDragOverKey(Number(team.id)); } }}
+                    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
+                    onDrop={(e) => { e.preventDefault(); handleDrop(Number(team.id)); }}
+                  >
+                    {/* Tile header */}
+                    <div className="p-5 flex flex-col items-center text-center border-b bg-gradient-to-b from-muted/40 to-transparent">
+                      <div className={cn("w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold mb-3 ring-4 ring-white shadow-md", col)}>
+                        {team.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <p className="font-bold text-sm leading-tight">{team.name}</p>
+                      {team.managerName && (
+                        <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                          <UserCheck className="w-3 h-3 shrink-0" />
+                          {team.managerName}
+                        </p>
+                      )}
+                      {team.description && (
+                        <p className="text-xs text-muted-foreground/60 mt-0.5 italic line-clamp-1">{team.description}</p>
+                      )}
+                      <p className="text-xs font-medium text-muted-foreground mt-1">
+                        {members.length} member{members.length !== 1 ? "s" : ""}
+                      </p>
+                      <div className="flex items-center gap-0.5 mt-2">
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={() => openEdit(team)} title="Edit team">
+                          <Edit2 className="w-3 h-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50"
+                          onClick={() => { if (confirm(`Delete team "${team.name}"?`)) del.mutate(team.id); }} title="Delete team">
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    {/* Member chips */}
+                    <div className={cn(
+                      "flex-1 p-2 space-y-1.5 min-h-[72px] max-h-56 overflow-y-auto transition-colors",
+                      dropTarget && "bg-primary/5"
+                    )}>
+                      {members.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-4 italic select-none">
+                          {isDragging ? "↓ Drop here to assign" : "No members yet"}
+                        </p>
+                      ) : members.map((emp: any) => (
+                        <TeamMemberChip
+                          key={emp.id}
+                          emp={emp}
+                          isDragging={dragEmpId === emp.id}
+                          onDragStart={() => setDragEmpId(emp.id)}
+                          onDragEnd={() => { setDragEmpId(null); setDragOverKey(undefined); setDragOverBin(false); }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Unassigned tile (only shown when there are unassigned employees) */}
+              {unassigned.length > 0 && (
+                <div
+                  className={cn(
+                    "flex flex-col rounded-2xl border bg-card overflow-hidden transition-all duration-150 shadow-sm",
+                    isDropTarget(null) ? "border-primary ring-2 ring-primary/30 shadow-xl" : "border-dashed border-border/50"
+                  )}
+                  onDragOver={(e) => { if (isDragging) { e.preventDefault(); setDragOverKey(null); } }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
+                  onDrop={(e) => { e.preventDefault(); handleDrop(null); }}
+                >
+                  <div className="p-5 flex flex-col items-center text-center border-b bg-muted/20">
+                    <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mb-3 ring-4 ring-white shadow-sm">
+                      <Users className="w-6 h-6 text-muted-foreground/60" />
+                    </div>
+                    <p className="font-bold text-sm">Unassigned</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">No team assigned</p>
+                    <p className="text-xs font-medium text-muted-foreground mt-1">
+                      {unassigned.length} member{unassigned.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <div className={cn("flex-1 p-2 space-y-1.5 min-h-[72px] max-h-56 overflow-y-auto", isDropTarget(null) && "bg-primary/5")}>
+                    {unassigned.map((emp: any) => (
+                      <TeamMemberChip
+                        key={emp.id}
+                        emp={emp}
+                        isDragging={dragEmpId === emp.id}
+                        onDragStart={() => setDragEmpId(emp.id)}
+                        onDragEnd={() => { setDragEmpId(null); setDragOverKey(undefined); setDragOverBin(false); }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Right-side bin */}
+        <div
+          className={cn(
+            "sticky top-24 w-24 shrink-0 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 px-2 py-7 text-center select-none transition-all duration-200",
+            isDragging
+              ? dragOverBin
+                ? "border-red-500 bg-red-500 text-white shadow-xl scale-105"
+                : "border-red-300 bg-red-50 text-red-500 border-dashed"
+              : "border-dashed border-border/20 bg-muted/5 text-muted-foreground/20"
+          )}
+          onDragOver={isDragging ? (e) => { e.preventDefault(); setDragOverBin(true); } : undefined}
+          onDragLeave={isDragging ? () => setDragOverBin(false) : undefined}
+          onDrop={isDragging ? handleBinDrop : undefined}
+        >
+          <Trash2 className={cn("w-7 h-7 transition-all duration-150", dragOverBin ? "scale-125" : isDragging ? "scale-110" : "scale-100")} />
+          <div className="space-y-0.5">
+            <p className="text-[11px] font-semibold leading-tight">
+              {dragOverBin ? "Release!" : isDragging ? "Drop here" : "Leavers"}
+            </p>
+            <p className="text-[10px] leading-tight opacity-80">
+              {dragOverBin ? "Goes inactive" : isDragging ? "to deactivate" : "Drag to deactivate"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Explosion animation */}
+      {explosionPos && (
+        <TeamExplosion x={explosionPos.x} y={explosionPos.y} onDone={() => setExplosionPos(null)} />
+      )}
+
+      {/* Team CRUD dialog */}
       <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader><DialogTitle>{editing ? "Edit Team" : "Add Team"}</DialogTitle></DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid gap-2">
               <Label>Team Name *</Label>
-              <Input placeholder="e.g. Warehouse, Admin, Field Sales" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <Input placeholder="e.g. Picking, Packing, High Bay" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div className="grid gap-2">
               <Label>Team Manager</Label>
@@ -1292,7 +1565,9 @@ function TeamsTab({ customerId }: { customerId: number }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>{save.isPending ? "Saving..." : "Save"}</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending || !form.name}>
+              {save.isPending ? "Saving..." : "Save"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
