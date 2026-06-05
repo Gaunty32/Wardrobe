@@ -32,13 +32,11 @@ interface LabelData {
 }
 
 // ── ZPL helpers (4×3 in = 812×609 dots at 203dpi) ───────────────────────────
-// Origin 0,0 is top-left. All coordinates in dots.
 
 function zplEscape(s: string): string {
   return s.replace(/[\\^~]/g, " ").replace(/[^\x20-\x7E]/g, "?");
 }
 
-// Wrap text to maxWidth chars
 function wrapText(text: string, maxChars: number): string[] {
   const words = text.split(" ");
   const lines: string[] = [];
@@ -56,23 +54,16 @@ function wrapText(text: string, maxChars: number): string[] {
 }
 
 function buildBoxLabelZpl(data: LabelData): string {
-  const W = 812; // 4 in @ 203 dpi
-  const H = 609; // 3 in @ 203 dpi
+  const W = 812;
+  const H = 609;
   const lines: string[] = [];
   lines.push("^XA");
   lines.push(`^PW${W}^LL${H}^LH0,0`);
-
-  // Header bar — order number right, "BOX LABEL" left
   lines.push("^FO20,10^A0N,22,22^FDBOX LABEL^FS");
   lines.push(`^FO${W - 20},10^A0N,22,22^FB200,1,0,R^FD${zplEscape(data.orderNumber)}^FS`);
-  // Header underline
   lines.push(`^FO0,40^GB${W},2,2^FS`);
-
-  // Customer name
   lines.push(`^FO20,50^A0N,44,44^FD${zplEscape(data.customerName.slice(0, 28))}^FS`);
-  // Divider under customer
   lines.push(`^FO0,104^GB${W},2,2^FS`);
-
   let y = 114;
   const KEY_W = 160;
   const addRow = (key: string, val: string) => {
@@ -80,14 +71,11 @@ function buildBoxLabelZpl(data: LabelData): string {
     lines.push(`^FO${KEY_W},${y}^A0N,24,24^FD${zplEscape(val.slice(0, 35))}^FS`);
     y += 34;
   };
-
   addRow("Delivery", data.shippingMethod);
   if (data.isDpd && data.trackingNumber) addRow("DPD", data.trackingNumber);
   if (data.poNumber) addRow("PO Ref", data.poNumber);
   if (data.contactName) addRow("Contact", data.contactName);
   if (data.phone) addRow("Phone", data.phone);
-
-  // Address block
   if (data.addressLines.length > 0) {
     y += 4;
     for (const line of data.addressLines.slice(0, 5)) {
@@ -95,31 +83,22 @@ function buildBoxLabelZpl(data: LabelData): string {
       y += 28;
     }
   }
-
   lines.push("^XZ");
   return lines.join("\n");
 }
 
-function buildWearerLabelZpl(
-  data: LabelData,
-  wearer: LabelData["wearers"][0],
-): string {
+function buildWearerLabelZpl(data: LabelData, wearer: LabelData["wearers"][0]): string {
   const W = 812;
   const H = 609;
   const lines: string[] = [];
   lines.push("^XA");
   lines.push(`^PW${W}^LL${H}^LH0,0`);
-
-  // Wearer name — large but capped
   const nameStr = zplEscape(wearer.name.slice(0, 30));
   lines.push(`^FO20,12^A0N,48,48^FD${nameStr}^FS`);
   if (wearer.jobTitle) {
     lines.push(`^FO20,68^A0N,22,22^FD${zplEscape(wearer.jobTitle.slice(0, 45))}^FS`);
   }
-  // Divider under name
   lines.push(`^FO0,${wearer.jobTitle ? 96 : 68}^GB${W},2,2^FS`);
-
-  // Column headers
   let y = wearer.jobTitle ? 104 : 76;
   lines.push(`^FO20,${y}^A0N,16,16^FDITEM^FS`);
   lines.push(`^FO370,${y}^A0N,16,16^FDCOLOUR^FS`);
@@ -128,7 +107,6 @@ function buildWearerLabelZpl(
   y += 22;
   lines.push(`^FO0,${y}^GB${W},1,1^FS`);
   y += 4;
-
   for (const item of wearer.items.slice(0, 8)) {
     const nameLines = wrapText(item.productName, 28);
     lines.push(`^FO20,${y}^A0N,20,20^FD${zplEscape(nameLines[0])}^FS`);
@@ -144,109 +122,85 @@ function buildWearerLabelZpl(
     y += 2;
     if (y > H - 40) break;
   }
-
-  // Footer
   lines.push(`^FO20,${H - 30}^A0N,20,20^FD${zplEscape(data.customerName)}^FS`);
   lines.push(`^FO${W - 20},${H - 30}^A0N,20,20^FB150,1,0,R^FD${zplEscape(data.orderNumber)}^FS`);
-
   lines.push("^XZ");
   return lines.join("\n");
 }
 
-// ── Zebra Browser Print bridge ───────────────────────────────────────────────
+// ── Zebra Browser Print REST API (no SDK script needed) ──────────────────────
+// Zebra Browser Print exposes a local REST API on :9100 (HTTP) and :9101 (HTTPS).
+// We use the HTTPS port since the app is served over HTTPS (mixed-content rules).
 
-declare global {
-  interface Window {
-    BrowserPrint?: {
-      getDefaultDevice(
-        type: string,
-        success: (device: ZebraDevice) => void,
-        error: (err: string) => void,
-      ): void;
-      getLocalDevices(
-        success: (devices: ZebraDevice[]) => void,
-        error: (err: string) => void,
-        type?: string,
-      ): void;
-    };
+const ZBP_ORIGIN = "https://127.0.0.1:9101";
+
+interface ZbrDevice {
+  name: string;
+  uid: string;
+  connection: string;
+  deviceType: string;
+}
+
+async function zbpFetch(path: string, options?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${ZBP_ORIGIN}${path}`, {
+      ...options,
+      signal: controller.signal,
+    });
+    return res;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-interface ZebraDevice {
-  name: string;
-  uid: string;
-  send(data: string, success?: () => void, error?: (err: string) => void): void;
+async function getAvailablePrinters(): Promise<ZbrDevice[]> {
+  const res = await zbpFetch("/available");
+  if (!res.ok) throw new Error(`Zebra Browser Print returned ${res.status}`);
+  const data = await res.json();
+  return (data.printer ?? []) as ZbrDevice[];
 }
 
-// Zebra BrowserPrint listens on :9100 (HTTP) and :9101 (HTTPS).
-// When the site is served over HTTPS browsers block mixed-content HTTP, so we
-// must use the HTTPS port.  Users need to visit https://127.0.0.1:9101 once
-// in their browser to trust Zebra's self-signed certificate.
-const ZBP_HTTPS_ORIGIN = "https://127.0.0.1:9101";
-const ZBP_SCRIPT_URL = `${ZBP_HTTPS_ORIGIN}/BrowserPrint-3.1.250.min.js`;
-const ZBP_NOT_FOUND = "Zebra Browser Print not found. Is the app installed and running?";
-const ZBP_CERT_HINT = "cert";
-
-function withTimeout<T>(promise: Promise<T>, ms: number, msg: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(msg)), ms)),
-  ]);
+async function getDefaultPrinter(): Promise<ZbrDevice | null> {
+  try {
+    const res = await zbpFetch("/default?type=printer");
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.uid ? (data as ZbrDevice) : null;
+  } catch {
+    return null;
+  }
 }
 
-function loadBrowserPrintScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (window.BrowserPrint) { resolve(); return; }
-
-    // Remove a stale/failed script element so we can try again cleanly
-    const existing = document.getElementById("zebra-browser-print-sdk") as HTMLScriptElement | null;
-    if (existing) {
-      if (!existing.dataset.failed) {
-        existing.addEventListener("load", () => resolve());
-        existing.addEventListener("error", () => reject(new Error(ZBP_CERT_HINT)));
-        return;
-      }
-      existing.remove();
+async function sendZpl(device: ZbrDevice, zpl: string): Promise<void> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch(`${ZBP_ORIGIN}/write`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ device, data: zpl }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Printer error ${res.status}${text ? `: ${text}` : ""}`);
     }
-
-    const script = document.createElement("script");
-    script.id = "zebra-browser-print-sdk";
-    script.src = ZBP_SCRIPT_URL;
-    script.onload = () => resolve();
-    script.onerror = () => {
-      script.dataset.failed = "1";
-      reject(new Error(ZBP_CERT_HINT));
-    };
-    document.head.appendChild(script);
-  });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-function sendZpl(device: ZebraDevice, zpl: string): Promise<void> {
-  return withTimeout(
-    new Promise((resolve, reject) => { device.send(zpl, resolve, reject); }),
-    10_000,
-    "Print timed out — is the printer switched on and connected?",
+function isCertError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  // AbortError from timeout, TypeError from cert/connection refusal, fetch network errors
+  return (
+    err instanceof TypeError ||
+    msg.toLowerCase().includes("failed to fetch") ||
+    msg.toLowerCase().includes("networkerror") ||
+    msg.toLowerCase().includes("aborted")
   );
-}
-
-function getDefaultPrinter(): Promise<ZebraDevice | null> {
-  return withTimeout(
-    new Promise((resolve, reject) => {
-      window.BrowserPrint!.getDefaultDevice("printer", resolve, reject);
-    }),
-    6_000,
-    "Timed out waiting for default printer",
-  ).catch(() => null);
-}
-
-function getAllPrinters(): Promise<ZebraDevice[]> {
-  return withTimeout(
-    new Promise((resolve, reject) => {
-      window.BrowserPrint!.getLocalDevices((devices) => resolve(devices ?? []), reject, "printer");
-    }),
-    6_000,
-    "Timed out listing printers",
-  ).catch(() => [] as ZebraDevice[]);
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -261,55 +215,62 @@ type PrinterStatus = "idle" | "loading" | "ready" | "printing" | "done" | "error
 
 const SAVED_PRINTER_KEY = "sbs_zebra_printer_uid";
 
-export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }: ZebraLabelsProps) {
+export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients: _hasNamedRecipients }: ZebraLabelsProps) {
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<PrinterStatus>("idle");
   const [statusMsg, setStatusMsg] = useState("");
-  const [printer, setPrinter] = useState<ZebraDevice | null>(null);
-  const [allPrinters, setAllPrinters] = useState<ZebraDevice[]>([]);
+  const [isCert, setIsCert] = useState(false);
+  const [printer, setPrinter] = useState<ZbrDevice | null>(null);
+  const [allPrinters, setAllPrinters] = useState<ZbrDevice[]>([]);
   const [labelData, setLabelData] = useState<LabelData | null>(null);
   const [printQueue, setPrintQueue] = useState<string[]>([]);
   const [printedCount, setPrintedCount] = useState(0);
 
-  function savePrinter(device: ZebraDevice) {
+  function savePrinter(device: ZbrDevice) {
     setPrinter(device);
     try { localStorage.setItem(SAVED_PRINTER_KEY, device.uid); } catch {}
   }
 
   const connectPrinter = useCallback(async () => {
     setStatus("loading");
+    setIsCert(false);
     setStatusMsg("Connecting to Zebra Browser Print…");
     try {
-      await loadBrowserPrintScript();
       const [printers, defaultDevice] = await Promise.all([
-        getAllPrinters().catch(() => [] as ZebraDevice[]),
-        getDefaultPrinter().catch(() => null as ZebraDevice | null),
+        getAvailablePrinters(),
+        getDefaultPrinter(),
       ]);
+
       const available = printers.length > 0 ? printers : (defaultDevice ? [defaultDevice] : []);
-      if (available.length === 0) throw new Error("No Zebra printers found.");
+      if (available.length === 0) throw new Error("No Zebra printers found. Make sure the printer is switched on and connected.");
       setAllPrinters(available);
 
-      // Restore previously saved printer if it's still available
       const savedUid = (() => { try { return localStorage.getItem(SAVED_PRINTER_KEY); } catch { return null; } })();
       const restored = savedUid ? available.find(d => d.uid === savedUid) : null;
       const chosen = restored ?? defaultDevice ?? available[0];
-      setPrinter(chosen);
+      setPrinter(chosen ?? null);
 
       const resp = await fetch(`${API_BASE}/orders/${orderId}/label-data`);
       if (!resp.ok) throw new Error(await resp.text());
       const data: LabelData = await resp.json();
       setLabelData(data);
       setStatus("ready");
-      setStatusMsg(`Connected to ${chosen.name}`);
+      setStatusMsg(`Connected to ${chosen?.name ?? "printer"}`);
     } catch (err: unknown) {
       setStatus("error");
-      setStatusMsg(err instanceof Error ? err.message : String(err));
+      if (isCertError(err)) {
+        setIsCert(true);
+        setStatusMsg("Cannot reach Zebra Browser Print");
+      } else {
+        setIsCert(false);
+        setStatusMsg(err instanceof Error ? err.message : String(err));
+      }
     }
   }, [orderId]);
 
   useEffect(() => {
     if (open) connectPrinter();
-    else { setStatus("idle"); setPrinter(null); setLabelData(null); setPrintQueue([]); setPrintedCount(0); }
+    else { setStatus("idle"); setIsCert(false); setPrinter(null); setLabelData(null); setPrintQueue([]); setPrintedCount(0); }
   }, [open, connectPrinter]);
 
   async function printAll() {
@@ -402,32 +363,23 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
               )}
             </div>
 
-            {status === "error" && statusMsg === ZBP_CERT_HINT && (
+            {/* Cert / connection help */}
+            {status === "error" && isCert && (
               <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2.5 text-xs text-amber-900 space-y-2">
                 <p className="font-semibold">One-time browser trust required</p>
                 <ol className="list-decimal list-inside space-y-1">
-                  <li>
-                    Open{" "}
-                    <a
-                      href={ZBP_HTTPS_ORIGIN}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline font-medium"
-                    >
+                  <li>Open{" "}
+                    <a href={ZBP_ORIGIN} target="_blank" rel="noopener noreferrer" className="underline font-medium">
                       https://127.0.0.1:9101
-                    </a>{" "}
-                    in a new tab
+                    </a>{" "}in a new tab
                   </li>
                   <li>Click <strong>Advanced</strong> → <strong>Proceed to 127.0.0.1</strong></li>
                   <li>Come back here and click <strong>Retry</strong></li>
                 </ol>
-                <p className="text-amber-700">If Zebra Browser Print isn't installed yet, download it from <a href="https://www.zebra.com/us/en/software/printer-software/browser-print.html" target="_blank" rel="noopener" className="underline">zebra.com</a>.</p>
-              </div>
-            )}
-            {status === "error" && statusMsg === ZBP_NOT_FOUND && (
-              <div className="rounded-lg bg-blue-50 border border-blue-200 px-3 py-2.5 text-xs text-blue-800 space-y-1">
-                <p className="font-semibold">No Zebra printer found</p>
-                <p>Make sure the printer is switched on and connected, then click Retry.</p>
+                <p className="text-amber-700">
+                  If Zebra Browser Print isn't installed yet, download it from{" "}
+                  <a href="https://www.zebra.com/us/en/software/printer-software/browser-print.html" target="_blank" rel="noopener" className="underline">zebra.com</a>.
+                </p>
               </div>
             )}
 
@@ -451,7 +403,6 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
             {/* Print actions */}
             {(status === "ready" || status === "done") && labelData && (
               <div className="space-y-3">
-                {/* Box label */}
                 <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-border bg-card">
                   <div>
                     <p className="text-sm font-medium">Box Label</p>
@@ -462,7 +413,6 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
                   </Button>
                 </div>
 
-                {/* Wearer labels */}
                 {labelData.wearers.length > 0 && (
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
@@ -492,7 +442,6 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients }
                   </div>
                 )}
 
-                {/* Print all in one go */}
                 {labelData.wearers.length > 0 && (
                   <Button
                     className="w-full gap-1.5 bg-[#1e3a5f] hover:bg-[#162d4a] text-white"
