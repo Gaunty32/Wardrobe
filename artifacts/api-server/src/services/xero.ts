@@ -532,15 +532,61 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     customerZeroVat = customer?.zeroVat ?? false;
   }
 
-  // If not yet linked, try: 1) sync from Xero, 2) create in Xero
+  // If not yet linked, try: 1) full contact sync, 2) direct Xero search, 3) create
   if (!xeroContactId && order.customerId) {
-    // Step 1: pull contacts from Xero and match by name/email
+    // Step 1: pull all contacts from Xero and match by name / email
     try { await syncContacts(); } catch { /* ignore — fall through */ }
     const [afterSync] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
     xeroContactId = afterSync?.xeroContactId ?? null;
     customerZeroVat = afterSync?.zeroVat ?? customerZeroVat;
 
-    // Step 2: still no match — create a new Xero contact from local data
+    // Step 2: still no match — search Xero directly by email then name
+    // (syncContacts only matches IsCustomer=true contacts; the existing Xero
+    //  contact might pre-date that flag or be a generic contact)
+    if (!xeroContactId) {
+      try {
+        const customerRow = afterSync;
+        let foundId: string | null = null;
+
+        // 2a. Search by email address
+        if (customerRow?.email) {
+          const emailRes = await xeroFetch(
+            `/Contacts?where=EmailAddress%3D%22${encodeURIComponent(customerRow.email)}%22`
+          );
+          if (emailRes.ok) {
+            const emailData = await emailRes.json() as { Contacts?: { ContactID: string }[] };
+            foundId = emailData.Contacts?.[0]?.ContactID ?? null;
+          }
+        }
+
+        // 2b. Fallback: search by company name
+        if (!foundId && customerRow?.name) {
+          const nameRes = await xeroFetch(
+            `/Contacts?searchTerm=${encodeURIComponent(customerRow.name)}`
+          );
+          if (nameRes.ok) {
+            const nameData = await nameRes.json() as { Contacts?: { ContactID: string; Name: string }[] };
+            // Pick the first contact whose name matches case-insensitively
+            const match = nameData.Contacts?.find(
+              (c) => c.Name.toLowerCase() === customerRow.name.toLowerCase()
+            );
+            foundId = match?.ContactID ?? nameData.Contacts?.[0]?.ContactID ?? null;
+          }
+        }
+
+        if (foundId) {
+          // Link the found Xero contact to the local customer
+          await db.update(customersTable)
+            .set({ xeroContactId: foundId, updatedAt: new Date() })
+            .where(eq(customersTable.id, order.customerId));
+          xeroContactId = foundId;
+          const [afterLink] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
+          customerZeroVat = afterLink?.zeroVat ?? customerZeroVat;
+        }
+      } catch { /* Xero search failure is non-fatal — fall through to create */ }
+    }
+
+    // Step 3: still nothing — create a brand-new Xero contact
     if (!xeroContactId) {
       await pushCustomerToXero(order.customerId);
       const [afterCreate] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));

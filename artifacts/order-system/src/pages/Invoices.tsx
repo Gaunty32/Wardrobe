@@ -193,12 +193,14 @@ function OrderRow({
   order,
   showSendEmail,
   showPostXero,
+  showResend,
   selected,
   onToggle,
 }: {
   order: InvoiceOrder;
   showSendEmail?: boolean;
   showPostXero?: boolean;
+  showResend?: boolean;
   selected?: boolean;
   onToggle?: (id: number) => void;
 }) {
@@ -393,9 +395,9 @@ function OrderRow({
           )}
         </TableCell>
         <TableCell>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-col items-start gap-1.5">
             {showSendEmail && (
-              <div className="flex flex-col items-start gap-1">
+              <>
                 <Button
                   size="sm"
                   className="h-7 gap-1 text-xs"
@@ -411,7 +413,19 @@ function OrderRow({
                     <AlertTriangle className="w-3 h-3" />Add PO number first
                   </span>
                 )}
-              </div>
+              </>
+            )}
+            {showResend && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 text-xs"
+                onClick={() => setConfirmOpen(true)}
+                disabled={sendEmail.isPending}
+              >
+                {sendEmail.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                Resend
+              </Button>
             )}
             {showPostXero && !order.xeroInvoiceId && (
               <Button
@@ -433,10 +447,14 @@ function OrderRow({
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Send Invoice — {order.orderNumber}</DialogTitle>
+            <DialogTitle>{showResend ? "Resend Invoice" : "Send Invoice"} — {order.orderNumber}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 text-sm">
-            <p className="text-muted-foreground">This will email the invoice PDF to the customer and post it to Xero as a draft invoice.</p>
+            <p className="text-muted-foreground">
+              {showResend
+                ? "This will resend the invoice PDF to the customer. Xero will also be updated if not already posted."
+                : "This will email the invoice PDF to the customer and post it to Xero as a draft invoice."}
+            </p>
 
             {/* Summary card */}
             <div className="rounded-lg bg-muted/50 border border-border p-3 space-y-1.5">
@@ -879,6 +897,7 @@ export default function Invoices() {
                         order={order}
                         showSendEmail={!order.invoiceEmailSentAt}
                         showPostXero={!!order.invoiceEmailSentAt && !order.xeroInvoiceId}
+                        showResend={!!order.invoiceEmailSentAt}
                         selected={selectedIds.has(order.id)}
                         onToggle={toggleSelect}
                       />
@@ -987,7 +1006,7 @@ export default function Invoices() {
                   <TableHeader>{COLS}</TableHeader>
                   <TableBody>
                     {toPost.map((order) => (
-                      <OrderRow key={order.id} order={order} showPostXero />
+                      <OrderRow key={order.id} order={order} showPostXero showResend />
                     ))}
                   </TableBody>
                 </Table>
@@ -1012,7 +1031,7 @@ export default function Invoices() {
                   <TableHeader>{COLS}</TableHeader>
                   <TableBody>
                     {done.map((order) => (
-                      <OrderRow key={order.id} order={order} />
+                      <OrderRow key={order.id} order={order} showResend />
                     ))}
                   </TableBody>
                 </Table>
