@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown
+  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -195,6 +195,14 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
     onError: () => toast({ title: "Error updating variant", variant: "destructive" }),
   });
 
+  const availabilityMut = useMutation({
+    mutationFn: (available: boolean) => apiFetch(`/products/${productId}/variants/${variant.id}`, {
+      method: "PATCH", body: JSON.stringify({ isAvailable: available }),
+    }),
+    onSuccess: () => onRefresh(),
+    onError: () => toast({ title: "Error updating availability", variant: "destructive" }),
+  });
+
   const deleteMut = useMutation({
     mutationFn: () => apiFetch(`/products/${productId}/variants/${variant.id}`, { method: "DELETE" }),
     onSuccess: () => { onRefresh(); toast({ title: "Variant removed" }); },
@@ -311,6 +319,21 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
           {secondarySupplier
             ? <span className={secondaryIsInherited ? "italic" : ""}>{secondarySupplier.name}</span>
             : <span className="italic">—</span>}
+        </TableCell>
+        <TableCell>
+          <button
+            type="button"
+            disabled={availabilityMut.isPending}
+            onClick={() => availabilityMut.mutate(variant.isAvailable === false ? true : false)}
+            className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border transition-colors disabled:opacity-50 ${
+              variant.isAvailable === false
+                ? "bg-slate-100 text-slate-500 border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-slate-100 hover:text-slate-500 hover:border-slate-200"
+            }`}
+          >
+            {availabilityMut.isPending && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+            {variant.isAvailable === false ? "Unavailable" : "Available"}
+          </button>
         </TableCell>
         <TableCell className="text-right">
           <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -584,6 +607,17 @@ export default function ProductDetail() {
   });
   // Stable reference: avoids creating a new [] on every render while loading
   const variants = useMemo(() => (variantsData as any[]) ?? [], [variantsData]);
+
+  const pushWooMut = useMutation({
+    mutationFn: () => apiFetch(`/products/${productId}/push-woo-availability`, { method: "POST" }),
+    onSuccess: (data: any) => {
+      toast({ title: `Pushed ${data.pushed} of ${data.total} variation${data.total !== 1 ? "s" : ""} to WooCommerce` });
+      if (data.errors?.length > 0) {
+        toast({ title: "Some variations failed", description: data.errors.slice(0, 3).join("; "), variant: "destructive" });
+      }
+    },
+    onError: (e: any) => toast({ title: "WooCommerce push failed", description: e?.message, variant: "destructive" }),
+  });
 
   // Upload one image and apply it to every variant that shares the same colour
   async function handleColourImageUpload(colour: string | null, imageUrl: string) {
@@ -1397,6 +1431,20 @@ export default function ProductDetail() {
                           <Layers className="w-4 h-4 mr-1.5" /> Generate size variants
                         </Button>
                       )}
+                      {!!(product as any).wooCommerceId && variants.length > 0 && (variants as any[]).some((v: any) => v.wooVariationId) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => pushWooMut.mutate()}
+                          disabled={pushWooMut.isPending}
+                          className="gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
+                        >
+                          {pushWooMut.isPending
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Cloud className="w-3.5 h-3.5" />}
+                          Push to WooCommerce
+                        </Button>
+                      )}
                       <Button size="sm" onClick={() => setAddVariantOpen(true)}>
                         <Plus className="w-4 h-4 mr-1.5" /> Add Variant
                       </Button>
@@ -1473,13 +1521,14 @@ export default function ProductDetail() {
                             <TableHead className="w-[90px]">Stock</TableHead>
                             <TableHead>Primary Supplier</TableHead>
                             <TableHead>Secondary Supplier</TableHead>
+                            <TableHead className="w-[110px]">Status</TableHead>
                             <TableHead className="w-[80px] text-right">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {filteredVariants.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={8} className="text-center py-8 text-muted-foreground text-sm">
+                              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground text-sm">
                                 No variants match the selected filters.{" "}
                                 <button className="underline" onClick={() => { setFilterColour("all"); setFilterSize("all"); setFilterSleeve("all"); }}>Clear filters</button>
                               </TableCell>

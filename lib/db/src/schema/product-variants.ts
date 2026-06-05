@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, numeric, boolean } from "drizzle-orm/pg-core";
 import { productsTable } from "./products";
 import { suppliersTable } from "./suppliers";
 
@@ -21,6 +21,7 @@ export const productVariantsTable = pgTable("product_variants", {
   secondarySupplierId: integer("secondary_supplier_id").references(() => suppliersTable.id, { onDelete: "set null" }),
   secondarySupplierCode: text("secondary_supplier_code"),
   secondarySupplierPrice: numeric("secondary_supplier_price", { precision: 10, scale: 2 }),
+  isAvailable: boolean("is_available").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

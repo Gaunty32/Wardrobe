@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, productVariantsTable, productsTable, productAttributesTable } from "@workspace/db";
+import { getWooSettings } from "./woo.js";
 
 const router: IRouter = Router();
 
@@ -22,6 +23,7 @@ const variantBody = z.object({
   secondarySupplierId: z.number().int().positive().optional().nullable(),
   secondarySupplierCode: z.string().optional().nullable(),
   secondarySupplierPrice: z.number().optional().nullable(),
+  isAvailable: z.boolean().optional(),
 });
 
 async function getProduct(id: number) {
@@ -256,6 +258,59 @@ router.post("/products/:productId/variants/generate-matrix", async (req, res): P
 
   await rollupProductStock(productId);
   res.json({ created, deleted, skipped: existing.filter(v => hasSleeve ? v.sleeve !== null : v.size !== null).length });
+});
+
+// Push availability (isAvailable) for all WooCommerce-linked variants to WooCommerce
+router.post("/products/:productId/push-woo-availability", async (req, res): Promise<void> => {
+  const p = productIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+
+  const product = await getProduct(p.data.productId);
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  if (!product.wooCommerceId) { res.status(400).json({ error: "This product has no WooCommerce ID — it cannot be synced." }); return; }
+
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured. Check Settings → WooCommerce." }); return; }
+
+  const variants = await db.select().from(productVariantsTable)
+    .where(and(
+      eq(productVariantsTable.productId, p.data.productId),
+      isNotNull(productVariantsTable.wooVariationId),
+    ));
+
+  if (variants.length === 0) {
+    res.json({ pushed: 0, total: 0, errors: [] });
+    return;
+  }
+
+  let pushed = 0;
+  const errors: string[] = [];
+
+  for (const variant of variants) {
+    const stockStatus = variant.isAvailable !== false ? "instock" : "outofstock";
+    const url = new URL(
+      `${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.wooCommerceId}/variations/${variant.wooVariationId}`
+    );
+    url.searchParams.set("consumer_key", settings.ck);
+    url.searchParams.set("consumer_secret", settings.cs);
+    try {
+      const wooRes = await fetch(url.toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ stock_status: stockStatus }),
+      });
+      if (!wooRes.ok) {
+        const text = await wooRes.text().catch(() => wooRes.status.toString());
+        errors.push(`Variation ${variant.wooVariationId}: ${text}`);
+      } else {
+        pushed++;
+      }
+    } catch (e: any) {
+      errors.push(`Variation ${variant.wooVariationId}: ${e.message}`);
+    }
+  }
+
+  res.json({ pushed, total: variants.length, errors });
 });
 
 // Delete a variant

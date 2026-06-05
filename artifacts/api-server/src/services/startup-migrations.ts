@@ -1431,6 +1431,10 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE worksheet_items ADD COLUMN IF NOT EXISTS supplier_code text;
   `);
 
+  await db.execute(sql`
+    ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS is_available boolean NOT NULL DEFAULT true;
+  `);
+
   // ── Clean up phantom pre_wip worksheets created by the old backfill ────────
   // The backfill (now removed) used to auto-create worksheets for any confirmed
   // order with allocated items — bypassing the picking flow. These phantom
