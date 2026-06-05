@@ -195,19 +195,22 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
       queryClient.invalidateQueries({ queryKey: ["dispatch-orders"] });
       setDispatchOpen(false);
 
+      // Always print the delivery note first
+      openDeliveryNote(order.id, order.shippingMethod);
+
       if (data.dpd) {
         toast({
           title: `${order.orderNumber} dispatched via DPD`,
           description: `Consignment: ${data.dpd.consignmentNumber}`,
         });
         if (data.dpd.labelPdfBase64) {
-          printBase64Pdf(data.dpd.labelPdfBase64);
+          setTimeout(() => printBase64Pdf(data.dpd.labelPdfBase64!), 400);
         }
         const namedCount = order.items.filter(
           (i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)
         ).length;
         if (namedCount > 0) {
-          openWearerLabels(order.id, { includeDeliveryLabel: true });
+          setTimeout(() => openWearerLabels(order.id, { includeDeliveryLabel: true }), 800);
         }
       } else if (data.dpdError) {
         toast({ title: `${order.orderNumber} dispatched`, description: `DPD note: ${data.dpdError}`, variant: "destructive" });
@@ -449,6 +452,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
 
             <div className="rounded-lg bg-muted/20 border border-border px-4 py-3 text-xs text-muted-foreground space-y-1">
               <p className="font-semibold text-foreground text-xs uppercase tracking-wide mb-1.5">What happens when you confirm</p>
+              <p>✓ Delivery note opened for printing</p>
               {isDpdShipping && <p>✓ DPD booking created automatically — tracking number assigned</p>}
               {isDpdShipping && <p>✓ DPD shipping label printed (select your label printer)</p>}
               {namedCount > 0 && isDpdShipping && <p>✓ Wearer labels printed with tracking number (delivery label first)</p>}
