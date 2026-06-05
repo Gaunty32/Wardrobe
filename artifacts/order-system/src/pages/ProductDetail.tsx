@@ -641,7 +641,7 @@ export default function ProductDetail() {
     onError: () => toast({ title: "Could not delete staff member", variant: "destructive" }),
   });
 
-  const { upload: uploadStaffPhoto, uploading: uploadingStaffPhoto } = useUpload({});
+  const { uploadFile: uploadStaffPhoto, isUploading: uploadingStaffPhoto } = useUpload({});
 
   const pushWooMut = useMutation({
     mutationFn: () => apiFetch(`/products/${productId}/push-woo-availability`, { method: "POST" }),
@@ -2049,8 +2049,8 @@ export default function ProductDetail() {
                         onChange={async (e) => {
                           const file = e.target.files?.[0];
                           if (!file) return;
-                          const url = await uploadStaffPhoto(file);
-                          if (url) setStaffFormImageUrl(url);
+                          const res = await uploadStaffPhoto(file);
+                          if (res) setStaffFormImageUrl(`/api/storage${res.objectPath}`);
                         }}
                       />
                       <span className="inline-flex items-center gap-1.5 text-xs border border-border rounded px-2 py-1.5 hover:bg-muted transition-colors">
