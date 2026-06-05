@@ -829,15 +829,16 @@ export default function ProductDetail() {
     );
   };
 
-  const saveGuidance = () => {
+  const saveGuidance = (staffQuotesOverride?: typeof guidance extends null ? never : typeof guidance.staffQuotes) => {
     if (!guidance) return;
+    const quotes = staffQuotesOverride ?? guidance.staffQuotes;
     updateMutation.mutate(
       {
         id: productId,
         data: {
           guidanceBestFor: guidance.bestFor || null,
           guidanceNotIdealFor: guidance.notIdealFor || null,
-          guidanceStaffQuotes: guidance.staffQuotes.length > 0 ? guidance.staffQuotes : null,
+          guidanceStaffQuotes: quotes.length > 0 ? quotes : null,
           guidanceBadges: guidance.badges.length > 0 ? guidance.badges : null,
           guidanceValueRating: guidance.valueRating,
           guidanceDurabilityRating: guidance.durabilityRating,
@@ -2004,6 +2005,7 @@ export default function ProductDetail() {
                     : [...guidance!.staffQuotes, newQuote];
                   handleGuidanceChange("staffQuotes", updated);
                   setQuoteDialogOpen(false);
+                  saveGuidance(updated);
                 }}
               >
                 {editingQuoteId ? "Save Changes" : "Add Quote"}
