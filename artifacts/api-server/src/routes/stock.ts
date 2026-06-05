@@ -510,6 +510,7 @@ router.get("/stock/bins/:id/report", async (req, res): Promise<void> => {
       colour: productVariantsTable.colour,
       size: productVariantsTable.size,
       supplierCode: productVariantsTable.supplierCode,
+      productSupplierCode: productsTable.supplierCode,
       stockQuantity: productVariantsTable.stockQuantity,
       minStockQty: productVariantsTable.minStockQty,
     })
@@ -528,7 +529,7 @@ router.get("/stock/bins/:id/report", async (req, res): Promise<void> => {
       <td class="mono">${v.productSku ?? "—"}</td>
       <td>${v.colour ?? "—"}</td>
       <td>${v.size ?? "—"}</td>
-      <td class="mono">${v.supplierCode ?? "—"}</td>
+      <td class="mono">${v.supplierCode ?? v.productSupplierCode ?? "—"}</td>
       <td class="num${low ? " low-num" : ""}">${low ? "⚠ " : ""}${v.stockQuantity ?? 0}</td>
     </tr>`;
   }).join("");
