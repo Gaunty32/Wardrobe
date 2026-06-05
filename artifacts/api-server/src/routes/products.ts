@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, ilike, or, sql, and } from "drizzle-orm";
 import { db, productsTable, productAttributesTable, productVariantsTable } from "@workspace/db";
 import { z } from "zod";
+import { getWooSettings } from "./woo.js";
 import {
   CreateProductBody,
   UpdateProductBody,
@@ -386,6 +387,52 @@ router.delete("/products/:id", async (req, res): Promise<void> => {
     return;
   }
   res.sendStatus(204);
+});
+
+// ── Push guidance data to WooCommerce as product meta ─────────────────────────
+router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const rows = await db.execute(sql`
+    SELECT woo_commerce_id,
+           guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
+           guidance_badges, guidance_tags, guidance_staff_quotes
+    FROM products WHERE id = ${parsed.data.id}
+  `);
+  const product = (rows.rows ?? rows)[0] as any;
+  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  if (!product.woo_commerce_id) { res.status(400).json({ error: "This product has no WooCommerce ID — it cannot be synced." }); return; }
+
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured. Check Settings → WooCommerce." }); return; }
+
+  const meta_data = [
+    { key: "_sbs_value_rating",       value: product.guidance_value_rating       ?? "" },
+    { key: "_sbs_durability_rating",   value: product.guidance_durability_rating   ?? "" },
+    { key: "_sbs_technical_rating",    value: product.guidance_smart_rating        ?? "" },
+    { key: "_sbs_badges",              value: JSON.stringify(product.guidance_badges       ?? []) },
+    { key: "_sbs_tags",                value: JSON.stringify(product.guidance_tags          ?? []) },
+    { key: "_sbs_staff_quotes",        value: JSON.stringify(product.guidance_staff_quotes  ?? []) },
+  ];
+
+  const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
+  url.searchParams.set("consumer_key", settings.ck);
+  url.searchParams.set("consumer_secret", settings.cs);
+
+  const wooRes = await fetch(url.toString(), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ meta_data }),
+  });
+
+  if (!wooRes.ok) {
+    const text = await wooRes.text().catch(() => wooRes.status.toString());
+    res.status(502).json({ error: `WooCommerce returned ${wooRes.status}: ${text}` });
+    return;
+  }
+
+  res.json({ ok: true, pushed: meta_data.length });
 });
 
 router.get("/products/:id/attributes", async (req, res): Promise<void> => {

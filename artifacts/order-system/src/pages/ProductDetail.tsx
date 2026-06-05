@@ -654,6 +654,12 @@ export default function ProductDetail() {
     onError: (e: any) => toast({ title: "WooCommerce push failed", description: e?.message, variant: "destructive" }),
   });
 
+  const pushWooGuidanceMut = useMutation({
+    mutationFn: () => apiFetch(`/products/${productId}/push-woo-guidance`, { method: "POST" }),
+    onSuccess: () => toast({ title: "Guidance pushed to WooCommerce" }),
+    onError: (e: any) => toast({ title: "WooCommerce push failed", description: e?.message, variant: "destructive" }),
+  });
+
   // Upload one image and apply it to every variant that shares the same colour
   async function handleColourImageUpload(colour: string | null, imageUrl: string) {
     const siblings = (variants as any[]).filter((v) =>
@@ -1870,7 +1876,20 @@ export default function ProductDetail() {
                     </Button>
                   </div>
 
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-end gap-2">
+                    {!!(product as any).wooCommerceId && (
+                      <Button
+                        variant="outline"
+                        onClick={() => pushWooGuidanceMut.mutate()}
+                        disabled={pushWooGuidanceMut.isPending || guidanceDirty}
+                        title={guidanceDirty ? "Save guidance first before pushing" : "Push guidance to WooCommerce"}
+                      >
+                        {pushWooGuidanceMut.isPending
+                          ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          : <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>}
+                        Push to WooCommerce
+                      </Button>
+                    )}
                     <Button onClick={saveGuidance} disabled={!guidanceDirty || updateMutation.isPending}>
                       {updateMutation.isPending
                         ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
