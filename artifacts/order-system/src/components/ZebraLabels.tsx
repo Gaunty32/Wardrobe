@@ -101,10 +101,8 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
     .wearer-name {
       font-size: 26pt;
       font-weight: 900;
-      line-height: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      line-height: 1.1;
+      word-break: break-word;
       flex-shrink: 0;
     }
     .wearer-title { font-size: 9pt; color: #555; margin-top: 2pt; margin-bottom: 5pt; flex-shrink: 0; }
@@ -171,7 +169,7 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
 
   const wearerLabelHtml = (w: LabelData["wearers"][0]) => {
     const wLen = w.name.length;
-    const wPt = wLen > 22 ? 18 : wLen > 16 ? 22 : 26;
+    const wPt = wLen > 28 ? 14 : wLen > 22 ? 17 : wLen > 16 ? 21 : 26;
     return `
 <div class="label">
   <div class="top-bar">
