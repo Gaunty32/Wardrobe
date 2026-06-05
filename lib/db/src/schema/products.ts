@@ -40,9 +40,7 @@ export const productsTable = pgTable("products", {
   guidanceBestFor: text("guidance_best_for"),
   /** Guidance: situations where this product is not ideal */
   guidanceNotIdealFor: text("guidance_not_ideal_for"),
-  /** Guidance: internal staff recommendation / selling tip */
-  guidanceStaffRecommendation: text("guidance_staff_recommendation"),
-  /** Guidance: promotional badge — 'Most Popular' | 'Best Value' | 'Premium Choice' | 'Staff Pick' (legacy single value) */
+  /** Guidance: promotional badge (legacy single value) */
   guidanceBadge: text("guidance_badge"),
   /** Guidance: multiple promotional badges */
   guidanceBadges: jsonb("guidance_badges").$type<string[]>(),
@@ -54,6 +52,12 @@ export const productsTable = pgTable("products", {
   guidanceSmartRating: integer("guidance_smart_rating"),
   /** Guidance: display tags e.g. ['Everyday Workwear', 'Heavy Duty'] */
   guidanceTags: jsonb("guidance_tags").$type<string[]>(),
+  /** Guidance: staff quotes attributed to named staff members */
+  guidanceStaffQuotes: jsonb("guidance_staff_quotes").$type<{
+    id: string; staffId: number; staffName: string;
+    staffRole: string | null; staffImageUrl: string | null;
+    draft: string; rewritten: string | null;
+  }[]>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

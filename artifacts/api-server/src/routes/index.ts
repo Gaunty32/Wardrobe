@@ -28,6 +28,7 @@ import selectExtraRouter from "./select-extra";
 import quotesRouter from "./quotes";
 import enquiriesRouter from "./enquiries";
 import wooRouter from "./woo";
+import staffMembersRouter from "./staff-members";
 
 const router: IRouter = Router();
 
@@ -60,5 +61,6 @@ router.use(selectExtraRouter);
 router.use(quotesRouter);
 router.use(enquiriesRouter);
 router.use(wooRouter);
+router.use(staffMembersRouter);
 
 export default router;

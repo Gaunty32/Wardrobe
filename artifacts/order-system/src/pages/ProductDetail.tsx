@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen
+  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -608,6 +608,41 @@ export default function ProductDetail() {
   // Stable reference: avoids creating a new [] on every render while loading
   const variants = useMemo(() => (variantsData as any[]) ?? [], [variantsData]);
 
+  const rewriteMut = useMutation({
+    mutationFn: ({ draft, staffName }: { draft: string; staffName: string }) =>
+      apiFetch("/staff/rewrite-quote", {
+        method: "POST",
+        body: JSON.stringify({ draft, staffName, productName: (product as any)?.name ?? "" }),
+      }),
+    onSuccess: (data: any) => {
+      setQuoteRewritten(data.rewritten);
+      setQuoteUseRewritten(true);
+    },
+    onError: () => toast({ title: "AI rewrite failed", variant: "destructive" }),
+  });
+
+  const addStaffMut = useMutation({
+    mutationFn: (body: { name: string; role: string | null; profileImageUrl: string | null }) =>
+      apiFetch("/staff", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => { refetchStaff(); setStaffFormName(""); setStaffFormRole(""); setStaffFormImageUrl(""); setEditingStaffId(null); },
+    onError: () => toast({ title: "Could not save staff member", variant: "destructive" }),
+  });
+
+  const updateStaffMut = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: { name: string; role: string | null; profileImageUrl: string | null } }) =>
+      apiFetch(`/staff/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: () => { refetchStaff(); setStaffFormName(""); setStaffFormRole(""); setStaffFormImageUrl(""); setEditingStaffId(null); },
+    onError: () => toast({ title: "Could not update staff member", variant: "destructive" }),
+  });
+
+  const deleteStaffMut = useMutation({
+    mutationFn: (id: number) => apiFetch(`/staff/${id}`, { method: "DELETE" }),
+    onSuccess: () => refetchStaff(),
+    onError: () => toast({ title: "Could not delete staff member", variant: "destructive" }),
+  });
+
+  const { upload: uploadStaffPhoto, uploading: uploadingStaffPhoto } = useUpload({});
+
   const pushWooMut = useMutation({
     mutationFn: () => apiFetch(`/products/${productId}/push-woo-availability`, { method: "POST" }),
     onSuccess: (data: any) => {
@@ -640,6 +675,11 @@ export default function ProductDetail() {
     queryFn: () => apiFetch("/products/category-names"),
   });
 
+  const { data: staffList = [], refetch: refetchStaff } = useQuery<any[]>({
+    queryKey: ["staff-members"],
+    queryFn: () => apiFetch("/staff"),
+  });
+
   const [details, setDetails] = useState<{
     name: string; sku: string; description: string; category: string;
     unitPrice: number; supplierId: string; secondarySupplierId: string;
@@ -654,7 +694,7 @@ export default function ProductDetail() {
   const [guidance, setGuidance] = useState<{
     bestFor: string;
     notIdealFor: string;
-    staffRecommendation: string;
+    staffQuotes: { id: string; staffId: number; staffName: string; staffRole: string | null; staffImageUrl: string | null; draft: string; rewritten: string | null; }[];
     badges: string[];
     valueRating: number | null;
     durabilityRating: number | null;
@@ -662,6 +702,17 @@ export default function ProductDetail() {
     tags: string[];
   } | null>(null);
   const [guidanceDirty, setGuidanceDirty] = useState(false);
+  const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
+  const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
+  const [quoteDraft, setQuoteDraft] = useState("");
+  const [quoteStaffId, setQuoteStaffId] = useState<number | null>(null);
+  const [quoteRewritten, setQuoteRewritten] = useState<string | null>(null);
+  const [quoteUseRewritten, setQuoteUseRewritten] = useState(false);
+  const [manageStaffOpen, setManageStaffOpen] = useState(false);
+  const [staffFormName, setStaffFormName] = useState("");
+  const [staffFormRole, setStaffFormRole] = useState("");
+  const [staffFormImageUrl, setStaffFormImageUrl] = useState("");
+  const [editingStaffId, setEditingStaffId] = useState<number | null>(null);
   const [isService, setIsService] = useState(false);
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
@@ -701,7 +752,7 @@ export default function ProductDetail() {
       setGuidance({
         bestFor: p.guidanceBestFor || "",
         notIdealFor: p.guidanceNotIdealFor || "",
-        staffRecommendation: p.guidanceStaffRecommendation || "",
+        staffQuotes: Array.isArray(p.guidanceStaffQuotes) ? p.guidanceStaffQuotes : [],
         badges: Array.isArray(p.guidanceBadges) ? p.guidanceBadges : (p.guidanceBadge ? [p.guidanceBadge] : []),
         valueRating: p.guidanceValueRating ?? null,
         durabilityRating: p.guidanceDurabilityRating ?? null,
@@ -786,7 +837,7 @@ export default function ProductDetail() {
         data: {
           guidanceBestFor: guidance.bestFor || null,
           guidanceNotIdealFor: guidance.notIdealFor || null,
-          guidanceStaffRecommendation: guidance.staffRecommendation || null,
+          guidanceStaffQuotes: guidance.staffQuotes.length > 0 ? guidance.staffQuotes : null,
           guidanceBadges: guidance.badges.length > 0 ? guidance.badges : null,
           guidanceValueRating: guidance.valueRating,
           guidanceDurabilityRating: guidance.durabilityRating,
@@ -1736,14 +1787,84 @@ export default function ProductDetail() {
                       rows={3}
                     />
                   </div>
-                  <div className="grid gap-2">
-                    <Label>Staff Recommendation</Label>
-                    <Textarea
-                      value={guidance.staffRecommendation}
-                      onChange={(e) => handleGuidanceChange("staffRecommendation", e.target.value)}
-                      placeholder="Internal note or selling tip for staff to share with customers…"
-                      rows={3}
-                    />
+                  {/* Staff Quotes */}
+                  <div className="grid gap-3">
+                    <div className="flex items-center justify-between">
+                      <Label>Staff Quotes</Label>
+                      <button
+                        type="button"
+                        onClick={() => setManageStaffOpen(true)}
+                        className="text-xs text-muted-foreground hover:text-primary transition-colors"
+                      >
+                        Manage Staff
+                      </button>
+                    </div>
+
+                    {guidance.staffQuotes.length === 0 ? (
+                      <div className="border border-dashed border-border rounded-lg p-4 text-center text-sm text-muted-foreground">
+                        No quotes yet — add your first staff recommendation below.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3">
+                        {guidance.staffQuotes.map((q) => (
+                          <div key={q.id} className="flex gap-3 border border-border rounded-lg p-3 bg-muted/20">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex-shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold text-primary">
+                              {q.staffImageUrl
+                                ? <img src={q.staffImageUrl} alt={q.staffName} className="w-full h-full object-cover" />
+                                : q.staffName.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-semibold">{q.staffName}</span>
+                                {q.staffRole && <span className="text-xs text-muted-foreground">{q.staffRole}</span>}
+                                {q.rewritten && <span className="text-xs text-primary/70 flex items-center gap-0.5"><Sparkles className="w-3 h-3" /> AI-polished</span>}
+                              </div>
+                              <p className="text-sm text-muted-foreground italic">"{q.rewritten || q.draft}"</p>
+                            </div>
+                            <div className="flex gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingQuoteId(q.id);
+                                  setQuoteDraft(q.draft);
+                                  setQuoteStaffId(q.staffId);
+                                  setQuoteRewritten(q.rewritten);
+                                  setQuoteUseRewritten(!!q.rewritten);
+                                  setQuoteDialogOpen(true);
+                                }}
+                                className="p-1 text-muted-foreground hover:text-primary transition-colors"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleGuidanceChange("staffQuotes", guidance.staffQuotes.filter((x) => x.id !== q.id))}
+                                className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEditingQuoteId(null);
+                        setQuoteDraft("");
+                        setQuoteStaffId(null);
+                        setQuoteRewritten(null);
+                        setQuoteUseRewritten(false);
+                        setQuoteDialogOpen(true);
+                      }}
+                      className="w-fit"
+                    >
+                      <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Quote
+                    </Button>
                   </div>
 
                   <div className="flex justify-end">
@@ -1771,6 +1892,232 @@ export default function ProductDetail() {
           defaultSecondaryId={defaultSecondaryId}
           onRefresh={refetchVariants}
         />
+
+        {/* ── Add / Edit Quote dialog ── */}
+        <Dialog open={quoteDialogOpen} onOpenChange={(v) => { if (!v) setQuoteDialogOpen(false); }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editingQuoteId ? "Edit Quote" : "Add Staff Quote"}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              <div className="grid gap-2">
+                <Label>Staff Member</Label>
+                {staffList.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No staff members yet —{" "}
+                    <button type="button" className="underline text-primary" onClick={() => { setQuoteDialogOpen(false); setManageStaffOpen(true); }}>
+                      add one first
+                    </button>
+                  </p>
+                ) : (
+                  <Select
+                    value={quoteStaffId ? String(quoteStaffId) : ""}
+                    onValueChange={(v) => {
+                      const id = Number(v);
+                      setQuoteStaffId(id);
+                      const sm = staffList.find((s: any) => s.id === id);
+                      if (sm) setQuoteRewritten(null);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a staff member…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {staffList.map((s: any) => (
+                        <SelectItem key={s.id} value={String(s.id)}>
+                          <span className="flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-primary/10 inline-flex items-center justify-center text-xs font-bold text-primary overflow-hidden flex-shrink-0">
+                              {s.profileImageUrl
+                                ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover" />
+                                : s.name.charAt(0).toUpperCase()}
+                            </span>
+                            {s.name}{s.role ? ` — ${s.role}` : ""}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Draft Recommendation</Label>
+                <Textarea
+                  value={quoteDraft}
+                  onChange={(e) => { setQuoteDraft(e.target.value); setQuoteRewritten(null); setQuoteUseRewritten(false); }}
+                  placeholder="Type the basic recommendation — AI will polish it…"
+                  rows={3}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-fit"
+                  disabled={!quoteDraft.trim() || !quoteStaffId || rewriteMut.isPending}
+                  onClick={() => {
+                    const sm = staffList.find((s: any) => s.id === quoteStaffId);
+                    rewriteMut.mutate({ draft: quoteDraft, staffName: sm?.name ?? "Staff" });
+                  }}
+                >
+                  {rewriteMut.isPending
+                    ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Rewriting…</>
+                    : <><Sparkles className="w-3.5 h-3.5 mr-1.5" /> AI Rewrite</>}
+                </Button>
+              </div>
+
+              {quoteRewritten && (
+                <div className="grid gap-2">
+                  <Label>AI-Polished Version</Label>
+                  <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm italic text-foreground">
+                    "{quoteRewritten}"
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="use-rewritten"
+                      checked={quoteUseRewritten}
+                      onChange={(e) => setQuoteUseRewritten(e.target.checked)}
+                      className="rounded"
+                    />
+                    <label htmlFor="use-rewritten" className="text-sm cursor-pointer">Use AI version on the product page</label>
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setQuoteDialogOpen(false)}>Cancel</Button>
+              <Button
+                disabled={!quoteStaffId || !quoteDraft.trim()}
+                onClick={() => {
+                  const sm = staffList.find((s: any) => s.id === quoteStaffId);
+                  const newQuote = {
+                    id: editingQuoteId ?? Math.random().toString(36).slice(2),
+                    staffId: quoteStaffId!,
+                    staffName: sm?.name ?? "",
+                    staffRole: sm?.role ?? null,
+                    staffImageUrl: sm?.profileImageUrl ?? null,
+                    draft: quoteDraft,
+                    rewritten: quoteUseRewritten ? quoteRewritten : null,
+                  };
+                  const updated = editingQuoteId
+                    ? guidance!.staffQuotes.map((q) => q.id === editingQuoteId ? newQuote : q)
+                    : [...guidance!.staffQuotes, newQuote];
+                  handleGuidanceChange("staffQuotes", updated);
+                  setQuoteDialogOpen(false);
+                }}
+              >
+                {editingQuoteId ? "Save Changes" : "Add Quote"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Manage Staff dialog ── */}
+        <Dialog open={manageStaffOpen} onOpenChange={(v) => { if (!v) { setManageStaffOpen(false); setEditingStaffId(null); setStaffFormName(""); setStaffFormRole(""); setStaffFormImageUrl(""); } }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Manage Staff</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-2">
+              {/* Add / Edit form */}
+              <div className="border border-border rounded-lg p-4 grid gap-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{editingStaffId ? "Edit Staff Member" : "Add Staff Member"}</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Name *</Label>
+                    <Input value={staffFormName} onChange={(e) => setStaffFormName(e.target.value)} placeholder="e.g. Chris" />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Role</Label>
+                    <Input value={staffFormRole} onChange={(e) => setStaffFormRole(e.target.value)} placeholder="e.g. Sales Manager" />
+                  </div>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">Profile Photo</Label>
+                  <div className="flex items-center gap-2">
+                    {staffFormImageUrl && (
+                      <img src={staffFormImageUrl} alt="preview" className="w-8 h-8 rounded-full object-cover border border-border" />
+                    )}
+                    <label className="cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploadingStaffPhoto}
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const url = await uploadStaffPhoto(file);
+                          if (url) setStaffFormImageUrl(url);
+                        }}
+                      />
+                      <span className="inline-flex items-center gap-1.5 text-xs border border-border rounded px-2 py-1.5 hover:bg-muted transition-colors">
+                        {uploadingStaffPhoto ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                        {uploadingStaffPhoto ? "Uploading…" : "Upload photo"}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!staffFormName.trim() || addStaffMut.isPending || updateStaffMut.isPending}
+                    onClick={() => {
+                      const body = { name: staffFormName.trim(), role: staffFormRole.trim() || null, profileImageUrl: staffFormImageUrl || null };
+                      if (editingStaffId) {
+                        updateStaffMut.mutate({ id: editingStaffId, body });
+                      } else {
+                        addStaffMut.mutate(body);
+                      }
+                    }}
+                  >
+                    {(addStaffMut.isPending || updateStaffMut.isPending) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (editingStaffId ? "Save" : "Add")}
+                  </Button>
+                  {editingStaffId && (
+                    <Button size="sm" variant="outline" onClick={() => { setEditingStaffId(null); setStaffFormName(""); setStaffFormRole(""); setStaffFormImageUrl(""); }}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Staff list */}
+              {staffList.length > 0 && (
+                <div className="grid gap-2">
+                  {staffList.map((s: any) => (
+                    <div key={s.id} className="flex items-center gap-3 py-1.5 border-b border-border/50 last:border-0">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex-shrink-0 overflow-hidden flex items-center justify-center text-xs font-bold text-primary">
+                        {s.profileImageUrl
+                          ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover" />
+                          : s.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{s.name}</p>
+                        {s.role && <p className="text-xs text-muted-foreground">{s.role}</p>}
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          className="p-1 text-muted-foreground hover:text-primary"
+                          onClick={() => { setEditingStaffId(s.id); setStaffFormName(s.name); setStaffFormRole(s.role ?? ""); setStaffFormImageUrl(s.profileImageUrl ?? ""); }}
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteStaffMut.mutate(s.id)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Generate colour × size matrix dialog */}
         <Dialog open={generateMatrixOpen} onOpenChange={v => { if (!v) setGenerateMatrixOpen(false); }}>

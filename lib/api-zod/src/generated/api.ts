@@ -215,6 +215,15 @@ export const UpdateProductBody = zod.object({
   guidanceDurabilityRating: zod.number().int().min(1).max(5).nullish(),
   guidanceSmartRating: zod.number().int().min(1).max(5).nullish(),
   guidanceTags: zod.array(zod.string()).nullish(),
+  guidanceStaffQuotes: zod.array(zod.object({
+    id: zod.string(),
+    staffId: zod.number(),
+    staffName: zod.string(),
+    staffRole: zod.string().nullable(),
+    staffImageUrl: zod.string().nullable(),
+    draft: zod.string(),
+    rewritten: zod.string().nullable(),
+  })).nullish(),
 });
 
 export const UpdateProductResponse = zod.object({
