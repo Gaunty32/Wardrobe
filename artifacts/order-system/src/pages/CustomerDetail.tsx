@@ -4695,6 +4695,23 @@ export default function CustomerDetail() {
     }
   };
 
+  const [poRequiredToggling, setPoRequiredToggling] = useState(false);
+  const togglePoRequired = async (checked: boolean) => {
+    setPoRequiredToggling(true);
+    try {
+      await apiFetch(`/customers/${customerId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ poNumberRequired: checked }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+      toast({ title: checked ? "PO number required" : "PO number not required", description: checked ? "Invoices cannot be sent until a PO number is added to the order." : "Invoices can be sent without a PO number." });
+    } catch {
+      toast({ title: "Failed to update PO number setting", variant: "destructive" });
+    } finally {
+      setPoRequiredToggling(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -4781,6 +4798,21 @@ export default function CustomerDetail() {
                   </Label>
                   {(customer as any).zeroVat && (
                     <Badge variant="outline" className="text-xs border-blue-300 text-blue-700 bg-blue-50">0% VAT</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="po-number-required"
+                    checked={(customer as any).poNumberRequired ?? false}
+                    onCheckedChange={togglePoRequired}
+                    disabled={poRequiredToggling}
+                    className="scale-90"
+                  />
+                  <Label htmlFor="po-number-required" className="text-xs text-muted-foreground cursor-pointer select-none">
+                    Requires PO number
+                  </Label>
+                  {(customer as any).poNumberRequired && (
+                    <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 bg-orange-50">PO required</Badge>
                   )}
                 </div>
               </div>
