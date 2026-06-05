@@ -1931,7 +1931,7 @@ export default function ProductDetail() {
                           <span className="flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-primary/10 inline-flex items-center justify-center text-xs font-bold text-primary overflow-hidden flex-shrink-0">
                               {s.profileImageUrl
-                                ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover" />
+                                ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover object-center" />
                                 : s.name.charAt(0).toUpperCase()}
                             </span>
                             {s.name}{s.role ? ` — ${s.role}` : ""}
@@ -2040,7 +2040,7 @@ export default function ProductDetail() {
                   <Label className="text-xs">Profile Photo</Label>
                   <div className="flex items-center gap-2">
                     {staffFormImageUrl && (
-                      <img src={staffFormImageUrl} alt="preview" className="w-8 h-8 rounded-full object-cover border border-border" />
+                      <img src={staffFormImageUrl} alt="preview" className="w-8 h-8 rounded-full object-cover object-center border border-border" />
                     )}
                     <label className="cursor-pointer">
                       <input
@@ -2092,7 +2092,7 @@ export default function ProductDetail() {
                     <div key={s.id} className="flex items-center gap-3 py-1.5 border-b border-border/50 last:border-0">
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex-shrink-0 overflow-hidden flex items-center justify-center text-xs font-bold text-primary">
                         {s.profileImageUrl
-                          ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover" />
+                          ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover object-center" />
                           : s.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1 min-w-0">
