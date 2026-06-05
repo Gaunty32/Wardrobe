@@ -128,12 +128,12 @@ function esc(s: string) {
 
 function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
   const css = `
-    @page { size: 4in 3in; margin: 3mm; }
+    @page { size: 6in 4in; margin: 8mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; }
     .label {
       width: 100%;
-      height: calc(3in - 6mm);
+      height: calc(4in - 16mm);
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -141,102 +141,115 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
     }
     .label:last-child { page-break-after: auto; }
 
-    /* ── shared ── */
+    /* ── top bar (logo left, type+order right) ── */
     .top-bar {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 4pt;
-      padding-bottom: 4pt;
-      border-bottom: 2pt solid #000;
+      padding-bottom: 6pt;
+      margin-bottom: 6pt;
+      border-bottom: 2.5pt solid #000;
       flex-shrink: 0;
     }
-    .top-bar-logo { height: 22pt; width: auto; display: block; }
-    .top-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
-    .top-bar-type { font-size: 6pt; text-transform: uppercase; letter-spacing: .1em; color: #777; font-weight: 600; }
-    .top-bar-order { font-size: 13pt; font-weight: 800; letter-spacing: .01em; line-height: 1; }
+    .top-bar-logo { height: 28pt; width: auto; display: block; }
+    .top-bar-right { display: flex; flex-direction: column; align-items: flex-end; }
+    .top-bar-type { font-size: 7pt; text-transform: uppercase; letter-spacing: .12em; color: #888; font-weight: 700; }
+    .top-bar-order { font-size: 18pt; font-weight: 900; letter-spacing: .01em; line-height: 1; }
 
     /* ── box label ── */
     .customer-name {
-      font-size: 22pt;
-      font-weight: 800;
-      line-height: 1.05;
-      margin-bottom: 4pt;
-      padding-bottom: 3pt;
+      font-size: 30pt;
+      font-weight: 900;
+      line-height: 1;
+      padding-bottom: 6pt;
+      margin-bottom: 8pt;
       border-bottom: 1.5pt solid #000;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-    }
-    .info-grid { display: flex; flex-direction: column; gap: 2pt; flex: 1; }
-    .info-row { display: flex; align-items: baseline; gap: 0; }
-    .info-key {
-      width: 48pt;
       flex-shrink: 0;
-      font-size: 6.5pt;
+    }
+    .info-grid { display: flex; flex-direction: column; gap: 5pt; flex: 1; }
+    .info-row { display: flex; align-items: baseline; }
+    .info-key {
+      width: 62pt;
+      flex-shrink: 0;
+      font-size: 7.5pt;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .06em;
-      color: #666;
-      padding-top: 1pt;
+      letter-spacing: .07em;
+      color: #777;
+      padding-top: 1.5pt;
     }
-    .info-val { font-size: 10pt; font-weight: 600; line-height: 1.2; }
-    .info-val.small { font-size: 8.5pt; font-weight: 500; }
-    .address-block { margin-top: 3pt; padding-top: 3pt; border-top: 1pt solid #ddd; font-size: 8.5pt; line-height: 1.5; color: #333; }
+    .info-val { font-size: 13pt; font-weight: 600; line-height: 1.2; }
+    .address-block {
+      margin-top: 6pt;
+      padding-top: 6pt;
+      border-top: 1pt solid #ddd;
+      font-size: 11pt;
+      line-height: 1.6;
+      color: #222;
+      flex-shrink: 0;
+    }
 
     /* ── wearer label ── */
     .wearer-name {
-      font-size: 24pt;
-      font-weight: 800;
+      font-size: 34pt;
+      font-weight: 900;
       line-height: 1;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      margin-bottom: 1pt;
+      flex-shrink: 0;
     }
-    .wearer-title { font-size: 8pt; color: #555; margin-bottom: 3pt; }
-    .w-divider { border-top: 2pt solid #000; margin-bottom: 3pt; }
-    table { width: 100%; border-collapse: collapse; flex: 1; }
-    colgroup .col-item  { width: 42%; }
-    colgroup .col-colour{ width: 22%; }
-    colgroup .col-size  { width: 18%; }
-    colgroup .col-qty   { width: 18%; }
+    .wearer-title {
+      font-size: 11pt;
+      color: #555;
+      margin-top: 2pt;
+      margin-bottom: 6pt;
+      flex-shrink: 0;
+    }
+    .w-divider { border-top: 2.5pt solid #000; margin-bottom: 6pt; flex-shrink: 0; }
+    table { width: 100%; border-collapse: collapse; }
     thead th {
-      font-size: 6.5pt;
+      font-size: 8pt;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .07em;
+      letter-spacing: .08em;
       color: #666;
       border-bottom: 1.5pt solid #000;
-      padding: 0 2pt 1.5pt;
+      padding: 0 4pt 3pt;
       text-align: left;
     }
     thead th.r { text-align: right; }
     tbody td {
-      font-size: 9pt;
-      padding: 2.5pt 2pt;
-      border-bottom: .75pt solid #e5e5e5;
+      font-size: 11pt;
+      padding: 4pt 4pt;
+      border-bottom: .75pt solid #e0e0e0;
       vertical-align: top;
-      line-height: 1.25;
+      line-height: 1.3;
     }
-    tbody td.r { text-align: right; font-weight: 700; }
-    .finish { font-size: 7pt; color: #666; display: block; }
+    tbody td.r { text-align: right; font-weight: 800; }
+    .finish { font-size: 8.5pt; color: #666; display: block; margin-top: 1pt; }
     .w-footer {
       margin-top: auto;
-      padding-top: 2pt;
+      padding-top: 4pt;
       border-top: 1pt solid #ccc;
       display: flex;
       justify-content: space-between;
-      font-size: 7pt;
-      color: #888;
+      font-size: 8.5pt;
+      color: #999;
+      flex-shrink: 0;
     }
   `;
 
-  // Scale customer name font if long
+  // Scale customer name down for long names
   const nameLen = data.customerName.length;
-  const namePt = nameLen > 22 ? 16 : nameLen > 16 ? 19 : 22;
+  const namePt = nameLen > 24 ? 20 : nameLen > 18 ? 25 : 30;
 
-  const logoImg = logoDataUrl ? `<img class="top-bar-logo" src="${logoDataUrl}" alt="SBS">` : `<span style="font-size:9pt;font-weight:800;letter-spacing:.02em">Select Branding Solutions</span>`;
+  const logoImg = logoDataUrl
+    ? `<img class="top-bar-logo" src="${logoDataUrl}" alt="SBS">`
+    : `<span style="font-size:11pt;font-weight:900;letter-spacing:.01em">Select Branding Solutions</span>`;
 
   const boxLabel = `
 <div class="label">
@@ -255,12 +268,12 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
     ${data.contactName ? `<div class="info-row"><span class="info-key">Contact</span><span class="info-val">${esc(data.contactName)}</span></div>` : ""}
     ${data.phone ? `<div class="info-row"><span class="info-key">Phone</span><span class="info-val">${esc(data.phone)}</span></div>` : ""}
   </div>
-  ${data.addressLines.length ? `<div class="address-block">${data.addressLines.map(l => esc(l)).join(" &nbsp;·&nbsp; ")}</div>` : ""}
+  ${data.addressLines.length ? `<div class="address-block">${data.addressLines.map(l => esc(l)).join("<br>")}</div>` : ""}
 </div>`;
 
   const wearerLabels = data.wearers.map(w => {
     const wNameLen = w.name.length;
-    const wNamePt = wNameLen > 22 ? 18 : wNameLen > 16 ? 21 : 24;
+    const wNamePt = wNameLen > 24 ? 22 : wNameLen > 18 ? 28 : 34;
     return `
 <div class="label">
   <div class="top-bar">
@@ -271,10 +284,12 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
     </div>
   </div>
   <div class="wearer-name" style="font-size:${wNamePt}pt">${esc(w.name)}</div>
-  ${w.jobTitle ? `<div class="wearer-title">${esc(w.jobTitle)}</div>` : ""}
+  ${w.jobTitle ? `<div class="wearer-title">${esc(w.jobTitle)}</div>` : `<div style="margin-bottom:6pt"></div>`}
   <div class="w-divider"></div>
   <table>
-    <colgroup><col class="col-item"><col class="col-colour"><col class="col-size"><col class="col-qty"></colgroup>
+    <colgroup>
+      <col style="width:45%"><col style="width:25%"><col style="width:16%"><col style="width:14%">
+    </colgroup>
     <thead>
       <tr><th>Item</th><th>Colour</th><th>Size</th><th class="r">Qty</th></tr>
     </thead>
@@ -288,14 +303,17 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
       </tr>`).join("")}
     </tbody>
   </table>
-  <div class="w-footer"><span>${esc(data.customerName)}</span><span>${esc(data.orderNumber)}</span></div>
+  <div class="w-footer">
+    <span>${esc(data.customerName)}</span>
+    <span>${esc(data.orderNumber)}</span>
+  </div>
 </div>`;
   }).join("");
 
   const promptBar = `
 <div class="no-print" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#1e3a5f;color:#fff;font-family:Arial,sans-serif;font-size:13px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-  <span>&#9888;&#65039; In the print dialog, make sure you select your <strong>Zebra label printer</strong> and set paper size to <strong>4×3 in (100×76 mm)</strong>.</span>
-  <button onclick="window.print()" style="background:#fff;color:#1e3a5f;border:none;border-radius:4px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;">Print Labels</button>
+  <span>In the print dialog, select your <strong>Zebra label printer</strong> — paper size should be <strong>6×4 in (152×102 mm)</strong>.</span>
+  <button onclick="window.print()" style="background:#fff;color:#1e3a5f;border:none;border-radius:4px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;">Print Labels</button>
 </div>
 <div class="no-print" style="height:44px"></div>`;
 
