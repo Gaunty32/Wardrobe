@@ -126,7 +126,7 @@ function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildBrowserPrintHtml(data: LabelData): string {
+function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
   const css = `
     @page { size: 4in 3in; margin: 3mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -146,12 +146,15 @@ function buildBrowserPrintHtml(data: LabelData): string {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 3pt;
-      padding-bottom: 3pt;
+      margin-bottom: 4pt;
+      padding-bottom: 4pt;
       border-bottom: 2pt solid #000;
+      flex-shrink: 0;
     }
-    .top-bar-label { font-size: 7pt; text-transform: uppercase; letter-spacing: .08em; color: #555; font-weight: 600; }
-    .top-bar-order { font-size: 12pt; font-weight: 800; letter-spacing: .02em; }
+    .top-bar-logo { height: 22pt; width: auto; display: block; }
+    .top-bar-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
+    .top-bar-type { font-size: 6pt; text-transform: uppercase; letter-spacing: .1em; color: #777; font-weight: 600; }
+    .top-bar-order { font-size: 13pt; font-weight: 800; letter-spacing: .01em; line-height: 1; }
 
     /* ── box label ── */
     .customer-name {
@@ -233,11 +236,16 @@ function buildBrowserPrintHtml(data: LabelData): string {
   const nameLen = data.customerName.length;
   const namePt = nameLen > 22 ? 16 : nameLen > 16 ? 19 : 22;
 
+  const logoImg = logoDataUrl ? `<img class="top-bar-logo" src="${logoDataUrl}" alt="SBS">` : `<span style="font-size:9pt;font-weight:800;letter-spacing:.02em">Select Branding Solutions</span>`;
+
   const boxLabel = `
 <div class="label">
   <div class="top-bar">
-    <span class="top-bar-label">Box Label</span>
-    <span class="top-bar-order">${esc(data.orderNumber)}</span>
+    ${logoImg}
+    <div class="top-bar-right">
+      <span class="top-bar-type">Box Label</span>
+      <span class="top-bar-order">${esc(data.orderNumber)}</span>
+    </div>
   </div>
   <div class="customer-name" style="font-size:${namePt}pt">${esc(data.customerName)}</div>
   <div class="info-grid">
@@ -256,8 +264,11 @@ function buildBrowserPrintHtml(data: LabelData): string {
     return `
 <div class="label">
   <div class="top-bar">
-    <span class="top-bar-label">Wearer Label</span>
-    <span class="top-bar-order">${esc(data.orderNumber)}</span>
+    ${logoImg}
+    <div class="top-bar-right">
+      <span class="top-bar-type">Wearer Label</span>
+      <span class="top-bar-order">${esc(data.orderNumber)}</span>
+    </div>
   </div>
   <div class="wearer-name" style="font-size:${wNamePt}pt">${esc(w.name)}</div>
   ${w.jobTitle ? `<div class="wearer-title">${esc(w.jobTitle)}</div>` : ""}
@@ -288,14 +299,26 @@ function buildBrowserPrintHtml(data: LabelData): string {
 </head><body>${boxLabel}${wearerLabels}</body></html>`;
 }
 
-function openBrowserPrint(data: LabelData) {
-  const html = buildBrowserPrintHtml(data);
+async function openBrowserPrint(data: LabelData, base: string) {
+  // Fetch logo as inline base64 so it works reliably inside the print window
+  let logoDataUrl = "";
+  try {
+    const res = await fetch(`${base}sbs-logo.png`);
+    const blob = await res.blob();
+    logoDataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch { /* logo unavailable — print without it */ }
+
+  const html = buildBrowserPrintHtml(data, logoDataUrl);
   const win = window.open("", "_blank", "width=500,height=400");
   if (!win) { alert("Pop-up blocked — please allow pop-ups for this site then try again."); return; }
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); }, 400);
+  setTimeout(() => { win.print(); }, 500);
 }
 
 // ── Zebra Browser Print REST API ─────────────────────────────────────────────
@@ -475,7 +498,7 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients: 
                   variant="outline"
                   className="shrink-0 gap-1.5 text-xs"
                   disabled={!labelData || labelLoading}
-                  onClick={() => labelData && openBrowserPrint(labelData)}
+                  onClick={() => labelData && openBrowserPrint(labelData, import.meta.env.BASE_URL)}
                 >
                   {labelLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Printer className="w-3 h-3" />}
                   {labelLoading ? "Loading…" : "Print"}
