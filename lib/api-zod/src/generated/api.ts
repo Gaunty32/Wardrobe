@@ -206,6 +206,14 @@ export const UpdateProductBody = zod.object({
   secondarySupplierId: zod.number().nullish(),
   supplierCode: zod.string().nullish(),
   imageUrl: zod.string().nullish(),
+  guidanceBestFor: zod.string().nullish(),
+  guidanceNotIdealFor: zod.string().nullish(),
+  guidanceStaffRecommendation: zod.string().nullish(),
+  guidanceBadge: zod.string().nullish(),
+  guidanceValueRating: zod.number().int().min(1).max(5).nullish(),
+  guidanceDurabilityRating: zod.number().int().min(1).max(5).nullish(),
+  guidanceSmartRating: zod.number().int().min(1).max(5).nullish(),
+  guidanceTags: zod.array(zod.string()).nullish(),
 });
 
 export const UpdateProductResponse = zod.object({

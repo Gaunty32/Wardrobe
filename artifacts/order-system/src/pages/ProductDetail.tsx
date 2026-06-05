@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud
+  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -651,6 +651,17 @@ export default function ProductDetail() {
     priceBreaks: { qty: number; price: number }[];
   } | null>(null);
   const [detailsDirty, setDetailsDirty] = useState(false);
+  const [guidance, setGuidance] = useState<{
+    bestFor: string;
+    notIdealFor: string;
+    staffRecommendation: string;
+    badge: string | null;
+    valueRating: number | null;
+    durabilityRating: number | null;
+    smartRating: number | null;
+    tags: string[];
+  } | null>(null);
+  const [guidanceDirty, setGuidanceDirty] = useState(false);
   const [isService, setIsService] = useState(false);
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
@@ -685,11 +696,29 @@ export default function ProductDetail() {
         priceBreaks: Array.isArray((product as any).priceBreaks) ? (product as any).priceBreaks : [],
       });
     }
-  }, [product, details]);
+    if (product && !guidance) {
+      const p = product as any;
+      setGuidance({
+        bestFor: p.guidanceBestFor || "",
+        notIdealFor: p.guidanceNotIdealFor || "",
+        staffRecommendation: p.guidanceStaffRecommendation || "",
+        badge: p.guidanceBadge ?? null,
+        valueRating: p.guidanceValueRating ?? null,
+        durabilityRating: p.guidanceDurabilityRating ?? null,
+        smartRating: p.guidanceSmartRating ?? null,
+        tags: Array.isArray(p.guidanceTags) ? p.guidanceTags : [],
+      });
+    }
+  }, [product, details, guidance]);
 
   const handleDetailChange = (field: string, value: any) => {
     setDetails(prev => prev ? { ...prev, [field]: value } : prev);
     setDetailsDirty(true);
+  };
+
+  const handleGuidanceChange = (field: string, value: any) => {
+    setGuidance(prev => prev ? { ...prev, [field]: value } : prev);
+    setGuidanceDirty(true);
   };
 
   // When supplier changes: auto-set currency from supplier record and apply default price breaks if none set
@@ -745,6 +774,33 @@ export default function ProductDetail() {
           setDetailsDirty(false);
         },
         onError: () => toast({ title: "Could not save product", variant: "destructive" }),
+      }
+    );
+  };
+
+  const saveGuidance = () => {
+    if (!guidance) return;
+    updateMutation.mutate(
+      {
+        id: productId,
+        data: {
+          guidanceBestFor: guidance.bestFor || null,
+          guidanceNotIdealFor: guidance.notIdealFor || null,
+          guidanceStaffRecommendation: guidance.staffRecommendation || null,
+          guidanceBadge: guidance.badge,
+          guidanceValueRating: guidance.valueRating,
+          guidanceDurabilityRating: guidance.durabilityRating,
+          guidanceSmartRating: guidance.smartRating,
+          guidanceTags: guidance.tags.length > 0 ? guidance.tags : null,
+        } as any,
+      },
+      {
+        onSuccess: () => {
+          qc.invalidateQueries({ queryKey: ["product", productId] });
+          toast({ title: "Guidance saved" });
+          setGuidanceDirty(false);
+        },
+        onError: () => toast({ title: "Could not save guidance", variant: "destructive" }),
       }
     );
   };
@@ -875,7 +931,7 @@ export default function ProductDetail() {
     });
   }, [comboPricingGroups]);
 
-  if (isLoading || !details) {
+  if (isLoading || !details || !guidance) {
     return <Layout><div className="flex justify-center items-center h-64"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div></Layout>;
   }
   if (!product) {
@@ -999,6 +1055,9 @@ export default function ProductDetail() {
                   )}
                 </TabsTrigger>
               )}
+              <TabsTrigger value="guidance" className="flex items-center gap-1.5">
+                <BookOpen className="w-3.5 h-3.5" /> Guidance
+              </TabsTrigger>
             </TabsList>
 
             {/* ── Details ── */}
@@ -1564,6 +1623,134 @@ export default function ProductDetail() {
                 )}
               </div>
             </TabsContent>
+
+            {/* ── Guidance ── */}
+            <TabsContent value="guidance">
+              <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
+                <div className="grid gap-6 max-w-2xl">
+
+                  {/* Ratings */}
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-4">Ratings (click to set, click again to clear)</p>
+                    <div className="grid grid-cols-3 gap-6">
+                      {([
+                        { label: "Value for Money", field: "valueRating", value: guidance.valueRating },
+                        { label: "Durability",       field: "durabilityRating", value: guidance.durabilityRating },
+                        { label: "Smarts / Tech",    field: "smartRating", value: guidance.smartRating },
+                      ] as { label: string; field: string; value: number | null }[]).map(({ label, field, value }) => (
+                        <div key={field} className="grid gap-2">
+                          <Label>{label}</Label>
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((n) => (
+                              <button
+                                key={n}
+                                type="button"
+                                onClick={() => handleGuidanceChange(field, value === n ? null : n)}
+                                className="p-0.5 hover:scale-110 transition-transform"
+                              >
+                                <Star className={`w-6 h-6 ${n <= (value ?? 0) ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"}`} />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Badge */}
+                  <div className="grid gap-2">
+                    <Label>Badge</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {([null, "Most Popular", "Best Value", "Premium Choice", "Staff Pick"] as (string | null)[]).map((b) => (
+                        <button
+                          key={b ?? "none"}
+                          type="button"
+                          onClick={() => handleGuidanceChange("badge", guidance.badge === b && b !== null ? null : b)}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                            guidance.badge === b && b !== null
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : b === null
+                                ? "bg-muted text-muted-foreground border-border"
+                                : "bg-background text-muted-foreground border-border hover:border-primary/50"
+                          }`}
+                        >
+                          {b ?? "No badge"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Tags */}
+                  <div className="grid gap-2">
+                    <Label>Guidance Tags</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {(["Everyday Workwear", "Smart Uniform", "Heavy Duty", "Budget Friendly", "Premium"] as string[]).map((tag) => {
+                        const active = guidance.tags.includes(tag);
+                        return (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => {
+                              const next = active
+                                ? guidance.tags.filter((t) => t !== tag)
+                                : [...guidance.tags, tag];
+                              handleGuidanceChange("tags", next);
+                            }}
+                            className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors flex items-center gap-1 ${
+                              active
+                                ? "bg-primary/10 text-primary border-primary/40"
+                                : "bg-background text-muted-foreground border-border hover:border-primary/30"
+                            }`}
+                          >
+                            {active && <Check className="w-3 h-3" />}
+                            {tag}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Text fields */}
+                  <div className="grid gap-2">
+                    <Label>Best For</Label>
+                    <Textarea
+                      value={guidance.bestFor}
+                      onChange={(e) => handleGuidanceChange("bestFor", e.target.value)}
+                      placeholder="e.g. Outdoor teams, frequent washers, budget-conscious buyers…"
+                      rows={3}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Not Ideal For</Label>
+                    <Textarea
+                      value={guidance.notIdealFor}
+                      onChange={(e) => handleGuidanceChange("notIdealFor", e.target.value)}
+                      placeholder="e.g. Office environments, formal wear…"
+                      rows={3}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Staff Recommendation</Label>
+                    <Textarea
+                      value={guidance.staffRecommendation}
+                      onChange={(e) => handleGuidanceChange("staffRecommendation", e.target.value)}
+                      placeholder="Internal note or selling tip for staff to share with customers…"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button onClick={saveGuidance} disabled={!guidanceDirty || updateMutation.isPending}>
+                      {updateMutation.isPending
+                        ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        : <Save className="w-4 h-4 mr-2" />}
+                      Save Guidance
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
           </Tabs>
         </div>
 

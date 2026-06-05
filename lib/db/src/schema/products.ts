@@ -36,6 +36,22 @@ export const productsTable = pgTable("products", {
   isService: boolean("is_service").notNull().default(false),
   /** Archived products are hidden from order entry, purchasing, and WooCommerce sync */
   isArchived: boolean("is_archived").notNull().default(false),
+  /** Guidance: what the product is best suited for */
+  guidanceBestFor: text("guidance_best_for"),
+  /** Guidance: situations where this product is not ideal */
+  guidanceNotIdealFor: text("guidance_not_ideal_for"),
+  /** Guidance: internal staff recommendation / selling tip */
+  guidanceStaffRecommendation: text("guidance_staff_recommendation"),
+  /** Guidance: promotional badge — 'Most Popular' | 'Best Value' | 'Premium Choice' | 'Staff Pick' */
+  guidanceBadge: text("guidance_badge"),
+  /** Guidance: value-for-money rating 1–5 */
+  guidanceValueRating: integer("guidance_value_rating"),
+  /** Guidance: durability rating 1–5 */
+  guidanceDurabilityRating: integer("guidance_durability_rating"),
+  /** Guidance: smarts/tech rating 1–5 */
+  guidanceSmartRating: integer("guidance_smart_rating"),
+  /** Guidance: display tags e.g. ['Everyday Workwear', 'Heavy Duty'] */
+  guidanceTags: jsonb("guidance_tags").$type<string[]>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

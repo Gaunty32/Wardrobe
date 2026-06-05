@@ -352,6 +352,9 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   if ("secondarySupplierCode" in req.body) {
     updateData.secondarySupplierCode = req.body.secondarySupplierCode || null;
   }
+  if ("guidanceTags" in req.body) {
+    updateData.guidanceTags = Array.isArray(req.body.guidanceTags) ? req.body.guidanceTags : null;
+  }
   const [product] = await db
     .update(productsTable)
     .set(updateData)

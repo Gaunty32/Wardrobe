@@ -1473,4 +1473,15 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_name ON products(name)`);
   await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_sku ON products(sku) WHERE sku IS NOT NULL`);
   console.log("[startup] Stock performance indexes ensured");
+
+  // ── Product guidance columns ───────────────────────────────────────────────
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_best_for text`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_not_ideal_for text`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_staff_recommendation text`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_badge text`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_value_rating integer`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_durability_rating integer`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_smart_rating integer`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_tags jsonb`);
+  console.log("[startup] Product guidance columns ensured");
 }
