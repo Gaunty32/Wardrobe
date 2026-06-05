@@ -1255,7 +1255,7 @@ export default function ProductDetail() {
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Quantity Price Breaks</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">Unit selling price (£) based on total order quantity</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Discount off unit price (£) based on total order quantity</p>
                       </div>
                       <Button
                         size="sm"
@@ -1274,7 +1274,7 @@ export default function ProductDetail() {
                           <thead className="bg-muted/50">
                             <tr>
                               <th className="text-left px-3 py-2 font-medium text-muted-foreground">Min. Qty</th>
-                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-nowrap">Unit Price (£)</th>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-nowrap">Discount (£)</th>
                               <th className="w-10 px-2 py-2" />
                             </tr>
                           </thead>
@@ -1282,6 +1282,7 @@ export default function ProductDetail() {
                             {[...details.priceBreaks]
                               .sort((a, b) => a.qty - b.qty)
                               .map((pb, idx) => {
+                                const discount = parseFloat((details.unitPrice - pb.price).toFixed(2));
                                 return (
                                   <tr key={idx} className="border-t border-border/30 hover:bg-muted/20">
                                     <td className="px-3 py-1.5">
@@ -1306,12 +1307,13 @@ export default function ProductDetail() {
                                           min="0"
                                           step="0.01"
                                           className="h-7 w-24 text-sm"
-                                          value={pb.price || ""}
+                                          value={discount > 0 ? discount : ""}
                                           placeholder="0.00"
                                           onFocus={e => e.target.select()}
                                           onChange={e => {
+                                            const disc = parseFloat(e.target.value) || 0;
                                             const updated = [...details.priceBreaks];
-                                            updated[idx] = { ...pb, price: parseFloat(e.target.value) || 0 };
+                                            updated[idx] = { ...pb, price: parseFloat((details.unitPrice - disc).toFixed(2)) };
                                             handleDetailChange("priceBreaks", updated);
                                           }}
                                         />
