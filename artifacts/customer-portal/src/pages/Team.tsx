@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +15,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
-  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw, ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet, GripVertical, ChevronRight, Search, X,
+  Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw,
+  ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet, Search, X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -34,6 +35,22 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   dept_manager: "Place orders for their team — orders are held for Admin approval",
   member: "Place orders for themselves only — orders are held for Admin approval",
 };
+
+const AVATAR_COLORS = [
+  "bg-blue-100 text-blue-700",
+  "bg-violet-100 text-violet-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-orange-100 text-orange-700",
+  "bg-rose-100 text-rose-700",
+  "bg-teal-100 text-teal-700",
+  "bg-indigo-100 text-indigo-700",
+  "bg-amber-100 text-amber-700",
+  "bg-cyan-100 text-cyan-700",
+  "bg-pink-100 text-pink-700",
+];
+function getAvatarColor(id: number) {
+  return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
+}
 
 function RoleBadge({ role }: { role: string }) {
   const colours: Record<string, string> = {
@@ -113,16 +130,16 @@ function Explosion({ x, y, onDone }: { x: number; y: number; onDone: () => void 
   );
 }
 
-// ─── Bin drop zone ────────────────────────────────────────────────────────────
+// ─── Bin zone (right-side panel) ──────────────────────────────────────────────
 
 function BinZone({
-  visible,
+  dragging,
   hovering,
   onDragOver,
   onDragLeave,
   onDrop,
 }: {
-  visible: boolean;
+  dragging: boolean;
   hovering: boolean;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: (e: React.DragEvent) => void;
@@ -130,44 +147,35 @@ function BinZone({
 }) {
   return (
     <div
-      style={{
-        position: "fixed",
-        bottom: "28px",
-        left:   "50%",
-        transform: `translateX(-50%) translateY(${visible ? "0" : "calc(100% + 40px)"})`,
-        transition: "transform 0.38s cubic-bezier(0.34,1.56,0.64,1)",
-        zIndex: 200,
-        pointerEvents: visible ? "all" : "none",
-      }}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      className={`sticky top-20 w-28 shrink-0 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 px-3 py-8 text-center select-none transition-all duration-200
+        ${dragging
+          ? hovering
+            ? "border-red-500 bg-red-500 text-white shadow-xl shadow-red-200/60 scale-105"
+            : "border-red-300 bg-red-50 text-red-500 border-dashed"
+          : "border-dashed border-border/30 bg-muted/10 text-muted-foreground/25"
+        }
+      `}
+      onDragOver={dragging ? onDragOver : undefined}
+      onDragLeave={dragging ? onDragLeave : undefined}
+      onDrop={dragging ? onDrop : undefined}
     >
-      <div
-        className={`flex items-center gap-3 rounded-2xl border-2 px-6 py-3.5 shadow-2xl backdrop-blur-sm select-none transition-all duration-150
-          ${hovering
-            ? "border-red-500 bg-red-500 text-white scale-110"
-            : "border-red-300 bg-white/95 text-red-500"
-          }`}
-      >
-        <Trash2
-          className={`w-6 h-6 shrink-0 transition-transform ${hovering ? "" : ""}`}
-          style={hovering ? { animation: "bin-shake 0.3s ease-in-out infinite" } : undefined}
-        />
-        <div>
-          <p className="font-bold text-sm leading-tight">
-            {hovering ? "Release to say goodbye! 😬" : "Gone but not forgotten"}
-          </p>
-          <p className={`text-xs leading-tight mt-0.5 ${hovering ? "text-red-100" : "text-red-400"}`}>
-            {hovering ? "They'll be marked as inactive — no take-backs*" : "Drop here if they've left the company 👋"}
-          </p>
-        </div>
+      <Trash2
+        className={`w-8 h-8 transition-all duration-150 ${hovering ? "scale-125" : dragging ? "scale-110" : "scale-100"}`}
+        style={hovering ? { animation: "bin-shake 0.3s ease-in-out infinite" } : undefined}
+      />
+      <div className="space-y-1">
+        <p className="text-xs font-semibold leading-tight">
+          {hovering ? "Let go! 😬" : dragging ? "Drop here" : "Leavers"}
+        </p>
+        <p className={`text-[10px] leading-tight ${dragging ? "opacity-80" : "opacity-50"}`}>
+          {hovering ? "They'll go inactive" : dragging ? "to deactivate" : "Drag here to deactivate"}
+        </p>
       </div>
     </div>
   );
 }
 
-// ─── Employee section ─────────────────────────────────────────────────────────
+// ─── Employee form ─────────────────────────────────────────────────────────────
 
 function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, onSave, onCancel, saving }: {
   initial?: any;
@@ -194,7 +202,6 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  // When role is Operative, only show Team Manager-role employees as manager options
   const selectedRoleName = roles.find(r => String(r.id) === form.roleId)?.name ?? "";
   const isOperativeRole = selectedRoleName.toLowerCase().includes("operative");
   const managerOptions = allEmployees.filter((e: any) => {
@@ -224,7 +231,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
         </div>
       </div>
       <div className="space-y-1">
-        <Label>Employee Number</Label>
+        <Label>Employee Number *</Label>
         <Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} />
       </div>
       <div className="space-y-1">
@@ -308,7 +315,6 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
         </div>
       )}
 
-      {/* Annual allowance */}
       <div className="space-y-1 pt-1">
         <Label className="flex items-center gap-1.5">
           <Wallet className="w-3.5 h-3.5 text-muted-foreground" />
@@ -329,7 +335,6 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
         </div>
       </div>
 
-      {/* Clothing sizes section */}
       <div className="space-y-2 pt-1">
         <div className="flex items-center justify-between">
           <Label className="flex items-center gap-1.5">
@@ -377,7 +382,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
       <DialogFooter className="pt-2">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
         <Button
-          disabled={saving || !form.firstName.trim() || !form.lastName.trim()}
+          disabled={saving || !form.firstName.trim() || !form.lastName.trim() || !form.employeeNumber.trim()}
           onClick={() => onSave(
             {
               ...form,
@@ -397,11 +402,12 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
   );
 }
 
+// ─── Employees tab ─────────────────────────────────────────────────────────────
+
 function EmployeesTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
 
-  // ── data ─────────────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const searchTrimmed = search.trim().toLowerCase();
 
@@ -409,17 +415,14 @@ function EmployeesTab() {
     queryKey: ["portal-team-employees", true],
     queryFn: () => apiFetch("/portal/team/employees?showInactive=true"),
   });
-  // Active-only list used by the employee form manager picker
   const { data: allEmployees = [] } = useQuery<any[]>({
     queryKey: ["portal-team-employees", false],
     queryFn: () => apiFetch("/portal/team/employees?showInactive=false"),
   });
-  // When not searching, hierarchy only shows active employees
   const activeEmployees = useMemo(
     () => (employees as any[]).filter((e: any) => e.is_active),
     [employees],
   );
-  // When searching, flat list across all employees
   const searchResults = useMemo(() => {
     if (!searchTrimmed) return [];
     return (employees as any[]).filter((e: any) =>
@@ -428,6 +431,7 @@ function EmployeesTab() {
         .includes(searchTrimmed),
     );
   }, [employees, searchTrimmed]);
+
   const { data: roles = [] } = useQuery<Array<{ id: number; name: string }>>({
     queryKey: ["portal-team-roles"],
     queryFn: () => apiFetch("/portal/team/roles"),
@@ -446,7 +450,6 @@ function EmployeesTab() {
   });
   const emailConfigured = emailStatus?.configured ?? false;
 
-  // ── portal user lookup ────────────────────────────────────────────────────────
   const portalByEmpId = useMemo(() => {
     const m = new Map<number, any>();
     for (const u of portalUsers as any[]) {
@@ -460,8 +463,6 @@ function EmployeesTab() {
     [portalUsers],
   );
 
-  // ── hierarchy (active employees only) ────────────────────────────────────────
-  // groups: manager_id → direct reports list
   const groups = useMemo(() => {
     const m = new Map<number | null, any[]>();
     for (const e of activeEmployees as any[]) {
@@ -472,7 +473,6 @@ function EmployeesTab() {
     return m;
   }, [activeEmployees]);
 
-  // IDs of employees who are managers of at least one other
   const leaderIds = useMemo(() => {
     const s = new Set<number>();
     for (const e of activeEmployees as any[]) {
@@ -481,7 +481,6 @@ function EmployeesTab() {
     return s;
   }, [activeEmployees]);
 
-  // Section keys: the leader IDs, sorted by leader surname
   const sectionKeys = useMemo(() => {
     const keys = [...groups.keys()].filter((k): k is number => k !== null);
     return keys.sort((a, b) => {
@@ -491,16 +490,10 @@ function EmployeesTab() {
     });
   }, [groups, activeEmployees]);
 
-  // Unassigned: top-level employees who do NOT lead anyone
   const unassigned = useMemo(
     () => (groups.get(null) ?? []).filter((e: any) => !leaderIds.has(e.id)),
     [groups, leaderIds],
   );
-
-  // ── expanded sections ─────────────────────────────────────────────────────────
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const toggle = (id: number) =>
-    setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   // ── drag & drop ───────────────────────────────────────────────────────────────
   const [dragEmpId, setDragEmpId] = useState<number | null>(null);
@@ -606,7 +599,6 @@ function EmployeesTab() {
   });
 
   // ── portal management ─────────────────────────────────────────────────────────
-  // portalTarget: { emp, user } — user=null means invite flow
   const [portalTarget, setPortalTarget] = useState<{ emp: any; user: any | null } | null>(null);
   const [portalInviteRole, setPortalInviteRole] = useState("member");
   const [portalInviteResult, setPortalInviteResult] = useState<{ emailSent: boolean; inviteUrl: string; email: string } | null>(null);
@@ -653,99 +645,58 @@ function EmployeesTab() {
     onError: () => toast({ title: "Failed to update access", variant: "destructive" }),
   });
 
-  // ── employee card renderer ────────────────────────────────────────────────────
-  const renderEmpCard = (emp: any) => {
-    const portalUser = portalByEmpId.get(emp.id);
-    const spend = parseFloat(emp.spend_12m ?? "0");
-    const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
-    const topup = parseFloat(emp.allowance_topup ?? "0");
-    const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+  // ── member chip renderer ──────────────────────────────────────────────────────
+  const renderMemberChip = (emp: any) => {
     const isDragging = dragEmpId === emp.id;
-
+    const portalUser = portalByEmpId.get(emp.id);
     return (
       <div
         key={emp.id}
         draggable
         onDragStart={(e) => { setDragEmpId(emp.id); e.dataTransfer.effectAllowed = "move"; }}
         onDragEnd={() => { setDragEmpId(null); setDragOverKey(undefined); setDragOverBin(false); }}
-        className={`flex items-center gap-2.5 rounded-lg border px-3 py-2.5 bg-card select-none transition-all
-          ${emp.is_active ? "" : "opacity-60"}
-          ${isDragging ? "opacity-40 border-dashed" : ""}
+        className={`group flex items-center gap-2 rounded-lg border px-2.5 py-2 bg-background select-none transition-all
+          ${isDragging ? "opacity-30 border-dashed scale-95" : "hover:border-primary/40 hover:shadow-sm cursor-grab active:cursor-grabbing"}
         `}
       >
-        <GripVertical className="w-3.5 h-3.5 text-muted-foreground/30 shrink-0 cursor-grab active:cursor-grabbing" />
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${getAvatarColor(emp.id)}`}>
           {emp.first_name?.[0]}{emp.last_name?.[0]}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-sm leading-tight">
-            {emp.first_name} {emp.last_name}
-            {!emp.is_active && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(inactive)</span>}
+          <p className="font-medium text-xs leading-tight truncate">{emp.first_name} {emp.last_name}</p>
+          <p className="text-[10px] text-muted-foreground truncate">
+            {[emp.employee_number && `#${emp.employee_number}`, emp.role_name || emp.job_title].filter(Boolean).join(" · ")}
           </p>
-          <p className="text-xs text-muted-foreground truncate mt-0.5">
-            {[emp.employee_number && `#${emp.employee_number}`, emp.role_name, emp.job_title, emp.department].filter(Boolean).join(" · ")}
-          </p>
-          {totalBudget != null && totalBudget > 0 && (() => {
-            const pct = Math.min(100, (spend / totalBudget) * 100);
-            const over = spend > totalBudget;
-            return (
-              <div className="mt-1 max-w-[220px]">
-                <div className="flex justify-between text-[10px] mb-0.5">
-                  <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>£{spend.toFixed(0)} / £{totalBudget.toFixed(0)}</span>
-                  {over ? <span className="text-destructive font-medium">Over</span> : <span className="text-muted-foreground">£{(totalBudget - spend).toFixed(0)} left</span>}
-                </div>
-                <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
-                  <div className={`h-full rounded-full ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
-                </div>
-              </div>
-            );
-          })()}
         </div>
-
-        {/* Portal badge or Invite */}
-        {portalUser ? (
-          <button onClick={() => openPortal(emp)} className="shrink-0" title="Manage portal access">
-            <RoleBadge role={portalUser.status === "invited" ? "invited" : portalUser.status === "inactive" ? "inactive" : portalUser.portal_role} />
-          </button>
-        ) : emp.email ? (
-          <Button variant="ghost" size="sm" className="shrink-0 text-xs h-6 px-2 gap-1 text-muted-foreground hover:text-primary"
-            onClick={() => openPortal(emp)}>
-            <Mail className="w-3 h-3" /> Invite
-          </Button>
-        ) : null}
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-0.5 shrink-0">
-          {effectiveAllowance != null && (
-            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => openTopup(emp)} title="Extra credits">
-              <Plus className="w-3.5 h-3.5" />
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          {portalUser ? (
+            <button onClick={() => openPortal(emp)} title="Manage portal access">
+              <RoleBadge role={portalUser.status === "invited" ? "invited" : portalUser.status === "inactive" ? "inactive" : portalUser.portal_role} />
+            </button>
+          ) : emp.email ? (
+            <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-primary" onClick={() => openPortal(emp)} title="Invite to portal">
+              <Mail className="w-3 h-3" />
             </Button>
-          )}
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditTarget(emp)} title="Edit">
-            <Pencil className="w-3.5 h-3.5" />
+          ) : null}
+          <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditTarget(emp)} title="Edit">
+            <Pencil className="w-3 h-3" />
           </Button>
-          <Button variant="ghost" size="icon"
-            className={`h-7 w-7 ${emp.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
-            onClick={() => statusMutation.mutate({ id: emp.id, isActive: !emp.is_active })}
-            title={emp.is_active ? "Deactivate" : "Reactivate"}>
-            {emp.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+          <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-destructive"
+            onClick={() => statusMutation.mutate({ id: emp.id, isActive: false })} title="Deactivate">
+            <UserMinus className="w-3 h-3" />
           </Button>
         </div>
       </div>
     );
   };
 
-  // Drop zone styles helper
-  const dropZoneCls = (key: number | null) =>
-    dragEmpId != null && dragOverKey === key
-      ? "border-primary ring-1 ring-primary/50 bg-primary/5"
-      : "";
-
   // ── JSX ───────────────────────────────────────────────────────────────────────
+  const isDropTarget = (key: number | null) => dragEmpId != null && dragOverKey === key;
+
   return (
     <div>
       {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-5">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           <Input
@@ -768,7 +719,7 @@ function EmployeesTab() {
       {isLoading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
       ) : searchTrimmed ? (
-        /* ── Search results: flat list ── */
+        /* ── Search results flat list ── */
         searchResults.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
@@ -783,7 +734,7 @@ function EmployeesTab() {
                 key={emp.id}
                 className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${emp.is_active ? "" : "opacity-60"}`}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${getAvatarColor(emp.id)}`}>
                   {emp.first_name?.[0]}{emp.last_name?.[0]}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -796,13 +747,18 @@ function EmployeesTab() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditTarget(emp); }} title="Edit">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditTarget(emp)} title="Edit">
                     <Pencil className="w-3.5 h-3.5" />
                   </Button>
-                  {!emp.is_active && (
+                  {!emp.is_active ? (
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-green-600"
                       onClick={() => statusMutation.mutate({ id: emp.id, isActive: true })} title="Reactivate">
                       <RotateCcw className="w-3.5 h-3.5" />
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => statusMutation.mutate({ id: emp.id, isActive: false })} title="Deactivate">
+                      <UserMinus className="w-3.5 h-3.5" />
                     </Button>
                   )}
                 </div>
@@ -818,171 +774,184 @@ function EmployeesTab() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
-          {/* ── Team sections (leaders with direct reports) ── */}
-          {sectionKeys.map((leaderId) => {
-            const leader = (activeEmployees as any[]).find((e: any) => e.id === leaderId);
-            if (!leader) return null;
-            const members = groups.get(leaderId) ?? [];
-            const isOpen = expanded.has(leaderId);
-            const leaderPortalUser = portalByEmpId.get(leaderId);
-            const leaderPortalRole = leaderPortalUser
-              ? (leaderPortalUser.status === "invited" ? "invited" : leaderPortalUser.status === "inactive" ? "inactive" : leaderPortalUser.portal_role)
-              : null;
+        /* ── Main tile view ── */
+        <div className="flex gap-5 items-start">
+          {/* Left: tile grid */}
+          <div className="flex-1 min-w-0 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
 
-            return (
-              <div
-                key={leaderId}
-                className={`rounded-xl border bg-card overflow-hidden transition-all ${dropZoneCls(leaderId)}`}
-                onDragOver={(e) => { if (dragEmpId != null) { e.preventDefault(); setDragOverKey(leaderId); } }}
-                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
-                onDrop={(e) => { e.preventDefault(); handleDrop(leaderId); }}
-              >
-                {/* Leader header row */}
-                <div className="flex items-center gap-2 px-4 py-3 hover:bg-muted/30 transition-colors">
-                  <button className="flex items-center gap-2 flex-1 min-w-0 text-left" onClick={() => toggle(leaderId)}>
-                    <ChevronRight className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-90" : ""}`} />
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${leader.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                      {leader.first_name?.[0]}{leader.last_name?.[0]}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm leading-tight">
-                        {leader.first_name} {leader.last_name}
-                        {!leader.is_active && <span className="ml-1.5 text-xs text-muted-foreground font-normal">(inactive)</span>}
+              {/* ── Manager tiles ── */}
+              {sectionKeys.map((leaderId) => {
+                const leader = (activeEmployees as any[]).find((e: any) => e.id === leaderId);
+                if (!leader) return null;
+                const members = groups.get(leaderId) ?? [];
+                const leaderPortalUser = portalByEmpId.get(leaderId);
+                const leaderPortalRole = leaderPortalUser
+                  ? (leaderPortalUser.status === "invited" ? "invited" : leaderPortalUser.status === "inactive" ? "inactive" : leaderPortalUser.portal_role)
+                  : null;
+                const effectiveAllowance = leader.effective_allowance != null ? parseFloat(leader.effective_allowance) : null;
+                const dropTarget = isDropTarget(leaderId);
+
+                return (
+                  <div
+                    key={leaderId}
+                    className={`flex flex-col rounded-2xl border bg-card overflow-hidden transition-all duration-150
+                      ${dropTarget ? "border-primary ring-2 ring-primary/30 shadow-xl" : "shadow-sm hover:shadow-md"}
+                    `}
+                    onDragOver={(e) => { if (dragEmpId != null) { e.preventDefault(); setDragOverKey(leaderId); } }}
+                    onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
+                    onDrop={(e) => { e.preventDefault(); handleDrop(leaderId); }}
+                  >
+                    {/* Manager header */}
+                    <div className="p-5 flex flex-col items-center text-center border-b bg-gradient-to-b from-muted/40 to-transparent">
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold mb-3 ring-4 ring-white shadow-md ${getAvatarColor(leaderId)}`}>
+                        {leader.first_name?.[0]}{leader.last_name?.[0]}
+                      </div>
+                      <p className="font-bold text-sm leading-tight">{leader.first_name} {leader.last_name}</p>
+                      {leader.employee_number && (
+                        <p className="text-[11px] text-muted-foreground/70 font-mono mt-0.5">#{leader.employee_number}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground mt-0.5">{leader.role_name || "Team Manager"}</p>
+                      <p className="text-xs font-medium text-muted-foreground mt-1">
+                        {members.length} member{members.length !== 1 ? "s" : ""}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {[leader.role_name, leader.job_title].filter(Boolean).join(" · ") || "Team Leader"}
-                        {" · "}{members.length} {members.length === 1 ? "member" : "members"}
-                      </p>
+                      {leaderPortalRole && (
+                        <button onClick={() => openPortal(leader)} className="mt-2" title="Manage portal access">
+                          <RoleBadge role={leaderPortalRole} />
+                        </button>
+                      )}
+                      <div className="flex items-center gap-0.5 mt-2.5">
+                        {!leaderPortalRole && leader.email && (
+                          <Button variant="ghost" size="sm" className="h-6 text-xs px-2 gap-1 text-muted-foreground hover:text-primary" onClick={() => openPortal(leader)}>
+                            <Mail className="w-3 h-3" /> Invite
+                          </Button>
+                        )}
+                        {effectiveAllowance != null && (
+                          <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={() => openTopup(leader)} title="Extra credits">
+                            <Plus className="w-3 h-3" />
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditTarget(leader)} title="Edit">
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        <Button variant="ghost" size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => statusMutation.mutate({ id: leader.id, isActive: false })}
+                          title="Deactivate">
+                          <UserMinus className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
-                  </button>
-                  {/* Portal badge on leader */}
-                  {leaderPortalRole ? (
-                    <button onClick={() => openPortal(leader)} className="shrink-0" title="Manage portal access">
-                      <RoleBadge role={leaderPortalRole} />
-                    </button>
-                  ) : leader.email ? (
-                    <Button variant="ghost" size="sm" className="shrink-0 text-xs h-6 px-2 gap-1 text-muted-foreground hover:text-primary"
-                      onClick={() => openPortal(leader)}>
-                      <Mail className="w-3 h-3" /> Invite
-                    </Button>
-                  ) : null}
-                  {leader.effective_allowance != null && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary shrink-0" onClick={() => openTopup(leader)} title="Extra credits">
-                      <Plus className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setEditTarget(leader)} title="Edit">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </Button>
-                  <Button variant="ghost" size="icon"
-                    className={`h-7 w-7 shrink-0 ${leader.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
-                    onClick={() => statusMutation.mutate({ id: leader.id, isActive: !leader.is_active })}
-                    title={leader.is_active ? "Deactivate" : "Reactivate"}>
-                    {leader.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                  </Button>
+
+                    {/* Member chips */}
+                    <div className={`flex-1 p-2 space-y-1.5 min-h-[72px] max-h-60 overflow-y-auto transition-colors
+                      ${dropTarget ? "bg-primary/5" : ""}
+                    `}>
+                      {members.length === 0 ? (
+                        <p className="text-xs text-muted-foreground text-center py-4 italic select-none">
+                          {dragEmpId != null ? "↓ Drop here to assign" : "No members yet"}
+                        </p>
+                      ) : (
+                        members.map((emp: any) => renderMemberChip(emp))
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* ── Unassigned tile ── */}
+              {unassigned.length > 0 && (
+                <div
+                  className={`flex flex-col rounded-2xl border bg-card overflow-hidden transition-all duration-150 shadow-sm
+                    ${isDropTarget(null) ? "border-primary ring-2 ring-primary/30 shadow-xl" : "border-dashed border-border/60"}
+                  `}
+                  onDragOver={(e) => { if (dragEmpId != null) { e.preventDefault(); setDragOverKey(null); } }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
+                  onDrop={(e) => { e.preventDefault(); handleDrop(null); }}
+                >
+                  <div className="p-5 flex flex-col items-center text-center border-b bg-muted/20">
+                    <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-3 ring-4 ring-white shadow-sm">
+                      <Users className="w-7 h-7 text-muted-foreground" />
+                    </div>
+                    <p className="font-bold text-sm">Unassigned</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">No team manager</p>
+                    <p className="text-xs font-medium text-muted-foreground mt-1">
+                      {unassigned.length} member{unassigned.length !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <div className={`flex-1 p-2 space-y-1.5 min-h-[72px] max-h-60 overflow-y-auto
+                    ${isDropTarget(null) ? "bg-primary/5" : ""}
+                  `}>
+                    {unassigned.map((emp: any) => renderMemberChip(emp))}
+                  </div>
                 </div>
-
-                {/* Expanded members */}
-                {isOpen && (
-                  <div className="border-t bg-muted/10 px-3 py-2 space-y-1.5">
-                    {members.length === 0 ? (
-                      <p className="text-xs text-muted-foreground text-center py-3">No team members yet — drag employees here to assign them.</p>
-                    ) : (
-                      members.map((emp: any) => renderEmpCard(emp))
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* ── Unassigned (no manager, not a leader) ── */}
-          {unassigned.length > 0 && (
-            <div
-              className={`rounded-xl border bg-card overflow-hidden transition-all ${dropZoneCls(null)}`}
-              onDragOver={(e) => { if (dragEmpId != null) { e.preventDefault(); setDragOverKey(null); } }}
-              onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverKey(undefined); }}
-              onDrop={(e) => { e.preventDefault(); handleDrop(null); }}
-            >
-              <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b bg-muted/20">
-                <Users className="w-3.5 h-3.5" /> Unassigned ({unassigned.length})
-              </div>
-              <div className="px-3 py-2 space-y-1.5">
-                {unassigned.map((emp: any) => renderEmpCard(emp))}
-              </div>
+              )}
             </div>
-          )}
 
-          {/* ── Portal-only users (not linked to an employee) ── */}
-          {unlinkedPortalUsers.length > 0 && (
-            <div className="rounded-xl border bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b bg-muted/20">
-                <ShieldCheck className="w-3.5 h-3.5" /> Portal access only ({unlinkedPortalUsers.length})
-              </div>
-              <div className="px-3 py-2 space-y-1.5">
-                {unlinkedPortalUsers.map((u: any) => (
-                  <div key={u.id} className="flex items-center gap-2.5 rounded-lg border px-3 py-2.5 bg-card">
-                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
-                      <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+            {/* Portal-only users */}
+            {unlinkedPortalUsers.length > 0 && (
+              <div className="rounded-xl border bg-card overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide border-b bg-muted/20">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Portal access only ({unlinkedPortalUsers.length})
+                </div>
+                <div className="px-3 py-2 space-y-1.5">
+                  {unlinkedPortalUsers.map((u: any) => (
+                    <div key={u.id} className="flex items-center gap-2.5 rounded-lg border px-3 py-2.5 bg-card">
+                      <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                        <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm truncate">{u.email}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {u.status === "invited" ? "Invite pending" : u.last_login_at
+                            ? `Last sign-in ${new Date(u.last_login_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+                            : "Never signed in"}
+                        </p>
+                      </div>
+                      <RoleBadge role={u.status === "invited" ? "invited" : u.status === "inactive" ? "inactive" : u.portal_role} />
+                      <Select value={u.portal_role} onValueChange={(v) => portalRoleMutation.mutate({ id: u.id, role: v })} disabled={u.status === "inactive"}>
+                        <SelectTrigger className="h-7 text-xs w-28 shrink-0"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="member">User</SelectItem>
+                          <SelectItem value="dept_manager">Manager</SelectItem>
+                          <SelectItem value="manager">Admin</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button variant={u.status !== "inactive" ? "outline" : "secondary"} size="sm" className="shrink-0 text-xs"
+                        onClick={() => portalStatusMutation.mutate({ id: u.id, status: u.status === "inactive" ? "active" : "inactive" })}>
+                        {u.status === "inactive" ? <><RotateCcw className="w-3 h-3 mr-1" />Reactivate</> : <><UserX className="w-3 h-3 mr-1" />Deactivate</>}
+                      </Button>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">{u.email}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {u.status === "invited" ? "Invite pending" : u.last_login_at
-                          ? `Last sign-in ${new Date(u.last_login_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
-                          : "Never signed in"}
-                      </p>
-                    </div>
-                    <RoleBadge role={u.status === "invited" ? "invited" : u.status === "inactive" ? "inactive" : u.portal_role} />
-                    <Select value={u.portal_role} onValueChange={(v) => portalRoleMutation.mutate({ id: u.id, role: v })} disabled={u.status === "inactive"}>
-                      <SelectTrigger className="h-7 text-xs w-28 shrink-0"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="member">User</SelectItem>
-                        <SelectItem value="dept_manager">Manager</SelectItem>
-                        <SelectItem value="manager">Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button variant={u.status !== "inactive" ? "outline" : "secondary"} size="sm" className="shrink-0 text-xs"
-                      onClick={() => portalStatusMutation.mutate({ id: u.id, status: u.status === "inactive" ? "active" : "inactive" })}>
-                      {u.status === "inactive" ? <><RotateCcw className="w-3 h-3 mr-1" />Reactivate</> : <><UserX className="w-3 h-3 mr-1" />Deactivate</>}
-                    </Button>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
+
+            {dragEmpId != null && (
+              <p className="text-xs text-center text-muted-foreground animate-pulse">
+                Drop onto a team tile to reassign, or the bin on the right to deactivate →
+              </p>
+            )}
+          </div>
+
+          {/* Right: bin panel */}
+          <BinZone
+            dragging={dragEmpId != null}
+            hovering={dragOverBin}
+            onDragOver={(e) => { e.preventDefault(); setDragOverBin(true); }}
+            onDragLeave={() => setDragOverBin(false)}
+            onDrop={handleBinDrop}
+          />
         </div>
       )}
 
-      {/* Drag-in-progress hint */}
-      {dragEmpId != null && (
-        <p className="text-xs text-center text-muted-foreground mt-3 animate-pulse">
-          Drop onto a team leader section to reassign — or into the bin below 👇
-        </p>
-      )}
-
-      {/* Bin zone — slides up from bottom when dragging */}
-      <BinZone
-        visible={dragEmpId != null}
-        hovering={dragOverBin}
-        onDragOver={(e) => { e.preventDefault(); setDragOverBin(true); }}
-        onDragLeave={() => setDragOverBin(false)}
-        onDrop={handleBinDrop}
-      />
-
-      {/* Particle explosion overlay */}
+      {/* Explosion overlay */}
       {explosionPos && (
-        <Explosion
-          x={explosionPos.x}
-          y={explosionPos.y}
-          onDone={() => setExplosionPos(null)}
-        />
+        <Explosion x={explosionPos.x} y={explosionPos.y} onDone={() => setExplosionPos(null)} />
       )}
 
-      {/* ── Dialogs ─────────────────────────────────────────────────────────── */}
+      {/* ── Dialogs ────────────────────────────────────────────────────────────── */}
 
-      {/* Add */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add employee</DialogTitle></DialogHeader>
@@ -992,7 +961,6 @@ function EmployeesTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit */}
       <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o) setEditTarget(null); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Edit employee</DialogTitle></DialogHeader>
@@ -1004,7 +972,6 @@ function EmployeesTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Top-up credits */}
       <Dialog open={!!topupTarget} onOpenChange={(o) => { if (!o) { setTopupTarget(null); setTopupAmount(""); } }}>
         <DialogContent className="sm:max-w-[380px]">
           <DialogHeader><DialogTitle>Extra credits — {topupTarget?.first_name} {topupTarget?.last_name}</DialogTitle></DialogHeader>
@@ -1045,7 +1012,6 @@ function EmployeesTab() {
         </DialogContent>
       </Dialog>
 
-      {/* Portal access dialog */}
       <Dialog open={!!portalTarget} onOpenChange={(o) => { if (!o) { setPortalTarget(null); setPortalInviteResult(null); } }}>
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
@@ -1055,7 +1021,6 @@ function EmployeesTab() {
           </DialogHeader>
           {portalTarget && (
             portalTarget.user ? (
-              /* ── Manage existing user ── */
               <div className="space-y-4 py-1">
                 <div className="rounded-lg bg-muted/40 border px-4 py-3 text-sm space-y-1.5">
                   <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span className="font-medium">{portalTarget.user.email}</span></div>
@@ -1102,7 +1067,6 @@ function EmployeesTab() {
                 </DialogFooter>
               </div>
             ) : portalInviteResult ? (
-              /* ── Invite success ── */
               <div className="space-y-4 py-1">
                 {portalInviteResult.emailSent ? (
                   <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3">
@@ -1127,7 +1091,6 @@ function EmployeesTab() {
                 </DialogFooter>
               </div>
             ) : (
-              /* ── Invite form ── */
               <div className="space-y-4 py-1">
                 {portalTarget.emp?.email && (
                   <div className="rounded-lg bg-muted/40 border px-3 py-2 text-sm text-muted-foreground">
@@ -1331,46 +1294,20 @@ function UsersTab() {
 
               {u.status === "invited" && (
                 emailConfigured ? (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 text-xs gap-1"
-                    disabled={sendingInviteId === u.id}
-                    onClick={() => sendInviteEmailMutation.mutate(u)}
-                    title="Send invite email"
-                  >
-                    {sendingInviteId === u.id ? (
-                      <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</>
-                    ) : (
-                      <><Mail className="w-3 h-3" /> Send invite</>
-                    )}
+                  <Button variant="outline" size="sm" className="shrink-0 text-xs gap-1" disabled={sendingInviteId === u.id}
+                    onClick={() => sendInviteEmailMutation.mutate(u)} title="Send invite email">
+                    {sendingInviteId === u.id ? <><Loader2 className="w-3 h-3 animate-spin" /> Sending…</> : <><Mail className="w-3 h-3" /> Send invite</>}
                   </Button>
                 ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 text-xs gap-1"
-                    disabled={resendLinkMutation.isPending}
-                    onClick={() => resendLinkMutation.mutate(u)}
-                    title="Copy invite link"
-                  >
-                    {copiedLink === u.email ? (
-                      <><Mail className="w-3 h-3" /> Copied!</>
-                    ) : (
-                      <><Mail className="w-3 h-3" /> Copy link</>
-                    )}
+                  <Button variant="outline" size="sm" className="shrink-0 text-xs gap-1" disabled={resendLinkMutation.isPending}
+                    onClick={() => resendLinkMutation.mutate(u)} title="Copy invite link">
+                    {copiedLink === u.email ? <><Mail className="w-3 h-3" /> Copied!</> : <><Mail className="w-3 h-3" /> Copy link</>}
                   </Button>
                 )
               )}
 
-              <Select
-                value={u.portal_role}
-                onValueChange={(v) => roleMutation.mutate({ id: u.id, role: v })}
-                disabled={u.status === "inactive"}
-              >
-                <SelectTrigger className="h-7 text-xs w-28 shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
+              <Select value={u.portal_role} onValueChange={(v) => roleMutation.mutate({ id: u.id, role: v })} disabled={u.status === "inactive"}>
+                <SelectTrigger className="h-7 text-xs w-28 shrink-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="member">User</SelectItem>
                   <SelectItem value="dept_manager">Manager</SelectItem>
@@ -1378,48 +1315,30 @@ function UsersTab() {
                 </SelectContent>
               </Select>
 
-              <Button
-                variant={u.status === "active" || u.status === "invited" ? "outline" : "secondary"}
-                size="sm"
-                className="shrink-0 text-xs"
-                onClick={() => statusMutation.mutate({ id: u.id, status: u.status === "inactive" ? "active" : "inactive" })}
-              >
-                {u.status === "inactive" ? (
-                  <><RotateCcw className="w-3 h-3 mr-1" /> Reactivate</>
-                ) : (
-                  <><UserX className="w-3 h-3 mr-1" /> Deactivate</>
-                )}
+              <Button variant={u.status === "active" || u.status === "invited" ? "outline" : "secondary"} size="sm" className="shrink-0 text-xs"
+                onClick={() => statusMutation.mutate({ id: u.id, status: u.status === "inactive" ? "active" : "inactive" })}>
+                {u.status === "inactive" ? <><RotateCcw className="w-3 h-3 mr-1" /> Reactivate</> : <><UserX className="w-3 h-3 mr-1" /> Deactivate</>}
               </Button>
 
               <RoleBadge role={u.status === "invited" ? "invited" : u.status === "inactive" ? "inactive" : u.portal_role} />
 
-              <Button
-                variant="ghost"
-                size="sm"
+              <Button variant="ghost" size="sm"
                 className={`shrink-0 text-xs gap-1 ${u.linked_employee_id ? "text-primary" : "text-muted-foreground"}`}
                 title={u.linked_employee_id ? `Linked to ${u.linked_first_name ?? ""} ${u.linked_last_name ?? ""}` : "Link to employee record"}
-                onClick={() => {
-                  setLinkDialogUser(u);
-                  setLinkEmployeeId(u.linked_employee_id ? String(u.linked_employee_id) : "none");
-                }}
-              >
+                onClick={() => { setLinkDialogUser(u); setLinkEmployeeId(u.linked_employee_id ? String(u.linked_employee_id) : "none"); }}>
                 <LinkIcon className="w-3.5 h-3.5" />
                 {u.linked_employee_id
                   ? <span className="hidden sm:inline">{u.linked_first_name} {u.linked_last_name}</span>
-                  : <span className="hidden sm:inline">Link</span>
-                }
+                  : <span className="hidden sm:inline">Link</span>}
               </Button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Link employee dialog */}
       <Dialog open={!!linkDialogUser} onOpenChange={(o) => { if (!o) setLinkDialogUser(null); }}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Link to employee record</DialogTitle>
-          </DialogHeader>
+          <DialogHeader><DialogTitle>Link to employee record</DialogTitle></DialogHeader>
           <div className="space-y-3 py-1">
             <p className="text-sm text-muted-foreground">
               Linking a portal user to their employee record lets them place wardrobe orders for themselves.
@@ -1427,9 +1346,7 @@ function UsersTab() {
             <div className="space-y-1.5">
               <Label>Employee</Label>
               <Select value={linkEmployeeId} onValueChange={setLinkEmployeeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select employee…" />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select employee…" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">— No link —</SelectItem>
                   {(employees as any[]).map((e: any) => (
@@ -1443,32 +1360,18 @@ function UsersTab() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLinkDialogUser(null)}>Cancel</Button>
-            <Button
-              disabled={linkMutation.isPending}
-              onClick={() => {
-                if (!linkDialogUser) return;
-                linkMutation.mutate({
-                  id: linkDialogUser.id,
-                  employeeId: linkEmployeeId === "none" ? null : parseInt(linkEmployeeId, 10),
-                });
-              }}
-            >
-              {linkMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Save
+            <Button disabled={linkMutation.isPending}
+              onClick={() => { if (!linkDialogUser) return; linkMutation.mutate({ id: linkDialogUser.id, employeeId: linkEmployeeId === "none" ? null : parseInt(linkEmployeeId, 10) }); }}>
+              {linkMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}Save
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(o) => { if (!o) { setInviteOpen(false); resetInviteDialog(); } }}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Invite a portal user</DialogTitle>
-          </DialogHeader>
-
+          <DialogHeader><DialogTitle>Invite a portal user</DialogTitle></DialogHeader>
           {inviteResult ? (
-            /* ── Success state ── */
             <div className="space-y-4">
               {inviteResult.emailSent ? (
                 <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3">
@@ -1489,13 +1392,7 @@ function UsersTab() {
               )}
               <DialogFooter>
                 {!inviteResult.emailSent && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}${inviteResult!.inviteUrl}`);
-                      toast({ title: "Copied to clipboard" });
-                    }}
-                  >
+                  <Button variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${inviteResult!.inviteUrl}`); toast({ title: "Copied to clipboard" }); }}>
                     Copy link
                   </Button>
                 )}
@@ -1503,96 +1400,52 @@ function UsersTab() {
               </DialogFooter>
             </div>
           ) : (
-            /* ── Form state ── */
             <div className="space-y-4">
               <div className="space-y-1">
                 <Label>Recipient *</Label>
                 {suggestedEmployees.length > 0 ? (
-                  <Select
-                    value={inviteSelection}
-                    onValueChange={val => {
-                      setInviteSelection(val);
-                      if (val !== "other") setInviteEmail("");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a team member…" />
-                    </SelectTrigger>
+                  <Select value={inviteSelection} onValueChange={val => { setInviteSelection(val); if (val !== "other") setInviteEmail(""); }}>
+                    <SelectTrigger><SelectValue placeholder="Select a team member…" /></SelectTrigger>
                     <SelectContent>
                       {suggestedEmployees.map((emp: any) => (
                         <SelectItem key={emp.id} value={String(emp.id)}>
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">
-                              {[emp.first_name, emp.last_name].filter(Boolean).join(" ")}
-                            </span>
-                            {emp.email && (
-                              <span className="text-muted-foreground text-xs">{emp.email.toLowerCase()}</span>
-                            )}
+                            <span className="font-medium">{[emp.first_name, emp.last_name].filter(Boolean).join(" ")}</span>
+                            {emp.email && <span className="text-muted-foreground text-xs">{emp.email.toLowerCase()}</span>}
                           </div>
                         </SelectItem>
                       ))}
-                      <SelectItem value="other">
-                        <span className="text-muted-foreground">Other (enter email manually)…</span>
-                      </SelectItem>
+                      <SelectItem value="other"><span className="text-muted-foreground">Other (enter email manually)…</span></SelectItem>
                     </SelectContent>
                   </Select>
                 ) : (
-                  <Input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={e => setInviteEmail(e.target.value)}
-                    placeholder="colleague@company.com"
-                    autoFocus
-                  />
+                  <Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="colleague@company.com" autoFocus />
                 )}
               </div>
-
               {suggestedEmployees.length > 0 && inviteSelection === "other" && (
                 <div className="space-y-1">
                   <Label>Email address *</Label>
-                  <Input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={e => setInviteEmail(e.target.value)}
-                    placeholder="colleague@company.com"
-                    autoFocus
-                  />
+                  <Input type="email" value={inviteEmail} onChange={e => setInviteEmail(e.target.value)} placeholder="colleague@company.com" autoFocus />
                 </div>
               )}
-
               <div className="space-y-2">
                 <Label>Portal role</Label>
                 {(["manager", "dept_manager", "member"] as const).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setInviteRole(r)}
-                    className={`w-full text-left rounded-lg border px-4 py-3 transition-colors ${
-                      inviteRole === r
-                        ? "border-primary bg-primary/5"
-                        : "border-border hover:border-primary/40 hover:bg-muted/30"
-                    }`}
-                  >
-                    <p className={`font-semibold text-sm ${inviteRole === r ? "text-primary" : ""}`}>
-                      {ROLE_LABELS[r]}
-                    </p>
+                  <button key={r} type="button" onClick={() => setInviteRole(r)}
+                    className={`w-full text-left rounded-lg border px-4 py-3 transition-colors ${inviteRole === r ? "border-primary bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30"}`}>
+                    <p className={`font-semibold text-sm ${inviteRole === r ? "text-primary" : ""}`}>{ROLE_LABELS[r]}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">{ROLE_DESCRIPTIONS[r]}</p>
                   </button>
                 ))}
               </div>
-
               {!emailConfigured && (
                 <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                   Email sending is not set up on this account — you'll get a link to share manually instead.
                 </p>
               )}
-
               <DialogFooter>
                 <Button variant="outline" onClick={() => { setInviteOpen(false); resetInviteDialog(); }}>Cancel</Button>
-                <Button
-                  disabled={inviteMutation.isPending || !finalEmail}
-                  onClick={() => inviteMutation.mutate({ email: finalEmail, portalRole: inviteRole })}
-                >
+                <Button disabled={inviteMutation.isPending || !finalEmail} onClick={() => inviteMutation.mutate({ email: finalEmail, portalRole: inviteRole })}>
                   {inviteMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
                   {emailConfigured ? "Send invite" : "Create invite"}
                 </Button>
@@ -1705,7 +1558,7 @@ function MyTeamTab() {
           <div className="space-y-1"><Label>First name *</Label><Input value={form.firstName} onChange={e => set("firstName", e.target.value)} /></div>
           <div className="space-y-1"><Label>Last name *</Label><Input value={form.lastName} onChange={e => set("lastName", e.target.value)} /></div>
         </div>
-        <div className="space-y-1"><Label>Employee Number</Label><Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} /></div>
+        <div className="space-y-1"><Label>Employee Number *</Label><Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} /></div>
         <div className="space-y-1"><Label>Email</Label><Input type="email" value={form.email} onChange={e => set("email", e.target.value)} /></div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1"><Label>Phone</Label><Input value={form.phone} onChange={e => set("phone", e.target.value)} /></div>
@@ -1714,7 +1567,7 @@ function MyTeamTab() {
         <div className="space-y-1"><Label>Department</Label><Input value={form.department} onChange={e => set("department", e.target.value)} /></div>
         <DialogFooter className="pt-2">
           <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button disabled={saving || !form.firstName.trim() || !form.lastName.trim()} onClick={onSave}>
+          <Button disabled={saving || !form.firstName.trim() || !form.lastName.trim() || !form.employeeNumber.trim()} onClick={onSave}>
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
             {editTarget ? "Save changes" : "Add team member"}
           </Button>
@@ -1725,6 +1578,7 @@ function MyTeamTab() {
 
   return (
     <div>
+      {/* Toolbar */}
       <div className="flex items-center gap-3 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
@@ -1745,170 +1599,154 @@ function MyTeamTab() {
         </Button>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-      ) : searchTrimmed ? (
-        searchResults.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
-              <p className="text-sm text-muted-foreground">No team members match "{search}"</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {searchResults.map((emp: any) => (
-              <div
-                key={emp.id}
-                className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${emp.is_active ? "" : "opacity-60"}`}
-              >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                  {emp.first_name?.[0]}{emp.last_name?.[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">
-                    {emp.first_name} {emp.last_name}
-                    {!emp.is_active && <span className="ml-2 text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-normal">leaver</span>}
-                  </p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)} title="Edit">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </Button>
-                  {!emp.is_active && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-green-600"
-                      onClick={() => statusMutation.mutate({ id: emp.id, isActive: true })} title="Reactivate">
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      ) : activeEmployees.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
-            <p className="text-sm text-muted-foreground">No active team members — add one to get started</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {activeEmployees.map((emp: any) => (
-            <div
-              key={emp.id}
-              draggable={emp.is_active}
-              onDragStart={(e) => { if (!emp.is_active) return; setDragEmpId(emp.id); e.dataTransfer.effectAllowed = "move"; }}
-              onDragEnd={() => { setDragEmpId(null); setDragOverBin(false); }}
-              className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card transition-all select-none
-                ${emp.is_active ? "" : "opacity-60"}
-                ${dragEmpId === emp.id ? "opacity-40 border-dashed" : ""}
-              `}
-            >
-              <GripVertical className={`w-3.5 h-3.5 text-muted-foreground/30 shrink-0 cursor-grab active:cursor-grabbing ${emp.is_active ? "" : "invisible"}`} />
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${emp.is_active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
-                {emp.first_name?.[0]}{emp.last_name?.[0]}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm">
-                  {emp.first_name} {emp.last_name}
-                  {!emp.is_active && <span className="ml-2 text-xs text-muted-foreground font-normal">(leaver)</span>}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
-                </p>
-                {(() => {
-                  const spend = parseFloat(emp.spend_12m ?? "0");
-                  const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
-                  const topup = parseFloat(emp.allowance_topup ?? "0");
-                  const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
-                  if (totalBudget != null && totalBudget > 0) {
-                    const pct = Math.min(100, (spend / totalBudget) * 100);
-                    const over = spend > totalBudget;
-                    return (
-                      <div className="mt-1.5 max-w-xs">
-                        <div className="flex items-center gap-2 text-[11px] mb-0.5">
-                          <Wallet className="w-3 h-3 text-muted-foreground shrink-0" />
-                          <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
-                            £{spend.toFixed(2)} of £{totalBudget.toFixed(2)} spent
-                          </span>
-                          {over
-                            ? <span className="text-destructive font-medium">— over budget</span>
-                            : <span className="text-muted-foreground/70">£{(totalBudget - spend).toFixed(2)} remaining</span>
-                          }
-                        </div>
-                        <div className="h-1.5 w-48 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        {topup > 0 && (
-                          <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                            Includes £{topup.toFixed(2)} extra credits
-                          </p>
-                        )}
-                      </div>
-                    );
-                  }
-                  if (spend > 0) {
-                    return (
-                      <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
-                        <Wallet className="w-3 h-3 shrink-0" />
-                        £{spend.toFixed(2)} spend in last 12 months
+      {/* Main content with bin on right */}
+      <div className="flex gap-5 items-start">
+        <div className="flex-1 min-w-0">
+          {isLoading ? (
+            <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+          ) : searchTrimmed ? (
+            searchResults.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+                  <p className="text-sm text-muted-foreground">No team members match "{search}"</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {searchResults.map((emp: any) => (
+                  <div key={emp.id} className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${emp.is_active ? "" : "opacity-60"}`}>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${getAvatarColor(emp.id)}`}>
+                      {emp.first_name?.[0]}{emp.last_name?.[0]}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm">
+                        {emp.first_name} {emp.last_name}
+                        {!emp.is_active && <span className="ml-2 text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded font-normal">leaver</span>}
                       </p>
-                    );
-                  }
-                  return null;
-                })()}
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)} title="Edit">
+                        <Pencil className="w-3.5 h-3.5" />
+                      </Button>
+                      {!emp.is_active && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-green-600"
+                          onClick={() => statusMutation.mutate({ id: emp.id, isActive: true })} title="Reactivate">
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-              {emp.role_name && <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>}
-              <div className="flex items-center gap-1 shrink-0">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)} title="Edit">
-                  <Pencil className="w-3.5 h-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`h-7 w-7 ${emp.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
-                  onClick={() => statusMutation.mutate({ id: emp.id, isActive: !emp.is_active })}
-                  title={emp.is_active ? "Mark as leaver" : "Reactivate"}
+            )
+          ) : activeEmployees.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Users className="w-10 h-10 mx-auto mb-3 text-muted-foreground/30" />
+                <p className="text-sm text-muted-foreground">No active team members — add one to get started</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {activeEmployees.map((emp: any) => (
+                <div
+                  key={emp.id}
+                  draggable={emp.is_active}
+                  onDragStart={(e) => { if (!emp.is_active) return; setDragEmpId(emp.id); e.dataTransfer.effectAllowed = "move"; }}
+                  onDragEnd={() => { setDragEmpId(null); setDragOverBin(false); }}
+                  className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card transition-all select-none
+                    ${emp.is_active ? "cursor-grab active:cursor-grabbing" : "opacity-60"}
+                    ${dragEmpId === emp.id ? "opacity-40 border-dashed scale-[0.98]" : ""}
+                  `}
                 >
-                  {emp.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                </Button>
-              </div>
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getAvatarColor(emp.id)}`}>
+                    {emp.first_name?.[0]}{emp.last_name?.[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">
+                      {emp.first_name} {emp.last_name}
+                      {!emp.is_active && <span className="ml-2 text-xs text-muted-foreground font-normal">(leaver)</span>}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {[emp.employee_number && `#${emp.employee_number}`, emp.job_title, emp.department, emp.email].filter(Boolean).join(" · ")}
+                    </p>
+                    {(() => {
+                      const spend = parseFloat(emp.spend_12m ?? "0");
+                      const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
+                      const topup = parseFloat(emp.allowance_topup ?? "0");
+                      const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+                      if (totalBudget != null && totalBudget > 0) {
+                        const pct = Math.min(100, (spend / totalBudget) * 100);
+                        const over = spend > totalBudget;
+                        return (
+                          <div className="mt-1.5 max-w-xs">
+                            <div className="flex items-center gap-2 text-[11px] mb-0.5">
+                              <Wallet className="w-3 h-3 text-muted-foreground shrink-0" />
+                              <span className={over ? "text-destructive font-medium" : "text-muted-foreground"}>
+                                £{spend.toFixed(2)} of £{totalBudget.toFixed(2)} spent
+                              </span>
+                              {over
+                                ? <span className="text-destructive font-medium">— over budget</span>
+                                : <span className="text-muted-foreground/70">£{(totalBudget - spend).toFixed(2)} remaining</span>}
+                            </div>
+                            <div className="h-1.5 w-48 rounded-full bg-muted overflow-hidden">
+                              <div className={`h-full rounded-full ${over ? "bg-destructive" : pct > 80 ? "bg-amber-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            {topup > 0 && <p className="text-[10px] text-muted-foreground/70 mt-0.5">Includes £{topup.toFixed(2)} extra credits</p>}
+                          </div>
+                        );
+                      }
+                      if (spend > 0) {
+                        return (
+                          <p className="text-[11px] text-muted-foreground mt-1 flex items-center gap-1">
+                            <Wallet className="w-3 h-3 shrink-0" />£{spend.toFixed(2)} spend in last 12 months
+                          </p>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
+                  {emp.role_name && <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)} title="Edit">
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon"
+                      className={`h-7 w-7 ${emp.is_active ? "text-muted-foreground hover:text-destructive" : "text-muted-foreground hover:text-green-600"}`}
+                      onClick={() => statusMutation.mutate({ id: emp.id, isActive: !emp.is_active })}
+                      title={emp.is_active ? "Mark as leaver" : "Reactivate"}>
+                      {emp.is_active ? <UserMinus className="w-3.5 h-3.5" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+
+          {dragEmpId != null && (
+            <p className="text-xs text-center text-muted-foreground mt-3 animate-pulse">
+              Drag to the bin on the right to mark as leaver →
+            </p>
+          )}
         </div>
-      )}
 
-      {/* Drag-in-progress hint */}
-      {dragEmpId != null && (
-        <p className="text-xs text-center text-muted-foreground mt-3 animate-pulse">
-          Drag to the bin below to mark as leaver 👇
-        </p>
-      )}
-
-      {/* Bin zone */}
-      <BinZone
-        visible={dragEmpId != null}
-        hovering={dragOverBin}
-        onDragOver={(e) => { e.preventDefault(); setDragOverBin(true); }}
-        onDragLeave={() => setDragOverBin(false)}
-        onDrop={handleBinDrop}
-      />
+        {/* Right: bin panel */}
+        <BinZone
+          dragging={dragEmpId != null}
+          hovering={dragOverBin}
+          onDragOver={(e) => { e.preventDefault(); setDragOverBin(true); }}
+          onDragLeave={() => setDragOverBin(false)}
+          onDrop={handleBinDrop}
+        />
+      </div>
 
       {/* Explosion overlay */}
       {explosionPos && (
-        <Explosion
-          x={explosionPos.x}
-          y={explosionPos.y}
-          onDone={() => setExplosionPos(null)}
-        />
+        <Explosion x={explosionPos.x} y={explosionPos.y} onDone={() => setExplosionPos(null)} />
       )}
 
       <Dialog open={addOpen} onOpenChange={o => { if (!o) { setAddOpen(false); resetForm(); } }}>
@@ -1937,14 +1775,13 @@ export default function Team() {
 
   if (!isManager && !isDeptManager) return <Redirect to="/orders" />;
 
-  // Dept managers see only their own team
   if (isDeptManager) {
     return (
       <PortalLayout>
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">My Team</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
-            Manage the members of your team — add new starters or mark leavers.
+            Manage the members of your team. Drag a member to the bin on the right to mark them as a leaver.
           </p>
         </div>
         <MyTeamTab />
@@ -1957,7 +1794,7 @@ export default function Team() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold tracking-tight">Team</h1>
         <p className="text-muted-foreground text-sm mt-0.5">
-          Manage employees and portal access. Drag team members between leaders to reassign them.
+          Each tile is a team manager. Drag members between tiles to reassign them, or drop onto the bin to deactivate.
         </p>
       </div>
       <EmployeesTab />
