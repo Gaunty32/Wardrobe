@@ -2560,39 +2560,16 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
       body{background:white}
       #page{padding:0}
       #sheet{box-shadow:none;width:100%}
-      @page dn{size:A4;margin:12mm}
-      #sheet{page:dn}
-      @page box{size:4in 4in;margin:8mm}
-      #box-label{page:box}
+      @page{size:A4;margin:12mm}
       *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     }
-    #box-label{
-      display:none;
-      width:4in;height:calc(4in - 16mm);
-      font-family:Arial,Helvetica,sans-serif;
-      flex-direction:column;background:#fff;
-      page-break-before:always;
-    }
-    @media print{
-      #box-label{display:flex}
-    }
-    .bl-top{display:flex;justify-content:space-between;align-items:center;padding-bottom:5pt;margin-bottom:5pt;border-bottom:2pt solid #000;flex-shrink:0}
-    .bl-logo{height:22pt;width:auto;display:block}
-    .bl-top-right{display:flex;flex-direction:column;align-items:flex-end}
-    .bl-type{font-size:6pt;text-transform:uppercase;letter-spacing:.12em;color:#888;font-weight:700}
-    .bl-order{font-size:14pt;font-weight:900;line-height:1}
-    .bl-name{font-weight:900;line-height:1;padding-bottom:5pt;margin-bottom:6pt;border-bottom:1.5pt solid #000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0}
-    .bl-grid{display:flex;flex-direction:column;gap:4pt;flex:1}
-    .bl-row{display:flex;align-items:baseline}
-    .bl-key{width:48pt;flex-shrink:0;font-size:6pt;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#777;padding-top:1pt}
-    .bl-val{font-size:10pt;font-weight:600;line-height:1.2}
-    .bl-addr{margin-top:5pt;padding-top:5pt;border-top:1pt solid #ddd;font-size:9pt;line-height:1.55;color:#222;flex-shrink:0}
   </style>
 </head>
 <body>
   <div id="toolbar">
     <span class="title">📄 ${isDraft ? "DRAFT — " : ""}Delivery Note · ${order.orderNumber} · ${(order.customerName ?? "").replace(/</g, "&lt;")}</span>
-    <button id="btn-print" onclick="window.print()">🖨 Print</button>
+    <button id="btn-box" onclick="window.open('/api/orders/${orderId}/shipping-label','_blank')" style="background:#f59e0b;color:white">🏷 Print Box Label</button>
+    <button id="btn-print" onclick="window.print()">🖨 Print Delivery Note</button>
     <button id="btn-close" onclick="window.close()">✕ Close</button>
   </div>
   <div id="page">
@@ -2676,33 +2653,6 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
       </div>
     </div>
   </div>
-  <div id="box-label">${(() => {
-    const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const nameLen = (order.customerName ?? "").length;
-    const namePt = nameLen > 22 ? 16 : nameLen > 16 ? 19 : 23;
-    const logoImg = SBS_LOGO_DATA_URL
-      ? `<img class="bl-logo" src="${SBS_LOGO_DATA_URL}" alt="SBS">`
-      : `<span style="font-size:8pt;font-weight:900">Select Branding Solutions</span>`;
-    const infoRows = [
-      shippingLabel ? `<div class="bl-row"><span class="bl-key">Delivery</span><span class="bl-val">${esc(shippingLabel)}</span></div>` : "",
-      order.trackingNumber && order.shippingMethod === "dpd" ? `<div class="bl-row"><span class="bl-key">DPD</span><span class="bl-val">${esc(order.trackingNumber)}</span></div>` : "",
-      order.poNumber ? `<div class="bl-row"><span class="bl-key">PO Ref</span><span class="bl-val">${esc(order.poNumber)}</span></div>` : "",
-      customerContactName ? `<div class="bl-row"><span class="bl-key">Contact</span><span class="bl-val">${esc(customerContactName)}</span></div>` : "",
-      customerPhone ? `<div class="bl-row"><span class="bl-key">Phone</span><span class="bl-val">${esc(customerPhone)}</span></div>` : "",
-    ].filter(Boolean).join("");
-    const addrHtml = addrLines.length ? `<div class="bl-addr">${addrLines.map(l => esc(String(l))).join("<br>")}</div>` : "";
-    return `
-    <div class="bl-top">
-      ${logoImg}
-      <div class="bl-top-right">
-        <span class="bl-type">Box Label</span>
-        <span class="bl-order">${esc(order.orderNumber)}</span>
-      </div>
-    </div>
-    <div class="bl-name" style="font-size:${namePt}pt">${esc(order.customerName ?? "")}</div>
-    <div class="bl-grid">${infoRows}</div>
-    ${addrHtml}`;
-  })()}</div>
   <script>document.getElementById('btn-print').focus();</script>
 </body>
 </html>`;
