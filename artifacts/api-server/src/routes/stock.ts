@@ -470,8 +470,8 @@ router.get("/stock/bins/:id/label", async (req, res): Promise<void> => {
     #toolbar span{flex:1;font-size:11px;font-weight:700}
     #toolbar button{padding:5px 14px;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer;background:#22c55e;color:white}
     #page{width:4in;height:3in;background:white;border:1px solid #aaa;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.15);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0}
-    .lbl{font-size:9pt;font-weight:900;text-transform:uppercase;letter-spacing:.3em;color:#888;margin-bottom:0.06in}
-    .num{font-size:80pt;font-weight:900;color:#000;line-height:1;letter-spacing:-.03em}
+    .lbl{font-size:13pt;font-weight:900;text-transform:uppercase;letter-spacing:.3em;color:#888;margin-bottom:0.08in}
+    .num{font-size:140pt;font-weight:900;color:#000;line-height:1;letter-spacing:-.03em}
     @media print{
       @page{size:4in 3in landscape;margin:0mm}
       html,body{width:4in;background:white;padding:0}
