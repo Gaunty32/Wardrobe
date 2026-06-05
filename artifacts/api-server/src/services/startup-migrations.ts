@@ -1483,5 +1483,6 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_durability_rating integer`);
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_smart_rating integer`);
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_tags jsonb`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS guidance_badges jsonb`);
   console.log("[startup] Product guidance columns ensured");
 }

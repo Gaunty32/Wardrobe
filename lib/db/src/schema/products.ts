@@ -42,8 +42,10 @@ export const productsTable = pgTable("products", {
   guidanceNotIdealFor: text("guidance_not_ideal_for"),
   /** Guidance: internal staff recommendation / selling tip */
   guidanceStaffRecommendation: text("guidance_staff_recommendation"),
-  /** Guidance: promotional badge — 'Most Popular' | 'Best Value' | 'Premium Choice' | 'Staff Pick' */
+  /** Guidance: promotional badge — 'Most Popular' | 'Best Value' | 'Premium Choice' | 'Staff Pick' (legacy single value) */
   guidanceBadge: text("guidance_badge"),
+  /** Guidance: multiple promotional badges */
+  guidanceBadges: jsonb("guidance_badges").$type<string[]>(),
   /** Guidance: value-for-money rating 1–5 */
   guidanceValueRating: integer("guidance_value_rating"),
   /** Guidance: durability rating 1–5 */

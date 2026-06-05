@@ -655,7 +655,7 @@ export default function ProductDetail() {
     bestFor: string;
     notIdealFor: string;
     staffRecommendation: string;
-    badge: string | null;
+    badges: string[];
     valueRating: number | null;
     durabilityRating: number | null;
     smartRating: number | null;
@@ -702,7 +702,7 @@ export default function ProductDetail() {
         bestFor: p.guidanceBestFor || "",
         notIdealFor: p.guidanceNotIdealFor || "",
         staffRecommendation: p.guidanceStaffRecommendation || "",
-        badge: p.guidanceBadge ?? null,
+        badges: Array.isArray(p.guidanceBadges) ? p.guidanceBadges : (p.guidanceBadge ? [p.guidanceBadge] : []),
         valueRating: p.guidanceValueRating ?? null,
         durabilityRating: p.guidanceDurabilityRating ?? null,
         smartRating: p.guidanceSmartRating ?? null,
@@ -787,7 +787,7 @@ export default function ProductDetail() {
           guidanceBestFor: guidance.bestFor || null,
           guidanceNotIdealFor: guidance.notIdealFor || null,
           guidanceStaffRecommendation: guidance.staffRecommendation || null,
-          guidanceBadge: guidance.badge,
+          guidanceBadges: guidance.badges.length > 0 ? guidance.badges : null,
           guidanceValueRating: guidance.valueRating,
           guidanceDurabilityRating: guidance.durabilityRating,
           guidanceSmartRating: guidance.smartRating,
@@ -1657,26 +1657,33 @@ export default function ProductDetail() {
                     </div>
                   </div>
 
-                  {/* Badge */}
+                  {/* Badges */}
                   <div className="grid gap-2">
-                    <Label>Badge</Label>
+                    <Label>Badges <span className="text-muted-foreground font-normal">(select any that apply)</span></Label>
                     <div className="flex flex-wrap gap-2">
-                      {([null, "Most Popular", "Best Value", "Premium Choice", "Staff Pick", "Bulk Buy Discount"] as (string | null)[]).map((b) => (
-                        <button
-                          key={b ?? "none"}
-                          type="button"
-                          onClick={() => handleGuidanceChange("badge", guidance.badge === b && b !== null ? null : b)}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                            guidance.badge === b && b !== null
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : b === null
-                                ? "bg-muted text-muted-foreground border-border"
+                      {(["Most Popular", "Best Value", "Premium Choice", "Staff Pick", "Bulk Buy Discount"] as string[]).map((b) => {
+                        const active = guidance.badges.includes(b);
+                        return (
+                          <button
+                            key={b}
+                            type="button"
+                            onClick={() => {
+                              const next = active
+                                ? guidance.badges.filter((x) => x !== b)
+                                : [...guidance.badges, b];
+                              handleGuidanceChange("badges", next);
+                            }}
+                            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors flex items-center gap-1 ${
+                              active
+                                ? "bg-primary text-primary-foreground border-primary"
                                 : "bg-background text-muted-foreground border-border hover:border-primary/50"
-                          }`}
-                        >
-                          {b ?? "No badge"}
-                        </button>
-                      ))}
+                            }`}
+                          >
+                            {active && <Check className="w-3 h-3" />}
+                            {b}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 

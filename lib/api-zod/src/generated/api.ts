@@ -210,6 +210,7 @@ export const UpdateProductBody = zod.object({
   guidanceNotIdealFor: zod.string().nullish(),
   guidanceStaffRecommendation: zod.string().nullish(),
   guidanceBadge: zod.string().nullish(),
+  guidanceBadges: zod.array(zod.string()).nullish(),
   guidanceValueRating: zod.number().int().min(1).max(5).nullish(),
   guidanceDurabilityRating: zod.number().int().min(1).max(5).nullish(),
   guidanceSmartRating: zod.number().int().min(1).max(5).nullish(),
