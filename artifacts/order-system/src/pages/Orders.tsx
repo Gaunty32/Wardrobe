@@ -597,9 +597,17 @@ export default function Orders() {
             <h1 className="text-3xl font-display font-bold text-foreground tracking-tight">Sales Orders</h1>
             <p className="text-muted-foreground mt-1">Manage and track customer orders.</p>
           </div>
-          <Button onClick={openCreate} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
-            <Plus className="w-4 h-4 mr-2" /> New Order
-          </Button>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium text-muted-foreground/70">GP%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">&#9679; ≥40%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">&#9679; ≥20%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-medium">&#9679; &lt;20%</span>
+            </div>
+            <Button onClick={openCreate} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
+              <Plus className="w-4 h-4 mr-2" /> New Order
+            </Button>
+          </div>
         </div>
 
         <QuoteHoldingPanel />

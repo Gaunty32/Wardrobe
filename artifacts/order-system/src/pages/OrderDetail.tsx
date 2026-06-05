@@ -1810,8 +1810,8 @@ export default function OrderDetail() {
                               const lineTotal = parseFloat(String(orderItem.lineTotal)) || 0;
                               if (lineTotal <= 0) return <span className="text-xs text-muted-foreground/40">—</span>;
                               const gp = ((lineTotal - totalCost) / lineTotal) * 100;
-                              const color = gp >= 70 ? "text-green-700 bg-green-50 border-green-200"
-                                          : gp >= 30 ? "text-amber-700 bg-amber-50 border-amber-200"
+                              const color = gp >= 65 ? "text-green-700 bg-green-50 border-green-200"
+                                          : gp >= 50 ? "text-amber-700 bg-amber-50 border-amber-200"
                                           : "text-red-700 bg-red-50 border-red-200";
                               return (
                                 <span className={`inline-block text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded border ${color}`}
