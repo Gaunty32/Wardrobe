@@ -127,69 +127,165 @@ function esc(s: string) {
 }
 
 function buildBrowserPrintHtml(data: LabelData): string {
-  const labelStyle = `
-    @page { size: 4in 3in; margin: 0; }
+  const css = `
+    @page { size: 4in 3in; margin: 3mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; }
-    .label { width: 4in; height: 3in; overflow: hidden; padding: 6pt; page-break-after: always; border: 1px solid #ccc; }
+    html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; }
+    .label {
+      width: 100%;
+      height: calc(3in - 6mm);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      page-break-after: always;
+    }
     .label:last-child { page-break-after: auto; }
-    .header { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1.5pt solid #000; padding-bottom: 3pt; margin-bottom: 4pt; }
-    .header-left { font-size: 8pt; text-transform: uppercase; letter-spacing: .04em; color: #555; }
-    .header-right { font-size: 9pt; font-weight: bold; }
-    .customer { font-size: 18pt; font-weight: bold; line-height: 1.1; margin-bottom: 4pt; border-bottom: 1pt solid #000; padding-bottom: 3pt; }
-    .row { display: flex; gap: 6pt; margin-bottom: 2pt; font-size: 9pt; }
-    .row-key { width: 52pt; font-size: 7.5pt; text-transform: uppercase; color: #666; padding-top: 1pt; flex-shrink: 0; }
-    .row-val { font-size: 10pt; font-weight: 600; }
-    .address { margin-top: 4pt; font-size: 9pt; line-height: 1.4; }
-    /* wearer */
-    .wearer-name { font-size: 20pt; font-weight: bold; line-height: 1; margin-bottom: 2pt; }
+
+    /* ── shared ── */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 3pt;
+      padding-bottom: 3pt;
+      border-bottom: 2pt solid #000;
+    }
+    .top-bar-label { font-size: 7pt; text-transform: uppercase; letter-spacing: .08em; color: #555; font-weight: 600; }
+    .top-bar-order { font-size: 12pt; font-weight: 800; letter-spacing: .02em; }
+
+    /* ── box label ── */
+    .customer-name {
+      font-size: 22pt;
+      font-weight: 800;
+      line-height: 1.05;
+      margin-bottom: 4pt;
+      padding-bottom: 3pt;
+      border-bottom: 1.5pt solid #000;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .info-grid { display: flex; flex-direction: column; gap: 2pt; flex: 1; }
+    .info-row { display: flex; align-items: baseline; gap: 0; }
+    .info-key {
+      width: 48pt;
+      flex-shrink: 0;
+      font-size: 6.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #666;
+      padding-top: 1pt;
+    }
+    .info-val { font-size: 10pt; font-weight: 600; line-height: 1.2; }
+    .info-val.small { font-size: 8.5pt; font-weight: 500; }
+    .address-block { margin-top: 3pt; padding-top: 3pt; border-top: 1pt solid #ddd; font-size: 8.5pt; line-height: 1.5; color: #333; }
+
+    /* ── wearer label ── */
+    .wearer-name {
+      font-size: 24pt;
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 1pt;
+    }
     .wearer-title { font-size: 8pt; color: #555; margin-bottom: 3pt; }
-    .divider { border-top: 1.5pt solid #000; margin-bottom: 3pt; }
-    table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
-    th { text-align: left; font-size: 7pt; text-transform: uppercase; color: #666; border-bottom: 1pt solid #ccc; padding: 1pt 2pt; }
-    td { padding: 2pt 2pt; border-bottom: .5pt solid #eee; vertical-align: top; }
-    .footer { margin-top: auto; padding-top: 3pt; border-top: 1pt solid #ddd; display: flex; justify-content: space-between; font-size: 7.5pt; color: #666; position: absolute; bottom: 6pt; left: 6pt; right: 6pt; }
+    .w-divider { border-top: 2pt solid #000; margin-bottom: 3pt; }
+    table { width: 100%; border-collapse: collapse; flex: 1; }
+    colgroup .col-item  { width: 42%; }
+    colgroup .col-colour{ width: 22%; }
+    colgroup .col-size  { width: 18%; }
+    colgroup .col-qty   { width: 18%; }
+    thead th {
+      font-size: 6.5pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: #666;
+      border-bottom: 1.5pt solid #000;
+      padding: 0 2pt 1.5pt;
+      text-align: left;
+    }
+    thead th.r { text-align: right; }
+    tbody td {
+      font-size: 9pt;
+      padding: 2.5pt 2pt;
+      border-bottom: .75pt solid #e5e5e5;
+      vertical-align: top;
+      line-height: 1.25;
+    }
+    tbody td.r { text-align: right; font-weight: 700; }
+    .finish { font-size: 7pt; color: #666; display: block; }
+    .w-footer {
+      margin-top: auto;
+      padding-top: 2pt;
+      border-top: 1pt solid #ccc;
+      display: flex;
+      justify-content: space-between;
+      font-size: 7pt;
+      color: #888;
+    }
   `;
+
+  // Scale customer name font if long
+  const nameLen = data.customerName.length;
+  const namePt = nameLen > 22 ? 16 : nameLen > 16 ? 19 : 22;
 
   const boxLabel = `
-    <div class="label" style="position:relative;">
-      <div class="header">
-        <span class="header-left">Box Label</span>
-        <span class="header-right">${esc(data.orderNumber)}</span>
-      </div>
-      <div class="customer">${esc(data.customerName)}</div>
-      ${data.shippingMethod ? `<div class="row"><span class="row-key">Delivery</span><span class="row-val">${esc(data.shippingMethod)}</span></div>` : ""}
-      ${data.isDpd && data.trackingNumber ? `<div class="row"><span class="row-key">DPD</span><span class="row-val">${esc(data.trackingNumber)}</span></div>` : ""}
-      ${data.poNumber ? `<div class="row"><span class="row-key">PO Ref</span><span class="row-val">${esc(data.poNumber)}</span></div>` : ""}
-      ${data.contactName ? `<div class="row"><span class="row-key">Contact</span><span class="row-val">${esc(data.contactName)}</span></div>` : ""}
-      ${data.phone ? `<div class="row"><span class="row-key">Phone</span><span class="row-val">${esc(data.phone)}</span></div>` : ""}
-      ${data.addressLines.length ? `<div class="address">${data.addressLines.map(l => esc(l)).join("<br>")}</div>` : ""}
-    </div>
-  `;
+<div class="label">
+  <div class="top-bar">
+    <span class="top-bar-label">Box Label</span>
+    <span class="top-bar-order">${esc(data.orderNumber)}</span>
+  </div>
+  <div class="customer-name" style="font-size:${namePt}pt">${esc(data.customerName)}</div>
+  <div class="info-grid">
+    ${data.shippingMethod ? `<div class="info-row"><span class="info-key">Delivery</span><span class="info-val">${esc(data.shippingMethod)}</span></div>` : ""}
+    ${data.isDpd && data.trackingNumber ? `<div class="info-row"><span class="info-key">DPD</span><span class="info-val">${esc(data.trackingNumber)}</span></div>` : ""}
+    ${data.poNumber ? `<div class="info-row"><span class="info-key">PO Ref</span><span class="info-val">${esc(data.poNumber)}</span></div>` : ""}
+    ${data.contactName ? `<div class="info-row"><span class="info-key">Contact</span><span class="info-val">${esc(data.contactName)}</span></div>` : ""}
+    ${data.phone ? `<div class="info-row"><span class="info-key">Phone</span><span class="info-val">${esc(data.phone)}</span></div>` : ""}
+  </div>
+  ${data.addressLines.length ? `<div class="address-block">${data.addressLines.map(l => esc(l)).join(" &nbsp;·&nbsp; ")}</div>` : ""}
+</div>`;
 
-  const wearerLabels = data.wearers.map(w => `
-    <div class="label" style="position:relative;">
-      <div class="wearer-name">${esc(w.name)}</div>
-      ${w.jobTitle ? `<div class="wearer-title">${esc(w.jobTitle)}</div>` : ""}
-      <div class="divider"></div>
-      <table>
-        <thead><tr><th style="width:45%">Item</th><th>Colour</th><th>Size</th><th style="width:18pt;text-align:center">Qty</th></tr></thead>
-        <tbody>
-          ${w.items.map(item => `
-            <tr>
-              <td>${esc(item.productName)}${item.finishName ? `<br><span style="font-size:7pt;color:#666">${esc(item.finishName)}</span>` : ""}</td>
-              <td>${item.colour ? esc(item.colour) : "—"}</td>
-              <td>${item.size ? esc(item.size) : "—"}</td>
-              <td style="text-align:center;font-weight:bold">${item.quantity}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-      <div class="footer"><span>${esc(data.customerName)}</span><span>${esc(data.orderNumber)}</span></div>
-    </div>
-  `).join("");
+  const wearerLabels = data.wearers.map(w => {
+    const wNameLen = w.name.length;
+    const wNamePt = wNameLen > 22 ? 18 : wNameLen > 16 ? 21 : 24;
+    return `
+<div class="label">
+  <div class="top-bar">
+    <span class="top-bar-label">Wearer Label</span>
+    <span class="top-bar-order">${esc(data.orderNumber)}</span>
+  </div>
+  <div class="wearer-name" style="font-size:${wNamePt}pt">${esc(w.name)}</div>
+  ${w.jobTitle ? `<div class="wearer-title">${esc(w.jobTitle)}</div>` : ""}
+  <div class="w-divider"></div>
+  <table>
+    <colgroup><col class="col-item"><col class="col-colour"><col class="col-size"><col class="col-qty"></colgroup>
+    <thead>
+      <tr><th>Item</th><th>Colour</th><th>Size</th><th class="r">Qty</th></tr>
+    </thead>
+    <tbody>
+      ${w.items.map(item => `
+      <tr>
+        <td>${esc(item.productName)}${item.finishName ? `<span class="finish">${esc(item.finishName)}</span>` : ""}</td>
+        <td>${item.colour ? esc(item.colour) : "—"}</td>
+        <td>${item.size ? esc(item.size) : "—"}</td>
+        <td class="r">${item.quantity}</td>
+      </tr>`).join("")}
+    </tbody>
+  </table>
+  <div class="w-footer"><span>${esc(data.customerName)}</span><span>${esc(data.orderNumber)}</span></div>
+</div>`;
+  }).join("");
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Labels — ${esc(data.orderNumber)}</title><style>${labelStyle}</style></head><body>${boxLabel}${wearerLabels}</body></html>`;
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>Labels \u2014 ${esc(data.orderNumber)}</title>
+<style>${css}</style>
+</head><body>${boxLabel}${wearerLabels}</body></html>`;
 }
 
 function openBrowserPrint(data: LabelData) {
