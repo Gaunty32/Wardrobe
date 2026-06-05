@@ -391,16 +391,32 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const itemRows = await db
-    .select({
-      item: orderItemsTable,
-      catalogueProductName: productsTable.name,
-      productSku: productsTable.sku,
-      supplierPrice: productsTable.supplierPrice,
-    })
-    .from(orderItemsTable)
-    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(eq(orderItemsTable.orderId, order.id));
+  // Join product_variants to get variant-level supplier price (COALESCE variant → product)
+  const itemRowsRaw = await db.execute(sql`
+    SELECT
+      oi.*,
+      p.name  AS catalogue_product_name,
+      p.sku   AS product_sku,
+      COALESCE(pv.supplier_price, p.supplier_price) AS resolved_supplier_price
+    FROM order_items oi
+    LEFT JOIN products p ON p.id = oi.product_id
+    LEFT JOIN product_variants pv
+      ON pv.product_id = oi.product_id
+      AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+      AND (pv.size   IS NOT DISTINCT FROM oi.size)
+    WHERE oi.order_id = ${order.id}
+  `);
+  type RawItemRow = typeof orderItemsTable.$inferSelect & {
+    catalogue_product_name: string | null;
+    product_sku: string | null;
+    resolved_supplier_price: string | null;
+  };
+  const itemRows = (itemRowsRaw.rows as RawItemRow[]).map(r => ({
+    item: r as typeof orderItemsTable.$inferSelect,
+    catalogueProductName: r.catalogue_product_name,
+    productSku: r.product_sku,
+    supplierPrice: r.resolved_supplier_price,
+  }));
 
   // ── Process stock cost per finish ID ──────────────────────────────────────
   const finishIds = [...new Set(itemRows.map(r => r.item.finishId).filter((id): id is number => id != null))];
