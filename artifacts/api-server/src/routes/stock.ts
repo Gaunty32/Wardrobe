@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, asc, sql } from "drizzle-orm";
+import { eq, asc, sql, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import {
   db,
@@ -15,25 +15,55 @@ const router = Router();
 // ─── GET /stock/plain — all product variants with full stock info ──────────────
 
 router.get("/stock/plain", async (req, res): Promise<void> => {
+  const q = (req.query.q as string | undefined)?.trim() || null;
+  // When no search query, default to "active" products only (those with any stock
+  // activity) so we don't transfer all 30k+ variants on every page load.
+  // Pass ?all=1 to bypass this filter and show everything.
+  const showAll = req.query.all === "1";
+
+  const selectFields = {
+    variantId: productVariantsTable.id,
+    productId: productsTable.id,
+    productName: productsTable.name,
+    productSku: productsTable.sku,
+    productImageUrl: productsTable.imageUrl,
+    colour: productVariantsTable.colour,
+    size: productVariantsTable.size,
+    sku: productVariantsTable.sku,
+    supplierCode: productVariantsTable.supplierCode,
+    stockQuantity: productVariantsTable.stockQuantity,
+    minStockQty: productVariantsTable.minStockQty,
+    binLocation: productVariantsTable.binLocation,
+    updatedAt: productVariantsTable.updatedAt,
+  };
+
+  let whereClause: ReturnType<typeof or> | ReturnType<typeof sql> | undefined;
+
+  if (q) {
+    whereClause = or(
+      ilike(productsTable.name, `%${q}%`),
+      ilike(productsTable.sku, `%${q}%`),
+      ilike(productVariantsTable.colour, `%${q}%`),
+      ilike(productVariantsTable.size, `%${q}%`),
+      ilike(productVariantsTable.binLocation, `%${q}%`),
+      ilike(productVariantsTable.supplierCode, `%${q}%`),
+      ilike(productVariantsTable.sku, `%${q}%`),
+    );
+  } else if (!showAll) {
+    // Only products that have at least one variant with activity
+    whereClause = sql`${productVariantsTable.productId} IN (
+      SELECT DISTINCT product_id FROM product_variants
+      WHERE stock_quantity > 0 OR bin_location IS NOT NULL OR min_stock_qty > 0
+    )`;
+  }
+
   const rows = await db
-    .select({
-      variantId: productVariantsTable.id,
-      productId: productsTable.id,
-      productName: productsTable.name,
-      productSku: productsTable.sku,
-      productImageUrl: productsTable.imageUrl,
-      colour: productVariantsTable.colour,
-      size: productVariantsTable.size,
-      sku: productVariantsTable.sku,
-      supplierCode: productVariantsTable.supplierCode,
-      stockQuantity: productVariantsTable.stockQuantity,
-      minStockQty: productVariantsTable.minStockQty,
-      binLocation: productVariantsTable.binLocation,
-      updatedAt: productVariantsTable.updatedAt,
-    })
+    .select(selectFields)
     .from(productVariantsTable)
     .innerJoin(productsTable, eq(productVariantsTable.productId, productsTable.id))
+    .where(whereClause)
     .orderBy(asc(productsTable.name), asc(productVariantsTable.colour), asc(productVariantsTable.size));
+
   res.json(rows);
 });
 

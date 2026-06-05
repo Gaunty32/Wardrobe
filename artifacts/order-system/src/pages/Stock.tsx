@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -433,12 +433,31 @@ function QuickAdjustModal({
 
 // ─── Plain stock tab ──────────────────────────────────────────────────────────
 
-function PlainStockTab({ variants, isLoading }: { variants: PlainVariant[]; isLoading: boolean }) {
+function PlainStockTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const sizeOrder = useSizeOrder();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [collapsedProducts, setCollapsedProducts] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: variants = [], isLoading } = useQuery<PlainVariant[]>({
+    queryKey: ["stock-plain", debouncedSearch || null, showAll],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (debouncedSearch) params.set("q", debouncedSearch);
+      if (showAll) params.set("all", "1");
+      const qs = params.toString();
+      return apiFetch(`/stock/plain${qs ? `?${qs}` : ""}`);
+    },
+    staleTime: 30_000,
+  });
   const [adjustingProduct, setAdjustingProduct] = useState<{ productId: number; productName: string; productSku: string | null } | null>(null);
 
   const updateMut = useMutation({
@@ -478,16 +497,10 @@ function PlainStockTab({ variants, isLoading }: { variants: PlainVariant[]; isLo
     setAdjustingProduct(null);
   };
 
-  const q = search.toLowerCase();
-  const filtered = variants.filter(v =>
-    !q || [v.productName, v.productSku, v.colour, v.size, v.sku, v.supplierCode, v.binLocation]
-      .some(s => s?.toLowerCase().includes(q))
-  );
-
-  // Group by product
+  // Search is now server-side — just group the returned variants by product
   type ProductGroup = { productId: number; productName: string; productSku: string | null; productImageUrl: string | null; variants: PlainVariant[] };
-  const byProduct = Object.values(
-    filtered.reduce<Record<number, ProductGroup>>((acc, v) => {
+  const byProduct = useMemo(() => Object.values(
+    variants.reduce<Record<number, ProductGroup>>((acc, v) => {
       if (!acc[v.productId]) acc[v.productId] = {
         productId: v.productId, productName: v.productName,
         productSku: v.productSku, productImageUrl: v.productImageUrl, variants: [],
@@ -495,10 +508,10 @@ function PlainStockTab({ variants, isLoading }: { variants: PlainVariant[]; isLo
       acc[v.productId].variants.push(v);
       return acc;
     }, {})
-  );
+  ), [variants]);
 
-  const lowCount = variants.filter(v => v.stockQuantity <= v.minStockQty).length;
-  const totalUnits = variants.reduce((s, v) => s + v.stockQuantity, 0);
+  const lowCount = useMemo(() => variants.filter(v => v.stockQuantity <= v.minStockQty).length, [variants]);
+  const totalUnits = useMemo(() => variants.reduce((s, v) => s + v.stockQuantity, 0), [variants]);
 
   const toggleCollapse = (productId: number) => {
     setCollapsedProducts(prev => {
@@ -530,8 +543,11 @@ function PlainStockTab({ variants, isLoading }: { variants: PlainVariant[]; isLo
             placeholder="Search FCC code, name, colour, size, bin…"
             className="pl-9"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); if (e.target.value) setShowAll(false); }}
           />
+          {isLoading && search && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />
+          )}
         </div>
         <div className="flex gap-2 items-center text-sm text-muted-foreground shrink-0">
           <span>{totalUnits.toLocaleString()} units total</span>
@@ -539,6 +555,23 @@ function PlainStockTab({ variants, isLoading }: { variants: PlainVariant[]; isLo
             <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 gap-1">
               <AlertTriangle className="w-3 h-3" />{lowCount} low/out of stock
             </Badge>
+          )}
+          {!search && !showAll && (
+            <button
+              onClick={() => setShowAll(true)}
+              className="text-xs underline underline-offset-2 text-muted-foreground hover:text-foreground transition-colors"
+              title="Load all 30k+ products from WooCommerce"
+            >
+              Show all products
+            </button>
+          )}
+          {showAll && (
+            <button
+              onClick={() => setShowAll(false)}
+              className="text-xs underline underline-offset-2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Show active only
+            </button>
           )}
         </div>
       </div>
@@ -896,12 +929,17 @@ function BinDetailDialog({ binId, onClose }: { binId: number; onClose: () => voi
   );
 }
 
-function BinViewTab({ bins, isLoading }: { bins: StockBin[]; isLoading: boolean }) {
+function BinViewTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [viewBinId, setViewBinId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const { data: bins = [], isLoading } = useQuery<StockBin[]>({
+    queryKey: ["stock-bins"],
+    queryFn: () => apiFetch("/stock/bins"),
+    staleTime: 0, // always re-fetch when tab becomes active so new bins appear immediately
+  });
 
   const deleteMut = useMutation({
     mutationFn: (id: number) => apiFetch(`/stock/bins/${id}`, { method: "DELETE" }),
@@ -1071,10 +1109,15 @@ function BinViewTab({ bins, isLoading }: { bins: StockBin[]; isLoading: boolean 
 
 // ─── Finish stock tab ─────────────────────────────────────────────────────────
 
-function FinishStockTab({ items, isLoading }: { items: FinishedItem[]; isLoading: boolean }) {
+function FinishStockTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const { data: items = [], isLoading } = useQuery<FinishedItem[]>({
+    queryKey: ["stock-finished"],
+    queryFn: () => apiFetch("/stock/finished"),
+    staleTime: 30_000,
+  });
 
   const updateMut = useMutation({
     mutationFn: ({ id, stockQuantity }: { id: number; stockQuantity: number }) =>
@@ -1189,22 +1232,6 @@ function FinishStockTab({ items, isLoading }: { items: FinishedItem[]; isLoading
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function Stock() {
-  const { data: variants = [], isLoading: loadingPlain } = useQuery<PlainVariant[]>({
-    queryKey: ["stock-plain"],
-    queryFn: () => apiFetch("/stock/plain"),
-    staleTime: 60_000,
-  });
-  const { data: bins = [], isLoading: loadingBins } = useQuery<StockBin[]>({
-    queryKey: ["stock-bins"],
-    queryFn: () => apiFetch("/stock/bins"),
-    staleTime: 60_000,
-  });
-  const { data: items = [], isLoading: loadingFinished } = useQuery<FinishedItem[]>({
-    queryKey: ["stock-finished"],
-    queryFn: () => apiFetch("/stock/finished"),
-    staleTime: 60_000,
-  });
-
   return (
     <Layout>
       <div className="flex flex-col space-y-6">
@@ -1227,9 +1254,9 @@ export default function Stock() {
               <Box className="w-4 h-4" /> Bin View
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="plain" forceMount className="data-[state=inactive]:hidden"><PlainStockTab variants={variants} isLoading={loadingPlain} /></TabsContent>
-          <TabsContent value="finish" forceMount className="data-[state=inactive]:hidden"><FinishStockTab items={items} isLoading={loadingFinished} /></TabsContent>
-          <TabsContent value="bins" forceMount className="data-[state=inactive]:hidden"><BinViewTab bins={bins} isLoading={loadingBins} /></TabsContent>
+          <TabsContent value="plain"><PlainStockTab /></TabsContent>
+          <TabsContent value="finish"><FinishStockTab /></TabsContent>
+          <TabsContent value="bins"><BinViewTab /></TabsContent>
         </Tabs>
       </div>
     </Layout>

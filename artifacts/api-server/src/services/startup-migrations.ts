@@ -1462,4 +1462,15 @@ export async function runStartupMigrations(): Promise<void> {
       console.log(`[startup] Removed ${phantomIds.length} phantom pre-production worksheet(s) — items returned to picking list`);
     }
   }
+
+  // ── Performance indexes for stock queries ──────────────────────────────────
+  // product_variants has 30k+ rows; without indexes every stock page load is a
+  // full table scan. Create these CONCURRENTLY so startup doesn't block.
+  await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_product_id ON product_variants(product_id)`);
+  await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_bin_location ON product_variants(bin_location) WHERE bin_location IS NOT NULL`);
+  await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_stock_qty ON product_variants(stock_quantity) WHERE stock_quantity > 0`);
+  await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_product_variants_min_stock ON product_variants(min_stock_qty) WHERE min_stock_qty > 0`);
+  await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_name ON products(name)`);
+  await db.execute(sql`CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_products_sku ON products(sku) WHERE sku IS NOT NULL`);
+  console.log("[startup] Stock performance indexes ensured");
 }
