@@ -2733,9 +2733,11 @@ router.get("/orders/:id/shipping-label", async (req, res): Promise<void> => {
   const contactName = [customerContact?.contactFirstName, customerContact?.contactLastName].filter(Boolean).join(" ") || null;
   const contactPhone = customerContact?.phone || null;
 
-  const labelHtml = `<div class="label delivery-label">
+  const numBoxes = Math.max(1, order.numberOfBoxes ?? 1);
+
+  const buildLabel = (boxNum: number) => `<div class="label delivery-label">
     <div class="dl-header">
-      <span class="dl-badge">BOX LABEL</span>
+      <span class="dl-badge">BOX LABEL${numBoxes > 1 ? ` · ${boxNum} of ${numBoxes}` : ""}</span>
       <span class="dl-order">${order.orderNumber}</span>
     </div>
     <div class="dl-customer">${order.customerName ?? ""}</div>
@@ -2747,6 +2749,8 @@ router.get("/orders/:id/shipping-label", async (req, res): Promise<void> => {
     ${contactPhone ? `<div class="dl-row"><span class="dl-key">Phone</span><span class="dl-val">${contactPhone}</span></div>` : ""}
     ${addrLines.length > 0 ? `<div class="dl-addr-block">${addrLines.map(l => `<div>${l}</div>`).join("")}</div>` : ""}
   </div>`;
+
+  const labelHtml = Array.from({ length: numBoxes }, (_, i) => buildLabel(i + 1)).join("");
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -2789,7 +2793,7 @@ router.get("/orders/:id/shipping-label", async (req, res): Promise<void> => {
 <body>
   <div id="toolbar">
     <div id="toolbar-text">
-      <div id="toolbar-title">📦 Box Label · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")} · ${order.orderNumber}</div>
+      <div id="toolbar-title">📦 Box Label${numBoxes > 1 ? ` (${numBoxes} copies)` : ""} · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")} · ${order.orderNumber}</div>
       <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: None (GC420d)</div>
     </div>
     <button id="btn-print" onclick="window.print()">🖨 Print Label</button>

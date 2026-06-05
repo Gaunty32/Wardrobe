@@ -45,6 +45,8 @@ export const ordersTable = pgTable("orders", {
   attachments: jsonb("attachments").$type<Array<{ name: string; objectPath: string }>>(),
   /** Order numbers absorbed into this order during a merge (e.g. ["P39", "P40"]) */
   absorbedOrderNumbers: text("absorbed_order_numbers").array(),
+  /** Number of boxes/parcels in this shipment — drives box label copies */
+  numberOfBoxes: integer("number_of_boxes").notNull().default(1),
   /** WooCommerce internal order ID (used for API calls back to WC) */
   wooOrderId: integer("woo_order_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -1531,4 +1531,9 @@ export async function runStartupMigrations(): Promise<void> {
     ON CONFLICT (bin_number) DO NOTHING
   `);
   console.log("[startup] stock_bins backfill complete");
+
+  // ── Add number_of_boxes to orders ──────────────────────────────────────────
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS number_of_boxes integer NOT NULL DEFAULT 1
+  `);
 }

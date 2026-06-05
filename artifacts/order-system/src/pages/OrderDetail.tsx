@@ -657,6 +657,20 @@ export default function OrderDetail() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const [editingBoxes, setEditingBoxes] = useState(false);
+  const [boxesInput, setBoxesInput] = useState("");
+
+  const updateBoxesMutation = useMutation({
+    mutationFn: (n: number) =>
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ numberOfBoxes: n }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingBoxes(false);
+      toast({ title: "Box count updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   interface PackItem { orderItemId: number; productName: string; colour: string | null; size: string | null; quantity: number; isComplete: boolean; worksheetNumber: string | null; }
   interface PackRecipient { recipientType: "stock" | "person"; recipientName: string | null; employeeId: number | null; jobTitle: string | null; department: string | null; allComplete: boolean; items: PackItem[]; }
   interface PackStatus { orderId: number; orderNumber: string; customerName: string | null; recipients: PackRecipient[]; }
@@ -2080,6 +2094,46 @@ export default function OrderDetail() {
                     <p className="text-sm font-medium">
                       £{parseFloat((order as any).carriageAmount ?? "0").toFixed(2)}
                     </p>
+                  )}
+                </div>
+
+                {/* Number of boxes */}
+                <div className="border-t pt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Number of Boxes</p>
+                    {!editingBoxes && (
+                      <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setBoxesInput(String((order as any).numberOfBoxes ?? 1)); setEditingBoxes(true); }}>
+                        <Pencil className="w-3 h-3 text-muted-foreground" />
+                      </Button>
+                    )}
+                  </div>
+                  {editingBoxes ? (
+                    <form
+                      className="flex items-center gap-2"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const v = parseInt(boxesInput, 10);
+                        if (!isNaN(v) && v >= 1) updateBoxesMutation.mutate(v);
+                      }}
+                    >
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={boxesInput}
+                        onChange={(e) => setBoxesInput(e.target.value)}
+                        className="w-full h-8 px-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                        autoFocus
+                      />
+                      <Button type="submit" size="icon" className="h-8 w-8" disabled={updateBoxesMutation.isPending}>
+                        <Check className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setEditingBoxes(false)}>
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </form>
+                  ) : (
+                    <p className="text-sm font-medium">{(order as any).numberOfBoxes ?? 1} {((order as any).numberOfBoxes ?? 1) === 1 ? "box" : "boxes"}</p>
                   )}
                 </div>
               </CardContent>
