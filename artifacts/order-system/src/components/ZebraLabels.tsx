@@ -292,11 +292,18 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
 </div>`;
   }).join("");
 
+  const promptBar = `
+<div class="no-print" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#1e3a5f;color:#fff;font-family:Arial,sans-serif;font-size:13px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+  <span>&#9888;&#65039; In the print dialog, make sure you select your <strong>Zebra label printer</strong> and set paper size to <strong>4×3 in (100×76 mm)</strong>.</span>
+  <button onclick="window.print()" style="background:#fff;color:#1e3a5f;border:none;border-radius:4px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;">Print Labels</button>
+</div>
+<div class="no-print" style="height:44px"></div>`;
+
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <title>Labels \u2014 ${esc(data.orderNumber)}</title>
-<style>${css}</style>
-</head><body>${boxLabel}${wearerLabels}</body></html>`;
+<style>${css} @media print { .no-print { display: none !important; } }</style>
+</head><body>${promptBar}${boxLabel}${wearerLabels}</body></html>`;
 }
 
 async function openBrowserPrint(data: LabelData, base: string) {
@@ -318,7 +325,6 @@ async function openBrowserPrint(data: LabelData, base: string) {
   win.document.write(html);
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); }, 500);
 }
 
 // ── Zebra Browser Print REST API ─────────────────────────────────────────────
