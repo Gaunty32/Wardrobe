@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   db,
   customerFinishedItemsTable,
+  customerFinishesTable,
   productVariantsTable,
   productsTable,
   customersTable,
@@ -247,6 +248,7 @@ router.get("/stock/finished", async (req, res): Promise<void> => {
       customerName: customersTable.name,
       name: customerFinishedItemsTable.name,
       productName: productsTable.name,
+      finishName: customerFinishesTable.name,
       colour: customerFinishedItemsTable.colour,
       size: customerFinishedItemsTable.size,
       unitPrice: customerFinishedItemsTable.unitPrice,
@@ -256,6 +258,7 @@ router.get("/stock/finished", async (req, res): Promise<void> => {
     .from(customerFinishedItemsTable)
     .innerJoin(customersTable, eq(customerFinishedItemsTable.customerId, customersTable.id))
     .leftJoin(productsTable, eq(customerFinishedItemsTable.productId, productsTable.id))
+    .leftJoin(customerFinishesTable, eq(customerFinishedItemsTable.finishId, customerFinishesTable.id))
     .orderBy(asc(customersTable.name), asc(customerFinishedItemsTable.name));
   res.json(rows.map(r => ({ ...r, unitPrice: r.unitPrice != null ? parseFloat(r.unitPrice) : 0 })));
 });

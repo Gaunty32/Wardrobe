@@ -58,6 +58,7 @@ interface FinishedItem {
   customerName: string;
   name: string;
   productName: string | null;
+  finishName: string | null;
   colour: string | null;
   size: string | null;
   unitPrice: number;
@@ -1128,7 +1129,7 @@ function FinishStockTab() {
 
   const filtered = items.filter(item => {
     const q = search.toLowerCase();
-    return !q || [item.name, item.customerName, item.productName, item.colour, item.size].some(s => s?.toLowerCase().includes(q));
+    return !q || [item.name, item.customerName, item.productName, item.finishName, item.colour, item.size].some(s => s?.toLowerCase().includes(q));
   });
 
   const grouped = filtered.reduce<Record<string, FinishedItem[]>>((acc, item) => {
@@ -1197,6 +1198,7 @@ function FinishStockTab() {
                     <TableRow className="hover:bg-transparent">
                       <TableHead>Item</TableHead>
                       <TableHead className="hidden md:table-cell">Base Product</TableHead>
+                      <TableHead className="hidden lg:table-cell">Finish</TableHead>
                       <TableHead className="hidden sm:table-cell">Colour / Size</TableHead>
                       <TableHead className="text-right">Stock Qty</TableHead>
                     </TableRow>
@@ -1206,6 +1208,11 @@ function FinishStockTab() {
                       <TableRow key={item.id} className="group">
                         <TableCell className="font-medium text-sm">{item.name}</TableCell>
                         <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{item.productName || "—"}</TableCell>
+                        <TableCell className="hidden lg:table-cell text-sm">
+                          {item.finishName
+                            ? <Badge variant="outline" className="text-xs font-normal">{item.finishName}</Badge>
+                            : <span className="text-muted-foreground">—</span>}
+                        </TableCell>
                         <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
                           {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
                         </TableCell>
