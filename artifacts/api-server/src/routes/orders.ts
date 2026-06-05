@@ -177,7 +177,7 @@ router.get("/orders", async (req, res): Promise<void> => {
         ON pv.product_id = oi.product_id
         AND (pv.colour IS NOT DISTINCT FROM oi.colour)
         AND (pv.size IS NOT DISTINCT FROM oi.size)
-      WHERE oi.order_id = ANY(${orderIds})
+      WHERE oi.order_id = ANY(ARRAY[${sql.raw(orderIds.join(","))}])
       GROUP BY oi.order_id
     `);
     for (const row of costRows.rows as CostRow[]) {
