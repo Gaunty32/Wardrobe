@@ -126,14 +126,21 @@ function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
+function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string, size: LabelSize): string {
+  const is4x4 = size === "4x4";
+  const pageW = is4x4 ? "4in" : "6in";
+  const pageH = "4in";
+  // Slightly smaller fonts for 4×4 (less width)
+  const scale = is4x4 ? 0.78 : 1;
+  const pt = (n: number) => `${Math.round(n * scale)}pt`;
+
   const css = `
-    @page { size: 6in 4in; margin: 8mm; }
+    @page { size: ${pageW} ${pageH}; margin: 8mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; }
     .label {
       width: 100%;
-      height: calc(4in - 16mm);
+      height: calc(${pageH} - 16mm);
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -151,14 +158,14 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
       border-bottom: 2.5pt solid #000;
       flex-shrink: 0;
     }
-    .top-bar-logo { height: 28pt; width: auto; display: block; }
+    .top-bar-logo { height: ${pt(28)}; width: auto; display: block; }
     .top-bar-right { display: flex; flex-direction: column; align-items: flex-end; }
-    .top-bar-type { font-size: 7pt; text-transform: uppercase; letter-spacing: .12em; color: #888; font-weight: 700; }
-    .top-bar-order { font-size: 18pt; font-weight: 900; letter-spacing: .01em; line-height: 1; }
+    .top-bar-type { font-size: ${pt(7)}; text-transform: uppercase; letter-spacing: .12em; color: #888; font-weight: 700; }
+    .top-bar-order { font-size: ${pt(18)}; font-weight: 900; letter-spacing: .01em; line-height: 1; }
 
     /* ── box label ── */
     .customer-name {
-      font-size: 30pt;
+      font-size: ${pt(30)};
       font-weight: 900;
       line-height: 1;
       padding-bottom: 6pt;
@@ -172,21 +179,21 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
     .info-grid { display: flex; flex-direction: column; gap: 5pt; flex: 1; }
     .info-row { display: flex; align-items: baseline; }
     .info-key {
-      width: 62pt;
+      width: ${pt(62)};
       flex-shrink: 0;
-      font-size: 7.5pt;
+      font-size: ${pt(7.5)};
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .07em;
       color: #777;
       padding-top: 1.5pt;
     }
-    .info-val { font-size: 13pt; font-weight: 600; line-height: 1.2; }
+    .info-val { font-size: ${pt(13)}; font-weight: 600; line-height: 1.2; }
     .address-block {
       margin-top: 6pt;
       padding-top: 6pt;
       border-top: 1pt solid #ddd;
-      font-size: 11pt;
+      font-size: ${pt(11)};
       line-height: 1.6;
       color: #222;
       flex-shrink: 0;
@@ -194,7 +201,7 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
 
     /* ── wearer label ── */
     .wearer-name {
-      font-size: 34pt;
+      font-size: ${pt(34)};
       font-weight: 900;
       line-height: 1;
       white-space: nowrap;
@@ -203,7 +210,7 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
       flex-shrink: 0;
     }
     .wearer-title {
-      font-size: 11pt;
+      font-size: ${pt(11)};
       color: #555;
       margin-top: 2pt;
       margin-bottom: 6pt;
@@ -212,7 +219,7 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
     .w-divider { border-top: 2.5pt solid #000; margin-bottom: 6pt; flex-shrink: 0; }
     table { width: 100%; border-collapse: collapse; }
     thead th {
-      font-size: 8pt;
+      font-size: ${pt(8)};
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .08em;
@@ -223,29 +230,29 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
     }
     thead th.r { text-align: right; }
     tbody td {
-      font-size: 11pt;
+      font-size: ${pt(11)};
       padding: 4pt 4pt;
       border-bottom: .75pt solid #e0e0e0;
       vertical-align: top;
       line-height: 1.3;
     }
     tbody td.r { text-align: right; font-weight: 800; }
-    .finish { font-size: 8.5pt; color: #666; display: block; margin-top: 1pt; }
+    .finish { font-size: ${pt(8.5)}; color: #666; display: block; margin-top: 1pt; }
     .w-footer {
       margin-top: auto;
       padding-top: 4pt;
       border-top: 1pt solid #ccc;
       display: flex;
       justify-content: space-between;
-      font-size: 8.5pt;
+      font-size: ${pt(8.5)};
       color: #999;
       flex-shrink: 0;
     }
   `;
 
-  // Scale customer name down for long names
+  // Scale customer name down for long names (then apply size scale)
   const nameLen = data.customerName.length;
-  const namePt = nameLen > 24 ? 20 : nameLen > 18 ? 25 : 30;
+  const namePt = Math.round((nameLen > 24 ? 20 : nameLen > 18 ? 25 : 30) * scale);
 
   const logoImg = logoDataUrl
     ? `<img class="top-bar-logo" src="${logoDataUrl}" alt="SBS">`
@@ -273,7 +280,7 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
 
   const wearerLabels = data.wearers.map(w => {
     const wNameLen = w.name.length;
-    const wNamePt = wNameLen > 24 ? 22 : wNameLen > 18 ? 28 : 34;
+    const wNamePt = Math.round((wNameLen > 24 ? 22 : wNameLen > 18 ? 28 : 34) * scale);
     return `
 <div class="label">
   <div class="top-bar">
@@ -310,9 +317,10 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
 </div>`;
   }).join("");
 
+  const sizeLabel = is4x4 ? "4×4 in (102×102 mm) — TSC" : "6×4 in (152×102 mm) — Zebra";
   const promptBar = `
 <div class="no-print" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#1e3a5f;color:#fff;font-family:Arial,sans-serif;font-size:13px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-  <span>In the print dialog, select your <strong>Zebra label printer</strong> — paper size should be <strong>6×4 in (152×102 mm)</strong>.</span>
+  <span>Select your label printer in the print dialog — paper size: <strong>${sizeLabel}</strong>.</span>
   <button onclick="window.print()" style="background:#fff;color:#1e3a5f;border:none;border-radius:4px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;">Print Labels</button>
 </div>
 <div class="no-print" style="height:44px"></div>`;
@@ -324,7 +332,7 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string): string {
 </head><body>${promptBar}${boxLabel}${wearerLabels}</body></html>`;
 }
 
-async function openBrowserPrint(data: LabelData, base: string) {
+async function openBrowserPrint(data: LabelData, base: string, size: LabelSize) {
   // Fetch logo as inline base64 so it works reliably inside the print window
   let logoDataUrl = "";
   try {
@@ -337,7 +345,7 @@ async function openBrowserPrint(data: LabelData, base: string) {
     });
   } catch { /* logo unavailable — print without it */ }
 
-  const html = buildBrowserPrintHtml(data, logoDataUrl);
+  const html = buildBrowserPrintHtml(data, logoDataUrl, size);
   const win = window.open("", "_blank", "width=500,height=400");
   if (!win) { alert("Pop-up blocked — please allow pop-ups for this site then try again."); return; }
   win.document.write(html);
@@ -403,6 +411,17 @@ interface ZebraLabelsProps { orderId: number; orderNumber: string; hasNamedRecip
 type ZebraStatus = "idle" | "loading" | "ready" | "printing" | "done" | "error";
 
 const SAVED_PRINTER_KEY = "sbs_zebra_printer_uid";
+const SAVED_LABEL_SIZE_KEY = "sbs_label_size";
+
+type LabelSize = "6x4" | "4x4";
+const LABEL_SIZES: { value: LabelSize; label: string; sub: string }[] = [
+  { value: "6x4", label: "6 × 4 in", sub: "Zebra / standard" },
+  { value: "4x4", label: "4 × 4 in", sub: "TSC" },
+];
+
+function getSavedLabelSize(): LabelSize {
+  try { const v = localStorage.getItem(SAVED_LABEL_SIZE_KEY); return (v === "4x4" ? "4x4" : "6x4"); } catch { return "6x4"; }
+}
 
 export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients: _h }: ZebraLabelsProps) {
   const [open, setOpen] = useState(false);
@@ -415,6 +434,12 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients: 
   const [labelLoading, setLabelLoading] = useState(false);
   const [printQueue, setPrintQueue] = useState<string[]>([]);
   const [printedCount, setPrintedCount] = useState(0);
+  const [labelSize, setLabelSize] = useState<LabelSize>(getSavedLabelSize);
+
+  function saveLabelSize(s: LabelSize) {
+    setLabelSize(s);
+    try { localStorage.setItem(SAVED_LABEL_SIZE_KEY, s); } catch {}
+  }
 
   function savePrinter(device: ZbrDevice) {
     setPrinter(device);
@@ -511,22 +536,36 @@ export default function ZebraLabels({ orderId, orderNumber, hasNamedRecipients: 
           <div className="space-y-4 py-1">
 
             {/* ── Browser print — always available ── */}
-            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2.5">
+            <div className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 space-y-2.5">
               <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium flex items-center gap-1.5"><Monitor className="w-3.5 h-3.5 text-muted-foreground" /> Print via browser</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Opens your browser print dialog — select your label printer</p>
-                </div>
+                <p className="text-sm font-medium flex items-center gap-1.5">
+                  <Monitor className="w-3.5 h-3.5 text-muted-foreground" /> Print via browser
+                </p>
                 <Button
                   size="sm"
                   variant="outline"
                   className="shrink-0 gap-1.5 text-xs"
                   disabled={!labelData || labelLoading}
-                  onClick={() => labelData && openBrowserPrint(labelData, import.meta.env.BASE_URL)}
+                  onClick={() => labelData && openBrowserPrint(labelData, import.meta.env.BASE_URL, labelSize)}
                 >
                   {labelLoading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Printer className="w-3 h-3" />}
                   {labelLoading ? "Loading…" : "Print"}
                 </Button>
+              </div>
+              {/* Label size selector */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground shrink-0">Label size:</span>
+                <div className="flex rounded-md border border-input overflow-hidden text-xs">
+                  {LABEL_SIZES.map(s => (
+                    <button
+                      key={s.value}
+                      onClick={() => saveLabelSize(s.value)}
+                      className={`px-2.5 py-1 font-medium transition-colors ${labelSize === s.value ? "bg-[#1e3a5f] text-white" : "bg-background text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {s.label} <span className="opacity-60 font-normal">{s.sub}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
