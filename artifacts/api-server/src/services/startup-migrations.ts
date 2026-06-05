@@ -1519,4 +1519,16 @@ export async function runStartupMigrations(): Promise<void> {
     )
   `);
   console.log("[startup] Product guidance columns ensured");
+
+  // ── Backfill stock_bins from existing bin_location values ──────────────────
+  // Variants may have bin_location set before the auto-create logic existed.
+  // Insert any missing bin records now so Bin View shows them correctly.
+  await db.execute(sql`
+    INSERT INTO stock_bins (bin_number, max_qty)
+    SELECT DISTINCT UPPER(bin_location), 15
+    FROM product_variants
+    WHERE bin_location IS NOT NULL AND bin_location <> ''
+    ON CONFLICT (bin_number) DO NOTHING
+  `);
+  console.log("[startup] stock_bins backfill complete");
 }
