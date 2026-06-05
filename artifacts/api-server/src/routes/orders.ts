@@ -165,18 +165,25 @@ router.get("/orders", async (req, res): Promise<void> => {
     const costRows = await db.execute(sql`
       SELECT
         oi.order_id AS "orderId",
-        COALESCE(SUM(oi.quantity * COALESCE(pv.supplier_price, p.supplier_price)), 0)::float AS cost,
+        COALESCE(SUM(oi.quantity * resolved.supplier_price), 0)::float AS cost,
         COUNT(*) FILTER (
           WHERE p.is_service IS NOT TRUE
-            AND (COALESCE(pv.supplier_price, p.supplier_price) IS NULL
-                 OR COALESCE(pv.supplier_price, p.supplier_price) = 0)
+            AND (resolved.supplier_price IS NULL OR resolved.supplier_price = 0)
         )::int AS "missingCost"
       FROM order_items oi
       LEFT JOIN products p ON p.id = oi.product_id
-      LEFT JOIN product_variants pv
-        ON pv.product_id = oi.product_id
-        AND (pv.colour IS NOT DISTINCT FROM oi.colour)
-        AND (pv.size IS NOT DISTINCT FROM oi.size)
+      -- LATERAL ensures at most one variant row per order item, preventing cost multiplication
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(
+          (SELECT pv.supplier_price
+           FROM product_variants pv
+           WHERE pv.product_id = oi.product_id
+             AND (pv.colour IS NOT DISTINCT FROM oi.colour)
+             AND (pv.size   IS NOT DISTINCT FROM oi.size)
+           LIMIT 1),
+          p.supplier_price
+        ) AS supplier_price
+      ) resolved ON true
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(orderIds.join(","))}])
       GROUP BY oi.order_id
     `);
