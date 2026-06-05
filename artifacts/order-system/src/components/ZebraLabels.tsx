@@ -333,7 +333,13 @@ function buildBrowserPrintHtml(data: LabelData, logoDataUrl: string, size: Label
 }
 
 async function openBrowserPrint(data: LabelData, base: string, size: LabelSize) {
-  // Fetch logo as inline base64 so it works reliably inside the print window
+  // Open the window synchronously (must happen directly from the click event)
+  // so the browser doesn't treat it as a blocked pop-up
+  const win = window.open("", "_blank", "width=700,height=520");
+  if (!win) { alert("Pop-up blocked — please allow pop-ups for this site and try again."); return; }
+  win.document.write("<html><body style='font-family:Arial;padding:24px;color:#555'>Preparing labels…</body></html>");
+
+  // Now do the async logo fetch
   let logoDataUrl = "";
   try {
     const res = await fetch(`${base}sbs-logo.png`);
@@ -346,8 +352,7 @@ async function openBrowserPrint(data: LabelData, base: string, size: LabelSize) 
   } catch { /* logo unavailable — print without it */ }
 
   const html = buildBrowserPrintHtml(data, logoDataUrl, size);
-  const win = window.open("", "_blank", "width=500,height=400");
-  if (!win) { alert("Pop-up blocked — please allow pop-ups for this site then try again."); return; }
+  win.document.open();
   win.document.write(html);
   win.document.close();
   win.focus();
