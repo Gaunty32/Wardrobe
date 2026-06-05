@@ -2018,11 +2018,11 @@ export default function ProductDetail() {
 
         {/* ── Manage Staff dialog ── */}
         <Dialog open={manageStaffOpen} onOpenChange={(v) => { if (!v) { setManageStaffOpen(false); setEditingStaffId(null); setStaffFormName(""); setStaffFormRole(""); setStaffFormImageUrl(""); } }}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
+          <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle>Manage Staff</DialogTitle>
             </DialogHeader>
-            <div className="grid gap-4 py-2">
+            <div className="grid gap-4 py-2 overflow-y-auto flex-1 min-h-0">
               {/* Add / Edit form */}
               <div className="border border-border rounded-lg p-4 grid gap-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{editingStaffId ? "Edit Staff Member" : "Add Staff Member"}</p>
