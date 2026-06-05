@@ -467,6 +467,12 @@ export default function Products() {
                 <BarChart2 className="w-3 h-3" /> Sales
               </button>
             </div>
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium text-muted-foreground/70">GP%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">&#9679; ≥80%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">&#9679; ≥60%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-medium">&#9679; &lt;60%</span>
+            </div>
             {viewMode === "catalogue" && (
               <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
                 <Plus className="w-4 h-4 mr-2" /> Add Product
@@ -842,8 +848,8 @@ function calcGp(product: ProductWithCategory): number | null {
 }
 
 function GpBadge({ gp }: { gp: number }) {
-  const color = gp >= 70 ? "text-green-700 bg-green-50 border-green-200"
-              : gp >= 30 ? "text-amber-700 bg-amber-50 border-amber-200"
+  const color = gp >= 80 ? "text-green-700 bg-green-50 border-green-200"
+              : gp >= 60 ? "text-amber-700 bg-amber-50 border-amber-200"
               : "text-red-700 bg-red-50 border-red-200";
   return (
     <span className={`inline-block text-xs font-semibold tabular-nums px-1.5 py-0.5 rounded border ${color}`}>
