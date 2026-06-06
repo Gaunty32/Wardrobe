@@ -397,7 +397,8 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   const rows = await db.execute(sql`
     SELECT woo_commerce_id,
            guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
-           guidance_badges, guidance_tags, guidance_staff_quotes
+           guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
+           guidance_staff_quotes
     FROM products WHERE id = ${parsed.data.id}
   `);
   const product = (rows.rows ?? rows)[0] as any;
@@ -407,13 +408,25 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   const settings = await getWooSettings();
   if (!settings) { res.status(400).json({ error: "WooCommerce not configured. Check Settings → WooCommerce." }); return; }
 
+  // Staff quotes: strip internal IDs and send only display-relevant fields
+  const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
+  const staffQuotesClean = rawQuotes.map((q: any) => ({
+    name: q.staffName ?? q.name ?? "",
+    role: q.staffRole ?? q.role ?? "",
+    imageUrl: q.staffImageUrl ?? q.imageUrl ?? null,
+    quote: q.rewritten ?? q.draft ?? "",
+    aiPolished: !!(q.rewritten),
+  }));
+
   const meta_data = [
-    { key: "_sbs_value_rating",       value: product.guidance_value_rating       ?? "" },
-    { key: "_sbs_durability_rating",   value: product.guidance_durability_rating   ?? "" },
-    { key: "_sbs_technical_rating",    value: product.guidance_smart_rating        ?? "" },
+    { key: "_sbs_value_rating",       value: String(product.guidance_value_rating       ?? "") },
+    { key: "_sbs_durability_rating",   value: String(product.guidance_durability_rating   ?? "") },
+    { key: "_sbs_technical_rating",    value: String(product.guidance_smart_rating        ?? "") },
     { key: "_sbs_badges",              value: JSON.stringify(product.guidance_badges       ?? []) },
     { key: "_sbs_tags",                value: JSON.stringify(product.guidance_tags          ?? []) },
-    { key: "_sbs_staff_quotes",        value: JSON.stringify(product.guidance_staff_quotes  ?? []) },
+    { key: "_sbs_best_for",            value: product.guidance_best_for                   ?? "" },
+    { key: "_sbs_not_ideal_for",       value: product.guidance_not_ideal_for              ?? "" },
+    { key: "_sbs_staff_quotes",        value: JSON.stringify(staffQuotesClean) },
   ];
 
   const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
