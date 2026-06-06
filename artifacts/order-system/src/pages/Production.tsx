@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
@@ -3435,21 +3435,9 @@ export default function Production() {
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
 
-  // ── Auto-advance: worksheets that arrive in pre_wip with stock already
-  //    allocated automatically move to WIP so decoration can begin immediately.
-  const autoAdvancedRef = useRef(new Set<number>());
-  useEffect(() => {
-    if (wsLoading) return;
-    const toAdvance = allWorksheets.filter(
-      (w) => w.status === "pre_wip" && !autoAdvancedRef.current.has(w.id),
-    );
-    if (toAdvance.length === 0) return;
-    toAdvance.forEach((ws) => {
-      autoAdvancedRef.current.add(ws.id);
-      statusMutation.mutate({ id: ws.id, status: "wip" });
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allWorksheets, wsLoading]);
+  // Pre-production (pre_wip) worksheets stay in pre_wip until staff manually
+  // move them to WIP via the "Move to WIP" button on the worksheet card.
+  // This happens when process stock (embroidery thread, DTF transfers, etc.) has arrived.
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/worksheets/${id}`, { method: "DELETE" }),
@@ -3616,7 +3604,7 @@ export default function Production() {
                 <Clock className="w-12 h-12 text-blue-300" />
                 <p className="text-lg font-medium">Nothing in Pre-Production</p>
                 <p className="text-sm text-center max-w-xs">
-                  Confirmed orders where garments haven't arrived yet appear here. Use 'Send to Production' on an order to create worksheets.
+                  Orders where garments have been picked and are waiting for process stock (threads, transfers, etc.) to arrive appear here. Once process stock is in, use "Move to WIP" to start production.
                 </p>
               </div>
             ) : (
@@ -3694,7 +3682,7 @@ export default function Production() {
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                 <ClipboardList className="w-12 h-12 text-amber-300" />
                 <p className="text-lg font-medium">No active worksheets</p>
-                <p className="text-sm text-center max-w-xs">Move items here from Pre-Production when the garments have arrived and decoration can begin.</p>
+                <p className="text-sm text-center max-w-xs">When garments are picked and process stock has arrived, use "Move to WIP" on a Pre-Production worksheet to start decoration.</p>
               </div>
             ) : (() => {
               // Group WIP worksheets by order
