@@ -408,6 +408,23 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   const settings = await getWooSettings();
   if (!settings) { res.status(400).json({ error: "WooCommerce not configured. Check Settings → WooCommerce." }); return; }
 
+  // Convert a numeric rating (1–5) to a unicode star string e.g. "★★★★☆"
+  function toStars(rating: any, max = 5): string {
+    const n = Math.min(Math.max(parseInt(String(rating ?? 0), 10) || 0, 0), max);
+    return "★".repeat(n) + "☆".repeat(max - n);
+  }
+
+  const valRating  = parseInt(String(product.guidance_value_rating       ?? 0), 10) || 0;
+  const durRating  = parseInt(String(product.guidance_durability_rating   ?? 0), 10) || 0;
+  const techRating = parseInt(String(product.guidance_smart_rating        ?? 0), 10) || 0;
+
+  // Combined HTML block showing all three ratings as labelled stars — ready to embed in WooCommerce
+  const ratingsHtml = [
+    { label: "Value for Money",    n: valRating  },
+    { label: "Durability",         n: durRating  },
+    { label: "Technical Features", n: techRating },
+  ].filter(r => r.n > 0).map(r => `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"><strong>${r.label}:</strong> <span style="color:#f59e0b;font-size:1.1em">${toStars(r.n)}</span></span>`).join("");
+
   // Staff quotes: strip internal IDs and send only display-relevant fields
   const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
   const staffQuotesClean = rawQuotes.map((q: any) => ({
@@ -419,14 +436,21 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   }));
 
   const meta_data = [
-    { key: "_sbs_value_rating",       value: String(product.guidance_value_rating       ?? "") },
-    { key: "_sbs_durability_rating",   value: String(product.guidance_durability_rating   ?? "") },
-    { key: "_sbs_technical_rating",    value: String(product.guidance_smart_rating        ?? "") },
-    { key: "_sbs_badges",              value: JSON.stringify(product.guidance_badges       ?? []) },
-    { key: "_sbs_tags",                value: JSON.stringify(product.guidance_tags          ?? []) },
-    { key: "_sbs_best_for",            value: product.guidance_best_for                   ?? "" },
-    { key: "_sbs_not_ideal_for",       value: product.guidance_not_ideal_for              ?? "" },
-    { key: "_sbs_staff_quotes",        value: JSON.stringify(staffQuotesClean) },
+    // Numeric values (for plugin logic)
+    { key: "_sbs_value_rating",           value: String(valRating)  },
+    { key: "_sbs_durability_rating",       value: String(durRating)  },
+    { key: "_sbs_technical_rating",        value: String(techRating) },
+    // Unicode star strings (one per rating, for simple display)
+    { key: "_sbs_value_stars",             value: toStars(valRating)  },
+    { key: "_sbs_durability_stars",        value: toStars(durRating)  },
+    { key: "_sbs_technical_stars",         value: toStars(techRating) },
+    // Combined HTML block (all three ratings in one field)
+    { key: "_sbs_ratings_html",            value: ratingsHtml },
+    { key: "_sbs_badges",                  value: JSON.stringify(product.guidance_badges ?? []) },
+    { key: "_sbs_tags",                    value: JSON.stringify(product.guidance_tags    ?? []) },
+    { key: "_sbs_best_for",                value: product.guidance_best_for               ?? "" },
+    { key: "_sbs_not_ideal_for",           value: product.guidance_not_ideal_for          ?? "" },
+    { key: "_sbs_staff_quotes",            value: JSON.stringify(staffQuotesClean) },
   ];
 
   const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
