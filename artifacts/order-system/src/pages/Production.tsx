@@ -2547,6 +2547,7 @@ function PickingListTab({ filters }: { filters: Filters }) {
   const [editingQty, setEditingQty] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<"due_date" | "order_number" | "customer_name">("due_date");
   const [expandedOrders, setExpandedOrders] = useState<Set<number>>(new Set());
+  const [processStockBlocker, setProcessStockBlocker] = useState<{ itemIds: number[]; missingNames: string } | null>(null);
 
   function toggleExpand(orderId: number) {
     setExpandedOrders((prev) => {
@@ -2585,7 +2586,7 @@ function PickingListTab({ filters }: { filters: Filters }) {
   });
 
   const pickMutation = useMutation({
-    mutationFn: (itemIds: number[]) => {
+    mutationFn: ({ itemIds, bypass }: { itemIds: number[]; bypass?: boolean }) => {
       const qtyOverridesObj: Record<string, number> = {};
       for (const [id, qty] of qtyOverrides.entries()) {
         if (itemIds.includes(id)) qtyOverridesObj[String(id)] = qty;
@@ -2595,34 +2596,41 @@ function PickingListTab({ filters }: { filters: Filters }) {
         body: JSON.stringify({
           itemIds,
           ...(Object.keys(qtyOverridesObj).length > 0 ? { qtyOverrides: qtyOverridesObj } : {}),
+          ...(bypass ? { bypassProcessStockCheck: true } : {}),
         }),
       });
     },
-    onSuccess: (data: { ok: boolean; plainPicked: number; worksheetItems: number; worksheets?: Worksheet[] }) => {
+    onSuccess: (data: { ok: boolean; plainPicked: number; worksheetItems: number; worksheets?: Worksheet[] }, vars) => {
       queryClient.invalidateQueries({ queryKey: ["picking-list"] });
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
       queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
       setChecked(new Set());
       setQtyOverrides(new Map());
+      setProcessStockBlocker(null);
       const parts: string[] = [];
       if (data.plainPicked > 0) parts.push(`${data.plainPicked} ready for dispatch`);
-      if (data.worksheetItems > 0) parts.push(`${data.worksheetItems} sent to production`);
+      if (data.worksheetItems > 0) {
+        parts.push(vars.bypass
+          ? `${data.worksheetItems} moved to Pre-Production (awaiting process stock)`
+          : `${data.worksheetItems} sent to production`);
+      }
       toast({ title: "Picked", description: parts.join(" · ") || "Items confirmed" });
-      // Auto-print worksheets created by this pick
       if (data.worksheets && data.worksheets.length > 0) {
         data.worksheets.forEach((ws) => printWorksheetFromData(ws));
       }
     },
-    onError: (err: any) => {
-      let title = "Cannot send to production";
-      let description = "An unexpected error occurred. Please try again.";
-      try {
-        const parsed = JSON.parse(err?.message ?? "");
-        if (parsed?.error) description = parsed.error;
-      } catch {
-        if (err?.message) description = err.message;
+    onError: (err: any, vars) => {
+      let parsed: any = null;
+      try { parsed = JSON.parse(err?.message ?? ""); } catch { /* */ }
+      if (parsed?.missingProcessStock && !vars.bypass) {
+        // Process stock is missing — offer "pick & hold in Pre-Production" option
+        const names = (parsed.missingProcessStock as { name: string; sku?: string }[])
+          .map(p => p.name + (p.sku ? ` (${p.sku})` : "")).join(", ");
+        setProcessStockBlocker({ itemIds: vars.itemIds, missingNames: names });
+        return;
       }
-      toast({ title, description, variant: "destructive" });
+      const description = parsed?.error ?? err?.message ?? "An unexpected error occurred.";
+      toast({ title: "Cannot send to production", description, variant: "destructive" });
     },
   });
 
@@ -2778,7 +2786,7 @@ function PickingListTab({ filters }: { filters: Filters }) {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => pickMutation.mutate([...checked])}
+                  onClick={() => pickMutation.mutate({ itemIds: [...checked] })}
                   disabled={pickMutation.isPending}
                   className={`gap-1.5 text-white ${needsWorksheet ? "bg-blue-600 hover:bg-blue-700" : "bg-green-600 hover:bg-green-700"}`}
                 >
@@ -2981,6 +2989,46 @@ function PickingListTab({ filters }: { filters: Filters }) {
           );
         })}
       </div>
+
+      {/* Process stock missing — offer pick & hold in Pre-Production */}
+      <Dialog open={!!processStockBlocker} onOpenChange={(open) => { if (!open) setProcessStockBlocker(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              Process Stock Not Yet Delivered
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              The garments are in stock and can be picked, but the following process stock hasn't arrived yet:
+            </p>
+            <p className="font-medium text-foreground bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {processStockBlocker?.missingNames}
+            </p>
+            <p>
+              You can pick the garments now and park the order in <strong>Pre-Production</strong> while you wait for the process stock to be delivered. It will appear in the Pre-Production tab until it's ready to run.
+            </p>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
+            <Button variant="outline" onClick={() => setProcessStockBlocker(null)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white gap-1.5"
+              disabled={pickMutation.isPending}
+              onClick={() => {
+                if (processStockBlocker) {
+                  pickMutation.mutate({ itemIds: processStockBlocker.itemIds, bypass: true });
+                }
+              }}
+            >
+              <Clock className="w-4 h-4" />
+              Pick & Hold in Pre-Production
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

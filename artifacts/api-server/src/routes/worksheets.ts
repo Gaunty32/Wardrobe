@@ -121,6 +121,7 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
   const parsed = z.object({
     itemIds: z.array(z.number().int().positive()),
     qtyOverrides: z.record(z.string(), z.number().int().min(1)).optional(),
+    bypassProcessStockCheck: z.boolean().optional(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -212,7 +213,9 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
   }
 
   // ── Guard: all required process stock must have been delivered (stockQuantity > 0) ──
-  if (finishItems.length > 0) {
+  // Skipped when bypassProcessStockCheck is true — allows picking garments into pre_wip
+  // while awaiting process stock delivery (e.g. embroidery threads, DTF transfers).
+  if (finishItems.length > 0 && !parsed.data.bypassProcessStockCheck) {
     const finishIds = [...new Set(finishItems.map(i => i.finishId!))] as number[];
 
     const finishProcessLinks = await db
