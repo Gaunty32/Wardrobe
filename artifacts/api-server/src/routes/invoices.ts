@@ -346,10 +346,10 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
   const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
   try {
-    const { order, items, customerEmail, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(idParse.data);
+    const { order, items, customerEmail, invoiceCustomerName, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(idParse.data);
     const pdfBuffer = await generateInvoicePDF({
       orderNumber: order.orderNumber,
-      customerName: order.customerName ?? "Customer",
+      customerName: invoiceCustomerName ?? order.customerName ?? "Customer",
       customerEmail,
       customerAddress,
       customerCity,

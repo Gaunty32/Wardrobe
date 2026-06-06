@@ -1536,4 +1536,13 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS number_of_boxes integer NOT NULL DEFAULT 1
   `);
+
+  // ── Add centralised invoicing fields to customers ───────────────────────────
+  await db.execute(sql`
+    ALTER TABLE customers
+      ADD COLUMN IF NOT EXISTS invoice_name text,
+      ADD COLUMN IF NOT EXISTS invoice_address text,
+      ADD COLUMN IF NOT EXISTS invoice_city text,
+      ADD COLUMN IF NOT EXISTS invoice_postcode text
+  `);
 }

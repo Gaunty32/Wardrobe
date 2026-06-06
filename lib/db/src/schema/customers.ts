@@ -23,6 +23,14 @@ export const customersTable = pgTable("customers", {
   requiresPrepayment: boolean("requires_prepayment").notNull().default(false),
   zeroVat: boolean("zero_vat").notNull().default(false),
   poNumberRequired: boolean("po_number_required").notNull().default(false),
+  /** Centralised invoicing — official company/group name shown on invoices */
+  invoiceName: text("invoice_name"),
+  /** Centralised invoicing — address line 1 */
+  invoiceAddress: text("invoice_address"),
+  /** Centralised invoicing — city */
+  invoiceCity: text("invoice_city"),
+  /** Centralised invoicing — postcode */
+  invoicePostcode: text("invoice_postcode"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -2533,6 +2533,7 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   customerEmail: string | null;
   contactFirstName: string | null;
   customerLogoDataUrl: string | null;
+  invoiceCustomerName: string | null;
   customerAddress: string | null;
   customerCity: string | null;
   customerPostcode: string | null;
@@ -2545,6 +2546,7 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   let customerEmail: string | null = null;
   let contactFirstName: string | null = null;
   let customerLogoDataUrl: string | null = null;
+  let invoiceCustomerName: string | null = null;
   let customerAddress: string | null = null;
   let customerCity: string | null = null;
   let customerPostcode: string | null = null;
@@ -2554,19 +2556,21 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
     // billingEmail overrides the general contact email for all invoice sends
     customerEmail = customer?.billingEmail ?? customer?.email ?? null;
     contactFirstName = customer?.contactFirstName ?? null;
-    customerAddress = customer?.address ?? null;
-    customerCity = customer?.city ?? null;
-    customerPostcode = customer?.postcode ?? null;
+    // Centralised invoicing: use group/official name + address when set
+    invoiceCustomerName = customer?.invoiceName ?? null;
+    customerAddress = customer?.invoiceAddress ?? customer?.address ?? null;
+    customerCity = customer?.invoiceCity ?? customer?.city ?? null;
+    customerPostcode = customer?.invoicePostcode ?? customer?.postcode ?? null;
     if (customer?.logoUrl) customerLogoDataUrl = await fetchLogoDataUrl(customer.logoUrl);
   }
 
-  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, customerAddress, customerCity, customerPostcode };
+  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode };
 }
 
 export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: string }> {
   if (!isEmailConfigured) throw new Error("Email not configured. Go to Settings → Email to set up.");
 
-  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(orderId);
+  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(orderId);
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
   const mappedItems = items.map((i) => ({
@@ -2600,7 +2604,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
 
   const pdfBuffer = await generateInvoicePDF({
     orderNumber: order.orderNumber,
-    customerName: order.customerName ?? "Customer",
+    customerName: invoiceCustomerName ?? order.customerName ?? "Customer",
     customerEmail,
     customerAddress,
     customerCity,

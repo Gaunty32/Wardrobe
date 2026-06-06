@@ -4596,6 +4596,7 @@ export default function CustomerDetail() {
     name: "", contactFirstName: "", contactLastName: "",
     email: "", billingEmail: "", phone: "",
     address: "", state: "", city: "", postcode: "",
+    invoiceName: "", invoiceAddress: "", invoiceCity: "", invoicePostcode: "",
   });
   const openEditInfo = () => {
     setEditInfoForm({
@@ -4609,6 +4610,10 @@ export default function CustomerDetail() {
       state: (customer as any)?.state ?? "",
       city: (customer as any)?.city ?? "",
       postcode: (customer as any)?.postcode ?? "",
+      invoiceName: (customer as any)?.invoiceName ?? "",
+      invoiceAddress: (customer as any)?.invoiceAddress ?? "",
+      invoiceCity: (customer as any)?.invoiceCity ?? "",
+      invoicePostcode: (customer as any)?.invoicePostcode ?? "",
     });
     setEditInfoOpen(true);
   };
@@ -4816,6 +4821,15 @@ export default function CustomerDetail() {
                   )}
                 </div>
               </div>
+              {(customer as any)?.invoiceName && (
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="text-xs text-muted-foreground">Invoiced to:</span>
+                  <Badge variant="outline" className="text-xs border-purple-300 text-purple-700 bg-purple-50 gap-1">
+                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                    {(customer as any).invoiceName}
+                  </Badge>
+                </div>
+              )}
               <div className="flex items-center gap-2 mt-3">
                 <ImageIcon className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
                 <Input
@@ -5051,6 +5065,30 @@ export default function CustomerDetail() {
                   <div className="grid gap-2">
                     <Label>Postcode</Label>
                     <Input value={editInfoForm.postcode} onChange={e => setEditInfoForm(f => ({ ...f, postcode: e.target.value }))} />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="border-t pt-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Centralised Invoice Contact</p>
+              <p className="text-xs text-muted-foreground mb-3">For group companies — overrides the name and address printed on invoices. Leave blank to use the fields above.</p>
+              <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <Label>Invoice Company Name</Label>
+                  <Input placeholder="e.g. Farnell Group Ltd" value={editInfoForm.invoiceName} onChange={e => setEditInfoForm(f => ({ ...f, invoiceName: e.target.value }))} />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Invoice Street Address</Label>
+                  <Input placeholder="e.g. 1 Finance Park, Leeds" value={editInfoForm.invoiceAddress} onChange={e => setEditInfoForm(f => ({ ...f, invoiceAddress: e.target.value }))} />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Invoice City</Label>
+                    <Input value={editInfoForm.invoiceCity} onChange={e => setEditInfoForm(f => ({ ...f, invoiceCity: e.target.value }))} />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Invoice Postcode</Label>
+                    <Input value={editInfoForm.invoicePostcode} onChange={e => setEditInfoForm(f => ({ ...f, invoicePostcode: e.target.value }))} />
                   </div>
                 </div>
               </div>
