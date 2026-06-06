@@ -21,7 +21,32 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail, Upload, X, Download, Building2, User } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail, Upload, X, Download, Building2, User, AlertTriangle } from "lucide-react";
+
+// ── Duplicate-detection helpers ──────────────────────────────────────────────
+const STRIP_WORDS = new Set(["ltd", "limited", "plc", "llp", "inc", "co", "company", "group", "the", "and", "uk", "solutions", "services", "trading"]);
+function normaliseCustomerName(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1 && !STRIP_WORDS.has(w));
+}
+function customerNameSimilarity(a: string, b: string): number {
+  const ta = normaliseCustomerName(a);
+  const tb = normaliseCustomerName(b);
+  if (!ta.length || !tb.length) return 0;
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+  const intersection = [...setA].filter((w) => setB.has(w)).length;
+  const union = new Set([...setA, ...setB]).size;
+  const jaccard = intersection / union;
+  // Boost if one normalised string contains all tokens of the other
+  const aStr = ta.join(" ");
+  const bStr = tb.join(" ");
+  const containsBoost = aStr.includes(bStr) || bStr.includes(aStr) ? 0.3 : 0;
+  return Math.min(1, jaccard + containsBoost);
+}
 
 const API_BASE = "/api";
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
@@ -316,6 +341,17 @@ export default function Customers() {
   const updateMutation = useUpdateCustomer();
   const deleteMutation = useDeleteCustomer();
 
+  // Duplicate detection — only active when creating (not editing)
+  const duplicateSuggestions = useMemo(() => {
+    if (editingCustomer || !formData.name.trim() || formData.name.trim().length < 3) return [];
+    return (allCustomers ?? [])
+      .map((c) => ({ customer: c, score: customerNameSimilarity(formData.name, c.name) }))
+      .filter(({ score }) => score >= 0.45)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map(({ customer }) => customer);
+  }, [formData.name, allCustomers, editingCustomer]);
+
   const openCreateDialog = () => {
     setFormData(initialForm);
     setIsCreateOpen(true);
@@ -546,6 +582,29 @@ export default function Customers() {
               <div className="grid gap-2">
                 <Label htmlFor="name">Company / Full Name *</Label>
                 <Input id="name" value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
+                {duplicateSuggestions.length > 0 && (
+                  <div className="flex gap-2.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                    <div>
+                      <p className="font-medium leading-snug">Possible duplicate{duplicateSuggestions.length > 1 ? "s" : ""} found</p>
+                      <p className="text-xs text-amber-700 mt-0.5">These customers already exist with a similar name:</p>
+                      <ul className="mt-1.5 space-y-0.5">
+                        {duplicateSuggestions.map((c) => (
+                          <li key={c.id}>
+                            <button
+                              type="button"
+                              className="text-xs font-semibold underline underline-offset-2 hover:text-amber-900 text-left"
+                              onClick={() => { setIsCreateOpen(false); navigate(`/customers/${c.id}`); }}
+                            >
+                              {c.name}
+                            </button>
+                            {c.city && <span className="text-xs text-amber-600 ml-1">· {c.city}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid gap-2 mt-1">
