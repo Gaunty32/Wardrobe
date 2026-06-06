@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
 import { apiFetch } from "@/lib/api";
 import { formatCurrency } from "@/lib/utils";
-import { sortSizes, sortSizesWithOrder } from "@/lib/sizeUtils";
+import { sortSizes, sortSizesWithOrder, abbreviateSizeLabel } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1401,7 +1401,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                               <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(sizeOptions.length, 4)}, 1fr)` }}>
                                 {sizeOptions.map((sz, si) => (
                                   <div key={sz} className="flex flex-col items-center gap-0.5">
-                                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{sz}</span>
+                                    <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{abbreviateSizeLabel(sz)}</span>
                                     <input
                                       type="number"
                                       min={0}
