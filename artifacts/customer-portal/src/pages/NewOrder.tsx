@@ -2734,13 +2734,15 @@ function printPickingNote(note: PickingNote) {
   setTimeout(() => win.print(), 300);
 }
 
-function ConfirmStep({ orderNumber, allFromStock, pickingNote, onViewOrder, stripeCharge, selectExtraClaimed }: {
+function ConfirmStep({ orderNumber, allFromStock, pickingNote, onViewOrder, stripeCharge, selectExtraClaimed, requiredDate, portalRole }: {
   orderNumber?: string;
   allFromStock?: boolean;
   pickingNote?: PickingNote | null;
   onViewOrder?: () => void;
   stripeCharge?: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null;
   selectExtraClaimed?: boolean;
+  requiredDate?: string | null;
+  portalRole?: string;
 }) {
   return (
     <div className="py-10 max-w-lg mx-auto">
@@ -2753,13 +2755,30 @@ function ConfirmStep({ orderNumber, allFromStock, pickingNote, onViewOrder, stri
             <h2 className="text-2xl font-bold mb-2">All items in stock!</h2>
             <p className="text-muted-foreground">All requested items are available in your stock — no order has been sent to SBS.</p>
           </>
-        ) : (
+        ) : portalRole === "manager" ? (
           <>
             <h2 className="text-2xl font-bold mb-2">Order submitted!</h2>
             <p className="text-muted-foreground mb-1">
-              Your order <span className="font-semibold text-foreground">{orderNumber}</span> has been submitted for review.
+              Your order <span className="font-semibold text-foreground">{orderNumber}</span> has been received by SBS.
             </p>
-            <p className="text-sm text-muted-foreground">We'll be in touch shortly to confirm your order.</p>
+            {requiredDate ? (
+              <p className="text-sm text-muted-foreground">
+                We're aiming to despatch this by{" "}
+                <span className="font-semibold text-foreground">
+                  {new Date(requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+                </span>.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">We typically despatch within 7–10 working days.</p>
+            )}
+          </>
+        ) : (
+          <>
+            <h2 className="text-2xl font-bold mb-2">Order saved for review!</h2>
+            <p className="text-muted-foreground mb-1">
+              Your order has been saved and is awaiting your manager's approval before being sent to SBS.
+            </p>
+            <p className="text-sm text-muted-foreground">Your manager will review and submit it shortly.</p>
           </>
         )}
       </div>
@@ -2889,6 +2908,7 @@ export default function NewOrder() {
     stripeCharge?: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null;
     pickingNote?: PickingNote | null;
     selectExtraClaimed?: boolean;
+    requiredDate?: string | null;
   } | null>(null);
   const [confirmedEnquiry, setConfirmedEnquiry] = useState<{ enquiryRef: string } | null>(null);
   const serverSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3036,7 +3056,7 @@ export default function NewOrder() {
           })),
         }),
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       clearSession();
       apiFetch("/portal/basket", { method: "DELETE" }).catch(() => {});
       setConfirmedOrder({
@@ -3046,6 +3066,7 @@ export default function NewOrder() {
         stripeCharge: data.stripeCharge ?? null,
         pickingNote: data.pickingNote ?? null,
         selectExtraClaimed: data.selectExtraClaimed ?? false,
+        requiredDate: variables.requiredDate ?? null,
       });
       setStep(3);
     },
@@ -3227,6 +3248,8 @@ export default function NewOrder() {
           onViewOrder={confirmedOrder.id ? () => setLocation(`/orders/${confirmedOrder.id}`) : undefined}
           stripeCharge={confirmedOrder.stripeCharge}
           selectExtraClaimed={confirmedOrder.selectExtraClaimed}
+          requiredDate={confirmedOrder.requiredDate}
+          portalRole={portalRole}
         />
       )}
 
