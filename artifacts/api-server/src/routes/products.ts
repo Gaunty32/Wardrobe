@@ -425,6 +425,38 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     { label: "Technical Features", n: techRating },
   ].filter(r => r.n > 0).map(r => `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"><strong>${r.label}:</strong> <span style="color:#f59e0b;font-size:1.1em">${toStars(r.n)}</span></span>`).join("");
 
+  // Badge icons and colours
+  const BADGE_STYLES: Record<string, { icon: string; bg: string; color: string }> = {
+    "Most Popular":      { icon: "🏆", bg: "#1e3a5f", color: "#ffffff" },
+    "Best Value":        { icon: "💰", bg: "#15803d", color: "#ffffff" },
+    "Premium Choice":    { icon: "💎", bg: "#7c3aed", color: "#ffffff" },
+    "Staff Pick":        { icon: "⭐", bg: "#b45309", color: "#ffffff" },
+    "Bulk Buy Discount": { icon: "📦", bg: "#0369a1", color: "#ffffff" },
+  };
+
+  const TAG_STYLES: Record<string, { icon: string }> = {
+    "Everyday Workwear": { icon: "👕" },
+    "Smart Uniform":     { icon: "👔" },
+    "Heavy Duty":        { icon: "💪" },
+    "Budget Friendly":   { icon: "💲" },
+    "Premium":           { icon: "💎" },
+  };
+
+  const badges: string[] = Array.isArray(product.guidance_badges) ? product.guidance_badges : [];
+  const tags: string[]   = Array.isArray(product.guidance_tags)   ? product.guidance_tags   : [];
+
+  const pillBase = "display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;font-size:0.8em;font-weight:700;margin:3px;line-height:1.3;white-space:nowrap";
+
+  const badgesHtml = badges.map(b => {
+    const s = BADGE_STYLES[b] ?? { icon: "✔", bg: "#1e3a5f", color: "#ffffff" };
+    return `<span style="${pillBase};background:${s.bg};color:${s.color}">${s.icon} ${b}</span>`;
+  }).join("");
+
+  const tagsHtml = tags.map(t => {
+    const s = TAG_STYLES[t] ?? { icon: "🏷" };
+    return `<span style="${pillBase};background:#e8f0fe;color:#1e3a5f;border:1.5px solid #1e3a5f">${s.icon} ${t}</span>`;
+  }).join("");
+
   // Staff quotes: strip internal IDs and send only display-relevant fields
   const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
   const staffQuotesClean = rawQuotes.map((q: any) => ({
@@ -446,10 +478,14 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     { key: "_sbs_technical_stars",         value: toStars(techRating) },
     // Combined HTML block (all three ratings in one field)
     { key: "_sbs_ratings_html",            value: ratingsHtml },
-    { key: "_sbs_badges",                  value: JSON.stringify(product.guidance_badges ?? []) },
-    { key: "_sbs_tags",                    value: JSON.stringify(product.guidance_tags    ?? []) },
-    { key: "_sbs_best_for",                value: product.guidance_best_for               ?? "" },
-    { key: "_sbs_not_ideal_for",           value: product.guidance_not_ideal_for          ?? "" },
+    // Badges — JSON for plugin logic, HTML pills for display
+    { key: "_sbs_badges",                  value: JSON.stringify(badges) },
+    { key: "_sbs_badges_html",             value: badgesHtml },
+    // Guidance tags — JSON for plugin logic, HTML pills for display
+    { key: "_sbs_tags",                    value: JSON.stringify(tags) },
+    { key: "_sbs_tags_html",               value: tagsHtml },
+    { key: "_sbs_best_for",                value: product.guidance_best_for      ?? "" },
+    { key: "_sbs_not_ideal_for",           value: product.guidance_not_ideal_for ?? "" },
     { key: "_sbs_staff_quotes",            value: JSON.stringify(staffQuotesClean) },
   ];
 
