@@ -457,7 +457,23 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     return `<span style="${pillBase};background:#e8f0fe;color:#1e3a5f;border:1.5px solid #1e3a5f">${s.icon} ${t}</span>`;
   }).join("");
 
-  // Staff quotes: strip internal IDs and send only display-relevant fields
+  // ── Best For / Not Ideal For — pill header + content ──────────────────────
+  function sectionHtml(
+    icon: string, label: string, pillBg: string, pillColor: string, borderColor: string, text: string
+  ): string {
+    if (!text?.trim()) return "";
+    const lines = text.trim().split(/\r?\n/).filter(Boolean);
+    const listItems = lines.map(l => `<li style="margin-bottom:4px">${l}</li>`).join("");
+    return `<div style="margin-bottom:16px">` +
+      `<span style="${pillBase};background:${pillBg};color:${pillColor};margin-bottom:10px;display:inline-flex">${icon} ${label}</span>` +
+      `<ul style="margin:8px 0 0 4px;padding-left:18px;color:#374151;font-size:0.95em;line-height:1.6">${listItems}</ul>` +
+      `</div>`;
+  }
+
+  const bestForHtml    = sectionHtml("✅", "Best For",      "#15803d", "#ffffff", "#16a34a", product.guidance_best_for      ?? "");
+  const notIdealForHtml = sectionHtml("⚠️", "Not Ideal For", "#b45309", "#ffffff", "#d97706", product.guidance_not_ideal_for ?? "");
+
+  // ── Staff quotes — card with avatar, name, role, quote ─────────────────────
   const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
   const staffQuotesClean = rawQuotes.map((q: any) => ({
     name: q.staffName ?? q.name ?? "",
@@ -466,6 +482,21 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     quote: q.rewritten ?? q.draft ?? "",
     aiPolished: !!(q.rewritten),
   }));
+
+  const staffQuotesHtml = staffQuotesClean.map(q => {
+    const initial = (q.name || "?")[0].toUpperCase();
+    const avatar = q.imageUrl
+      ? `<img src="${q.imageUrl}" alt="${q.name}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid #e5e7eb" />`
+      : `<span style="width:52px;height:52px;border-radius:50%;background:#1e3a5f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:1.3em;font-weight:700;flex-shrink:0">${initial}</span>`;
+    return `<div style="border:1.5px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:12px;background:#fafafa">` +
+      `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">` +
+        avatar +
+        `<div><div style="font-weight:700;color:#111827;font-size:1em">${q.name}</div>` +
+        `<div style="color:#6b7280;font-size:0.82em;margin-top:1px">${q.role ?? ""}</div></div>` +
+      `</div>` +
+      `<p style="margin:0;font-style:italic;color:#374151;font-size:0.95em;line-height:1.6;border-left:3px solid #1e3a5f;padding-left:10px">&ldquo;${q.quote}&rdquo;</p>` +
+    `</div>`;
+  }).join("");
 
   const meta_data = [
     // Numeric values (for plugin logic)
@@ -484,9 +515,14 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     // Guidance tags — JSON for plugin logic, HTML pills for display
     { key: "_sbs_tags",                    value: JSON.stringify(tags) },
     { key: "_sbs_tags_html",               value: tagsHtml },
-    { key: "_sbs_best_for",                value: product.guidance_best_for      ?? "" },
-    { key: "_sbs_not_ideal_for",           value: product.guidance_not_ideal_for ?? "" },
+    // Best For / Not Ideal For — plain text + HTML section with pill header
+    { key: "_sbs_best_for",                value: product.guidance_best_for               ?? "" },
+    { key: "_sbs_best_for_html",           value: bestForHtml },
+    { key: "_sbs_not_ideal_for",           value: product.guidance_not_ideal_for          ?? "" },
+    { key: "_sbs_not_ideal_for_html",      value: notIdealForHtml },
+    // Staff quotes — JSON for plugin logic, HTML cards for display
     { key: "_sbs_staff_quotes",            value: JSON.stringify(staffQuotesClean) },
+    { key: "_sbs_staff_quotes_html",       value: staffQuotesHtml },
   ];
 
   const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
