@@ -58,7 +58,7 @@ export function sortBySize<T>(arr: T[], key: (item: T) => string | null | undefi
 
 /** Map of normalised long-form size names → short display label for tight grids */
 const SIZE_ABBREV: Record<string, string> = {
-  "EXTRASMALL": "XS", "XSMALL": "XS", "XSMALL": "XS", "X-SMALL": "XS",
+  "EXTRASMALL": "XS", "XSMALL": "XS", "X-SMALL": "XS",
   "SMALL": "S",
   "MEDIUM": "M",
   "LARGE": "L",
@@ -69,7 +69,7 @@ const SIZE_ABBREV: Record<string, string> = {
   "XXXLARGE": "3XL", "3XLARGE": "3XL",
   "XXXXLARGE": "4XL", "4XLARGE": "4XL",
   "XXXXXLARGE": "5XL", "5XLARGE": "5XL",
-  "EXTRASMALL YOUTH": "XS Youth", "XSYOUTH": "XS Youth", "EXTRASMALL YOUTH": "XS Youth",
+  "EXTRASMALL YOUTH": "XS Youth", "XSYOUTH": "XS Youth",
   "SMALL YOUTH": "S Youth", "SYOUTH": "S Youth",
   "MEDIUM YOUTH": "M Youth", "MYOUTH": "M Youth",
   "LARGE YOUTH": "L Youth", "LYOUTH": "L Youth",

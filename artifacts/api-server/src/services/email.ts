@@ -503,6 +503,8 @@ export interface AckOrderData {
   totalAmount?: number | null;
   shippingAmount?: number | null;
   vatRate?: number;
+  /** When true all VAT is suppressed on the PDF (Channel Islands / zero-rated customers) */
+  zeroVat?: boolean;
   items: AckOrderItem[];
 }
 
@@ -715,26 +717,28 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     // ── Totals ────────────────────────────────────────────────────────────────
     const pdfSubtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
     const pdfShipping = order.shippingAmount ?? 0;
-    // Calculate VAT per item using each item's own rate; shipping assumed standard 20%
-    const pdfItemVat  = order.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.20), 0);
-    const pdfVat      = pdfItemVat + pdfShipping * 0.20;
+    // Zero-rated customers: suppress all VAT (Channel Islands etc.)
+    const effectiveZeroVat = order.zeroVat || order.items.every(i => (i.vatRate ?? 0.20) === 0);
+    const pdfItemVat  = effectiveZeroVat ? 0 : order.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.20), 0);
+    const pdfVat      = effectiveZeroVat ? 0 : pdfItemVat + pdfShipping * 0.20;
     const pdfGrand    = pdfSubtotal + pdfShipping + pdfVat;
-
-    const pdfUniqueRates = [...new Set(order.items.map(i => i.vatRate ?? 0.20))];
-    const pdfVatLabel = pdfUniqueRates.length === 1 && pdfShipping === 0
-      ? `VAT (${Math.round(pdfUniqueRates[0] * 100)}%):`
-      : "VAT:";
 
     const totalsX = margin + tableW - 195;
     const totalsW = 195;
     y += 6;
 
-    const totalsRows: { label: string; value: string; bold?: boolean; big?: boolean }[] = [
-      { label: "Subtotal (exc. VAT):", value: `£${pdfSubtotal.toFixed(2)}` },
-      ...(pdfShipping > 0 ? [{ label: "Shipping & Handling:", value: `£${pdfShipping.toFixed(2)}` }] : []),
-      { label: pdfVatLabel, value: `£${pdfVat.toFixed(2)}` },
-      { label: "TOTAL (inc. VAT):", value: `£${pdfGrand.toFixed(2)}`, bold: true, big: true },
-    ];
+    const totalsRows: { label: string; value: string; bold?: boolean; big?: boolean }[] = effectiveZeroVat
+      ? [
+          { label: "Subtotal:", value: `£${pdfSubtotal.toFixed(2)}` },
+          ...(pdfShipping > 0 ? [{ label: "Shipping & Handling:", value: `£${pdfShipping.toFixed(2)}` }] : []),
+          { label: "TOTAL:", value: `£${pdfGrand.toFixed(2)}`, bold: true, big: true },
+        ]
+      : [
+          { label: "Subtotal (exc. VAT):", value: `£${pdfSubtotal.toFixed(2)}` },
+          ...(pdfShipping > 0 ? [{ label: "Shipping & Handling:", value: `£${pdfShipping.toFixed(2)}` }] : []),
+          { label: "VAT:", value: `£${pdfVat.toFixed(2)}` },
+          { label: "TOTAL (inc. VAT):", value: `£${pdfGrand.toFixed(2)}`, bold: true, big: true },
+        ];
 
     doc.fontSize(7.5);
     for (const row of totalsRows) {

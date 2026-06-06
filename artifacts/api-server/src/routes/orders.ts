@@ -1185,6 +1185,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
   let customerLogoUrl: string | null = null;
   let customerLogoDataUrl: string | null = null;
   let customerLogoBuffer: Buffer | null = null;
+  let sendAckZeroVat = false;
 
   if (order.customerId) {
     const [customer] = await db.select({
@@ -1194,12 +1195,14 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       city: customersTable.city,
       postcode: customersTable.postcode,
       logoUrl: customersTable.logoUrl,
+      zeroVat: customersTable.zeroVat,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     contactFirstName = customer?.contactFirstName ?? null;
     customerAddress = customer?.address ?? null;
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
     customerLogoUrl = customer?.logoUrl ?? null;
+    sendAckZeroVat = customer?.zeroVat ?? false;
 
     if (!toEmail) {
       // For portal orders, prefer the email of the person who placed the order
@@ -1291,6 +1294,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       customerLogoBuffer,
       totalAmount: numericToFloat(order.totalAmount),
       shippingAmount: numericToFloat(order.carriageAmount),
+      zeroVat: sendAckZeroVat,
       items: mappedItems,
     });
     attachments = [{ filename: `Order-Acknowledgement-${order.orderNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" }];
@@ -1406,16 +1410,19 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
   let customerPostcode: string | null = null;
   let customerLogoBuffer: Buffer | null = null;
 
+  let customerZeroVat = false;
   if (order.customerId) {
     const [customer] = await db.select({
       address: customersTable.address,
       city: customersTable.city,
       postcode: customersTable.postcode,
       logoUrl: customersTable.logoUrl,
+      zeroVat: customersTable.zeroVat,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     customerAddress = customer?.address ?? null;
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
+    customerZeroVat = customer?.zeroVat ?? false;
     if (customer?.logoUrl) {
       const logoResult = await readLogoForSending(customer.logoUrl);
       if (logoResult) customerLogoBuffer = logoResult.buffer;
@@ -1443,6 +1450,7 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
       customerLogoBuffer,
       totalAmount: numericToFloat(order.totalAmount),
       shippingAmount: numericToFloat(order.carriageAmount),
+      zeroVat: customerZeroVat,
       items,
     });
     res.setHeader("Content-Type", "application/pdf");
@@ -1497,6 +1505,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
   let customerPostcode: string | null = null;
   let stripeCustomerId: string | null = null;
 
+  let emlZeroVat = false;
   if (order.customerId) {
     const [customer] = await db.select({
       email: customersTable.email,
@@ -1505,6 +1514,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
       city: customersTable.city,
       postcode: customersTable.postcode,
       stripeCustomerId: customersTable.stripeCustomerId,
+      zeroVat: customersTable.zeroVat,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     toEmail = customer?.email ?? "";
     contactFirstName = customer?.contactFirstName ?? null;
@@ -1512,6 +1522,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
     stripeCustomerId = customer?.stripeCustomerId ?? null;
+    emlZeroVat = customer?.zeroVat ?? false;
   }
 
   let deliveryAddressText: string | null = null;
@@ -1572,6 +1583,7 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
       totalAmount: numericToFloat(order.totalAmount),
       shippingAmount: numericToFloat(order.carriageAmount),
       shippingMethod: order.shippingMethod ?? null,
+      zeroVat: emlZeroVat,
       items: mappedItems,
     });
     pdfBase64 = pdfBuffer.toString("base64");
@@ -1664,6 +1676,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
   let customerCity: string | null = null;
   let customerPostcode: string | null = null;
   let stripeCustomerId2: string | null = null;
+  let vbsZeroVat = false;
 
   if (order.customerId) {
     const [customer] = await db.select({
@@ -1673,6 +1686,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
       city: customersTable.city,
       postcode: customersTable.postcode,
       stripeCustomerId: customersTable.stripeCustomerId,
+      zeroVat: customersTable.zeroVat,
     }).from(customersTable).where(eq(customersTable.id, order.customerId));
     toEmail = customer?.email ?? "";
     contactFirstName = customer?.contactFirstName ?? null;
@@ -1680,6 +1694,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
     customerCity = customer?.city ?? null;
     customerPostcode = customer?.postcode ?? null;
     stripeCustomerId2 = customer?.stripeCustomerId ?? null;
+    vbsZeroVat = customer?.zeroVat ?? false;
   }
 
   let deliveryAddressText: string | null = null;
@@ -1739,6 +1754,7 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
       totalAmount: numericToFloat(order.totalAmount),
       shippingAmount: numericToFloat(order.carriageAmount),
       shippingMethod: order.shippingMethod ?? null,
+      zeroVat: vbsZeroVat,
       items: mappedItems,
     });
     pdfBase64 = pdfBuffer.toString("base64");

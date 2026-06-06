@@ -2254,16 +2254,18 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
       recipientName: r.recipient_name ?? null,
     }));
 
-    // Fetch customer address for PDF
+    // Fetch customer address + zero-VAT flag for PDF
     let customerAddress: string | null = null;
     let customerCity: string | null = null;
     let customerPostcode: string | null = null;
+    let portalAckZeroVat = false;
     if (ord.customer_id) {
-      const custRows = await db.execute(sql`SELECT address, city, postcode FROM customers WHERE id = ${ord.customer_id} LIMIT 1`);
+      const custRows = await db.execute(sql`SELECT address, city, postcode, zero_vat FROM customers WHERE id = ${ord.customer_id} LIMIT 1`);
       const c = custRows.rows[0] as any;
       customerAddress = c?.address ?? null;
       customerCity = c?.city ?? null;
       customerPostcode = c?.postcode ?? null;
+      portalAckZeroVat = c?.zero_vat === true || c?.zero_vat === "true";
     }
 
     // Fetch delivery address text
@@ -2298,6 +2300,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
         deliveryAddress: deliveryAddressText,
         totalAmount: parseFloat(ord.total_amount ?? "0"),
         shippingAmount: parseFloat(ord.carriage_amount ?? "0") || undefined,
+        zeroVat: portalAckZeroVat,
         items: pdfItems,
       });
     } catch (_e) {}
