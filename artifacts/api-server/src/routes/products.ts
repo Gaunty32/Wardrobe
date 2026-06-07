@@ -475,13 +475,23 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
 
   // ── Staff quotes — card with avatar, name, role, quote ─────────────────────
   const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
-  const staffQuotesClean = rawQuotes.map((q: any) => ({
-    name: q.staffName ?? q.name ?? "",
-    role: q.staffRole ?? q.role ?? "",
-    imageUrl: q.staffImageUrl ?? q.imageUrl ?? null,
-    quote: q.rewritten ?? q.draft ?? "",
-    aiPolished: !!(q.rewritten),
-  }));
+  const staffQuotesClean = rawQuotes.map((q: any) => {
+    const name     = q.staffName ?? q.name ?? "";
+    const role     = q.staffRole ?? q.role ?? "";
+    const imageUrl = q.staffImageUrl ?? q.imageUrl ?? null;
+    const quote    = q.rewritten ?? q.draft ?? "";
+    return {
+      // Name variants
+      name,
+      // Role/title — send under every common key the theme might use
+      role, title: role, job_title: role, position: role,
+      // Image URL — send under every common key the theme might use
+      imageUrl, image_url: imageUrl, image: imageUrl, avatar: imageUrl, photo: imageUrl,
+      // Quote text — send under every common key the theme might use
+      quote, text: quote,
+      aiPolished: !!(q.rewritten),
+    };
+  });
 
   const staffQuotesHtml = staffQuotesClean.map(q => {
     const initial = (q.name || "?")[0].toUpperCase();
@@ -509,11 +519,14 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     { key: "_sbs_technical_stars",         value: toStars(techRating) },
     // Combined HTML block (all three ratings in one field)
     { key: "_sbs_ratings_html",            value: ratingsHtml },
-    // Badges — JSON array for theme rendering; pre-built HTML pills as _html variant
-    { key: "_sbs_badges",                  value: JSON.stringify(badges) },
+    // Badges — plain comma-separated string (theme wraps each in its own pill);
+    //          JSON array and pre-built HTML pills available as alternate keys
+    { key: "_sbs_badges",                  value: badges.join(",") },
+    { key: "_sbs_badges_json",             value: JSON.stringify(badges) },
     { key: "_sbs_badges_html",             value: badgesHtml },
-    // Guidance tags — JSON array for theme rendering; pre-built HTML pills as _html variant
-    { key: "_sbs_tags",                    value: JSON.stringify(tags) },
+    // Guidance tags — plain comma-separated string; JSON and HTML as alternate keys
+    { key: "_sbs_tags",                    value: tags.join(",") },
+    { key: "_sbs_tags_json",               value: JSON.stringify(tags) },
     { key: "_sbs_tags_html",               value: tagsHtml },
     // Best For — plain text for theme rendering; pre-built HTML section as _html variant
     { key: "_sbs_best_for",                value: product.guidance_best_for               ?? "" },
