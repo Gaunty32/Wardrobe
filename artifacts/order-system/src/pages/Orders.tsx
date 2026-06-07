@@ -600,9 +600,9 @@ export default function Orders() {
           <div className="flex items-center gap-3">
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="font-medium text-muted-foreground/70">GP%</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">&#9679; ≥40%</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">&#9679; ≥20%</span>
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-medium">&#9679; &lt;20%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-medium">&#9679; &gt;65%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium">&#9679; &gt;50%</span>
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-medium">&#9679; &lt;50%</span>
             </div>
             <Button onClick={openCreate} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
               <Plus className="w-4 h-4 mr-2" /> New Order
@@ -703,8 +703,8 @@ export default function Orders() {
                               <span className="font-semibold text-foreground">{formatCurrency(order.totalAmount)}</span>
                               {(order as any).gpMargin != null && (
                                 <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                                  (order as any).gpMargin >= 40 ? "bg-green-50 text-green-700" :
-                                  (order as any).gpMargin >= 20 ? "bg-amber-50 text-amber-700" :
+                                  (order as any).gpMargin > 65 ? "bg-green-50 text-green-700" :
+                                  (order as any).gpMargin > 50 ? "bg-amber-50 text-amber-700" :
                                   "bg-red-50 text-red-600"
                                 }`}>
                                   {((order as any).gpMargin as number).toFixed(0)}%
