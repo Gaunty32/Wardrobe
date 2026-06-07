@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient as _useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useUpload } from "@workspace/object-storage-web";
 import Layout from "@/components/Layout";
@@ -27,7 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore, AlertTriangle, ImageOff as NoImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -72,7 +72,7 @@ export default function Products() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductWithCategory | null>(null);
   const [customerComboOpen, setCustomerComboOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"catalogue" | "sales">("catalogue");
+  const [viewMode, setViewMode] = useState<"catalogue" | "issues" | "sales">("catalogue");
   const [salesDateFrom, setSalesDateFrom] = useState("");
   const [salesDateTo, setSalesDateTo] = useState("");
   const [salesSearch, setSalesSearch] = useState("");
@@ -120,6 +120,29 @@ export default function Products() {
       return apiFetch(`/products/analytics${qs ? `?${qs}` : ""}`);
     },
     enabled: viewMode === "sales",
+  });
+  type ProductIssue = { id: number; name: string; sku: string | null; imageUrl: string | null; supplierName: string | null; unitPrice: number | null; supplierPrice: number | null; gpPct: number | null; suggestedPrice: number | null; wooCommerceId: number | null; issueNoImage: boolean; issueLowGp: boolean; lastChecked: string | null };
+  const { data: issuesData, isLoading: issuesLoading } = useQuery<{ products: ProductIssue[]; total: number; lastChecked: string | null }>({
+    queryKey: ["product-issues"],
+    queryFn: () => apiFetch("/products/issues"),
+    enabled: viewMode === "issues",
+    staleTime: 5 * 60 * 1000,
+  });
+  const [pushingPrice, setPushingPrice] = useState<Record<number, boolean>>({});
+  const pushPriceMutation = useMutation({
+    mutationFn: ({ id, newPrice }: { id: number; newPrice: number }) =>
+      fetch(`${BASE}/api/products/${id}/push-woo-price`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPrice }),
+      }).then(async r => { if (!r.ok) throw new Error((await r.json()).error ?? r.statusText); return r.json(); }),
+    onMutate: ({ id }) => setPushingPrice(p => ({ ...p, [id]: true })),
+    onSettled: (_d, _e, { id }) => setPushingPrice(p => ({ ...p, [id]: false })),
+    onSuccess: (_d, { id, newPrice }) => {
+      toast({ title: `Price updated to ${formatCurrency(newPrice)}`, description: _d.wooPushed ? "Pushed to WooCommerce ✓" : "Updated locally (no WooCommerce ID)" });
+      queryClient.invalidateQueries({ queryKey: ["product-issues"] });
+    },
+    onError: (e: any) => toast({ title: "Price update failed", description: e.message, variant: "destructive" }),
   });
 
   const createMutation = useCreateProduct();
@@ -458,6 +481,19 @@ export default function Products() {
                 <Package className="w-3 h-3" /> Catalogue
               </button>
               <button
+                onClick={() => setViewMode("issues")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  viewMode === "issues" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <AlertTriangle className="w-3 h-3 text-amber-500" />
+                Issues
+                {issuesData && issuesData.total > 0 && (
+                  <span className="ml-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold px-1.5 py-0 leading-4">{issuesData.total}</span>
+                )}
+              </button>
+              <button
                 onClick={() => setViewMode("sales")}
                 className={cn(
                   "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
@@ -542,7 +578,119 @@ export default function Products() {
           </div>
         )}
 
-        {viewMode === "sales" ? (
+        {viewMode === "issues" ? (
+          /* ── Issues view ── */
+          issuesLoading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            </div>
+          ) : !issuesData || issuesData.products.length === 0 ? (
+            <div className="py-20 text-center text-muted-foreground">
+              <AlertTriangle className="w-14 h-14 mx-auto mb-4 text-green-400" />
+              <h3 className="text-lg font-medium text-foreground">No issues found</h3>
+              <p className="mt-1 text-sm">All active products have images and meet the 80% GP threshold.</p>
+              {issuesData?.lastChecked && (
+                <p className="mt-2 text-xs text-muted-foreground/60">Last checked {new Date(issuesData.lastChecked).toLocaleString("en-GB")}</p>
+              )}
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">{issuesData.total}</span> product{issuesData.total !== 1 ? "s" : ""} need attention
+                </p>
+                {issuesData.lastChecked && (
+                  <p className="text-xs text-muted-foreground/60">Checked weekly · last {new Date(issuesData.lastChecked).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                )}
+              </div>
+              <div className="rounded-lg border border-border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30">
+                      <TableHead className="w-12"></TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="hidden sm:table-cell">SKU</TableHead>
+                      <TableHead className="hidden md:table-cell">Supplier</TableHead>
+                      <TableHead className="text-right">Sell price</TableHead>
+                      <TableHead className="text-right">Cost</TableHead>
+                      <TableHead className="text-right w-20">GP%</TableHead>
+                      <TableHead className="text-right w-44">Suggested price</TableHead>
+                      <TableHead className="w-24">Issues</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {issuesData.products.map(p => (
+                      <TableRow
+                        key={p.id}
+                        className="cursor-pointer hover:bg-muted/40 transition-colors"
+                        onClick={() => navigate(`/products/${p.id}`)}
+                      >
+                        <TableCell className="p-2">
+                          {p.imageUrl ? (
+                            <img src={p.imageUrl} alt={p.name} className="w-9 h-9 rounded object-cover border border-border" />
+                          ) : (
+                            <div className="w-9 h-9 rounded border border-dashed border-red-300 bg-red-50 flex items-center justify-center">
+                              <ImageOff className="w-4 h-4 text-red-400" />
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium">{p.name}</TableCell>
+                        <TableCell className="hidden sm:table-cell font-mono text-xs text-muted-foreground">{p.sku ?? "—"}</TableCell>
+                        <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{p.supplierName ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums text-sm">{p.unitPrice != null ? formatCurrency(p.unitPrice) : "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{p.supplierPrice != null ? formatCurrency(p.supplierPrice) : "—"}</TableCell>
+                        <TableCell className="text-right">
+                          {p.gpPct != null ? (
+                            <span className={cn(
+                              "text-xs font-semibold px-1.5 py-0.5 rounded tabular-nums",
+                              p.gpPct >= 80 ? "bg-green-50 text-green-700" :
+                              p.gpPct >= 60 ? "bg-amber-50 text-amber-700" :
+                              "bg-red-50 text-red-600"
+                            )}>{p.gpPct.toFixed(1)}%</span>
+                          ) : <span className="text-xs text-muted-foreground/50">—</span>}
+                        </TableCell>
+                        {/* Suggested price + Apply & Push button */}
+                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
+                          {p.issueLowGp && p.suggestedPrice != null ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="tabular-nums text-sm font-semibold text-green-700">{formatCurrency(p.suggestedPrice)}</span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs px-2 border-green-400 text-green-700 hover:bg-green-50 whitespace-nowrap"
+                                disabled={pushingPrice[p.id]}
+                                onClick={() => pushPriceMutation.mutate({ id: p.id, newPrice: p.suggestedPrice! })}
+                              >
+                                {pushingPrice[p.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <TrendingUp className="w-3 h-3" />}
+                                {p.wooCommerceId ? "Apply & Push" : "Apply"}
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground/40">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {p.issueNoImage && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-700 border border-red-200">
+                                <ImageOff className="w-2.5 h-2.5" />No image
+                              </span>
+                            )}
+                            {p.issueLowGp && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200">
+                                <TrendingUp className="w-2.5 h-2.5" />Low GP
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )
+        ) : viewMode === "sales" ? (
           /* ── Sales analytics view ── */
           analyticsLoading ? (
             <div className="flex justify-center py-20">

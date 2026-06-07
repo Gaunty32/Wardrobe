@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler, normalizeCustomerCasing } from "./services/scheduler";
-import { runStartupMigrations } from "./services/startup-migrations";
+import { runStartupMigrations, refreshProductIssues } from "./services/startup-migrations";
 
 const rawPort = process.env["PORT"];
 
@@ -35,6 +35,16 @@ app.listen(port, async (err) => {
     await initScheduler();
   } catch (e) {
     logger.warn({ err: e }, "Scheduler init failed — will retry when settings are saved");
+  }
+
+  try {
+    await refreshProductIssues();
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    setInterval(() => {
+      refreshProductIssues().catch(e => logger.warn({ err: e }, "Weekly product issues refresh failed"));
+    }, WEEK_MS);
+  } catch (e) {
+    logger.warn({ err: e }, "Product issues refresh failed on startup");
   }
 
   try {

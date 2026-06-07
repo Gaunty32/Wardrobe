@@ -241,6 +241,112 @@ router.post("/products/:id/duplicate", async (req, res): Promise<void> => {
   res.status(201).json(fmtProduct(created));
 });
 
+router.get("/products/issues", async (req, res): Promise<void> => {
+  const rows = await db.execute(sql`
+    SELECT
+      p.id, p.name, p.sku, p.image_url, p.woo_commerce_id,
+      p.unit_price, p.supplier_price,
+      p.issue_no_image, p.issue_low_gp, p.issues_checked_at,
+      s.name AS supplier_name,
+      CASE
+        WHEN p.supplier_price IS NOT NULL
+          AND p.unit_price IS NOT NULL
+          AND CAST(p.unit_price AS float) > 0
+        THEN ROUND(
+          ((CAST(p.unit_price AS float) - CAST(p.supplier_price AS float))
+           / CAST(p.unit_price AS float) * 100)::numeric, 1)
+        ELSE NULL
+      END AS gp_pct,
+      -- Minimum whole-pound price that achieves ≥80% GP: ceil(cost / 0.20)
+      CASE
+        WHEN p.issue_low_gp = true AND p.supplier_price IS NOT NULL
+        THEN CEIL(CAST(p.supplier_price AS float) / 0.20)
+        ELSE NULL
+      END AS suggested_price
+    FROM products p
+    LEFT JOIN suppliers s ON s.id = p.supplier_id
+    WHERE (p.issue_no_image = true OR p.issue_low_gp = true)
+      AND p.is_archived = false
+    ORDER BY p.issue_no_image DESC, gp_pct ASC NULLS LAST, p.name
+  `);
+  const products = ((rows.rows ?? rows) as any[]).map(r => ({
+    id: r.id,
+    name: r.name,
+    sku: r.sku,
+    imageUrl: r.image_url ?? null,
+    supplierName: r.supplier_name ?? null,
+    unitPrice: r.unit_price != null ? parseFloat(r.unit_price) : null,
+    supplierPrice: r.supplier_price != null ? parseFloat(r.supplier_price) : null,
+    gpPct: r.gp_pct != null ? parseFloat(r.gp_pct) : null,
+    suggestedPrice: r.suggested_price != null ? parseFloat(r.suggested_price) : null,
+    issueNoImage: r.issue_no_image,
+    issueLowGp: r.issue_low_gp,
+    wooCommerceId: r.woo_commerce_id ?? null,
+    lastChecked: r.issues_checked_at ?? null,
+  }));
+  res.json({ products, total: products.length, lastChecked: products[0]?.lastChecked ?? null });
+});
+
+// ── Push a new sell price to the SBS DB + WooCommerce ─────────────────────────
+router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = z.object({ newPrice: z.number().positive() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { id } = parsed.data;
+  const { newPrice } = body.data;
+
+  // Update sell price in local DB
+  await db.execute(sql`
+    UPDATE products SET unit_price = ${newPrice.toFixed(2)} WHERE id = ${id}
+  `);
+
+  // Refresh issue flags for this product
+  await db.execute(sql`
+    UPDATE products SET
+      issue_low_gp = (
+        supplier_price IS NOT NULL AND unit_price IS NOT NULL
+        AND CAST(unit_price AS float) > 0
+        AND (CAST(unit_price AS float) - CAST(supplier_price AS float))
+            / CAST(unit_price AS float) * 100 < 80
+      ),
+      issues_checked_at = NOW()
+    WHERE id = ${id}
+  `);
+
+  // Push to WooCommerce if configured
+  const [product] = await db.execute(sql`SELECT woo_commerce_id FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
+  if (!product?.woo_commerce_id) {
+    res.json({ ok: true, wooPushed: false, message: "Price updated locally (no WooCommerce ID)" });
+    return;
+  }
+
+  const settings = await getWooSettings();
+  if (!settings) {
+    res.json({ ok: true, wooPushed: false, message: "Price updated locally (WooCommerce not configured)" });
+    return;
+  }
+
+  const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
+  url.searchParams.set("consumer_key", settings.ck);
+  url.searchParams.set("consumer_secret", settings.cs);
+
+  const wooRes = await fetch(url.toString(), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ regular_price: newPrice.toFixed(2) }),
+  });
+
+  if (!wooRes.ok) {
+    const text = await wooRes.text().catch(() => wooRes.status.toString());
+    res.status(502).json({ error: `Price updated locally but WooCommerce returned ${wooRes.status}: ${text}` });
+    return;
+  }
+
+  res.json({ ok: true, wooPushed: true, newPrice });
+});
+
 router.get("/products/analytics", async (req, res): Promise<void> => {
   const { dateFrom, dateTo } = req.query as { dateFrom?: string; dateTo?: string };
 

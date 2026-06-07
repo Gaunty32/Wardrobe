@@ -1545,4 +1545,29 @@ export async function runStartupMigrations(): Promise<void> {
       ADD COLUMN IF NOT EXISTS invoice_city text,
       ADD COLUMN IF NOT EXISTS invoice_postcode text
   `);
+
+  // ── Product issue flags ────────────────────────────────────────────────────
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issue_no_image boolean NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issue_low_gp boolean NOT NULL DEFAULT false`);
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issues_checked_at timestamptz`);
+}
+
+// ── Weekly product issues refresh ─────────────────────────────────────────────
+export async function refreshProductIssues(): Promise<void> {
+  await db.execute(sql`
+    UPDATE products SET
+      issue_no_image = (
+        image_url IS NULL OR TRIM(image_url) = '' OR image_url LIKE 'blob:%'
+      ),
+      issue_low_gp = (
+        supplier_price IS NOT NULL
+        AND unit_price IS NOT NULL
+        AND CAST(unit_price AS float) > 0
+        AND (CAST(unit_price AS float) - CAST(supplier_price AS float))
+            / CAST(unit_price AS float) * 100 < 80
+      ),
+      issues_checked_at = NOW()
+    WHERE is_archived = false
+  `);
+  console.log("[issues] Product issue flags refreshed");
 }
