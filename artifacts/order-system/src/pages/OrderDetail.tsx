@@ -1712,6 +1712,11 @@ export default function OrderDetail() {
                                   <Archive className="w-3 h-3" />Stock
                                 </Badge>
                               )}
+                              {((orderItem as any).poNumbers as string[] | undefined)?.map((po) => (
+                                <Badge key={po} variant="outline" className="text-xs gap-1 font-normal border-violet-200 text-violet-700 bg-violet-50">
+                                  <ClipboardList className="w-3 h-3" />{po}
+                                </Badge>
+                              ))}
                             </div>
                             {/* Item notes — shown for all items, editable inline */}
                             {editingItemNotes?.id === orderItem.id ? (

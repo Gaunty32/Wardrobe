@@ -425,6 +425,35 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     supplierPrice: r.resolved_supplier_price,
   }));
 
+  // ── PO numbers per order item (direct link + consolidated source_order_item_ids) ─
+  const orderItemIds = itemRows.map(r => r.item.id);
+  const poByItemId = new Map<number, string[]>();
+  if (orderItemIds.length > 0) {
+    const idsStr = orderItemIds.join(",");
+    const poRows = await db.execute(sql`
+      SELECT oi_id, po_number FROM (
+        SELECT poi.order_item_id AS oi_id, po.po_number
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.po_id
+        WHERE poi.order_item_id IN (${sql.raw(idsStr)})
+          AND po.status != 'cancelled'
+        UNION
+        SELECT elem::int AS oi_id, po.po_number
+        FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.po_id,
+        jsonb_array_elements_text(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) AS elem
+        WHERE jsonb_array_length(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) > 0
+          AND po.status != 'cancelled'
+          AND elem::int IN (${sql.raw(idsStr)})
+      ) t
+    `);
+    for (const row of poRows.rows as Array<{ oi_id: number; po_number: string }>) {
+      const existing = poByItemId.get(Number(row.oi_id)) ?? [];
+      existing.push(row.po_number);
+      poByItemId.set(Number(row.oi_id), existing);
+    }
+  }
+
   // ── Process stock cost per finish ID ──────────────────────────────────────
   const finishIds = [...new Set(itemRows.map(r => r.item.finishId).filter((id): id is number => id != null))];
   const processCostByFinishId = new Map<number, number>();
@@ -486,6 +515,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
         supplierName: item.supplierName,
         garmentCost,
         processCost,
+        poNumbers: poByItemId.get(item.id) ?? [],
       };
     }),
   });
