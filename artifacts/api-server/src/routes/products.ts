@@ -418,95 +418,114 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   const durRating  = parseInt(String(product.guidance_durability_rating   ?? 0), 10) || 0;
   const techRating = parseInt(String(product.guidance_smart_rating        ?? 0), 10) || 0;
 
-  // Combined HTML block showing all three ratings as labelled stars — ready to embed in WooCommerce
-  const ratingsHtml = [
+  // ── Ratings — card grid with large amber stars ─────────────────────────────
+  const ratingItems = [
     { label: "Value for Money",    n: valRating  },
     { label: "Durability",         n: durRating  },
     { label: "Technical Features", n: techRating },
-  ].filter(r => r.n > 0).map(r => `<span style="display:inline-flex;align-items:center;gap:6px;margin-right:16px"><strong>${r.label}:</strong> <span style="color:#f59e0b;font-size:1.1em">${toStars(r.n)}</span></span>`).join("");
+  ].filter(r => r.n > 0);
 
-  // Badge icons and colours
-  const BADGE_STYLES: Record<string, { icon: string; bg: string; color: string }> = {
-    "Most Popular":      { icon: "🏆", bg: "#1e3a5f", color: "#ffffff" },
-    "Best Value":        { icon: "💰", bg: "#15803d", color: "#ffffff" },
-    "Premium Choice":    { icon: "💎", bg: "#7c3aed", color: "#ffffff" },
-    "Staff Pick":        { icon: "⭐", bg: "#b45309", color: "#ffffff" },
-    "Bulk Buy Discount": { icon: "📦", bg: "#0369a1", color: "#ffffff" },
+  const ratingsHtml = ratingItems.length === 0 ? "" :
+    `<div style="display:flex;flex-wrap:wrap;gap:12px;padding:16px 20px;background:linear-gradient(135deg,#1e3a5f 0%,#2d5491 100%);border-radius:14px;margin-bottom:20px">` +
+    ratingItems.map(r =>
+      `<div style="flex:1;min-width:110px;text-align:center">` +
+        `<div style="font-size:0.65em;font-weight:700;color:#93c5fd;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px">${r.label}</div>` +
+        `<div style="color:#fbbf24;font-size:1.7em;letter-spacing:2px;line-height:1">${"★".repeat(r.n)}${"☆".repeat(5 - r.n)}</div>` +
+        `<div style="font-size:0.7em;color:#bfdbfe;margin-top:4px;font-weight:600">${r.n} / 5</div>` +
+      `</div>`
+    ).join("") +
+    `</div>`;
+
+  // ── Badge pills — bold coloured with shadow ───────────────────────────────
+  const BADGE_STYLES: Record<string, { icon: string; bg: string; color: string; shadow: string }> = {
+    "Most Popular":      { icon: "🏆", bg: "linear-gradient(135deg,#1e3a5f,#2d5491)", color: "#ffffff", shadow: "rgba(30,58,95,0.4)"  },
+    "Best Value":        { icon: "💰", bg: "linear-gradient(135deg,#15803d,#16a34a)", color: "#ffffff", shadow: "rgba(21,128,61,0.4)"  },
+    "Premium Choice":    { icon: "💎", bg: "linear-gradient(135deg,#6d28d9,#7c3aed)", color: "#ffffff", shadow: "rgba(109,40,217,0.4)" },
+    "Staff Pick":        { icon: "⭐", bg: "linear-gradient(135deg,#92400e,#b45309)", color: "#ffffff", shadow: "rgba(146,64,14,0.4)"  },
+    "Bulk Buy Discount": { icon: "📦", bg: "linear-gradient(135deg,#075985,#0369a1)", color: "#ffffff", shadow: "rgba(7,89,133,0.4)"   },
   };
 
-  const TAG_STYLES: Record<string, { icon: string }> = {
-    "Everyday Workwear": { icon: "👕" },
-    "Smart Uniform":     { icon: "👔" },
-    "Heavy Duty":        { icon: "💪" },
-    "Budget Friendly":   { icon: "💲" },
-    "Premium":           { icon: "💎" },
+  const TAG_STYLES: Record<string, { icon: string; bg: string; color: string; border: string }> = {
+    "Everyday Workwear": { icon: "👕", bg: "#eff6ff", color: "#1d4ed8", border: "#3b82f6" },
+    "Smart Uniform":     { icon: "👔", bg: "#fdf4ff", color: "#7e22ce", border: "#a855f7" },
+    "Heavy Duty":        { icon: "💪", bg: "#fff7ed", color: "#c2410c", border: "#f97316" },
+    "Budget Friendly":   { icon: "💲", bg: "#f0fdf4", color: "#15803d", border: "#22c55e" },
+    "Premium":           { icon: "💎", bg: "#f5f3ff", color: "#6d28d9", border: "#8b5cf6" },
   };
 
   const badges: string[] = Array.isArray(product.guidance_badges) ? product.guidance_badges : [];
   const tags: string[]   = Array.isArray(product.guidance_tags)   ? product.guidance_tags   : [];
 
-  const pillBase = "display:inline-flex;align-items:center;gap:5px;padding:5px 14px;border-radius:999px;font-size:0.8em;font-weight:700;margin:3px;line-height:1.3;white-space:nowrap";
+  const badgesHtml = badges.length === 0 ? "" :
+    `<div style="margin-bottom:16px">` +
+    badges.map(b => {
+      const s = BADGE_STYLES[b] ?? { icon: "✔", bg: "linear-gradient(135deg,#1e3a5f,#2d5491)", color: "#ffffff", shadow: "rgba(30,58,95,0.4)" };
+      return `<span style="display:inline-flex;align-items:center;gap:6px;padding:7px 16px;border-radius:999px;font-size:0.88em;font-weight:700;margin:4px;line-height:1.3;white-space:nowrap;background:${s.bg};color:${s.color};box-shadow:0 3px 10px ${s.shadow}">${s.icon} ${b}</span>`;
+    }).join("") +
+    `</div>`;
 
-  const badgesHtml = badges.map(b => {
-    const s = BADGE_STYLES[b] ?? { icon: "✔", bg: "#1e3a5f", color: "#ffffff" };
-    return `<span style="${pillBase};background:${s.bg};color:${s.color}">${s.icon} ${b}</span>`;
-  }).join("");
+  const tagsHtml = tags.length === 0 ? "" :
+    `<div style="margin-bottom:16px">` +
+    tags.map(t => {
+      const s = TAG_STYLES[t] ?? { icon: "🏷", bg: "#f1f5f9", color: "#334155", border: "#94a3b8" };
+      return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;font-size:0.85em;font-weight:600;margin:4px;line-height:1.3;white-space:nowrap;background:${s.bg};color:${s.color};border:2px solid ${s.border}">${s.icon} ${t}</span>`;
+    }).join("") +
+    `</div>`;
 
-  const tagsHtml = tags.map(t => {
-    const s = TAG_STYLES[t] ?? { icon: "🏷" };
-    return `<span style="${pillBase};background:#e8f0fe;color:#1e3a5f;border:1.5px solid #1e3a5f">${s.icon} ${t}</span>`;
-  }).join("");
-
-  // ── Best For / Not Ideal For — pill header + content ──────────────────────
+  // ── Best For / Not Ideal For ───────────────────────────────────────────────
   function sectionHtml(
-    icon: string, label: string, pillBg: string, pillColor: string, borderColor: string, text: string
+    icon: string, label: string, headerBg: string, headerColor: string, accentColor: string, text: string
   ): string {
     if (!text?.trim()) return "";
     const lines = text.trim().split(/\r?\n/).filter(Boolean);
-    const listItems = lines.map(l => `<li style="margin-bottom:4px">${l}</li>`).join("");
-    return `<div style="margin-bottom:16px">` +
-      `<span style="${pillBase};background:${pillBg};color:${pillColor};margin-bottom:10px;display:inline-flex">${icon} ${label}</span>` +
-      `<ul style="margin:8px 0 0 4px;padding-left:18px;color:#374151;font-size:0.95em;line-height:1.6">${listItems}</ul>` +
+    const listItems = lines.map(l =>
+      `<li style="margin-bottom:6px;padding-left:4px">${l}</li>`
+    ).join("");
+    return `<div style="margin-bottom:18px;border-radius:12px;overflow:hidden;border:1.5px solid ${accentColor}20">` +
+      `<div style="background:${headerBg};color:${headerColor};padding:8px 14px;font-weight:700;font-size:0.88em;display:flex;align-items:center;gap:6px">${icon} ${label}</div>` +
+      `<div style="padding:12px 16px;background:#fff"><ul style="margin:0;padding-left:18px;color:#374151;font-size:0.92em;line-height:1.7">${listItems}</ul></div>` +
       `</div>`;
   }
 
-  const bestForHtml    = sectionHtml("✅", "Best For",      "#15803d", "#ffffff", "#16a34a", product.guidance_best_for      ?? "");
-  const notIdealForHtml = sectionHtml("⚠️", "Not Ideal For", "#b45309", "#ffffff", "#d97706", product.guidance_not_ideal_for ?? "");
+  const bestForHtml     = sectionHtml("✅", "Best For",      "#15803d", "#ffffff", "#16a34a", product.guidance_best_for      ?? "");
+  const notIdealForHtml = sectionHtml("⚠️",  "Not Ideal For", "#92400e", "#ffffff", "#d97706", product.guidance_not_ideal_for ?? "");
 
-  // ── Staff quotes — card with avatar, name, role, quote ─────────────────────
+  // ── Staff quotes ───────────────────────────────────────────────────────────
   const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
   const staffQuotesClean = rawQuotes.map((q: any) => {
-    const name     = q.staffName ?? q.name ?? "";
-    const role     = q.staffRole ?? q.role ?? "";
+    const name     = q.staffName   ?? q.name      ?? "";
+    const role     = q.staffRole   ?? q.role      ?? "";
     const imageUrl = q.staffImageUrl ?? q.imageUrl ?? null;
-    const quote    = q.rewritten ?? q.draft ?? "";
+    const quote    = q.rewritten   ?? q.draft     ?? "";
     return {
-      // Name variants
       name,
-      // Role/title — send under every common key the theme might use
       role, title: role, job_title: role, position: role,
-      // Image URL — send under every common key the theme might use
       imageUrl, image_url: imageUrl, image: imageUrl, avatar: imageUrl, photo: imageUrl,
-      // Quote text — send under every common key the theme might use
       quote, text: quote,
       aiPolished: !!(q.rewritten),
     };
   });
 
-  const staffQuotesHtml = staffQuotesClean.map(q => {
-    const initial = (q.name || "?")[0].toUpperCase();
-    const avatar = q.imageUrl
-      ? `<img src="${q.imageUrl}" alt="${q.name}" style="width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid #e5e7eb" />`
-      : `<span style="width:52px;height:52px;border-radius:50%;background:#1e3a5f;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:1.3em;font-weight:700;flex-shrink:0">${initial}</span>`;
-    return `<div style="border:1.5px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:12px;background:#fafafa">` +
-      `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">` +
-        avatar +
-        `<div><div style="font-weight:700;color:#111827;font-size:1em">${q.name}</div>` +
-        `<div style="color:#6b7280;font-size:0.82em;margin-top:1px">${q.role ?? ""}</div></div>` +
-      `</div>` +
-      `<p style="margin:0;font-style:italic;color:#374151;font-size:0.95em;line-height:1.6;border-left:3px solid #1e3a5f;padding-left:10px">&ldquo;${q.quote}&rdquo;</p>` +
+  const staffQuotesHtml = staffQuotesClean.length === 0 ? "" :
+    `<div style="margin-bottom:8px">` +
+    `<div style="font-size:0.7em;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">&#128172; Staff Recommendations</div>` +
+    staffQuotesClean.map(q => {
+      const initial = (q.name || "?")[0].toUpperCase();
+      const avatar = q.imageUrl
+        ? `<img src="${q.imageUrl}" alt="${q.name}" style="width:56px;height:56px;border-radius:50%;object-fit:cover;flex-shrink:0;border:3px solid #1e3a5f;box-shadow:0 2px 8px rgba(30,58,95,0.25)" />`
+        : `<div style="width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#1e3a5f,#2d5491);color:#fff;display:flex;align-items:center;justify-content:center;font-size:1.4em;font-weight:700;flex-shrink:0;box-shadow:0 2px 8px rgba(30,58,95,0.3)">${initial}</div>`;
+      return `<div style="border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;margin-bottom:14px;background:linear-gradient(135deg,#f8fafc,#fff);box-shadow:0 2px 12px rgba(0,0,0,0.06)">` +
+        `<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">` +
+          avatar +
+          `<div>` +
+            `<div style="font-weight:700;color:#1e3a5f;font-size:1.05em;line-height:1.2">${q.name}</div>` +
+            `${q.role ? `<div style="color:#64748b;font-size:0.82em;margin-top:3px;font-weight:500">${q.role}</div>` : ""}` +
+          `</div>` +
+        `</div>` +
+        `<p style="margin:0;font-style:italic;color:#374151;font-size:0.95em;line-height:1.7;border-left:4px solid #1e3a5f;padding-left:12px;background:#f0f4ff;padding:10px 14px 10px 14px;border-radius:0 8px 8px 0">&ldquo;${q.quote}&rdquo;</p>` +
+      `</div>`;
+    }).join("") +
     `</div>`;
-  }).join("");
 
   const meta_data = [
     // Numeric values (for plugin logic)
