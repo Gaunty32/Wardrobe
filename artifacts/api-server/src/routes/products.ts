@@ -509,20 +509,21 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     { key: "_sbs_technical_stars",         value: toStars(techRating) },
     // Combined HTML block (all three ratings in one field)
     { key: "_sbs_ratings_html",            value: ratingsHtml },
-    // Badges — JSON for plugin logic, HTML pills for display
-    { key: "_sbs_badges",                  value: JSON.stringify(badges) },
-    { key: "_sbs_badges_html",             value: badgesHtml },
-    // Guidance tags — JSON for plugin logic, HTML pills for display
-    { key: "_sbs_tags",                    value: JSON.stringify(tags) },
-    { key: "_sbs_tags_html",               value: tagsHtml },
-    // Best For / Not Ideal For — plain text + HTML section with pill header
-    { key: "_sbs_best_for",                value: product.guidance_best_for               ?? "" },
-    { key: "_sbs_best_for_html",           value: bestForHtml },
-    { key: "_sbs_not_ideal_for",           value: product.guidance_not_ideal_for          ?? "" },
-    { key: "_sbs_not_ideal_for_html",      value: notIdealForHtml },
-    // Staff quotes — JSON for plugin logic, HTML cards for display
-    { key: "_sbs_staff_quotes",            value: JSON.stringify(staffQuotesClean) },
-    { key: "_sbs_staff_quotes_html",       value: staffQuotesHtml },
+    // Badges — HTML pills in primary key (theme echoes this directly); raw JSON as backup
+    { key: "_sbs_badges",                  value: badgesHtml },
+    { key: "_sbs_badges_json",             value: JSON.stringify(badges) },
+    // Guidance tags — HTML pills in primary key; raw JSON as backup
+    { key: "_sbs_tags",                    value: tagsHtml },
+    { key: "_sbs_tags_json",               value: JSON.stringify(tags) },
+    // Best For — HTML section in primary key; plain text as backup
+    { key: "_sbs_best_for",                value: bestForHtml },
+    { key: "_sbs_best_for_text",           value: product.guidance_best_for      ?? "" },
+    // Not Ideal For — HTML section in primary key; plain text as backup
+    { key: "_sbs_not_ideal_for",           value: notIdealForHtml },
+    { key: "_sbs_not_ideal_for_text",      value: product.guidance_not_ideal_for ?? "" },
+    // Staff quotes — HTML cards in primary key; raw JSON as backup
+    { key: "_sbs_staff_quotes",            value: staffQuotesHtml },
+    { key: "_sbs_staff_quotes_json",       value: JSON.stringify(staffQuotesClean) },
   ];
 
   const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
