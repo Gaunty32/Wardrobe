@@ -935,11 +935,34 @@ export default function OrderDetail() {
     } catch { /* size pre-fill is best-effort */ }
   };
 
+  // Compute decoration surcharge for a CustomerFinishedItem (all processes above cheapest).
+  // Mirrors portal resolveItemPricing: unit_price is garment base; cheapest process is assumed
+  // baked into the WooCommerce product price so only the "extra" processes are added on top.
+  const getFiFinishExtra = (fi: CustomerFinishedItem): number => {
+    if (fi.specialPrice != null || fi.finishId == null) return 0;
+    const finish = customerFinishes?.find(f => f.id === fi.finishId);
+    if (!finish || !finish.processes?.length) return 0;
+    const prices = [...finish.processes].map((p: any) => Number(p.price ?? 0)).sort((a, b) => a - b);
+    prices.shift(); // remove cheapest — included in garment/WooCommerce base
+    return prices.reduce((s, p) => s + p, 0);
+  };
+
+  // Same for wi (wardrobeData item) objects using wardrobeData.processes.
+  const getWiFinishExtra = (wi: any): number => {
+    if (wi.special_price != null || wi.finish_id == null) return 0;
+    const procs = (wardrobeData?.processes ?? []).filter((p: any) => Number(p.finish_id) === Number(wi.finish_id));
+    if (procs.length === 0) return 0;
+    const prices = procs.map((p: any) => parseFloat(p.price ?? "0")).sort((a: number, b: number) => a - b);
+    prices.shift(); // remove cheapest — included in garment/WooCommerce base
+    return prices.reduce((s: number, p: number) => s + p, 0);
+  };
+
   // Add a single wardrobe item directly (without closing the dialog so staff can add more)
   const handleWardrobeItemAdd = (fi: CustomerFinishedItem) => {
     const size = wardrobeItemSizes[fi.id] ?? "";
     const qty = wardrobeItemQtys[fi.id] ?? 1;
-    const effectivePrice = fi.specialPrice ?? fi.unitPrice;
+    const finishExtra = getFiFinishExtra(fi);
+    const effectivePrice = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice + finishExtra;
     const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
     const recipientName = isPersonRecipient
       ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
@@ -991,9 +1014,10 @@ export default function OrderDetail() {
       ? ""
       : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist;
     const qty = wardrobeItemQtys[id] ?? 1;
-    const effectivePrice = wi.special_price != null
+    const garmentBase = wi.special_price != null
       ? parseFloat(String(wi.special_price))
       : parseFloat(String(wi.unit_price ?? "0"));
+    const effectivePrice = wi.special_price != null ? garmentBase : garmentBase + getWiFinishExtra(wi);
     const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
     const recipientName = isPersonRecipient
       ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
@@ -1034,9 +1058,10 @@ export default function OrderDetail() {
     const qtys = wardrobeBulkQtys[id] ?? {};
     const sizesWithQty = comboOptions.filter(s => (qtys[s] ?? 0) > 0);
     if (sizesWithQty.length === 0) return;
-    const effectivePrice = wi.special_price != null
+    const garmentBase = wi.special_price != null
       ? parseFloat(String(wi.special_price))
       : parseFloat(String(wi.unit_price ?? "0"));
+    const effectivePrice = wi.special_price != null ? garmentBase : garmentBase + getWiFinishExtra(wi);
     const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
     const recipientName = isPersonRecipient
       ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
@@ -1071,7 +1096,9 @@ export default function OrderDetail() {
   };
 
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
-    const effectivePrice = fi.specialPrice ?? fi.unitPrice;
+    const finishExtra = getFiFinishExtra(fi);
+    const garmentBase = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice;
+    const effectivePrice = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice + finishExtra;
     setPriceOverrideEnabled(false);
     setItem({
       ...EMPTY_ITEM,
@@ -1081,9 +1108,9 @@ export default function OrderDetail() {
       size: fi.size ?? "",
       finishId: fi.finishId ?? null,
       finishName: fi.finishName ?? null,
-      finishCost: 0,
+      finishCost: finishExtra,
       unitPrice: effectivePrice.toString(),
-      baseUnitPrice: effectivePrice.toString(),
+      baseUnitPrice: garmentBase.toString(),
       fromWardrobe: true,
     });
   };
@@ -2699,9 +2726,10 @@ export default function OrderDetail() {
                             const bulkComboOpts = sleeveOpts.length > 0
                               ? sizeOpts.flatMap(s => sleeveOpts.map(sl => `${s}/${sl}`))
                               : sizeOpts;
-                            const effectivePrice = wi.special_price != null
+                            const garmentCardBase = wi.special_price != null
                               ? parseFloat(String(wi.special_price))
                               : parseFloat(String(wi.unit_price ?? "0"));
+                            const effectivePrice = wi.special_price != null ? garmentCardBase : garmentCardBase + getWiFinishExtra(wi);
                             const imageUrl = wi.variant_image_url ?? wi.product_image_url;
                             return (
                               <div key={id} className="rounded-xl border bg-card overflow-hidden flex flex-col">
