@@ -1831,10 +1831,10 @@ export default function ProductDetail() {
                     ) : (
                       <div className="grid gap-3">
                         {guidance.staffQuotes.map((q) => (
-                          <div key={q.id} className="flex gap-3 border border-border rounded-lg p-3 bg-muted/20">
-                            <div className="w-10 h-10 rounded-full bg-primary/10 flex-shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold text-primary">
+                          <div key={q.id} className="flex items-start gap-4 border border-border rounded-lg p-3 bg-muted/20">
+                            <div className="w-20 h-20 rounded-full bg-primary/10 flex-shrink-0 overflow-hidden flex items-center justify-center text-xl font-bold text-primary">
                               {q.staffImageUrl
-                                ? <img src={q.staffImageUrl} alt={q.staffName} className="w-full h-full object-cover" />
+                                ? <img src={q.staffImageUrl} alt={q.staffName} className="w-full h-full object-cover object-top" />
                                 : q.staffName.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
