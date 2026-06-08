@@ -1880,7 +1880,10 @@ export default function ProductDetail() {
                       onClick={() => {
                         setEditingQuoteId(null);
                         setQuoteDraft("");
-                        setQuoteStaffId(null);
+                        const randomStaff = staffList.length > 0
+                          ? staffList[Math.floor(Math.random() * staffList.length)]
+                          : null;
+                        setQuoteStaffId(randomStaff?.id ?? null);
                         setQuoteRewritten(null);
                         setQuoteUseRewritten(false);
                         setQuoteDialogOpen(true);
