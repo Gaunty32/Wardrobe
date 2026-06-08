@@ -594,7 +594,7 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   }
 
   const bestForHtml     = sectionHtml("✅", "Best For",      "#15803d", "#ffffff", "#16a34a", product.guidance_best_for      ?? "");
-  const notIdealForHtml = sectionHtml("⚠️",  "Not Ideal For", "#92400e", "#ffffff", "#d97706", product.guidance_not_ideal_for ?? "");
+  const notIdealForHtml = sectionHtml("⚠️",  "Not Ideal For", "#b91c1c", "#ffffff", "#ef4444", product.guidance_not_ideal_for ?? "");
 
   // ── Staff quotes ───────────────────────────────────────────────────────────
   const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
