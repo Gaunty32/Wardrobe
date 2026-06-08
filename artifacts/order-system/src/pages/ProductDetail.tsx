@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles
+  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles, Shuffle
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -1947,33 +1947,52 @@ export default function ProductDetail() {
                     </button>
                   </p>
                 ) : (
-                  <Select
-                    value={quoteStaffId ? String(quoteStaffId) : ""}
-                    onValueChange={(v) => {
-                      const id = Number(v);
-                      setQuoteStaffId(id);
-                      const sm = staffList.find((s: any) => s.id === id);
-                      if (sm) setQuoteRewritten(null);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a staff member…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {staffList.map((s: any) => (
-                        <SelectItem key={s.id} value={String(s.id)}>
-                          <span className="flex items-center gap-2">
-                            <span className="w-5 h-5 rounded-full bg-primary/10 inline-flex items-center justify-center text-xs font-bold text-primary overflow-hidden flex-shrink-0">
-                              {s.profileImageUrl
-                                ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover object-center" />
-                                : s.name.charAt(0).toUpperCase()}
+                  <div className="flex gap-2">
+                    <Select
+                      value={quoteStaffId ? String(quoteStaffId) : ""}
+                      onValueChange={(v) => {
+                        const id = Number(v);
+                        setQuoteStaffId(id);
+                        const sm = staffList.find((s: any) => s.id === id);
+                        if (sm) setQuoteRewritten(null);
+                      }}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Select a staff member…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {staffList.map((s: any) => (
+                          <SelectItem key={s.id} value={String(s.id)}>
+                            <span className="flex items-center gap-2">
+                              <span className="w-5 h-5 rounded-full bg-primary/10 inline-flex items-center justify-center text-xs font-bold text-primary overflow-hidden flex-shrink-0">
+                                {s.profileImageUrl
+                                  ? <img src={s.profileImageUrl} alt={s.name} className="w-full h-full object-cover object-center" />
+                                  : s.name.charAt(0).toUpperCase()}
+                              </span>
+                              {s.name}{s.role ? ` — ${s.role}` : ""}
                             </span>
-                            {s.name}{s.role ? ` — ${s.role}` : ""}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="shrink-0"
+                      title="Pick a random staff member"
+                      onClick={() => {
+                        if (staffList.length === 0) return;
+                        const others = staffList.filter((s: any) => s.id !== quoteStaffId);
+                        const pool = others.length > 0 ? others : staffList;
+                        const pick = pool[Math.floor(Math.random() * pool.length)];
+                        setQuoteStaffId(pick.id);
+                        setQuoteRewritten(null);
+                      }}
+                    >
+                      <Shuffle className="w-4 h-4" />
+                    </Button>
+                  </div>
                 )}
               </div>
 
