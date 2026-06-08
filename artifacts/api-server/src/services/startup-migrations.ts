@@ -1550,6 +1550,9 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issue_no_image boolean NOT NULL DEFAULT false`);
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issue_low_gp boolean NOT NULL DEFAULT false`);
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issues_checked_at timestamptz`);
+
+  // ── WooCommerce publish status ─────────────────────────────────────────────
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS woo_status varchar(20)`);
 }
 
 // ── Weekly product issues refresh ─────────────────────────────────────────────

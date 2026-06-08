@@ -660,6 +660,16 @@ export default function ProductDetail() {
     onError: (e: any) => toast({ title: "WooCommerce push failed", description: e?.message, variant: "destructive" }),
   });
 
+  const pushWooStatusMut = useMutation({
+    mutationFn: (status: "draft" | "publish") =>
+      apiFetch(`/products/${productId}/push-woo-status`, { method: "POST", body: JSON.stringify({ status }) }),
+    onSuccess: (_data: any, status) => {
+      queryClient.invalidateQueries({ queryKey: ["product", productId] });
+      toast({ title: status === "draft" ? "Product set to draft on WooCommerce" : "Product published on WooCommerce" });
+    },
+    onError: (e: any) => toast({ title: "WooCommerce status update failed", description: e?.message, variant: "destructive" }),
+  });
+
   // Upload one image and apply it to every variant that shares the same colour
   async function handleColourImageUpload(colour: string | null, imageUrl: string) {
     const siblings = (variants as any[]).filter((v) =>
@@ -1172,6 +1182,56 @@ export default function ProductDetail() {
                       <p className="text-xs text-blue-600">On save, standard variants will be auto-created: <strong>Full Length Tie</strong> ({details.sku ? `${details.sku}-FLT` : "SKU-FLT"}), <strong>Clip-On Tie</strong> ({details.sku ? `${details.sku}-COT` : "SKU-COT"}), <strong>Clip-on Cravat</strong> ({details.sku ? `${details.sku}-COC` : "SKU-COC"}).</p>
                     )}
                   </div>
+
+                  {/* ── WooCommerce status ── */}
+                  {!!(product as any).wooCommerceId && (
+                    <div className="border-t border-border/40 pt-5 mt-1">
+                      <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3">
+                        <Cloud className="w-3.5 h-3.5 text-blue-500" /> WooCommerce Status
+                      </h4>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className={cn(
+                          "text-xs font-semibold px-2.5 py-1 rounded-full border",
+                          (product as any).wooStatus === "publish" ? "bg-green-50 text-green-700 border-green-200" :
+                          (product as any).wooStatus === "draft"   ? "bg-amber-50 text-amber-700 border-amber-200" :
+                          "bg-muted text-muted-foreground border-border"
+                        )}>
+                          {(product as any).wooStatus === "publish" ? "● Published" :
+                           (product as any).wooStatus === "draft"   ? "● Draft" :
+                           "● Unknown"}
+                        </span>
+                        <p className="text-xs text-muted-foreground flex-1">
+                          {(product as any).wooStatus === "draft"
+                            ? "Hidden from your store. Publish when ready."
+                            : (product as any).wooStatus === "publish"
+                            ? "Live on your store. Set to draft to hide it."
+                            : "Status not yet recorded — use the buttons to set it."}
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => pushWooStatusMut.mutate("draft")}
+                            disabled={pushWooStatusMut.isPending || (product as any).wooStatus === "draft"}
+                            className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-40"
+                          >
+                            {pushWooStatusMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                            Set to Draft
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => pushWooStatusMut.mutate("publish")}
+                            disabled={pushWooStatusMut.isPending || (product as any).wooStatus === "publish"}
+                            className="h-7 text-xs border-green-300 text-green-700 hover:bg-green-50 disabled:opacity-40"
+                          >
+                            {pushWooStatusMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                            Publish
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* ── Service toggle ── */}
                   <div className="border-t border-border/40 pt-5 mt-1">

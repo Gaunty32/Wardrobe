@@ -113,6 +113,7 @@ function fmtProduct(p: any) {
     priceBreaks: p.priceBreaks ?? null,
     isService: p.isService ?? false,
     isArchived: p.isArchived ?? p.is_archived ?? false,
+    wooStatus: p.wooStatus ?? p.woo_status ?? null,
   };
 }
 
@@ -149,6 +150,7 @@ router.get("/products", async (req, res): Promise<void> => {
     isArchived: p.is_archived ?? false,
     customerId: p.customer_id ?? null,
     wooCommerceId: p.woo_commerce_id ?? null,
+    wooStatus: p.woo_status ?? null,
     imageUrl: p.image_url ?? null,
     permalink: p.permalink ?? null,
     supplierId: p.supplier_id ?? null,
@@ -345,6 +347,49 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
   }
 
   res.json({ ok: true, wooPushed: true, newPrice });
+});
+
+// ── Push WooCommerce publish status (draft ↔ publish) ──────────────────────
+router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = z.object({ status: z.enum(["draft", "publish"]) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { id } = parsed.data;
+  const { status } = body.data;
+
+  await db.execute(sql`UPDATE products SET woo_status = ${status} WHERE id = ${id}`);
+
+  const [product] = await db.execute(sql`SELECT woo_commerce_id FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
+  if (!product?.woo_commerce_id) {
+    res.json({ ok: true, wooPushed: false, status, message: "Status saved locally (no WooCommerce ID)" });
+    return;
+  }
+
+  const settings = await getWooSettings();
+  if (!settings) {
+    res.json({ ok: true, wooPushed: false, status, message: "Status saved locally (WooCommerce not configured)" });
+    return;
+  }
+
+  const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
+  url.searchParams.set("consumer_key", settings.ck);
+  url.searchParams.set("consumer_secret", settings.cs);
+
+  const wooRes = await fetch(url.toString(), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+
+  if (!wooRes.ok) {
+    const text = await wooRes.text().catch(() => wooRes.status.toString());
+    res.status(502).json({ error: `Status saved locally but WooCommerce returned ${wooRes.status}: ${text}` });
+    return;
+  }
+
+  res.json({ ok: true, wooPushed: true, status });
 });
 
 router.get("/products/analytics", async (req, res): Promise<void> => {
