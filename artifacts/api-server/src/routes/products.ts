@@ -597,11 +597,19 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   const notIdealForHtml = sectionHtml("⚠️",  "Not Ideal For", "#b91c1c", "#ffffff", "#ef4444", product.guidance_not_ideal_for ?? "");
 
   // ── Staff quotes ───────────────────────────────────────────────────────────
+  // Fetch current profile photos so they're always up to date regardless of when the quote was saved
+  const staffRows = await db.execute(sql`SELECT id, profile_image_url FROM staff_members`);
+  const staffPhotoMap: Record<number, string | null> = {};
+  for (const row of ((staffRows.rows ?? staffRows) as any[])) {
+    staffPhotoMap[row.id] = row.profile_image_url ?? null;
+  }
+
   const rawQuotes: any[] = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : [];
   const staffQuotesClean = rawQuotes.map((q: any) => {
     const name     = q.staffName   ?? q.name      ?? "";
     const role     = q.staffRole   ?? q.role      ?? "";
-    const imageUrl = q.staffImageUrl ?? q.imageUrl ?? null;
+    // Always prefer the live DB photo over the cached JSONB value
+    const imageUrl = (q.staffId ? staffPhotoMap[q.staffId] : null) ?? q.staffImageUrl ?? q.imageUrl ?? null;
     const quote    = q.rewritten   ?? q.draft     ?? "";
     return {
       name,
