@@ -1281,6 +1281,7 @@ export default function ProductDetail() {
                             <tr>
                               <th className="text-left px-3 py-2 font-medium text-muted-foreground">Min. Qty</th>
                               <th className="text-left px-3 py-2 font-medium text-muted-foreground text-nowrap">Discount (£)</th>
+                              <th className="text-right px-3 py-2 font-medium text-muted-foreground">GP%</th>
                               <th className="w-10 px-2 py-2" />
                             </tr>
                           </thead>
@@ -1289,6 +1290,10 @@ export default function ProductDetail() {
                               .sort((a, b) => a.qty - b.qty)
                               .map((pb, idx) => {
                                 const discount = parseFloat((details.unitPrice - pb.price).toFixed(2));
+                                const cost = details.supplierPrice ?? 0;
+                                const gp = pb.price > 0 && cost > 0
+                                  ? ((pb.price - cost) / pb.price) * 100
+                                  : null;
                                 return (
                                   <tr key={idx} className="border-t border-border/30 hover:bg-muted/20">
                                     <td className="px-3 py-1.5">
@@ -1324,6 +1329,16 @@ export default function ProductDetail() {
                                           }}
                                         />
                                       </div>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right">
+                                      {gp != null ? (
+                                        <span className={cn(
+                                          "text-xs font-semibold px-1.5 py-0.5 rounded tabular-nums",
+                                          gp >= 80 ? "bg-green-50 text-green-700" :
+                                          gp >= 50 ? "bg-amber-50 text-amber-700" :
+                                          "bg-red-50 text-red-600"
+                                        )}>{gp.toFixed(1)}%</span>
+                                      ) : <span className="text-xs text-muted-foreground/40">—</span>}
                                     </td>
                                     <td className="px-2 py-1.5">
                                       <button
