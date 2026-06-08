@@ -500,6 +500,21 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
+  // Resolve a public base URL so relative /api/storage/... image paths become
+  // absolute URLs that WooCommerce can fetch from outside our server.
+  const publicBase = (() => {
+    const domains = process.env.REPLIT_DOMAINS ?? "";
+    const first = domains.split(",")[0]?.trim();
+    if (first) return `https://${first}`;
+    const fwdHost = req.headers["x-forwarded-host"] as string | undefined;
+    const host = fwdHost ?? req.headers.host ?? "";
+    return host ? `${req.protocol}://${host}` : "";
+  })();
+  const toAbsolute = (url: string | null | undefined): string | null => {
+    if (!url) return null;
+    return url.startsWith("/") ? `${publicBase}${url}` : url;
+  };
+
   const rows = await db.execute(sql`
     SELECT woo_commerce_id,
            guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
@@ -594,7 +609,7 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   }
 
   const bestForHtml     = sectionHtml("✅", "Best For",      "#15803d", "#ffffff", "#16a34a", product.guidance_best_for      ?? "");
-  const notIdealForHtml = sectionHtml("⚠️",  "Not Ideal For", "#b91c1c", "#ffffff", "#ef4444", product.guidance_not_ideal_for ?? "");
+  const notIdealForHtml = sectionHtml("⚠️",  "Not Ideal For", "#c2410c", "#ffffff", "#f97316", product.guidance_not_ideal_for ?? "");
 
   // ── Staff quotes ───────────────────────────────────────────────────────────
   // Fetch current profile photos so they're always up to date regardless of when the quote was saved
@@ -608,8 +623,8 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
   const staffQuotesClean = rawQuotes.map((q: any) => {
     const name     = q.staffName   ?? q.name      ?? "";
     const role     = q.staffRole   ?? q.role      ?? "";
-    // Always prefer the live DB photo over the cached JSONB value
-    const imageUrl = (q.staffId ? staffPhotoMap[q.staffId] : null) ?? q.staffImageUrl ?? q.imageUrl ?? null;
+    // Always prefer the live DB photo over the cached JSONB value, then make absolute
+    const imageUrl = toAbsolute((q.staffId ? staffPhotoMap[q.staffId] : null) ?? q.staffImageUrl ?? q.imageUrl ?? null);
     const quote    = q.rewritten   ?? q.draft     ?? "";
     return {
       name,
