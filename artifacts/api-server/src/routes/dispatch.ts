@@ -57,19 +57,20 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
       const orderWs = worksheets.filter((w) => w.orderId === order.id);
       const items = orderItems.filter((i) => i.orderId === order.id);
 
-      // Build the set of item IDs covered by a COMPLETED worksheet
-      const wsCompleteItemIds = new Set(
-        orderWs.filter((w) => w.status === "complete")
-          .flatMap((w) => wsItems.filter((wi) => wi.worksheetId === w.id).map((wi) => wi.orderItemId))
-      );
+      // Worksheet-level rule (mirrors the delivery-note guard so they stay in sync):
+      //   Decorated items (finishId != null) → all worksheets on this order must be complete
+      //                                        (no pre_wip / wip remaining)
+      //   Plain items     (finishId == null) → must have stockStatus = 'complete'
+      // Using worksheet-level (not per-item) means orders where items were added
+      // after a worksheet was created can still reach dispatch, matching the
+      // criterion already used to allow delivery-note generation.
+      const hasDecoratedItems = items.some(i => i.finishId != null);
+      const plainItems = items.filter(i => i.finishId == null);
+      const allPlainComplete = plainItems.every(i => i.stockStatus === "complete");
+      const hasIncompleteWorksheets = orderWs.some(w => w.status !== "complete");
 
-      // Strict per-item rule:
-      //   Decorated items (finishId != null) → must be in a completed worksheet
-      //   Plain items (finishId == null)     → must have stockStatus = 'complete'
-      // An order only enters the dispatch queue when ALL items satisfy this.
-      const allComplete = items.length > 0 && items.every((i) =>
-        i.finishId != null ? wsCompleteItemIds.has(i.id) : i.stockStatus === "complete"
-      );
+      const decoratedOk = !hasDecoratedItems || (orderWs.length > 0 && !hasIncompleteWorksheets);
+      const allComplete = items.length > 0 && decoratedOk && allPlainComplete;
 
       if (!allComplete) return null;
       const address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
