@@ -407,10 +407,14 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       COALESCE(pv.supplier_price, p.supplier_price) AS resolved_supplier_price
     FROM order_items oi
     LEFT JOIN products p ON p.id = oi.product_id
-    LEFT JOIN product_variants pv
-      ON pv.product_id = oi.product_id
-      AND (pv.colour IS NOT DISTINCT FROM oi.colour)
-      AND (pv.size   IS NOT DISTINCT FROM oi.size)
+    LEFT JOIN LATERAL (
+      SELECT supplier_price
+      FROM product_variants
+      WHERE product_id = oi.product_id
+        AND (colour IS NOT DISTINCT FROM oi.colour)
+        AND (size   IS NOT DISTINCT FROM oi.size)
+      LIMIT 1
+    ) pv ON true
     WHERE oi.order_id = ${order.id}
   `);
   type RawItemRow = typeof orderItemsTable.$inferSelect & {
