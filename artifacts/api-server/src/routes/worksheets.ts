@@ -829,22 +829,36 @@ router.get("/worksheets", async (req, res): Promise<void> => {
     ? await db.select().from(worksheetItemsTable).where(inArray(worksheetItemsTable.worksheetId, wsIds))
     : [];
 
-  // Fetch requiredDate from orders for sorting
+  // Fetch requiredDate + invoice/dispatch status from orders
   const orderIds = [...new Set(rows.filter((w) => w.orderId != null).map((w) => w.orderId!))];
   const orderDates = orderIds.length > 0
-    ? await db.select({ id: ordersTable.id, requiredDate: ordersTable.requiredDate })
+    ? await db.select({
+        id: ordersTable.id,
+        requiredDate: ordersTable.requiredDate,
+        orderStatus: ordersTable.status,
+        dispatchedAt: ordersTable.dispatchedAt,
+        invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
+        xeroInvoiceId: ordersTable.xeroInvoiceId,
+      })
         .from(ordersTable).where(inArray(ordersTable.id, orderIds))
     : [];
-  const orderDateMap = new Map(orderDates.map((o) => [o.id, o.requiredDate]));
+  const orderDateMap = new Map(orderDates.map((o) => [o.id, o]));
 
-  const result = rows.map((ws) => ({
-    ...ws,
-    requiredDate: ws.orderId ? (orderDateMap.get(ws.orderId) ?? null) : null,
-    items: items.filter((i) => i.worksheetId === ws.id).map((i) => ({
-      ...i,
-      processes: i.processesSnapshot ? JSON.parse(i.processesSnapshot) : [],
-    })),
-  }));
+  const result = rows.map((ws) => {
+    const orderRow = ws.orderId ? (orderDateMap.get(ws.orderId) ?? null) : null;
+    return {
+      ...ws,
+      requiredDate: orderRow?.requiredDate ?? null,
+      orderStatus: orderRow?.orderStatus ?? null,
+      dispatchedAt: orderRow?.dispatchedAt ?? null,
+      invoiceEmailSentAt: orderRow?.invoiceEmailSentAt ?? null,
+      xeroInvoiceId: orderRow?.xeroInvoiceId ?? null,
+      items: items.filter((i) => i.worksheetId === ws.id).map((i) => ({
+        ...i,
+        processes: i.processesSnapshot ? JSON.parse(i.processesSnapshot) : [],
+      })),
+    };
+  });
 
   // Sort by requiredDate asc (nulls last), then createdAt desc
   result.sort((a, b) => {

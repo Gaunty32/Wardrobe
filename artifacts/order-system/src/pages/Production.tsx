@@ -5,6 +5,7 @@ import {
   RefreshCw, Trash2, ChevronDown, ChevronRight, Sparkles, User, Archive, Ruler, Palette,
   ShoppingCart, ExternalLink, ListChecks, CheckSquare, Square, RotateCcw, AlertCircle,
   Search, Calendar, X, FileText, Zap, AlertTriangle, Play, Layers, TrendingUp, Pencil, Box,
+  Mail, BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +73,10 @@ interface Worksheet {
   createdAt: string;
   updatedAt: string;
   items: WorksheetItem[];
+  orderStatus: string | null;
+  dispatchedAt: string | null;
+  invoiceEmailSentAt: string | null;
+  xeroInvoiceId: string | null;
 }
 
 interface PendingItem {
@@ -1340,20 +1345,42 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
                   </Button>
                 </>
               )}
-              {ws.status === "complete" && (
-                <>
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
-                    <Printer className="w-3.5 h-3.5" /> Print
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
-                    onClick={() => { window.location.href = "/dispatch"; }}
-                  >
-                    <ArrowRight className="w-3.5 h-3.5" /> Go to Dispatch
-                  </Button>
-                </>
-              )}
+              {ws.status === "complete" && (() => {
+                const isDispatched = !!(ws.dispatchedAt || ws.orderStatus === "shipped" || ws.orderStatus === "delivered");
+                const isInvoiced = !!(ws.xeroInvoiceId || ws.invoiceEmailSentAt);
+                const needsInvoice = isDispatched && !isInvoiced;
+                return (
+                  <>
+                    <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
+                      <Printer className="w-3.5 h-3.5" /> Print
+                    </Button>
+                    {!isDispatched && (
+                      <Button
+                        size="sm"
+                        className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => { window.location.href = "/dispatch"; }}
+                      >
+                        <ArrowRight className="w-3.5 h-3.5" /> Go to Dispatch
+                      </Button>
+                    )}
+                    {needsInvoice && (
+                      <Button
+                        size="sm"
+                        className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                        onClick={() => { window.location.href = "/invoices"; }}
+                      >
+                        <Mail className="w-3.5 h-3.5" /> Send Invoice
+                      </Button>
+                    )}
+                    {isInvoiced && (
+                      <Badge className="gap-1 text-xs bg-indigo-100 text-indigo-800 border-indigo-300">
+                        {ws.xeroInvoiceId ? <BookOpen className="w-3 h-3" /> : <Mail className="w-3 h-3" />}
+                        {ws.xeroInvoiceId ? "In Xero" : "Invoice Sent"}
+                      </Badge>
+                    )}
+                  </>
+                );
+              })()}
               <Button size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => onDelete(ws.id)}>
                 <Trash2 className="w-4 h-4" />
               </Button>
