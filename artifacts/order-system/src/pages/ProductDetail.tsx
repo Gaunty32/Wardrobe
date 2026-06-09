@@ -730,6 +730,7 @@ export default function ProductDetail() {
   const [staffFormImageUrl, setStaffFormImageUrl] = useState("");
   const [editingStaffId, setEditingStaffId] = useState<number | null>(null);
   const [isService, setIsService] = useState(false);
+  const [priceBreakModes, setPriceBreakModes] = useState<Record<number, "price" | "pct" | "disc">>({});
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
   const [generateMatrixOpen, setGenerateMatrixOpen] = useState(false);
@@ -1321,12 +1322,16 @@ export default function ProductDetail() {
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Quantity Price Breaks</h4>
-                        <p className="text-xs text-muted-foreground mt-0.5">Discount off unit price (£) based on total order quantity</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Set the price per item when a minimum quantity is reached</p>
                       </div>
                       <Button
                         size="sm"
                         variant="outline"
-                        onClick={() => handleDetailChange("priceBreaks", [...details.priceBreaks, { qty: 0, price: 0 }])}
+                        onClick={() => {
+                          const newIdx = details.priceBreaks.length;
+                          handleDetailChange("priceBreaks", [...details.priceBreaks, { qty: 0, price: 0 }]);
+                          setPriceBreakModes(m => ({ ...m, [newIdx]: "price" }));
+                        }}
                       >
                         <Plus className="w-3.5 h-3.5 mr-1" /> Add Tier
                       </Button>
@@ -1340,57 +1345,122 @@ export default function ProductDetail() {
                           <thead className="bg-muted/50">
                             <tr>
                               <th className="text-left px-3 py-2 font-medium text-muted-foreground">Min. Qty</th>
-                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-nowrap">Discount (£)</th>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Input type</th>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Value</th>
+                              <th className="text-left px-3 py-2 font-medium text-muted-foreground text-nowrap">Sell price</th>
                               <th className="text-right px-3 py-2 font-medium text-muted-foreground">GP%</th>
                               <th className="w-10 px-2 py-2" />
                             </tr>
                           </thead>
                           <tbody>
                             {[...details.priceBreaks]
-                              .sort((a, b) => a.qty - b.qty)
-                              .map((pb, idx) => {
-                                const discount = parseFloat((details.unitPrice - pb.price).toFixed(2));
+                              .map((pb, origIdx) => ({ pb, origIdx }))
+                              .sort((a, b) => a.pb.qty - b.pb.qty)
+                              .map(({ pb, origIdx }) => {
+                                const mode = priceBreakModes[origIdx] ?? "disc";
                                 const cost = details.supplierPrice ?? 0;
-                                const gp = pb.price > 0 && cost > 0
-                                  ? ((pb.price - cost) / pb.price) * 100
+                                const unitPrice = details.unitPrice;
+                                const sellPrice = pb.price;
+                                const gp = sellPrice > 0 && cost > 0
+                                  ? ((sellPrice - cost) / sellPrice) * 100
                                   : null;
+                                const modeBtn = (m: "price" | "pct" | "disc", label: string) => (
+                                  <button
+                                    type="button"
+                                    onClick={() => setPriceBreakModes(prev => ({ ...prev, [origIdx]: m }))}
+                                    className={cn(
+                                      "px-2 py-0.5 text-xs rounded transition-colors",
+                                      mode === m
+                                        ? "bg-primary text-primary-foreground font-semibold"
+                                        : "bg-muted text-muted-foreground hover:bg-muted/80"
+                                    )}
+                                  >{label}</button>
+                                );
                                 return (
-                                  <tr key={idx} className="border-t border-border/30 hover:bg-muted/20">
-                                    <td className="px-3 py-1.5">
+                                  <tr key={origIdx} className="border-t border-border/30 hover:bg-muted/20">
+                                    <td className="px-3 py-2">
                                       <Input
                                         type="number"
                                         min="1"
                                         step="1"
-                                        className="h-7 w-24 text-sm"
+                                        className="h-7 w-20 text-sm"
                                         value={pb.qty || ""}
                                         onChange={e => {
                                           const updated = [...details.priceBreaks];
-                                          updated[idx] = { ...pb, qty: parseInt(e.target.value, 10) || 0 };
+                                          updated[origIdx] = { ...pb, qty: parseInt(e.target.value, 10) || 0 };
                                           handleDetailChange("priceBreaks", updated);
                                         }}
                                       />
                                     </td>
-                                    <td className="px-3 py-1.5">
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-muted-foreground text-sm">£</span>
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          step="0.01"
-                                          className="h-7 w-24 text-sm"
-                                          value={discount > 0 ? discount : ""}
-                                          placeholder="0.00"
-                                          onFocus={e => e.target.select()}
-                                          onChange={e => {
-                                            const disc = parseFloat(e.target.value) || 0;
-                                            const updated = [...details.priceBreaks];
-                                            updated[idx] = { ...pb, price: parseFloat((details.unitPrice - disc).toFixed(2)) };
-                                            handleDetailChange("priceBreaks", updated);
-                                          }}
-                                        />
+                                    <td className="px-3 py-2">
+                                      <div className="flex gap-1">
+                                        {modeBtn("price", "£ price")}
+                                        {modeBtn("pct", "% off")}
+                                        {modeBtn("disc", "£ off")}
                                       </div>
                                     </td>
-                                    <td className="px-3 py-1.5 text-right">
+                                    <td className="px-3 py-2">
+                                      {mode === "price" && (
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-muted-foreground text-sm">£</span>
+                                          <Input
+                                            type="number" min="0" step="0.01"
+                                            className="h-7 w-24 text-sm"
+                                            value={sellPrice > 0 ? sellPrice : ""}
+                                            placeholder="0.00"
+                                            onFocus={e => e.target.select()}
+                                            onChange={e => {
+                                              const updated = [...details.priceBreaks];
+                                              updated[origIdx] = { ...pb, price: parseFloat(parseFloat(e.target.value || "0").toFixed(2)) };
+                                              handleDetailChange("priceBreaks", updated);
+                                            }}
+                                          />
+                                        </div>
+                                      )}
+                                      {mode === "pct" && (
+                                        <div className="flex items-center gap-1">
+                                          <Input
+                                            type="number" min="0" max="100" step="0.1"
+                                            className="h-7 w-20 text-sm"
+                                            value={unitPrice > 0 && sellPrice > 0 ? parseFloat(((1 - sellPrice / unitPrice) * 100).toFixed(2)) : ""}
+                                            placeholder="0.0"
+                                            onFocus={e => e.target.select()}
+                                            onChange={e => {
+                                              const pct = parseFloat(e.target.value) || 0;
+                                              const updated = [...details.priceBreaks];
+                                              updated[origIdx] = { ...pb, price: parseFloat((unitPrice * (1 - pct / 100)).toFixed(2)) };
+                                              handleDetailChange("priceBreaks", updated);
+                                            }}
+                                          />
+                                          <span className="text-muted-foreground text-sm">%</span>
+                                        </div>
+                                      )}
+                                      {mode === "disc" && (
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-muted-foreground text-sm">£</span>
+                                          <Input
+                                            type="number" min="0" step="0.01"
+                                            className="h-7 w-24 text-sm"
+                                            value={unitPrice > 0 && sellPrice > 0 ? parseFloat((unitPrice - sellPrice).toFixed(2)) : ""}
+                                            placeholder="0.00"
+                                            onFocus={e => e.target.select()}
+                                            onChange={e => {
+                                              const disc = parseFloat(e.target.value) || 0;
+                                              const updated = [...details.priceBreaks];
+                                              updated[origIdx] = { ...pb, price: parseFloat((unitPrice - disc).toFixed(2)) };
+                                              handleDetailChange("priceBreaks", updated);
+                                            }}
+                                          />
+                                          <span className="text-xs text-muted-foreground">off</span>
+                                        </div>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <span className={cn("text-sm font-semibold tabular-nums", sellPrice > 0 ? "text-foreground" : "text-muted-foreground/40")}>
+                                        {sellPrice > 0 ? `£${sellPrice.toFixed(2)}` : "—"}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
                                       {gp != null ? (
                                         <span className={cn(
                                           "text-xs font-semibold px-1.5 py-0.5 rounded tabular-nums",
@@ -1400,13 +1470,22 @@ export default function ProductDetail() {
                                         )}>{gp.toFixed(1)}%</span>
                                       ) : <span className="text-xs text-muted-foreground/40">—</span>}
                                     </td>
-                                    <td className="px-2 py-1.5">
+                                    <td className="px-2 py-2">
                                       <button
                                         type="button"
                                         className="text-muted-foreground hover:text-destructive transition-colors"
                                         onClick={() => {
-                                          const updated = details.priceBreaks.filter((_, i) => i !== idx);
+                                          const updated = details.priceBreaks.filter((_, i) => i !== origIdx);
                                           handleDetailChange("priceBreaks", updated);
+                                          setPriceBreakModes(m => {
+                                            const next: Record<number, "price" | "pct" | "disc"> = {};
+                                            Object.entries(m).forEach(([k, v]) => {
+                                              const ki = parseInt(k);
+                                              if (ki < origIdx) next[ki] = v;
+                                              else if (ki > origIdx) next[ki - 1] = v;
+                                            });
+                                            return next;
+                                          });
                                         }}
                                       >
                                         <X className="w-4 h-4" />
