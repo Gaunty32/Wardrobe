@@ -47,7 +47,7 @@ export async function pushCustomerToHighLevel(customerId: number): Promise<void>
   const existingContactId = customer.highLevelContactId;
 
   if (existingContactId) {
-    // PATCH the existing contact
+    // We already know the GHL contact — just update it
     const res = await fetch(
       `https://services.leadconnectorhq.com/contacts/${existingContactId}`,
       { method: "PUT", headers, body: JSON.stringify(payload) }
@@ -59,30 +59,79 @@ export async function pushCustomerToHighLevel(customerId: number): Promise<void>
     return;
   }
 
-  // No existing GHL contact ID — try to find by email first
-  if (customer.email) {
-    const searchRes = await fetch(
-      `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&email=${encodeURIComponent(customer.email)}`,
-      { headers }
-    );
-    if (searchRes.ok) {
-      const data = await searchRes.json() as any;
-      const match = data?.contact ?? data?.contacts?.[0];
-      if (match?.id) {
-        await db.update(customersTable)
-          .set({ highLevelContactId: match.id, updatedAt: new Date() })
-          .where(eq(customersTable.id, customerId));
-        // Now update the matched contact
-        await fetch(
-          `https://services.leadconnectorhq.com/contacts/${match.id}`,
-          { method: "PUT", headers, body: JSON.stringify(payload) }
-        ).catch(() => {});
-        return;
-      }
-    }
+  // ── Helper: extract a contact id from GHL search/duplicate response ──────
+  function extractContactId(data: any): string | null {
+    // /contacts/search/duplicate  → { contact: { id } }  or  { contacts: [{ id }] }
+    // /contacts/ (search)         → { contacts: [{ id }] }
+    if (data?.contact?.id) return data.contact.id;
+    if (Array.isArray(data?.contacts) && data.contacts[0]?.id) return data.contacts[0].id;
+    if (Array.isArray(data?.data) && data.data[0]?.id) return data.data[0].id;
+    return null;
   }
 
-  // Create a new GHL contact
+  // ── Helper: link a found GHL contact and update it ────────────────────────
+  async function linkAndUpdate(contactId: string): Promise<void> {
+    await db.update(customersTable)
+      .set({ highLevelContactId: contactId, updatedAt: new Date() })
+      .where(eq(customersTable.id, customerId));
+    await fetch(
+      `https://services.leadconnectorhq.com/contacts/${contactId}`,
+      { method: "PUT", headers, body: JSON.stringify(payload) }
+    ).catch(() => {});
+  }
+
+  // ── 1. Search by email (duplicate endpoint) ───────────────────────────────
+  if (customer.email) {
+    try {
+      const res = await fetch(
+        `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&email=${encodeURIComponent(customer.email)}`,
+        { headers }
+      );
+      if (res.ok) {
+        const data = await res.json() as any;
+        const id = extractContactId(data);
+        if (id) { await linkAndUpdate(id); return; }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // ── 2. Search by phone (duplicate endpoint) ───────────────────────────────
+  if (customer.phone) {
+    try {
+      const res = await fetch(
+        `https://services.leadconnectorhq.com/contacts/search/duplicate?locationId=${encodeURIComponent(locationId)}&phone=${encodeURIComponent(customer.phone)}`,
+        { headers }
+      );
+      if (res.ok) {
+        const data = await res.json() as any;
+        const id = extractContactId(data);
+        if (id) { await linkAndUpdate(id); return; }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // ── 3. General contacts search by company name / email / phone ────────────
+  const searchQuery = customer.email ?? customer.phone ?? customer.name;
+  if (searchQuery) {
+    try {
+      const res = await fetch(
+        `https://services.leadconnectorhq.com/contacts/?locationId=${encodeURIComponent(locationId)}&query=${encodeURIComponent(searchQuery)}&limit=5`,
+        { headers }
+      );
+      if (res.ok) {
+        const data = await res.json() as any;
+        const contacts: any[] = data?.contacts ?? data?.data ?? [];
+        // Find the best match: same email, or same phone
+        const match = contacts.find((c: any) =>
+          (customer.email && c.email?.toLowerCase() === customer.email.toLowerCase()) ||
+          (customer.phone && (c.phone === customer.phone || c.phone?.replace(/\s/g, "") === customer.phone?.replace(/\s/g, "")))
+        ) ?? null;
+        if (match?.id) { await linkAndUpdate(match.id); return; }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // ── 4. Nothing found — create a new GHL contact ───────────────────────────
   const createRes = await fetch(
     "https://services.leadconnectorhq.com/contacts/",
     { method: "POST", headers, body: JSON.stringify(payload) }
