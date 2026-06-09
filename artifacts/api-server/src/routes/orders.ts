@@ -455,7 +455,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
   }
 
   // ── Process stock cost per finish ID ──────────────────────────────────────
-  const finishIds = [...new Set(itemRows.map(r => r.item.finishId).filter((id): id is number => id != null))];
+  const finishIds = [...new Set(itemRows.map(r => (r.item as any).finish_id as number | null).filter((id): id is number => id != null))];
   const processCostByFinishId = new Map<number, number>();
   if (finishIds.length > 0) {
     const costRows = await db.execute(sql`
@@ -498,24 +498,37 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     customerEmail,
     customerMainAddress,
     items: itemRows.map(({ item, catalogueProductName, productSku, supplierPrice }) => {
-      const qty = item.quantity ?? 1;
+      const raw = item as any;
+      const qty = raw.quantity ?? 1;
+      const finishId: number | null = raw.finish_id ?? null;
       const garmentCost = supplierPrice != null ? parseFloat(String(supplierPrice)) * qty : null;
-      const processCostPerItem = item.finishId != null ? (processCostByFinishId.get(item.finishId) ?? 0) : 0;
+      const processCostPerItem = finishId != null ? (processCostByFinishId.get(finishId) ?? 0) : 0;
       const processCost = processCostPerItem * qty;
       return {
         ...item,
-        productName: catalogueProductName ?? item.productName,
+        id: raw.id,
+        orderId: raw.order_id,
+        productId: raw.product_id,
+        productName: catalogueProductName ?? raw.product_name,
         productSku: productSku ?? null,
-        unitPrice: numericToFloat(item.unitPrice),
-        lineTotal: numericToFloat(item.lineTotal),
-        vatRate: parseFloat(String(item.vatRate ?? 0.20)),
-        purchaseRequired: item.purchaseRequired,
-        purchaseQuantity: item.purchaseQuantity,
-        supplierId: item.supplierId,
-        supplierName: item.supplierName,
+        finishId: raw.finish_id ?? null,
+        finishName: raw.finish_name ?? null,
+        colour: raw.colour ?? null,
+        size: raw.size ?? null,
+        quantity: qty,
+        recipientType: raw.recipient_type ?? null,
+        recipientName: raw.recipient_name ?? null,
+        notes: raw.notes ?? null,
+        unitPrice: numericToFloat(raw.unit_price),
+        lineTotal: numericToFloat(raw.line_total),
+        vatRate: parseFloat(String(raw.vat_rate ?? 0.20)),
+        purchaseRequired: raw.purchase_required ?? false,
+        purchaseQuantity: raw.purchase_quantity ?? null,
+        supplierId: raw.supplier_id ?? null,
+        supplierName: raw.supplier_name ?? null,
         garmentCost,
         processCost,
-        poNumbers: poByItemId.get(item.id) ?? [],
+        poNumbers: poByItemId.get(raw.id) ?? [],
       };
     }),
   });
