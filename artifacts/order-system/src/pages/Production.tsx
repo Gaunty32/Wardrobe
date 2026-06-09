@@ -1401,7 +1401,9 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
       const size = item.size ?? "";
       if (!m.colours.includes(colour)) m.colours.push(colour);
       if (!m.sizes.includes(size)) m.sizes.push(size);
-      m.cells.set(`${colour}||${size}`, item);
+      const ck1 = `${colour}||${size}`;
+      const ex1 = m.cells.get(ck1);
+      m.cells.set(ck1, ex1 ? { ...ex1, quantity: ex1.quantity + item.quantity } : item);
     }
     for (const m of map.values()) {
       m.sizes = sortSizes(m.sizes);
@@ -1576,7 +1578,9 @@ function ItemMatrix({ items, borderClass = "border-gray-200", headClass = "bg-gr
       const size = item.size ?? "";
       if (!m.colours.includes(colour)) m.colours.push(colour);
       if (!m.sizes.includes(size)) m.sizes.push(size);
-      m.cells.set(`${colour}||${size}`, item);
+      const ck2 = `${colour}||${size}`;
+      const ex2 = m.cells.get(ck2);
+      m.cells.set(ck2, ex2 ? { ...ex2, quantity: ex2.quantity + item.quantity } : item);
     }
     for (const m of map.values()) m.sizes = sortSizes(m.sizes);
     return [...map.entries()].map(([productName, m]) => ({ productName, ...m }));
@@ -1707,7 +1711,9 @@ function PartInStockOrderCard({ order, onSendToProduction }: {
       const size = item.size ?? "";
       if (!m.colours.includes(colour)) m.colours.push(colour);
       if (!m.sizes.includes(size)) m.sizes.push(size);
-      m.cells.set(`${colour}||${size}`, item);
+      const ck3 = `${colour}||${size}`;
+      const ex3 = m.cells.get(ck3);
+      m.cells.set(ck3, ex3 ? { ...ex3, quantity: ex3.quantity + item.quantity } : item);
     }
     for (const m of map.values()) m.sizes = sortSizes(m.sizes);
     return [...map.entries()].map(([productName, m]) => ({ productName, ...m }));
