@@ -1654,7 +1654,9 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
           FROM customer_finished_items cfi
           WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
         )
-      ORDER BY pa.product_id, pa.value
+      ORDER BY pa.product_id,
+        CASE WHEN pa.value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN pa.value::numeric ELSE NULL END NULLS LAST,
+        pa.value
     `);
     for (const row of sleeveAttrRows.rows as any[]) {
       const pid = String(row.product_id);
