@@ -1663,6 +1663,12 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
             SELECT DISTINCT cfi.product_id FROM customer_finished_items cfi
             WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
           )
+        UNION
+        SELECT cfi.product_id, cfi.sleeve AS sleeve
+        FROM customer_finished_items cfi
+        WHERE cfi.customer_id = ${customerId}
+          AND cfi.sleeve IS NOT NULL AND cfi.sleeve != ''
+          AND cfi.product_id IS NOT NULL
       ) t
       ORDER BY product_id,
         CASE WHEN sleeve ~ '^-?[0-9]+(\.[0-9]+)?$' THEN sleeve::numeric ELSE NULL END NULLS LAST,

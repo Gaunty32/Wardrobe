@@ -3059,7 +3059,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
       const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
       const attrSleeves = attrs.filter((a: any) => a.type === "sleeve").map((a: any) => a.value as string).filter(Boolean);
-      const variantSleeveList = [...new Set(attrSleeves)];
+      const variantSleevesFromVariants = [...new Set(variants.map((x: any) => x.sleeve as string).filter(Boolean))];
+      const variantSleeveList = [...new Set([...attrSleeves, ...variantSleevesFromVariants])];
       const sizes = sortSizesWithOrder([...new Set([...attrSizes, ...variantSizes])], sizeOrder);
       setVariantColours(colours);
       setVariantSleeves(variantSleeveList);
@@ -3095,7 +3096,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       const variantSizes = variants.map((x: any) => x.size).filter(Boolean) as string[];
       const attrSizes = attrs.filter((a: any) => a.type === "size").map((a: any) => a.value) as string[];
       const attrSleeves = attrs.filter((a: any) => a.type === "sleeve").map((a: any) => a.value as string).filter(Boolean);
-      const variantSleeveList = [...new Set(attrSleeves)];
+      const variantSleevesFromVariants = [...new Set(variants.map((x: any) => x.sleeve as string).filter(Boolean))];
+      const variantSleeveList = [...new Set([...attrSleeves, ...variantSleevesFromVariants])];
       const sizes = sortSizesWithOrder([...new Set([...attrSizes, ...variantSizes])], sizeOrder);
       setVariantColours(colours);
       setVariantSleeves(variantSleeveList);
@@ -3213,11 +3215,12 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const groups = useMemo<WardrobeGroup[]>(() => {
     const map = new Map<string, WardrobeGroup>();
     for (const item of filteredItems) {
-      const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? "", item.colour ?? "", item.sleeve ?? ""].join("|");
+      const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? "", item.colour ?? ""].join("|");
       if (!map.has(key)) {
         map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, sleeve: item.sleeve ?? null, unitPrice: item.unitPrice, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
       }
       const g = map.get(key)!;
+      if (g.sleeve !== (item.sleeve ?? null)) g.sleeve = null;
       g.items.push(item);
       g.totalStock += (item.stockQuantity ?? 0);
       g.sizes.push(item.size);
