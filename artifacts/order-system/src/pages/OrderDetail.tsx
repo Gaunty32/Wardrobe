@@ -2823,7 +2823,7 @@ export default function OrderDetail() {
                                                     <tr>
                                                       <th className="text-left pr-1 text-muted-foreground font-semibold py-0.5 text-[10px]">Waist</th>
                                                       {sleeveOpts.map(sl => (
-                                                        <th key={sl} className="text-center px-0.5 text-muted-foreground font-semibold py-0.5 text-[10px] min-w-[2rem]">{sl}"</th>
+                                                        <th key={sl} className="text-center px-0.5 text-muted-foreground font-semibold py-0.5 text-[10px] min-w-[2rem]">{sl}</th>
                                                       ))}
                                                     </tr>
                                                   </thead>
@@ -2890,7 +2890,7 @@ export default function OrderDetail() {
                                               <SelectValue placeholder="Fit / Length" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                              {sleeveOpts.map(sl => <SelectItem key={sl} value={sl}>{sl}"</SelectItem>)}
+                                              {sleeveOpts.map(sl => <SelectItem key={sl} value={sl}>{sl}</SelectItem>)}
                                             </SelectContent>
                                           </Select>
                                         )}

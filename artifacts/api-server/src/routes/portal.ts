@@ -1641,22 +1641,32 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
   }
 
   // Build sleevesMap: { [productId]: string[] } from product_attributes type='sleeve'
-  // Used by the portal to show a second "Fit / Length" selector for trousers etc.
+  // AND product_variants.sleeve column — covers both attribute-driven and variant-driven fit options.
   const sleevesMap: Record<string, string[]> = {};
   try {
     const sleeveAttrRows = await db.execute(sql`
-      SELECT DISTINCT pa.product_id, pa.value AS sleeve
-      FROM product_attributes pa
-      WHERE pa.type = 'sleeve'
-        AND pa.value IS NOT NULL AND pa.value != ''
-        AND pa.product_id IN (
-          SELECT DISTINCT cfi.product_id
-          FROM customer_finished_items cfi
-          WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
-        )
-      ORDER BY pa.product_id,
-        CASE WHEN pa.value ~ '^-?[0-9]+(\.[0-9]+)?$' THEN pa.value::numeric ELSE NULL END NULLS LAST,
-        pa.value
+      SELECT DISTINCT product_id, sleeve
+      FROM (
+        SELECT pa.product_id, pa.value AS sleeve
+        FROM product_attributes pa
+        WHERE pa.type = 'sleeve'
+          AND pa.value IS NOT NULL AND pa.value != ''
+          AND pa.product_id IN (
+            SELECT DISTINCT cfi.product_id FROM customer_finished_items cfi
+            WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+          )
+        UNION
+        SELECT pv.product_id, pv.sleeve AS sleeve
+        FROM product_variants pv
+        WHERE pv.sleeve IS NOT NULL AND pv.sleeve != ''
+          AND pv.product_id IN (
+            SELECT DISTINCT cfi.product_id FROM customer_finished_items cfi
+            WHERE cfi.customer_id = ${customerId} AND cfi.product_id IS NOT NULL
+          )
+      ) t
+      ORDER BY product_id,
+        CASE WHEN sleeve ~ '^-?[0-9]+(\.[0-9]+)?$' THEN sleeve::numeric ELSE NULL END NULLS LAST,
+        sleeve
     `);
     for (const row of sleeveAttrRows.rows as any[]) {
       const pid = String(row.product_id);

@@ -1453,11 +1453,11 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                           {sleeveOptions.length > 0 && (
                             <Select value={state.sleeve} onValueChange={v => setItemState(key, { sleeve: v })}>
                               <SelectTrigger className="h-8 text-sm w-full">
-                                <SelectValue placeholder="Select size" />
+                                <SelectValue placeholder="Select fit / length" />
                               </SelectTrigger>
                               <SelectContent>
                                 {sleeveOptions.map(sl => (
-                                  <SelectItem key={sl} value={sl}>{sl}"</SelectItem>
+                                  <SelectItem key={sl} value={sl}>{sl}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
