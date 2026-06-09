@@ -29,7 +29,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmOrderDialog } from "@/components/ConfirmOrderDialog";
 import { SendAcknowledgementDialog } from "@/components/SendAcknowledgementDialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { sortSizesWithOrder, sortSizes } from "@/lib/sizeUtils";
+import { sortSizesWithOrder, sortSizes, abbreviateSizeLabel } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench } from "lucide-react";
@@ -2859,7 +2859,7 @@ export default function OrderDetail() {
                                             <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(sizeOpts.length, 4)}, 1fr)` }}>
                                               {sizeOpts.map(sz => (
                                                 <div key={sz} className="flex flex-col items-center gap-0.5">
-                                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">{sz}</span>
+                                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{abbreviateSizeLabel(sz)}</span>
                                                   <input type="number" min={0} value={qtys[sz] || ""} placeholder="0"
                                                     onChange={e => { const v = parseInt(e.target.value, 10); setWardrobeBulkQtys(q => ({ ...q, [id]: { ...(q[id] ?? {}), [sz]: isNaN(v) || v < 0 ? 0 : v } })); }}
                                                     className="w-full h-8 text-center text-sm font-semibold rounded-md border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"

@@ -49,6 +49,34 @@ export function sortSizes(sizes: string[]): string[] {
   });
 }
 
+/** Map of normalised long-form size names → short display label for tight grids */
+const SIZE_ABBREV: Record<string, string> = {
+  "EXTRASMALL": "XS", "XSMALL": "XS", "X-SMALL": "XS", "EXTRA SMALL": "XS",
+  "SMALL": "S",
+  "MEDIUM": "M",
+  "LARGE": "L",
+  "XLARGE": "XL", "X-LARGE": "XL", "EXTRALARGE": "XL", "EXTRA LARGE": "XL",
+  "XXSMALL": "XXS", "2XSMALL": "XXS",
+  "XXXSMALL": "3XS", "3XSMALL": "3XS",
+  "XXLARGE": "2XL", "2XLARGE": "2XL",
+  "XXXLARGE": "3XL", "3XLARGE": "3XL",
+  "XXXXLARGE": "4XL", "4XLARGE": "4XL",
+  "XXXXXLARGE": "5XL", "5XLARGE": "5XL",
+  "EXTRASMALL YOUTH": "XS Youth", "XSYOUTH": "XS Youth",
+  "SMALL YOUTH": "S Youth", "SYOUTH": "S Youth",
+  "MEDIUM YOUTH": "M Youth", "MYOUTH": "M Youth",
+  "LARGE YOUTH": "L Youth", "LYOUTH": "L Youth",
+  "EXTRALARGE YOUTH": "XL Youth", "XLYOUTH": "XL Youth",
+  "ONESIZE": "One Size", "ONE-SIZE": "One Size", "FREESIZE": "Free Size",
+};
+
+/** Returns a short display label for size grids where column width is tight. */
+export function abbreviateSizeLabel(s: string): string {
+  const key = s.trim().toUpperCase().replace(/\s+/g, " ");
+  const compactKey = key.replace(/\s+/g, "");
+  return SIZE_ABBREV[key] ?? SIZE_ABBREV[compactKey] ?? s;
+}
+
 export function sortBySize<T>(arr: T[], key: (item: T) => string | null | undefined): T[] {
   return [...arr].sort((a, b) => {
     const diff = sizeRank(key(a)) - sizeRank(key(b));
