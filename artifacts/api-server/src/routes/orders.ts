@@ -488,7 +488,20 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     if (!deliveryAddress && cust?.address) {
       customerMainAddress = { line1: cust.address, city: cust.city ?? null, postcode: cust.postcode ?? null };
     }
-    customerEmail = cust?.email ?? null;
+    // Use customer main email; if missing fall back to portal manager/dept_manager emails
+    if (cust?.email) {
+      customerEmail = cust.email;
+    } else {
+      const managerRows = await db.execute(sql`
+        SELECT email FROM customer_portal_users
+        WHERE customer_id = ${order.customerId}
+          AND portal_role IN ('manager', 'dept_manager')
+          AND email IS NOT NULL
+        ORDER BY portal_role = 'manager' DESC, status = 'active' DESC, id ASC
+      `);
+      const emails = (managerRows.rows as Array<{ email: string }>).map(r => r.email).filter(Boolean);
+      if (emails.length > 0) customerEmail = emails.join(", ");
+    }
   }
 
   res.json({
@@ -1271,7 +1284,14 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       }
     }
   }
-  if (!toEmail) { res.status(400).json({ error: "No customer email address found" }); return; }
+  if (!toEmail) {
+    if (body.success && body.data.previewOnly) {
+      // Preview mode — no email yet, return preview with empty to so dialog can display it
+      toEmail = "";
+    } else {
+      res.status(400).json({ error: "No customer email address found" }); return;
+    }
+  }
 
   // Read customer logo directly from storage (URL is a relative object-storage path, not a public URL)
   if (customerLogoUrl) {
