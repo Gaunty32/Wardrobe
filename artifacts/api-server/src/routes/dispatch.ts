@@ -57,20 +57,25 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
       const orderWs = worksheets.filter((w) => w.orderId === order.id);
       const items = orderItems.filter((i) => i.orderId === order.id);
 
-      // Worksheet-level rule (mirrors the delivery-note guard so they stay in sync):
-      //   Decorated items (finishId != null) → all worksheets on this order must be complete
-      //                                        (no pre_wip / wip remaining)
-      //   Plain items     (finishId == null) → must have stockStatus = 'complete'
-      // Using worksheet-level (not per-item) means orders where items were added
-      // after a worksheet was created can still reach dispatch, matching the
-      // criterion already used to allow delivery-note generation.
+      // Dispatch-readiness rule (mirrors the delivery-note guard so they stay in sync):
+      //
+      // Orders with decorated items (finishId != null):
+      //   → All worksheets on this order must be complete (no pre_wip / wip).
+      //     Plain items alongside decorated items are verified physically when
+      //     packing — we don't block dispatch for them.
+      //
+      // Plain-item-only orders (no finish on any item):
+      //   → Every item must have stockStatus = 'complete'.
+      //
+      // This means: if a delivery note could be generated, dispatch is unblocked.
       const hasDecoratedItems = items.some(i => i.finishId != null);
-      const plainItems = items.filter(i => i.finishId == null);
-      const allPlainComplete = plainItems.every(i => i.stockStatus === "complete");
       const hasIncompleteWorksheets = orderWs.some(w => w.status !== "complete");
 
-      const decoratedOk = !hasDecoratedItems || (orderWs.length > 0 && !hasIncompleteWorksheets);
-      const allComplete = items.length > 0 && decoratedOk && allPlainComplete;
+      const allComplete = items.length > 0 && (
+        hasDecoratedItems
+          ? orderWs.length > 0 && !hasIncompleteWorksheets
+          : items.every(i => i.stockStatus === "complete")
+      );
 
       if (!allComplete) return null;
       const address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
