@@ -1649,7 +1649,7 @@ function POCard({
                 items={po.items}
                 currency={po.supplierCurrency}
                 onDeleteLine={po.status !== "delivered" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
-                onLineUpdate={po.status === "draft" ? (itemId, qty) => onLineUpdate(po.id, itemId, { quantityOrdered: qty }) : undefined}
+                onLineUpdate={(po.status === "draft" || po.status === "ordered") ? (itemId, qty) => onLineUpdate(po.id, itemId, { quantityOrdered: qty }) : undefined}
               />
 
               {po.status === "ordered" && (
