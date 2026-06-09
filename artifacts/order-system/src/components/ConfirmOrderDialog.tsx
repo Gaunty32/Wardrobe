@@ -91,9 +91,10 @@ interface ConfirmOrderDialogProps {
     items?: Array<{ id: number; productName: string; quantity: number; purchaseRequired?: boolean }>;
   };
   onConfirmed: () => void;
+  customerDefaultShipping?: string | null;
 }
 
-export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: ConfirmOrderDialogProps) {
+export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, customerDefaultShipping }: ConfirmOrderDialogProps) {
   const { toast } = useToast();
   const [step, setStep] = useState<Step>("review");
   const [result, setResult] = useState<AllocationResult | null>(null);
@@ -114,7 +115,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
 
   const initialRequiredDate = () =>
     order.requiredDate ? new Date(order.requiredDate).toISOString().slice(0, 10) : defaultRequiredDate();
-  const initialShippingMethod = () => order.shippingMethod ?? "";
+  const initialShippingMethod = () => order.shippingMethod ?? customerDefaultShipping ?? "";
 
   const reset = () => {
     setStep("review");
@@ -126,8 +127,9 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
     setEmailText("");
     setCopied(false);
     setRequiredDate(initialRequiredDate());
-    setShippingMethod(initialShippingMethod());
-    setCarriageAmount(order.shippingMethod === "courier" ? "8.50" : "");
+    const sm = initialShippingMethod();
+    setShippingMethod(sm);
+    setCarriageAmount(sm === "courier" ? "8.50" : "");
     setPaymentLinkUrl(null);
     setPaymentLinkLoading(false);
     setPaymentLinkError(null);
@@ -137,8 +139,9 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed }: C
   useEffect(() => {
     if (open) {
       setRequiredDate(initialRequiredDate());
-      setShippingMethod(initialShippingMethod());
-      setCarriageAmount(order.shippingMethod === "courier" ? "8.50" : "");
+      const sm = initialShippingMethod();
+      setShippingMethod(sm);
+      setCarriageAmount(sm === "courier" ? "8.50" : "");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);

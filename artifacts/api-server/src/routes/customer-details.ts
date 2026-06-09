@@ -1207,7 +1207,10 @@ router.get("/customers/:customerId/wardrobe-data", async (req, res): Promise<voi
     }
   } catch { /* best-effort */ }
 
-  res.json({ items: items.rows, processes: processes.rows, sizesMap, sleevesMap });
+  const custRow = await db.execute(sql`SELECT default_shipping_option FROM customers WHERE id = ${customerId} LIMIT 1`);
+  const defaultShippingOption = (custRow.rows[0] as any)?.default_shipping_option ?? null;
+
+  res.json({ items: items.rows, processes: processes.rows, sizesMap, sleevesMap, defaultShippingOption });
 });
 
 router.post("/customers/:customerId/finished-items", async (req, res): Promise<void> => {

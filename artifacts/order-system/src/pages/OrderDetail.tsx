@@ -3424,6 +3424,7 @@ export default function OrderDetail() {
           shippingMethod: (order as any).shippingMethod ?? null,
           items: order.items,
         }}
+        customerDefaultShipping={(wardrobeData as any)?.defaultShippingOption ?? null}
         onConfirmed={() => {
           queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
           queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
