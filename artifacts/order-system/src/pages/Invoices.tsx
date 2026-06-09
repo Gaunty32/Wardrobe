@@ -782,7 +782,12 @@ export default function Invoices() {
   const allSameCustomer = selectedOrders.length > 0 && selectedOrders.every(
     (o) => (o.customerId ? String(o.customerId) : o.customerName ?? "") === selectedCustomerKey
   );
-  const showCombineBar = selectedOrders.length >= 1 && allSameCustomer;
+  // Combining rules: orders with PO numbers must all share the same PO number;
+  // orders without a PO number can be combined only with other no-PO orders for the same customer.
+  const selectedPOs = [...new Set(selectedOrders.map((o) => o.poNumber).filter(Boolean))];
+  const allHaveSamePO = selectedPOs.length === 1 && selectedOrders.every((o) => o.poNumber === selectedPOs[0]);
+  const noneHavePO = selectedOrders.every((o) => !o.poNumber);
+  const showCombineBar = selectedOrders.length >= 1 && allSameCustomer && (allHaveSamePO || noneHavePO);
 
   return (
     <Layout>

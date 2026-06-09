@@ -52,9 +52,9 @@ router.get("/invoices", async (_req, res): Promise<void> => {
     .where(sql`${ordersTable.status} IN ('shipped', 'dispatched')`)
     .orderBy(desc(ordersTable.dispatchedAt));
 
-  const toSend = orders.filter((o) => !o.invoiceEmailSentAt);
+  const toSend = orders.filter((o) => !o.invoiceEmailSentAt && !o.xeroInvoiceId);
   const toPost = orders.filter((o) => o.invoiceEmailSentAt && !o.xeroInvoiceId);
-  const done = orders.filter((o) => o.invoiceEmailSentAt && o.xeroInvoiceId);
+  const done = orders.filter((o) => !!o.xeroInvoiceId);
 
   res.json({ toSend, toPost, done });
 });
