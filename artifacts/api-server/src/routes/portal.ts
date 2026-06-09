@@ -1645,7 +1645,7 @@ router.get("/portal/wardrobe", portalAuth, async (req: Request, res: Response) =
   const sleevesMap: Record<string, string[]> = {};
   try {
     const sleeveAttrRows = await db.execute(sql`
-      SELECT DISTINCT product_id, sleeve
+      SELECT product_id, sleeve
       FROM (
         SELECT pa.product_id, pa.value AS sleeve
         FROM product_attributes pa

@@ -1182,7 +1182,7 @@ router.get("/customers/:customerId/wardrobe-data", async (req, res): Promise<voi
   const sleevesMap: Record<string, string[]> = {};
   try {
     const sleeveRows = await db.execute(sql`
-      SELECT DISTINCT product_id, sleeve
+      SELECT product_id, sleeve
       FROM (
         SELECT pa.product_id, pa.value AS sleeve
         FROM product_attributes pa
