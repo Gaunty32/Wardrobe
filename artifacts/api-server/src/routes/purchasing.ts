@@ -88,7 +88,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     LEFT  JOIN suppliers s ON s.id = p.supplier_id
     WHERE oi.product_id IS NOT NULL
       AND p.is_service IS NOT TRUE
-      AND COALESCE(o.status, '') NOT IN ('cancelled', 'archived', 'completed', 'delivered', 'shipped', 'invoiced')
+      AND COALESCE(o.status, '') NOT IN ('cancelled', 'archived', 'completed', 'delivered', 'shipped', 'invoiced', 'draft', 'portal_draft', 'portal_pending')
       AND NOT EXISTS (
         SELECT 1
         FROM purchase_order_items poi
@@ -346,7 +346,7 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       eq(orderItemsTable.purchaseRequired, true),
       sql`${productsTable.isService} IS NOT TRUE`,
       // Exclude items belonging to orders that are no longer active
-      sql`COALESCE(${ordersTable.status}, '') NOT IN ('cancelled', 'archived', 'shipped', 'completed', 'delivered', 'invoiced')`,
+      sql`COALESCE(${ordersTable.status}, '') NOT IN ('cancelled', 'archived', 'shipped', 'completed', 'delivered', 'invoiced', 'draft', 'portal_draft', 'portal_pending')`,
       sql`${orderItemsTable.id} NOT IN (
         SELECT poi.order_item_id
         FROM purchase_order_items poi
@@ -475,7 +475,7 @@ router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       WHERE oi.purchase_required = true
-        AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived')
+        AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
         AND COALESCE(
           -- Prefer explicit variant_id link
           CASE WHEN oi.variant_id IS NOT NULL THEN
