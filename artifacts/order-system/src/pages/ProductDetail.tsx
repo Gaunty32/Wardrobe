@@ -19,7 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
-  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles, Shuffle
+  Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles, Shuffle, Search
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -737,6 +737,7 @@ export default function ProductDetail() {
   const [filterColour, setFilterColour] = useState<string>("all");
   const [filterSize, setFilterSize] = useState<string>("all");
   const [filterSleeve, setFilterSleeve] = useState<string>("all");
+  const [filterSearch, setFilterSearch] = useState<string>("");
   const [bulkPrimaryId, setBulkPrimaryId] = useState<string>("none");
   const [bulkPrice, setBulkPrice] = useState<string>("");
   const [bulkCode, setBulkCode] = useState<string>("");
@@ -941,6 +942,13 @@ export default function ProductDetail() {
     if (filterColour !== "all" && v.colour !== filterColour) return false;
     if (filterSize !== "all" && v.size !== filterSize) return false;
     if (filterSleeve !== "all" && v.sleeve !== filterSleeve) return false;
+    if (filterSearch) {
+      const q = filterSearch.toLowerCase();
+      const matchSku = (v.sku ?? "").toLowerCase().includes(q);
+      const matchCode = (v.supplierCode ?? "").toLowerCase().includes(q);
+      const matchColour = (v.colour ?? "").toLowerCase().includes(q);
+      if (!matchSku && !matchCode && !matchColour) return false;
+    }
     return true;
   });
 
@@ -1553,152 +1561,19 @@ export default function ProductDetail() {
                   </div>
                 </div>
 
-                {/* ── Supplier by Combination ── */}
-                {comboPricingGroups.length > 1 && (
-                  <div className="bg-card border border-border/50 rounded-lg shadow-sm">
-                    <div className="flex items-center gap-2 px-4 py-3 border-b border-border/40">
-                      <Layers className="w-4 h-4 text-primary" />
-                      <div>
-                        <h3 className="font-semibold text-foreground text-sm">Supplier by Combination</h3>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Set a different supplier, code, and cost for each {colours.length > 0 ? "colour" : ""}{colours.length > 0 && sleeves.length > 0 ? " + " : ""}{sleeves.length > 0 ? "fit" : ""} combination — applies to all sizes in that group.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="hover:bg-transparent text-xs">
-                            {colours.length > 0 && <TableHead>Colour</TableHead>}
-                            {sleeves.length > 0 && <TableHead>Fit / Length</TableHead>}
-                            <TableHead>Supplier</TableHead>
-                            <TableHead>Code</TableHead>
-                            <TableHead>Cost</TableHead>
-                            <TableHead className="text-right w-24" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {comboPricingGroups.map(g => {
-                            const draft: ComboDraft = comboDrafts[g.key] ?? { supplierId: g.sharedSupplierId, code: g.sharedCode, price: g.sharedPrice };
-                            const isDirty = draft.supplierId !== g.sharedSupplierId || draft.code !== g.sharedCode || draft.price !== g.sharedPrice;
-                            const bulkSup = (suppliers as any[]).find((s: any) => String(s.id) === draft.supplierId);
-                            const currSym = bulkSup?.currency === "USD" ? "$" : bulkSup?.currency === "EUR" ? "€" : "£";
-                            const setDraft = (field: keyof ComboDraft, val: string) =>
-                              setComboDrafts(prev => ({ ...prev, [g.key]: { ...draft, [field]: val } }));
-                            const canApply = draft.supplierId !== "none" || draft.code !== "" || draft.price !== "";
-                            return (
-                              <TableRow key={g.key} className={isDirty ? "bg-primary/5" : ""}>
-                                {colours.length > 0 && (
-                                  <TableCell>
-                                    {g.colour
-                                      ? <span className="font-medium text-sm">{g.colour}</span>
-                                      : <span className="text-muted-foreground text-sm">—</span>}
-                                  </TableCell>
-                                )}
-                                {sleeves.length > 0 && (
-                                  <TableCell>
-                                    {g.sleeve
-                                      ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">{g.sleeve}</span>
-                                      : <span className="text-muted-foreground text-sm">—</span>}
-                                  </TableCell>
-                                )}
-                                <TableCell>
-                                  <SupplierSelect
-                                    value={draft.supplierId}
-                                    onChange={v => setDraft("supplierId", v)}
-                                    suppliers={suppliers}
-                                    className="h-7 text-xs w-[150px]"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Input
-                                    value={draft.code}
-                                    onChange={e => setDraft("code", e.target.value)}
-                                    placeholder={g.sharedCode || "e.g. FCC1001"}
-                                    className="h-7 text-xs w-[110px]"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <div className="relative flex items-center">
-                                    <span className="absolute left-2 text-muted-foreground text-xs pointer-events-none">{currSym}</span>
-                                    <Input
-                                      type="number" min="0" step="0.01"
-                                      value={draft.price}
-                                      onChange={e => setDraft("price", e.target.value)}
-                                      placeholder="0.00"
-                                      className="h-7 text-xs w-24 pl-4"
-                                    />
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Button
-                                    size="sm"
-                                    variant={isDirty ? "default" : "outline"}
-                                    className="h-7 text-xs gap-1"
-                                    disabled={!canApply || bulkUpdateMut.isPending}
-                                    onClick={() => bulkUpdateMut.mutate({
-                                      ids: g.variantIds,
-                                      supplierId: draft.supplierId,
-                                      code: draft.code,
-                                      price: draft.price,
-                                    })}
-                                  >
-                                    {bulkUpdateMut.isPending
-                                      ? <Loader2 className="w-3 h-3 animate-spin" />
-                                      : <Save className="w-3 h-3" />}
-                                    Apply
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Variant table */}
+                {/* ── Variants (merged: group bulk-supplier + individual rows) ── */}
                 <div className="bg-card border border-border/50 rounded-lg shadow-sm">
+                  {/* Header */}
                   <div className="flex items-center justify-between p-4 border-b border-border/40">
                     <div>
-                      <h3 className="font-semibold text-foreground">Variant Combinations</h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">Each row is a specific colour / sleeve / size combo with its own stock level and suppliers.</p>
+                      <h3 className="font-semibold text-foreground">Variants</h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {comboPricingGroups.length > 1
+                          ? "Use the group rows to set a supplier for all sizes at once, or edit individual rows below."
+                          : "Each row is a specific colour / fit / size combo with its own stock level and suppliers."}
+                      </p>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      {colours.length > 1 && (
-                        <Select value={filterColour} onValueChange={setFilterColour}>
-                          <SelectTrigger className="h-8 w-[140px] text-xs">
-                            <SelectValue placeholder="All colours" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All colours</SelectItem>
-                            {colours.map((c: string) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      {sizes.length > 1 && (
-                        <Select value={filterSize} onValueChange={setFilterSize}>
-                          <SelectTrigger className="h-8 w-[130px] text-xs">
-                            <SelectValue placeholder="All sizes" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All sizes</SelectItem>
-                            {sizes.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
-                      {sleeves.length > 1 && (
-                        <Select value={filterSleeve} onValueChange={setFilterSleeve}>
-                          <SelectTrigger className="h-8 w-[140px] text-xs">
-                            <SelectValue placeholder="All fits" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All fits</SelectItem>
-                            {sleeves.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                          </SelectContent>
-                        </Select>
-                      )}
                       {canGenerateMatrix && (
                         <Button size="sm" variant="outline" onClick={() => setGenerateMatrixOpen(true)}>
                           <Layers className="w-4 h-4 mr-1.5" /> Generate size variants
@@ -1724,56 +1599,61 @@ export default function ProductDetail() {
                     </div>
                   </div>
 
-                  {/* Bulk supplier price strip — visible when there are variants */}
-                  {variants.length > 0 && (() => {
-                    const targetIds = filteredVariants.map((v: any) => v.id);
-                    const isFiltered = filterColour !== "all" || filterSize !== "all" || filterSleeve !== "all";
-                    const canApply = targetIds.length > 0 && (bulkPrimaryId !== "none" || bulkPrice !== "" || bulkCode !== "");
-                    const bulkSup = suppliers.find((s: any) => String(s.id) === bulkPrimaryId);
-                    const currSym = (bulkSup as any)?.currency === "USD" ? "$" : (bulkSup as any)?.currency === "EUR" ? "€" : "£";
-                    return (
-                      <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 bg-muted/40 border-b border-border/40 text-sm">
-                        <span className="text-muted-foreground font-medium shrink-0">
-                          {(bulkPrimaryId !== "none" || bulkCode !== "" || bulkPrice !== "") ? "Edit" : "Set"} supplier{" "}
-                          <span className="font-normal">({isFiltered ? `${targetIds.length} filtered` : `all ${targetIds.length}`}):</span>
-                        </span>
-                        <SupplierSelect value={bulkPrimaryId} onChange={setBulkPrimaryId} suppliers={suppliers} className="h-7 text-xs w-[160px]" />
+                  {/* Filter bar */}
+                  {variants.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap px-4 py-2.5 bg-muted/30 border-b border-border/40">
+                      {colours.length > 1 && (
+                        <Select value={filterColour} onValueChange={setFilterColour}>
+                          <SelectTrigger className="h-8 w-[140px] text-xs">
+                            <SelectValue placeholder="All colours" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All colours</SelectItem>
+                            {colours.map((c: string) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {sleeves.length > 1 && (
+                        <Select value={filterSleeve} onValueChange={setFilterSleeve}>
+                          <SelectTrigger className="h-8 w-[130px] text-xs">
+                            <SelectValue placeholder="All fits" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All fits</SelectItem>
+                            {sleeves.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      {sizes.length > 1 && (
+                        <Select value={filterSize} onValueChange={setFilterSize}>
+                          <SelectTrigger className="h-8 w-[120px] text-xs">
+                            <SelectValue placeholder="All sizes" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All sizes</SelectItem>
+                            {sizes.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      )}
+                      <div className="relative flex items-center ml-auto">
+                        <Search className="absolute left-2.5 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                         <Input
-                          value={bulkCode}
-                          onChange={e => setBulkCode(e.target.value)}
-                          placeholder="Supplier code"
-                          className="h-7 text-xs w-[120px]"
+                          value={filterSearch}
+                          onChange={e => setFilterSearch(e.target.value)}
+                          placeholder="Search SKU or code…"
+                          className="h-8 text-xs w-[170px] pl-8"
                         />
-                        <div className="relative flex items-center">
-                          <span className="absolute left-2.5 text-muted-foreground text-xs pointer-events-none">{currSym}</span>
-                          <Input
-                            type="number" min="0" step="0.01"
-                            value={bulkPrice}
-                            onChange={e => setBulkPrice(e.target.value)}
-                            placeholder="0.00"
-                            className="h-7 text-xs w-24 pl-5"
-                          />
-                        </div>
-                        <Button
-                          size="sm"
-                          className="h-7 text-xs"
-                          disabled={!canApply || bulkUpdateMut.isPending}
-                          onClick={() => bulkUpdateMut.mutate({ ids: targetIds, supplierId: bulkPrimaryId, code: bulkCode, price: bulkPrice })}
-                        >
-                          {bulkUpdateMut.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
-                          Apply
-                        </Button>
-                        {(bulkPrimaryId !== "none" || bulkPrice !== "" || bulkCode !== "") && (
-                          <button
-                            className="text-xs text-muted-foreground hover:text-foreground underline"
-                            onClick={() => { setBulkPrimaryId("none"); setBulkPrice(""); setBulkCode(""); }}
-                          >
-                            Clear
-                          </button>
-                        )}
                       </div>
-                    );
-                  })()}
+                      {(filterColour !== "all" || filterSize !== "all" || filterSleeve !== "all" || filterSearch !== "") && (
+                        <button
+                          className="text-xs text-muted-foreground hover:text-foreground underline"
+                          onClick={() => { setFilterColour("all"); setFilterSize("all"); setFilterSleeve("all"); setFilterSearch(""); }}
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  )}
 
                   {variants.length === 0 ? (
                     <div className="py-12 text-center text-muted-foreground">
@@ -1799,25 +1679,112 @@ export default function ProductDetail() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredVariants.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={9} className="text-center py-8 text-muted-foreground text-sm">
-                                No variants match the selected filters.{" "}
-                                <button className="underline" onClick={() => { setFilterColour("all"); setFilterSize("all"); setFilterSleeve("all"); }}>Clear filters</button>
-                              </TableCell>
-                            </TableRow>
-                          ) : filteredVariants.map((v: any) => (
-                            <VariantRow
-                              key={v.id}
-                              variant={v}
-                              suppliers={suppliers}
-                              productId={productId}
-                              onRefresh={refetchVariants}
-                              onColourImageUpload={handleColourImageUpload}
-                              productSupplierId={defaultPrimaryId}
-                              productSecondaryId={defaultSecondaryId}
-                            />
-                          ))}
+                          {(() => {
+                            if (filteredVariants.length === 0) {
+                              return (
+                                <TableRow>
+                                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground text-sm">
+                                    No variants match the selected filters.{" "}
+                                    <button className="underline" onClick={() => { setFilterColour("all"); setFilterSize("all"); setFilterSleeve("all"); setFilterSearch(""); }}>Clear filters</button>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+
+                            const showGroups = comboPricingGroups.length > 1;
+                            const defSup = (suppliers as any[]).find((s: any) => String(s.id) === details.supplierId);
+                            const rows: React.ReactNode[] = [];
+
+                            for (const g of comboPricingGroups) {
+                              const groupVariants = filteredVariants.filter((v: any) =>
+                                (v.colour ?? "") === (g.colour ?? "") && (v.sleeve ?? "") === (g.sleeve ?? "")
+                              );
+                              if (groupVariants.length === 0) continue;
+
+                              if (showGroups) {
+                                const draft: ComboDraft = comboDrafts[g.key] ?? { supplierId: g.sharedSupplierId, code: g.sharedCode, price: g.sharedPrice };
+                                const isDirty = draft.supplierId !== g.sharedSupplierId || draft.code !== g.sharedCode || draft.price !== g.sharedPrice;
+                                const setDraft = (field: keyof ComboDraft, val: string) =>
+                                  setComboDrafts(prev => ({ ...prev, [g.key]: { ...draft, [field]: val } }));
+                                const canApply = draft.supplierId !== "none" || draft.code !== "" || draft.price !== "";
+                                const bulkSup = (suppliers as any[]).find((s: any) => String(s.id) === draft.supplierId);
+                                const currSym = bulkSup?.currency === "USD" ? "$" : bulkSup?.currency === "EUR" ? "€" : "£";
+
+                                rows.push(
+                                  <TableRow key={`gh-${g.key}`} className={`border-t-2 border-border/40 ${isDirty ? "bg-primary/5" : "bg-muted/25"}`}>
+                                    <TableCell colSpan={9} className="py-2 px-4">
+                                      <div className="flex items-center gap-3 flex-wrap">
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          {g.colour && (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-pink-100 text-pink-800 border border-pink-200">{g.colour}</span>
+                                          )}
+                                          {g.sleeve && (
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">{g.sleeve}</span>
+                                          )}
+                                          <span className="text-xs text-muted-foreground">{groupVariants.length} size{groupVariants.length !== 1 ? "s" : ""}</span>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground shrink-0">→ Set supplier for all:</span>
+                                        <SupplierSelect
+                                          value={draft.supplierId}
+                                          onChange={v => setDraft("supplierId", v)}
+                                          suppliers={suppliers}
+                                          className="h-7 text-xs w-[150px]"
+                                        />
+                                        <Input
+                                          value={draft.code}
+                                          onChange={e => setDraft("code", e.target.value)}
+                                          placeholder={details.supplierCode || "Code"}
+                                          className="h-7 text-xs w-[110px]"
+                                        />
+                                        <div className="relative flex items-center">
+                                          <span className="absolute left-2 text-muted-foreground text-xs pointer-events-none">{currSym}</span>
+                                          <Input
+                                            type="number" min="0" step="0.01"
+                                            value={draft.price}
+                                            onChange={e => setDraft("price", e.target.value)}
+                                            placeholder="0.00"
+                                            className="h-7 text-xs w-24 pl-4"
+                                          />
+                                        </div>
+                                        <Button
+                                          size="sm"
+                                          variant={isDirty ? "default" : "outline"}
+                                          className="h-7 text-xs gap-1"
+                                          disabled={!canApply || bulkUpdateMut.isPending}
+                                          onClick={() => bulkUpdateMut.mutate({ ids: g.variantIds, supplierId: draft.supplierId, code: draft.code, price: draft.price })}
+                                        >
+                                          {bulkUpdateMut.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                          Apply
+                                        </Button>
+                                        {draft.supplierId === "none" && defSup && (
+                                          <span className="text-xs text-muted-foreground italic">
+                                            Default: {defSup.name}{details.supplierCode ? ` · ${details.supplierCode}` : ""}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              }
+
+                              for (const v of groupVariants) {
+                                rows.push(
+                                  <VariantRow
+                                    key={v.id}
+                                    variant={v}
+                                    suppliers={suppliers}
+                                    productId={productId}
+                                    onRefresh={refetchVariants}
+                                    onColourImageUpload={handleColourImageUpload}
+                                    productSupplierId={defaultPrimaryId}
+                                    productSecondaryId={defaultSecondaryId}
+                                  />
+                                );
+                              }
+                            }
+
+                            return rows;
+                          })()}
                         </TableBody>
                       </Table>
                     </div>
