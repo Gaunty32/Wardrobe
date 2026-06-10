@@ -744,6 +744,8 @@ export default function Products() {
                 onDuplicate={handleDuplicate}
                 onArchive={handleArchive}
                 onNavigate={(id) => navigate(`/products/${id}`)}
+                onPushWooPrice={(id, price) => pushPriceMutation.mutate({ id, newPrice: price })}
+                pushingPrice={pushingPrice}
               />
             </div>
           )
@@ -1016,6 +1018,8 @@ function ProductTable({
   onDuplicate,
   onArchive,
   onNavigate,
+  onPushWooPrice,
+  pushingPrice,
 }: {
   products: ProductWithCategory[];
   onEdit: (p: ProductWithCategory) => void;
@@ -1023,6 +1027,8 @@ function ProductTable({
   onDuplicate: (id: number) => void;
   onArchive: (id: number, archive: boolean) => void;
   onNavigate: (id: number) => void;
+  onPushWooPrice?: (id: number, price: number) => void;
+  pushingPrice?: Record<number, boolean>;
 }) {
   const [sort, setSort] = useState<{ col: SortCol; dir: SortDir } | null>(null);
 
@@ -1131,6 +1137,18 @@ function ProductTable({
                 </TableCell>
                 <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {!(product as any).isArchived && (product as any).wooCommerceId && onPushWooPrice && product.unitPrice != null && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50"
+                        title="Push price to WooCommerce"
+                        disabled={pushingPrice?.[product.id]}
+                        onClick={() => onPushWooPrice(product.id, product.unitPrice!)}
+                      >
+                        {pushingPrice?.[product.id] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      </Button>
+                    )}
                     {!(product as any).isArchived && (
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50" title="Duplicate product" onClick={() => onDuplicate(product.id)}>
                         <Copy className="w-4 h-4" />
