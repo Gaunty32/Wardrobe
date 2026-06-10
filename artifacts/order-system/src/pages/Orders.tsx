@@ -21,6 +21,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { formatCurrency, formatDate, toTitleCase } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, ShoppingCart, Loader2, ArrowRight, ChevronsUpDown, Check, Globe, CheckCircle2, XCircle, Search, AlertTriangle, FileText, Pencil, Paperclip, StickyNote, GitMerge, ChevronUp, ChevronDown } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { cn } from "@/lib/utils";
 const API_BASE = "/api";
@@ -87,7 +88,18 @@ function QuoteHoldingPanel() {
                 <TableCell>
                   <div className="flex items-center gap-1.5">
                     <span className="font-semibold text-violet-700">{o.orderNumber}</span>
-                    {o.notes && <StickyNote className="w-3 h-3 text-amber-400 shrink-0" title="Has internal note" />}
+                    {o.notes && (
+                      <TooltipProvider delayDuration={100}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <StickyNote className="w-3 h-3 text-amber-400 shrink-0 cursor-default" />
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="max-w-xs whitespace-pre-wrap text-xs">
+                            {o.notes}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
                     {o.attachments?.length > 0 && <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" title="Has attachments" />}
                   </div>
                 </TableCell>
@@ -684,7 +696,16 @@ export default function Orders() {
                               {isPortalPending && <Globe className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
                               <span className={cn("font-bold text-base tracking-wide", isPortalPending ? "text-amber-700" : "text-primary")}>{order.orderNumber}</span>
                               {(order as any).notes && (
-                                <StickyNote className="w-3 h-3 text-amber-400 shrink-0" title="Has internal note" />
+                                <TooltipProvider delayDuration={100}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <StickyNote className="w-3 h-3 text-amber-400 shrink-0 cursor-default" />
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right" className="max-w-xs whitespace-pre-wrap text-xs">
+                                      {(order as any).notes}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               )}
                               {(order as any).attachments?.length > 0 && (
                                 <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" title="Has attachments" />
