@@ -286,14 +286,14 @@ export default function ZebraLabels({ orderId, orderNumber }: ZebraLabelsProps) 
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
+        <DialogContent className="max-w-md max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Printer className="w-5 h-5" /> Print Labels — {orderNumber}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-3 py-1">
+          <div className="space-y-3 py-1 overflow-y-auto flex-1 min-h-0 pr-1">
             {loading && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                 <RefreshCw className="w-4 h-4 animate-spin" /> Loading label data…
