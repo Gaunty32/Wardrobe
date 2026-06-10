@@ -1926,7 +1926,7 @@ const SHIPPING_OPTIONS = [
   },
   {
     id: "dpd_next_day",
-    label: "Next Day DPD",
+    label: "Courier",
     sublabel: "Tracked courier — delivered next working day",
     cost: 8.50,
   },

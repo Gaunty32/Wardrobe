@@ -240,7 +240,7 @@ export function buildAcknowledgementEmail(order: {
     free_local: "Free Local Delivery",
     dpd: "DPD Courier", royal_mail: "Royal Mail", local_delivery: "Local Delivery",
     office_collection: "Office Collection", warehouse_collection: "Collection from our warehouse", courier: "Courier",
-    dpd_next_day: "Next Day DPD",
+    dpd_next_day: "Courier",
   };
   const shippingLabel = order.shippingMethod ? (SHIPPING_LABELS[order.shippingMethod] ?? order.shippingMethod) : null;
   const isFreeLocal = order.shippingMethod === "free_local";
@@ -757,7 +757,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       free_local: "Free Local Delivery",
       dpd: "DPD Courier", royal_mail: "Royal Mail", local_delivery: "Local Delivery",
       office_collection: "Office Collection", warehouse_collection: "Collection from our warehouse", courier: "Courier",
-      dpd_next_day: "Next Day DPD",
+      dpd_next_day: "Courier",
     };
     const isCollection = order.shippingMethod
       ? ["office_collection", "warehouse_collection"].includes(order.shippingMethod)

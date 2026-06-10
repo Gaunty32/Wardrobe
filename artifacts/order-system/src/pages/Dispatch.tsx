@@ -80,6 +80,7 @@ const SHIPPING_LABELS: Record<string, string> = {
   warehouse_collection: "Warehouse Collection",
   courier: "Courier",
   dpd: "DPD Courier",
+  dpd_next_day: "Courier",
 };
 
 function shippingLabel(method: string | null): string {

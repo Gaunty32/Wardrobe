@@ -2424,7 +2424,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
 
   const SHIPPING_OPTIONS = [
     { id: "free_local", label: "Free local delivery" },
-    { id: "dpd_next_day", label: "DPD Next Day" },
+    { id: "dpd_next_day", label: "Courier" },
     { id: "warehouse_collection", label: "Warehouse collection" },
     { id: "office_collection", label: "Office collection" },
   ];
