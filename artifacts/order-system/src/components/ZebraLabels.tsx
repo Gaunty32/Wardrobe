@@ -222,10 +222,12 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
     body = wearerLabelHtml(data.wearers[which]);
   }
 
+  const qzScript = `(function(){var KEY='sbs_label_printer';function getPrinter(){try{return localStorage.getItem(KEY)||'TSC DA210';}catch(e){return 'TSC DA210';}}function setStatus(t){var el=document.getElementById('_qz_status');if(el)el.textContent=t;}function buildPrintHtml(){var c=document.documentElement.cloneNode(true);var rem=c.querySelectorAll('#_qz_toolbar,script');for(var i=0;i<rem.length;i++){if(rem[i].parentNode)rem[i].parentNode.removeChild(rem[i]);}return '<!DOCTYPE html><html>'+c.innerHTML+'</html>';}window.addEventListener('load',function(){var printer=getPrinter();setStatus('Connecting to QZ Tray\u2026');var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js';s.onload=function(){var qz=window.qz;qz.security.setCertificatePromise(function(){return Promise.resolve('');});qz.security.setSignatureAlgorithm('SHA512');qz.security.setSignaturePromise(function(){return Promise.resolve('');});var conn=qz.websocket.isActive()?Promise.resolve():qz.websocket.connect({retries:1,delay:0.5});conn.then(function(){setStatus('Sending to '+printer+'\u2026');return qz.print(qz.configs.create(printer),[{type:'pixel',format:'html',flavor:'plain',data:buildPrintHtml()}]);}).then(function(){setStatus('\u2714 Sent to '+printer);}).catch(function(){setStatus('QZ Tray error \u2014 using browser dialog');window.print();});};s.onerror=function(){setStatus('QZ Tray not running \u2014 using browser dialog');window.print();};document.head.appendChild(s);});})();`;
+
   const promptBar = `
-<div class="no-print" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#1e3a5f;color:#fff;font-family:Arial,sans-serif;font-size:13px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
-  <span>Select your <strong>TSC label printer</strong> — paper size: <strong>4×4 in (102×102 mm)</strong>.</span>
-  <button onclick="window.print()" style="background:#fff;color:#1e3a5f;border:none;border-radius:4px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;">Print Labels</button>
+<div id="_qz_toolbar" class="no-print" style="position:fixed;top:0;left:0;right:0;z-index:999;background:#1e3a5f;color:#fff;font-family:Arial,sans-serif;font-size:13px;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+  <span id="_qz_status" style="opacity:.85">Starting\u2026</span>
+  <button onclick="window.print()" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:4px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;">Print manually</button>
 </div>
 <div class="no-print" style="height:44px"></div>`;
 
@@ -233,7 +235,7 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
 <html><head><meta charset="utf-8">
 <title>Labels \u2014 ${esc(data.orderNumber)}</title>
 <style>${css} @media print { .no-print { display: none !important; } }</style>
-</head><body>${promptBar}${body}</body></html>`;
+</head><body>${promptBar}${body}<script>${qzScript}</script></body></html>`;
 }
 
 async function doPrint(data: LabelData, base: string, which: "all" | "box" | number) {

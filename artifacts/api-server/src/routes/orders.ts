@@ -3173,15 +3173,14 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   <div id="toolbar">
     <div id="toolbar-text">
       <div id="toolbar-title">🏷️ ${totalCount} Label${totalCount !== 1 ? "s" : ""} · ${(order.customerName ?? order.orderNumber).replace(/</g, "&lt;")}</div>
-      <div id="toolbar-sub">⚠️ Paper: <strong>User defined 4×3 in</strong> · Orientation: <strong>Landscape</strong> · Margins: <strong>None</strong> (GC420d)</div>
+      <div id="toolbar-sub"><span id="_qz_status" style="font-style:italic;opacity:.85">Starting…</span></div>
     </div>
-    <button id="btn-print" onclick="window.print()">🖨 Print Labels</button>
+    <button id="btn-print" onclick="window.print()">🖨 Print manually</button>
     <button id="btn-dl" onclick="downloadPdf()">💾 Download PDF</button>
     <button id="btn-close" onclick="window.close()">✕ Close</button>
   </div>
   <div id="page">${labels.join("\n")}</div>
   <script>
-    document.getElementById('btn-print').focus();
     function downloadPdf() {
       var hint = document.createElement('div');
       hint.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e3a5f;color:white;padding:12px 24px;border-radius:8px;font-size:13px;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.35);white-space:nowrap';
@@ -3189,6 +3188,45 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
       document.body.appendChild(hint);
       setTimeout(function() { window.print(); setTimeout(function() { hint.remove(); }, 4000); }, 300);
     }
+    (function(){
+      var KEY='sbs_label_printer';
+      function getPrinter(){try{return localStorage.getItem(KEY)||'TSC DA210';}catch(e){return 'TSC DA210';}}
+      function setStatus(t){var el=document.getElementById('_qz_status');if(el)el.textContent=t;}
+      function buildPrintHtml(){
+        var c=document.documentElement.cloneNode(true);
+        var rem=c.querySelectorAll('#toolbar,script');
+        for(var i=0;i<rem.length;i++){if(rem[i].parentNode)rem[i].parentNode.removeChild(rem[i]);}
+        return '<!DOCTYPE html><html>'+c.innerHTML+'</html>';
+      }
+      window.addEventListener('load',function(){
+        var printer=getPrinter();
+        setStatus('Connecting to QZ Tray\u2026');
+        var s=document.createElement('script');
+        s.src='https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js';
+        s.onload=function(){
+          var qz=window.qz;
+          qz.security.setCertificatePromise(function(){return Promise.resolve('');});
+          qz.security.setSignatureAlgorithm('SHA512');
+          qz.security.setSignaturePromise(function(){return Promise.resolve('');});
+          var conn=qz.websocket.isActive()?Promise.resolve():qz.websocket.connect({retries:1,delay:0.5});
+          conn.then(function(){
+            setStatus('Sending to '+printer+'\u2026');
+            return qz.print(qz.configs.create(printer),[{type:'pixel',format:'html',flavor:'plain',data:buildPrintHtml()}]);
+          }).then(function(){
+            setStatus('\u2714 Sent to '+printer);
+          }).catch(function(e){
+            setStatus('QZ Tray error \u2014 using browser dialog');
+            console.warn('QZ Tray error:',e&&e.message);
+            window.print();
+          });
+        };
+        s.onerror=function(){
+          setStatus('QZ Tray not running \u2014 using browser dialog');
+          window.print();
+        };
+        document.head.appendChild(s);
+      });
+    })();
   </script>
 </body>
 </html>`;

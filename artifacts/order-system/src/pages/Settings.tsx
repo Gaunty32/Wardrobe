@@ -4,7 +4,7 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck, Zap, Phone
+  UserPlus, Trash2, UserCheck, Zap, Phone, Printer
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -720,6 +720,67 @@ function SecurityTab() {
   );
 }
 
+const LABEL_PRINTER_KEY = "sbs_label_printer";
+
+function PrintingTab() {
+  const [printerName, setPrinterName] = useState(() => {
+    try { return localStorage.getItem(LABEL_PRINTER_KEY) || "TSC DA210"; } catch { return "TSC DA210"; }
+  });
+  const [saved, setSaved] = useState(false);
+
+  function save() {
+    try { localStorage.setItem(LABEL_PRINTER_KEY, printerName.trim() || "TSC DA210"); } catch { /* ignore */ }
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <div className="grid gap-6 max-w-2xl">
+      <div>
+        <h3 className="text-base font-semibold mb-1">Label Printer (QZ Tray)</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          When <strong>QZ Tray</strong> is running on this computer, wearer and box labels print
+          directly to the named printer below — no dialog required. If QZ Tray isn't running,
+          the browser print dialog opens as normal.
+        </p>
+        <div className="flex gap-2 items-end">
+          <div className="flex-1">
+            <Label className="mb-1 block">Printer name</Label>
+            <Input
+              value={printerName}
+              onChange={e => { setPrinterName(e.target.value); setSaved(false); }}
+              placeholder="TSC DA210"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Must match the printer name exactly as shown in Windows → Printers &amp; scanners.
+            </p>
+          </div>
+          <Button onClick={save} className="gap-2 shrink-0">
+            {saved ? <><CheckCircle className="w-4 h-4" /> Saved</> : "Save"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="border rounded-lg p-4 bg-muted/40">
+        <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+          <Printer className="w-4 h-4" /> QZ Tray setup (one-time, per computer)
+        </h4>
+        <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
+          <li>Download and install <strong>QZ Tray</strong> from <a href="https://qz.io/download/" target="_blank" rel="noreferrer" className="underline text-foreground">qz.io/download</a></li>
+          <li>Launch QZ Tray — it runs in the system tray (bottom-right of taskbar)</li>
+          <li>Right-click the QZ Tray icon → <strong>Advanced</strong> → tick <strong>Allow unsigned content</strong></li>
+          <li>Set the printer name above to match your label printer exactly, then click Save</li>
+          <li>Open any order and print wearer or box labels — they will send automatically</li>
+        </ol>
+        <p className="text-xs text-muted-foreground mt-3">
+          QZ Tray must be running whenever labels need to print silently. If it's not running,
+          labels still open and print via the normal browser dialog.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -985,6 +1046,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="sizes" className="gap-2">
               <Ruler className="w-4 h-4" /> Sizes
+            </TabsTrigger>
+            <TabsTrigger value="printing" className="gap-2">
+              <Printer className="w-4 h-4" /> Printing
             </TabsTrigger>
           </TabsList>
 
@@ -1529,6 +1593,11 @@ export default function Settings() {
           {/* ─── Sizes Tab ─────────────────────────────────────────── */}
           <TabsContent value="sizes" className="mt-6">
             <SizesTab />
+          </TabsContent>
+
+          {/* ─── Printing Tab ──────────────────────────────────────── */}
+          <TabsContent value="printing" className="mt-6">
+            <PrintingTab />
           </TabsContent>
 
         </Tabs>
