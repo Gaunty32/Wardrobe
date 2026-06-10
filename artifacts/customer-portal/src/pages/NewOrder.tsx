@@ -565,8 +565,16 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
     };
 
     if (customerSpecificPrice != null && customerSpecificPrice > 0) {
-      const { processLines, totalExtra } = buildProcessLines();
-      return { garmentPrice: customerSpecificPrice, processLines, unitPrice: customerSpecificPrice + totalExtra };
+      // The unit_price on a wardrobe item is the all-in agreed price — it already
+      // includes the garment and all applicable logo/decoration charges.  Mark every
+      // process line as included so no extra surcharges appear in the portal.
+      const processLines: ProcessLine[] = finishProcs.map((p: any) => ({
+        name: p.item_finish_name ?? p.process_type ?? "",
+        type: p.process_type ?? null,
+        price: parseFloat(p.price ?? "0") || 0,
+        included: true,
+      }));
+      return { garmentPrice: customerSpecificPrice, processLines, unitPrice: customerSpecificPrice };
     }
 
     const wooBase = parseFloat(wi.woo_price ?? "0");
