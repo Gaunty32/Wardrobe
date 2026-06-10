@@ -963,10 +963,34 @@ export async function runStartupMigrations(): Promise<void> {
       AND o.status IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
   `);
 
+  // Also clear stale purchase_required flags on unconfirmed orders (draft,
+  // portal_draft, portal_pending). These can accumulate when an order is
+  // confirmed (triggering stock allocation), then reverted to draft status
+  // without the cleanup that the portal unconfirm route performs.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required = false,
+        purchase_quantity = NULL,
+        stock_status = NULL,
+        stock_allocated_at = NULL
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND o.status IN ('draft', 'portal_draft', 'portal_pending')
+      AND (oi.purchase_required = true OR oi.stock_status IS NOT NULL)
+      AND NOT EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        JOIN purchase_orders po ON poi.po_id = po.id
+        WHERE poi.order_item_id = oi.id
+          AND po.status IN ('draft', 'ordered')
+      )
+  `);
+
   // Promote stock-covered items on active orders to 'allocated' so they appear
   // in the picking list. Previously, only PO delivery set stock_status='allocated';
   // items already in stock (purchase_required=false) were never promoted and so
   // were invisible to the production picking/worksheet workflow.
+  // Explicitly exclude draft/portal_draft/portal_pending — those orders have not
+  // been confirmed so no stock should be allocated against them yet.
   await db.execute(sql`
     UPDATE order_items oi
     SET stock_status = 'allocated',
@@ -975,7 +999,7 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE oi.order_id = o.id
       AND oi.purchase_required = false
       AND oi.stock_status IS NULL
-      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
   `);
   console.log("[startup] Promoted stock-covered items to picking list");
 
@@ -1285,7 +1309,7 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE order_items.order_id = o.id
       AND order_items.purchase_required = false
       AND order_items.stock_status = 'allocated'
-      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
       AND EXISTS (
         SELECT 1 FROM products p
         WHERE p.id = order_items.product_id
@@ -1322,7 +1346,7 @@ export async function runStartupMigrations(): Promise<void> {
     FROM orders o
     WHERE oi.order_id = o.id
       AND oi.stock_status = 'allocated'
-      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
       AND NOT EXISTS (
         SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
       )
@@ -1352,7 +1376,7 @@ export async function runStartupMigrations(): Promise<void> {
       FROM orders o
       WHERE oi.order_id = o.id
         AND oi.stock_status = 'allocated'
-        AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+        AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
         AND NOT EXISTS (
           SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
         )

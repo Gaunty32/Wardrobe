@@ -1065,6 +1065,59 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     });
     return;
   }
+  // ── Purchase-flag cleanup when reverting to draft ─────────────────────────
+  // If the order is being set back to draft (from confirmed or any active state),
+  // clear purchase_required/purchase_quantity on all items and restore any stock
+  // that was deducted during the prior confirmation.
+  if (parsed.data.status === "draft") {
+    const itemRows = await db.execute(sql`
+      SELECT id, product_id, quantity, purchase_required, purchase_quantity
+      FROM order_items WHERE order_id = ${params.data.id} AND product_id IS NOT NULL
+    `);
+    const items = itemRows.rows as Array<{
+      id: number; product_id: number; quantity: number;
+      purchase_required: boolean | null; purchase_quantity: number | null;
+    }>;
+
+    // Restore stock that was deducted during confirmation
+    const stockRestore = new Map<number, number>();
+    for (const item of items) {
+      const qty = Number(item.quantity ?? 0);
+      const purchaseQty = Number(item.purchase_quantity ?? 0);
+      // Stock decremented = quantity - purchase_quantity (items fulfilled from stock)
+      const allocated = item.purchase_required ? qty - purchaseQty : qty;
+      if (allocated > 0) {
+        stockRestore.set(item.product_id, (stockRestore.get(item.product_id) ?? 0) + allocated);
+      }
+    }
+    for (const [productId, restoreQty] of stockRestore.entries()) {
+      await db.execute(sql`
+        UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${restoreQty}
+        WHERE id = ${productId}
+      `);
+    }
+
+    // Clear all purchase and stock-allocation flags
+    await db.execute(sql`
+      UPDATE order_items
+      SET purchase_required = false, purchase_quantity = NULL,
+          supplier_id = NULL, supplier_name = NULL,
+          stock_status = NULL, stock_allocated_at = NULL
+      WHERE order_id = ${params.data.id}
+    `);
+
+    // Also delete any pre_wip worksheets that were auto-created on confirmation
+    await db.execute(sql`
+      DELETE FROM worksheet_items
+      WHERE worksheet_id IN (
+        SELECT id FROM worksheets WHERE order_id = ${params.data.id} AND status = 'pre_wip'
+      )
+    `);
+    await db.execute(sql`
+      DELETE FROM worksheets WHERE order_id = ${params.data.id} AND status = 'pre_wip'
+    `);
+  }
+
   // ── Worksheet cleanup on cancellation / archiving ─────────────────────────
   if (parsed.data.status === "cancelled" || parsed.data.status === "archived") {
     const linkedWorksheets = await db

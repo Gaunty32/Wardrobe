@@ -854,6 +854,26 @@ router.post("/purchasing/purchase-orders", async (req, res): Promise<void> => {
   }).returning();
 
   if (parsed.data.itemIds.length > 0) {
+    // Guard: ensure all items belong to confirmed (active) orders — never create
+    // POs from draft, portal_pending, or other non-active orders.
+    const inactiveCheck = await db.execute(sql`
+      SELECT oi.id, o.order_number, o.status
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE oi.id IN (${sql.join(parsed.data.itemIds.map(id => sql`${id}`), sql`, `)})
+        AND COALESCE(o.status, '') IN (
+          'draft', 'portal_draft', 'portal_pending',
+          'cancelled', 'archived', 'shipped', 'completed', 'delivered', 'invoiced'
+        )
+    `);
+    if (inactiveCheck.rows.length > 0) {
+      const offenders = (inactiveCheck.rows as Array<{ order_number: string; status: string }>)
+        .map(r => `${r.order_number} (${r.status})`).join(", ");
+      await db.delete(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, po.id));
+      res.status(400).json({ error: `Cannot create PO: items belong to inactive/unconfirmed orders: ${offenders}` });
+      return;
+    }
+
     const poItems = await buildPoItems(parsed.data.itemIds, po.id, parsed.data.qtyOverrides);
     await db.insert(purchaseOrderItemsTable).values(poItems);
     // Remove items from requirements now that they are on a PO
