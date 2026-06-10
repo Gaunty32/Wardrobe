@@ -1269,10 +1269,11 @@ function DeliveryRow({ line, onSave }: {
 }
 
 
-function BookInMatrix({ items, poId, onSave }: {
+function BookInMatrix({ items, poId, onSave, onQtysChange }: {
   items: POItem[];
   poId: number;
   onSave: (poId: number, itemId: number, data: { quantityDelivered?: number; notes?: string | null }) => void;
+  onQtysChange?: (qtys: Map<number, number>) => void;
 }) {
   const { groupKeys, groups, allSizes } = useMemo(() => buildPOMatrix(items), [items]);
 
@@ -1301,7 +1302,11 @@ function BookInMatrix({ items, poId, onSave }: {
   }, [items]);
 
   const handleQtyChange = useCallback((itemId: number, value: number) => {
-    setLocalQtys(prev => new Map(prev).set(itemId, value));
+    setLocalQtys(prev => {
+      const next = new Map(prev).set(itemId, value);
+      onQtysChange?.(next);
+      return next;
+    });
     const existing = saveTimers.current.get(itemId);
     if (existing) clearTimeout(existing);
     const t = setTimeout(() => {
@@ -1309,7 +1314,7 @@ function BookInMatrix({ items, poId, onSave }: {
       saveTimers.current.delete(itemId);
     }, 400);
     saveTimers.current.set(itemId, t);
-  }, [poId, onSave]);
+  }, [poId, onSave, onQtysChange]);
 
   // Detect completed rows and fade them out
   useEffect(() => {
@@ -1577,6 +1582,7 @@ function POCard({
   const [expanded, setExpanded] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [markOrderedOpen, setMarkOrderedOpen] = useState(false);
+  const latestQtysRef = useRef<Map<number, number>>(new Map());
   const cfg = STATUS_CFG[po.status];
   const StatusIcon = cfg.icon;
 
@@ -1658,7 +1664,10 @@ function POCard({
               title={allDelivered
                 ? "Close this PO and allocate received stock to orders"
                 : "Record this partial delivery — backordered lines will remain tracked until they arrive"}
-              onClick={() => onStatusChange(po.id, "delivered")}
+              onClick={() => {
+                const qtys = [...latestQtysRef.current.entries()].map(([itemId, quantity]) => ({ itemId, quantity }));
+                onStatusChange(po.id, "delivered", qtys.length > 0 ? { quantities: qtys } : undefined);
+              }}
             >
               <PackageCheck className="w-3.5 h-3.5" />
               {allDelivered ? "Complete Delivery" : "Book Partial Delivery"}
@@ -1720,6 +1729,7 @@ function POCard({
                     items={po.items}
                     poId={po.id}
                     onSave={(poId, itemId, data) => onLineUpdate(poId, itemId, data)}
+                    onQtysChange={(qtys) => { latestQtysRef.current = qtys; }}
                   />
                 </div>
               )}
@@ -2762,7 +2772,11 @@ export default function Purchasing() {
               </Button>
               <Button
                 className="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
-                onClick={() => { setNextStepData(null); navigate("/production?tab=picking_list"); }}
+                onClick={() => {
+                  const ids = nextStepData?.summary.map(r => r.orderId).join(",") ?? "";
+                  setNextStepData(null);
+                  navigate(`/production?tab=picking_list${ids ? `&highlight=${ids}` : ""}`);
+                }}
               >
                 <ListChecks className="w-4 h-4" />
                 Go to Picking List

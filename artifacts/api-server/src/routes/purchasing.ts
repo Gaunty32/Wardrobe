@@ -895,6 +895,9 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
     notes: z.string().optional().nullable(),
     supplierEmail: z.string().optional().nullable(),
     estimatedDeliveryDate: z.string().optional().nullable(),
+    // When status="delivered": optional snapshot of current book-in quantities to apply atomically
+    // before allocation runs, preventing race conditions with the 400ms debounce saves.
+    quantities: z.array(z.object({ itemId: z.number().int().positive(), quantity: z.number().int().min(0) })).optional(),
   });
   const parsed = bodySchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -913,6 +916,15 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
 
   // When a PO is marked delivered, mark all linked order items as fulfilled and run allocation
   if (parsed.data.status === "delivered") {
+    // Apply any quantity snapshot sent by the frontend (prevents race conditions with debounced saves)
+    if (parsed.data.quantities && parsed.data.quantities.length > 0) {
+      for (const { itemId, quantity } of parsed.data.quantities) {
+        await db.update(purchaseOrderItemsTable)
+          .set({ quantityDelivered: quantity, updatedAt: new Date() })
+          .where(and(eq(purchaseOrderItemsTable.id, itemId), eq(purchaseOrderItemsTable.poId, po.id)));
+      }
+    }
+
     const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, po.id));
     // Collect order item IDs from both the legacy orderItemId column and the
     // consolidated sourceOrderItemIds array — whichever the PO line uses.
@@ -1279,8 +1291,13 @@ router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Pro
     .set({ status: "delivered", updatedAt: new Date() })
     .where(eq(purchaseOrdersTable.id, poId));
 
-  // Clear purchaseRequired on linked order items
-  const linkedOrderItemIds = poItems.map((i) => i.orderItemId).filter((id): id is number => id != null);
+  // Clear purchaseRequired on ALL linked order items — both direct FK and consolidated sourceOrderItemIds
+  const linkedOrderItemIds = [
+    ...new Set([
+      ...poItems.map((i) => i.orderItemId).filter((id): id is number => id != null),
+      ...poItems.flatMap((i) => (i.sourceOrderItemIds as number[] | null) ?? []),
+    ]),
+  ];
   if (linkedOrderItemIds.length > 0) {
     await db.update(orderItemsTable)
       .set({ purchaseRequired: false, purchaseQuantity: null })

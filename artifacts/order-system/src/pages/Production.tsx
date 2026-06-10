@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Package, ClipboardList, CheckCircle2, Clock, Printer, ArrowRight,
@@ -2571,7 +2571,7 @@ function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: ()
 
 // ─── Picking List Tab Component ───────────────────────────────────────────────
 
-function PickingListTab({ filters }: { filters: Filters }) {
+function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; highlightOrderIds?: Set<number> }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [checked, setChecked] = useState<Set<number>>(new Set());
@@ -2581,6 +2581,7 @@ function PickingListTab({ filters }: { filters: Filters }) {
   const [sortBy, setSortBy] = useState<"due_date" | "order_number" | "customer_name">("due_date");
   const [expandedOrders, setExpandedOrders] = useState<Set<number>>(new Set());
   const [processStockBlocker, setProcessStockBlocker] = useState<{ itemIds: number[]; missingNames: string } | null>(null);
+  const highlightApplied = useRef(false);
 
   function toggleExpand(orderId: number) {
     setExpandedOrders((prev) => {
@@ -2604,6 +2605,17 @@ function PickingListTab({ filters }: { filters: Filters }) {
     queryFn: () => apiFetch("/picking-list"),
     refetchInterval: 15_000,
   });
+
+  // Auto-select and expand orders that were just received (navigated from "What's Next" dialog)
+  useEffect(() => {
+    if (highlightApplied.current || !highlightOrderIds || highlightOrderIds.size === 0 || rawPickingOrders.length === 0) return;
+    const matchingOrders = rawPickingOrders.filter(o => highlightOrderIds.has(o.orderId));
+    if (matchingOrders.length === 0) return;
+    highlightApplied.current = true;
+    const itemIds = matchingOrders.flatMap(o => o.items.map(i => i.id));
+    setChecked(new Set(itemIds));
+    setExpandedOrders(new Set(matchingOrders.map(o => o.orderId)));
+  }, [rawPickingOrders, highlightOrderIds]);
 
   const filteredPickingOrders = filterPickingOrders(rawPickingOrders, filters);
 
@@ -3366,6 +3378,13 @@ export default function Production() {
     const params = new URLSearchParams(window.location.search);
     return params.get("tab") ?? "plan";
   });
+  const highlightOrderIds = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("highlight");
+    if (!raw) return undefined;
+    const ids = raw.split(",").map(Number).filter(n => !isNaN(n) && n > 0);
+    return ids.length > 0 ? new Set(ids) : undefined;
+  }, []);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [readyOrder, setReadyOrder] = useState<DocOrder | null>(null);
   const [partialOrder, setPartialOrder] = useState<{ order: DocOrder; incompleteItemIds: number[] } | null>(null);
@@ -3779,7 +3798,7 @@ export default function Production() {
 
           {/* ── Picking List Tab ── */}
           <TabsContent value="picking_list">
-            <PickingListTab filters={filters} />
+            <PickingListTab filters={filters} highlightOrderIds={highlightOrderIds} />
           </TabsContent>
 
           {/* ── Complete Tab ── */}
