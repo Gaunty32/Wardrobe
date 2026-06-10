@@ -7,7 +7,7 @@ import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
   CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip, Upload,
-  CheckCircle2, ListChecks, Sparkles,
+  CheckCircle2, ListChecks, Sparkles, StickyNote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -178,6 +178,7 @@ function buildPOMatrix(items: POItem[]) {
     qty: Map<string, Map<string, number>>;
     rowItemIds: Map<string, number[]>;
     cellItemId: Map<string, Map<string, number>>;
+    cellNote: Map<string, Map<string, string | null>>;
     cellInfo: Map<string, Map<string, POCellInfo>>;
     rowInfo: Map<string, POCellInfo[]>;
   }>();
@@ -185,7 +186,7 @@ function buildPOMatrix(items: POItem[]) {
     const gk = item.supplierCode ?? item.productName;
     if (!groups.has(gk)) {
       groupKeys.push(gk);
-      groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map(), cellInfo: new Map(), rowInfo: new Map() });
+      groups.set(gk, { code: item.supplierCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, price: item.supplierPrice, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellItemId: new Map(), cellNote: new Map(), cellInfo: new Map(), rowInfo: new Map() });
     }
     const g = groups.get(gk)!;
     const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
@@ -198,6 +199,8 @@ function buildPOMatrix(items: POItem[]) {
     g.rowItemIds.get(c)!.push(item.id);
     if (!g.cellItemId.has(c)) g.cellItemId.set(c, new Map());
     g.cellItemId.get(c)!.set(s, item.id);
+    if (!g.cellNote.has(c)) g.cellNote.set(c, new Map());
+    g.cellNote.get(c)!.set(s, item.notes ?? null);
     // Order info for tooltips
     const info: POCellInfo = { orderNumber: item.orderNumber, customerName: item.customerName };
     if (!g.cellInfo.has(c)) g.cellInfo.set(c, new Map());
@@ -1269,7 +1272,7 @@ function DeliveryRow({ line, onSave }: {
 function BookInMatrix({ items, poId, onSave }: {
   items: POItem[];
   poId: number;
-  onSave: (poId: number, itemId: number, data: { quantityDelivered?: number }) => void;
+  onSave: (poId: number, itemId: number, data: { quantityDelivered?: number; notes?: string | null }) => void;
 }) {
   const { groupKeys, groups, allSizes } = useMemo(() => buildPOMatrix(items), [items]);
 
@@ -1282,6 +1285,8 @@ function BookInMatrix({ items, poId, onSave }: {
   const [fadingRows, setFadingRows] = useState<Set<string>>(new Set());
   const scheduledRows = useRef<Set<string>>(new Set());
   const saveTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
+  const [noteDialog, setNoteDialog] = useState<{ itemId: number; context: string; current: string } | null>(null);
+  const [noteText, setNoteText] = useState("");
 
   // Sync upward values when items change (e.g. after "Receive All")
   useEffect(() => {
@@ -1401,14 +1406,33 @@ function BookInMatrix({ items, poId, onSave }: {
                       {allSizes.map(sz => {
                         const ordQty = g.qty.get(colour)?.get(sz) ?? 0;
                         const cellItemId = g.cellItemId.get(colour)?.get(sz);
-                        if (ordQty === 0 || !cellItemId) {
+                        const cellNote = cellItemId ? (g.cellNote.get(colour)?.get(sz) ?? null) : null;
+                        const noteContext = `${g.code ?? g.productName} · ${colour} · ${sz}`;
+                        const noteBtn = cellItemId ? (
+                          <button
+                            className={`absolute top-0.5 right-0.5 transition-opacity rounded ${cellNote ? "opacity-100 text-amber-500" : "opacity-0 group-hover:opacity-50 text-muted-foreground"}`}
+                            onClick={e => { e.stopPropagation(); setNoteDialog({ itemId: cellItemId, context: noteContext, current: cellNote ?? "" }); setNoteText(cellNote ?? ""); }}
+                            title={cellNote ?? "Add line note"}
+                          >
+                            <StickyNote className="w-3 h-3" />
+                          </button>
+                        ) : null;
+                        if (!cellItemId) {
                           return <TableCell key={sz} className="text-center p-1"><span className="text-muted-foreground text-xs">—</span></TableCell>;
+                        }
+                        if (ordQty === 0) {
+                          return (
+                            <TableCell key={sz} className="text-center p-1 relative group">
+                              <span className="text-muted-foreground text-xs">—</span>
+                              {noteBtn}
+                            </TableCell>
+                          );
                         }
                         const rcvd = localQtys.get(cellItemId) ?? 0;
                         const cellFull = rcvd >= ordQty;
                         const cellPartial = rcvd > 0 && rcvd < ordQty;
                         return (
-                          <TableCell key={sz} className="p-1 text-center">
+                          <TableCell key={sz} className="p-1 text-center relative group">
                             <div className="flex flex-col items-center gap-0.5">
                               <input
                                 type="number"
@@ -1428,7 +1452,11 @@ function BookInMatrix({ items, poId, onSave }: {
                                 }`}
                               />
                               <span className="text-[10px] text-muted-foreground">/{ordQty}</span>
+                              {cellNote && (
+                                <span className="text-[9px] text-amber-600 max-w-[54px] truncate leading-tight" title={cellNote}>{cellNote}</span>
+                              )}
                             </div>
+                            {noteBtn}
                           </TableCell>
                         );
                       })}
@@ -1454,6 +1482,39 @@ function BookInMatrix({ items, poId, onSave }: {
         </p>
       )}
       <p className="text-xs text-muted-foreground">Enter received quantities in each cell. Completed lines disappear automatically. Any undelivered lines become backorders when you click <strong>Complete Delivery</strong>.</p>
+
+      {/* Note edit dialog */}
+      {noteDialog && (
+        <Dialog open onOpenChange={() => setNoteDialog(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm flex items-center gap-2">
+                <StickyNote className="w-4 h-4 text-amber-500" /> Line Note
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground font-mono pt-0.5">{noteDialog.context}</p>
+            </DialogHeader>
+            <Textarea
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="e.g. Cancelled from order — do not chase"
+              rows={3}
+              autoFocus
+              onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { onSave(poId, noteDialog.itemId, { notes: noteText.trim() || null }); setNoteDialog(null); } }}
+            />
+            <DialogFooter className="gap-2">
+              {noteText && (
+                <Button variant="ghost" size="sm" className="text-destructive mr-auto" onClick={() => setNoteText("")}>
+                  Clear
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => setNoteDialog(null)}>Cancel</Button>
+              <Button size="sm" onClick={() => { onSave(poId, noteDialog.itemId, { notes: noteText.trim() || null }); setNoteDialog(null); }}>
+                Save note
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
