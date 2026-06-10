@@ -219,7 +219,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           setTimeout(() => openWearerLabels(order.id, { includeDeliveryLabel: true }), 800);
         }
       } else if (data.dpdError) {
-        toast({ title: `${order.orderNumber} dispatched`, description: `DPD note: ${data.dpdError}`, variant: "destructive" });
+        toast({ title: `DPD booking failed — ${order.orderNumber} dispatched`, description: `${data.dpdError}. Open the order and use the "Book DPD" button to retry.`, variant: "destructive", duration: 10000 });
       } else if (isPartShipped) {
         toast({ title: "Part dispatched", description: `${order.orderNumber} — remaining items will follow when ready.` });
       } else {

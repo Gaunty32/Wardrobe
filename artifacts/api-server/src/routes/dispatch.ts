@@ -550,6 +550,59 @@ router.post("/dispatch/orders/:id/return", async (req, res): Promise<void> => {
   res.json({ returned: itemsToReset.length });
 });
 
+// ── Book DPD for an already-dispatched order (retry after API failure) ────────
+router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const body = z.object({
+    numberOfParcels: z.number().int().positive(),
+    totalWeightKg: z.number().positive(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, parsed.data.id));
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  if (!order.dispatchedAt) { res.status(400).json({ error: "Order has not been dispatched yet" }); return; }
+  if (order.dpdConsignmentId) { res.status(400).json({ error: "DPD consignment already booked" }); return; }
+
+  let address = null;
+  if (order.deliveryAddressId) {
+    const [a] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    address = a ?? null;
+  }
+  if (!address) { res.status(400).json({ error: "No delivery address on this order" }); return; }
+
+  const { numberOfParcels, totalWeightKg } = body.data;
+  const dpdResult = await bookDpdConsignment({
+    orderNumber: order.orderNumber,
+    delivery: {
+      contactName: order.customerName ?? "Recipient",
+      organisation: order.customerName ?? undefined,
+      line1: address.line1 ?? "",
+      line2: address.line2 ?? undefined,
+      town: address.city ?? "",
+      postcode: address.postcode ?? "",
+      countryCode: address.country === "United Kingdom" || !address.country ? "GB" : address.country,
+    },
+    numberOfParcels,
+    totalWeightKg,
+  });
+
+  await db.update(ordersTable).set({
+    trackingNumber: dpdResult.consignmentNumber,
+    dpdConsignmentId: dpdResult.consignmentNumber,
+    dpdJobId: dpdResult.jobId,
+    dpdParcelCount: numberOfParcels,
+    updatedAt: new Date(),
+  }).where(eq(ordersTable.id, parsed.data.id));
+
+  await logOrderAction(parsed.data.id, "DPD booked (retry)", getActor(req),
+    `Consignment ${dpdResult.consignmentNumber}, ${numberOfParcels} parcel(s)`);
+
+  res.json({ consignmentNumber: dpdResult.consignmentNumber, trackingUrl: dpdResult.trackingUrl, labelPdfBase64: dpdResult.labelPdfBase64 });
+});
+
 // ── Reprint DPD label for a dispatched order ──────────────────────────────────
 router.get("/dispatch/orders/:id/dpd-label", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);

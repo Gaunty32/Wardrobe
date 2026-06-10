@@ -46,6 +46,13 @@ function getStoredActor(): string {
   return localStorage.getItem("sbs_actor_name") || "";
 }
 
+function printBase64Pdf(base64: string) {
+  const blob = new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, "_blank");
+  if (w) w.onload = () => setTimeout(() => { w.print(); URL.revokeObjectURL(url); }, 200);
+}
+
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
   const actor = getStoredActor();
   const res = await fetch(`${API_BASE}${path}`, {
@@ -630,6 +637,25 @@ export default function OrderDetail() {
   ];
 
   const [editingShippingMethod, setEditingShippingMethod] = useState(false);
+  const [dpdRetryOpen, setDpdRetryOpen] = useState(false);
+  const [dpdRetryParcels, setDpdRetryParcels] = useState(1);
+  const [dpdRetryWeight, setDpdRetryWeight] = useState<number | "">("");
+
+  const DPD_METHODS = new Set(["dpd", "dpd_next_day", "courier"]);
+
+  const retryDpdMutation = useMutation({
+    mutationFn: () => apiFetch<{ consignmentNumber: string; trackingUrl: string; labelPdfBase64: string | null }>(
+      `/dispatch/orders/${orderId}/retry-dpd`,
+      { method: "POST", body: JSON.stringify({ numberOfParcels: dpdRetryParcels, totalWeightKg: dpdRetryWeight }) }
+    ),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setDpdRetryOpen(false);
+      toast({ title: "DPD booked", description: `Consignment: ${data.consignmentNumber}` });
+      if (data.labelPdfBase64) setTimeout(() => printBase64Pdf(data.labelPdfBase64!), 300);
+    },
+    onError: (e: Error) => toast({ title: "DPD booking failed", description: e.message, variant: "destructive" }),
+  });
 
   const updateShippingMethodMutation = useMutation({
     mutationFn: (method: string | null) =>
@@ -2082,6 +2108,51 @@ export default function OrderDetail() {
                     }
                   </p>
                 )}
+
+                {/* DPD retry — shown for dispatched DPD orders with no consignment */}
+                {(order as any).dispatchedAt
+                  && DPD_METHODS.has((order as any).shippingMethod ?? "")
+                  && !(order as any).dpdConsignmentId && (
+                  <div className="rounded-lg bg-amber-50 border border-amber-300 px-3 py-2.5 flex items-start gap-2.5">
+                    <TriangleAlert className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-amber-900">DPD not booked</p>
+                      <p className="text-xs text-amber-800">The DPD booking failed when this order was dispatched.</p>
+                    </div>
+                    <Button size="sm" variant="outline" className="text-xs h-7 shrink-0 border-amber-300 hover:bg-amber-100"
+                      onClick={() => { setDpdRetryParcels(1); setDpdRetryWeight(""); setDpdRetryOpen(true); }}>
+                      <Truck className="w-3 h-3 mr-1" /> Book DPD
+                    </Button>
+                  </div>
+                )}
+
+                {/* DPD retry dialog */}
+                <Dialog open={dpdRetryOpen} onOpenChange={setDpdRetryOpen}>
+                  <DialogContent className="sm:max-w-sm">
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2"><Truck className="w-4 h-4" /> Book DPD — {order?.orderNumber}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 py-1">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="retry-parcels">Number of boxes</Label>
+                        <Input id="retry-parcels" type="number" min={1} step={1} value={dpdRetryParcels}
+                          onChange={(e) => setDpdRetryParcels(Math.max(1, parseInt(e.target.value) || 1))} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="retry-weight">Total weight (kg)</Label>
+                        <Input id="retry-weight" type="number" min={0.1} step={0.1} placeholder="e.g. 2.5" value={dpdRetryWeight}
+                          onChange={(e) => setDpdRetryWeight(e.target.value === "" ? "" : parseFloat(e.target.value))} />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="ghost" onClick={() => setDpdRetryOpen(false)}>Cancel</Button>
+                      <Button onClick={() => retryDpdMutation.mutate()}
+                        disabled={retryDpdMutation.isPending || dpdRetryWeight === ""}>
+                        {retryDpdMutation.isPending ? "Booking…" : "Book DPD"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Carriage amount */}
                 <div className="border-t pt-3">
