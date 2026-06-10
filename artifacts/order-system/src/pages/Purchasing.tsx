@@ -1634,6 +1634,15 @@ function POCard({
   const totalDelivered = po.items.reduce((s, i) => s + i.quantityDelivered, 0);
   const allDelivered = po.items.length > 0 && po.items.every((i) => i.quantityDelivered >= i.quantityOrdered);
   const someDelivered = po.items.some((i) => i.quantityDelivered > 0);
+
+  // Auto-complete the PO once server confirms all lines are fully received
+  useEffect(() => {
+    if (!allDelivered || po.status !== "ordered") return;
+    const timer = setTimeout(() => {
+      onStatusChange(po.id, "delivered");
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [allDelivered, po.status, po.id]);
   const totalValue = po.items.reduce((s, i) => s + (i.supplierPrice != null ? i.supplierPrice * i.quantityOrdered : 0), 0);
   const hasValue = po.items.some((i) => i.supplierPrice != null);
 
