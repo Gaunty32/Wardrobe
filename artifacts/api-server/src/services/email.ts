@@ -485,6 +485,12 @@ export interface AckOrderItem {
   lineTotal: number;
   /** VAT rate as a decimal. 0.20 = 20%, 0 = zero-rated. Defaults to 0.20 if omitted. */
   vatRate?: number;
+  recipientName?: string | null;
+  finishName?: string | null;
+  /** Groups items that belong to the same bundle instance in an order. */
+  bundleRef?: string | null;
+  /** True for the header row that carries the bundle price; false for component rows (price £0). */
+  isBundleHeader?: boolean;
 }
 
 export interface AckOrderData {
@@ -593,30 +599,42 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       qty: Map<string, Map<string, number>>;
       lineTotal: number;
       vatRate: number;
+      bundleRef: string | null;
+      isBundleHeader: boolean;
     };
     const groupKeys: string[] = [];
     const groups = new Map<string, Group>();
     const allSizes: string[] = [];
 
     const sortedItems = [...order.items].sort((a, b) => {
-      const skuA = (a.sku ?? a.productName ?? "").toLowerCase();
-      const skuB = (b.sku ?? b.productName ?? "").toLowerCase();
-      return skuA.localeCompare(skuB);
+      const aB = !!(a.bundleRef), bB = !!(b.bundleRef);
+      if (aB !== bB) return aB ? -1 : 1;
+      if (aB && bB) {
+        const rc = (a.bundleRef ?? "").localeCompare(b.bundleRef ?? "");
+        if (rc !== 0) return rc;
+        if (a.isBundleHeader !== b.isBundleHeader) return a.isBundleHeader ? -1 : 1;
+      }
+      return ((a.sku ?? a.productName ?? "").toLowerCase()).localeCompare(((b.sku ?? b.productName ?? "").toLowerCase()));
     });
 
     for (const item of sortedItems) {
-      // Include recipient in key so each named employee gets their own product row
-      const gk = `${item.productName}||${item.finishName ?? ""}||${item.recipientName ?? ""}`;
+      // Bundle items get dedicated group keys so they preserve ordering and get special styling
+      const gk = item.bundleRef
+        ? (item.isBundleHeader
+            ? `__BDL_HDR__:${item.bundleRef}`
+            : `__BDL_CMP__:${item.bundleRef}:${item.productName}||${item.finishName ?? ""}`)
+        : `${item.productName}||${item.finishName ?? ""}||${item.recipientName ?? ""}`;
       if (!groups.has(gk)) {
         groupKeys.push(gk);
-        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, recipientName: item.recipientName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0, vatRate: item.vatRate ?? 0.20 });
+        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, recipientName: item.recipientName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0, vatRate: item.vatRate ?? 0.20, bundleRef: item.bundleRef ?? null, isBundleHeader: item.isBundleHeader ?? false });
       }
       const g = groups.get(gk)!;
       const c = item.colour ?? "—";
       const s = normalizeSize(item.size ?? "One Size");
       if (!g.colours.includes(c)) g.colours.push(c);
       if (!g.sizes.includes(s)) g.sizes.push(s);
-      if (!allSizes.includes(s)) allSizes.push(s);
+      // Exclude bundle header items from the column-width calculation — they render without matrix rows
+      if (!item.isBundleHeader && !allSizes.includes(s)) allSizes.push(s);
       if (!g.qty.has(c)) g.qty.set(c, new Map());
       g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantity);
       g.lineTotal += item.lineTotal;
@@ -665,15 +683,40 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     for (const gk of groupKeys) {
       const g = groups.get(gk)!;
 
+      // ── Bundle header row — spans full width, SBS navy, no matrix columns ──
+      if (g.isBundleHeader) {
+        const bundleQty = [...g.qty.values()].reduce((s, m) => s + [...m.values()].reduce((a, b) => a + b, 0), 0);
+        doc.rect(margin, y, tableW, rowH + 3).fill("#1e3a5f");
+        doc.fillColor("#94a3b8").fontSize(6.5).font("Helvetica-Bold").text("BUNDLE", margin + 6, y + 4);
+        doc.fillColor("#ffffff").fontSize(7).font("Helvetica-Bold")
+          .text(g.productName, margin + 52, y + 4, { width: tableW - 52 - totalW - unitPriceW - qtyW - 6 });
+        doc.fillColor("#94a3b8").font("Helvetica").fontSize(7)
+          .text(`× ${bundleQty}`, margin + tableW - totalW - unitPriceW - qtyW, y + 4, { width: qtyW - 2, align: "center" });
+        doc.text(`£${g.unitPrice.toFixed(2)}`, margin + tableW - totalW - unitPriceW, y + 4, { width: unitPriceW - 2, align: "right" });
+        doc.fillColor("#ffffff").font("Helvetica-Bold")
+          .text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 4, { width: totalW - 3, align: "right" });
+        y += rowH + 3;
+        if (y > pageH - 120) { doc.addPage(); y = margin; drawTableHeader(y); y += tblHdrH; rowAlt = false; }
+        continue;
+      }
+
+      const isBundleComp = !!(g.bundleRef);
+
       // Product name row (taller when finish / recipient / vat note is present)
       const hasVatNote = g.vatRate !== 0.20;
       const hasSubLine = !!(g.finishName || g.recipientName || hasVatNote);
       const productRowH = hasSubLine ? rowH + 9 : rowH;
-      doc.rect(margin, y, tableW, productRowH).fill("#f0f4f8");
+      doc.rect(margin, y, tableW, productRowH).fill(isBundleComp ? "#f5f7fa" : "#f0f4f8");
       doc.fillColor("#111827").fontSize(7).font("Helvetica-Bold");
-      const productLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
+      const productPrefix = isBundleComp ? "  \u2514 " : "";
+      const productLabel = g.sku ? `${productPrefix}${g.sku}  ${g.productName}` : `${productPrefix}${g.productName}`;
       doc.text(productLabel, margin + 3, y + 3, { width: tableW - totalW - 6 });
-      doc.text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 3, { width: totalW - 3, align: "right" });
+      if (isBundleComp) {
+        doc.fillColor("#9ca3af").font("Helvetica").fontSize(6.5)
+          .text("incl.", margin + tableW - totalW, y + 3, { width: totalW - 3, align: "right" });
+      } else {
+        doc.text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 3, { width: totalW - 3, align: "right" });
+      }
       const subLineY = y + 12;
       let subLineX = margin + 3;
       if (g.finishName) {
@@ -701,14 +744,14 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
         doc.fillColor("#374151").fontSize(7).font("Helvetica");
         let rx = margin;
         doc.text("", rx + 3, y + 3, { width: itemNameW - 3 }); rx += itemNameW;
-        doc.text(colour, rx + 3, y + 3, { width: colourW - 3 }); rx += colourW;
+        doc.text(colour === "—" && isBundleComp ? "" : colour, rx + 3, y + 3, { width: colourW - 3 }); rx += colourW;
         for (const sz of allSizes) {
           const q = g.qty.get(colour)?.get(sz) ?? 0;
           doc.text(q > 0 ? String(q) : "", rx + 2, y + 3, { width: sizeColW - 2, align: "center" });
           rx += sizeColW;
         }
         doc.font("Helvetica-Bold").text(String(rowTotal), rx + 2, y + 3, { width: qtyW - 2, align: "center" }); rx += qtyW;
-        doc.font("Helvetica").text(`£${g.unitPrice.toFixed(2)}`, rx + 2, y + 3, { width: unitPriceW - 2, align: "right" }); rx += unitPriceW;
+        doc.font("Helvetica").text(isBundleComp ? "" : `£${g.unitPrice.toFixed(2)}`, rx + 2, y + 3, { width: unitPriceW - 2, align: "right" }); rx += unitPriceW;
         doc.text("", rx + 2, y + 3, { width: totalW - 3, align: "right" });
         y += rowH;
         rowAlt = !rowAlt;

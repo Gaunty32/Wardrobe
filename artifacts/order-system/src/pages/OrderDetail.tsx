@@ -32,7 +32,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder, sortSizes, abbreviateSizeLabel } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench } from "lucide-react";
+import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench, Package2 } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 import { Link } from "wouter";
@@ -346,9 +346,31 @@ export default function OrderDetail() {
   const { data: products } = useListProducts();
   const serviceProducts = products?.filter(p => (p as any).isService === true);
 
+  const { data: bundles = [] } = useQuery<Array<{ id: number; name: string; sku: string | null; price: string | number; is_active: boolean; component_count: number }>>({
+    queryKey: ["bundles"],
+    queryFn: () => apiFetch("/bundles"),
+  });
+
   const updateOrderMutation = useUpdateOrder();
   const addItemMutation = useAddOrderItem();
   const deleteItemMutation = useDeleteOrderItem();
+
+  const addBundleMutation = useMutation({
+    mutationFn: ({ bundleId, quantity }: { bundleId: number; quantity: number }) =>
+      apiFetch(`/bundles/${bundleId}/add-to-order/${orderId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quantity }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["order", orderId] });
+      setIsAddBundleOpen(false);
+      setAddBundleId(null);
+      setAddBundleQty("1");
+      toast({ title: "Bundle added to order" });
+    },
+    onError: (e: Error) => toast({ title: "Could not add bundle", description: e.message, variant: "destructive" }),
+  });
 
   const deleteOrderMutation = useMutation({
     mutationFn: () => apiFetch(`/orders/${orderId}`, { method: "DELETE" }),
@@ -372,6 +394,9 @@ export default function OrderDetail() {
   const { data: customerDeliveryAddresses } = useCustomerDeliveryAddresses(customerId);
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
+  const [isAddBundleOpen, setIsAddBundleOpen] = useState(false);
+  const [addBundleId, setAddBundleId] = useState<number | null>(null);
+  const [addBundleQty, setAddBundleQty] = useState("1");
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [serviceProductSearchOpen, setServiceProductSearchOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom" | "service">("wardrobe");
@@ -1602,6 +1627,9 @@ export default function OrderDetail() {
                     Send to Production ({order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length})
                   </Button>
                 )}
+                <Button size="sm" variant="outline" className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setAddBundleId(null); setAddBundleQty("1"); setIsAddBundleOpen(true); }}>
+                  <Package2 className="w-4 h-4" /> Add Bundle
+                </Button>
                 <Button size="sm" onClick={() => setIsAddItemOpen(true)}>
                   <Plus className="w-4 h-4 mr-1" /> Add Item
                 </Button>
@@ -3596,6 +3624,54 @@ export default function OrderDetail() {
               onClick={() => editingSizeColour && updateItemSizeColourMutation.mutate(editingSizeColour)}
             >
               {updateItemSizeColourMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Saving…</> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* ── Add Bundle dialog ── */}
+      <Dialog open={isAddBundleOpen} onOpenChange={open => { if (!open) { setIsAddBundleOpen(false); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Package2 className="w-5 h-5 text-primary" /> Add Bundle
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label>Bundle</Label>
+              <Select value={addBundleId?.toString() ?? ""} onValueChange={v => setAddBundleId(parseInt(v))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a bundle…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {bundles.filter(b => b.is_active).map(b => (
+                    <SelectItem key={b.id} value={b.id.toString()}>
+                      {b.name}
+                      <span className="ml-2 text-muted-foreground text-xs">£{parseFloat(String(b.price)).toFixed(2)}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {addBundleId != null && (() => {
+                const sel = bundles.find(b => b.id === addBundleId);
+                return sel ? (
+                  <p className="text-xs text-muted-foreground">{sel.component_count} component item{sel.component_count !== 1 ? "s" : ""} will be added at £0 each</p>
+                ) : null;
+              })()}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Quantity</Label>
+              <Input type="number" min="1" value={addBundleQty} onChange={e => setAddBundleQty(e.target.value)} className="w-28" />
+              <p className="text-xs text-muted-foreground">How many bundles to add</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddBundleOpen(false)}>Cancel</Button>
+            <Button
+              disabled={addBundleId == null || !addBundleQty || addBundleMutation.isPending}
+              onClick={() => addBundleId != null && addBundleMutation.mutate({ bundleId: addBundleId, quantity: parseInt(addBundleQty) || 1 })}
+            >
+              {addBundleMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Adding…</> : "Add to Order"}
             </Button>
           </DialogFooter>
         </DialogContent>

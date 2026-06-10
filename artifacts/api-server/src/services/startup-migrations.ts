@@ -1669,4 +1669,38 @@ export async function refreshProductIssues(): Promise<void> {
       console.log(`[startup] Safety-net promoted ${promoted} item(s) to picking list (purchase_required=false, stock_status=null, no outstanding PO)`);
     }
   }
+
+  // ── Bundles ──────────────────────────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS bundles (
+      id          SERIAL PRIMARY KEY,
+      name        TEXT NOT NULL,
+      sku         TEXT,
+      description TEXT,
+      price       NUMERIC(10,2) NOT NULL DEFAULT 0,
+      is_active   BOOLEAN NOT NULL DEFAULT true,
+      notes       TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS bundle_components (
+      id          SERIAL PRIMARY KEY,
+      bundle_id   INTEGER NOT NULL REFERENCES bundles(id) ON DELETE CASCADE,
+      product_id  INTEGER REFERENCES products(id) ON DELETE SET NULL,
+      product_name TEXT NOT NULL,
+      quantity    INTEGER NOT NULL DEFAULT 1,
+      finish_id   INTEGER,
+      finish_name TEXT,
+      notes       TEXT
+    )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE order_items
+      ADD COLUMN IF NOT EXISTS bundle_ref      TEXT,
+      ADD COLUMN IF NOT EXISTS is_bundle_header BOOLEAN NOT NULL DEFAULT false,
+      ADD COLUMN IF NOT EXISTS bundle_def_id   INTEGER
+  `);
 }

@@ -1,2 +1,3 @@
 - [Stock Management](stock-management.md) — bins table, per-variant min_stock_qty/bin_location, bin suggestion algorithm, 6×4 label routes, QuickAdjustModal for stock takes
+- [Bundle Feature](bundle-feature.md) — bundles/bundle_components tables, order_items bundle columns, CRUD routes, PDF rendering, Add Bundle dialog in OrderDetail
 - [Part-Dispatch Design](part-dispatch.md) — per-item dispatched_at, part_shipped status, queue/invoice/email filtering rules

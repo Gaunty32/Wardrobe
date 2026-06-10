@@ -29,6 +29,7 @@ import quotesRouter from "./quotes";
 import enquiriesRouter from "./enquiries";
 import wooRouter from "./woo";
 import staffMembersRouter from "./staff-members";
+import bundlesRouter from "./bundles";
 
 const router: IRouter = Router();
 
@@ -62,5 +63,6 @@ router.use(quotesRouter);
 router.use(enquiriesRouter);
 router.use(wooRouter);
 router.use(staffMembersRouter);
+router.use(bundlesRouter);
 
 export default router;

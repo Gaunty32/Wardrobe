@@ -1496,33 +1496,31 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
     .where(eq(ordersTable.id, params.data.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const itemRows = await db
-    .select({
-      productName: orderItemsTable.productName,
-      catalogueProductName: productsTable.name,
-      sku: productsTable.sku,
-      colour: orderItemsTable.colour,
-      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
-      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
-      vatRate: orderItemsTable.vatRate,
-      recipientName: orderItemsTable.recipientName,
-      finishName: orderItemsTable.finishName,
-    })
-    .from(orderItemsTable)
-    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(eq(orderItemsTable.orderId, params.data.id));
-
-  const items = itemRows.map(r => ({
-    productName: r.catalogueProductName ?? r.productName,
+  const itemRowsRaw = await db.execute(sql`
+    SELECT
+      COALESCE(p.name, oi.product_name) AS product_name,
+      p.sku,
+      oi.colour, oi.size, oi.quantity, oi.unit_price, oi.line_total, oi.vat_rate,
+      oi.recipient_name, oi.finish_name,
+      oi.bundle_ref, oi.is_bundle_header
+    FROM order_items oi
+    LEFT JOIN products p ON p.id = oi.product_id
+    WHERE oi.order_id = ${params.data.id}
+    ORDER BY oi.id
+  `);
+  const items = ((itemRowsRaw.rows ?? itemRowsRaw) as any[]).map(r => ({
+    productName: r.product_name,
     sku: r.sku ?? null,
     colour: r.colour ?? null,
     size: r.size ?? null,
     quantity: r.quantity ?? 1,
-    unitPrice: parseFloat(String(r.unitPrice ?? 0)),
-    lineTotal: parseFloat(String(r.lineTotal ?? 0)),
-    vatRate: parseFloat(String(r.vatRate ?? 0.20)),
-    recipientName: r.recipientName ?? null,
-    finishName: r.finishName ?? null,
+    unitPrice: parseFloat(String(r.unit_price ?? 0)),
+    lineTotal: parseFloat(String(r.line_total ?? 0)),
+    vatRate: parseFloat(String(r.vat_rate ?? 0.20)),
+    recipientName: r.recipient_name ?? null,
+    finishName: r.finish_name ?? null,
+    bundleRef: r.bundle_ref ?? null,
+    isBundleHeader: r.is_bundle_header ?? false,
   }));
 
   let customerAddress: string | null = null;
