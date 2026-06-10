@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
+import { allocatePODelivery } from "./allocation.js";
 
 /**
  * Idempotent schema migrations that run on every server start.
@@ -1602,4 +1603,70 @@ export async function refreshProductIssues(): Promise<void> {
     WHERE is_archived = false
   `);
   console.log("[issues] Product issue flags refreshed");
+
+  // Auto-complete any "ordered" POs where every line is already fully delivered.
+  // This covers cases where quantities were booked in via the matrix but the
+  // "Complete Delivery" step was never explicitly triggered (e.g. session ended
+  // before the auto-complete useEffect fired in the browser).
+  {
+    const stuck = await db.execute(sql`
+      SELECT po.id
+      FROM purchase_orders po
+      WHERE po.status = 'ordered'
+        AND EXISTS (
+          SELECT 1 FROM purchase_order_items poi WHERE poi.po_id = po.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          WHERE poi.po_id = po.id
+            AND poi.quantity_delivered < poi.quantity_ordered
+        )
+    `);
+    const stuckIds = (stuck.rows as Array<{ id: number }>).map(r => r.id);
+    for (const poId of stuckIds) {
+      await db.execute(sql`
+        UPDATE purchase_orders SET status = 'delivered', updated_at = now() WHERE id = ${poId}
+      `);
+      await allocatePODelivery(poId);
+      console.log(`[startup] Auto-completed fully-delivered PO id=${poId}`);
+    }
+    if (stuckIds.length > 0) {
+      console.log(`[startup] Auto-completed ${stuckIds.length} fully-delivered PO(s) and ran allocation`);
+    }
+  }
+
+  // Safety-net: promote any order item that is purchase_required=false but
+  // still has stock_status=null (e.g. sourceOrderItemIds was empty so
+  // allocatePODelivery couldn't find them, or the PO was delivered before
+  // this logic existed).  Only promote items that have NO outstanding PO line
+  // still awaiting delivery — so we don't surface items whose stock hasn't
+  // physically arrived yet.
+  {
+    const { rowCount: promoted } = await db.execute(sql`
+      UPDATE order_items oi
+      SET stock_status       = 'allocated',
+          stock_allocated_at = NOW()
+      FROM orders o
+      WHERE oi.order_id = o.id
+        AND oi.purchase_required = false
+        AND oi.stock_status IS NULL
+        AND o.status NOT IN (
+          'shipped','completed','delivered','invoiced',
+          'cancelled','archived','draft','portal_draft','portal_pending'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po2 ON po2.id = poi.po_id
+          WHERE po2.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND (
+              poi.order_item_id = oi.id
+              OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+            )
+        )
+    `);
+    if ((promoted ?? 0) > 0) {
+      console.log(`[startup] Safety-net promoted ${promoted} item(s) to picking list (purchase_required=false, stock_status=null, no outstanding PO)`);
+    }
+  }
 }

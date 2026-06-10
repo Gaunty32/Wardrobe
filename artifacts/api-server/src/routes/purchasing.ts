@@ -954,6 +954,35 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
     }
 
     const allocation = await allocatePODelivery(po.id);
+
+    // Safety-net: promote any order item still stuck as purchase_required=false +
+    // stock_status=null after allocation (covers cases where sourceOrderItemIds
+    // was empty or the item IDs didn't match).  Only promote items that have no
+    // OTHER outstanding PO line still awaiting delivery.
+    await db.execute(sql`
+      UPDATE order_items oi
+      SET stock_status       = 'allocated',
+          stock_allocated_at = NOW()
+      FROM orders o
+      WHERE oi.order_id = o.id
+        AND oi.purchase_required = false
+        AND oi.stock_status IS NULL
+        AND o.status NOT IN (
+          'shipped','completed','delivered','invoiced',
+          'cancelled','archived','draft','portal_draft','portal_pending'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po2 ON po2.id = poi.po_id
+          WHERE po2.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND (
+              poi.order_item_id = oi.id
+              OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+            )
+        )
+    `);
+
     const result = await getPoWithItems(po.id);
     res.json({ ...result, allocation });
     return;
@@ -1104,6 +1133,51 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
       if (oi?.productId) {
         await db.execute(sql`UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${surplus} WHERE id = ${oi.productId}`);
       }
+    }
+  }
+
+  // Server-side auto-complete: if this PO is still "ordered" and every line is
+  // now fully delivered (qty_delivered >= qty_ordered), mark it as delivered and
+  // run allocation immediately.  This is more reliable than the browser useEffect
+  // because it fires synchronously when the last cell is saved.
+  const [currentPo] = await db.select({ status: purchaseOrdersTable.status }).from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, params.data.id));
+  if (currentPo?.status === "ordered") {
+    const allLines = await db
+      .select({ qtyOrdered: purchaseOrderItemsTable.quantityOrdered, qtyDelivered: purchaseOrderItemsTable.quantityDelivered })
+      .from(purchaseOrderItemsTable)
+      .where(eq(purchaseOrderItemsTable.poId, params.data.id));
+
+    const allDelivered = allLines.length > 0 && allLines.every(
+      (l) => (l.qtyDelivered ?? 0) >= (l.qtyOrdered ?? 1)
+    );
+
+    if (allDelivered) {
+      await db.execute(sql`UPDATE purchase_orders SET status = 'delivered', updated_at = now() WHERE id = ${params.data.id}`);
+      await allocatePODelivery(params.data.id);
+      // Safety-net: promote any remaining purchase_required=false, stock_status=null items
+      await db.execute(sql`
+        UPDATE order_items oi
+        SET stock_status       = 'allocated',
+            stock_allocated_at = NOW()
+        FROM orders o
+        WHERE oi.order_id = o.id
+          AND oi.purchase_required = false
+          AND oi.stock_status IS NULL
+          AND o.status NOT IN (
+            'shipped','completed','delivered','invoiced',
+            'cancelled','archived','draft','portal_draft','portal_pending'
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            JOIN purchase_orders po2 ON po2.id = poi.po_id
+            WHERE po2.status NOT IN ('cancelled', 'delivered')
+              AND poi.quantity_delivered < poi.quantity_ordered
+              AND (
+                poi.order_item_id = oi.id
+                OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+              )
+          )
+      `);
     }
   }
 
@@ -1291,6 +1365,19 @@ router.post("/purchasing/purchase-orders/:id/items/:itemId/cancel-outstanding", 
     await db.update(orderItemsTable)
       .set({ purchaseRequired: false, purchaseQuantity: null })
       .where(inArray(orderItemsTable.id, linkedIds));
+  }
+
+  // If all remaining lines are now fully delivered, auto-complete the PO and run allocation
+  const allItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, params.data.id));
+  const allFullyDelivered = allItems.length > 0 && allItems.every(i => i.quantityDelivered >= i.quantityOrdered);
+  if (allFullyDelivered) {
+    const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, params.data.id));
+    if (po && po.status === "ordered") {
+      await db.update(purchaseOrdersTable).set({ status: "delivered", updatedAt: new Date() }).where(eq(purchaseOrdersTable.id, params.data.id));
+      const allocation = await allocatePODelivery(params.data.id);
+      res.json({ ok: true, autoCompleted: true, allocation });
+      return;
+    }
   }
 
   res.json({ ok: true });
