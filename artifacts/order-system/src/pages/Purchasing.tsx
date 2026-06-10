@@ -7,7 +7,7 @@ import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
   CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip, Upload,
-  CheckCircle2, ListChecks, Sparkles, StickyNote,
+  CheckCircle2, ListChecks, Sparkles, StickyNote, Ban,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1269,11 +1269,12 @@ function DeliveryRow({ line, onSave }: {
 }
 
 
-function BookInMatrix({ items, poId, onSave, onQtysChange }: {
+function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
   items: POItem[];
   poId: number;
   onSave: (poId: number, itemId: number, data: { quantityDelivered?: number; notes?: string | null }) => void;
   onQtysChange?: (qtys: Map<number, number>) => void;
+  onCancelLine?: (poId: number, itemId: number, context: string) => void;
 }) {
   const { groupKeys, groups, allSizes } = useMemo(() => buildPOMatrix(items), [items]);
 
@@ -1288,6 +1289,7 @@ function BookInMatrix({ items, poId, onSave, onQtysChange }: {
   const saveTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
   const [noteDialog, setNoteDialog] = useState<{ itemId: number; context: string; current: string } | null>(null);
   const [noteText, setNoteText] = useState("");
+  const [cancelConfirm, setCancelConfirm] = useState<{ itemId: number; context: string } | null>(null);
 
   // Sync upward values when items change (e.g. after "Receive All")
   useEffect(() => {
@@ -1436,8 +1438,19 @@ function BookInMatrix({ items, poId, onSave, onQtysChange }: {
                         const rcvd = localQtys.get(cellItemId) ?? 0;
                         const cellFull = rcvd >= ordQty;
                         const cellPartial = rcvd > 0 && rcvd < ordQty;
+                        const canCancel = onCancelLine && rcvd === 0 && ordQty > 0;
+                        const cancelBtn = canCancel ? (
+                          <button
+                            className="absolute top-0.5 left-0.5 opacity-0 group-hover:opacity-60 hover:!opacity-100 text-red-500 transition-opacity rounded"
+                            title={`Cancel outstanding ${ordQty}× ${sz} — no backorder will be created`}
+                            onClick={e => { e.stopPropagation(); setCancelConfirm({ itemId: cellItemId, context: noteContext }); }}
+                          >
+                            <Ban className="w-3 h-3" />
+                          </button>
+                        ) : null;
                         return (
                           <TableCell key={sz} className="p-1 text-center relative group">
+                            {cancelBtn}
                             <div className="flex flex-col items-center gap-0.5">
                               <input
                                 type="number"
@@ -1487,6 +1500,36 @@ function BookInMatrix({ items, poId, onSave, onQtysChange }: {
         </p>
       )}
       <p className="text-xs text-muted-foreground">Enter received quantities in each cell. Completed lines disappear automatically. Any undelivered lines become backorders when you click <strong>Complete Delivery</strong>.</p>
+
+      {/* Cancel outstanding line confirm dialog */}
+      {cancelConfirm && (
+        <Dialog open onOpenChange={() => setCancelConfirm(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm flex items-center gap-2">
+                <Ban className="w-4 h-4 text-red-500" /> Cancel Outstanding Line
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground font-mono pt-0.5">{cancelConfirm.context}</p>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              This will write off the undelivered quantity. No backorder will be created and the item will be removed from purchasing requirements.
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button size="sm" variant="outline" onClick={() => setCancelConfirm(null)}>Keep</Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  onCancelLine!(poId, cancelConfirm.itemId, cancelConfirm.context);
+                  setCancelConfirm(null);
+                }}
+              >
+                Cancel Line
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Note edit dialog */}
       {noteDialog && (
@@ -1569,7 +1612,7 @@ function MarkOrderedDialog({ po, open, onClose, onConfirm }: {
 }
 
 function POCard({
-  po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll,
+  po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll, onCancelLine,
 }: {
   po: PurchaseOrder;
   onStatusChange: (id: number, status: string, extra?: Record<string, unknown>) => void;
@@ -1578,6 +1621,7 @@ function POCard({
   onLineUpdate: (poId: number, itemId: number, data: Record<string, unknown>) => void;
   onRefresh: () => void;
   onReceiveAll: (id: number) => void;
+  onCancelLine: (poId: number, itemId: number) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -1730,6 +1774,7 @@ function POCard({
                     poId={po.id}
                     onSave={(poId, itemId, data) => onLineUpdate(poId, itemId, data)}
                     onQtysChange={(qtys) => { latestQtysRef.current = qtys; }}
+                    onCancelLine={(poId, itemId) => onCancelLine(poId, itemId)}
                   />
                 </div>
               )}
@@ -1918,6 +1963,18 @@ export default function Purchasing() {
       queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
       queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] });
       toast({ title: "Line removed", description: "Item returned to purchasing requirements." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const cancelLineMutation = useMutation({
+    mutationFn: ({ poId, itemId }: { poId: number; itemId: number }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}/cancel-outstanding`, { method: "POST" }),
+    onSuccess: () => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      queryClient.invalidateQueries({ queryKey: ["process-stock-requirements"] });
+      toast({ title: "Line cancelled", description: "Outstanding quantity written off — no backorder will be created." });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -2326,6 +2383,7 @@ export default function Purchasing() {
                       onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
                       onRefresh={() => { refetchPos(); refetchReqs(); }}
                       onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                      onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
                     />
                   ))}
                 </div>
@@ -2397,6 +2455,7 @@ export default function Purchasing() {
                       onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
                       onRefresh={() => { refetchPos(); refetchReqs(); }}
                       onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                      onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
                     />
                   ))}
                 </div>
@@ -2458,6 +2517,7 @@ export default function Purchasing() {
                     onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
                     onRefresh={() => { refetchPos(); refetchReqs(); }}
                     onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                    onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
                   />
                 ))}
               </div>

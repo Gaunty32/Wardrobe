@@ -1268,6 +1268,34 @@ router.post("/purchasing/purchase-orders/:id/mark-ordered", async (req, res): Pr
   res.json({ ok: true });
 });
 
+// ── Cancel an outstanding (undelivered) PO line — writes off the gap, no backorder ──────────
+router.post("/purchasing/purchase-orders/:id/items/:itemId/cancel-outstanding", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const [item] = await db.select().from(purchaseOrderItemsTable)
+    .where(and(eq(purchaseOrderItemsTable.id, params.data.itemId), eq(purchaseOrderItemsTable.poId, params.data.id)));
+  if (!item) { res.status(404).json({ error: "PO line not found" }); return; }
+
+  // Shrink quantity_ordered down to whatever was actually delivered — no backorder created
+  await db.update(purchaseOrderItemsTable)
+    .set({ quantityOrdered: item.quantityDelivered, updatedAt: new Date() })
+    .where(eq(purchaseOrderItemsTable.id, params.data.itemId));
+
+  // Clear purchase_required on all linked order items so they don't re-enter purchasing queue
+  const linkedIds: number[] = [
+    ...(item.orderItemId != null ? [item.orderItemId] : []),
+    ...((item.sourceOrderItemIds as number[] | null) ?? []),
+  ];
+  if (linkedIds.length > 0) {
+    await db.update(orderItemsTable)
+      .set({ purchaseRequired: false, purchaseQuantity: null })
+      .where(inArray(orderItemsTable.id, linkedIds));
+  }
+
+  res.json({ ok: true });
+});
+
 router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
