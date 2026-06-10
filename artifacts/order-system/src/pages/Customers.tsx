@@ -306,6 +306,7 @@ function CustomerTile({ customer, onEdit, onDelete, onClick }: {
 export default function Customers() {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isHlImportOpen, setIsHlImportOpen] = useState(false);
@@ -324,11 +325,20 @@ export default function Customers() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
+  // Debounce search — only apply filter after 300 ms of idle typing,
+  // and only when at least 3 characters have been entered.
+  useEffect(() => {
+    const trimmed = search.trim();
+    if (trimmed.length < 3) { setDebouncedSearch(""); return; } // below threshold → clear immediately
+    const t = setTimeout(() => setDebouncedSearch(trimmed), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const { data: allCustomers, isLoading } = useListCustomers();
   const customers = useMemo(() => {
     if (!allCustomers) return allCustomers;
-    if (!search.trim()) return allCustomers;
-    const term = search.trim().toLowerCase();
+    if (!debouncedSearch) return allCustomers;
+    const term = debouncedSearch.toLowerCase();
     return allCustomers.filter((c) =>
       c.name.toLowerCase().includes(term) ||
       (c.email ?? "").toLowerCase().includes(term) ||
@@ -336,7 +346,7 @@ export default function Customers() {
       (c.contactFirstName ?? "").toLowerCase().includes(term) ||
       (c.contactLastName ?? "").toLowerCase().includes(term)
     );
-  }, [allCustomers, search]);
+  }, [allCustomers, debouncedSearch]);
   const createMutation = useCreateCustomer();
   const updateMutation = useUpdateCustomer();
   const deleteMutation = useDeleteCustomer();
@@ -455,6 +465,11 @@ export default function Customers() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                {search.trim().length > 0 && search.trim().length < 3 && (
+                  <p className="absolute left-0 top-full mt-1 text-xs text-muted-foreground">
+                    Type {3 - search.trim().length} more character{3 - search.trim().length !== 1 ? "s" : ""} to search…
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1 border border-border/50 rounded-lg p-1 bg-background">
                 <Button
