@@ -191,7 +191,10 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
     if (!bundle) { res.status(404).json({ error: "Bundle not found" }); return; }
 
     const compRows = await db.execute(sql`
-      SELECT bc.*, COALESCE(p.name, bc.product_name) AS resolved_name, p.vat_rate AS p_vat_rate
+      SELECT bc.*,
+        COALESCE(p.name, bc.product_name) AS resolved_name,
+        p.vat_rate  AS p_vat_rate,
+        p.is_service AS p_is_service
       FROM bundle_components bc
       LEFT JOIN products p ON p.id = bc.product_id
       WHERE bc.bundle_id = ${bundleId}
@@ -213,20 +216,25 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
     const unitPrice  = parseFloat(String(bundle.price));
     const lineTotal  = unitPrice * qty;
 
-    // Header row — carries the price for the whole bundle
+    // Header row — pricing container only; not a physical item, so no stock_status
     await db.execute(sql`
       INSERT INTO order_items
         (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
          purchase_required, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type)
       VALUES
         (${orderId}, NULL, ${bundle.name}, ${qty}, ${unitPrice}, ${lineTotal},
-         ${zeroVat ? 0 : 0.20}, false, 'allocated', ${bundleRef}, true, ${bundleId}, 'stock')
+         ${zeroVat ? 0 : 0.20}, false, NULL, ${bundleRef}, true, ${bundleId}, 'stock')
     `);
 
-    // Component rows — price £0, picked from stock
+    // Component rows — price £0
+    // Physical stock items: stock_status='allocated' so they appear in the picking list
+    // Service items: stock_status=NULL — nothing to pick, no purchase needed
     for (const comp of components) {
-      const compQty    = qty * (parseInt(String(comp.quantity)) || 1);
-      const compVat    = zeroVat ? 0 : parseFloat(String(comp.p_vat_rate ?? 0.20));
+      const compQty      = qty * (parseInt(String(comp.quantity)) || 1);
+      const compVat      = zeroVat ? 0 : parseFloat(String(comp.p_vat_rate ?? 0.20));
+      const isService    = comp.p_is_service === true;
+      const stockStatus  = isService ? null : "allocated";
+      const recipType    = isService ? "service" : "stock";
       await db.execute(sql`
         INSERT INTO order_items
           (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
@@ -235,7 +243,7 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
         VALUES
           (${orderId}, ${comp.product_id ?? null}, ${comp.resolved_name}, ${compQty},
            0, 0, ${compVat},
-           false, NULL, ${bundleRef}, false, ${bundleId}, 'stock',
+           false, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
            ${comp.finish_id ?? null}, ${comp.finish_name ?? null})
       `);
     }
