@@ -464,6 +464,7 @@ router.get("/invoices/by-customer", async (_req, res): Promise<void> => {
       customerName: ordersTable.customerName,
       customerId: ordersTable.customerId,
       totalAmount: ordersTable.totalAmount,
+      carriageAmount: ordersTable.carriageAmount,
       status: ordersTable.status,
       poNumber: ordersTable.poNumber,
       orderDate: ordersTable.orderDate,
@@ -491,8 +492,9 @@ router.get("/invoices/by-customer", async (_req, res): Promise<void> => {
     const g = groupMap.get(key)!;
     g.orders.push(o);
     const ex = parseFloat(String(o.totalAmount ?? 0));
-    g.totalEx += ex;
-    g.totalInc += ex * 1.2;
+    const carriage = parseFloat(String(o.carriageAmount ?? 0));
+    g.totalEx += ex + carriage;
+    g.totalInc += (ex + carriage) * 1.2;
   }
 
   res.json([...groupMap.values()].map((g) => ({
@@ -512,6 +514,7 @@ router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
       customerName: ordersTable.customerName,
       customerId: ordersTable.customerId,
       totalAmount: ordersTable.totalAmount,
+      carriageAmount: ordersTable.carriageAmount,
       status: ordersTable.status,
       poNumber: ordersTable.poNumber,
       orderDate: ordersTable.orderDate,
@@ -541,8 +544,9 @@ router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
     const g = groupMap.get(key)!;
     g.orders.push(o);
     const ex = parseFloat(String(o.totalAmount ?? 0));
-    g.totalEx += ex;
-    g.totalInc += ex * 1.2;
+    const carriage = parseFloat(String(o.carriageAmount ?? 0));
+    g.totalEx += ex + carriage;
+    g.totalInc += (ex + carriage) * 1.2;
   }
 
   res.json([...groupMap.values()].map((g) => ({
@@ -564,6 +568,7 @@ router.post("/invoices/:orderId/send-highlevel", async (req, res): Promise<void>
       orderNumber: ordersTable.orderNumber,
       customerName: ordersTable.customerName,
       totalAmount: ordersTable.totalAmount,
+      carriageAmount: ordersTable.carriageAmount,
       shippingMethod: ordersTable.shippingMethod,
       highLevelContactId: customersTable.highLevelContactId,
       customerEmail: customersTable.email,
@@ -589,7 +594,7 @@ router.post("/invoices/:orderId/send-highlevel", async (req, res): Promise<void>
     return;
   }
 
-  const totalInc = (parseFloat(row.totalAmount ?? "0") * 1.2).toFixed(2);
+  const totalInc = ((parseFloat(row.totalAmount ?? "0") + parseFloat(String(row.carriageAmount ?? 0))) * 1.2).toFixed(2);
 
   const payload = {
     contactId: row.highLevelContactId,
