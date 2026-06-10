@@ -128,6 +128,7 @@ router.post("/stripe/orders/:orderId/payment-link", async (req, res): Promise<vo
       id: ordersTable.id,
       orderNumber: ordersTable.orderNumber,
       totalAmount: ordersTable.totalAmount,
+      carriageAmount: ordersTable.carriageAmount,
       stripePaymentLinkUrl: ordersTable.stripePaymentLinkUrl,
       stripePaymentLinkId: ordersTable.stripePaymentLinkId,
     }).from(ordersTable).where(eq(ordersTable.id, orderId));
@@ -139,12 +140,13 @@ router.post("/stripe/orders/:orderId/payment-link", async (req, res): Promise<vo
     }
 
     const totalAmount = parseFloat(String(order.totalAmount ?? 0));
+    const carriageAmount = parseFloat(String(order.carriageAmount ?? 0));
     if (totalAmount <= 0) { res.status(400).json({ error: "Order has no total amount — set an order total before generating a payment link" }); return; }
 
     const stripe = await getUncachableStripeClient();
 
     const price = await stripe.prices.create({
-      unit_amount: Math.round(totalAmount * 100 * 1.2),
+      unit_amount: Math.round((totalAmount + carriageAmount) * 100 * 1.2),
       currency: "gbp",
       product_data: {
         name: `Order ${order.orderNumber} — Select Branding Solutions Ltd`,
