@@ -38,6 +38,7 @@ interface DispatchItem {
   size: string | null; quantity: number; recipientType: string;
   recipientName: string | null; recipientEmployeeId: number | null;
   finishName: string | null; unitPrice: number; lineTotal: number;
+  stockStatus: string | null; purchaseRequired: boolean | null;
   dispatchedAt: string | null;
   employee: Employee | null;
 }
@@ -485,6 +486,30 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                 </div>
               )}
             </div>
+
+            {(() => {
+              const notReady = order.items.filter(
+                i => !i.dispatchedAt && i.stockStatus !== "complete" && i.stockStatus !== "allocated"
+              );
+              if (notReady.length === 0) return null;
+              return (
+                <div className="rounded-lg bg-amber-50 border border-amber-300 px-4 py-3 text-sm text-amber-900 space-y-1.5">
+                  <p className="font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    {notReady.length} item line{notReady.length !== 1 ? "s" : ""} not yet in stock
+                  </p>
+                  <ul className="text-xs space-y-0.5 pl-5 list-disc text-amber-800">
+                    {notReady.map(i => (
+                      <li key={i.id}>{i.productName}{i.colour ? ` (${i.colour})` : ""} ×{i.quantity}</li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-amber-800">
+                    Dispatching now will send the ready items only. The items above will follow as a separate shipment once they arrive.
+                    <strong> Cancel and wait</strong> if you want to dispatch the order complete.
+                  </p>
+                </div>
+              );
+            })()}
 
             <div className="rounded-lg bg-muted/20 border border-border px-4 py-3 text-xs text-muted-foreground space-y-1">
               <p className="font-semibold text-foreground text-xs uppercase tracking-wide mb-1.5">What happens when you confirm</p>
