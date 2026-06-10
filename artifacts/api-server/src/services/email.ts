@@ -688,8 +688,9 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
         const bundleQty = [...g.qty.values()].reduce((s, m) => s + [...m.values()].reduce((a, b) => a + b, 0), 0);
         doc.rect(margin, y, tableW, rowH + 3).fill("#1e3a5f");
         doc.fillColor("#94a3b8").fontSize(6.5).font("Helvetica-Bold").text("BUNDLE", margin + 6, y + 4);
+        const bundleLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
         doc.fillColor("#ffffff").fontSize(7).font("Helvetica-Bold")
-          .text(g.productName, margin + 52, y + 4, { width: tableW - 52 - totalW - unitPriceW - qtyW - 6 });
+          .text(bundleLabel, margin + 52, y + 4, { width: tableW - 52 - totalW - unitPriceW - qtyW - 6 });
         doc.fillColor("#94a3b8").font("Helvetica").fontSize(7)
           .text(`× ${bundleQty}`, margin + tableW - totalW - unitPriceW - qtyW, y + 4, { width: qtyW - 2, align: "center" });
         doc.text(`£${g.unitPrice.toFixed(2)}`, margin + tableW - totalW - unitPriceW, y + 4, { width: unitPriceW - 2, align: "right" });

@@ -1269,23 +1269,33 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     .where(eq(ordersTable.id, params.data.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const itemRows2 = await db
-    .select({
-      productName: orderItemsTable.productName,
-      catalogueProductName: productsTable.name,
-      sku: productsTable.sku,
-      colour: orderItemsTable.colour,
-      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
-      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
-      vatRate: orderItemsTable.vatRate,
-      recipientName: orderItemsTable.recipientName,
-      finishName: orderItemsTable.finishName,
-    })
-    .from(orderItemsTable)
-    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(eq(orderItemsTable.orderId, params.data.id));
-
-  const items = itemRows2.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
+  const itemRows2Raw = await db.execute(sql`
+    SELECT
+      COALESCE(p.name, oi.product_name) AS product_name,
+      COALESCE(p.sku, b.sku)            AS sku,
+      oi.colour, oi.size, oi.quantity, oi.unit_price, oi.line_total, oi.vat_rate,
+      oi.recipient_name, oi.finish_name,
+      oi.bundle_ref, oi.is_bundle_header
+    FROM order_items oi
+    LEFT JOIN products p ON p.id = oi.product_id
+    LEFT JOIN bundles  b ON b.id = oi.bundle_def_id
+    WHERE oi.order_id = ${params.data.id}
+    ORDER BY oi.id
+  `);
+  const items = ((itemRows2Raw.rows ?? itemRows2Raw) as any[]).map(r => ({
+    productName: r.product_name,
+    sku: r.sku ?? null,
+    colour: r.colour ?? null,
+    size: r.size ?? null,
+    quantity: r.quantity ?? 1,
+    unitPrice: parseFloat(String(r.unit_price ?? 0)),
+    lineTotal: parseFloat(String(r.line_total ?? 0)),
+    vatRate: parseFloat(String(r.vat_rate ?? 0.20)),
+    recipientName: r.recipient_name ?? null,
+    finishName: r.finish_name ?? null,
+    bundleRef: r.bundle_ref ?? null,
+    isBundleHeader: r.is_bundle_header ?? false,
+  }));
 
   // Resolve customer email and address
   const body = z.object({ toEmail: z.string().optional(), previewOnly: z.boolean().optional() }).safeParse(req.body);
@@ -1379,6 +1389,8 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     vatRate: parseFloat(String(i.vatRate ?? 0.20)),
     recipientName: i.recipientName ?? null,
     finishName: i.finishName ?? null,
+    bundleRef: i.bundleRef ?? null,
+    isBundleHeader: i.isBundleHeader ?? false,
   }));
 
   const { subject, html, text } = buildAcknowledgementEmail({
@@ -1499,12 +1511,13 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
   const itemRowsRaw = await db.execute(sql`
     SELECT
       COALESCE(p.name, oi.product_name) AS product_name,
-      p.sku,
+      COALESCE(p.sku, b.sku)            AS sku,
       oi.colour, oi.size, oi.quantity, oi.unit_price, oi.line_total, oi.vat_rate,
       oi.recipient_name, oi.finish_name,
       oi.bundle_ref, oi.is_bundle_header
     FROM order_items oi
     LEFT JOIN products p ON p.id = oi.product_id
+    LEFT JOIN bundles  b ON b.id = oi.bundle_def_id
     WHERE oi.order_id = ${params.data.id}
     ORDER BY oi.id
   `);
@@ -1600,21 +1613,33 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     .where(eq(ordersTable.id, params.data.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const itemRows = await db
-    .select({
-      productName: orderItemsTable.productName,
-      catalogueProductName: productsTable.name,
-      sku: productsTable.sku,
-      colour: orderItemsTable.colour,
-      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
-      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
-      recipientName: orderItemsTable.recipientName,
-    })
-    .from(orderItemsTable)
-    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(eq(orderItemsTable.orderId, params.data.id));
-
-  const items = itemRows.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
+  const emlItemRowsRaw = await db.execute(sql`
+    SELECT
+      COALESCE(p.name, oi.product_name) AS product_name,
+      COALESCE(p.sku, b.sku)            AS sku,
+      oi.colour, oi.size, oi.quantity, oi.unit_price, oi.line_total, oi.vat_rate,
+      oi.recipient_name, oi.finish_name,
+      oi.bundle_ref, oi.is_bundle_header
+    FROM order_items oi
+    LEFT JOIN products p ON p.id = oi.product_id
+    LEFT JOIN bundles  b ON b.id = oi.bundle_def_id
+    WHERE oi.order_id = ${params.data.id}
+    ORDER BY oi.id
+  `);
+  const items = ((emlItemRowsRaw.rows ?? emlItemRowsRaw) as any[]).map(r => ({
+    productName: r.product_name,
+    sku: r.sku ?? null,
+    colour: r.colour ?? null,
+    size: r.size ?? null,
+    quantity: r.quantity ?? 1,
+    unitPrice: parseFloat(String(r.unit_price ?? 0)),
+    lineTotal: parseFloat(String(r.line_total ?? 0)),
+    vatRate: parseFloat(String(r.vat_rate ?? 0.20)),
+    recipientName: r.recipient_name ?? null,
+    finishName: r.finish_name ?? null,
+    bundleRef: r.bundle_ref ?? null,
+    isBundleHeader: r.is_bundle_header ?? false,
+  }));
 
   let toEmail = "";
   let contactFirstName: string | null = null;
@@ -1659,6 +1684,9 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
     lineTotal: parseFloat(String(i.lineTotal ?? 0)),
     vatRate: parseFloat(String(i.vatRate ?? 0.20)),
     recipientName: i.recipientName ?? null,
+    finishName: i.finishName ?? null,
+    bundleRef: i.bundleRef ?? null,
+    isBundleHeader: i.isBundleHeader ?? false,
   }));
 
   const baseUrl = `${req.protocol}://${req.get("host")}`;
@@ -1772,21 +1800,33 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
     .where(eq(ordersTable.id, params.data.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  const itemRows = await db
-    .select({
-      productName: orderItemsTable.productName,
-      catalogueProductName: productsTable.name,
-      sku: productsTable.sku,
-      colour: orderItemsTable.colour,
-      size: orderItemsTable.size, quantity: orderItemsTable.quantity,
-      unitPrice: orderItemsTable.unitPrice, lineTotal: orderItemsTable.lineTotal,
-      recipientName: orderItemsTable.recipientName,
-    })
-    .from(orderItemsTable)
-    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
-    .where(eq(orderItemsTable.orderId, params.data.id));
-
-  const items = itemRows.map(r => ({ ...r, productName: r.catalogueProductName ?? r.productName }));
+  const vbsItemRowsRaw = await db.execute(sql`
+    SELECT
+      COALESCE(p.name, oi.product_name) AS product_name,
+      COALESCE(p.sku, b.sku)            AS sku,
+      oi.colour, oi.size, oi.quantity, oi.unit_price, oi.line_total, oi.vat_rate,
+      oi.recipient_name, oi.finish_name,
+      oi.bundle_ref, oi.is_bundle_header
+    FROM order_items oi
+    LEFT JOIN products p ON p.id = oi.product_id
+    LEFT JOIN bundles  b ON b.id = oi.bundle_def_id
+    WHERE oi.order_id = ${params.data.id}
+    ORDER BY oi.id
+  `);
+  const items = ((vbsItemRowsRaw.rows ?? vbsItemRowsRaw) as any[]).map(r => ({
+    productName: r.product_name,
+    sku: r.sku ?? null,
+    colour: r.colour ?? null,
+    size: r.size ?? null,
+    quantity: r.quantity ?? 1,
+    unitPrice: parseFloat(String(r.unit_price ?? 0)),
+    lineTotal: parseFloat(String(r.line_total ?? 0)),
+    vatRate: parseFloat(String(r.vat_rate ?? 0.20)),
+    recipientName: r.recipient_name ?? null,
+    finishName: r.finish_name ?? null,
+    bundleRef: r.bundle_ref ?? null,
+    isBundleHeader: r.is_bundle_header ?? false,
+  }));
 
   let toEmail = "";
   let contactFirstName: string | null = null;
@@ -1831,6 +1871,9 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
     lineTotal: parseFloat(String(i.lineTotal ?? 0)),
     vatRate: parseFloat(String(i.vatRate ?? 0.20)),
     recipientName: i.recipientName ?? null,
+    finishName: i.finishName ?? null,
+    bundleRef: i.bundleRef ?? null,
+    isBundleHeader: i.isBundleHeader ?? false,
   }));
 
   const baseUrl2 = `${req.protocol}://${req.get("host")}`;
