@@ -205,10 +205,21 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
     worksheets.filter((w) => w.status === "complete")
       .flatMap((w) => wsItems.filter((wi) => wi.worksheetId === w.id).map((wi) => wi.orderItemId))
   );
-  const isComplete = items.length > 0 && items.every(
-    (i) => i.stockStatus === "complete" || wsCompleteItemIds.has(i.id)
+
+  // Use the same logic as the dispatch queue:
+  //   - Orders with decorated items (finishId set): ready when all worksheets are complete.
+  //   - Plain-item-only orders: ready when every item has stockStatus = 'complete'.
+  const hasDecoratedItems = items.some(i => i.finishId != null);
+  const hasIncompleteWorksheets = worksheets.some(w => w.status !== "complete");
+  const isComplete = items.length > 0 && (
+    hasDecoratedItems
+      ? worksheets.length > 0 && !hasIncompleteWorksheets
+      : items.every(i => i.stockStatus === "complete")
   );
 
+  // Items considered incomplete for delivery note purposes: not in a completed
+  // worksheet AND not marked complete in stock. For decorated-item orders these
+  // are informational only (order is still dispatchable once worksheets are done).
   const incompleteItemIds = items
     .filter((i) => i.stockStatus !== "complete" && !wsCompleteItemIds.has(i.id))
     .map((i) => i.id);
