@@ -35,6 +35,20 @@ function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+const SHIPPING_LABELS: Record<string, string> = {
+  local_delivery: "Local Delivery",
+  office_collection: "Office Collection",
+  warehouse_collection: "Warehouse Collection",
+  courier: "Courier",
+  dpd: "DPD Courier",
+  dpd_next_day: "DPD Next Day",
+};
+
+function shippingLabel(method: string | null | undefined): string {
+  if (!method) return "";
+  return SHIPPING_LABELS[method] ?? method;
+}
+
 function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "box" | number): string {
   const css = `
     @page { size: 4in 4in; margin: 8mm; }
@@ -158,7 +172,7 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
   </div>
   <div class="customer-name" style="font-size:${namePt}pt">${esc(data.customerName)}</div>
   <div class="info-grid">
-    ${data.shippingMethod ? `<div class="info-row"><span class="info-key">Delivery</span><span class="info-val">${esc(data.shippingMethod)}</span></div>` : ""}
+    ${data.shippingMethod ? `<div class="info-row"><span class="info-key">Delivery</span><span class="info-val">${esc(shippingLabel(data.shippingMethod))}</span></div>` : ""}
     ${data.isDpd && data.trackingNumber ? `<div class="info-row"><span class="info-key">DPD</span><span class="info-val">${esc(data.trackingNumber)}</span></div>` : ""}
     ${data.poNumber ? `<div class="info-row"><span class="info-key">PO Ref</span><span class="info-val">${esc(data.poNumber)}</span></div>` : ""}
     ${data.contactName ? `<div class="info-row"><span class="info-key">Contact</span><span class="info-val">${esc(data.contactName)}</span></div>` : ""}
@@ -313,7 +327,7 @@ export default function ZebraLabels({ orderId, orderNumber }: ZebraLabelsProps) 
                 <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-border bg-card">
                   <div>
                     <p className="text-sm font-medium">Box Label</p>
-                    <p className="text-xs text-muted-foreground">{labelData.customerName} · {labelData.shippingMethod}</p>
+                    <p className="text-xs text-muted-foreground">{labelData.customerName} · {shippingLabel(labelData.shippingMethod)}</p>
                   </div>
                   <Button size="sm" variant="outline" className="gap-1.5 text-xs shrink-0"
                     onClick={() => doPrint(labelData, base, "box")}>
