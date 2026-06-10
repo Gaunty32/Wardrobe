@@ -149,7 +149,7 @@ export default function SelectExtra() {
       productUrl: offer.product_url ?? "",
       quantity: offer.quantity,
       minSpend: parseFloat(offer.min_spend),
-      isActive: offer.is_active,
+      isActive: true,
     });
     setOfferOpen(true);
   }
@@ -203,20 +203,20 @@ export default function SelectExtra() {
           )}
         </div>
 
-        {/* Next-month draft notice */}
-        {isCurrentRealMonth && nextMonthOffer && !nextMonthOffer.is_active && (
-          <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/50 px-4 py-3 mb-6 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2 text-sm text-amber-800">
+        {/* Next-month ready notice */}
+        {isCurrentRealMonth && nextMonthOffer && (
+          <div className="rounded-xl border border-dashed border-emerald-300 bg-emerald-50/50 px-4 py-3 mb-6 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm text-emerald-800">
               <Calendar className="w-4 h-4 shrink-0" />
               <span>
-                <strong>{MONTHS[nextMonthView - 1]} {nextYearView}</strong> offer is drafted
-                ({nextMonthOffer.product_name}) — activate it when the month begins.
+                <strong>{MONTHS[nextMonthView - 1]} {nextYearView}</strong> offer is ready
+                ({nextMonthOffer.product_name}) — it will go live automatically on the 1st.
               </span>
             </div>
             <Button size="sm" variant="outline"
-              className="border-amber-400 text-amber-800 hover:bg-amber-100 shrink-0"
+              className="border-emerald-400 text-emerald-800 hover:bg-emerald-100 shrink-0"
               onClick={() => { setViewYear(nextYearView); setViewMonth(nextMonthView); }}>
-              View draft
+              Preview
             </Button>
           </div>
         )}
@@ -243,8 +243,8 @@ export default function SelectExtra() {
                   {currentOffer ? currentOffer.title : `No offer for ${MONTHS[viewMonth - 1]} ${viewYear}`}
                 </span>
                 {currentOffer && (
-                  <Badge variant={currentOffer.is_active ? "default" : "secondary"} className="text-xs">
-                    {currentOffer.is_active ? "Active" : "Inactive"}
+                  <Badge variant={currentOffer.is_active ? "default" : "destructive"} className="text-xs">
+                    {currentOffer.is_active ? "Live" : "Hidden"}
                   </Badge>
                 )}
               </div>
@@ -281,8 +281,9 @@ export default function SelectExtra() {
                       ? "text-muted-foreground hover:text-destructive hover:border-destructive/50"
                       : "text-emerald-700 border-emerald-300 hover:bg-emerald-50"}
                     onClick={() => toggleMutation.mutate(currentOffer.id)}
+                    title={currentOffer.is_active ? "Emergency hide — removes offer from portal immediately" : "Re-enable — offer goes live on portal"}
                   >
-                    {currentOffer.is_active ? "Deactivate" : "Activate"}
+                    {currentOffer.is_active ? "Hide" : "Re-enable"}
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => openEditOffer(currentOffer)}>
                     Edit
@@ -359,14 +360,14 @@ export default function SelectExtra() {
                 const isPast = offerKey < nowKey;
                 const isFuture = offerKey > nowKey;
                 const statusLabel = isPast
-                  ? (offer.is_active ? "Active" : "Expired")
+                  ? "Expired"
                   : isFuture
-                    ? (offer.is_active ? "Scheduled" : "Draft")
-                    : (offer.is_active ? "Active" : "Inactive");
-                const statusVariant: "default" | "secondary" | "outline" =
+                    ? (offer.is_active ? "Ready" : "Hidden")
+                    : (offer.is_active ? "Live" : "Hidden");
+                const statusVariant: "default" | "secondary" | "outline" | "destructive" =
                   isPast ? "secondary"
                   : isFuture ? "outline"
-                  : offer.is_active ? "default" : "secondary";
+                  : offer.is_active ? "default" : "destructive";
 
                 return (
                   <div
@@ -387,14 +388,17 @@ export default function SelectExtra() {
                       <Badge variant={statusVariant} className={`text-xs ${isFuture && offer.is_active ? "border-emerald-400 text-emerald-700" : ""}`}>
                         {statusLabel}
                       </Badge>
-                      <Button
-                        variant="ghost" size="sm"
-                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                        disabled={toggleMutation.isPending}
-                        onClick={() => toggleMutation.mutate(offer.id)}
-                      >
-                        {offer.is_active ? "Deactivate" : "Activate"}
-                      </Button>
+                      {!isPast && (
+                        <Button
+                          variant="ghost" size="sm"
+                          className={`h-7 px-2 text-xs ${offer.is_active ? "text-muted-foreground hover:text-destructive" : "text-emerald-700 hover:text-emerald-900"}`}
+                          disabled={toggleMutation.isPending}
+                          onClick={() => toggleMutation.mutate(offer.id)}
+                          title={offer.is_active ? "Hide from portal" : "Re-enable on portal"}
+                        >
+                          {offer.is_active ? "Hide" : "Re-enable"}
+                        </Button>
+                      )}
                       {isPast && (
                         <Button
                           variant="ghost" size="sm"
@@ -470,12 +474,9 @@ export default function SelectExtra() {
               <Input value={form.productUrl} onChange={e => setForm(f => ({ ...f, productUrl: e.target.value }))} className="mt-1"
                 placeholder="https://…" />
             </div>
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" checked={form.isActive}
-                onChange={e => setForm(f => ({ ...f, isActive: e.target.checked }))}
-                className="w-4 h-4 accent-primary rounded" />
-              <span className="text-sm font-medium">Offer is active (visible to customers)</span>
-            </label>
+            <p className="text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+              This offer will go live automatically on the 1st of the selected month and expire at the end of that month.
+            </p>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOfferOpen(false)}>Cancel</Button>

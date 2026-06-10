@@ -22,7 +22,8 @@ router.get("/portal/select-extra/current", portalAuth, async (req: Request, res:
         c.id AS claim_id, c.claimed_at, c.order_number AS claim_order_number
       FROM select_extra_offers o
       LEFT JOIN select_extra_claims c ON c.offer_id = o.id AND c.customer_id = ${customerId}
-      WHERE o.year = ${year} AND o.month = ${month} AND o.is_active = true
+      WHERE o.year = ${year} AND o.month = ${month}
+        AND o.is_active = true
       LIMIT 1
     `);
 
