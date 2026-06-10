@@ -7,7 +7,7 @@ import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
   CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip, Upload,
-  CheckCircle2, ListChecks, Sparkles, StickyNote, Ban,
+  CheckCircle2, ListChecks, Sparkles, StickyNote, Ban, Search, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1819,6 +1819,7 @@ export default function Purchasing() {
   const [psQtyOverrides, setPsQtyOverrides] = useState<Record<string, Record<number, number>>>({});
   const [emailGroup, setEmailGroup] = useState<SupplierGroup | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [poSearch, setPoSearch] = useState("");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
   const [createPoNotes, setCreatePoNotes] = useState("");
   const [createProcessPoGroup, setCreateProcessPoGroup] = useState<{ supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] } | null>(null);
@@ -2403,6 +2404,23 @@ export default function Purchasing() {
           {/* ── Purchase Orders Tab ── */}
           <TabsContent value="orders">
             <div className="space-y-4">
+              {/* Search bar */}
+              {(filteredPos.length > 0 || poSearch) && (
+                <div className="relative max-w-sm">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search by PO number, supplier, product…"
+                    value={poSearch}
+                    onChange={e => { setPoSearch(e.target.value); setSelectedOrdersSupplier(null); }}
+                    className="pl-9 pr-8 h-9"
+                  />
+                  {poSearch && (
+                    <button onClick={() => setPoSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
               {posFetching && purchaseOrders.length === 0 ? (
                 <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
               ) : filteredPos.length === 0 ? (
@@ -2411,7 +2429,43 @@ export default function Purchasing() {
                   <p className="text-lg font-medium">No orders awaiting delivery</p>
                   <p className="text-sm">Mark a draft PO as Ordered once you've sent it to the supplier.</p>
                 </div>
-              ) : selectedOrdersSupplier === null ? (
+              ) : poSearch.trim() ? (() => {
+                const q = poSearch.trim().toLowerCase();
+                const matched = filteredPos.filter(po =>
+                  po.poNumber.toLowerCase().includes(q) ||
+                  po.supplierName.toLowerCase().includes(q) ||
+                  po.items.some(i =>
+                    i.productName?.toLowerCase().includes(q) ||
+                    i.orderNumber?.toLowerCase().includes(q) ||
+                    i.customerName?.toLowerCase().includes(q) ||
+                    i.supplierCode?.toLowerCase().includes(q)
+                  )
+                );
+                return matched.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+                    <Search className="w-10 h-10 text-muted-foreground/30" />
+                    <p className="text-base font-medium">No matching purchase orders</p>
+                    <p className="text-sm">Try searching by PO number, supplier, or product name.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">{matched.length} PO{matched.length !== 1 ? "s" : ""} found</p>
+                    {matched.map((po) => (
+                      <POCard
+                        key={po.id}
+                        po={po}
+                        onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
+                        onDelete={(id) => deleteMutation.mutate(id)}
+                        onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
+                        onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
+                        onRefresh={() => { refetchPos(); refetchReqs(); }}
+                        onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                        onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
+                      />
+                    ))}
+                  </div>
+                );
+              })() : selectedOrdersSupplier === null ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                   {orderedBySupplier.map(({ name, pos }) => {
                     const logoUrl = supplierLogoMap.get(name.toLowerCase());

@@ -32,7 +32,10 @@ router.get("/bundles/:id", async (req, res): Promise<void> => {
     const bundle = (bundleRows.rows ?? bundleRows)[0];
     if (!bundle) { res.status(404).json({ error: "Bundle not found" }); return; }
     const compRows = await db.execute(sql`
-      SELECT bc.*, COALESCE(p.name, bc.product_name) AS resolved_name, p.sku AS product_sku
+      SELECT bc.*, COALESCE(p.name, bc.product_name) AS resolved_name, p.sku AS product_sku,
+        p.is_service AS p_is_service,
+        (SELECT json_agg(DISTINCT jsonb_build_object('colour', pv.colour, 'size', pv.size) ORDER BY jsonb_build_object('colour', pv.colour, 'size', pv.size))
+         FROM product_variants pv WHERE pv.product_id = bc.product_id AND pv.colour IS NOT NULL) AS variants
       FROM bundle_components bc
       LEFT JOIN products p ON p.id = bc.product_id
       WHERE bc.bundle_id = ${id}
@@ -181,9 +184,16 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
   const orderId  = parseInt(req.params.orderId);
   if (isNaN(bundleId) || isNaN(orderId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
-  const body = z.object({ quantity: z.number().int().positive() }).safeParse(req.body);
+  const body = z.object({
+    quantity: z.number().int().positive(),
+    componentOverrides: z.array(z.object({
+      componentId: z.number().int(),
+      colour: z.string().optional().nullable(),
+      size: z.string().optional().nullable(),
+    })).optional(),
+  }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const qty = body.data.quantity;
+  const { quantity: qty, componentOverrides = [] } = body.data;
 
   try {
     const bundleRows = await db.execute(sql`SELECT * FROM bundles WHERE id = ${bundleId}`);
@@ -235,16 +245,19 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
       const isService    = comp.p_is_service === true;
       const stockStatus  = isService ? null : "allocated";
       const recipType    = isService ? "service" : "stock";
+      const override     = componentOverrides.find((o) => o.componentId === comp.id);
+      const colour       = override?.colour ?? null;
+      const size         = override?.size ?? null;
       await db.execute(sql`
         INSERT INTO order_items
           (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
            purchase_required, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type,
-           finish_id, finish_name)
+           finish_id, finish_name, colour, size)
         VALUES
           (${orderId}, ${comp.product_id ?? null}, ${comp.resolved_name}, ${compQty},
            0, 0, ${compVat},
            false, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
-           ${comp.finish_id ?? null}, ${comp.finish_name ?? null})
+           ${comp.finish_id ?? null}, ${comp.finish_name ?? null}, ${colour}, ${size})
       `);
     }
 

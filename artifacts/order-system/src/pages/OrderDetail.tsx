@@ -351,22 +351,36 @@ export default function OrderDetail() {
     queryFn: () => apiFetch("/bundles"),
   });
 
+  const { data: bundleDetails } = useQuery<{
+    id: number; name: string;
+    components: Array<{
+      id: number; resolved_name: string; quantity: number;
+      p_is_service: boolean | null;
+      variants: Array<{ colour: string; size: string }> | null;
+    }>;
+  }>({
+    queryKey: ["bundle-detail", addBundleId],
+    queryFn: () => apiFetch(`/bundles/${addBundleId}`),
+    enabled: addBundleId != null,
+  });
+
   const updateOrderMutation = useUpdateOrder();
   const addItemMutation = useAddOrderItem();
   const deleteItemMutation = useDeleteOrderItem();
 
   const addBundleMutation = useMutation({
-    mutationFn: ({ bundleId, quantity }: { bundleId: number; quantity: number }) =>
+    mutationFn: ({ bundleId, quantity, componentOverrides }: { bundleId: number; quantity: number; componentOverrides?: Array<{ componentId: number; colour?: string; size?: string }> }) =>
       apiFetch(`/bundles/${bundleId}/add-to-order/${orderId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity }),
+        body: JSON.stringify({ quantity, componentOverrides }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["order", orderId] });
       setIsAddBundleOpen(false);
       setAddBundleId(null);
       setAddBundleQty("1");
+      setCompOverrides({});
       toast({ title: "Bundle added to order" });
     },
     onError: (e: Error) => toast({ title: "Could not add bundle", description: e.message, variant: "destructive" }),
@@ -397,6 +411,7 @@ export default function OrderDetail() {
   const [isAddBundleOpen, setIsAddBundleOpen] = useState(false);
   const [addBundleId, setAddBundleId] = useState<number | null>(null);
   const [addBundleQty, setAddBundleQty] = useState("1");
+  const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string }>>({});
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [serviceProductSearchOpen, setServiceProductSearchOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom" | "service">("wardrobe");
@@ -3629,8 +3644,8 @@ export default function OrderDetail() {
         </DialogContent>
       </Dialog>
       {/* ── Add Bundle dialog ── */}
-      <Dialog open={isAddBundleOpen} onOpenChange={open => { if (!open) { setIsAddBundleOpen(false); } }}>
-        <DialogContent className="max-w-sm">
+      <Dialog open={isAddBundleOpen} onOpenChange={open => { if (!open) { setIsAddBundleOpen(false); setCompOverrides({}); } }}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Package2 className="w-5 h-5 text-primary" /> Add Bundle
@@ -3639,7 +3654,7 @@ export default function OrderDetail() {
           <div className="space-y-4 py-1">
             <div className="space-y-1.5">
               <Label>Bundle</Label>
-              <Select value={addBundleId?.toString() ?? ""} onValueChange={v => setAddBundleId(parseInt(v))}>
+              <Select value={addBundleId?.toString() ?? ""} onValueChange={v => { setAddBundleId(parseInt(v)); setCompOverrides({}); }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a bundle…" />
                 </SelectTrigger>
@@ -3664,12 +3679,71 @@ export default function OrderDetail() {
               <Input type="number" min="1" value={addBundleQty} onChange={e => setAddBundleQty(e.target.value)} className="w-28" />
               <p className="text-xs text-muted-foreground">How many bundles to add</p>
             </div>
+            {/* ── Per-component colour/size pickers ── */}
+            {bundleDetails?.components && bundleDetails.components.filter(c => !c.p_is_service && c.variants && c.variants.length > 0).length > 0 && (
+              <div className="space-y-2">
+                <Label>Component Variations</Label>
+                <div className="space-y-2">
+                  {bundleDetails.components.filter(c => !c.p_is_service && c.variants && c.variants.length > 0).map(comp => {
+                    const colours = [...new Set(comp.variants!.map(v => v.colour).filter(Boolean))].sort();
+                    const selectedColour = compOverrides[comp.id]?.colour ?? "";
+                    const sizesForColour = [...new Set(comp.variants!.filter(v => v.colour === selectedColour).map(v => v.size).filter(Boolean))];
+                    const selectedSize = compOverrides[comp.id]?.size ?? "";
+                    return (
+                      <div key={comp.id} className="border rounded-lg p-3 bg-muted/20 space-y-2">
+                        <p className="text-sm font-medium leading-tight">
+                          {comp.resolved_name}
+                          {comp.quantity > 1 && <span className="text-muted-foreground font-normal ml-1">(×{comp.quantity} per bundle)</span>}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Colour</Label>
+                            <Select
+                              value={selectedColour}
+                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { colour: v, size: "" } }))}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="— select —" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Size</Label>
+                            <Select
+                              value={selectedSize}
+                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: v } }))}
+                              disabled={!selectedColour || sizesForColour.length === 0}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder={!selectedColour ? "Pick colour first" : "— select —"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {sizesForColour.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddBundleOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setIsAddBundleOpen(false); setCompOverrides({}); }}>Cancel</Button>
             <Button
               disabled={addBundleId == null || !addBundleQty || addBundleMutation.isPending}
-              onClick={() => addBundleId != null && addBundleMutation.mutate({ bundleId: addBundleId, quantity: parseInt(addBundleQty) || 1 })}
+              onClick={() => addBundleId != null && addBundleMutation.mutate({
+                bundleId: addBundleId,
+                quantity: parseInt(addBundleQty) || 1,
+                componentOverrides: Object.entries(compOverrides)
+                  .filter(([, ov]) => ov.colour || ov.size)
+                  .map(([id, ov]) => ({ componentId: parseInt(id), colour: ov.colour || undefined, size: ov.size || undefined })),
+              })}
             >
               {addBundleMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Adding…</> : "Add to Order"}
             </Button>
