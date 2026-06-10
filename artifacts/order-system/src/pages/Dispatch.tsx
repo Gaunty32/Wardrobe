@@ -165,7 +165,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const isDpdShipping = !!order.shippingMethod?.toLowerCase().includes("dpd");
+  const DPD_METHODS = new Set(["dpd", "dpd_next_day", "courier"]);
+  const isDpdShipping = !!order.shippingMethod && DPD_METHODS.has(order.shippingMethod);
   const deliveryMethodLabel = shippingLabel(order.shippingMethod);
 
   function openDispatchModal() {
