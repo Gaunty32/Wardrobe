@@ -1393,12 +1393,10 @@ function BookInMatrix({ items, poId, onSave }: {
                         isFading ? "opacity-0 bg-green-50" : ci % 2 === 0 ? "bg-white" : "bg-muted/30"
                       }`}
                     >
-                      {ci === 0 ? (
-                        <TableCell className="font-mono font-bold text-sm text-indigo-700 align-top pt-3">
-                          <div>{g.code ?? "—"}</div>
-                          <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
-                        </TableCell>
-                      ) : <TableCell />}
+                      <TableCell className="align-top pt-2.5">
+                        <div className={`font-mono font-bold text-sm ${ci === 0 ? "text-indigo-700" : "text-indigo-300"}`}>{g.code ?? "—"}</div>
+                        <div className={`text-xs font-sans truncate max-w-[90px] ${ci === 0 ? "text-muted-foreground" : "text-muted-foreground/40"}`}>{g.productName}</div>
+                      </TableCell>
                       <TableCell className="font-medium text-sm">{colour}</TableCell>
                       {allSizes.map(sz => {
                         const ordQty = g.qty.get(colour)?.get(sz) ?? 0;
