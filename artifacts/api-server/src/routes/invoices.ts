@@ -115,6 +115,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
         customerName: ordersTable.customerName,
         customerId: ordersTable.customerId,
         totalAmount: ordersTable.totalAmount,
+        carriageAmount: ordersTable.carriageAmount,
         status: ordersTable.status,
         poNumber: ordersTable.poNumber,
         notes: ordersTable.notes,
@@ -195,6 +196,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
     }
 
     const totalAmount = orderRows.reduce((s, o) => s + parseFloat(String(o.totalAmount ?? "0")), 0);
+    const totalCarriage = orderRows.reduce((s, o) => s + parseFloat(String(o.carriageAmount ?? "0")), 0);
 
     // Generate consolidated PDF
     const pdfBuffer = await generateInvoicePDF({
@@ -206,6 +208,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
       customerPostcode: firstOrder.customerPostcode,
       invoiceDate: new Date(),
       poNumber,
+      carriageAmount: totalCarriage,
       items: allItems,
       totalAmount: totalAmount.toFixed(2),
       notes: null,
@@ -219,6 +222,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
       customerLogoDataUrl,
       invoiceDate: new Date(),
       poNumber,
+      carriageAmount: totalCarriage,
       items: allItems.map((i) => ({
         ...i,
         unitPrice: parseFloat(i.unitPrice),
@@ -360,6 +364,7 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
       paidAt: order.paidAt,
       stripePaymentLinkUrl: order.stripePaymentLinkUrl,
       poNumber: order.poNumber,
+      carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
       items: items.map((i) => ({
         productName: i.productName,
         colour: i.colour,
@@ -413,6 +418,7 @@ router.get("/invoices/:orderId/preview-email", async (req, res): Promise<void> =
       paidAt: order.paidAt,
       stripePaymentLinkUrl: order.stripePaymentLinkUrl,
       poNumber: order.poNumber,
+      carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
       items: mappedItems,
     });
     res.json({ subject, html });
