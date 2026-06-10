@@ -608,6 +608,18 @@ router.post("/portal/admin/preview/:customerId", async (req: Request, res: Respo
   res.json({ previewUrl, token, expiresIn: "2h", role, linkedEmployeeId, portalUserId: reqPortalUserId });
 });
 
+// ─── portal: customer settings (lightweight, used by all new-order flows) ────
+
+router.get("/portal/settings", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const row = await db.execute(sql`
+    SELECT default_shipping_option FROM customers WHERE id = ${customerId} LIMIT 1
+  `);
+  res.json({
+    defaultShippingOption: (row.rows[0] as any)?.default_shipping_option ?? null,
+  });
+});
+
 // ─── portal: list orders ─────────────────────────────────────────────────────
 
 router.get("/portal/orders", portalAuth, async (req: Request, res: Response) => {

@@ -3010,6 +3010,12 @@ export default function NewOrder() {
     return () => { if (serverSaveTimer.current) clearTimeout(serverSaveTimer.current); };
   }, [basket, mode, step]);
 
+  const { data: portalSettings } = useQuery<{ defaultShippingOption: string | null }>({
+    queryKey: ["portal-settings"],
+    queryFn: () => apiFetch("/portal/settings"),
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: wardrobe, isLoading: wardrobeLoading } = useQuery<{
     items: any[];
     employees: any[];
@@ -3025,6 +3031,8 @@ export default function NewOrder() {
     queryFn: () => apiFetch("/portal/wardrobe"),
     enabled: mode === "wardrobe",
   });
+
+  const defaultShippingOption = portalSettings?.defaultShippingOption ?? wardrobe?.defaultShippingOption ?? null;
 
   const submitMutation = useMutation({
     mutationFn: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean; addToStores?: boolean }) =>
@@ -3220,7 +3228,7 @@ export default function NewOrder() {
           variantImagesMap={quoteData?.variantImagesMap ?? {}}
           fromQuote={true}
           disabled={quoteMismatch}
-          defaultShippingOption={wardrobe?.defaultShippingOption}
+          defaultShippingOption={defaultShippingOption}
         />
       )}
 
@@ -3232,7 +3240,7 @@ export default function NewOrder() {
           submitting={submitMutation.isPending}
           portalRole={portalRole}
           onAddMore={() => setStep(1)}
-          defaultShippingOption={wardrobe?.defaultShippingOption}
+          defaultShippingOption={defaultShippingOption}
         />
       )}
 
