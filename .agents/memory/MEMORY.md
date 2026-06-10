@@ -1,1 +1,2 @@
 - [Stock Management](stock-management.md) — bins table, per-variant min_stock_qty/bin_location, bin suggestion algorithm, 6×4 label routes, QuickAdjustModal for stock takes
+- [Part-Dispatch Design](part-dispatch.md) — per-item dispatched_at, part_shipped status, queue/invoice/email filtering rules

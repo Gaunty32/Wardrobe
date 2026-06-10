@@ -38,6 +38,7 @@ interface DispatchItem {
   size: string | null; quantity: number; recipientType: string;
   recipientName: string | null; recipientEmployeeId: number | null;
   finishName: string | null; unitPrice: number; lineTotal: number;
+  dispatchedAt: string | null;
   employee: Employee | null;
 }
 interface Worksheet {
@@ -199,10 +200,12 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
       // Always print the delivery note first
       openDeliveryNote(order.id, order.shippingMethod);
 
+      const isPartShipped = data.order.status === "part_shipped";
+
       if (data.dpd) {
         toast({
-          title: `${order.orderNumber} dispatched via DPD`,
-          description: `Consignment: ${data.dpd.consignmentNumber}`,
+          title: isPartShipped ? `${order.orderNumber} part-dispatched via DPD` : `${order.orderNumber} dispatched via DPD`,
+          description: `Consignment: ${data.dpd.consignmentNumber}${isPartShipped ? " — remaining items to follow" : ""}`,
         });
         if (data.dpd.labelPdfBase64) {
           setTimeout(() => printBase64Pdf(data.dpd.labelPdfBase64!), 400);
@@ -215,6 +218,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         }
       } else if (data.dpdError) {
         toast({ title: `${order.orderNumber} dispatched`, description: `DPD note: ${data.dpdError}`, variant: "destructive" });
+      } else if (isPartShipped) {
+        toast({ title: "Part dispatched", description: `${order.orderNumber} — remaining items will follow when ready.` });
       } else {
         toast({ title: "Order dispatched", description: `${order.orderNumber} marked as shipped.` });
       }
@@ -241,13 +246,25 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-mono font-bold text-base">{order.orderNumber}</span>
               <span className="text-muted-foreground font-medium">{order.customerName}</span>
+              {order.status === "part_shipped" && (
+                <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1">
+                  <Package className="w-3 h-3" /> Part Shipped
+                </Badge>
+              )}
               <RequiredDateBadge requiredDate={order.requiredDate} />
             </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
-              <span className={`flex items-center gap-1 font-medium ${order.productionComplete ? "text-green-600" : "text-amber-600"}`}>
-                {order.productionComplete ? <CheckCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
-                {completeWs}/{totalWs} worksheets complete
-              </span>
+              {order.status === "part_shipped" ? (
+                <span className={`flex items-center gap-1 font-medium ${order.productionComplete ? "text-green-600" : "text-amber-600"}`}>
+                  {order.productionComplete ? <CheckCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                  {order.productionComplete ? "Remaining items ready" : "Awaiting remaining items"}
+                </span>
+              ) : (
+                <span className={`flex items-center gap-1 font-medium ${order.productionComplete ? "text-green-600" : "text-amber-600"}`}>
+                  {order.productionComplete ? <CheckCircle className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+                  {completeWs}/{totalWs} worksheets complete
+                </span>
+              )}
               <span>{order.items.length} item lines</span>
               {namedCount > 0 && <span>{namedCount} named recipients</span>}
             </div>
@@ -272,19 +289,36 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           >
             <RotateCcw className="w-3.5 h-3.5" /> Return
           </Button>
-          <Button size="sm" className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white" onClick={openDispatchModal}>
-            <Send className="w-3.5 h-3.5" /> Dispatch
+          <Button
+            size="sm"
+            className={`gap-1.5 text-xs text-white ${order.status === "part_shipped" ? "bg-amber-600 hover:bg-amber-700" : "bg-green-600 hover:bg-green-700"}`}
+            onClick={openDispatchModal}
+          >
+            <Send className="w-3.5 h-3.5" />
+            {order.status === "part_shipped" ? "Dispatch Remaining" : "Dispatch"}
           </Button>
         </div>
       </div>
 
-      {order.productionComplete && (
+      {order.status === "part_shipped" && order.productionComplete && (
+        <div className="mx-5 mb-3 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          <span className="font-medium">Remaining items in stock</span> — ready to dispatch the follow-up shipment.
+        </div>
+      )}
+      {order.status === "part_shipped" && !order.productionComplete && (
+        <div className="mx-5 mb-3 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+          <Package className="w-4 h-4 flex-shrink-0" />
+          <span><span className="font-medium">Part dispatched</span> — {order.items.filter(i => !i.dispatchedAt).length} item line(s) awaiting delivery before follow-up shipment.</span>
+        </div>
+      )}
+      {order.status !== "part_shipped" && order.productionComplete && (
         <div className="mx-5 mb-3 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-green-50 border border-green-200 text-sm text-green-800">
           <CheckCircle className="w-4 h-4 flex-shrink-0" />
           <span className="font-medium">All production complete</span> — ready to dispatch whenever you are.
         </div>
       )}
-      {!order.productionComplete && (dueToday || overdue) && (
+      {!order.productionComplete && order.status !== "part_shipped" && (dueToday || overdue) && (
         <div className="mx-5 mb-3 flex items-center justify-between px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0" />

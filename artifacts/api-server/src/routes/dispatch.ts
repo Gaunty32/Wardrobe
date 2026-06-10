@@ -70,14 +70,27 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
       // This means: if a delivery note could be generated, dispatch is unblocked.
       const hasDecoratedItems = items.some(i => i.finishId != null);
       const hasIncompleteWorksheets = orderWs.some(w => w.status !== "complete");
+      const isPartShipped = order.status === "part_shipped";
 
-      const allComplete = items.length > 0 && (
-        hasDecoratedItems
-          ? orderWs.length > 0 && !hasIncompleteWorksheets
-          : items.every(i => i.stockStatus === "complete")
-      );
+      // part_shipped: check only remaining (undispatched) items are ready for follow-up
+      // confirmed: check all items are ready using the decoration-aware logic
+      const remainingItems = isPartShipped ? items.filter(i => !i.dispatchedAt) : items;
 
-      if (!allComplete) return null;
+      let allComplete: boolean;
+      if (isPartShipped) {
+        allComplete = remainingItems.length > 0 && remainingItems.every(i =>
+          i.stockStatus === "complete" || i.stockStatus === "allocated"
+        );
+      } else {
+        allComplete = items.length > 0 && (
+          hasDecoratedItems
+            ? orderWs.length > 0 && !hasIncompleteWorksheets
+            : items.every(i => i.stockStatus === "complete")
+        );
+      }
+
+      // part_shipped orders always stay in the queue (need follow-up dispatch)
+      if (!isPartShipped && !allComplete) return null;
       const address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
 
       const enrichedItems = items.map((item) => {
@@ -206,22 +219,31 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
       .flatMap((w) => wsItems.filter((wi) => wi.worksheetId === w.id).map((wi) => wi.orderItemId))
   );
 
-  // Use the same logic as the dispatch queue:
-  //   - Orders with decorated items (finishId set): ready when all worksheets are complete.
-  //   - Plain-item-only orders: ready when every item has stockStatus = 'complete'.
   const hasDecoratedItems = items.some(i => i.finishId != null);
   const hasIncompleteWorksheets = worksheets.some(w => w.status !== "complete");
-  const isComplete = items.length > 0 && (
-    hasDecoratedItems
-      ? worksheets.length > 0 && !hasIncompleteWorksheets
-      : items.every(i => i.stockStatus === "complete")
-  );
+  const isPartShipped = order.status === "part_shipped";
 
-  // Items considered incomplete for delivery note purposes: not in a completed
-  // worksheet AND not marked complete in stock. For decorated-item orders these
-  // are informational only (order is still dispatchable once worksheets are done).
-  const incompleteItemIds = items
-    .filter((i) => i.stockStatus !== "complete" && !wsCompleteItemIds.has(i.id))
+  // For part_shipped: check remaining (undispatched) items; for confirmed: all items
+  const remainingItems = isPartShipped ? items.filter(i => !i.dispatchedAt) : items;
+
+  let isComplete: boolean;
+  if (isPartShipped) {
+    isComplete = remainingItems.length > 0 && remainingItems.every(i =>
+      i.stockStatus === "complete" || i.stockStatus === "allocated"
+    );
+  } else {
+    // Same logic as dispatch queue:
+    //   - Orders with decorated items: ready when all worksheets are complete.
+    //   - Plain-item-only orders: ready when every item has stockStatus = 'complete'.
+    isComplete = items.length > 0 && (
+      hasDecoratedItems
+        ? worksheets.length > 0 && !hasIncompleteWorksheets
+        : items.every(i => i.stockStatus === "complete")
+    );
+  }
+
+  const incompleteItemIds = remainingItems
+    .filter((i) => i.stockStatus !== "complete" && i.stockStatus !== "allocated" && !wsCompleteItemIds.has(i.id))
     .map((i) => i.id);
 
   let customer = null;
@@ -334,9 +356,36 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
   );
   const invoiceDate = crossMonth ? orderDate! : now;
 
-  // Mark order as shipped regardless of DPD outcome
+  // ── Mark per-item dispatched_at and determine full vs partial shipment ────────
+  const allOrderItems = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, parsed.data.id));
+  const allWs = await db.select().from(worksheetsTable).where(eq(worksheetsTable.orderId, parsed.data.id));
+  const allWsIds = allWs.map(w => w.id);
+  const allWsItems = allWsIds.length > 0
+    ? await db.select().from(worksheetItemsTable).where(inArray(worksheetItemsTable.worksheetId, allWsIds))
+    : [];
+  const wsCompleteItemIds = new Set(
+    allWs.filter(w => w.status === "complete")
+      .flatMap(w => allWsItems.filter(wi => wi.worksheetId === w.id).map(wi => wi.orderItemId))
+  );
+  // Only consider items not already marked as dispatched
+  const undispatchedItems = allOrderItems.filter(i => !i.dispatchedAt);
+  // Ready to ship now: in a completed worksheet, or stock is allocated/complete
+  const itemsToDispatch = undispatchedItems.filter(i =>
+    wsCompleteItemIds.has(i.id) || i.stockStatus === "complete" || i.stockStatus === "allocated"
+  );
+  const remainingAfter = undispatchedItems.filter(i => !itemsToDispatch.some(d => d.id === i.id));
+
+  if (itemsToDispatch.length > 0) {
+    await db.update(orderItemsTable)
+      .set({ dispatchedAt: now })
+      .where(inArray(orderItemsTable.id, itemsToDispatch.map(i => i.id)));
+  }
+
+  const isPartialShipment = remainingAfter.length > 0;
+  const newStatus = isPartialShipment ? "part_shipped" : "shipped";
+
   const updateFields: Partial<typeof ordersTable.$inferInsert> = {
-    status: "shipped",
+    status: newStatus,
     dispatchedAt: now,
     invoiceDate,
     updatedAt: now,
@@ -354,10 +403,12 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     .where(eq(ordersTable.id, parsed.data.id))
     .returning();
 
-  await logOrderAction(parsed.data.id, "Order dispatched", getActor(req),
+  await logOrderAction(parsed.data.id,
+    isPartialShipment ? "Order part-shipped" : "Order dispatched",
+    getActor(req),
     dpdResult
-      ? `DPD consignment ${dpdResult.consignmentNumber}, ${numberOfParcels ?? 1} parcel(s)`
-      : `Local/manual dispatch, ${numberOfParcels ?? 1} box(es)${dpdError ? ` (DPD error: ${dpdError})` : ""}`);
+      ? `DPD consignment ${dpdResult.consignmentNumber}, ${numberOfParcels ?? 1} parcel(s)${isPartialShipment ? ` — ${remainingAfter.length} item line(s) to follow` : ""}`
+      : `${isPartialShipment ? "Partial dispatch" : "Local/manual dispatch"}, ${numberOfParcels ?? 1} box(es)${isPartialShipment ? ` — ${remainingAfter.length} item line(s) to follow` : ""}${dpdError ? ` (DPD error: ${dpdError})` : ""}`);
 
   // Notify all portal users for this customer that their order has been dispatched
   if (updated.customerId && updated.source === "portal") {

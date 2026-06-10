@@ -2545,7 +2545,11 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) throw new Error("Order not found.");
 
-  const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+  // For part-shipped orders only invoice the items that have actually been dispatched
+  const allItems = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+  const items = order.status === "part_shipped"
+    ? allItems.filter(i => i.dispatchedAt != null)
+    : allItems;
 
   let customerEmail: string | null = null;
   let contactFirstName: string | null = null;

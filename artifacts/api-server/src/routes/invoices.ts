@@ -49,7 +49,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
     })
     .from(ordersTable)
     .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
-    .where(sql`${ordersTable.status} IN ('shipped', 'dispatched')`)
+    .where(sql`${ordersTable.status} IN ('shipped', 'dispatched', 'part_shipped')`)
     .orderBy(desc(ordersTable.dispatchedAt));
 
   const toSend = orders.filter((o) => !o.invoiceEmailSentAt && !o.xeroInvoiceId);
@@ -466,7 +466,7 @@ router.get("/invoices/by-customer", async (_req, res): Promise<void> => {
       xeroInvoiceId: ordersTable.xeroInvoiceId,
     })
     .from(ordersTable)
-    .where(sql`${ordersTable.status} IN ('shipped', 'dispatched')`)
+    .where(sql`${ordersTable.status} IN ('shipped', 'dispatched', 'part_shipped')`)
     .orderBy(desc(ordersTable.dispatchedAt));
 
   const groupMap = new Map<string, {

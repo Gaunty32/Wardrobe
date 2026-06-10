@@ -13,6 +13,11 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS purchasing_queued_at timestamptz
   `);
 
+  // dispatched_at — per-item dispatch timestamp for part-shipment tracking
+  await db.execute(sql`
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS dispatched_at timestamptz
+  `);
+
   // Add columns introduced in the product-variants schema update
   await db.execute(sql`
     ALTER TABLE product_variants ADD COLUMN IF NOT EXISTS woo_variation_id integer;

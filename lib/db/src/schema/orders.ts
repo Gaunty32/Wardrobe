@@ -81,6 +81,8 @@ export const orderItemsTable = pgTable("order_items", {
   notes: text("notes"),
   /** Timestamp when this item first entered the purchasing queue (purchase_required set to true) */
   purchasingQueuedAt: timestamp("purchasing_queued_at", { withTimezone: true }),
+  /** Set when this item is dispatched; null = not yet shipped. Used for part-shipment tracking. */
+  dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
 });
 
 export const purchaseOrdersTable = pgTable("purchase_orders", {
