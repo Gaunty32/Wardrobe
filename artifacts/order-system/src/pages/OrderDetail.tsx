@@ -1782,10 +1782,13 @@ export default function OrderDetail() {
                                   Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
                                 </Badge>
                               )}
-                              {!(orderItem as any).purchaseRequired && (orderItem as any).stockStatus === 'allocated' && (
+                              {!(orderItem as any).purchaseRequired && (
+                                (orderItem as any).stockStatus === 'allocated' ||
+                                ((orderItem as any).stockStatus == null && !((orderItem as any).isService) && !((orderItem as any).isBundleHeader) && ((orderItem as any).poNumbers as string[] | undefined)?.length === 0)
+                              ) && (
                                 <button
                                   className="opacity-0 group-hover/badges:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs text-amber-700 hover:text-amber-900 hover:bg-amber-50 border border-amber-200"
-                                  title="Item is marked as allocated but may have no real stock — click to re-queue for purchasing"
+                                  title="Item is not queued for purchasing — click to re-queue"
                                   onClick={() => requeueForPurchaseMutation.mutate([orderItem.id])}
                                   disabled={requeueForPurchaseMutation.isPending}
                                 >
