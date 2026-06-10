@@ -134,16 +134,16 @@ router.post("/stripe/orders/:orderId/payment-link", async (req, res): Promise<vo
     }).from(ordersTable).where(eq(ordersTable.id, orderId));
     if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-    if (order.stripePaymentLinkUrl) {
-      res.json({ url: order.stripePaymentLinkUrl, id: order.stripePaymentLinkId, existing: true });
-      return;
-    }
-
     const totalAmount = parseFloat(String(order.totalAmount ?? 0));
     const carriageAmount = parseFloat(String(order.carriageAmount ?? 0));
     if (totalAmount <= 0) { res.status(400).json({ error: "Order has no total amount — set an order total before generating a payment link" }); return; }
 
     const stripe = await getUncachableStripeClient();
+
+    // Deactivate the existing link (if any) so the old URL stops working
+    if (order.stripePaymentLinkId) {
+      try { await stripe.paymentLinks.update(order.stripePaymentLinkId, { active: false }); } catch { /* ignore */ }
+    }
 
     const price = await stripe.prices.create({
       unit_amount: Math.round((totalAmount + carriageAmount) * 100 * 1.2),

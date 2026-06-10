@@ -600,6 +600,36 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  // ── Re-generate Stripe payment link when carriage changes ─────────────────
+  // The link amount is (totalAmount + carriageAmount) × 1.2, so it goes stale
+  // whenever shipping is added/changed after the link was first created.
+  if (req.body.carriageAmount !== undefined && order.stripePaymentLinkId) {
+    try {
+      const stripe = await getUncachableStripeClient();
+      await stripe.paymentLinks.update(order.stripePaymentLinkId, { active: false });
+      const tAmt = parseFloat(String(order.totalAmount ?? 0));
+      const cAmt = parseFloat(String(order.carriageAmount ?? 0));
+      const newPrice = await stripe.prices.create({
+        unit_amount: Math.round((tAmt + cAmt) * 100 * 1.2),
+        currency: "gbp",
+        product_data: { name: `Order ${order.orderNumber} — Select Branding Solutions Ltd` },
+      });
+      const newLink = await stripe.paymentLinks.create({
+        line_items: [{ price: newPrice.id, quantity: 1 }],
+        metadata: { order_id: String(order.id), order_number: order.orderNumber },
+        after_completion: {
+          type: "hosted_confirmation",
+          hosted_confirmation: { custom_message: `Payment received for order ${order.orderNumber}. Thank you — Select Branding Solutions Ltd` },
+        },
+      });
+      await db.update(ordersTable)
+        .set({ stripePaymentLinkUrl: newLink.url, stripePaymentLinkId: newLink.id })
+        .where(eq(ordersTable.id, order.id));
+    } catch {
+      // Non-fatal — Stripe may not be configured; carry on
+    }
+  }
+
   // ── Stock allocation on confirmation ──────────────────────────────────────
   if (parsed.data.status === "confirmed") {
     const items = await db
