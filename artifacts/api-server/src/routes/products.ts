@@ -522,6 +522,25 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Product not found" });
     return;
   }
+  // Cascade supplier price changes to variants so order GP% reflects the new cost.
+  // Variant-level supplier_price acts as an override; updating the product price resets
+  // all variants to inherit the new product price (they can be individually overridden after).
+  if ("supplierPrice" in req.body) {
+    const newPrice = updateData.supplierPrice != null ? String(updateData.supplierPrice) : null;
+    await db.execute(sql`
+      UPDATE product_variants
+      SET supplier_price = ${newPrice}
+      WHERE product_id = ${params.data.id}
+    `);
+  }
+  if ("secondarySupplierPrice" in req.body) {
+    const newPrice = updateData.secondarySupplierPrice != null ? String(updateData.secondarySupplierPrice) : null;
+    await db.execute(sql`
+      UPDATE product_variants
+      SET secondary_supplier_price = ${newPrice}
+      WHERE product_id = ${params.data.id}
+    `);
+  }
   if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku, product);
   res.json(fmtProduct(product));
 });
