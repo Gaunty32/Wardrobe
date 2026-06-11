@@ -24,7 +24,7 @@ import {
 import { cn, formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
-import { useGetProduct, useUpdateProduct, getListProductsQueryKey, useListSuppliers } from "@workspace/api-client-react";
+import { useGetProduct, useUpdateProduct, getListProductsQueryKey, getGetProductQueryKey, useListSuppliers } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
 
@@ -838,7 +838,8 @@ export default function ProductDetail() {
           qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
           qc.invalidateQueries({ queryKey: ["product", productId, "attributes"] });
           qc.invalidateQueries({ queryKey: ["product", productId, "variants"] });
-          qc.invalidateQueries({ queryKey: ["product", productId] });
+          qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
+          setDetails(null);
           toast({ title: "Product saved" });
           setDetailsDirty(false);
         },
@@ -866,7 +867,8 @@ export default function ProductDetail() {
       },
       {
         onSuccess: () => {
-          qc.invalidateQueries({ queryKey: ["product", productId] });
+          qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
+          setGuidance(null);
           toast({ title: "Guidance saved" });
           setGuidanceDirty(false);
         },
