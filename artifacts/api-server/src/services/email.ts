@@ -2645,9 +2645,11 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
 
   // Always regenerate the Stripe payment link before sending so the amount
   // reflects the current order total + carriage (the cached link may be stale).
+  // Use the invoiced items sum — for part-shipped orders `items` is already
+  // filtered to dispatched items only, so this matches exactly what's on the invoice.
   let freshPaymentLinkUrl: string | null = order.stripePaymentLinkUrl;
   if (!order.paidAt) {
-    const totalAmount = parseFloat(String(order.totalAmount ?? 0));
+    const totalAmount = items.reduce((sum, i) => sum + parseFloat(String(i.lineTotal ?? 0)), 0);
     const carriageAmount = parseFloat(String(order.carriageAmount ?? 0));
     if (totalAmount > 0) {
       try {
