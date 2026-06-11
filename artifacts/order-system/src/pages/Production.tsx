@@ -272,7 +272,9 @@ function filterWorksheets(worksheets: Worksheet[], f: Filters): Worksheet[] {
     }
     if (f.process) {
       const proc = f.process.toLowerCase();
-      if (!ws.items.some((i) => i.processes.some((p) => p.name.toLowerCase().includes(proc)))) return false;
+      if (!ws.items.some((i) => i.processes.some((p) =>
+        p.name.toLowerCase().includes(proc) || (p.type ?? "").toLowerCase().includes(proc)
+      ))) return false;
     }
     if (!matchesDateFilters(ws.requiredDate, f.dateFrom, f.dateTo)) return false;
     return true;
@@ -3658,10 +3660,19 @@ export default function Production() {
                   <div className="flex flex-wrap gap-1 mt-2">
                     {processEntries.map(([type, qty]) => {
                       const col = PROCESS_COLOURS[type] ?? { bg: "bg-muted", text: "text-muted-foreground", border: "border-border", label: type };
+                      const isActive = activeTab === t.key && filters.process === type;
                       return (
-                        <span key={type} className={`text-xs font-semibold px-1.5 py-0.5 rounded border ${col.bg} ${col.text} ${col.border}`}>
+                        <button
+                          key={type}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab(t.key);
+                            setFilters(f => ({ ...f, process: f.process === type ? "" : type }));
+                          }}
+                          className={`text-xs font-semibold px-1.5 py-0.5 rounded border transition-all ${col.bg} ${col.text} ${col.border} ${isActive ? "ring-2 ring-offset-1 ring-current opacity-100" : "opacity-80 hover:opacity-100 hover:ring-1 hover:ring-current"}`}
+                        >
                           {col.label} {qty}
-                        </span>
+                        </button>
                       );
                     })}
                   </div>
