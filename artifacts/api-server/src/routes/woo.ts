@@ -38,11 +38,16 @@ export async function getWooSettings(): Promise<WooSettings | null> {
   return { baseUrl: map["woo_url"], ck: map["woo_consumer_key"], cs: map["woo_consumer_secret"] };
 }
 
+const WOO_TIMEOUT_MS = 10_000;
+
 async function wooFetch<T>(settings: WooSettings, path: string): Promise<T> {
   const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3${path}`);
   url.searchParams.set("consumer_key", settings.ck);
   url.searchParams.set("consumer_secret", settings.cs);
-  const res = await fetch(url.toString(), { headers: { "Accept": "application/json" } });
+  const res = await fetch(url.toString(), {
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(WOO_TIMEOUT_MS),
+  });
   if (!res.ok) throw new Error(`WooCommerce API error ${res.status}: ${await res.text()}`);
   return res.json() as T;
 }
@@ -55,6 +60,7 @@ export async function wooUpdateOrderStatus(settings: WooSettings, wooOrderId: nu
     method: "PUT",
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
     body: JSON.stringify({ status }),
+    signal: AbortSignal.timeout(WOO_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`WooCommerce API error ${res.status}: ${await res.text()}`);
 }
