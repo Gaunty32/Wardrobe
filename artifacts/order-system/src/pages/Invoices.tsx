@@ -278,10 +278,16 @@ function OrderRow({
   });
 
   const postXero = useMutation({
-    mutationFn: () => apiFetch(`/invoices/${order.id}/post-xero`, { method: "POST" }),
-    onSuccess: () => {
+    mutationFn: () => apiFetch<{ xeroInvoiceId: string; invoiceNumber: string; allocatedAmount: number; clearedByCredit: boolean }>(`/invoices/${order.id}/post-xero`, { method: "POST" }),
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
-      toast({ title: "Posted to Xero", description: `Invoice for ${order.orderNumber} posted.` });
+      const base = `Invoice ${res.invoiceNumber} posted to Xero.`;
+      const extra = res.clearedByCredit
+        ? ` £${res.allocatedAmount.toFixed(2)} credit allocated — invoice cleared.`
+        : res.allocatedAmount > 0
+        ? ` £${res.allocatedAmount.toFixed(2)} credit allocated against invoice.`
+        : "";
+      toast({ title: "Posted to Xero", description: base + extra });
     },
     onError: (e: Error) => toast({ title: "Xero error", description: parseApiError(e), variant: "destructive" }),
   });

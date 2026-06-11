@@ -716,9 +716,69 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     .set({ xeroInvoiceId: created.InvoiceID, xeroInvoiceNumber: created.InvoiceNumber ?? null, xeroInvoiceStatus: created.Status, updatedAt: new Date() })
     .where(eq(ordersTable.id, orderId));
 
+  // ── Auto-allocate any unallocated prepayments / overpayments on this contact ──
+  let allocatedAmount = 0;
+  let clearedByCredit = false;
+
+  try {
+    // Get the invoice's AmountDue from Xero (most accurate — includes any rounding Xero applies)
+    const invDetailRes = await xeroFetch(`/Invoices/${created.InvoiceID}`);
+    let amountDue = 0;
+    if (invDetailRes.ok) {
+      const invDetail = await invDetailRes.json() as { Invoices: Array<{ AmountDue: number }> };
+      amountDue = invDetail.Invoices?.[0]?.AmountDue ?? 0;
+    }
+
+    if (amountDue > 0) {
+      let remaining = amountDue;
+
+      // Helper: allocate a prepayment or overpayment against this invoice
+      async function allocateCredit(type: "Prepayments" | "Overpayments", idField: "PrepaymentID" | "OverpaymentID"): Promise<void> {
+        const res = await xeroFetch(
+          `/${type}?where=Contact.ContactID%3Dguid(%22${xeroContactId}%22)%26%26Status%3D%22AUTHORISED%22`
+        );
+        if (!res.ok) return;
+        const data = await res.json() as { [key: string]: Array<Record<string, unknown>> };
+        const records = data[type] ?? [];
+        for (const rec of records) {
+          if (remaining <= 0.005) break;
+          const credit = typeof rec.RemainingCredit === "number" ? rec.RemainingCredit : 0;
+          if (credit < 0.01) continue;
+          const toAllocate = Math.min(credit, remaining);
+          const allocRes = await xeroFetch(`/${type}/${rec[idField]}/Allocations`, {
+            method: "PUT",
+            body: JSON.stringify({
+              Allocations: [{ Invoice: { InvoiceID: created.InvoiceID }, Amount: Math.round(toAllocate * 100) / 100 }],
+            }),
+          });
+          if (allocRes.ok) {
+            remaining -= toAllocate;
+            allocatedAmount += toAllocate;
+          }
+        }
+      }
+
+      await allocateCredit("Prepayments", "PrepaymentID");
+      await allocateCredit("Overpayments", "OverpaymentID");
+
+      // If fully cleared, mark the order as paid in our DB
+      if (allocatedAmount > 0 && remaining <= 0.005) {
+        clearedByCredit = true;
+        await db.update(ordersTable)
+          .set({ paidAt: new Date(), updatedAt: new Date() })
+          .where(eq(ordersTable.id, orderId));
+      }
+    }
+  } catch (allocErr) {
+    // Allocation is best-effort — never block the invoice post itself
+    console.warn("[xero] Auto-allocation failed (non-fatal):", allocErr);
+  }
+
   return {
     xeroInvoiceId: created.InvoiceID,
     xeroInvoiceStatus: created.Status,
     invoiceNumber: created.InvoiceNumber,
+    allocatedAmount: Math.round(allocatedAmount * 100) / 100,
+    clearedByCredit,
   };
 }
