@@ -3409,6 +3409,8 @@ export default function Production() {
   const [sendingOrder, setSendingOrder] = useState<AllReadyOrder | null>(null);
   const [sendingNotes, setSendingNotes] = useState("");
   const [sendingExcluded, setSendingExcluded] = useState<Set<number>>(new Set());
+  const [sendAllConfirmOpen, setSendAllConfirmOpen] = useState(false);
+  const [sendAllInProgress, setSendAllInProgress] = useState(false);
 
   const returnReadyOrderMutation = useMutation({
     mutationFn: (itemIds: number[]) =>
@@ -3509,6 +3511,51 @@ export default function Production() {
     },
     onError: () => toast({ title: "Error", variant: "destructive" }),
   });
+
+  async function handleSendAll() {
+    setSendAllInProgress(true);
+    setSendAllConfirmOpen(false);
+    const results = await Promise.allSettled(
+      filteredAllReady.map(order =>
+        apiFetch<any>("/worksheets", {
+          method: "POST",
+          body: JSON.stringify({
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            customerId: order.customerId,
+            customerName: order.customerName,
+            notes: "",
+            itemIds: order.items.map((i: ReadyItemSummary) => i.id),
+            returnItemIds: [],
+          }),
+        })
+      )
+    );
+    let created = 0, failed = 0;
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        created++;
+        if (result.value?.worksheetNumber) {
+          printWorksheetFromData(result.value as Worksheet);
+        }
+      } else {
+        failed++;
+      }
+    }
+    queryClient.invalidateQueries({ queryKey: ["production-pending"] });
+    queryClient.invalidateQueries({ queryKey: ["worksheets"] });
+    queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+    setSendAllInProgress(false);
+    toast({
+      title: failed === 0
+        ? `${created} order${created !== 1 ? "s" : ""} sent to production`
+        : `${created} sent, ${failed} failed`,
+      description: failed > 0
+        ? "Some orders could not be sent — check them individually."
+        : created > 0 ? "Worksheets created and printing now." : undefined,
+      variant: failed > 0 ? "destructive" : undefined,
+    });
+  }
 
   const handleDelete = (id: number) => {
     if (!confirm("Delete this worksheet?")) return;
@@ -3663,9 +3710,24 @@ export default function Production() {
               <div className="space-y-3">
                 {filteredAllReady.length > 0 && (
                   <>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
-                      <CheckCircle2 className="w-4 h-4" />
-                      All Stock In — Ready to Send ({filteredAllReady.length} order{filteredAllReady.length !== 1 ? "s" : ""})
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
+                        <CheckCircle2 className="w-4 h-4" />
+                        All Stock In — Ready to Send ({filteredAllReady.length} order{filteredAllReady.length !== 1 ? "s" : ""})
+                      </div>
+                      {filteredAllReady.length >= 2 && (
+                        <Button
+                          size="sm"
+                          className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
+                          disabled={sendAllInProgress}
+                          onClick={() => setSendAllConfirmOpen(true)}
+                        >
+                          {sendAllInProgress
+                            ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            : <ClipboardList className="w-3.5 h-3.5" />}
+                          {sendAllInProgress ? "Sending…" : `Send All ${filteredAllReady.length} to Production`}
+                        </Button>
+                      )}
                     </div>
                     {filteredAllReady.map((order) => (
                       <ReadyOrderCard
@@ -3829,6 +3891,37 @@ export default function Production() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {sendAllConfirmOpen && (
+        <Dialog open onOpenChange={(open) => { if (!open) setSendAllConfirmOpen(false); }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ClipboardList className="w-5 h-5" />
+                Send All to Production
+              </DialogTitle>
+            </DialogHeader>
+            <div className="py-3 space-y-3">
+              <p className="text-sm text-muted-foreground">
+                This will send all <strong>{filteredAllReady.length} orders</strong> to production at once. A worksheet will be created and printed for each decorated order; plain stock orders will be confirmed for dispatch.
+              </p>
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                ⚠️ All items for every order will be included with no notes. To exclude individual items or add notes, use the per-order buttons instead.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSendAllConfirmOpen(false)}>Cancel</Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                onClick={handleSendAll}
+              >
+                <ClipboardList className="w-3.5 h-3.5" />
+                Send All {filteredAllReady.length} to Production
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {sendingOrder && (() => {
         const includedItems = sendingOrder.items.filter(i => !sendingExcluded.has(i.id));
