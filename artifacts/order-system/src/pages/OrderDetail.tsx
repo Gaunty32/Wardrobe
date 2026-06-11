@@ -1667,64 +1667,138 @@ export default function OrderDetail() {
                 </Button>
               </div>
             </CardHeader>
-            {orderBackorders.length > 0 && (
-              <div className="mx-6 mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
-                <div className="flex items-center gap-2 text-amber-800 font-semibold text-sm">
-                  <TriangleAlert className="w-4 h-4 flex-shrink-0" />
-                  Part-shipped — {orderBackorders.length} item{orderBackorders.length !== 1 ? "s" : ""} on backorder
+            {(() => {
+              // Outstanding items = undispatched non-service lines
+              const outstandingItems = (order.items ?? []).filter((i: any) =>
+                i.dispatched_at == null && (i.colour || i.size || i.finish_id)
+              );
+              if (outstandingItems.length === 0) return null;
+
+              // Map backorder info by order_item_id for quick lookup
+              const boByItemId = new Map<number, OrderBackorderLine>();
+              for (const b of orderBackorders) {
+                if (b.orderItemId != null) boByItemId.set(b.orderItemId, b);
+              }
+
+              const fmtDue = (d: string) =>
+                new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+              return (
+                <div className="mx-6 mb-4 rounded-lg border border-amber-300 bg-amber-50 overflow-hidden">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-100 border-b border-amber-300">
+                    <TriangleAlert className="w-4 h-4 text-amber-700 flex-shrink-0" />
+                    <span className="text-amber-900 font-semibold text-sm">
+                      {outstandingItems.length} outstanding item{outstandingItems.length !== 1 ? "s" : ""} — will be dispatched when ready
+                    </span>
+                  </div>
+                  {/* Rows */}
+                  <div className="divide-y divide-amber-200">
+                    {outstandingItems.map((item: any) => {
+                      const bo = boByItemId.get(item.id);
+                      const isOnBackorder = !!bo;
+
+                      // Derive status label
+                      let statusLabel: React.ReactNode;
+                      if (isOnBackorder) {
+                        statusLabel = (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-200 text-amber-900 border border-amber-300">
+                            <ShoppingBag className="w-2.5 h-2.5" /> On backorder · {bo!.poNumber}
+                          </span>
+                        );
+                      } else if (item.stock_status === "complete") {
+                        statusLabel = (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-800 border border-green-200">
+                            <CheckCircle2 className="w-2.5 h-2.5" /> Ready — awaiting dispatch
+                          </span>
+                        );
+                      } else if (item.stock_status === "allocated") {
+                        statusLabel = (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+                            <Archive className="w-2.5 h-2.5" /> Allocated from stock
+                          </span>
+                        );
+                      } else if (item.purchase_required) {
+                        statusLabel = (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-800 border border-orange-200">
+                            <ShoppingBag className="w-2.5 h-2.5" /> In purchasing
+                          </span>
+                        );
+                      } else {
+                        statusLabel = (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-800 border border-violet-200">
+                            <ClipboardList className="w-2.5 h-2.5" /> In production
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <div key={item.id} className="flex items-center justify-between gap-3 px-4 py-2.5 bg-white/60">
+                          {/* Left: item description */}
+                          <div className="min-w-0 flex-1">
+                            <span className="font-medium text-sm text-foreground">{item.product_name ?? item.productName}</span>
+                            {(item.colour || item.size) && (
+                              <span className="text-muted-foreground text-xs ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
+                            )}
+                            <div className="mt-1">{statusLabel}</div>
+                          </div>
+                          {/* Right: qty + due date */}
+                          <div className="flex items-center gap-4 flex-shrink-0 text-sm">
+                            <span className="font-semibold text-foreground tabular-nums">×{item.quantity}</span>
+                            {/* Due date — editable when on a PO backorder */}
+                            {isOnBackorder ? (
+                              editingBackorderDate?.id === bo!.id ? (
+                                <form
+                                  className="flex items-center gap-1"
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    updateBackorderDateMutation.mutate({ id: bo!.id, poId: bo!.poId, date: editingBackorderDate.date });
+                                  }}
+                                >
+                                  <input
+                                    type="date"
+                                    className="border border-amber-400 rounded px-1.5 py-0.5 text-xs bg-white text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    value={editingBackorderDate.date}
+                                    onChange={(e) => setEditingBackorderDate(prev => prev ? { ...prev, date: e.target.value } : prev)}
+                                    autoFocus
+                                  />
+                                  <button type="submit" disabled={updateBackorderDateMutation.isPending} className="text-green-700 hover:text-green-900 font-semibold px-1">✓</button>
+                                  <button type="button" onClick={() => setEditingBackorderDate(null)} className="text-muted-foreground hover:text-foreground px-1">✕</button>
+                                </form>
+                              ) : (
+                                <button
+                                  className="flex items-center gap-1.5 text-xs text-amber-700 hover:bg-amber-100 rounded px-2 py-1 transition-colors group"
+                                  title="Click to edit estimated due date"
+                                  onClick={() => setEditingBackorderDate({
+                                    id: bo!.id,
+                                    poId: bo!.poId,
+                                    date: bo!.estimatedDueDate ? new Date(bo!.estimatedDueDate).toISOString().slice(0, 10) : "",
+                                  })}
+                                >
+                                  <Calendar className="w-3 h-3" />
+                                  {bo!.estimatedDueDate
+                                    ? <span className="font-semibold">Due {fmtDue(bo!.estimatedDueDate)}</span>
+                                    : <span className="italic text-amber-500 group-hover:text-amber-700">Set due date</span>}
+                                </button>
+                              )
+                            ) : (
+                              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {item.stock_status === "complete" || item.stock_status === "allocated" ? "Ready" : "—"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Footer hint */}
+                  <div className="px-4 py-2 bg-amber-50 border-t border-amber-200 text-xs text-amber-700">
+                    Backorder due dates are editable. Book in deliveries via <a href="/purchasing?tab=ordered" className="underline font-medium hover:text-amber-900">Purchasing → Ordered</a>.
+                  </div>
                 </div>
-                <p className="text-xs text-amber-700">Items awaiting stock — dispatched separately when received. Click a due date to edit it, or go to <a href="/purchasing?tab=ordered" className="underline font-medium hover:text-amber-900">Purchasing</a> to book in deliveries.</p>
-                <div className="space-y-1.5">
-                  {orderBackorders.map((b) => (
-                    <div key={b.id} className="flex items-center justify-between gap-3 text-xs bg-white/70 rounded px-3 py-1.5 border border-amber-200">
-                      <span className="font-medium text-foreground">
-                        {b.supplierCode && <span className="font-mono text-primary mr-1.5">{b.supplierCode}</span>}
-                        {b.productName}
-                        {(b.colour || b.size) && <span className="text-muted-foreground ml-1.5">{[b.colour, b.size].filter(Boolean).join(" / ")}</span>}
-                      </span>
-                      <div className="flex items-center gap-2 flex-shrink-0 text-amber-700">
-                        <span className="font-semibold">{b.remaining} pending</span>
-                        {editingBackorderDate?.id === b.id ? (
-                          <form
-                            className="flex items-center gap-1"
-                            onSubmit={(e) => {
-                              e.preventDefault();
-                              updateBackorderDateMutation.mutate({ id: b.id, poId: b.poId, date: editingBackorderDate.date });
-                            }}
-                          >
-                            <input
-                              type="date"
-                              className="border border-amber-400 rounded px-1.5 py-0.5 text-xs bg-white text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500"
-                              value={editingBackorderDate.date}
-                              onChange={(e) => setEditingBackorderDate(prev => prev ? { ...prev, date: e.target.value } : prev)}
-                              autoFocus
-                            />
-                            <button type="submit" disabled={updateBackorderDateMutation.isPending} className="text-green-700 hover:text-green-900 font-semibold px-1">✓</button>
-                            <button type="button" onClick={() => setEditingBackorderDate(null)} className="text-muted-foreground hover:text-foreground px-1">✕</button>
-                          </form>
-                        ) : (
-                          <button
-                            className="flex items-center gap-1 hover:bg-amber-100 rounded px-1 py-0.5 transition-colors group"
-                            title="Click to set due date"
-                            onClick={() => setEditingBackorderDate({
-                              id: b.id,
-                              poId: b.poId,
-                              date: b.estimatedDueDate ? new Date(b.estimatedDueDate).toISOString().slice(0, 10) : "",
-                            })}
-                          >
-                            <Calendar className="w-3 h-3" />
-                            {b.estimatedDueDate
-                              ? new Date(b.estimatedDueDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
-                              : <span className="text-amber-500 group-hover:text-amber-700 italic">set due date</span>}
-                          </button>
-                        )}
-                        <a href="/purchasing?tab=ordered" className="text-muted-foreground hover:text-foreground underline">via {b.poNumber}</a>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+              );
+            })()}
             <CardContent className="p-0 flex-1">
               {order.items && order.items.length > 0 ? (
                 <div>
