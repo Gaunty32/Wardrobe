@@ -439,7 +439,7 @@ function OrderRow({
                 Resend
               </Button>
             )}
-            {showPostXero && !order.xeroInvoiceId && (
+            {showPostXero && (
               <Button
                 size="sm"
                 variant="outline"
@@ -448,7 +448,7 @@ function OrderRow({
                 disabled={postXero.isPending}
               >
                 {postXero.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
-                Post to Xero
+                {order.xeroInvoiceId ? "Re-post to Xero" : "Post to Xero"}
               </Button>
             )}
           </div>
@@ -1063,7 +1063,7 @@ export default function Invoices() {
                   <TableHeader>{COLS}</TableHeader>
                   <TableBody>
                     {done.map((order) => (
-                      <OrderRow key={order.id} order={order} showResend />
+                      <OrderRow key={order.id} order={order} showResend showPostXero />
                     ))}
                   </TableBody>
                 </Table>
