@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
-import { db, settingsTable, ordersTable, orderItemsTable, customersTable } from "@workspace/db";
+import { db, settingsTable, ordersTable, orderItemsTable, customersTable, customerEmployeesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
 import { getResendClient } from "./resend-client.js";
@@ -2220,6 +2220,7 @@ interface InvoiceLineItem {
   colour?: string | null;
   size?: string | null;
   finishName?: string | null;
+  recipientName?: string | null;
   quantity: number;
   unitPrice: string;
   lineTotal: string;
@@ -2411,7 +2412,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
         y = MARGIN;
       }
       if (rowAlt) doc.rect(MARGIN, y, W, ROW_H).fill(ALT);
-      const desc = item.productName + (item.finishName ? ` [${item.finishName}]` : "");
+      const desc = item.productName + (item.finishName ? ` [${item.finishName}]` : "") + (item.recipientName ? ` — ${item.recipientName}` : "");
       const cs   = [item.colour, item.size].filter(Boolean).join(" / ") || "—";
       const qty  = item.quantity;
       const unit = parseFloat(item.unitPrice);
@@ -2595,7 +2596,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
 // Helper to build invoice data from the DB (shared between send + preview)
 export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   order: typeof ordersTable.$inferSelect;
-  items: typeof orderItemsTable.$inferSelect[];
+  items: (typeof orderItemsTable.$inferSelect & { employeeName: string | null })[];
   customerEmail: string | null;
   contactFirstName: string | null;
   customerLogoDataUrl: string | null;
@@ -2608,7 +2609,19 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   if (!order) throw new Error("Order not found.");
 
   // For part-shipped orders only invoice the items that have actually been dispatched
-  const allItems = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+  const allItemRows = await db
+    .select({ item: orderItemsTable, employee: customerEmployeesTable })
+    .from(orderItemsTable)
+    .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+    .where(eq(orderItemsTable.orderId, orderId));
+
+  const allItems = allItemRows.map(r => ({
+    ...r.item,
+    employeeName: r.employee
+      ? [r.employee.firstName, r.employee.lastName].filter(Boolean).join(" ") || null
+      : (r.item.recipientName ?? null),
+  }));
+
   const items = order.status === "part_shipped"
     ? allItems.filter(i => i.dispatchedAt != null)
     : allItems;
@@ -2687,6 +2700,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     colour: i.colour,
     size: i.size,
     finishName: i.finishName,
+    recipientName: i.employeeName,
     quantity: i.quantity,
     unitPrice: parseFloat(i.unitPrice as string),
     lineTotal: parseFloat(i.lineTotal as string),
@@ -2731,6 +2745,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
       colour: i.colour,
       size: i.size,
       finishName: i.finishName,
+      recipientName: i.employeeName,
       quantity: i.quantity,
       unitPrice: i.unitPrice as string,
       lineTotal: i.lineTotal as string,

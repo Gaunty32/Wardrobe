@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { z } from "zod";
-import { db, ordersTable, orderItemsTable, customersTable, settingsTable } from "@workspace/db";
+import { db, ordersTable, orderItemsTable, customersTable, settingsTable, customerEmployeesTable } from "@workspace/db";
 import { eq, desc, and, isNotNull, isNull, sql, inArray } from "drizzle-orm";
 import {
   sendInvoiceEmail, getSmtpConfig, testSmtpConnection,
@@ -167,6 +167,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
       colour: string | null;
       size: string | null;
       finishName: string | null;
+      recipientName: string | null;
       quantity: number;
       unitPrice: string;
       lineTotal: string;
@@ -175,17 +176,22 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
     }> = [];
 
     for (const order of orderRows) {
-      const items = await db
-        .select()
+      const itemRows = await db
+        .select({ item: orderItemsTable, employee: customerEmployeesTable })
         .from(orderItemsTable)
+        .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
         .where(eq(orderItemsTable.orderId, order.id));
 
-      for (const item of items) {
+      for (const { item, employee } of itemRows) {
+        const recipientName = employee
+          ? [employee.firstName, employee.lastName].filter(Boolean).join(" ") || null
+          : (item.recipientName ?? null);
         allItems.push({
           productName: item.productName,
           colour: item.colour,
           size: item.size,
           finishName: item.finishName,
+          recipientName,
           quantity: item.quantity,
           unitPrice: item.unitPrice as string,
           lineTotal: item.lineTotal as string,
@@ -370,6 +376,7 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
         colour: i.colour,
         size: i.size,
         finishName: i.finishName,
+        recipientName: (i as any).employeeName ?? null,
         quantity: i.quantity,
         unitPrice: i.unitPrice as string,
         lineTotal: i.lineTotal as string,

@@ -2485,8 +2485,11 @@ router.get("/portal/invoices/:orderId/pdf", portalAuth, async (req: Request, res
   if (!order) { res.status(404).json({ error: "Invoice not found" }); return; }
 
   const itemRows = await db.execute(sql`
-    SELECT product_name, colour, size, finish_name, quantity, unit_price, line_total
-    FROM order_items WHERE order_id = ${orderId} ORDER BY id
+    SELECT oi.product_name, oi.colour, oi.size, oi.finish_name, oi.quantity, oi.unit_price, oi.line_total,
+      COALESCE(NULLIF(TRIM(CONCAT(e.first_name, ' ', e.last_name)), ''), oi.recipient_name) AS recipient_name
+    FROM order_items oi
+    LEFT JOIN customer_employees e ON e.id = oi.recipient_employee_id
+    WHERE oi.order_id = ${orderId} ORDER BY oi.id
   `);
 
   const pdfBuffer = await generateInvoicePDF({
@@ -2499,6 +2502,7 @@ router.get("/portal/invoices/:orderId/pdf", portalAuth, async (req: Request, res
       colour: i.colour,
       size: i.size,
       finishName: i.finish_name,
+      recipientName: i.recipient_name ?? null,
       quantity: i.quantity,
       unitPrice: i.unit_price,
       lineTotal: i.line_total,
