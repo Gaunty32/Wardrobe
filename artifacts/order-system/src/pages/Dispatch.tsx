@@ -109,10 +109,11 @@ function isPast(dateStr: string | null): boolean {
   return new Date(dateStr) < new Date();
 }
 
-function openWearerLabels(orderId: number, opts?: { includeDeliveryLabel?: boolean; recipient?: string }) {
+function openWearerLabels(orderId: number, opts?: { includeDeliveryLabel?: boolean; recipient?: string; dispatchedItemIds?: number[] }) {
   const params = new URLSearchParams();
   if (opts?.includeDeliveryLabel) params.set("includeDeliveryLabel", "1");
   if (opts?.recipient) params.set("recipient", opts.recipient);
+  if (opts?.dispatchedItemIds && opts.dispatchedItemIds.length > 0) params.set("dispatchedItemIds", opts.dispatchedItemIds.join(","));
   window.open(`/api/orders/${orderId}/wearer-labels?${params}`, "_blank");
 }
 
@@ -221,7 +222,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           (i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)
         ).length;
         if (namedCount > 0) {
-          setTimeout(() => openWearerLabels(order.id, { includeDeliveryLabel: true }), 800);
+          setTimeout(() => openWearerLabels(order.id, { includeDeliveryLabel: true, dispatchedItemIds: data.dispatchedItemIds }), 800);
         }
       } else if (data.dpdError) {
         toast({ title: `DPD booking failed — ${order.orderNumber} dispatched`, description: `${data.dpdError}. Open the order and use the "Book DPD" button to retry.`, variant: "destructive", duration: 10000 });
