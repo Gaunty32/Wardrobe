@@ -2665,17 +2665,21 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     const totalAmount = items.reduce((sum, i) => sum + parseFloat(String(i.lineTotal ?? 0)), 0);
     const carriageAmount = parseFloat(String(order.carriageAmount ?? 0));
     if (totalAmount > 0) {
-      try {
-        const stripe = await getUncachableStripeClient();
+      // Separate "Stripe not configured" (swallow silently) from "Stripe API error"
+      // (let propagate — so the caller knows the link amount may be wrong).
+      let stripeClient: Awaited<ReturnType<typeof getUncachableStripeClient>> | null = null;
+      try { stripeClient = await getUncachableStripeClient(); } catch { /* not configured — skip */ }
+
+      if (stripeClient) {
         if (order.stripePaymentLinkId) {
-          try { await stripe.paymentLinks.update(order.stripePaymentLinkId, { active: false }); } catch { /* ignore */ }
+          try { await stripeClient.paymentLinks.update(order.stripePaymentLinkId, { active: false }); } catch { /* ignore deactivation errors */ }
         }
-        const price = await stripe.prices.create({
+        const price = await stripeClient.prices.create({
           unit_amount: Math.round((totalAmount + carriageAmount) * 100 * 1.2),
           currency: "gbp",
           product_data: { name: `Order ${order.orderNumber} — Select Branding Solutions Ltd` },
         });
-        const link = await stripe.paymentLinks.create({
+        const link = await stripeClient.paymentLinks.create({
           line_items: [{ price: price.id, quantity: 1 }],
           metadata: { order_id: String(orderId), order_number: order.orderNumber },
           after_completion: {
@@ -2689,8 +2693,6 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
         await db.update(ordersTable)
           .set({ stripePaymentLinkUrl: link.url, stripePaymentLinkId: link.id })
           .where(eq(ordersTable.id, orderId));
-      } catch {
-        // Stripe not configured or API error — fall back to existing link
       }
     }
   }
