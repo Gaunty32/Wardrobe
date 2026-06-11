@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Gift, Plus, CheckCircle2, ExternalLink, Package, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { Gift, Plus, CheckCircle2, ExternalLink, Package, Calendar, ChevronLeft, ChevronRight, Upload, X, ImageIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
+import { useUpload } from "@workspace/object-storage-web";
 
 const API_BASE = "/api";
 
@@ -58,6 +59,15 @@ interface Claim {
 export default function SelectExtra() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { uploadFile, isUploading } = useUpload({
+    onSuccess: (response) => {
+      const servingUrl = `/api/storage${response.objectPath}`;
+      setForm(f => ({ ...f, imageUrl: servingUrl }));
+      toast({ title: "Image uploaded" });
+    },
+    onError: (err) => toast({ title: "Upload failed", description: err.message, variant: "destructive" }),
+  });
   const now = new Date();
   const [viewYear, setViewYear] = useState(now.getFullYear());
   const [viewMonth, setViewMonth] = useState(now.getMonth() + 1);
@@ -457,6 +467,55 @@ export default function SelectExtra() {
               <Label>Description (shown to customers)</Label>
               <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="mt-1" rows={3} />
             </div>
+            {/* Image upload */}
+            <div>
+              <Label>Product image (optional)</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (file) await uploadFile(file);
+                  e.target.value = "";
+                }}
+              />
+              {form.imageUrl ? (
+                <div className="mt-1 flex items-center gap-3 rounded-md border bg-muted/30 px-3 py-2">
+                  <img src={form.imageUrl} alt="Product" className="w-12 h-12 object-contain rounded shrink-0 bg-white border" />
+                  <span className="flex-1 text-xs text-muted-foreground truncate">{form.imageUrl}</span>
+                  <Button
+                    type="button" size="sm" variant="ghost"
+                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive shrink-0"
+                    onClick={() => setForm(f => ({ ...f, imageUrl: "" }))}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-1 flex gap-2">
+                  <Button
+                    type="button" variant="outline" size="sm"
+                    className="gap-1.5" disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    {isUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                    {isUploading ? "Uploading…" : "Upload file"}
+                  </Button>
+                  <div className="relative flex-1">
+                    <ImageIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                    <Input
+                      value={form.imageUrl}
+                      onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))}
+                      placeholder="or paste image URL…"
+                      className="pl-8 text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Quantity included</Label>
