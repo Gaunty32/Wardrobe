@@ -37,6 +37,7 @@ interface InvoiceOrder {
   customerName: string | null;
   customerId: number | null;
   totalAmount: string;
+  carriageAmount?: string | null;
   status: string;
   orderDate: string | null;
   dispatchedAt: string | null;
@@ -313,7 +314,7 @@ function OrderRow({
   };
 
   const subtotal = parseFloat(order.totalAmount);
-  const carriage = parseFloat(String((order as any).carriageAmount ?? 0));
+  const carriage = parseFloat(String(order.carriageAmount ?? 0));
   const total = (subtotal + carriage) * 1.2;
 
   return (

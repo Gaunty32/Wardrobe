@@ -30,6 +30,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       customerName: ordersTable.customerName,
       customerId: ordersTable.customerId,
       totalAmount: ordersTable.totalAmount,
+      carriageAmount: ordersTable.carriageAmount,
       status: ordersTable.status,
       orderDate: ordersTable.orderDate,
       dispatchedAt: ordersTable.dispatchedAt,
