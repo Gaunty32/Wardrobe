@@ -744,6 +744,8 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
           if (remaining <= 0.005) break;
           const credit = typeof rec.RemainingCredit === "number" ? rec.RemainingCredit : 0;
           if (credit < 0.01) continue;
+          // Only allocate when the credit exactly matches the outstanding invoice amount (±1p tolerance)
+          if (Math.abs(credit - amountDue) > 0.01) continue;
           const toAllocate = Math.min(credit, remaining);
           const allocRes = await xeroFetch(`/${type}/${rec[idField]}/Allocations`, {
             method: "PUT",
