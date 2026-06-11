@@ -249,7 +249,7 @@ type ReqOrderEntry = { orderNumber: string | null; customerName: string | null; 
 function buildReqMatrix(items: PurchaseRequirement[]) {
   const groupKeys: string[] = [];
   const groups = new Map<string, {
-    code: string | null; productName: string; productSku: string | null; colours: string[]; sizes: string[];
+    code: string | null; productName: string; productSku: string | null; price: number | null; colours: string[]; sizes: string[];
     qty: Map<string, Map<string, { total: number; cellKey: string }>>;
     rowItemIds: Map<string, number[]>;
     cellOrders: Map<string, Map<string, ReqOrderEntry[]>>;
@@ -259,8 +259,9 @@ function buildReqMatrix(items: PurchaseRequirement[]) {
     const effectiveCode = item.supplierCode ?? item.secondarySupplierCode ?? null;
     const gk = effectiveCode ?? item.canonicalProductName ?? item.productName;
     if (!groups.has(gk)) groupKeys.push(gk);
-    if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellOrders: new Map(), rowOrders: new Map() });
+    if (!groups.has(gk)) groups.set(gk, { code: effectiveCode, productName: item.canonicalProductName ?? item.productName, productSku: item.productSku ?? null, price: item.supplierPrice ?? null, colours: [], sizes: [], qty: new Map(), rowItemIds: new Map(), cellOrders: new Map(), rowOrders: new Map() });
     const g = groups.get(gk)!;
+    if (g.price == null && item.supplierPrice != null) g.price = item.supplierPrice;
     const c = item.colour ?? "—"; const s = normalizeSize(item.size ?? "—");
     const cellKey = [item.productName, item.colour ?? "", item.size ?? "", effectiveCode ?? ""].join("|");
     if (!g.colours.includes(c)) g.colours.push(c);
@@ -319,15 +320,17 @@ function ReqRowTooltip({ entries }: { entries: ReqOrderEntry[] }) {
   );
 }
 
-function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
+function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow, currency }: {
   items: PurchaseRequirement[];
   overrides: Record<string, number>;
   onQtyChange: (cellKey: string, qty: number) => void;
   onDeleteRow: (itemIds: number[]) => void;
+  currency?: string;
 }) {
   const { groupKeys, groups, allSizes } = buildReqMatrix(items);
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+  const sym = currencySymbol(currency);
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -338,6 +341,8 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
             <TableHead className="font-semibold text-white">Colour</TableHead>
             {allSizes.map((s) => <TableHead key={s} className="text-center font-semibold text-white">{s}</TableHead>)}
             <TableHead className="text-center font-semibold text-white">Total</TableHead>
+            <TableHead className="text-right font-semibold text-white whitespace-nowrap">Unit Price</TableHead>
+            <TableHead className="text-right font-semibold text-white whitespace-nowrap">Line Total</TableHead>
             <TableHead className="w-8" />
           </TableRow>
         </TableHeader>
@@ -352,6 +357,7 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
                 const cell = g.qty.get(colour)?.get(sz);
                 return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
               }, 0);
+              const lineTotal = g.price != null ? g.price * rowTotal : null;
               return (
                 <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
                   <TableCell className="font-mono font-bold text-xs text-indigo-700">
@@ -397,6 +403,12 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
                     );
                   })}
                   <TableCell className="text-center font-bold text-sm">{rowTotal}</TableCell>
+                  <TableCell className="text-right text-sm text-muted-foreground whitespace-nowrap">
+                    {g.price != null ? `${sym}${g.price.toFixed(2)}` : "—"}
+                  </TableCell>
+                  <TableCell className="text-right text-sm font-semibold whitespace-nowrap">
+                    {lineTotal != null ? `${sym}${lineTotal.toFixed(2)}` : "—"}
+                  </TableCell>
                   <TableCell className="text-center p-1">
                     <Button
                       size="sm" variant="ghost"
@@ -410,31 +422,46 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow }: {
               );
             });
           })}
-          {groupKeys.length > 1 && (
-            <TableRow className="bg-slate-800">
-              <TableCell className="text-white font-bold text-sm" colSpan={2}>TOTAL</TableCell>
-              {allSizes.map((sz) => {
-                const t = groupKeys.reduce((sum, gk) => {
-                  const g = groups.get(gk)!;
-                  return sum + g.colours.reduce((s, c) => {
-                    const cell = g.qty.get(c)?.get(sz);
-                    return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+          {groupKeys.length > 0 && (() => {
+            const grandTotalQty = groupKeys.reduce((sum, gk) => {
+              const g = groups.get(gk)!;
+              return sum + g.colours.reduce((cs, c) => cs + allSizes.reduce((s, sz) => {
+                const cell = g.qty.get(c)?.get(sz);
+                return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+              }, 0), 0);
+            }, 0);
+            const grandTotalValue = groupKeys.reduce((sum, gk) => {
+              const g = groups.get(gk)!;
+              if (g.price == null) return sum;
+              const qty = g.colours.reduce((cs, c) => cs + allSizes.reduce((s, sz) => {
+                const cell = g.qty.get(c)?.get(sz);
+                return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+              }, 0), 0);
+              return sum + g.price * qty;
+            }, 0);
+            const hasAnyPrice = groupKeys.some(gk => groups.get(gk)!.price != null);
+            return (
+              <TableRow className="bg-slate-800">
+                <TableCell className="text-white font-bold text-sm" colSpan={2}>TOTAL</TableCell>
+                {allSizes.map((sz) => {
+                  const t = groupKeys.reduce((sum, gk) => {
+                    const g = groups.get(gk)!;
+                    return sum + g.colours.reduce((s, c) => {
+                      const cell = g.qty.get(c)?.get(sz);
+                      return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
+                    }, 0);
                   }, 0);
-                }, 0);
-                return <TableCell key={sz} className="text-center font-bold text-white">{t > 0 ? t : "—"}</TableCell>;
-              })}
-              <TableCell className="text-center font-bold text-white">
-                {groupKeys.reduce((sum, gk) => {
-                  const g = groups.get(gk)!;
-                  return sum + g.colours.reduce((cs, c) => cs + allSizes.reduce((s, sz) => {
-                    const cell = g.qty.get(c)?.get(sz);
-                    return s + (cell ? (overrides[cell.cellKey] ?? cell.total) : 0);
-                  }, 0), 0);
-                }, 0)}
-              </TableCell>
-              <TableCell />
-            </TableRow>
-          )}
+                  return <TableCell key={sz} className="text-center font-bold text-white">{t > 0 ? t : "—"}</TableCell>;
+                })}
+                <TableCell className="text-center font-bold text-white">{grandTotalQty}</TableCell>
+                <TableCell />
+                <TableCell className="text-right font-bold text-white whitespace-nowrap">
+                  {hasAnyPrice ? `${sym}${grandTotalValue.toFixed(2)}` : "—"}
+                </TableCell>
+                <TableCell />
+              </TableRow>
+            );
+          })()}
         </TableBody>
       </Table>
     </div>
@@ -2331,6 +2358,7 @@ export default function Purchasing() {
                             overrides={overrides}
                             onQtyChange={(cellKey, qty) => setReqQtyOverrides((prev) => ({ ...prev, [group.supplierName]: { ...(prev[group.supplierName] ?? {}), [cellKey]: qty } }))}
                             onDeleteRow={(itemIds) => deleteRequirementMutation.mutate(itemIds)}
+                            currency={group.supplierCurrency}
                           />
                         </div>
                       </div>
