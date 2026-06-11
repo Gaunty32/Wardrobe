@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
 import { getResendClient } from "./resend-client.js";
 import { ObjectStorageService } from "../lib/objectStorage.js";
+import { getUncachableStripeClient } from "./stripeClient.js";
 
 // ── SBS logo buffer for PDFKit (extracted from data URL) ─────────────────────
 const SBS_LOGO_BUFFER: Buffer | null = (() => {
@@ -2642,6 +2643,43 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
   const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(orderId);
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
+  // Always regenerate the Stripe payment link before sending so the amount
+  // reflects the current order total + carriage (the cached link may be stale).
+  let freshPaymentLinkUrl: string | null = order.stripePaymentLinkUrl;
+  if (!order.paidAt) {
+    const totalAmount = parseFloat(String(order.totalAmount ?? 0));
+    const carriageAmount = parseFloat(String(order.carriageAmount ?? 0));
+    if (totalAmount > 0) {
+      try {
+        const stripe = await getUncachableStripeClient();
+        if (order.stripePaymentLinkId) {
+          try { await stripe.paymentLinks.update(order.stripePaymentLinkId, { active: false }); } catch { /* ignore */ }
+        }
+        const price = await stripe.prices.create({
+          unit_amount: Math.round((totalAmount + carriageAmount) * 100 * 1.2),
+          currency: "gbp",
+          product_data: { name: `Order ${order.orderNumber} — Select Branding Solutions Ltd` },
+        });
+        const link = await stripe.paymentLinks.create({
+          line_items: [{ price: price.id, quantity: 1 }],
+          metadata: { order_id: String(orderId), order_number: order.orderNumber },
+          after_completion: {
+            type: "hosted_confirmation",
+            hosted_confirmation: {
+              custom_message: `Payment received for order ${order.orderNumber}. Thank you — Select Branding Solutions Ltd`,
+            },
+          },
+        });
+        freshPaymentLinkUrl = link.url;
+        await db.update(ordersTable)
+          .set({ stripePaymentLinkUrl: link.url, stripePaymentLinkId: link.id })
+          .where(eq(ordersTable.id, orderId));
+      } catch {
+        // Stripe not configured or API error — fall back to existing link
+      }
+    }
+  }
+
   const mappedItems = items.map((i) => ({
     productName: i.productName,
     colour: i.colour,
@@ -2666,7 +2704,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     trackingNumber: order.trackingNumber,
     notes: order.notes,
     paidAt: order.paidAt,
-    stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+    stripePaymentLinkUrl: freshPaymentLinkUrl,
     poNumber: order.poNumber,
     carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
     items: mappedItems,
@@ -2683,7 +2721,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     shippingMethod: order.shippingMethod,
     trackingNumber: order.trackingNumber,
     paidAt: order.paidAt,
-    stripePaymentLinkUrl: order.stripePaymentLinkUrl,
+    stripePaymentLinkUrl: freshPaymentLinkUrl,
     poNumber: order.poNumber,
     carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
     items: items.map((i) => ({
