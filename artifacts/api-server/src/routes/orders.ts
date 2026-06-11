@@ -530,18 +530,9 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       const raw = item as any;
       const qty = raw.quantity ?? 1;
       const finishId: number | null = raw.finish_id ?? null;
-      // Use best applicable price break (tier based on total product qty across the whole order)
-      const totalProductQty = totalQtyByProductId.get(raw.product_id as number) ?? qty;
-      let effectiveUnitCost: number | null = null;
-      if (priceBreaks && priceBreaks.length > 0) {
-        const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
-        for (const tier of sorted) {
-          if (totalProductQty >= tier.qty) effectiveUnitCost = tier.price;
-        }
-      }
-      if (effectiveUnitCost == null && supplierPrice != null) {
-        effectiveUnitCost = parseFloat(String(supplierPrice));
-      }
+      // Cost is always the supplier price (variant level preferred, falls back to product level).
+      // price_breaks stores SELL price tiers — never use them as cost.
+      const effectiveUnitCost: number | null = supplierPrice != null ? parseFloat(String(supplierPrice)) : null;
       const garmentCost = effectiveUnitCost != null ? effectiveUnitCost * qty : null;
       const processCostPerItem = finishId != null ? (processCostByFinishId.get(finishId) ?? 0) : 0;
       const processCost = processCostPerItem * qty;
