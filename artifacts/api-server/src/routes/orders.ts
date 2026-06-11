@@ -165,7 +165,17 @@ router.get("/orders", async (req, res): Promise<void> => {
     const costRows = await db.execute(sql`
       SELECT
         oi.order_id AS "orderId",
-        COALESCE(SUM(oi.quantity * resolved.supplier_price), 0)::float AS cost,
+        COALESCE(SUM(oi.quantity * COALESCE(
+          -- Apply price break: highest tier whose min qty <= total product qty in this order
+          (
+            SELECT (pb.value->>'price')::numeric
+            FROM jsonb_array_elements(COALESCE(p.price_breaks, '[]'::jsonb)) AS pb
+            WHERE (pb.value->>'qty')::int <= prod_total.total_qty
+            ORDER BY (pb.value->>'qty')::int DESC
+            LIMIT 1
+          ),
+          resolved.supplier_price
+        )), 0)::float AS cost,
         COUNT(*) FILTER (
           WHERE p.is_service IS NOT TRUE
             AND (resolved.supplier_price IS NULL OR resolved.supplier_price = 0)
@@ -184,6 +194,12 @@ router.get("/orders", async (req, res): Promise<void> => {
           p.supplier_price
         ) AS supplier_price
       ) resolved ON true
+      -- Total qty of this product across the whole order (for price-break tier lookup)
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(SUM(oi2.quantity), 0) AS total_qty
+        FROM order_items oi2
+        WHERE oi2.order_id = oi.order_id AND oi2.product_id = oi.product_id
+      ) prod_total ON true
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(orderIds.join(","))}])
       GROUP BY oi.order_id
     `);
@@ -402,8 +418,9 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
   const itemRowsRaw = await db.execute(sql`
     SELECT
       oi.*,
-      p.name  AS catalogue_product_name,
-      p.sku   AS product_sku,
+      p.name         AS catalogue_product_name,
+      p.sku          AS product_sku,
+      p.price_breaks AS price_breaks,
       COALESCE(pv.supplier_price, p.supplier_price) AS resolved_supplier_price
     FROM order_items oi
     LEFT JOIN products p ON p.id = oi.product_id
@@ -421,13 +438,24 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     catalogue_product_name: string | null;
     product_sku: string | null;
     resolved_supplier_price: string | null;
+    price_breaks: { qty: number; price: number }[] | null;
   };
   const itemRows = (itemRowsRaw.rows as RawItemRow[]).map(r => ({
     item: r as typeof orderItemsTable.$inferSelect,
     catalogueProductName: r.catalogue_product_name,
     productSku: r.product_sku,
     supplierPrice: r.resolved_supplier_price,
+    priceBreaks: (r.price_breaks as { qty: number; price: number }[] | null) ?? null,
   }));
+
+  // Sum total quantity per product across all lines — price break tier is per-product total, not per-size
+  const totalQtyByProductId = new Map<number, number>();
+  for (const r of itemRows) {
+    const pid = (r.item as any).product_id as number | null;
+    if (pid != null) {
+      totalQtyByProductId.set(pid, (totalQtyByProductId.get(pid) ?? 0) + ((r.item as any).quantity ?? 1));
+    }
+  }
 
   // ── PO numbers per order item (direct link + consolidated source_order_item_ids) ─
   const orderItemIds = itemRows.map(r => r.item.id);
@@ -514,11 +542,23 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     deliveryAddress,
     customerEmail,
     customerMainAddress,
-    items: itemRows.map(({ item, catalogueProductName, productSku, supplierPrice }) => {
+    items: itemRows.map(({ item, catalogueProductName, productSku, supplierPrice, priceBreaks }) => {
       const raw = item as any;
       const qty = raw.quantity ?? 1;
       const finishId: number | null = raw.finish_id ?? null;
-      const garmentCost = supplierPrice != null ? parseFloat(String(supplierPrice)) * qty : null;
+      // Use best applicable price break (tier based on total product qty across the whole order)
+      const totalProductQty = totalQtyByProductId.get(raw.product_id as number) ?? qty;
+      let effectiveUnitCost: number | null = null;
+      if (priceBreaks && priceBreaks.length > 0) {
+        const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+        for (const tier of sorted) {
+          if (totalProductQty >= tier.qty) effectiveUnitCost = tier.price;
+        }
+      }
+      if (effectiveUnitCost == null && supplierPrice != null) {
+        effectiveUnitCost = parseFloat(String(supplierPrice));
+      }
+      const garmentCost = effectiveUnitCost != null ? effectiveUnitCost * qty : null;
       const processCostPerItem = finishId != null ? (processCostByFinishId.get(finishId) ?? 0) : 0;
       const processCost = processCostPerItem * qty;
       return {
