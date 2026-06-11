@@ -286,6 +286,16 @@ function OrderRow({
     onError: (e: Error) => toast({ title: "Xero error", description: parseApiError(e), variant: "destructive" }),
   });
 
+  const refreshStripeLink = useMutation({
+    mutationFn: () => apiFetch<{ ok: boolean; url?: string; amountPence?: number; skipped?: string }>(`/invoices/${order.id}/refresh-stripe-link`, { method: "POST" }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      const amount = res.amountPence ? `£${(res.amountPence / 100).toFixed(2)}` : "";
+      toast({ title: "Stripe link updated", description: `New payment link created${amount ? ` for ${amount} inc. VAT` : ""}.` });
+    },
+    onError: (e: Error) => toast({ title: "Failed to refresh Stripe link", description: parseApiError(e), variant: "destructive" }),
+  });
+
   const handlePreviewPdf = () => {
     window.open(`/api/invoices/${order.id}/preview-pdf`, "_blank");
   };
@@ -546,6 +556,21 @@ function OrderRow({
                   : <Eye className="w-3.5 h-3.5" />}
                 Preview email
               </Button>
+              {!order.paidAt && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs border-violet-200 text-violet-700 hover:bg-violet-50"
+                  onClick={() => refreshStripeLink.mutate()}
+                  disabled={refreshStripeLink.isPending}
+                  title="Regenerate the Stripe payment link with the current order total + shipping"
+                >
+                  {refreshStripeLink.isPending
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <RefreshCw className="w-3.5 h-3.5" />}
+                  Refresh Stripe link
+                </Button>
+              )}
               {isCollection && (order.customerHighLevelContactId || order.customerPhone) && (
                 <Button
                   variant="outline"

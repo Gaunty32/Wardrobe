@@ -9,6 +9,7 @@ import {
 } from "../services/email";
 import { postInvoiceToXero } from "../services/xero";
 import { logOrderAction, getActor } from "../services/orderLog";
+import { getUncachableStripeClient } from "../services/stripeClient";
 
 const router: IRouter = Router();
 
@@ -268,6 +269,61 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
     res.json({ ok: true, sentTo: customerEmail, invoiceRef });
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to send consolidated invoice" });
+  }
+});
+
+// ─── Refresh Stripe payment link (correct amount without re-sending email) ───
+
+router.post("/invoices/:orderId/refresh-stripe-link", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+
+  try {
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, idParse.data));
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    if (order.paidAt) { res.json({ ok: true, skipped: "already_paid", url: order.stripePaymentLinkUrl }); return; }
+
+    const totalAmount = parseFloat(String(order.totalAmount ?? 0));
+    const carriageAmount = parseFloat(String(order.carriageAmount ?? 0));
+    const amountPence = Math.round((totalAmount + carriageAmount) * 100 * 1.2);
+
+    if (amountPence <= 0) { res.status(400).json({ error: "Order total is zero — cannot create a payment link." }); return; }
+
+    let stripeClient: Awaited<ReturnType<typeof getUncachableStripeClient>>;
+    try { stripeClient = await getUncachableStripeClient(); } catch {
+      res.status(503).json({ error: "Stripe is not configured on this account." }); return;
+    }
+
+    // Deactivate existing link
+    if (order.stripePaymentLinkId) {
+      try { await stripeClient.paymentLinks.update(order.stripePaymentLinkId, { active: false }); } catch { /* ignore */ }
+    }
+
+    // Create fresh link with correct amount (items + carriage, inc. VAT)
+    const price = await stripeClient.prices.create({
+      unit_amount: amountPence,
+      currency: "gbp",
+      product_data: { name: `Order ${order.orderNumber} — Select Branding Solutions Ltd` },
+    });
+    const link = await stripeClient.paymentLinks.create({
+      line_items: [{ price: price.id, quantity: 1 }],
+      metadata: { order_id: String(idParse.data), order_number: order.orderNumber },
+      after_completion: {
+        type: "hosted_confirmation",
+        hosted_confirmation: { custom_message: `Payment received for order ${order.orderNumber}. Thank you — Select Branding Solutions Ltd` },
+      },
+    });
+
+    await db.update(ordersTable)
+      .set({ stripePaymentLinkUrl: link.url, stripePaymentLinkId: link.id, updatedAt: new Date() })
+      .where(eq(ordersTable.id, idParse.data));
+
+    await logOrderAction(idParse.data, "Stripe link refreshed", getActor(req),
+      `New link created for £${((amountPence) / 100).toFixed(2)} inc. VAT`);
+
+    res.json({ ok: true, url: link.url, amountPence });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to refresh Stripe link" });
   }
 });
 
