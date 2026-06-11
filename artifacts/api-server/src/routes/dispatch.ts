@@ -57,17 +57,6 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
       const orderWs = worksheets.filter((w) => w.orderId === order.id);
       const items = orderItems.filter((i) => i.orderId === order.id);
 
-      // Dispatch-readiness rule (mirrors the delivery-note guard so they stay in sync):
-      //
-      // Orders with decorated items (finishId != null):
-      //   → All worksheets on this order must be complete (no pre_wip / wip).
-      //     Plain items alongside decorated items are verified physically when
-      //     packing — we don't block dispatch for them.
-      //
-      // Plain-item-only orders (no finish on any item):
-      //   → Every item must have stockStatus = 'complete'.
-      //
-      // This means: if a delivery note could be generated, dispatch is unblocked.
       const hasDecoratedItems = items.some(i => i.finishId != null);
       const hasIncompleteWorksheets = orderWs.some(w => w.status !== "complete");
       const isPartShipped = order.status === "part_shipped";
@@ -76,13 +65,27 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
       // confirmed: check all items are ready using the decoration-aware logic
       const remainingItems = isPartShipped ? items.filter(i => !i.dispatchedAt) : items;
 
+      // Item IDs that are covered by a completed worksheet
+      const wsCompleteItemIdsForOrder = new Set(
+        orderWs.filter(w => w.status === "complete")
+          .flatMap(w => wsItems.filter(wi => wi.worksheetId === w.id).map(wi => wi.orderItemId))
+      );
+
+      // Items NOT on a completed worksheet that are not yet in a ready state —
+      // e.g. plain items still in purchasing (ordered, purchaseRequired, etc.)
+      const hasOutstandingItems = items.some(i =>
+        !wsCompleteItemIdsForOrder.has(i.id) &&
+        i.stockStatus !== "complete" &&
+        i.stockStatus !== "allocated"
+      );
+
       let allComplete: boolean;
       if (isPartShipped) {
         allComplete = remainingItems.length > 0 && remainingItems.every(i =>
           i.stockStatus === "complete" || i.stockStatus === "allocated"
         );
       } else {
-        allComplete = items.length > 0 && (
+        allComplete = items.length > 0 && !hasOutstandingItems && (
           hasDecoratedItems
             ? orderWs.length > 0 && !hasIncompleteWorksheets
             : items.every(i => i.stockStatus === "complete")
@@ -226,16 +229,21 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
   // For part_shipped: check remaining (undispatched) items; for confirmed: all items
   const remainingItems = isPartShipped ? items.filter(i => !i.dispatchedAt) : items;
 
+  // Items NOT on a completed worksheet that are not yet in a ready state —
+  // e.g. plain items still in purchasing (ordered, purchaseRequired, etc.)
+  const hasOutstandingItems = items.some(i =>
+    !wsCompleteItemIds.has(i.id) &&
+    i.stockStatus !== "complete" &&
+    i.stockStatus !== "allocated"
+  );
+
   let isComplete: boolean;
   if (isPartShipped) {
     isComplete = remainingItems.length > 0 && remainingItems.every(i =>
       i.stockStatus === "complete" || i.stockStatus === "allocated"
     );
   } else {
-    // Same logic as dispatch queue:
-    //   - Orders with decorated items: ready when all worksheets are complete.
-    //   - Plain-item-only orders: ready when every item has stockStatus = 'complete'.
-    isComplete = items.length > 0 && (
+    isComplete = items.length > 0 && !hasOutstandingItems && (
       hasDecoratedItems
         ? worksheets.length > 0 && !hasIncompleteWorksheets
         : items.every(i => i.stockStatus === "complete")
