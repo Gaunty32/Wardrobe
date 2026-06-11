@@ -377,9 +377,11 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
   );
   // Only consider items not already marked as dispatched
   const undispatchedItems = allOrderItems.filter(i => !i.dispatchedAt);
-  // Ready to ship now: in a completed worksheet, or stock is allocated/complete
+  // Ready to ship now: in a completed worksheet, stock is allocated/complete,
+  // OR a service/charge line (no size, no colour, no stock tracking — e.g. logo digitising fee)
+  const isServiceLine = (i: typeof allOrderItems[0]) => !i.size && !i.colour && i.stockStatus == null;
   const itemsToDispatch = undispatchedItems.filter(i =>
-    wsCompleteItemIds.has(i.id) || i.stockStatus === "complete" || i.stockStatus === "allocated"
+    wsCompleteItemIds.has(i.id) || i.stockStatus === "complete" || i.stockStatus === "allocated" || isServiceLine(i)
   );
   const remainingAfter = undispatchedItems.filter(i => !itemsToDispatch.some(d => d.id === i.id));
 

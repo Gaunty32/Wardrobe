@@ -1703,4 +1703,31 @@ export async function refreshProductIssues(): Promise<void> {
       ADD COLUMN IF NOT EXISTS is_bundle_header BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS bundle_def_id   INTEGER
   `);
+
+  // Fix O103: service/charge line (Logo Conversion to Stitches) was not included
+  // in dispatch because it had no size/colour/stockStatus — mark it dispatched
+  // and restore the order to 'shipped'.
+  const fixO103Flag = await db.execute(sql`
+    SELECT 1 FROM _migration_flags WHERE name = 'fix_o103_service_line_dispatch'
+  `);
+  if (fixO103Flag.rows.length === 0) {
+    await db.execute(sql`
+      UPDATE order_items
+        SET dispatched_at = (
+          SELECT MIN(dispatched_at) FROM order_items
+          WHERE order_id = (SELECT id FROM orders WHERE order_number = 'O103')
+            AND dispatched_at IS NOT NULL
+        )
+      WHERE order_id = (SELECT id FROM orders WHERE order_number = 'O103')
+        AND dispatched_at IS NULL;
+
+      UPDATE orders
+        SET status = 'shipped'
+      WHERE order_number = 'O103'
+        AND status = 'part_shipped';
+
+      INSERT INTO _migration_flags (name) VALUES ('fix_o103_service_line_dispatch');
+    `);
+    console.log("[startup] Fixed O103: service line marked dispatched, order restored to shipped");
+  }
 }
