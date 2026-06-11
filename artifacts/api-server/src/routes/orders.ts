@@ -165,17 +165,7 @@ router.get("/orders", async (req, res): Promise<void> => {
     const costRows = await db.execute(sql`
       SELECT
         oi.order_id AS "orderId",
-        COALESCE(SUM(oi.quantity * COALESCE(
-          -- Apply price break: highest tier whose min qty <= total product qty in this order
-          (
-            SELECT (pb.value->>'price')::numeric
-            FROM jsonb_array_elements(COALESCE(p.price_breaks, '[]'::jsonb)) AS pb
-            WHERE (pb.value->>'qty')::int <= prod_total.total_qty
-            ORDER BY (pb.value->>'qty')::int DESC
-            LIMIT 1
-          ),
-          resolved.supplier_price
-        )), 0)::float AS cost,
+        COALESCE(SUM(oi.quantity * resolved.supplier_price), 0)::float AS cost,
         COUNT(*) FILTER (
           WHERE p.is_service IS NOT TRUE
             AND (resolved.supplier_price IS NULL OR resolved.supplier_price = 0)
@@ -194,12 +184,6 @@ router.get("/orders", async (req, res): Promise<void> => {
           p.supplier_price
         ) AS supplier_price
       ) resolved ON true
-      -- Total qty of this product across the whole order (for price-break tier lookup)
-      LEFT JOIN LATERAL (
-        SELECT COALESCE(SUM(oi2.quantity), 0) AS total_qty
-        FROM order_items oi2
-        WHERE oi2.order_id = oi.order_id AND oi2.product_id = oi.product_id
-      ) prod_total ON true
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(orderIds.join(","))}])
       GROUP BY oi.order_id
     `);
