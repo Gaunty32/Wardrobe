@@ -603,6 +603,21 @@ export default function OrderDetail() {
     onError: () => toast({ title: "Failed to re-queue", variant: "destructive" }),
   });
 
+  const [editingItemFinish, setEditingItemFinish] = useState<number | null>(null);
+  const resetItemToProductionMutation = useMutation({
+    mutationFn: ({ itemId, finishId, finishName }: { itemId: number; finishId: number | null; finishName: string | null }) =>
+      apiFetch(`/orders/${orderId}/items/${itemId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ finishId, finishName, stockStatus: "allocated" }),
+      }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingItemFinish(null);
+      toast({ title: "Item reset to production", description: vars.finishName ? `Finish set to "${vars.finishName}". Item will reappear in the production queue.` : "Item returned to the production queue." });
+    },
+    onError: (e: Error) => toast({ title: "Failed to reset item", description: e.message, variant: "destructive" }),
+  });
+
   const [editingBackorderDate, setEditingBackorderDate] = useState<{ id: number; poId: number; date: string } | null>(null);
   const updateBackorderDateMutation = useMutation({
     mutationFn: ({ id, poId, date }: { id: number; poId: number; date: string }) =>
@@ -1803,6 +1818,44 @@ export default function OrderDetail() {
                                   <Sparkles className="w-3 h-3" />{orderItem.finishName}
                                 </Badge>
                               ) : null}
+                              {/* Reset to production — shown for items incorrectly sent to dispatch without a finish */}
+                              {(orderItem as any).stockStatus === 'complete' && !(order as any).dispatchedAt && !(orderItem as any).isBundleHeader && (
+                                editingItemFinish === orderItem.id ? (
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    <select
+                                      autoFocus
+                                      className="text-xs border border-amber-400 rounded px-1.5 py-0.5 bg-amber-50 text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                      defaultValue=""
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        if (!val) return;
+                                        const finish = val === "__plain__" ? null : customerFinishes?.find((f: any) => f.id.toString() === val);
+                                        resetItemToProductionMutation.mutate({
+                                          itemId: orderItem.id,
+                                          finishId: finish ? (finish as any).id : null,
+                                          finishName: finish ? (finish as any).name : null,
+                                        });
+                                      }}
+                                    >
+                                      <option value="">Pick a finish…</option>
+                                      {customerFinishes?.map((f: any) => (
+                                        <option key={f.id} value={f.id.toString()}>{f.name}</option>
+                                      ))}
+                                      <option value="__plain__">Plain (no finish)</option>
+                                    </select>
+                                    <button className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setEditingItemFinish(null)}>✕</button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium text-amber-700 bg-amber-50 border border-amber-300 hover:bg-amber-100 transition-colors"
+                                    title="This item was sent straight to dispatch — click to assign a finish and reset it to the production queue"
+                                    onClick={() => setEditingItemFinish(orderItem.id)}
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                    Reset to Production
+                                  </button>
+                                )
+                              )}
                               {orderItem.recipientType === "person" && orderItem.recipientName ? (
                                 <Badge variant="outline" className="text-xs gap-1 border-blue-200 text-blue-700 bg-blue-50 font-normal">
                                   <User className="w-3 h-3" />{orderItem.recipientName}
