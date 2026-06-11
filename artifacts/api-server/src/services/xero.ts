@@ -548,29 +548,44 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
         const customerRow = afterSync;
         let foundId: string | null = null;
 
-        // 2a. Search by email address
+        // Normalise company suffixes so "Ltd" == "Limited", "Plc" == "PLC", etc.
+        function normaliseCompany(name: string): string {
+          return name
+            .toLowerCase()
+            .replace(/\blimited\b/g, "ltd")
+            .replace(/\bpublic limited company\b/g, "plc")
+            .replace(/[.,]/g, "")
+            .replace(/\s+/g, " ")
+            .trim();
+        }
+
+        // 2a. Search by email using searchTerm (case-insensitive), filter client-side
         if (customerRow?.email) {
           const emailRes = await xeroFetch(
-            `/Contacts?where=EmailAddress%3D%22${encodeURIComponent(customerRow.email)}%22`
+            `/Contacts?searchTerm=${encodeURIComponent(customerRow.email)}`
           );
           if (emailRes.ok) {
-            const emailData = await emailRes.json() as { Contacts?: { ContactID: string }[] };
-            foundId = emailData.Contacts?.[0]?.ContactID ?? null;
+            const emailData = await emailRes.json() as { Contacts?: { ContactID: string; EmailAddress?: string }[] };
+            const hit = emailData.Contacts?.find(
+              (c) => c.EmailAddress?.toLowerCase() === customerRow.email!.toLowerCase()
+            );
+            foundId = hit?.ContactID ?? null;
           }
         }
 
-        // 2b. Fallback: search by company name
+        // 2b. Fallback: search by company name with normalised suffix comparison
         if (!foundId && customerRow?.name) {
           const nameRes = await xeroFetch(
             `/Contacts?searchTerm=${encodeURIComponent(customerRow.name)}`
           );
           if (nameRes.ok) {
             const nameData = await nameRes.json() as { Contacts?: { ContactID: string; Name: string }[] };
-            // Pick the first contact whose name matches case-insensitively
+            const normLocal = normaliseCompany(customerRow.name);
+            // Prefer exact normalised match; fall back to first result from the specific search
             const match = nameData.Contacts?.find(
-              (c) => c.Name.toLowerCase() === customerRow.name.toLowerCase()
+              (c) => normaliseCompany(c.Name) === normLocal
             );
-            foundId = match?.ContactID ?? nameData.Contacts?.[0]?.ContactID ?? null;
+            foundId = match?.ContactID ?? (nameData.Contacts?.length === 1 ? nameData.Contacts[0].ContactID : null) ?? null;
           }
         }
 
