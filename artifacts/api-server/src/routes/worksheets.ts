@@ -1033,8 +1033,19 @@ router.post("/worksheets", async (req, res): Promise<void> => {
       `Worksheet ${ws.worksheetNumber} created with ${wsItems.flat().length} item(s)`);
   }
 
+  // Fetch requiredDate from the order so the print window can show it immediately
+  let requiredDate: string | null = null;
+  if (ws.orderId) {
+    const [orderRow] = await db
+      .select({ requiredDate: ordersTable.requiredDate })
+      .from(ordersTable)
+      .where(eq(ordersTable.id, ws.orderId));
+    requiredDate = orderRow?.requiredDate ? orderRow.requiredDate.toISOString() : null;
+  }
+
   res.status(201).json({
     ...ws,
+    requiredDate,
     items: wsItems.flat().map((i) => ({
       ...i,
       processes: i.processesSnapshot ? JSON.parse(i.processesSnapshot) : [],
