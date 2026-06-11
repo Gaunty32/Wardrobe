@@ -643,6 +643,45 @@ export default function ProductDetail() {
 
   const { uploadFile: uploadStaffPhoto, isUploading: uploadingStaffPhoto } = useUpload({});
 
+  async function confirmCrop() {
+    if (!cropSrc) return;
+    setIsCropping(true);
+    try {
+      const SIZE = 400;
+      const canvas = document.createElement("canvas");
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      const ctx = canvas.getContext("2d")!;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = cropSrc;
+      await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = reject; });
+      // Scale so shorter side fills the preview (200px), then apply zoom
+      const aspect = img.naturalWidth / img.naturalHeight;
+      let baseW = aspect >= 1 ? 200 * aspect : 200;
+      let baseH = aspect >= 1 ? 200 : 200 / aspect;
+      const canvasScale = SIZE / 200;
+      const w = baseW * cropZoom * canvasScale;
+      const h = baseH * cropZoom * canvasScale;
+      const dx = SIZE / 2 - w / 2 + cropOffsetX * canvasScale;
+      const dy = SIZE / 2 - h / 2 + cropOffsetY * canvasScale;
+      ctx.drawImage(img, dx, dy, w, h);
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/png"));
+      if (!blob) return;
+      const file = new File([blob], "staff-crop.png", { type: "image/png" });
+      const res = await uploadStaffPhoto(file);
+      if (res) {
+        setStaffFormImageUrl(`/api/storage${res.objectPath}`);
+        setCropSrc(null);
+        setCropZoom(1);
+        setCropOffsetX(0);
+        setCropOffsetY(0);
+      }
+    } finally {
+      setIsCropping(false);
+    }
+  }
+
   const pushWooMut = useMutation({
     mutationFn: () => apiFetch(`/products/${productId}/push-woo-availability`, { method: "POST" }),
     onSuccess: (data: any) => {
@@ -729,6 +768,12 @@ export default function ProductDetail() {
   const [staffFormRole, setStaffFormRole] = useState("");
   const [staffFormImageUrl, setStaffFormImageUrl] = useState("");
   const [editingStaffId, setEditingStaffId] = useState<number | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropZoom, setCropZoom] = useState(1);
+  const [cropOffsetX, setCropOffsetX] = useState(0);
+  const [cropOffsetY, setCropOffsetY] = useState(0);
+  const [isCropping, setIsCropping] = useState(false);
+  const cropDragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({ active: false, lastX: 0, lastY: 0 });
   const [isService, setIsService] = useState(false);
   const [priceBreakModes, setPriceBreakModes] = useState<Record<number, "price" | "pct" | "disc">>({});
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
@@ -2202,29 +2247,118 @@ export default function ProductDetail() {
                 </div>
                 <div className="grid gap-1.5">
                   <Label className="text-xs">Profile Photo</Label>
-                  <div className="flex items-center gap-2">
-                    {staffFormImageUrl && (
-                      <img src={staffFormImageUrl} alt="preview" className="w-8 h-8 rounded-full object-cover object-center border border-border" />
-                    )}
-                    <label className="cursor-pointer">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadingStaffPhoto}
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const res = await uploadStaffPhoto(file);
-                          if (res) setStaffFormImageUrl(`/api/storage${res.objectPath}`);
+
+                  {/* ── Crop editor ── */}
+                  {cropSrc ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground">Drag to reposition · Scroll to zoom</p>
+                      <div
+                        className="relative mx-auto select-none"
+                        style={{ width: 200, height: 200, borderRadius: "50%", overflow: "hidden", cursor: cropDragRef.current.active ? "grabbing" : "grab", background: "#e2e8f0", border: "3px solid #1e3a5f", boxShadow: "0 2px 12px rgba(30,58,95,0.25)" }}
+                        onMouseDown={(e) => {
+                          cropDragRef.current = { active: true, lastX: e.clientX, lastY: e.clientY };
+                          e.preventDefault();
                         }}
-                      />
-                      <span className="inline-flex items-center gap-1.5 text-xs border border-border rounded px-2 py-1.5 hover:bg-muted transition-colors">
-                        {uploadingStaffPhoto ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
-                        {uploadingStaffPhoto ? "Uploading…" : "Upload photo"}
-                      </span>
-                    </label>
-                  </div>
+                        onMouseMove={(e) => {
+                          if (!cropDragRef.current.active) return;
+                          const dx = e.clientX - cropDragRef.current.lastX;
+                          const dy = e.clientY - cropDragRef.current.lastY;
+                          cropDragRef.current.lastX = e.clientX;
+                          cropDragRef.current.lastY = e.clientY;
+                          setCropOffsetX(x => x + dx);
+                          setCropOffsetY(y => y + dy);
+                        }}
+                        onMouseUp={() => { cropDragRef.current.active = false; }}
+                        onMouseLeave={() => { cropDragRef.current.active = false; }}
+                        onWheel={(e) => {
+                          e.preventDefault();
+                          setCropZoom(z => Math.max(0.5, Math.min(5, z - e.deltaY * 0.005)));
+                        }}
+                        onTouchStart={(e) => {
+                          const t = e.touches[0];
+                          cropDragRef.current = { active: true, lastX: t.clientX, lastY: t.clientY };
+                        }}
+                        onTouchMove={(e) => {
+                          if (!cropDragRef.current.active) return;
+                          const t = e.touches[0];
+                          const dx = t.clientX - cropDragRef.current.lastX;
+                          const dy = t.clientY - cropDragRef.current.lastY;
+                          cropDragRef.current.lastX = t.clientX;
+                          cropDragRef.current.lastY = t.clientY;
+                          setCropOffsetX(x => x + dx);
+                          setCropOffsetY(y => y + dy);
+                        }}
+                        onTouchEnd={() => { cropDragRef.current.active = false; }}
+                      >
+                        <img
+                          src={cropSrc}
+                          alt="crop preview"
+                          draggable={false}
+                          style={{
+                            position: "absolute",
+                            left: "50%",
+                            top: "50%",
+                            width: "auto",
+                            height: "auto",
+                            minWidth: "100%",
+                            minHeight: "100%",
+                            transform: `translate(calc(-50% + ${cropOffsetX}px), calc(-50% + ${cropOffsetY}px)) scale(${cropZoom})`,
+                            transformOrigin: "center center",
+                            pointerEvents: "none",
+                            objectFit: "cover",
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-muted-foreground">Zoom</label>
+                        <input
+                          type="range" min={0.5} max={5} step={0.05}
+                          value={cropZoom}
+                          onChange={(e) => setCropZoom(parseFloat(e.target.value))}
+                          className="flex-1 h-1.5 accent-primary"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={confirmCrop} disabled={isCropping || uploadingStaffPhoto}>
+                          {(isCropping || uploadingStaffPhoto) ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+                          Apply crop
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setCropSrc(null); setCropZoom(1); setCropOffsetX(0); setCropOffsetY(0); }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      {staffFormImageUrl && (
+                        <img src={staffFormImageUrl} alt="preview" className="w-10 h-10 rounded-full object-cover object-center border border-border flex-shrink-0" />
+                      )}
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              setCropSrc(ev.target?.result as string);
+                              setCropZoom(1);
+                              setCropOffsetX(0);
+                              setCropOffsetY(0);
+                            };
+                            reader.readAsDataURL(file);
+                            e.target.value = "";
+                          }}
+                        />
+                        <span className="inline-flex items-center gap-1.5 text-xs border border-border rounded px-2 py-1.5 hover:bg-muted transition-colors">
+                          <Upload className="w-3 h-3" />
+                          {staffFormImageUrl ? "Replace photo" : "Upload photo"}
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <Button

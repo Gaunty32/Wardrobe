@@ -12,3 +12,27 @@ id = "HWhPVndvhHVoJFzHPn3z8"
 uri = "file://attached_assets/sbs-customer-icon.png"
 type = "image"
 title = "SBS customer portal app icon"
+
+[[generated]]
+id = "nU72MaxC80cZyotAQcM8f"
+uri = "file://attached_assets/staff_sarah.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "a75zs4IeeO-EltUfcB17g"
+uri = "file://attached_assets/staff_mike.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "N43j-Ng-TaRDttsKglFxh"
+uri = "file://attached_assets/staff_emma.png"
+type = "image"
+title = "generated_image"
+
+[[generated]]
+id = "N23FmMGi408AAPGdC4mFb"
+uri = "file://attached_assets/staff_dave.png"
+type = "image"
+title = "generated_image"
