@@ -1583,6 +1583,25 @@ export async function runStartupMigrations(): Promise<void> {
 
   // ── WooCommerce publish status ─────────────────────────────────────────────
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS woo_status varchar(20)`);
+
+  // ── Cascade product-level supplier prices to variants ──────────────────────
+  // Variant supplier_price overrides the product price in order GP calculations.
+  // Before the cascade-on-update fix was added, editing a product's supplier_price
+  // left variant rows with stale values that shadowed the new product price.
+  // This one-time sync brings all variants into line with their parent product price
+  // so that existing orders immediately reflect any product price edits already made.
+  await db.execute(sql`
+    UPDATE product_variants pv
+    SET supplier_price = p.supplier_price,
+        secondary_supplier_price = p.secondary_supplier_price
+    FROM products p
+    WHERE pv.product_id = p.id
+      AND (
+        pv.supplier_price IS DISTINCT FROM p.supplier_price
+        OR pv.secondary_supplier_price IS DISTINCT FROM p.secondary_supplier_price
+      )
+  `);
+  console.log("[startup] Variant supplier prices synced to product level");
 }
 
 // ── Weekly product issues refresh ─────────────────────────────────────────────
