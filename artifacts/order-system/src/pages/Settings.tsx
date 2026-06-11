@@ -4,7 +4,7 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck, Zap, Phone, Printer
+  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1050,6 +1050,9 @@ export default function Settings() {
             <TabsTrigger value="printing" className="gap-2">
               <Printer className="w-4 h-4" /> Printing
             </TabsTrigger>
+            <TabsTrigger value="dpd" className="gap-2">
+              <Truck className="w-4 h-4" /> DPD Courier
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="woocommerce" className="mt-6">
@@ -1600,8 +1603,108 @@ export default function Settings() {
             <PrintingTab />
           </TabsContent>
 
+          {/* ─── DPD Tab ───────────────────────────────────────────── */}
+          <TabsContent value="dpd" className="mt-6">
+            <DpdTab />
+          </TabsContent>
+
         </Tabs>
       </div>
     </Layout>
+  );
+}
+
+function DpdTab() {
+  const { toast } = useToast();
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; configured: boolean; message: string; accountNumber?: string } | null>(null);
+
+  async function testConnection() {
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/settings/dpd-test`);
+      const data = await res.json();
+      setResult(data);
+      if (data.ok) {
+        toast({ title: "DPD connected", description: data.message });
+      } else {
+        toast({ title: "DPD connection failed", description: data.message, variant: "destructive" });
+      }
+    } catch (e: any) {
+      const msg = e.message ?? "Request failed";
+      setResult({ ok: false, configured: false, message: msg });
+      toast({ title: "DPD test error", description: msg, variant: "destructive" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-6 max-w-2xl">
+      <div>
+        <h2 className="text-lg font-semibold">DPD Courier Integration</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          DPD bookings are made automatically at dispatch for orders with a DPD shipping method and a delivery address.
+          Use this page to verify the API credentials are working.
+        </p>
+      </div>
+
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        <p className="text-sm font-medium">Credential status</p>
+        <div className="space-y-1.5 text-sm">
+          {(["DPD_USERNAME", "DPD_PASSWORD", "DPD_ACCOUNT_NUMBER"] as const).map((key) => (
+            <div key={key} className="flex items-center gap-2 text-muted-foreground">
+              <CheckCircle className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />
+              <code className="text-xs">{key}</code>
+              <span className="text-xs">— set via environment secret</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground pt-1">
+          These are stored as Replit environment secrets and cannot be viewed here. To change them, update the secret values in the Replit environment secrets panel.
+        </p>
+      </div>
+
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        <p className="text-sm font-medium">Test live connection</p>
+        <p className="text-sm text-muted-foreground">
+          Attempts to authenticate with the DPD API using the stored credentials. Does not create any booking.
+        </p>
+        <Button onClick={testConnection} disabled={testing} className="gap-2">
+          {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Truck className="w-4 h-4" />}
+          {testing ? "Testing…" : "Test DPD Connection"}
+        </Button>
+
+        {result && (
+          <div className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-sm ${
+            result.ok
+              ? "bg-green-50 border-green-200 text-green-900"
+              : "bg-red-50 border-red-200 text-red-900"
+          }`}>
+            {result.ok
+              ? <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-green-600" />
+              : <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-600" />}
+            <div>
+              <p className="font-medium">{result.ok ? "Connected" : "Failed"}</p>
+              <p className="text-xs mt-0.5 opacity-80">{result.message}</p>
+              {result.accountNumber && (
+                <p className="text-xs mt-0.5 opacity-70">Account: {result.accountNumber}</p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border bg-muted/30 p-4 space-y-2 text-sm">
+        <p className="font-medium">Why DPD might not book automatically</p>
+        <ul className="space-y-1 text-muted-foreground text-xs list-disc pl-4">
+          <li>The order has no delivery address set — open the order and add one, then use the <strong>Book DPD</strong> retry button</li>
+          <li>The shipping method is not set to DPD, DPD Next Day, or Courier</li>
+          <li>The DPD API credentials are incorrect — use the test above to verify</li>
+          <li>The DPD API was temporarily unavailable when the order was dispatched — use the <strong>Book DPD</strong> retry button on the order</li>
+        </ul>
+      </div>
+    </div>
   );
 }

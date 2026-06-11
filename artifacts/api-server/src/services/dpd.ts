@@ -223,3 +223,21 @@ export async function reprrintDpdLabel(jobId: number): Promise<string | null> {
 export function isDpdConfigured(): boolean {
   return ["DPD_USERNAME", "DPD_PASSWORD", "DPD_ACCOUNT_NUMBER"].every((k) => !!process.env[k]);
 }
+
+export async function testDpdConnection(): Promise<{ ok: boolean; message: string; accountNumber?: string }> {
+  try {
+    const cfg = getConfig();
+    const geoSession = await login(cfg);
+    if (!geoSession) throw new Error("Login succeeded but no GeoSession returned");
+    return {
+      ok: true,
+      message: `Connected successfully. GeoSession token received.`,
+      accountNumber: cfg.accountNumber,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : "Unknown error",
+    };
+  }
+}

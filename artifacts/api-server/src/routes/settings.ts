@@ -3,6 +3,7 @@ import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { db, settingsTable, syncLogsTable } from "@workspace/db";
 import { runWooSync } from "../services/woo-sync";
+import { testDpdConnection, isDpdConfigured } from "../services/dpd.js";
 
 
 const router: IRouter = Router();
@@ -61,6 +62,15 @@ router.post("/woo-sync/run", async (req, res): Promise<void> => {
   runWooSync({ full }).catch(async (err) => {
     console.error("[sync] Background sync failed:", err);
   });
+});
+
+router.get("/settings/dpd-test", async (_req, res): Promise<void> => {
+  if (!isDpdConfigured()) {
+    res.json({ ok: false, configured: false, message: "DPD credentials not set (DPD_USERNAME, DPD_PASSWORD, DPD_ACCOUNT_NUMBER environment variables required)" });
+    return;
+  }
+  const result = await testDpdConnection();
+  res.json({ ...result, configured: true });
 });
 
 export default router;
