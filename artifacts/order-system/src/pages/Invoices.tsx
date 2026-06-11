@@ -313,7 +313,8 @@ function OrderRow({
   };
 
   const subtotal = parseFloat(order.totalAmount);
-  const total = subtotal * 1.2;
+  const carriage = parseFloat(String((order as any).carriageAmount ?? 0));
+  const total = (subtotal + carriage) * 1.2;
 
   return (
     <>
