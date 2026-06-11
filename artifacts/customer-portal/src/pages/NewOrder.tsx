@@ -1986,7 +1986,8 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const [selectedPmId, setSelectedPmId] = useState<string | null>(null);
   const [attachments, setAttachments] = useState<Array<{ name: string; objectPath: string }>>([]);
   const [uploading, setUploading] = useState(false);
-  const [wantsSelectExtra, setWantsSelectExtra] = useState(false);
+  const reviewSearch = useSearch();
+  const [wantsSelectExtra, setWantsSelectExtra] = useState(() => new URLSearchParams(reviewSearch).get("selectExtra") === "true");
   const [giftDialogOpen, setGiftDialogOpen] = useState(false);
   const giftDialogShownRef = useRef(false);
   const pendingSubmitRef = useRef<Parameters<typeof onSubmit>[0] | null>(null);

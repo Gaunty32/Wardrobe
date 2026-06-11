@@ -705,7 +705,7 @@ export default function Dashboard() {
                     Select Extra is our gift to our loyal customers. Limited to one per customer per month with a qualifying order value.
                   </p>
                   <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-                    <Button size="sm" className="h-7 text-xs px-3 bg-amber-600 hover:bg-amber-700 gap-1" onClick={() => setLocation("/orders/new")}>
+                    <Button size="sm" className="h-7 text-xs px-3 bg-amber-600 hover:bg-amber-700 gap-1" onClick={() => setLocation("/orders/new?selectExtra=true")}>
                       Add to basket <ShoppingBag className="w-3 h-3" />
                     </Button>
                     {selectExtraData.offer.productUrl && (
