@@ -504,9 +504,15 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                     {notReady.length} item line{notReady.length !== 1 ? "s" : ""} not yet in stock
                   </p>
                   <ul className="text-xs space-y-0.5 pl-5 list-disc text-amber-800">
-                    {notReady.map(i => (
-                      <li key={i.id}>{i.productName}{i.colour ? ` (${i.colour})` : ""} ×{i.quantity}</li>
-                    ))}
+                    {notReady.map(i => {
+                      const parts = [i.colour, i.size].filter(Boolean).join(" / ");
+                      return (
+                        <li key={i.id}>
+                          {i.productName}{parts ? ` (${parts})` : ""} ×{i.quantity}
+                          {i.wearerName ? <span className="text-amber-700"> — {i.wearerName}</span> : null}
+                        </li>
+                      );
+                    })}
                   </ul>
                   <p className="text-xs text-amber-800">
                     Dispatching now will send the ready items only. The items above will follow as a separate shipment once they arrive.
