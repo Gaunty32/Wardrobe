@@ -351,6 +351,11 @@ export default function OrderDetail() {
     queryFn: () => apiFetch("/bundles"),
   });
 
+  // Must be declared BEFORE the bundleDetails useQuery that references addBundleId
+  const [addBundleId, setAddBundleId] = useState<number | null>(null);
+  const [addBundleQty, setAddBundleQty] = useState("1");
+  const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string }>>({});
+
   const { data: bundleDetails } = useQuery<{
     id: number; name: string;
     components: Array<{
@@ -409,9 +414,6 @@ export default function OrderDetail() {
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const [isAddBundleOpen, setIsAddBundleOpen] = useState(false);
-  const [addBundleId, setAddBundleId] = useState<number | null>(null);
-  const [addBundleQty, setAddBundleQty] = useState("1");
-  const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string }>>({});
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [serviceProductSearchOpen, setServiceProductSearchOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom" | "service">("wardrobe");
