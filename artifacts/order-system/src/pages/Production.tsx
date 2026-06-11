@@ -264,7 +264,7 @@ function filterWorksheets(worksheets: Worksheet[], f: Filters): Worksheet[] {
   return worksheets.filter((ws) => {
     if (f.search) {
       const q = f.search.toLowerCase();
-      if (!ws.customerName?.toLowerCase().includes(q) && !ws.orderNumber?.toLowerCase().includes(q)) return false;
+      if (!ws.customerName?.toLowerCase().includes(q) && !ws.orderNumber?.toLowerCase().includes(q) && !ws.worksheetNumber?.toLowerCase().includes(q)) return false;
     }
     if (f.finish) {
       const fin = f.finish.toLowerCase();
@@ -284,7 +284,7 @@ function filterPickingOrders(orders: PickingOrder[], f: Filters): PickingOrder[]
     .map((order) => {
       if (f.search) {
         const q = f.search.toLowerCase();
-        if (!order.customerName?.toLowerCase().includes(q) && !order.orderNumber.toLowerCase().includes(q)) return null;
+        if (!order.customerName?.toLowerCase().includes(q) && !order.orderNumber.toLowerCase().includes(q) && !order.worksheets?.some((ws: any) => ws.worksheetNumber?.toLowerCase().includes(q))) return null;
       }
       if (!matchesDateFilters(order.requiredDate, f.dateFrom, f.dateTo)) return null;
       let items = order.items;
