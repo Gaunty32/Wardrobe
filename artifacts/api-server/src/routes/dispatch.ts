@@ -494,6 +494,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
 
   res.json({
     order: updated,
+    dispatchedItemIds: itemsToDispatch.map(i => i.id),
     dpd: dpdResult ? {
       consignmentNumber: dpdResult.consignmentNumber,
       trackingUrl: dpdResult.trackingUrl,

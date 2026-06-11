@@ -2518,7 +2518,12 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
   if (!order) { res.status(404).send("Order not found"); return; }
 
   // ── Guard: all production worksheets must be complete before issuing a delivery note ──
-  if (!isDraft) {
+  // Skip the guard when:
+  //   • isDraft is set (preview mode)
+  //   • dispatchedIds are provided (explicit partial dispatch — API already validated readiness)
+  //   • order is already part_shipped, shipped, or delivered (items were validated at dispatch time)
+  const skipGuard = isDraft || dispatchedIds !== null || ["part_shipped", "shipped", "delivered"].includes(order.status);
+  if (!skipGuard) {
     const incompleteWs = await db
       .select({ worksheetNumber: worksheetsTable.worksheetNumber, status: worksheetsTable.status })
       .from(worksheetsTable)
@@ -2572,8 +2577,20 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     employee: r.employee ?? null,
   }));
 
-  const dispatchedItems = dispatchedIds ? allItems.filter(i => dispatchedIds.includes(i.id)) : allItems;
-  const pendingItems    = dispatchedIds ? allItems.filter(i => !dispatchedIds.includes(i.id)) : [];
+  // Split into dispatched-now vs to-follow:
+  //   1. Explicit dispatchedItemIds param → use those IDs
+  //   2. part_shipped order with no explicit IDs → use dispatchedAt field on items
+  //   3. Fully dispatched / normal → all items dispatched, none pending
+  const dispatchedItems = dispatchedIds
+    ? allItems.filter(i => dispatchedIds.includes(i.id))
+    : order.status === "part_shipped"
+      ? allItems.filter(i => i.dispatchedAt != null)
+      : allItems;
+  const pendingItems = dispatchedIds
+    ? allItems.filter(i => !dispatchedIds.includes(i.id))
+    : order.status === "part_shipped"
+      ? allItems.filter(i => i.dispatchedAt == null)
+      : [];
 
   let customerLogoDataUrl: string | null = null;
   let customerPostalAddress: string | null = null;

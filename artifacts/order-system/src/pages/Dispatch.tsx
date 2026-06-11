@@ -118,8 +118,11 @@ function openWearerLabels(orderId: number, opts?: { includeDeliveryLabel?: boole
 
 const LOCAL_DELIVERY_METHODS = new Set(["free_local", "local_delivery"]);
 
-function openDeliveryNote(orderId: number, shippingMethod?: string | null) {
-  window.open(`/api/orders/${orderId}/delivery-note`, "_blank");
+function openDeliveryNote(orderId: number, shippingMethod?: string | null, dispatchedItemIds?: number[]) {
+  const params = dispatchedItemIds && dispatchedItemIds.length > 0
+    ? `?dispatchedItemIds=${dispatchedItemIds.join(",")}`
+    : "";
+  window.open(`/api/orders/${orderId}/delivery-note${params}`, "_blank");
   if (shippingMethod && LOCAL_DELIVERY_METHODS.has(shippingMethod)) {
     setTimeout(() => window.open(`/api/orders/${orderId}/shipping-label`, "_blank"), 300);
   }
@@ -143,6 +146,7 @@ function RequiredDateBadge({ requiredDate }: { requiredDate: string | null }) {
 
 interface DispatchResponse {
   order: DispatchOrder;
+  dispatchedItemIds: number[];
   dpd: { consignmentNumber: string; trackingUrl: string; labelPdfBase64: string | null } | null;
   dpdError: string | null;
   dpdConfigured: boolean;
@@ -199,8 +203,9 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
       queryClient.invalidateQueries({ queryKey: ["dispatch-orders"] });
       setDispatchOpen(false);
 
-      // Always print the delivery note first
-      openDeliveryNote(order.id, order.shippingMethod);
+      // Always print the delivery note first — pass the just-dispatched IDs so
+      // the note shows "Items Delivered Now" + "Items To Follow" for partial dispatches
+      openDeliveryNote(order.id, order.shippingMethod, data.dispatchedItemIds);
 
       const isPartShipped = data.order.status === "part_shipped";
 
