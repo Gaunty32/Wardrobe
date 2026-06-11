@@ -3938,6 +3938,8 @@ export default function Production() {
         const includedItems = sendingOrder.items.filter(i => !sendingExcluded.has(i.id));
         const excludedItems = sendingOrder.items.filter(i => sendingExcluded.has(i.id));
         const hasDecoration = includedItems.some(i => i.finishId != null);
+        const includedPlainCount = includedItems.filter(i => i.finishId == null).length;
+        const includedDecoratedCount = includedItems.filter(i => i.finishId != null).length;
         const closeSendingDialog = () => { setSendingOrder(null); setSendingNotes(""); setSendingExcluded(new Set()); };
         return (
           <Dialog open onOpenChange={(open) => { if (!open) closeSendingDialog(); }}>
@@ -3952,6 +3954,15 @@ export default function Production() {
                 <p className="text-sm text-muted-foreground">
                   Tick the items that are physically in stock and ready. Unticked items will be <strong>returned to purchasing</strong>.
                 </p>
+                {hasDecoration && includedPlainCount > 0 && (
+                  <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    <span className="mt-0.5 text-amber-500">⚠</span>
+                    <span>
+                      <strong>{includedDecoratedCount} item{includedDecoratedCount !== 1 ? "s" : ""}</strong> will go on the production worksheet.{" "}
+                      <strong>{includedPlainCount} plain item{includedPlainCount !== 1 ? "s" : ""} (no finish)</strong> will be sent straight to dispatch — they won't appear on the worksheet.
+                    </span>
+                  </div>
+                )}
                 <div className="space-y-3">
                   {buildSendMatrix(sendingOrder.items).map(group => {
                     const getRowCells = (colour: string) =>
