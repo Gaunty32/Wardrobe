@@ -620,6 +620,19 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     return line;
   });
 
+  // Add carriage as a separate line item when present
+  const carriageAmount = parseFloat(String(order.carriageAmount ?? 0));
+  if (carriageAmount > 0) {
+    const carriageLine: Record<string, unknown> = {
+      Description: "Carriage",
+      Quantity: 1,
+      UnitAmount: carriageAmount,
+      AccountCode: "4000",
+    };
+    if (!customerZeroVat) carriageLine.TaxType = "OUTPUT2"; // standard 20% VAT
+    lineItems.push(carriageLine);
+  }
+
   const invoiceDate = order.invoiceDate ? new Date(order.invoiceDate) : new Date();
   const invoiceDateStr = invoiceDate.toISOString().slice(0, 10);
   const dueDate = new Date(invoiceDate);
