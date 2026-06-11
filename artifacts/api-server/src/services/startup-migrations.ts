@@ -1730,4 +1730,22 @@ export async function refreshProductIssues(): Promise<void> {
     `);
     console.log("[startup] Fixed O103: service line marked dispatched, order restored to shipped");
   }
+
+  // P39: Crew T-Shirt Small items for Eniko Bajko and Junior Frater (IDs 339, 348)
+  // were embroidered but never assigned to a worksheet, leaving stock_status NULL
+  // and blocking dispatch. Mark them complete so they surface in the dispatch queue.
+  const p39Fix = await db.execute(sql`
+    SELECT 1 FROM _migration_flags WHERE name = 'fix_p39_missing_stock_status'
+  `);
+  if (p39Fix.rows.length === 0) {
+    await db.execute(sql`
+      UPDATE order_items
+        SET stock_status = 'complete'
+      WHERE id IN (339, 348)
+        AND stock_status IS NULL;
+
+      INSERT INTO _migration_flags (name) VALUES ('fix_p39_missing_stock_status');
+    `);
+    console.log("[startup] Fixed P39: items 339/348 stock_status set to complete");
+  }
 }
