@@ -314,9 +314,8 @@ function CustomerRow({ customer }: { customer: PendingCustomer }) {
   const { toast } = useToast();
 
   const oldestDate = customer.orders.reduce((oldest, o) => {
-    const d = o.orderDate ?? o.createdAt;
-    return d < oldest ? d : oldest;
-  }, customer.orders[0]?.orderDate ?? customer.orders[0]?.createdAt ?? "");
+    return o.createdAt < oldest ? o.createdAt : oldest;
+  }, customer.orders[0]?.createdAt ?? "");
 
   const awaitingSBS = customer.orders.filter(o => o.portalStatus === "submitted").length;
   const awaitingManager = customer.orders.filter(o => o.portalStatus === "pending_review").length;
@@ -455,7 +454,7 @@ function CustomerRow({ customer }: { customer: PendingCustomer }) {
                             : "—"}
                         </td>
                         <td className="py-2 text-xs text-muted-foreground pl-4">
-                          <AgeBadge dateStr={order.orderDate ?? order.createdAt} />
+                          <AgeBadge dateStr={order.createdAt} />
                         </td>
                         <td className="py-2 text-right">
                           <Link href={`/orders/${order.id}`}>

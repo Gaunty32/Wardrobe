@@ -56,7 +56,7 @@ router.get("/reports/portal-pending", async (req: Request, res: Response) => {
         customerPhone: row.customer_phone ?? null,
         orders: [],
         totalValue: 0,
-        oldestOrderDate: row.order_date ?? row.created_at,
+        oldestOrderDate: row.created_at,
       };
     }
     byCustomer[key].orders.push({
@@ -74,10 +74,9 @@ router.get("/reports/portal-pending", async (req: Request, res: Response) => {
       notes: row.portal_notes || row.notes || null,
     });
     byCustomer[key].totalValue += parseFloat(row.total_amount ?? "0");
-    // keep the oldest date
-    const rowDate = row.order_date ?? row.created_at;
-    if (rowDate < byCustomer[key].oldestOrderDate) {
-      byCustomer[key].oldestOrderDate = rowDate;
+    // keep the oldest created_at (not order_date — order_date is user-editable and can be backdated)
+    if (row.created_at < byCustomer[key].oldestOrderDate) {
+      byCustomer[key].oldestOrderDate = row.created_at;
     }
   }
 
