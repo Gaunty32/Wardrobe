@@ -594,15 +594,21 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       return { garmentPrice: wooBase, processLines, unitPrice: wooBase };
     }
 
-    // Standard pricing: WooCommerce base + extra logos
-    // Price break tier is determined by breakQty (total across all sizes), not per-size qty.
+    // Wardrobe items always have an all-in agreed price — the woo_price already includes
+    // all decorations. Apply quantity price breaks if available, but never add finish
+    // surcharges on top (all processes are shown as included).
     const breaks: { qty: number; price: number }[] = Array.isArray(wi.price_breaks) ? wi.price_breaks : [];
     const sorted = [...breaks].sort((a, b) => b.qty - a.qty);
     const garmentPrice = breaks.length > 0 ? (sorted.find(pb => breakQty >= pb.qty)?.price ?? wooBase) : wooBase;
 
-    const { processLines, totalExtra } = buildProcessLines();
+    const processLines: ProcessLine[] = finishProcs.map((p: any) => ({
+      name: p.item_finish_name ?? p.process_type ?? "",
+      type: p.process_type ?? null,
+      price: parseFloat(p.price ?? "0") || 0,
+      included: true,
+    }));
 
-    return { garmentPrice, processLines, unitPrice: garmentPrice + totalExtra };
+    return { garmentPrice, processLines, unitPrice: garmentPrice };
   };
 
   // Quick price-only helper used for the live price display on cards before adding to basket.
