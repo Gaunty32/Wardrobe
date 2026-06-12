@@ -2948,16 +2948,12 @@ function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; high
                                   </span>
                                 )}
                               </span>
-                              {item.colour && (
-                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                  <Palette className="w-3 h-3" />{item.colour}
-                                </span>
-                              )}
-                              {item.size && (
-                                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                                  <Ruler className="w-3 h-3" />{item.size}
-                                </span>
-                              )}
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <Palette className="w-3 h-3" />{item.colour ?? "—"}
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                <Ruler className="w-3 h-3" />{item.size ?? "—"}
+                              </span>
                               {item.recipientName && (
                                 <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                                   <User className="w-3 h-3" />{item.recipientName}
@@ -3116,7 +3112,7 @@ function TaskGroupCard({
   onNavigate,
 }: {
   group: PlanTaskGroup;
-  onNavigate: (tab: string) => void;
+  onNavigate: (tab: string, search?: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const urg = URGENCY_CONFIG[group.urgency];
@@ -3163,7 +3159,12 @@ function TaskGroupCard({
             size="sm"
             variant="outline"
             className="text-xs h-7 gap-1"
-            onClick={() => onNavigate(actionTab)}
+            onClick={() => {
+              const wsNum = group.overallStatus === "in_progress"
+                ? (group.tasks[0]?.worksheetNumber ?? undefined)
+                : undefined;
+              onNavigate(actionTab, wsNum);
+            }}
           >
             {group.overallStatus === "in_progress" ? <Play className="w-3 h-3" /> : <ArrowRight className="w-3 h-3" />}
             {actionLabel}
@@ -3227,7 +3228,7 @@ function TaskGroupCard({
   );
 }
 
-function DailyPlanTab({ onNavigate, pendingCount, readyCount }: { onNavigate: (tab: string) => void; pendingCount: number; readyCount: number }) {
+function DailyPlanTab({ onNavigate, pendingCount, readyCount }: { onNavigate: (tab: string, search?: string) => void; pendingCount: number; readyCount: number }) {
   const { data: plan, isLoading } = useQuery<DailyPlan>({
     queryKey: ["daily-plan"],
     queryFn: () => apiFetch("/production/daily-plan"),
@@ -3700,7 +3701,14 @@ export default function Production() {
 
           {/* ── Today's Plan Tab ── */}
           <TabsContent value="plan">
-            <DailyPlanTab onNavigate={setActiveTab} pendingCount={allAwaitingOrders.length + partInStockOrders.length} readyCount={allReadyOrders.length} />
+            <DailyPlanTab
+              onNavigate={(tab, search) => {
+                if (search) setFilters(f => ({ ...f, search }));
+                setActiveTab(tab);
+              }}
+              pendingCount={allAwaitingOrders.length + partInStockOrders.length}
+              readyCount={allReadyOrders.length}
+            />
           </TabsContent>
 
           {/* ── Pre-Production Tab ── */}

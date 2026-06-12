@@ -1797,4 +1797,18 @@ export async function refreshProductIssues(): Promise<void> {
       )
   `);
   console.log("[startup] Cleared service product items from purchasing queue and draft POs");
+
+  // Clear stock_status = 'allocated' on service product order items — service lines
+  // (e.g. "Logo Conversion to Stitches") have no physical stock to pick so they should
+  // never appear on the picking list.  Safe to re-run: becomes a no-op once cleared.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET stock_status       = NULL,
+        stock_allocated_at = NULL
+    FROM products p
+    WHERE oi.product_id   = p.id
+      AND p.is_service    = true
+      AND oi.stock_status = 'allocated'
+      AND oi.dispatched_at IS NULL
+  `);
 }

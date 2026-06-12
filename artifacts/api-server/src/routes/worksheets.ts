@@ -67,6 +67,7 @@ router.get("/picking-list", async (req, res): Promise<void> => {
            AND (pv.size   = oi.size   OR (pv.size   IS NULL AND oi.size   IS NULL))
     WHERE oi.stock_status = 'allocated'
       AND oi.dispatched_at IS NULL
+      AND COALESCE(p.is_service, false) = false
       AND NOT EXISTS (
         -- Exclude items still waiting for PO delivery (direct link)
         SELECT 1 FROM purchase_order_items poi
