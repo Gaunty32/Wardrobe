@@ -24,7 +24,7 @@ import {
 import { cn, formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
-import { useGetProduct, useUpdateProduct, getListProductsQueryKey, getGetProductQueryKey, useListSuppliers } from "@workspace/api-client-react";
+import { useGetProduct, useUpdateProduct, getListProductsQueryKey, getGetProductQueryKey, useListSuppliers, useListCustomers } from "@workspace/api-client-react";
 
 const API_BASE = "/api";
 
@@ -787,6 +787,9 @@ export default function ProductDetail() {
   const [isCropping, setIsCropping] = useState(false);
   const cropDragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({ active: false, lastX: 0, lastY: 0 });
   const [isService, setIsService] = useState(false);
+  const [isBespoke, setIsBespoke] = useState(false);
+  const [bespokeCustomerId, setBespokeCustomerId] = useState<string>("none");
+  const [bespokePickerOpen, setBespokePickerOpen] = useState(false);
   const [priceBreakModes, setPriceBreakModes] = useState<Record<number, "price" | "pct" | "disc">>({});
   const [showSecondarySupplier, setShowSecondarySupplier] = useState(false);
   const [addVariantOpen, setAddVariantOpen] = useState(false);
@@ -802,6 +805,8 @@ export default function ProductDetail() {
   useEffect(() => {
     if (product) {
       setIsService(!!(product as any).isService);
+      setIsBespoke(!!(product as any).isBespoke);
+      setBespokeCustomerId((product as any).customerId ? String((product as any).customerId) : "none");
     }
     if (product && !details) {
       setDetails({
@@ -946,6 +951,24 @@ export default function ProductDetail() {
       toast({ title: val ? "Marked as service" : "Marked as physical product" });
     },
     onError: () => toast({ title: "Could not update product type", variant: "destructive" }),
+  });
+
+  const { data: customers = [] } = useListCustomers();
+
+  const setBespokeMut = useMutation({
+    mutationFn: ({ bespoke, customerId }: { bespoke: boolean; customerId: number | null }) =>
+      apiFetch(`/products/${productId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isBespoke: bespoke, customerId: bespoke ? customerId : null }),
+      }),
+    onSuccess: (_data: any, vars) => {
+      setIsBespoke(vars.bespoke);
+      if (!vars.bespoke) setBespokeCustomerId("none");
+      qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
+      qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
+      toast({ title: vars.bespoke ? "Marked as bespoke" : "Bespoke flag removed" });
+    },
+    onError: () => toast({ title: "Could not update product", variant: "destructive" }),
   });
 
   const generateMatrixMut = useMutation({
@@ -1321,6 +1344,72 @@ export default function ProductDetail() {
                         <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform ${isService ? "translate-x-4" : "translate-x-0"}`} />
                       </button>
                     </div>
+                  </div>
+
+                  {/* ── Bespoke toggle ── */}
+                  <div className="border-t border-border/40 pt-5 mt-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                          <User className="w-3.5 h-3.5 text-purple-500" /> Bespoke product
+                        </h4>
+                        <p className="text-xs text-muted-foreground mt-0.5">Exclusive to one customer — only available when ordering for them.</p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isBespoke}
+                        onClick={() => setBespokeMut.mutate({ bespoke: !isBespoke, customerId: isBespoke ? null : (bespokeCustomerId !== "none" ? Number(bespokeCustomerId) : null) })}
+                        disabled={setBespokeMut.isPending}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${isBespoke ? "bg-purple-500" : "bg-muted-foreground/30"}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg ring-0 transition-transform ${isBespoke ? "translate-x-4" : "translate-x-0"}`} />
+                      </button>
+                    </div>
+                    {isBespoke && (
+                      <div className="mt-3">
+                        <Label className="text-xs mb-1.5 block">Assigned customer</Label>
+                        <Popover open={bespokePickerOpen} onOpenChange={setBespokePickerOpen}>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" role="combobox" className="w-full justify-between font-normal text-sm h-9">
+                              <span className="truncate">
+                                {bespokeCustomerId !== "none"
+                                  ? (customers as any[]).find((c: any) => String(c.id) === bespokeCustomerId)?.name ?? "Unknown customer"
+                                  : "— No customer assigned —"}
+                              </span>
+                              <ChevronsUpDown className="w-3.5 h-3.5 shrink-0 opacity-50 ml-2" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[280px] p-0" align="start">
+                            <Command>
+                              <CommandInput placeholder="Search customers…" className="h-8 text-sm" />
+                              <CommandList className="max-h-56">
+                                <CommandEmpty>No customers found.</CommandEmpty>
+                                <CommandGroup>
+                                  <CommandItem value="none" onSelect={() => { setBespokeCustomerId("none"); setBespokePickerOpen(false); setBespokeMut.mutate({ bespoke: true, customerId: null }); }}>
+                                    <Check className={`mr-2 w-3.5 h-3.5 ${bespokeCustomerId === "none" ? "opacity-100" : "opacity-0"}`} />
+                                    — No customer assigned —
+                                  </CommandItem>
+                                  {(customers as any[]).map((c: any) => (
+                                    <CommandItem key={c.id} value={c.name} onSelect={() => {
+                                      setBespokeCustomerId(String(c.id));
+                                      setBespokePickerOpen(false);
+                                      setBespokeMut.mutate({ bespoke: true, customerId: c.id });
+                                    }}>
+                                      <Check className={`mr-2 w-3.5 h-3.5 ${String(c.id) === bespokeCustomerId ? "opacity-100" : "opacity-0"}`} />
+                                      {c.name}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        {bespokeCustomerId === "none" && (
+                          <p className="text-xs text-amber-600 mt-1.5">Assign a customer so this product appears in their orders.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {!isService && (
