@@ -957,9 +957,25 @@ export default function OrderDetail() {
     } else {
       const finish = customerFinishes?.find(f => f.id.toString() === value);
       if (finish) {
-        const base = parseFloat(item.baseUnitPrice || item.unitPrice) || 0;
-        const total = base + finish.totalCost;
-        setItem(i => ({ ...i, finishId: finish.id, finishName: finish.name, finishCost: finish.totalCost, unitPrice: total.toFixed(2) }));
+        // Check for an agreed price on this product+finish combination first
+        const agreedItem = (customerFinishedItems ?? []).find(
+          fi => fi.productId === item.productId && fi.finishId === finish.id
+        );
+        if (agreedItem) {
+          // Use the agreed all-in price (specialPrice overrides everything; unitPrice is the garment base)
+          const agreedPrice = agreedItem.specialPrice != null
+            ? agreedItem.specialPrice
+            : agreedItem.unitPrice;
+          setItem(i => ({ ...i, finishId: finish.id, finishName: finish.name, finishCost: 0, unitPrice: agreedPrice.toFixed(2) }));
+        } else {
+          // No agreed price — add only the processes beyond the cheapest (cheapest is baked into garment base)
+          const processRates = [...(finish.processes ?? [])].map((p: any) => Number(p.price ?? 0)).sort((a, b) => a - b);
+          processRates.shift(); // cheapest assumed baked into garment price
+          const extraCost = processRates.reduce((s, p) => s + p, 0);
+          const base = parseFloat(item.baseUnitPrice || item.unitPrice) || 0;
+          const total = base + extraCost;
+          setItem(i => ({ ...i, finishId: finish.id, finishName: finish.name, finishCost: extraCost, unitPrice: total.toFixed(2) }));
+        }
       }
     }
   };
