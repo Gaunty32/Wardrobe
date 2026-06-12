@@ -493,15 +493,41 @@ function MatrixQtyInput({ itemId, initialQty, onSave }: { itemId: number; initia
   );
 }
 
-function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
+function POMatrixView({ items, currency, onDeleteLine, onLineUpdate, onDueDateChange }: {
   items: POItem[];
   currency?: string;
   onDeleteLine?: (itemId: number) => void;
   onLineUpdate?: (itemId: number, qty: number) => void;
+  onDueDateChange?: (itemIds: number[], date: string | null) => void;
 }) {
   const { groupKeys, groups, allSizes } = buildPOMatrix(items);
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
+
+  // Per-row due dates: rowKey -> YYYY-MM-DD string
+  const [rowDueDates, setRowDueDates] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const [gk, g] of groups.entries()) {
+      for (const colour of g.colours) {
+        const rowIds = g.rowItemIds.get(colour) ?? [];
+        const dated = items.find(i => rowIds.includes(i.id) && i.estimatedDueDate != null);
+        if (dated) init[`${gk}||${colour}`] = toDateInputValue(dated.estimatedDueDate);
+      }
+    }
+    return init;
+  });
+
+  const handleRowDueDateChange = (rowKey: string, rowIds: number[], date: string) => {
+    setRowDueDates(prev => ({ ...prev, [rowKey]: date }));
+    onDueDateChange?.(rowIds, date || null);
+  };
+
+  const handleRowDueDateClear = (rowKey: string, rowIds: number[]) => {
+    setRowDueDates(prev => { const next = { ...prev }; delete next[rowKey]; return next; });
+    onDueDateChange?.(rowIds, null);
+  };
+
+  const showDueDateCol = !!onDueDateChange;
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
@@ -512,6 +538,7 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
             <TableHead className="font-semibold text-white">Colour</TableHead>
             {allSizes.map((s) => <TableHead key={s} className="text-center font-semibold text-white">{s}</TableHead>)}
             <TableHead className="text-center font-semibold text-white">Total</TableHead>
+            {showDueDateCol && <TableHead className="font-semibold text-white text-xs whitespace-nowrap">Due Date</TableHead>}
             {onDeleteLine && <TableHead className="w-8" />}
           </TableRow>
         </TableHeader>
@@ -525,6 +552,7 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
                   const rowIds = g.rowItemIds.get(colour) ?? [];
                   const rowInfos = g.rowInfo.get(colour) ?? [];
                   const rowKey = `${gk}||${colour}`;
+                  const rowDueDate = rowDueDates[rowKey] ?? "";
                   return (
                     <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
                       {ci === 0 ? (
@@ -583,6 +611,34 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
                         );
                       })}
                       <TableCell className="text-center font-bold">{rowTotal}</TableCell>
+                      {showDueDateCol && (
+                        <TableCell className="p-1.5">
+                          <div className="flex items-center gap-1 min-w-[130px]">
+                            <input
+                              type="date"
+                              value={rowDueDate}
+                              onChange={e => handleRowDueDateChange(rowKey, rowIds, e.target.value)}
+                              className="h-7 w-28 text-xs rounded border border-input bg-background px-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              title="Set backorder due date for this row"
+                            />
+                            {rowDueDate && (
+                              <button
+                                type="button"
+                                onClick={() => handleRowDueDateClear(rowKey, rowIds)}
+                                className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                                title="Clear due date"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                          {rowDueDate && (
+                            <span className="inline-flex items-center gap-0.5 mt-0.5 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
+                              <CalendarDays className="w-2.5 h-2.5" /> Backorder
+                            </span>
+                          )}
+                        </TableCell>
+                      )}
                       {onDeleteLine && (
                         <TableCell className="text-center p-1">
                           <button
@@ -610,6 +666,7 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
                 return <TableCell key={sz} className="text-center font-bold text-white">{t > 0 ? t : "—"}</TableCell>;
               })}
               <TableCell className="text-center font-bold text-white">{items.reduce((s, i) => s + i.quantityOrdered, 0)}</TableCell>
+              {showDueDateCol && <TableCell />}
               {onDeleteLine && <TableCell />}
             </TableRow>
           )}
@@ -1798,6 +1855,9 @@ function POCard({
                 currency={po.supplierCurrency}
                 onDeleteLine={po.status !== "delivered" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
                 onLineUpdate={(po.status === "draft" || po.status === "ordered") ? (itemId, qty) => onLineUpdate(po.id, itemId, { quantityOrdered: qty }) : undefined}
+                onDueDateChange={po.status === "ordered" ? (itemIds, date) => {
+                  itemIds.forEach(itemId => onLineUpdate(po.id, itemId, { estimatedDueDate: date }));
+                } : undefined}
               />
 
               {po.status === "ordered" && (
