@@ -1,10 +1,10 @@
 /**
  * DPD UK API v2 integration
- * Docs: https://api2.dpd.co.uk/
+ * Docs: https://api.dpd.co.uk/
  *
  * Required env vars:
  *   DPD_USERNAME        – DPD account username (email)
- *   DPD_PASSWORD        – DPD account password
+ *   DPD_PASSWORD        – DPD account password (sent as MD5 hash per DPD API spec)
  *   DPD_ACCOUNT_NUMBER  – DPD account / Fin number
  *
  * Optional env vars (default to empty — DPD uses account defaults):
@@ -14,6 +14,8 @@
  *   DPD_SENDER_POSTCODE – Collection postcode
  *   DPD_NETWORK_CODE    – Service code, e.g. "1^12" (next-day by 12) or "1" (next-day)
  */
+
+import crypto from "crypto";
 
 const DPD_BASE = "https://api.dpd.co.uk";
 
@@ -42,7 +44,9 @@ function getConfig() {
 }
 
 async function login(cfg: ReturnType<typeof getConfig>): Promise<string> {
-  const credentials = Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
+  // DPD UK API v2 requires the password as an MD5 hash, not plain text
+  const md5Password = crypto.createHash("md5").update(cfg.password).digest("hex");
+  const credentials = Buffer.from(`${cfg.username}:${md5Password}`).toString("base64");
   const res = await fetch(`${DPD_BASE}/user/?action=login`, {
     method: "POST",
     headers: {
