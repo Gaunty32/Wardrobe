@@ -1450,7 +1450,19 @@ export default function OrderDetail() {
                 )}
                 <StatusBadge status={order.status} className="mt-1" />
               </div>
-              <p className="text-muted-foreground mt-1">{formatDate(order.orderDate)} &bull; {order.customerName}</p>
+              <p className="text-muted-foreground mt-1">
+                {formatDate(order.orderDate)} &bull;{" "}
+                {order.customerId ? (
+                  <a
+                    href={`/customers/${order.customerId}`}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                  >
+                    {order.customerName}
+                  </a>
+                ) : (
+                  order.customerName
+                )}
+              </p>
               <PoNumberInline orderId={orderId} current={(order as any).poNumber ?? null} />
             </div>
           </div>
