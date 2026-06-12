@@ -2368,41 +2368,13 @@ function IncompleteOrderModal({
             <p className="text-xs text-muted-foreground italic">No purchase orders found for outstanding items.</p>
           )}
 
-          {/* Document & action buttons */}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-              Documents
-            </p>
-            <div className="grid grid-cols-1 gap-2">
-              {completeItems.length > 0 && (
-                <Button
-                  variant="outline"
-                  className="justify-start gap-2 h-auto py-3"
-                  onClick={() => openDeliveryNote(order.id, { dispatchedItemIds: completeOrder.items.map(i => i.id) })}
-                >
-                  <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                  <div className="text-left">
-                    <div className="font-medium">Delivery Note — Ready Items Only</div>
-                    <div className="text-xs text-muted-foreground">
-                      {completeItems.length} line{completeItems.length !== 1 ? "s" : ""} · {completeQty} item{completeQty !== 1 ? "s" : ""} ready to ship
-                    </div>
-                  </div>
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                className="justify-start gap-2 h-auto py-3"
-                onClick={() => openDeliveryNote(order.id, { draft: true })}
-              >
-                <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                <div className="text-left">
-                  <div className="font-medium">Delivery Note — Full Order (Draft)</div>
-                  <div className="text-xs text-muted-foreground">
-                    All {order.items.length} line{order.items.length !== 1 ? "s" : ""} including outstanding, marked DRAFT
-                  </div>
-                </div>
-              </Button>
-              {namedCompleteCount > 0 && (
+          {/* Document & action buttons — wearer labels only; delivery note + box labels print at dispatch confirmation */}
+          {namedCompleteCount > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Documents
+              </p>
+              <div className="grid grid-cols-1 gap-2">
                 <Button
                   variant="outline"
                   className="justify-start gap-2 h-auto py-3"
@@ -2416,9 +2388,9 @@ function IncompleteOrderModal({
                     </div>
                   </div>
                 </Button>
-              )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <DialogFooter className="gap-2 flex-wrap">
@@ -2514,21 +2486,9 @@ function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: ()
             </div>
           )}
 
-          <p className="text-sm text-muted-foreground">Print the documents you need before dispatching.</p>
+          <p className="text-sm text-muted-foreground">Print any documents you need, then head to Dispatch to confirm shipment — the delivery note and box labels will be produced automatically.</p>
 
           <div className="grid grid-cols-1 gap-2">
-            <Button
-              variant="outline"
-              className="justify-start gap-2 h-auto py-3"
-              onClick={() => openDeliveryNote(order.id)}
-            >
-              <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
-              <div className="text-left">
-                <div className="font-medium">Delivery Note</div>
-                <div className="text-xs text-muted-foreground">Items by recipient, sign-off fields</div>
-              </div>
-            </Button>
-
             <Button
               variant="outline"
               className="justify-start gap-2 h-auto py-3"

@@ -290,10 +290,6 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          <ZebraLabels orderId={order.id} orderNumber={order.orderNumber} hasNamedRecipients={namedCount > 0} />
-          <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => openDeliveryNote(order.id, order.shippingMethod)}>
-            <FileText className="w-3.5 h-3.5" /> Delivery Note
-          </Button>
           <Button
             size="sm"
             variant="outline"
