@@ -608,7 +608,11 @@ async function getPoWithItems(poId: number) {
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .leftJoin(processStockTable, eq(purchaseOrderItemsTable.processStockId, processStockTable.id))
-    .where(eq(purchaseOrderItemsTable.poId, poId));
+    .where(and(
+      eq(purchaseOrderItemsTable.poId, poId),
+      // Exclude service products — they don't need purchasing
+      sql`(${productsTable.isService} IS NOT TRUE OR ${productsTable.id} IS NULL)`,
+    ));
   return {
     ...poRow.po,
     supplierContactName: poRow.supplierContactName ?? null,

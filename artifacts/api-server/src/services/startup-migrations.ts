@@ -1767,4 +1767,34 @@ export async function refreshProductIssues(): Promise<void> {
     `);
     console.log("[startup] Fixed P39: items 339/348 stock_status set to complete");
   }
+
+  // Clear purchase_required / stock_status flags on service product order items
+  // — service products have no purchasing or stock requirement.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required = false,
+        purchase_quantity  = NULL,
+        stock_status       = NULL,
+        stock_allocated_at = NULL
+    FROM products p
+    WHERE oi.product_id = p.id
+      AND p.is_service IS TRUE
+      AND (oi.purchase_required = true OR oi.stock_status IS NOT NULL)
+  `);
+
+  // Remove service product items from any existing draft / ordered POs.
+  // They were added before this rule existed and will cause confusion.
+  await db.execute(sql`
+    DELETE FROM purchase_order_items poi
+    USING order_items oi
+    JOIN products p ON oi.product_id = p.id
+    WHERE poi.order_item_id = oi.id
+      AND p.is_service IS TRUE
+      AND EXISTS (
+        SELECT 1 FROM purchase_orders po
+        WHERE po.id = poi.po_id
+          AND po.status IN ('draft', 'ordered')
+      )
+  `);
+  console.log("[startup] Cleared service product items from purchasing queue and draft POs");
 }
