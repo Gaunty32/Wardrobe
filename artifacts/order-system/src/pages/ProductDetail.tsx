@@ -1486,7 +1486,7 @@ export default function ProductDetail() {
                         onClick={() => {
                           const newIdx = details.priceBreaks.length;
                           handleDetailChange("priceBreaks", [...details.priceBreaks, { qty: 0, price: 0 }]);
-                          setPriceBreakModes(m => ({ ...m, [newIdx]: "price" }));
+                          setPriceBreakModes(m => ({ ...m, [newIdx]: "disc" }));
                         }}
                       >
                         <Plus className="w-3.5 h-3.5 mr-1" /> Add Tier
