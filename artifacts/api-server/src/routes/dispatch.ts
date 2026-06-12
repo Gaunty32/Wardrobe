@@ -389,6 +389,15 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     await db.update(orderItemsTable)
       .set({ dispatchedAt: now })
       .where(inArray(orderItemsTable.id, itemsToDispatch.map(i => i.id)));
+
+    // Items that were still 'allocated' (picked directly from stock without a
+    // production worksheet) must be marked 'complete' so they leave the picking list.
+    const allocatedIds = itemsToDispatch.filter(i => i.stockStatus === "allocated").map(i => i.id);
+    if (allocatedIds.length > 0) {
+      await db.update(orderItemsTable)
+        .set({ stockStatus: "complete" })
+        .where(inArray(orderItemsTable.id, allocatedIds));
+    }
   }
 
   const isPartialShipment = remainingAfter.length > 0;
