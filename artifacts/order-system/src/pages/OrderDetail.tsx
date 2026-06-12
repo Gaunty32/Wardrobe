@@ -46,11 +46,13 @@ function getStoredActor(): string {
   return localStorage.getItem("sbs_actor_name") || "";
 }
 
-function printBase64Pdf(base64: string) {
-  const blob = new Blob([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const w = window.open(url, "_blank");
-  if (w) w.onload = () => setTimeout(() => { w.print(); URL.revokeObjectURL(url); }, 200);
+function printDpdLabelHtml(html: string) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => { win.print(); }, 600);
 }
 
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
@@ -705,7 +707,7 @@ export default function OrderDetail() {
   const DPD_METHODS = new Set(["dpd", "dpd_next_day", "courier"]);
 
   const retryDpdMutation = useMutation({
-    mutationFn: () => apiFetch<{ consignmentNumber: string; trackingUrl: string; labelPdfBase64: string | null }>(
+    mutationFn: () => apiFetch<{ consignmentNumber: string; trackingUrl: string; labelHtml: string | null }>(
       `/dispatch/orders/${orderId}/retry-dpd`,
       { method: "POST", body: JSON.stringify({ numberOfParcels: dpdRetryParcels, totalWeightKg: dpdRetryWeight }) }
     ),
@@ -713,7 +715,7 @@ export default function OrderDetail() {
       queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
       setDpdRetryOpen(false);
       toast({ title: "DPD booked", description: `Consignment: ${data.consignmentNumber}` });
-      if (data.labelPdfBase64) setTimeout(() => printBase64Pdf(data.labelPdfBase64!), 300);
+      if (data.labelHtml) setTimeout(() => printDpdLabelHtml(data.labelHtml!), 300);
     },
     onError: (e: Error) => toast({ title: "DPD booking failed", description: e.message, variant: "destructive" }),
   });

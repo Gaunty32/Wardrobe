@@ -148,19 +148,18 @@ function RequiredDateBadge({ requiredDate }: { requiredDate: string | null }) {
 interface DispatchResponse {
   order: DispatchOrder;
   dispatchedItemIds: number[];
-  dpd: { consignmentNumber: string; trackingUrl: string; labelPdfBase64: string | null } | null;
+  dpd: { consignmentNumber: string; trackingUrl: string; labelHtml: string | null } | null;
   dpdError: string | null;
   dpdConfigured: boolean;
 }
 
-function printBase64Pdf(base64: string) {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank");
-  if (win) win.onload = () => { win.print(); setTimeout(() => URL.revokeObjectURL(url), 10000); };
+function printDpdLabelHtml(html: string) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => { win.print(); }, 600);
 }
 
 function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatched: () => void }) {
@@ -215,8 +214,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           title: isPartShipped ? `${order.orderNumber} part-dispatched via DPD` : `${order.orderNumber} dispatched via DPD`,
           description: `Consignment: ${data.dpd.consignmentNumber}${isPartShipped ? " — remaining items to follow" : ""}`,
         });
-        if (data.dpd.labelPdfBase64) {
-          setTimeout(() => printBase64Pdf(data.dpd.labelPdfBase64!), 400);
+        if (data.dpd.labelHtml) {
+          setTimeout(() => printDpdLabelHtml(data.dpd.labelHtml!), 400);
         }
         const namedCount = order.items.filter(
           (i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)

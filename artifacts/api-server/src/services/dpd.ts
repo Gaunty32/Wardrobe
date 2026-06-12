@@ -1,23 +1,21 @@
 /**
- * DPD UK API v2 integration
- * Docs: https://api.dpd.co.uk/
+ * DPD Local API v3.2 integration
+ * Spec: api.dpdlocal.co.uk
  *
  * Required env vars:
- *   DPD_USERNAME        – DPD account username (email)
- *   DPD_PASSWORD        – DPD account password (sent as MD5 hash per DPD API spec)
- *   DPD_ACCOUNT_NUMBER  – DPD account / Fin number
+ *   DPD_USERNAME        – DPD account username
+ *   DPD_PASSWORD        – DPD account password (plain text — encoded as base64 per spec)
+ *   DPD_ACCOUNT_NUMBER  – DPD account number (used in GeoClient header)
  *
- * Optional env vars (default to empty — DPD uses account defaults):
- *   DPD_SENDER_NAME     – Business name shown on labels
+ * Optional env vars:
+ *   DPD_SENDER_NAME     – Business name shown on labels (e.g. "Select Branding Solutions")
  *   DPD_SENDER_LINE1    – Collection address street
  *   DPD_SENDER_TOWN     – Collection town / city
  *   DPD_SENDER_POSTCODE – Collection postcode
- *   DPD_NETWORK_CODE    – Service code, e.g. "1^12" (next-day by 12) or "1" (next-day)
+ *   DPD_NETWORK_CODE    – Service network code (default: "2^12" = Parcel Next Day)
  */
 
-import crypto from "crypto";
-
-const DPD_BASE = "https://api.dpd.co.uk";
+const DPD_BASE = "https://api.dpdlocal.co.uk";
 
 function getConfig() {
   const required = [
@@ -35,36 +33,43 @@ function getConfig() {
     username: process.env.DPD_USERNAME!,
     password: process.env.DPD_PASSWORD!,
     accountNumber: process.env.DPD_ACCOUNT_NUMBER!,
-    senderName: process.env.DPD_SENDER_NAME ?? "",
+    senderName: process.env.DPD_SENDER_NAME ?? "Select Branding Solutions",
     senderLine1: process.env.DPD_SENDER_LINE1 ?? "",
     senderTown: process.env.DPD_SENDER_TOWN ?? "",
     senderPostcode: process.env.DPD_SENDER_POSTCODE ?? "",
-    networkCode: process.env.DPD_NETWORK_CODE ?? "1^12",
+    networkCode: process.env.DPD_NETWORK_CODE ?? "2^12",
   };
 }
 
+/**
+ * Authenticate with DPD Local API.
+ * Per spec: base64-encode "username:password" (plain text — no hashing).
+ * Returns a GeoSession token valid for the day.
+ */
 async function login(cfg: ReturnType<typeof getConfig>): Promise<string> {
-  // DPD UK API v2 requires the password as an MD5 hash, not plain text
-  const md5Password = crypto.createHash("md5").update(cfg.password).digest("hex");
-  const credentials = Buffer.from(`${cfg.username}:${md5Password}`).toString("base64");
+  const credentials = Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
   const res = await fetch(`${DPD_BASE}/user/?action=login`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/json;charset=UTF-8",
+      "Content-Type": "application/json",
+      Accept: "application/json",
       GeoClient: `account/${cfg.accountNumber}`,
     },
   });
 
+  if (res.status === 401) {
+    throw new Error("DPD login failed: invalid username or password (HTTP 401)");
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`DPD login failed (${res.status}): ${body}`);
   }
 
-  const json = await res.json() as { data?: { GeoSession?: string } };
-  const session = json?.data?.GeoSession;
+  const json = await res.json() as { data?: { geoSession?: string }; error?: unknown };
+  const session = json?.data?.geoSession;
   if (!session) {
-    throw new Error(`DPD login succeeded but returned no GeoSession. Response: ${JSON.stringify(json)}`);
+    throw new Error(`DPD login succeeded but returned no geoSession. Response: ${JSON.stringify(json)}`);
   }
   return session;
 }
@@ -78,6 +83,8 @@ export interface DpdDeliveryAddress {
   postcode: string;
   countryCode?: string;
   telephone?: string;
+  email?: string;
+  mobile?: string;
 }
 
 export interface BookConsignmentParams {
@@ -90,9 +97,9 @@ export interface BookConsignmentParams {
 
 export interface ConsignmentResult {
   consignmentNumber: string;
-  jobId: number;
+  shipmentId: number;
   trackingUrl: string;
-  labelPdfBase64: string | null;
+  labelHtml: string | null;
 }
 
 export async function bookDpdConsignment(params: BookConsignmentParams): Promise<ConsignmentResult> {
@@ -100,12 +107,13 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
   const geoSession = await login(cfg);
 
   const authHeaders = {
-    "Content-Type": "application/json;charset=UTF-8",
+    "Content-Type": "application/json",
+    Accept: "application/json",
     GeoClient: `account/${cfg.accountNumber}`,
     GeoSession: geoSession,
   };
 
-  const collectionDate = (params.collectionDate ?? new Date()).toISOString().split("T")[0] + "T00:00:00";
+  const collectionDate = (params.collectionDate ?? new Date()).toISOString().split("T")[0] + "T09:00:00";
 
   const shipmentPayload = {
     jobId: null,
@@ -117,7 +125,7 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
       {
         consignmentNumber: null,
         consignmentRef: params.orderNumber,
-        parcels: [],
+        parcel: [],
         collectionDetails: {
           contactDetails: {
             contactName: cfg.senderName,
@@ -147,18 +155,27 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
             town: params.delivery.town,
             county: "",
           },
+          notificationDetails: {
+            email: params.delivery.email ?? "",
+            mobile: params.delivery.mobile ?? "",
+          },
         },
         networkCode: cfg.networkCode,
         numberOfParcels: params.numberOfParcels,
         totalWeight: params.totalWeightKg,
-        shippingRef1: params.orderNumber,
+        shippingRef1: params.orderNumber.slice(0, 25),
         shippingRef2: "",
         shippingRef3: "",
+        customsValue: null,
+        deliveryInstructions: "",
+        parcelDescription: "",
+        liabilityValue: null,
+        liability: false,
       },
     ],
   };
 
-  const shipRes = await fetch(`${DPD_BASE}/shipment/`, {
+  const shipRes = await fetch(`${DPD_BASE}/shipping/shipment`, {
     method: "POST",
     headers: authHeaders,
     body: JSON.stringify(shipmentPayload),
@@ -171,29 +188,35 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
 
   const shipJson = await shipRes.json() as {
     data?: {
-      shipment?: Array<{ consignmentNumber?: string }>;
-      jobId?: number;
+      shipmentId?: number;
+      consolidated?: boolean;
+      consignmentDetail?: Array<{ consignmentNumber?: string; parcelNumbers?: string[] }>;
     };
-    error?: { errorCode?: number; errorMessage?: string };
+    error?: { errorCode?: number; errorMessage?: string } | null;
   };
 
-  if (shipJson.error?.errorCode && shipJson.error.errorCode !== 0) {
-    throw new Error(`DPD error ${shipJson.error.errorCode}: ${shipJson.error.errorMessage}`);
+  if (shipJson.error && (shipJson.error as { errorCode?: number }).errorCode) {
+    const err = shipJson.error as { errorCode?: number; errorMessage?: string };
+    throw new Error(`DPD error ${err.errorCode}: ${err.errorMessage}`);
   }
 
-  const consignmentNumber = shipJson.data?.shipment?.[0]?.consignmentNumber ?? "";
-  const jobId = shipJson.data?.jobId ?? 0;
+  const consignmentNumber = shipJson.data?.consignmentDetail?.[0]?.consignmentNumber ?? "";
+  const shipmentId = shipJson.data?.shipmentId ?? 0;
 
-  // Try to fetch the label PDF (non-fatal if it fails)
-  let labelPdfBase64: string | null = null;
+  // Fetch label HTML (non-fatal if it fails — dispatch still proceeds)
+  let labelHtml: string | null = null;
   try {
     const labelRes = await fetch(
-      `${DPD_BASE}/label/${cfg.accountNumber}/${jobId}?format=PDF`,
-      { headers: authHeaders }
+      `${DPD_BASE}/shipping/shipment/${shipmentId}/label/`,
+      {
+        headers: {
+          ...authHeaders,
+          Accept: "text/html",
+        },
+      }
     );
     if (labelRes.ok) {
-      const buf = await labelRes.arrayBuffer();
-      labelPdfBase64 = Buffer.from(buf).toString("base64");
+      labelHtml = await labelRes.text();
     }
   } catch {
     // Label fetch is best-effort; dispatch still succeeds
@@ -201,24 +224,25 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
 
   return {
     consignmentNumber,
-    jobId,
-    trackingUrl: `https://track.dpd.co.uk/search?reference=${consignmentNumber}`,
-    labelPdfBase64,
+    shipmentId,
+    trackingUrl: `https://track.dpdlocal.co.uk/search?reference=${consignmentNumber}&postcode=${encodeURIComponent(params.delivery.postcode)}`,
+    labelHtml,
   };
 }
 
-export async function reprrintDpdLabel(jobId: number): Promise<string | null> {
+export async function reprrintDpdLabel(shipmentId: number): Promise<string | null> {
   try {
     const cfg = getConfig();
     const geoSession = await login(cfg);
-    const headers = {
-      GeoClient: `account/${cfg.accountNumber}`,
-      GeoSession: geoSession,
-    };
-    const res = await fetch(`${DPD_BASE}/label/${cfg.accountNumber}/${jobId}?format=PDF`, { headers });
+    const res = await fetch(`${DPD_BASE}/shipping/shipment/${shipmentId}/label/`, {
+      headers: {
+        GeoClient: `account/${cfg.accountNumber}`,
+        GeoSession: geoSession,
+        Accept: "text/html",
+      },
+    });
     if (!res.ok) return null;
-    const buf = await res.arrayBuffer();
-    return Buffer.from(buf).toString("base64");
+    return await res.text();
   } catch {
     return null;
   }
@@ -228,51 +252,30 @@ export function isDpdConfigured(): boolean {
   return ["DPD_USERNAME", "DPD_PASSWORD", "DPD_ACCOUNT_NUMBER"].every((k) => !!process.env[k]);
 }
 
-async function loginWithPassword(cfg: ReturnType<typeof getConfig>, password: string): Promise<{ ok: boolean; session?: string; status?: number; body?: string }> {
-  try {
-    const credentials = Buffer.from(`${cfg.username}:${password}`).toString("base64");
-    const res = await fetch(`${DPD_BASE}/user/?action=login`, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        "Content-Type": "application/json;charset=UTF-8",
-        GeoClient: `account/${cfg.accountNumber}`,
-      },
-    });
-    const body = await res.text();
-    if (!res.ok) return { ok: false, status: res.status, body };
-    const json = JSON.parse(body) as { data?: { GeoSession?: string } };
-    const session = json?.data?.GeoSession;
-    return { ok: !!session, session: session ?? undefined };
-  } catch (e) {
-    return { ok: false, body: e instanceof Error ? e.message : "fetch failed" };
-  }
-}
-
+/**
+ * Test connection by attempting a login.
+ * Returns detailed diagnostics to surface in Settings.
+ */
 export async function testDpdConnection(): Promise<{ ok: boolean; message: string; accountNumber?: string }> {
-  const cfg = getConfig();
+  const cfg = (() => {
+    try { return getConfig(); } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  })();
 
-  // Try MD5-hashed password (DPD UK Ship API v2 standard)
-  const md5Password = crypto.createHash("md5").update(cfg.password).digest("hex");
-  const md5Result = await loginWithPassword(cfg, md5Password);
-  if (md5Result.ok) {
-    return { ok: true, message: "Connected successfully (MD5 auth). GeoSession token received.", accountNumber: cfg.accountNumber };
+  if ("error" in cfg) {
+    return { ok: false, message: cfg.error };
   }
 
-  // Try plain-text password (some DPD account types)
-  const plainResult = await loginWithPassword(cfg, cfg.password);
-  if (plainResult.ok) {
-    return { ok: true, message: "Connected successfully (plain-text auth). GeoSession token received.", accountNumber: cfg.accountNumber };
+  try {
+    await login(cfg as ReturnType<typeof getConfig>);
+    return {
+      ok: true,
+      message: "Connected successfully to DPD Local API. GeoSession token received.",
+      accountNumber: (cfg as ReturnType<typeof getConfig>).accountNumber,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, message: msg };
   }
-
-  // Both failed — return detailed diagnostics
-  const diagMd5 = `MD5: HTTP ${md5Result.status ?? "err"} — ${md5Result.body ?? ""}`;
-  const diagPlain = `Plain: HTTP ${plainResult.status ?? "err"} — ${plainResult.body ?? ""}`;
-  const hint = (md5Result.status === 401 && plainResult.status === 401)
-    ? " Credentials rejected by DPD. Please verify DPD_USERNAME (email), DPD_PASSWORD, and DPD_ACCOUNT_NUMBER are correct and that your DPD account has API/web-services access enabled."
-    : "";
-  return {
-    ok: false,
-    message: `Login failed.\n${diagMd5}\n${diagPlain}${hint}`,
-  };
 }

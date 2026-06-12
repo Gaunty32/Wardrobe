@@ -314,7 +314,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, parsed.data.id));
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
 
-  let dpdResult: { consignmentNumber: string; jobId: number; trackingUrl: string; labelPdfBase64: string | null } | null = null;
+  let dpdResult: { consignmentNumber: string; shipmentId: number; trackingUrl: string; labelHtml: string | null } | null = null;
   let dpdError: string | null = null;
 
   if (bookDpd && numberOfParcels && totalWeightKg) {
@@ -412,7 +412,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     ...(dpdResult ? {
       trackingNumber: dpdResult.consignmentNumber,
       dpdConsignmentId: dpdResult.consignmentNumber,
-      dpdJobId: dpdResult.jobId,
+      dpdJobId: dpdResult.shipmentId,
     } : {}),
   };
 
@@ -517,7 +517,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     dpd: dpdResult ? {
       consignmentNumber: dpdResult.consignmentNumber,
       trackingUrl: dpdResult.trackingUrl,
-      labelPdfBase64: dpdResult.labelPdfBase64,
+      labelHtml: dpdResult.labelHtml,
     } : null,
     dpdError,
     dpdConfigured: isDpdConfigured(),
@@ -612,7 +612,7 @@ router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> =>
   await db.update(ordersTable).set({
     trackingNumber: dpdResult.consignmentNumber,
     dpdConsignmentId: dpdResult.consignmentNumber,
-    dpdJobId: dpdResult.jobId,
+    dpdJobId: dpdResult.shipmentId,
     dpdParcelCount: numberOfParcels,
     updatedAt: new Date(),
   }).where(eq(ordersTable.id, parsed.data.id));
@@ -620,7 +620,7 @@ router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> =>
   await logOrderAction(parsed.data.id, "DPD booked (retry)", getActor(req),
     `Consignment ${dpdResult.consignmentNumber}, ${numberOfParcels} parcel(s)`);
 
-  res.json({ consignmentNumber: dpdResult.consignmentNumber, trackingUrl: dpdResult.trackingUrl, labelPdfBase64: dpdResult.labelPdfBase64 });
+  res.json({ consignmentNumber: dpdResult.consignmentNumber, trackingUrl: dpdResult.trackingUrl, labelHtml: dpdResult.labelHtml });
 });
 
 // ── Reprint DPD label for a dispatched order ──────────────────────────────────
@@ -632,10 +632,10 @@ router.get("/dispatch/orders/:id/dpd-label", async (req, res): Promise<void> => 
   if (!order) { res.status(404).json({ error: "Order not found" }); return; }
   if (!order.dpdJobId) { res.status(404).json({ error: "No DPD label on record for this order" }); return; }
 
-  const labelBase64 = await reprrintDpdLabel(order.dpdJobId);
-  if (!labelBase64) { res.status(502).json({ error: "Could not fetch DPD label" }); return; }
+  const labelHtml = await reprrintDpdLabel(order.dpdJobId);
+  if (!labelHtml) { res.status(502).json({ error: "Could not fetch DPD label" }); return; }
 
-  res.json({ labelPdfBase64: labelBase64 });
+  res.json({ labelHtml });
 });
 
 export default router;
