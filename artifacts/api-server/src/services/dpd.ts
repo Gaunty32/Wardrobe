@@ -15,7 +15,7 @@
  *   DPD_NETWORK_CODE    – Service code, e.g. "1^12" (next-day by 12) or "1" (next-day)
  */
 
-const DPD_BASE = "https://api2.dpd.co.uk";
+const DPD_BASE = "https://api.dpd.co.uk";
 
 function getConfig() {
   const required = [
