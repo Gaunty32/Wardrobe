@@ -151,10 +151,11 @@ function SupplierSelect({ value, onChange, suppliers, placeholder = "Select supp
 }
 
 // ── Variant row ─────────────────────────────────────────────────────────────
-function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpload, productSupplierId, productSecondaryId }: {
+function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpload, productSupplierId, productSecondaryId, productSupplierCode, productSupplierPrice }: {
   variant: any; suppliers: any[]; productId: number; onRefresh: () => void;
   onColourImageUpload: (colour: string | null, imageUrl: string) => void;
   productSupplierId?: number | null; productSecondaryId?: number | null;
+  productSupplierCode?: string; productSupplierPrice?: string;
 }) {
   const { toast } = useToast();
   const [editOpen, setEditOpen] = useState(false);
@@ -297,8 +298,19 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
             ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">{variant.size}</span>
             : <span className="text-muted-foreground text-sm italic">Any</span>}
         </TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground">
-          {variant.sku ?? <span className="italic">—</span>}
+        <TableCell className="font-mono text-xs">
+          {variant.supplierCode
+            ? <span className="text-foreground">{variant.supplierCode}</span>
+            : productSupplierCode
+              ? <span className="text-muted-foreground italic">{productSupplierCode}</span>
+              : <span className="text-muted-foreground italic">—</span>}
+        </TableCell>
+        <TableCell className="text-xs tabular-nums">
+          {variant.supplierPrice != null
+            ? <span className="font-medium">£{parseFloat(String(variant.supplierPrice)).toFixed(2)}</span>
+            : productSupplierPrice && productSupplierPrice !== ""
+              ? <span className="text-muted-foreground italic">£{parseFloat(productSupplierPrice).toFixed(2)}</span>
+              : <span className="text-muted-foreground italic">—</span>}
         </TableCell>
         <TableCell>
           <Input
@@ -1717,7 +1729,8 @@ export default function ProductDetail() {
                             <TableHead className="w-[180px]">Colour</TableHead>
                             <TableHead className="w-[130px]">Fit / Length</TableHead>
                             <TableHead className="w-[110px]">Size</TableHead>
-                            <TableHead className="w-[130px]">SKU</TableHead>
+                            <TableHead className="w-[110px]">Code</TableHead>
+                            <TableHead className="w-[80px]">Cost</TableHead>
                             <TableHead className="w-[90px]">Stock</TableHead>
                             <TableHead>Primary Supplier</TableHead>
                             <TableHead>Secondary Supplier</TableHead>
@@ -1730,7 +1743,7 @@ export default function ProductDetail() {
                             if (filteredVariants.length === 0) {
                               return (
                                 <TableRow>
-                                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground text-sm">
+                                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground text-sm">
                                     No variants match the selected filters.{" "}
                                     <button className="underline" onClick={() => { setFilterColour("all"); setFilterSize("all"); setFilterSleeve("all"); setFilterSearch(""); }}>Clear filters</button>
                                   </TableCell>
@@ -1759,7 +1772,7 @@ export default function ProductDetail() {
 
                                 rows.push(
                                   <TableRow key={`gh-${g.key}`} className={`border-t-2 border-border/40 ${isDirty ? "bg-primary/5" : "bg-muted/25"}`}>
-                                    <TableCell colSpan={9} className="py-2 px-4">
+                                    <TableCell colSpan={10} className="py-2 px-4">
                                       <div className="flex items-center gap-3 flex-wrap">
                                         <div className="flex items-center gap-1.5 shrink-0">
                                           {g.colour && (
@@ -1825,6 +1838,8 @@ export default function ProductDetail() {
                                     onColourImageUpload={handleColourImageUpload}
                                     productSupplierId={defaultPrimaryId}
                                     productSecondaryId={defaultSecondaryId}
+                                    productSupplierCode={details.supplierCode}
+                                    productSupplierPrice={details.supplierPrice}
                                   />
                                 );
                               }
