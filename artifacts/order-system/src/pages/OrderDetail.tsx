@@ -50,7 +50,7 @@ function printDpdLabelHtml(html: string) {
   const win = window.open("", "_blank");
   if (!win) return;
   const thermalCss = `<style>
-    @page { size: 100mm 150mm; margin: 0mm; }
+    @page { size: 4in 4in; margin: 0mm; }
     html, body { margin: 0 !important; padding: 0 !important; }
   </style>`;
   const modified = html.includes("</head>")
