@@ -228,20 +228,51 @@ export function isDpdConfigured(): boolean {
   return ["DPD_USERNAME", "DPD_PASSWORD", "DPD_ACCOUNT_NUMBER"].every((k) => !!process.env[k]);
 }
 
-export async function testDpdConnection(): Promise<{ ok: boolean; message: string; accountNumber?: string }> {
+async function loginWithPassword(cfg: ReturnType<typeof getConfig>, password: string): Promise<{ ok: boolean; session?: string; status?: number; body?: string }> {
   try {
-    const cfg = getConfig();
-    const geoSession = await login(cfg);
-    if (!geoSession) throw new Error("Login succeeded but no GeoSession returned");
-    return {
-      ok: true,
-      message: `Connected successfully. GeoSession token received.`,
-      accountNumber: cfg.accountNumber,
-    };
-  } catch (err) {
-    return {
-      ok: false,
-      message: err instanceof Error ? err.message : "Unknown error",
-    };
+    const credentials = Buffer.from(`${cfg.username}:${password}`).toString("base64");
+    const res = await fetch(`${DPD_BASE}/user/?action=login`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/json;charset=UTF-8",
+        GeoClient: `account/${cfg.accountNumber}`,
+      },
+    });
+    const body = await res.text();
+    if (!res.ok) return { ok: false, status: res.status, body };
+    const json = JSON.parse(body) as { data?: { GeoSession?: string } };
+    const session = json?.data?.GeoSession;
+    return { ok: !!session, session: session ?? undefined };
+  } catch (e) {
+    return { ok: false, body: e instanceof Error ? e.message : "fetch failed" };
   }
+}
+
+export async function testDpdConnection(): Promise<{ ok: boolean; message: string; accountNumber?: string }> {
+  const cfg = getConfig();
+
+  // Try MD5-hashed password (DPD UK Ship API v2 standard)
+  const md5Password = crypto.createHash("md5").update(cfg.password).digest("hex");
+  const md5Result = await loginWithPassword(cfg, md5Password);
+  if (md5Result.ok) {
+    return { ok: true, message: "Connected successfully (MD5 auth). GeoSession token received.", accountNumber: cfg.accountNumber };
+  }
+
+  // Try plain-text password (some DPD account types)
+  const plainResult = await loginWithPassword(cfg, cfg.password);
+  if (plainResult.ok) {
+    return { ok: true, message: "Connected successfully (plain-text auth). GeoSession token received.", accountNumber: cfg.accountNumber };
+  }
+
+  // Both failed — return detailed diagnostics
+  const diagMd5 = `MD5: HTTP ${md5Result.status ?? "err"} — ${md5Result.body ?? ""}`;
+  const diagPlain = `Plain: HTTP ${plainResult.status ?? "err"} — ${plainResult.body ?? ""}`;
+  const hint = (md5Result.status === 401 && plainResult.status === 401)
+    ? " Credentials rejected by DPD. Please verify DPD_USERNAME (email), DPD_PASSWORD, and DPD_ACCOUNT_NUMBER are correct and that your DPD account has API/web-services access enabled."
+    : "";
+  return {
+    ok: false,
+    message: `Login failed.\n${diagMd5}\n${diagPlain}${hint}`,
+  };
 }
