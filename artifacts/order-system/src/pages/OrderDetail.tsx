@@ -49,8 +49,15 @@ function getStoredActor(): string {
 function printDpdLabelHtml(html: string) {
   const win = window.open("", "_blank");
   if (!win) return;
+  const thermalCss = `<style>
+    @page { size: 100mm 150mm; margin: 0mm; }
+    html, body { margin: 0 !important; padding: 0 !important; }
+  </style>`;
+  const modified = html.includes("</head>")
+    ? html.replace("</head>", thermalCss + "</head>")
+    : thermalCss + html;
   win.document.open();
-  win.document.write(html);
+  win.document.write(modified);
   win.document.close();
   setTimeout(() => { win.print(); }, 600);
 }
