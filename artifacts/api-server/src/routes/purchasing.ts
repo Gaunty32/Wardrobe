@@ -643,9 +643,6 @@ async function buildPoItems(orderItemIds: number[], poId: number, qtyOverrides?:
          WHERE pv.product_id = ${orderItemsTable.productId}
            AND LOWER(TRIM(COALESCE(pv.colour, ''))) = LOWER(TRIM(COALESCE(${orderItemsTable.colour}, '')))
            AND pv.supplier_code IS NOT NULL LIMIT 1),
-        (SELECT pv.supplier_code FROM product_variants pv
-         WHERE pv.product_id = ${orderItemsTable.productId}
-           AND pv.supplier_code IS NOT NULL LIMIT 1),
         ${productsTable.supplierCode}
       )`,
       supplierPrice: sql<string | null>`COALESCE(

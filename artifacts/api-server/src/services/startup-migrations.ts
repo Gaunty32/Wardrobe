@@ -1811,4 +1811,35 @@ export async function refreshProductIssues(): Promise<void> {
       AND oi.stock_status = 'allocated'
       AND oi.dispatched_at IS NULL
   `);
+
+  // Fix PO items where the supplier_code was incorrectly set from a variant belonging to a
+  // DIFFERENT colour (the old "any variant with a supplier_code" COALESCE fallback).
+  // Correct behaviour: if no variant exists for this exact colour with a supplier_code,
+  // fall back to the product-level supplier_code, not another colour's variant code.
+  // Safe to re-run: only touches rows where the stored code doesn't match the colour-specific
+  // variant code AND doesn't match the product-level code but DOES match some other-colour variant.
+  await db.execute(sql`
+    UPDATE purchase_order_items poi
+    SET supplier_code = p.supplier_code
+    FROM order_items oi
+    JOIN products p ON p.id = oi.product_id
+    WHERE poi.order_item_id = oi.id
+      AND p.supplier_code IS NOT NULL
+      AND poi.supplier_code IS NOT NULL
+      AND poi.supplier_code <> p.supplier_code
+      -- The stored code does NOT belong to this colour
+      AND NOT EXISTS (
+        SELECT 1 FROM product_variants pv
+        WHERE pv.product_id = oi.product_id
+          AND LOWER(TRIM(COALESCE(pv.colour, ''))) = LOWER(TRIM(COALESCE(oi.colour, '')))
+          AND pv.supplier_code = poi.supplier_code
+      )
+      -- But that code DOES exist on a different-colour variant (confirms it came from the bad fallback)
+      AND EXISTS (
+        SELECT 1 FROM product_variants pv
+        WHERE pv.product_id = oi.product_id
+          AND pv.supplier_code = poi.supplier_code
+      )
+  `);
+  console.log("[startup] Corrected PO item supplier codes that were inherited from wrong-colour variants");
 }
