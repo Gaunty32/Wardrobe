@@ -283,7 +283,11 @@ function getPriceBreakSuggestion(
   unitPrice: number,
 ): { title: string; description: string } | null {
   if (!priceBreaks.length) return null;
-  const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+  // Normalise price to number — it may arrive as a string from JSON
+  const sorted = [...priceBreaks]
+    .map(pb => ({ qty: Number(pb.qty), price: parseFloat(String(pb.price)) }))
+    .filter(pb => !isNaN(pb.price))
+    .sort((a, b) => a.qty - b.qty);
 
   // Celebrate if they just crossed into a new tier
   const justUnlocked = sorted.filter(pb => pb.qty <= totalQty && pb.qty > priorQty);
@@ -3405,7 +3409,10 @@ export default function OrderDetail() {
                     const minOrderQty = (prod as any)?.minOrderQty as number | null;
                     if (!priceBreaks || priceBreaks.length === 0) return null;
                     const totalQty = sizes.length > 0 ? sizeRows.reduce((s, r) => s + (r.qty || 0), 0) : item.quantity;
-                    const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+                    const sorted = [...priceBreaks]
+                      .map(t => ({ qty: Number(t.qty), price: parseFloat(String(t.price)) }))
+                      .filter(t => !isNaN(t.price))
+                      .sort((a, b) => a.qty - b.qty);
                     const nextTier = sorted.find(t => t.qty > totalQty);
                     const activeTier = sorted.filter(t => t.qty <= totalQty).at(-1);
                     const belowMin = minOrderQty != null && totalQty < minOrderQty;

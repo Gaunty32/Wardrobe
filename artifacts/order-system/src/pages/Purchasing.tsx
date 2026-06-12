@@ -404,7 +404,7 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow, currency }:
                   })}
                   <TableCell className="text-center font-bold text-sm">{rowTotal}</TableCell>
                   <TableCell className="text-right text-sm text-muted-foreground whitespace-nowrap">
-                    {g.price != null ? `${sym}${g.price.toFixed(2)}` : "—"}
+                    {g.price != null ? `${sym}${parseFloat(String(g.price)).toFixed(2)}` : "—"}
                   </TableCell>
                   <TableCell className="text-right text-sm font-semibold whitespace-nowrap">
                     {lineTotal != null ? `${sym}${lineTotal.toFixed(2)}` : "—"}
@@ -531,7 +531,7 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate }: {
                         <TableCell className="font-mono font-bold text-sm text-indigo-700 align-top pt-3">
                           <div>{g.code ?? "—"}</div>
                           <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
-                          {g.price != null && <div className="text-xs text-muted-foreground">{currencySymbol(currency)}{g.price.toFixed(2)}/u</div>}
+                          {g.price != null && <div className="text-xs text-muted-foreground">{currencySymbol(currency)}{parseFloat(String(g.price)).toFixed(2)}/u</div>}
                         </TableCell>
                       ) : (
                         <TableCell />
