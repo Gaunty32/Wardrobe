@@ -222,7 +222,11 @@ function getPriceBreakSuggestion(
   basePrice: number,
 ): { title: string; description: string } | null {
   if (!priceBreaks.length) return null;
-  const sorted = [...priceBreaks].sort((a, b) => a.qty - b.qty);
+  // Normalise price to number — it may arrive as a string from JSON
+  const sorted = [...priceBreaks]
+    .map(pb => ({ qty: Number(pb.qty), price: parseFloat(String(pb.price)) }))
+    .filter(pb => !isNaN(pb.price))
+    .sort((a, b) => a.qty - b.qty);
 
   // Celebrate crossing into a new tier
   const justUnlocked = sorted.filter(pb => pb.qty <= totalQty && pb.qty > priorQty);
