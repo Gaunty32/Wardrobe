@@ -48,8 +48,11 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
     : [];
 
   const deliveryAddressIds = [...new Set(orders.map((o) => o.deliveryAddressId).filter((id): id is number => id != null))];
-  const addresses = deliveryAddressIds.length > 0
-    ? await db.select().from(customerDeliveryAddressesTable).where(inArray(customerDeliveryAddressesTable.id, deliveryAddressIds))
+  // Also collect delivery addresses assigned at employee level (orders with no order-level address)
+  const employeeDeliveryAddrIds = [...new Set(employees.map(e => (e as any).deliveryAddressId).filter((id): id is number => id != null))];
+  const allAddrIds = [...new Set([...deliveryAddressIds, ...employeeDeliveryAddrIds])];
+  const addresses = allAddrIds.length > 0
+    ? await db.select().from(customerDeliveryAddressesTable).where(inArray(customerDeliveryAddressesTable.id, allAddrIds))
     : [];
 
   const result = orders
@@ -104,7 +107,15 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
       //  • all items complete (full dispatch), OR
       //  • at least some items are ready (partial dispatch — remaining will follow)
       if (!isPartShipped && !allComplete && !hasAnyReadyItems) return null;
-      const address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
+
+      // Resolve delivery address: order-level first, then fall back to employee location
+      let address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
+      if (!address) {
+        const orderEmpIds = [...new Set(items.map(i => i.recipientEmployeeId).filter((id): id is number => id != null))];
+        const orderEmps = employees.filter(e => orderEmpIds.includes(e.id));
+        const empAddrIds = [...new Set(orderEmps.map(e => (e as any).deliveryAddressId as number | null).filter((id): id is number => id != null))];
+        if (empAddrIds.length === 1) address = addresses.find(a => a.id === empAddrIds[0]) ?? null;
+      }
 
       const enrichedItems = items.map((item) => {
         const employee = item.recipientEmployeeId ? employees.find((e) => e.id === item.recipientEmployeeId) ?? null : null;
@@ -270,16 +281,24 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
     customer = c ?? null;
   }
 
+  const employeeIds = [...new Set(items.map((i) => i.recipientEmployeeId).filter((id): id is number => id != null))];
+  const employees = employeeIds.length > 0
+    ? await db.select().from(customerEmployeesTable).where(inArray(customerEmployeesTable.id, employeeIds))
+    : [];
+
+  // Resolve delivery address: order-level first, then fall back to employee location
   let address = null;
   if (order.deliveryAddressId) {
     const [a] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     address = a ?? null;
   }
-
-  const employeeIds = [...new Set(items.map((i) => i.recipientEmployeeId).filter((id): id is number => id != null))];
-  const employees = employeeIds.length > 0
-    ? await db.select().from(customerEmployeesTable).where(inArray(customerEmployeesTable.id, employeeIds))
-    : [];
+  if (!address) {
+    const empAddrIds = [...new Set(employees.map(e => (e as any).deliveryAddressId as number | null).filter((id): id is number => id != null))];
+    if (empAddrIds.length === 1) {
+      const [a] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, empAddrIds[0]));
+      address = a ?? null;
+    }
+  }
 
   const enrichedItems = items.map((item) => {
     const emp = item.recipientEmployeeId ? employees.find((e) => e.id === item.recipientEmployeeId) ?? null : null;
@@ -328,7 +347,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
   let dpdError: string | null = null;
 
   if (bookDpd && numberOfParcels && totalWeightKg) {
-    // Fetch delivery address for DPD
+    // Fetch delivery address for DPD — order-level first, fall back to employee location
     let address = null;
     if (order.deliveryAddressId) {
       const [a] = await db
@@ -336,6 +355,21 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
         .from(customerDeliveryAddressesTable)
         .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
       address = a ?? null;
+    }
+    if (!address) {
+      // Try employee-level delivery addresses
+      const dispatchItems = await db.select({ recipientEmployeeId: orderItemsTable.recipientEmployeeId })
+        .from(orderItemsTable).where(eq(orderItemsTable.orderId, order.id));
+      const empIds = [...new Set(dispatchItems.map(i => i.recipientEmployeeId).filter((id): id is number => id != null))];
+      if (empIds.length > 0) {
+        const emps = await db.select({ deliveryAddressId: (customerEmployeesTable as any).deliveryAddressId })
+          .from(customerEmployeesTable).where(inArray(customerEmployeesTable.id, empIds));
+        const addrIds = [...new Set(emps.map((e: any) => e.deliveryAddressId as number | null).filter((id): id is number => id != null))];
+        if (addrIds.length === 1) {
+          const [a] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, addrIds[0]));
+          address = a ?? null;
+        }
+      }
     }
 
     if (!address) {
