@@ -439,11 +439,13 @@ router.get("/production/pending", async (req, res): Promise<void> => {
           OR oi.id IN (SELECT item_id FROM outstanding_po_items)
         )
         AND COALESCE(p.is_service, false) = false
+        AND oi.finish_id IS NOT NULL
       )::integer AS purchase_count,
       COUNT(*) FILTER (
         WHERE oi.purchase_required = false
           AND oi.stock_status NOT IN ('in_production', 'complete')
           AND oi.id NOT IN (SELECT item_id FROM outstanding_po_items)
+          AND oi.finish_id IS NOT NULL
       )::integer AS ready_count,
       EXISTS(SELECT 1 FROM worksheets WHERE order_id = o.id) AS has_worksheet
     FROM orders o
@@ -479,6 +481,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       LEFT JOIN products p ON p.id = oi.product_id
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(readyOrderIds.join(","))}]::integer[])
         AND oi.purchase_required = false
+        AND oi.finish_id IS NOT NULL
         AND oi.stock_status NOT IN ('in_production', 'complete')
         AND NOT EXISTS (
           SELECT 1 FROM purchase_order_items poi
@@ -524,6 +527,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       LEFT JOIN products p ON p.id = oi.product_id
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(pendingOrderIds.join(","))}]::integer[])
         AND COALESCE(p.is_service, false) = false
+        AND oi.finish_id IS NOT NULL
         AND (
           oi.purchase_required = true
           OR (
