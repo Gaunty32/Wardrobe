@@ -1403,7 +1403,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   );
 }
 
-function PendingOrderCard({ order, onForceClear }: { order: PendingOrder; onForceClear?: () => void }) {
+function PendingOrderCard({ order }: { order: PendingOrder }) {
   const [expanded, setExpanded] = useState(true);
 
   const totalUnits = order.items.reduce((s, i) => s + i.purchaseQuantity, 0);
@@ -1471,16 +1471,6 @@ function PendingOrderCard({ order, onForceClear }: { order: PendingOrder; onForc
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-          {onForceClear && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 text-xs text-green-700 border-green-300 hover:bg-green-50"
-              onClick={onForceClear}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" /> Stock received
-            </Button>
-          )}
           <a href={`/orders/${order.orderId}`}>
             <Button size="sm" variant="outline" className="gap-1.5 text-xs">
               <ExternalLink className="w-3.5 h-3.5" /> View Order
@@ -3419,26 +3409,6 @@ export default function Production() {
     onError: () => toast({ title: "Error returning items", variant: "destructive" }),
   });
 
-  const forceClearStockMutation = useMutation({
-    mutationFn: (orderId: number) =>
-      apiFetch<{ ok: boolean; updated: number }>(`/production/orders/${orderId}/force-clear-stock`, { method: "POST" }),
-    onSuccess: (data, orderId) => {
-      queryClient.invalidateQueries({ queryKey: ["production-pending"] });
-      queryClient.invalidateQueries({ queryKey: ["picking-list"] });
-      queryClient.invalidateQueries({ queryKey: ["dispatch-queue"] });
-      const updated = data?.updated ?? 0;
-      if (updated > 0) {
-        setActiveTab("picking_list");
-        toast({
-          title: "Stock confirmed — go to Picking List",
-          description: `${updated} item line${updated !== 1 ? "s" : ""} ready to pick. Select them in the Picking List tab and click Pick to create a production worksheet.`,
-        });
-      } else {
-        toast({ title: "Stock received", description: "No items needed updating." });
-      }
-    },
-    onError: () => toast({ title: "Error clearing stock", variant: "destructive" }),
-  });
 
   const createWorksheetMutation = useMutation({
     mutationFn: (data: { orderId: number; orderNumber: string; customerId: number | null; customerName: string | null; notes: string; itemIds: number[]; returnItemIds: number[] }) =>
@@ -3618,10 +3588,10 @@ export default function Production() {
   const filteredPartInStock  = filterBySearchAndDate(partInStockOrders);
   const filteredAllAwaiting  = filterBySearchAndDate(allAwaitingOrders.map(o => ({ ...o, orderNumber: o.orderNumber, customerName: o.customerName, requiredDate: o.requiredDate })));
 
-  const preWipTotal = preWipWorksheets.length + filteredAllReady.length + filteredPartInStock.length + filteredAllAwaiting.length;
+  const preWipTotal = preWipWorksheets.length + filteredAllReady.length + filteredPartInStock.length;
 
   // Unfiltered counts for stat cards (show actual total, filtered shown inside tab)
-  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + allReadyOrders.length + partInStockOrders.length + allAwaitingOrders.length;
+  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + allReadyOrders.length + partInStockOrders.length;
   const rawWip = allWorksheets.filter((w) => w.status === "wip").length;
   const rawComplete = allWorksheets.filter((w) => w.status === "complete").length;
   const hasFilters = Object.values(filters).some(Boolean);
@@ -3752,7 +3722,7 @@ export default function Production() {
                 <Clock className="w-12 h-12 text-blue-300" />
                 <p className="text-lg font-medium">Nothing in Pre-Production</p>
                 <p className="text-sm text-center max-w-xs">
-                  Orders where garments have been picked and are waiting for process stock (threads, transfers, etc.) to arrive appear here. Once process stock is in, use "Move to WIP" to start production.
+                  Orders will appear here once stock has been received and allocated. Pick the items and create a worksheet to send them to production.
                 </p>
               </div>
             ) : (
@@ -3762,7 +3732,7 @@ export default function Production() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-sm font-semibold text-green-700">
                         <CheckCircle2 className="w-4 h-4" />
-                        All Stock In — Ready to Send ({filteredAllReady.length} order{filteredAllReady.length !== 1 ? "s" : ""})
+                        Ready to Pick &amp; Worksheet ({filteredAllReady.length} order{filteredAllReady.length !== 1 ? "s" : ""})
                       </div>
                       {filteredAllReady.length >= 2 && (
                         <Button
@@ -3793,32 +3763,16 @@ export default function Production() {
                     {filteredAllReady.length > 0 && <div className="pt-1" />}
                     <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
                       <Layers className="w-4 h-4" />
-                      Part in Stock ({filteredPartInStock.length} order{filteredPartInStock.length !== 1 ? "s" : ""})
+                      Part in Stock — Pick Available ({filteredPartInStock.length} order{filteredPartInStock.length !== 1 ? "s" : ""})
                     </div>
                     {filteredPartInStock.map((order) => (
                       <PartInStockOrderCard key={order.id} order={order} onSendToProduction={setSendingOrder} />
                     ))}
                   </>
                 )}
-                {filteredAllAwaiting.length > 0 && (
-                  <>
-                    {(filteredAllReady.length > 0 || filteredPartInStock.length > 0) && <div className="pt-1" />}
-                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-700">
-                      <ShoppingCart className="w-4 h-4" />
-                      Awaiting Stock ({filteredAllAwaiting.length} order{filteredAllAwaiting.length !== 1 ? "s" : ""})
-                    </div>
-                    {filteredAllAwaiting.map((order) => (
-                      <PendingOrderCard
-                        key={order.orderId}
-                        order={order}
-                        onForceClear={() => forceClearStockMutation.mutate(order.orderId)}
-                      />
-                    ))}
-                  </>
-                )}
                 {preWipWorksheets.length > 0 && (
                   <>
-                    {(filteredAllAwaiting.length > 0 || filteredPartInStock.length > 0 || filteredAllReady.length > 0) && (
+                    {(filteredAllReady.length > 0 || filteredPartInStock.length > 0) && (
                       <div className="flex items-center gap-2 text-sm font-semibold text-slate-600 pt-2">
                         <FileText className="w-4 h-4" />
                         Worksheets in Pre-Production ({preWipWorksheets.length})
