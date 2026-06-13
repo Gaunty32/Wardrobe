@@ -1592,10 +1592,33 @@ function PendingOrderCard({ order, onForceClear }: { order: PendingOrder; onForc
               </div>
             );
           })}
-          <p className="text-xs text-amber-700 flex items-center gap-1.5 pt-1">
-            <ShoppingCart className="w-3.5 h-3.5" />
-            Stock must be received in Purchasing before this order can move to production.
-          </p>
+          {(() => {
+            const allItems = order.items;
+            const anyOnPo = allItems.some(i => !!i.poNumber);
+            const allOrdered = allItems.length > 0 && allItems.every(i => i.poStatus === "ordered");
+            if (allOrdered) {
+              return (
+                <p className="text-xs text-green-700 flex items-center gap-1.5 pt-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  All lines are on order. When the supplier delivers and you book it in Purchasing, these items will automatically move to the Picking List.
+                </p>
+              );
+            }
+            if (anyOnPo) {
+              return (
+                <p className="text-xs text-amber-700 flex items-center gap-1.5 pt-1">
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  Book the delivery in Purchasing to automatically move items to the Picking List — or click <strong>Stock received</strong> above if the goods have already arrived.
+                </p>
+              );
+            }
+            return (
+              <p className="text-xs text-amber-700 flex items-center gap-1.5 pt-1">
+                <ShoppingCart className="w-3.5 h-3.5" />
+                No purchase order has been raised for these items. If stock has arrived, click <strong>Stock received</strong> above — items will move straight to the Picking List.
+              </p>
+            );
+          })()}
         </div>
       )}
     </div>
@@ -3404,12 +3427,15 @@ export default function Production() {
       queryClient.invalidateQueries({ queryKey: ["picking-list"] });
       queryClient.invalidateQueries({ queryKey: ["dispatch-queue"] });
       const updated = data?.updated ?? 0;
-      toast({
-        title: "Stock cleared",
-        description: updated > 0
-          ? `${updated} item line${updated !== 1 ? "s" : ""} moved — plain items to dispatch, decorated items to picking list.`
-          : "No items needed updating.",
-      });
+      if (updated > 0) {
+        setActiveTab("picking_list");
+        toast({
+          title: "Stock confirmed — go to Picking List",
+          description: `${updated} item line${updated !== 1 ? "s" : ""} ready to pick. Select them in the Picking List tab and click Pick to create a production worksheet.`,
+        });
+      } else {
+        toast({ title: "Stock received", description: "No items needed updating." });
+      }
     },
     onError: () => toast({ title: "Error clearing stock", variant: "destructive" }),
   });
