@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, worksheetsTable, worksheetItemsTable,
   customerEmployeesTable, customerDeliveryAddressesTable, customersTable, productsTable,
+  purchaseOrdersTable, purchaseOrderItemsTable,
 } from "@workspace/db";
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
 import { logOrderAction, getActor } from "../services/orderLog";
@@ -42,6 +43,44 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
     .where(inArray(orderItemsTable.orderId, orderIds));
   const orderItems = orderItemRows.map(r => ({ ...r.item, productSku: r.productSku ?? null }));
 
+  // Item IDs that are still on outstanding PO lines — treat as "not ready" even if
+  // stock_status='complete', because physical stock hasn't arrived yet.
+  const blockedByPoItemIds = new Set<number>();
+  if (orderItems.length > 0) {
+    const blocked = await db.execute(sql`
+      SELECT DISTINCT oi.id
+      FROM order_items oi
+      WHERE oi.order_id IN (${sql.join(orderIds.map(id => sql`${id}`), sql`, `)})
+        AND oi.dispatched_at IS NULL
+        AND (
+          EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            JOIN purchase_orders po ON po.id = poi.po_id
+            WHERE po.status NOT IN ('cancelled', 'delivered')
+              AND poi.quantity_delivered < poi.quantity_ordered
+              AND poi.quantity_ordered > 0
+              AND poi.order_item_id = oi.id
+          )
+          OR EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            JOIN purchase_orders po ON po.id = poi.po_id
+            WHERE po.status NOT IN ('cancelled', 'delivered')
+              AND poi.quantity_delivered < poi.quantity_ordered
+              AND poi.quantity_ordered > 0
+              AND poi.order_id = oi.order_id
+              AND poi.order_item_id IS NULL
+              AND (poi.source_order_item_ids IS NULL OR poi.source_order_item_ids = '[]'::jsonb)
+              AND LOWER(TRIM(COALESCE(poi.product_name,''))) = LOWER(TRIM(COALESCE(oi.product_name,'')))
+              AND LOWER(TRIM(COALESCE(poi.colour,'')))       = LOWER(TRIM(COALESCE(oi.colour,'')))
+              AND LOWER(TRIM(COALESCE(poi.size,'')))         = LOWER(TRIM(COALESCE(oi.size,'')))
+          )
+        )
+    `);
+    for (const row of blocked.rows as any[]) {
+      blockedByPoItemIds.add(Number(row.id));
+    }
+  }
+
   const employeeIds = [...new Set(orderItems.map((i) => i.recipientEmployeeId).filter((id): id is number => id != null))];
   const employees = employeeIds.length > 0
     ? await db.select().from(customerEmployeesTable).where(inArray(customerEmployeesTable.id, employeeIds))
@@ -76,30 +115,35 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
 
       // Items NOT on a completed worksheet that are not yet in a ready state —
       // e.g. plain items still in purchasing (ordered, purchaseRequired, etc.)
+      // Also treat items blocked by an outstanding PO as "outstanding" even if
+      // their stock_status is 'complete' (stock hasn't physically arrived yet).
       const hasOutstandingItems = items.some(i =>
-        !wsCompleteItemIdsForOrder.has(i.id) &&
-        i.stockStatus !== "complete" &&
-        i.stockStatus !== "allocated"
+        blockedByPoItemIds.has(i.id) ||
+        (!wsCompleteItemIdsForOrder.has(i.id) &&
+         i.stockStatus !== "complete" &&
+         i.stockStatus !== "allocated")
       );
 
       let allComplete: boolean;
       if (isPartShipped) {
         allComplete = remainingItems.length > 0 && remainingItems.every(i =>
-          i.stockStatus === "complete" || i.stockStatus === "allocated"
+          !blockedByPoItemIds.has(i.id) &&
+          (i.stockStatus === "complete" || i.stockStatus === "allocated")
         );
       } else {
         allComplete = items.length > 0 && !hasOutstandingItems && (
           hasDecoratedItems
             ? orderWs.length > 0 && !hasIncompleteWorksheets
-            : items.every(i => i.stockStatus === "complete")
+            : items.every(i => !blockedByPoItemIds.has(i.id) && i.stockStatus === "complete")
         );
       }
 
       // Items that ARE ready to dispatch right now (complete worksheet or picked/plain-complete).
       // 'allocated' means "in the picking list for production" — not ready for dispatch yet.
+      // Items blocked by an outstanding PO are excluded even if stock_status='complete'.
       const hasAnyReadyItems = items.some(i =>
-        wsCompleteItemIdsForOrder.has(i.id) ||
-        i.stockStatus === "complete"
+        !blockedByPoItemIds.has(i.id) &&
+        (wsCompleteItemIdsForOrder.has(i.id) || i.stockStatus === "complete")
       );
 
       // Show in dispatch queue if:
@@ -123,6 +167,7 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
           ...item,
           unitPrice: parseFloat(item.unitPrice ?? "0"),
           lineTotal: parseFloat(item.lineTotal ?? "0"),
+          blockedByPo: blockedByPoItemIds.has(item.id),
           employee: employee ? {
             id: employee.id,
             firstName: employee.firstName,
@@ -604,9 +649,12 @@ router.post("/dispatch/orders/:id/return", async (req, res): Promise<void> => {
     await db.update(orderItemsTable)
       .set({ stockStatus: null, purchaseRequired: true, stockAllocatedAt: null })
       .where(eq(orderItemsTable.id, item.id));
+    // Restore the stock that was decremented when this item was allocated from
+    // product stock. We're saying "this allocation was wrong — the stock is
+    // still available (or needs to be re-purchased)."
     if (item.productId != null) {
       await db.execute(sql`
-        UPDATE products SET stock_quantity = GREATEST(0, COALESCE(stock_quantity, 0) - ${item.quantity})
+        UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${item.quantity}
         WHERE id = ${item.productId}
       `);
     }

@@ -1423,6 +1423,84 @@ export async function runStartupMigrations(): Promise<void> {
     }
   }
 
+  // Safety net A: items that reached stock_status='complete' but still have a
+  // DIRECTLY-linked outstanding PO line (stock has not actually arrived).
+  {
+    const { rowCount: directCount } = await db.execute(sql`
+      UPDATE order_items oi
+      SET purchase_required    = true,
+          purchase_quantity    = oi.quantity,
+          stock_status         = NULL,
+          stock_allocated_at   = NULL,
+          purchasing_queued_at = COALESCE(oi.purchasing_queued_at, now())
+      FROM orders o
+      WHERE oi.order_id = o.id
+        AND oi.stock_status = 'complete'
+        AND oi.dispatched_at IS NULL
+        AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
+        AND NOT EXISTS (
+          SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
+        )
+        AND EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po2 ON po2.id = poi.po_id
+          WHERE po2.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND poi.quantity_ordered > 0
+            AND poi.order_item_id = oi.id
+        )
+    `);
+    if ((directCount ?? 0) > 0) {
+      console.log(`[startup] Re-queued ${directCount} complete item(s) with outstanding direct PO links`);
+    }
+  }
+
+  // Safety net B: items that reached stock_status='complete' but still have an
+  // UNLINKED outstanding PO line (poi.order_item_id IS NULL) that matches by
+  // order_id + product name + colour + size AND has quantity_ordered > 0.
+  // This catches the retroactive-fix false-positive: the fix previously matched
+  // PO lines with quantity_ordered=0 (0>=0=true) and incorrectly set items complete.
+  // Extra guard: product stock_quantity < item quantity confirms stock is not present.
+  {
+    const { rowCount: unlinkCount } = await db.execute(sql`
+      UPDATE order_items oi
+      SET purchase_required    = true,
+          purchase_quantity    = oi.quantity,
+          stock_status         = NULL,
+          stock_allocated_at   = NULL,
+          purchasing_queued_at = COALESCE(oi.purchasing_queued_at, now())
+      FROM orders o
+      WHERE oi.order_id = o.id
+        AND oi.stock_status = 'complete'
+        AND oi.dispatched_at IS NULL
+        AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
+        AND NOT EXISTS (
+          SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
+        )
+        AND EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po2 ON po2.id = poi.po_id
+          WHERE po2.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND poi.quantity_ordered > 0
+            AND poi.order_id = oi.order_id
+            AND poi.order_item_id IS NULL
+            AND (poi.source_order_item_ids IS NULL OR poi.source_order_item_ids = '[]'::jsonb)
+            AND LOWER(TRIM(COALESCE(poi.product_name,''))) = LOWER(TRIM(COALESCE(oi.product_name,'')))
+            AND LOWER(TRIM(COALESCE(poi.colour,'')))       = LOWER(TRIM(COALESCE(oi.colour,'')))
+            AND LOWER(TRIM(COALESCE(poi.size,'')))         = LOWER(TRIM(COALESCE(oi.size,'')))
+        )
+        AND EXISTS (
+          SELECT 1 FROM products p
+          WHERE p.id = oi.product_id
+            AND COALESCE(p.stock_quantity, 0) < oi.quantity
+        )
+    `);
+    if ((unlinkCount ?? 0) > 0) {
+      console.log(`[startup] Re-queued ${unlinkCount} complete item(s) with outstanding unlinked PO lines (no actual stock)`);
+    }
+  }
+
   // Track when an order item first enters the purchasing queue
   await db.execute(sql`
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS purchasing_queued_at timestamptz
@@ -1875,7 +1953,7 @@ export async function refreshProductIssues(): Promise<void> {
     JOIN purchase_orders po ON po.id = poi.po_id
     JOIN orders o           ON o.id  = poi.order_id
     WHERE oi.order_id = poi.order_id
-      AND (po.status = 'delivered' OR poi.quantity_delivered >= poi.quantity_ordered)
+      AND (po.status = 'delivered' OR (poi.quantity_delivered >= poi.quantity_ordered AND poi.quantity_ordered > 0))
       AND poi.order_item_id IS NULL
       AND (poi.source_order_item_ids IS NULL OR poi.source_order_item_ids = '[]'::jsonb)
       AND oi.purchase_required = true

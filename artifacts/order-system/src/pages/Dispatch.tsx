@@ -40,6 +40,7 @@ interface DispatchItem {
   finishName: string | null; unitPrice: number; lineTotal: number;
   stockStatus: string | null; purchaseRequired: boolean | null;
   dispatchedAt: string | null;
+  blockedByPo?: boolean;
   employee: Employee | null;
 }
 interface Worksheet {
@@ -387,14 +388,17 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Items</h4>
             <div className="space-y-1">
               {order.items.map((item) => (
-                <div key={item.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-muted/30 text-sm">
-                  <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                <div key={item.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${item.blockedByPo ? "bg-amber-50 border border-amber-200" : "bg-muted/30"}`}>
+                  <Package className={`w-3.5 h-3.5 flex-shrink-0 ${item.blockedByPo ? "text-amber-500" : "text-muted-foreground"}`} />
                   <div className="flex-1 min-w-0">
                     <span className="font-medium">{item.productName}</span>
                     {(item.colour || item.size) && (
                       <span className="text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
                     )}
                   </div>
+                  {item.blockedByPo && (
+                    <span className="text-xs font-medium text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 whitespace-nowrap">Awaiting stock</span>
+                  )}
                   <span className="text-muted-foreground text-xs">
                     {item.recipientType === "person" && (item.recipientName || item.employee)
                       ? recipientFullName(item)
