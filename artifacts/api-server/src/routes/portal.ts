@@ -2213,7 +2213,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
           .insert(worksheetsTable)
           .values({
             worksheetNumber,
-            status: "pre_wip",
+            status: "wip",
             orderId,
             orderNumber: ord.order_number,
             customerId: ord.customer_id ?? null,

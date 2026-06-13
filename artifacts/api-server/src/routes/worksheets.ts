@@ -282,7 +282,7 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
           .insert(worksheetsTable)
           .values({
             worksheetNumber: wsNum,
-            status: "pre_wip",
+            status: "wip",
             orderId,
             orderNumber: firstItem.orderNumber,
             customerId: firstItem.customerId ?? null,

@@ -1610,6 +1610,18 @@ export async function runStartupMigrations(): Promise<void> {
     }
   }
 
+  // ── Promote all remaining pre_wip worksheets to wip ───────────────────────
+  // pre_wip no longer exists as a user-facing state: producing a worksheet
+  // means the order is in WIP. Any worksheets left as pre_wip are promoted.
+  {
+    const promoted = await db.execute(sql`
+      UPDATE worksheets SET status = 'wip' WHERE status = 'pre_wip'
+    `);
+    if ((promoted.rowCount ?? 0) > 0) {
+      console.log(`[startup] Promoted ${promoted.rowCount} pre_wip worksheet(s) to wip`);
+    }
+  }
+
   // ── Performance indexes for stock queries ──────────────────────────────────
   // product_variants has 30k+ rows; without indexes every stock page load is a
   // full table scan. Create these CONCURRENTLY so startup doesn't block.

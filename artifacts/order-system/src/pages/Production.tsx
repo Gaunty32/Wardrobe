@@ -1311,25 +1311,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
             </>
           ) : (
             <>
-              {ws.status === "pre_wip" && (
-                <>
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
-                    <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
-                  </Button>
-                  {canEdit && (
-                    <Button size="sm" variant="outline" className="gap-1.5 text-xs border-amber-300 text-amber-700 hover:bg-amber-50" onClick={startEditing}>
-                      <Pencil className="w-3.5 h-3.5" /> Edit Qtys
-                    </Button>
-                  )}
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={handlePrint}>
-                    <Printer className="w-3.5 h-3.5" /> Print Worksheet
-                  </Button>
-                  <Button size="sm" className="gap-1.5 text-xs bg-amber-600 hover:bg-amber-700 text-white" onClick={() => onStatusChange(ws.id, "wip")}>
-                    <ArrowRight className="w-3.5 h-3.5" /> Move to WIP
-                  </Button>
-                </>
-              )}
-              {ws.status === "wip" && (
+              {(ws.status === "pre_wip" || ws.status === "wip") && (
                 <>
                   <Button size="sm" variant="outline" className="gap-1.5 text-xs border-orange-300 text-orange-700 hover:bg-orange-50" onClick={() => onReturnToPicking(ws.id)}>
                     <RotateCcw className="w-3.5 h-3.5" /> Return to Picking
@@ -2640,9 +2622,7 @@ function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; high
       const parts: string[] = [];
       if (data.plainPicked > 0) parts.push(`${data.plainPicked} ready for dispatch`);
       if (data.worksheetItems > 0) {
-        parts.push(vars.bypass
-          ? `${data.worksheetItems} moved to Pre-Production (awaiting process stock)`
-          : `${data.worksheetItems} sent to production`);
+        parts.push(`${data.worksheetItems} sent to WIP`);
       }
       toast({ title: "Picked", description: parts.join(" · ") || "Items confirmed" });
       if (data.worksheets && data.worksheets.length > 0) {
@@ -3033,7 +3013,7 @@ function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; high
               {processStockBlocker?.missingNames}
             </p>
             <p>
-              You can pick the garments now and park the order in <strong>Pre-Production</strong> while you wait for the process stock to be delivered. It will appear in the Pre-Production tab until it's ready to run.
+              You can pick the garments now and the worksheet will go straight to <strong>Work in Progress</strong>. It will sit in WIP until the process stock arrives and you're ready to decorate.
             </p>
           </div>
           <DialogFooter className="gap-2 sm:gap-0 flex-col sm:flex-row">
@@ -3049,8 +3029,8 @@ function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; high
                 }
               }}
             >
-              <Clock className="w-4 h-4" />
-              Pick & Hold in Pre-Production
+              <ClipboardList className="w-4 h-4" />
+              Pick &amp; Send to WIP
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3078,7 +3058,7 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 
 const TASK_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   picking: { label: "Picking List", color: "text-purple-600" },
-  pre_wip: { label: "Pre-Production", color: "text-blue-600" },
+  pre_wip: { label: "Work in Progress", color: "text-amber-600" },
   wip:     { label: "In Progress",  color: "text-amber-600" },
 };
 
@@ -3588,10 +3568,10 @@ export default function Production() {
   const filteredPartInStock  = filterBySearchAndDate(partInStockOrders);
   const filteredAllAwaiting  = filterBySearchAndDate(allAwaitingOrders.map(o => ({ ...o, orderNumber: o.orderNumber, customerName: o.customerName, requiredDate: o.requiredDate })));
 
-  const preWipTotal = preWipWorksheets.length + filteredAllReady.length + filteredPartInStock.length;
+  const preWipTotal = filteredAllReady.length + filteredPartInStock.length;
 
   // Unfiltered counts for stat cards (show actual total, filtered shown inside tab)
-  const rawPreWip = allWorksheets.filter((w) => w.status === "pre_wip").length + allReadyOrders.length + partInStockOrders.length;
+  const rawPreWip = allReadyOrders.length + partInStockOrders.length;
   const rawWip = allWorksheets.filter((w) => w.status === "wip").length;
   const rawComplete = allWorksheets.filter((w) => w.status === "complete").length;
   const hasFilters = Object.values(filters).some(Boolean);
@@ -3770,25 +3750,6 @@ export default function Production() {
                     ))}
                   </>
                 )}
-                {preWipWorksheets.length > 0 && (
-                  <>
-                    {(filteredAllReady.length > 0 || filteredPartInStock.length > 0) && (
-                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600 pt-2">
-                        <FileText className="w-4 h-4" />
-                        Worksheets in Pre-Production ({preWipWorksheets.length})
-                      </div>
-                    )}
-                    {preWipWorksheets.map((ws) => (
-                      <WorksheetCard
-                        key={ws.id}
-                        ws={ws}
-                        onStatusChange={(id, s) => statusMutation.mutate({ id, status: s, orderId: ws.orderId })}
-                        onDelete={handleDelete}
-                        onReturnToPicking={handleReturnToPicking}
-                      />
-                    ))}
-                  </>
-                )}
               </div>
             )}
           </TabsContent>
@@ -3803,7 +3764,7 @@ export default function Production() {
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                 <ClipboardList className="w-12 h-12 text-amber-300" />
                 <p className="text-lg font-medium">No active worksheets</p>
-                <p className="text-sm text-center max-w-xs">When garments are picked and process stock has arrived, use "Move to WIP" on a Pre-Production worksheet to start decoration.</p>
+                <p className="text-sm text-center max-w-xs">Worksheets appear here once garments have been picked. Mark them complete when decoration is finished.</p>
               </div>
             ) : (() => {
               // Group WIP worksheets by order

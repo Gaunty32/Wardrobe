@@ -981,7 +981,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           .insert(worksheetsTable)
           .values({
             worksheetNumber,
-            status: "pre_wip",
+            status: "wip",
             orderId: params.data.id,
             orderNumber: order.orderNumber,
             customerId: order.customerId ?? null,
