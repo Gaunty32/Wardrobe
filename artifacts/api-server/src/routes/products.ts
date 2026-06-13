@@ -704,17 +704,17 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     `<div style="font-size:0.7em;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">&#128172; Staff Recommendations</div>` +
     staffQuotesClean.map(q => {
       const initial = (q.name || "?")[0].toUpperCase();
-      const avatar = q.imageUrl
-        ? `<img src="${q.imageUrl}" alt="${q.name}" style="width:112px;height:112px;border-radius:50%;object-fit:cover;object-position:top;flex-shrink:0;border:3px solid #1e3a5f;box-shadow:0 2px 8px rgba(30,58,95,0.25)" />`
-        : `<div style="width:112px;height:112px;border-radius:50%;background:linear-gradient(135deg,#1e3a5f,#2d5491);color:#fff;display:flex;align-items:center;justify-content:center;font-size:2.6em;font-weight:700;flex-shrink:0;box-shadow:0 2px 8px rgba(30,58,95,0.3)">${initial}</div>`;
+      const avatarImg = q.imageUrl
+        ? `<img src="${q.imageUrl}" alt="${q.name}" style="width:160px;height:160px;border-radius:50%;object-fit:cover;object-position:top;border:3px solid #1e3a5f;box-shadow:0 2px 8px rgba(30,58,95,0.25);display:block" />`
+        : `<div style="width:160px;height:160px;border-radius:50%;background:linear-gradient(135deg,#1e3a5f,#2d5491);color:#fff;display:flex;align-items:center;justify-content:center;font-size:3em;font-weight:700;box-shadow:0 2px 8px rgba(30,58,95,0.3)">${initial}</div>`;
       return `<div style="border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;margin-bottom:14px;background:linear-gradient(135deg,#f8fafc,#fff);box-shadow:0 2px 12px rgba(0,0,0,0.06)">` +
-        `<div style="display:flex;align-items:flex-start;gap:20px">` +
-          avatar +
-          `<div style="flex:1;min-width:0">` +
-            `<div style="font-weight:700;color:#1e3a5f;font-size:1.05em;line-height:1.2;margin-bottom:2px">${q.name}</div>` +
-            `${q.role ? `<div style="color:#64748b;font-size:0.82em;margin-bottom:10px;font-weight:500">${q.role}</div>` : `<div style="margin-bottom:10px"></div>`}` +
-            `<p style="margin:0;font-style:italic;color:#374151;font-size:0.95em;line-height:1.7;border-left:4px solid #1e3a5f;padding:10px 14px;border-radius:0 8px 8px 0;background:#f0f4ff">&ldquo;${q.quote}&rdquo;</p>` +
+        `<div style="display:flex;align-items:center;gap:24px">` +
+          `<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;text-align:center;min-width:160px">` +
+            avatarImg +
+            `<div style="font-weight:700;color:#1e3a5f;font-size:1.05em;line-height:1.3;margin-top:10px">${q.name}</div>` +
+            `${q.role ? `<div style="color:#64748b;font-size:0.82em;font-weight:500;margin-top:3px">${q.role}</div>` : ''}` +
           `</div>` +
+          `<p style="margin:0;font-style:italic;color:#374151;font-size:0.95em;line-height:1.7;border-left:4px solid #1e3a5f;padding:10px 14px;border-radius:0 8px 8px 0;background:#f0f4ff;flex:1;min-width:0">&ldquo;${q.quote}&rdquo;</p>` +
         `</div>` +
       `</div>`;
     }).join("") +
