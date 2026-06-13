@@ -92,8 +92,18 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
         );
       }
 
-      // part_shipped orders always stay in the queue (need follow-up dispatch)
-      if (!isPartShipped && !allComplete) return null;
+      // Items that ARE ready to dispatch right now (complete worksheet or stock ready)
+      const hasAnyReadyItems = items.some(i =>
+        wsCompleteItemIdsForOrder.has(i.id) ||
+        i.stockStatus === "complete" ||
+        i.stockStatus === "allocated"
+      );
+
+      // Show in dispatch queue if:
+      //  • part_shipped (follow-up needed), OR
+      //  • all items complete (full dispatch), OR
+      //  • at least some items are ready (partial dispatch — remaining will follow)
+      if (!isPartShipped && !allComplete && !hasAnyReadyItems) return null;
       const address = order.deliveryAddressId ? addresses.find((a) => a.id === order.deliveryAddressId) ?? null : null;
 
       const enrichedItems = items.map((item) => {

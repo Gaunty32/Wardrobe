@@ -345,6 +345,25 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           </div>
         </div>
       )}
+      {!order.productionComplete && order.status !== "part_shipped" && !dueToday && !overdue && (() => {
+        const readyLines = order.items.filter(i => i.stockStatus === "complete" || i.stockStatus === "allocated");
+        const outstandingLines = order.items.filter(i => i.stockStatus !== "complete" && i.stockStatus !== "allocated");
+        if (readyLines.length === 0) return null;
+        return (
+          <div className="mx-5 mb-3 flex items-center justify-between px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 flex-shrink-0" />
+              <span>
+                <span className="font-medium">{readyLines.length} item line{readyLines.length !== 1 ? "s" : ""} ready</span>
+                {" "}— {outstandingLines.length} still outstanding. Dispatch ready items now, remainder follows when complete.
+              </span>
+            </div>
+            <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1 flex-shrink-0 ml-3" onClick={openDispatchModal}>
+              <Send className="w-3 h-3" /> Part Dispatch
+            </Button>
+          </div>
+        );
+      })()}
 
       {expanded && (
         <div className="border-t border-border px-5 py-4 space-y-4">
