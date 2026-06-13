@@ -7,6 +7,10 @@
  *     complete, on-time orders are prioritised when stock is short.
  *  3. All fully-delivered items are placed on the picking list (stockStatus = 'allocated').
  *  4. Production worksheets are created later, at pick time, for items with a finish.
+ *
+ * Fallback: when a PO line has orderId set but no orderItemId / sourceOrderItemIds,
+ * the service matches order items by orderId + productName + colour + size.
+ * This covers POs that were created without wiring up individual item IDs.
  */
 
 import { eq, inArray, and } from "drizzle-orm";
@@ -39,22 +43,65 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
     .from(purchaseOrderItemsTable)
     .where(eq(purchaseOrderItemsTable.poId, poId));
 
-  // Collect all order item IDs from both the legacy orderItemId column and
-  // the consolidated sourceOrderItemIds array (new consolidated PO lines).
-  const linkedOrderItemIds = [
+  // ── Direct links (legacy orderItemId + consolidated sourceOrderItemIds) ─────
+  const directLinkedIds = [
     ...new Set([
       ...poItems.map((i) => i.orderItemId).filter((id): id is number => id != null),
       ...poItems.flatMap((i) => (i.sourceOrderItemIds as number[] | null) ?? []),
     ]),
   ];
 
+  // ── Fallback: match by orderId + productName + colour + size ──────────────
+  // Used when a PO line has orderId set but no direct order item link.
+  // Only applies to fully-delivered lines.
+  const fallbackIds = new Set<number>();
+  const unlinkedPoItems = poItems.filter(poi =>
+    poi.orderId != null &&
+    poi.quantityDelivered >= poi.quantityOrdered &&
+    poi.orderItemId == null &&
+    ((poi.sourceOrderItemIds as number[] | null)?.length ?? 0) === 0
+  );
+
+  if (unlinkedPoItems.length > 0) {
+    const orderIds = [...new Set(unlinkedPoItems.map(p => p.orderId as number))];
+    for (const orderId of orderIds) {
+      const candidates = await db
+        .select({ id: orderItemsTable.id, productName: orderItemsTable.productName, colour: orderItemsTable.colour, size: orderItemsTable.size })
+        .from(orderItemsTable)
+        .where(and(
+          eq(orderItemsTable.orderId, orderId),
+          eq(orderItemsTable.purchaseRequired, true),
+        ));
+
+      for (const poi of unlinkedPoItems.filter(p => p.orderId === orderId)) {
+        const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
+        const matched = candidates.filter(oi =>
+          norm(oi.productName) === norm(poi.productName) &&
+          norm(oi.colour) === norm(poi.colour) &&
+          norm(oi.size) === norm(poi.size)
+        );
+        for (const m of matched) fallbackIds.add(m.id);
+      }
+    }
+
+    // Clear purchaseRequired on fallback items — the calling route handles this
+    // for direct-linked items, but fallback items need it done here.
+    const fallbackArr = [...fallbackIds];
+    if (fallbackArr.length > 0) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: false, purchaseQuantity: null })
+        .where(inArray(orderItemsTable.id, fallbackArr));
+    }
+  }
+
+  const linkedOrderItemIds = [...new Set([...directLinkedIds, ...fallbackIds])];
+
   if (linkedOrderItemIds.length === 0) {
     return { ordersAffected: 0, worksheetsCreated: 0, worksheetsUpdated: 0, pickingItems: 0, summary: [] };
   }
 
-  // Build a map of quantityDelivered by orderItemId.
-  // For consolidated lines (sourceOrderItemIds), map every source ID to the PO item
-  // so the delivery-fraction check has data for each individual order item.
+  // Build a map: orderItemId → the PO line that covers it.
+  // Fallback items are treated as fully delivered (already filtered above).
   const poItemByOrderItemId = new Map<number, typeof poItems[0]>();
   for (const poi of poItems) {
     const allIds: number[] = [
@@ -73,13 +120,16 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .where(inArray(orderItemsTable.id, linkedOrderItemIds));
 
-  // Separate fully-delivered from partial
+  // Separate fully-delivered from partial.
+  // Fallback items (no entry in poItemByOrderItemId) are always treated as
+  // fully delivered since we already required qty_delivered >= qty_ordered.
   const fullyDelivered = rows.filter(({ item }) => {
     const poi = poItemByOrderItemId.get(item.id);
-    return poi && poi.quantityDelivered >= poi.quantityOrdered;
+    if (!poi) return fallbackIds.has(item.id);
+    return poi.quantityDelivered >= poi.quantityOrdered;
   });
 
-  // Group by order, sort by requiredDate (smart: soonest first)
+  // Group by order, sort by requiredDate (soonest first)
   const orderGroups = new Map<
     number,
     { order: typeof ordersTable.$inferSelect; items: typeof orderItemsTable.$inferSelect[] }
@@ -103,7 +153,6 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
   for (const { order, items } of sortedOrders) {
     let wsPickCount = 0;
 
-    // ── All items → picking list (worksheets created at pick time, not here) ─
     for (const item of items) {
       if (item.stockStatus === "allocated" || item.stockStatus === "in_production" || item.stockStatus === "complete") continue;
       await db

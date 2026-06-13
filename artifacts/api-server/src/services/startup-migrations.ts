@@ -1842,4 +1842,30 @@ export async function refreshProductIssues(): Promise<void> {
       )
   `);
   console.log("[startup] Corrected PO item supplier codes that were inherited from wrong-colour variants");
+
+  // Retroactive fix: order items that are still purchase_required=true even though
+  // their PO has been delivered.  This happens when a PO line has an orderId but
+  // no orderItemId / sourceOrderItemIds, so allocatePODelivery() never cleared the flag.
+  // Match by orderId + productName + colour + size on fully-delivered PO lines.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required = false,
+        purchase_quantity  = NULL,
+        stock_status       = 'allocated',
+        stock_allocated_at = NOW()
+    FROM purchase_order_items poi
+    JOIN purchase_orders po ON po.id = poi.po_id
+    JOIN orders o           ON o.id  = poi.order_id
+    WHERE oi.order_id = poi.order_id
+      AND po.status = 'delivered'
+      AND poi.quantity_delivered >= poi.quantity_ordered
+      AND poi.order_item_id IS NULL
+      AND (poi.source_order_item_ids IS NULL OR poi.source_order_item_ids = '[]'::jsonb)
+      AND oi.purchase_required = true
+      AND LOWER(TRIM(COALESCE(oi.product_name,''))) = LOWER(TRIM(COALESCE(poi.product_name,'')))
+      AND LOWER(TRIM(COALESCE(oi.colour,'')))       = LOWER(TRIM(COALESCE(poi.colour,'')))
+      AND LOWER(TRIM(COALESCE(oi.size,'')))         = LOWER(TRIM(COALESCE(poi.size,'')))
+      AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
+  `);
+  console.log("[startup] Retroactively cleared purchase_required on PO-delivered items with broken links");
 }
