@@ -440,6 +440,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
         )
         AND COALESCE(p.is_service, false) = false
         AND oi.finish_id IS NOT NULL
+        AND COALESCE(oi.stock_status, '') NOT IN ('in_production', 'complete', 'allocated')
       )::integer AS purchase_count,
       COUNT(*) FILTER (
         WHERE oi.purchase_required = false
@@ -528,6 +529,7 @@ router.get("/production/pending", async (req, res): Promise<void> => {
       WHERE oi.order_id = ANY(ARRAY[${sql.raw(pendingOrderIds.join(","))}]::integer[])
         AND COALESCE(p.is_service, false) = false
         AND oi.finish_id IS NOT NULL
+        AND COALESCE(oi.stock_status, '') NOT IN ('in_production', 'complete')
         AND (
           oi.purchase_required = true
           OR (

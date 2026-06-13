@@ -1963,4 +1963,17 @@ export async function refreshProductIssues(): Promise<void> {
       AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
   `);
   console.log("[startup] Retroactively cleared purchase_required on PO-delivered items with broken links");
+
+  // Safety Net C: items that already have stock_status IN ('in_production','complete','allocated')
+  // should NEVER have purchase_required=true — that flag is stale and causes them to ghost into
+  // the "Awaiting Stock" section even though they've already passed that stage.
+  // This can happen when a PO is delivered after the item was already picked/worksheeted.
+  await db.execute(sql`
+    UPDATE order_items
+    SET purchase_required = false,
+        purchase_quantity  = NULL
+    WHERE purchase_required = true
+      AND stock_status IN ('in_production', 'complete', 'allocated')
+  `);
+  console.log("[startup] Safety Net C: cleared stale purchase_required=true on items already in/past production");
 }
