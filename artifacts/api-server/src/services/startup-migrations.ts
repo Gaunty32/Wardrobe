@@ -1862,18 +1862,20 @@ export async function refreshProductIssues(): Promise<void> {
   // their PO has been delivered.  This happens when a PO line has an orderId but
   // no orderItemId / sourceOrderItemIds, so allocatePODelivery() never cleared the flag.
   // Match by orderId + productName + colour + size on fully-delivered PO lines.
+  // Broadened: also catches POs where quantity_delivered >= quantity_ordered even if
+  // po.status hasn't yet been flipped to 'delivered' (e.g. still 'ordered').
+  // Plain items (no finish_id) go straight to 'complete'; decorated items → 'allocated'.
   await db.execute(sql`
     UPDATE order_items oi
     SET purchase_required = false,
         purchase_quantity  = NULL,
-        stock_status       = 'allocated',
+        stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
         stock_allocated_at = NOW()
     FROM purchase_order_items poi
     JOIN purchase_orders po ON po.id = poi.po_id
     JOIN orders o           ON o.id  = poi.order_id
     WHERE oi.order_id = poi.order_id
-      AND po.status = 'delivered'
-      AND poi.quantity_delivered >= poi.quantity_ordered
+      AND (po.status = 'delivered' OR poi.quantity_delivered >= poi.quantity_ordered)
       AND poi.order_item_id IS NULL
       AND (poi.source_order_item_ids IS NULL OR poi.source_order_item_ids = '[]'::jsonb)
       AND oi.purchase_required = true

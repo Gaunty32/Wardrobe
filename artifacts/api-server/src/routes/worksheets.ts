@@ -1172,4 +1172,39 @@ router.delete("/worksheets/:id", async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
+// Force-clear purchasing flags for a stuck order.
+// Used when stock has physically arrived but the system hasn't automatically
+// detected it (e.g. PO link broken, quantity_delivered not recorded).
+// Plain items (no finish) → stock_status='complete' (go to dispatch).
+// Decorated items (with finish) → stock_status='allocated' (go to picking list).
+router.post("/production/orders/:id/force-clear-stock", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const orderId = parsed.data.id;
+
+  const result = await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required  = false,
+        purchase_quantity  = NULL,
+        stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
+        stock_allocated_at = NOW()
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.order_id = ${orderId}
+      AND oi.dispatched_at IS NULL
+      AND COALESCE(oi.stock_status, 'pending') NOT IN ('in_production', 'complete')
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+      AND NOT EXISTS (
+        SELECT 1 FROM products p
+        WHERE p.id = oi.product_id AND COALESCE(p.is_service, false) = true
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
+      )
+  `);
+
+  res.json({ ok: true, updated: result.rowCount ?? 0 });
+});
+
 export default router;

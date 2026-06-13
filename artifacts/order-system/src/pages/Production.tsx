@@ -1403,7 +1403,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   );
 }
 
-function PendingOrderCard({ order }: { order: PendingOrder }) {
+function PendingOrderCard({ order, onForceClear }: { order: PendingOrder; onForceClear?: () => void }) {
   const [expanded, setExpanded] = useState(true);
 
   const totalUnits = order.items.reduce((s, i) => s + i.purchaseQuantity, 0);
@@ -1470,7 +1470,17 @@ function PendingOrderCard({ order }: { order: PendingOrder }) {
             </div>
           </div>
         </div>
-        <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          {onForceClear && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs text-green-700 border-green-300 hover:bg-green-50"
+              onClick={onForceClear}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" /> Stock received
+            </Button>
+          )}
           <a href={`/orders/${order.orderId}`}>
             <Button size="sm" variant="outline" className="gap-1.5 text-xs">
               <ExternalLink className="w-3.5 h-3.5" /> View Order
@@ -3386,6 +3396,24 @@ export default function Production() {
     onError: () => toast({ title: "Error returning items", variant: "destructive" }),
   });
 
+  const forceClearStockMutation = useMutation({
+    mutationFn: (orderId: number) =>
+      apiFetch<{ ok: boolean; updated: number }>(`/production/orders/${orderId}/force-clear-stock`, { method: "POST" }),
+    onSuccess: (data, orderId) => {
+      queryClient.invalidateQueries({ queryKey: ["production-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["picking-list"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatch-queue"] });
+      const updated = data?.updated ?? 0;
+      toast({
+        title: "Stock cleared",
+        description: updated > 0
+          ? `${updated} item line${updated !== 1 ? "s" : ""} moved — plain items to dispatch, decorated items to picking list.`
+          : "No items needed updating.",
+      });
+    },
+    onError: () => toast({ title: "Error clearing stock", variant: "destructive" }),
+  });
+
   const createWorksheetMutation = useMutation({
     mutationFn: (data: { orderId: number; orderNumber: string; customerId: number | null; customerName: string | null; notes: string; itemIds: number[]; returnItemIds: number[] }) =>
       apiFetch("/worksheets", { method: "POST", body: JSON.stringify(data) }),
@@ -3738,7 +3766,11 @@ export default function Production() {
                       Awaiting Stock ({filteredAllAwaiting.length} order{filteredAllAwaiting.length !== 1 ? "s" : ""})
                     </div>
                     {filteredAllAwaiting.map((order) => (
-                      <PendingOrderCard key={order.orderId} order={order} />
+                      <PendingOrderCard
+                        key={order.orderId}
+                        order={order}
+                        onForceClear={() => forceClearStockMutation.mutate(order.orderId)}
+                      />
                     ))}
                   </>
                 )}
