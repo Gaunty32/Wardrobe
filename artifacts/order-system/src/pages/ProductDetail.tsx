@@ -1513,7 +1513,7 @@ export default function ProductDetail() {
                               .map((pb, origIdx) => ({ pb, origIdx }))
                               .sort((a, b) => a.pb.qty - b.pb.qty)
                               .map(({ pb, origIdx }) => {
-                                const mode = priceBreakModes[origIdx] ?? "disc";
+                                const mode = priceBreakModes[origIdx] ?? "price";
                                 const cost = details.supplierPrice ?? 0;
                                 const unitPrice = details.unitPrice;
                                 const sellPrice = pb.price;
