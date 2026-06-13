@@ -1976,4 +1976,39 @@ export async function refreshProductIssues(): Promise<void> {
       AND stock_status IN ('in_production', 'complete', 'allocated')
   `);
   console.log("[startup] Safety Net C: cleared stale purchase_required=true on items already in/past production");
+
+  // Safety Net D: order items still purchase_required=true where the linked PO line is fully
+  // delivered (quantity_delivered >= quantity_ordered). This catches cases where the delivery
+  // was recorded but allocatePODelivery() was never triggered (e.g. direct quantity edits,
+  // or the item had a direct order_item_id link that the "broken links" migration skipped).
+  // Plain items (no finish) go to 'complete'; decorated items go to 'allocated' for picking.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET purchase_required = false,
+        purchase_quantity  = NULL,
+        stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
+        stock_allocated_at = NOW()
+    FROM purchase_order_items poi
+    WHERE poi.order_item_id = oi.id
+      AND poi.quantity_delivered >= poi.quantity_ordered
+      AND poi.quantity_ordered > 0
+      AND oi.purchase_required = true
+      AND COALESCE(oi.stock_status, '') NOT IN ('in_production', 'complete', 'allocated')
+  `);
+  console.log("[startup] Safety Net D: allocated items on fully-delivered PO lines");
+
+  // Safety Net E: purchase orders where every line is fully delivered but the PO status
+  // is still 'ordered'. Mark them 'delivered' so the UI shows them correctly.
+  await db.execute(sql`
+    UPDATE purchase_orders po
+    SET status = 'delivered'
+    WHERE po.status = 'ordered'
+      AND EXISTS (SELECT 1 FROM purchase_order_items WHERE po_id = po.id)
+      AND NOT EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        WHERE poi.po_id = po.id
+          AND poi.quantity_delivered < poi.quantity_ordered
+      )
+  `);
+  console.log("[startup] Safety Net E: closed fully-delivered POs still in ordered status");
 }
