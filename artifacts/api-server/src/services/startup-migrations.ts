@@ -997,9 +997,11 @@ export async function runStartupMigrations(): Promise<void> {
   // were invisible to the production picking/worksheet workflow.
   // Explicitly exclude draft/portal_draft/portal_pending — those orders have not
   // been confirmed so no stock should be allocated against them yet.
+  // Plain items (no finish) skip the picking list and go straight to 'complete'.
+  // Decorated items (finish set) land as 'allocated' to await physical picking.
   await db.execute(sql`
     UPDATE order_items oi
-    SET stock_status = 'allocated',
+    SET stock_status = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
         stock_allocated_at = NOW()
     FROM orders o
     WHERE oi.order_id = o.id
@@ -1007,6 +1009,19 @@ export async function runStartupMigrations(): Promise<void> {
       AND oi.stock_status IS NULL
       AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
   `);
+
+  // Retroactive fix: existing plain items that are 'allocated' should be 'complete'
+  // (they were allocated before this rule existed and never need physical picking-to-production).
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET stock_status = 'complete'
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.finish_id IS NULL
+      AND oi.stock_status = 'allocated'
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+  `);
+
   console.log("[startup] Promoted stock-covered items to picking list");
 
   await db.execute(sql`

@@ -66,6 +66,7 @@ router.get("/picking-list", async (req, res): Promise<void> => {
            AND (pv.colour = oi.colour OR (pv.colour IS NULL AND oi.colour IS NULL))
            AND (pv.size   = oi.size   OR (pv.size   IS NULL AND oi.size   IS NULL))
     WHERE oi.stock_status = 'allocated'
+      AND oi.finish_id IS NOT NULL
       AND oi.dispatched_at IS NULL
       AND COALESCE(p.is_service, false) = false
       AND NOT EXISTS (

@@ -155,9 +155,12 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
 
     for (const item of items) {
       if (item.stockStatus === "allocated" || item.stockStatus === "in_production" || item.stockStatus === "complete") continue;
+      // Plain items (no decoration) skip the picking list and go straight to complete;
+      // decorated items land on the picking list as 'allocated' until physically picked.
+      const isPlain = item.finishId == null;
       await db
         .update(orderItemsTable)
-        .set({ stockStatus: "allocated", stockAllocatedAt: new Date() })
+        .set({ stockStatus: isPlain ? "complete" : "allocated", stockAllocatedAt: new Date() })
         .where(eq(orderItemsTable.id, item.id));
       pickingItems++;
       wsPickCount++;

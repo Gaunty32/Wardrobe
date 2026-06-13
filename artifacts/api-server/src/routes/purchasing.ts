@@ -498,7 +498,7 @@ router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
     UPDATE order_items oi
     SET purchase_required = false,
         purchase_quantity = NULL,
-        stock_status = 'allocated',
+        stock_status = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
         stock_allocated_at = NOW()
     FROM covered
     WHERE oi.id = covered.item_id
@@ -506,10 +506,11 @@ router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
   `);
   const promoted = (result.rows as any[]).length;
 
-  // Also promote stock-covered items that have no stock_status yet
+  // Also promote stock-covered items that have no stock_status yet.
+  // Plain items (no finish) go straight to 'complete'; decorated items to 'allocated'.
   await db.execute(sql`
     UPDATE order_items oi
-    SET stock_status = 'allocated',
+    SET stock_status = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
         stock_allocated_at = NOW()
     FROM orders o
     WHERE oi.order_id = o.id
@@ -962,7 +963,7 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
     // OTHER outstanding PO line still awaiting delivery.
     await db.execute(sql`
       UPDATE order_items oi
-      SET stock_status       = 'allocated',
+      SET stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
           stock_allocated_at = NOW()
       FROM orders o
       WHERE oi.order_id = o.id
@@ -1155,10 +1156,11 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
     if (allDelivered) {
       await db.execute(sql`UPDATE purchase_orders SET status = 'delivered', updated_at = now() WHERE id = ${params.data.id}`);
       await allocatePODelivery(params.data.id);
-      // Safety-net: promote any remaining purchase_required=false, stock_status=null items
+      // Safety-net: promote any remaining purchase_required=false, stock_status=null items.
+      // Plain items (no finish) go straight to 'complete'; decorated items to 'allocated'.
       await db.execute(sql`
         UPDATE order_items oi
-        SET stock_status       = 'allocated',
+        SET stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
             stock_allocated_at = NOW()
         FROM orders o
         WHERE oi.order_id = o.id

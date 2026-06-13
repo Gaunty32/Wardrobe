@@ -1005,7 +1005,7 @@ export default function Dispatch() {
               <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
                 <CheckCircle className="w-12 h-12 text-green-400" />
                 <p className="text-lg font-medium">Nothing to dispatch</p>
-                <p className="text-sm">Orders will appear here once production worksheets are marked complete.</p>
+                <p className="text-sm">Orders will appear here once production is complete or when plain (undecorated) items are ready to ship.</p>
               </div>
             ) : filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">

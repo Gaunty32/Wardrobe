@@ -95,11 +95,11 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
         );
       }
 
-      // Items that ARE ready to dispatch right now (complete worksheet or stock ready)
+      // Items that ARE ready to dispatch right now (complete worksheet or picked/plain-complete).
+      // 'allocated' means "in the picking list for production" — not ready for dispatch yet.
       const hasAnyReadyItems = items.some(i =>
         wsCompleteItemIdsForOrder.has(i.id) ||
-        i.stockStatus === "complete" ||
-        i.stockStatus === "allocated"
+        i.stockStatus === "complete"
       );
 
       // Show in dispatch queue if:
@@ -252,16 +252,17 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
 
   // Items NOT on a completed worksheet that are not yet in a ready state —
   // e.g. plain items still in purchasing (ordered, purchaseRequired, etc.)
+  // 'allocated' = decorated item in the picking list (not yet picked for production).
+  // Plain items are now auto-completed on allocation so they are never 'allocated'.
   const hasOutstandingItems = items.some(i =>
     !wsCompleteItemIds.has(i.id) &&
-    i.stockStatus !== "complete" &&
-    i.stockStatus !== "allocated"
+    i.stockStatus !== "complete"
   );
 
   let isComplete: boolean;
   if (isPartShipped) {
     isComplete = remainingItems.length > 0 && remainingItems.every(i =>
-      i.stockStatus === "complete" || i.stockStatus === "allocated"
+      i.stockStatus === "complete" || wsCompleteItemIds.has(i.id)
     );
   } else {
     isComplete = items.length > 0 && !hasOutstandingItems && (
@@ -272,7 +273,7 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
   }
 
   const incompleteItemIds = remainingItems
-    .filter((i) => i.stockStatus !== "complete" && i.stockStatus !== "allocated" && !wsCompleteItemIds.has(i.id))
+    .filter((i) => i.stockStatus !== "complete" && !wsCompleteItemIds.has(i.id))
     .map((i) => i.id);
 
   let customer = null;
