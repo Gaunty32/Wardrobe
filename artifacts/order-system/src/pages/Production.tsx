@@ -3469,7 +3469,23 @@ export default function Production() {
         }
       }
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => {
+      if (e.message?.includes("already have a worksheet")) {
+        // Stale page — these items were already sent to production since this page loaded.
+        // Close the dialog and refresh so the user sees the current state.
+        setSendingOrder(null);
+        setSendingNotes("");
+        setSendingExcluded(new Set());
+        queryClient.invalidateQueries({ queryKey: ["production-pending"] });
+        queryClient.invalidateQueries({ queryKey: ["worksheets"] });
+        toast({
+          title: "Page refreshed",
+          description: "Those items were already sent to production — the page has been updated.",
+        });
+      } else {
+        toast({ title: "Error", description: e.message, variant: "destructive" });
+      }
+    },
   });
 
   const { data: pickingOrders = [] } = useQuery<PickingOrder[]>({
