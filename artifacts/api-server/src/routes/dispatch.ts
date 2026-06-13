@@ -635,6 +635,17 @@ router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> =>
     const [a] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     address = a ?? null;
   }
+  if (!address) {
+    const empRows = await db.select({ deliveryAddressId: (customerEmployeesTable as any).deliveryAddressId })
+      .from(orderItemsTable)
+      .innerJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+      .where(eq(orderItemsTable.orderId, order.id));
+    const addrIds = [...new Set(empRows.map((e: any) => e.deliveryAddressId as number | null).filter((id): id is number => id != null))];
+    if (addrIds.length === 1) {
+      const [a] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, addrIds[0]));
+      address = a ?? null;
+    }
+  }
   if (!address) { res.status(400).json({ error: "No delivery address on this order" }); return; }
 
   const { numberOfParcels, totalWeightKg } = body.data;

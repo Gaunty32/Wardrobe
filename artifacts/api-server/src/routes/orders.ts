@@ -2635,6 +2635,14 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
       .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     deliveryAddress = addr ?? null;
   }
+  if (!deliveryAddress) {
+    // Fall back to employee-level delivery address if all employees share the same one
+    const empAddrIds = [...new Set(allItems.map(i => (i.employee as any)?.deliveryAddressId as number | null).filter((id): id is number => id != null))];
+    if (empAddrIds.length === 1) {
+      const [addr] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, empAddrIds[0]));
+      deliveryAddress = addr ?? null;
+    }
+  }
 
   const backorderMap = new Map<number, { estimatedDueDate: string | null }>();
   if (pendingItems.length > 0) {
@@ -2952,6 +2960,17 @@ router.get("/orders/:id/shipping-label", async (req, res): Promise<void> => {
     const [addr] = await db.select().from(customerDeliveryAddressesTable)
       .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     deliveryAddress = addr ?? null;
+  }
+  if (!deliveryAddress) {
+    const empRows = await db.select({ deliveryAddressId: (customerEmployeesTable as any).deliveryAddressId })
+      .from(orderItemsTable)
+      .innerJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+      .where(eq(orderItemsTable.orderId, orderId));
+    const empAddrIds = [...new Set(empRows.map((e: any) => e.deliveryAddressId as number | null).filter((id): id is number => id != null))];
+    if (empAddrIds.length === 1) {
+      const [addr] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, empAddrIds[0]));
+      deliveryAddress = addr ?? null;
+    }
   }
   if (order.customerId) {
     const [cust] = await db.select({
@@ -3541,6 +3560,17 @@ router.get("/orders/:id/label-data", async (req, res): Promise<void> => {
     const [addr] = await db.select().from(customerDeliveryAddressesTable)
       .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     deliveryAddress = addr ?? null;
+  }
+  if (!deliveryAddress) {
+    const empRows = await db.select({ deliveryAddressId: (customerEmployeesTable as any).deliveryAddressId })
+      .from(orderItemsTable)
+      .innerJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+      .where(eq(orderItemsTable.orderId, orderId));
+    const empAddrIds = [...new Set(empRows.map((e: any) => e.deliveryAddressId as number | null).filter((id): id is number => id != null))];
+    if (empAddrIds.length === 1) {
+      const [addr] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, empAddrIds[0]));
+      deliveryAddress = addr ?? null;
+    }
   }
   if (order.customerId) {
     const [cust] = await db.select({
