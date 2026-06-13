@@ -903,6 +903,7 @@ export default function Dispatch() {
   const [tab, setTab] = useState<"queue" | "history">("queue");
   const [bulkLabelsOpen, setBulkLabelsOpen] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "ready" | "pending" | "urgent">("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { data: orders = [], isLoading, refetch } = useQuery<DispatchOrder[]>({
     queryKey: ["dispatch-orders"],
@@ -914,10 +915,17 @@ export default function Dispatch() {
   const pendingCount = orders.filter((o) => !o.productionComplete).length;
   const urgentCount = orders.filter((o) => !o.productionComplete && (isToday(o.requiredDate) || isPast(o.requiredDate))).length;
 
+  const q = searchQuery.trim().toLowerCase();
   const filteredOrders = orders.filter((o) => {
-    if (queueFilter === "ready") return o.productionComplete;
-    if (queueFilter === "pending") return !o.productionComplete;
-    if (queueFilter === "urgent") return !o.productionComplete && (isToday(o.requiredDate) || isPast(o.requiredDate));
+    if (queueFilter === "ready" && !o.productionComplete) return false;
+    if (queueFilter === "pending" && o.productionComplete) return false;
+    if (queueFilter === "urgent" && !((!o.productionComplete) && (isToday(o.requiredDate) || isPast(o.requiredDate)))) return false;
+    if (q) {
+      return (
+        o.orderNumber.toLowerCase().includes(q) ||
+        (o.customerName ?? "").toLowerCase().includes(q)
+      );
+    }
     return true;
   });
 
@@ -975,6 +983,24 @@ export default function Dispatch() {
 
         {tab === "queue" && (
           <>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input
+                placeholder="Search by customer or order number…"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-9"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
             {orders.length > 0 && (
               <div className="grid grid-cols-3 gap-3">
                 <button
@@ -1013,8 +1039,8 @@ export default function Dispatch() {
               </div>
             ) : filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
-                <p className="text-sm">No orders match this filter.</p>
-                <button className="text-xs text-primary underline" onClick={() => setQueueFilter("all")}>Show all</button>
+                <p className="text-sm">No orders match{q ? ` "${searchQuery}"` : " this filter"}.</p>
+                <button className="text-xs text-primary underline" onClick={() => { setQueueFilter("all"); setSearchQuery(""); }}>Clear filters</button>
               </div>
             ) : (
               <div className="space-y-3">
