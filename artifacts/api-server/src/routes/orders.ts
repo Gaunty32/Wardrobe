@@ -2602,7 +2602,10 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
       ? allItems.filter(i => i.dispatchedAt != null)
       : allItems;
   const pendingItems = dispatchedIds
-    ? allItems.filter(i => !dispatchedIds.includes(i.id))
+    // When explicit IDs are given (fresh partial dispatch), exclude both the current
+    // batch AND any items already dispatched in a prior shipment — only truly
+    // outstanding (never-dispatched) items should appear in "To Follow".
+    ? allItems.filter(i => !dispatchedIds.includes(i.id) && i.dispatchedAt == null)
     : order.status === "part_shipped"
       ? allItems.filter(i => i.dispatchedAt == null)
       : [];
