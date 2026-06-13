@@ -4,7 +4,7 @@
  *
  * Required env vars:
  *   DPD_USERNAME        – DPD account username
- *   DPD_PASSWORD        – DPD account password (plain text — encoded as base64 per spec)
+ *   DPD_PASSWORD        – DPD account password (plain text; MD5-hashed internally per spec)
  *   DPD_ACCOUNT_NUMBER  – DPD account number (used in GeoClient header)
  *
  * Optional env vars:
@@ -14,6 +14,8 @@
  *   DPD_SENDER_POSTCODE – Collection postcode
  *   DPD_NETWORK_CODE    – Service network code (default: "2^12" = Parcel Next Day)
  */
+
+import { createHash } from "crypto";
 
 const DPD_BASE = "https://api.dpdlocal.co.uk";
 
@@ -43,11 +45,13 @@ function getConfig() {
 
 /**
  * Authenticate with DPD Local API.
- * Per spec: base64-encode "username:password" (plain text — no hashing).
+ * Per spec: base64-encode "username:md5(password)" — password must be MD5-hashed.
  * Returns a GeoSession token valid for the day.
  */
 async function login(cfg: ReturnType<typeof getConfig>): Promise<string> {
-  const credentials = Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
+  // DPD Local API requires the password to be MD5-hashed before base64 encoding
+  const hashedPassword = createHash("md5").update(cfg.password).digest("hex");
+  const credentials = Buffer.from(`${cfg.username}:${hashedPassword}`).toString("base64");
   const res = await fetch(`${DPD_BASE}/user/?action=login`, {
     method: "POST",
     headers: {
