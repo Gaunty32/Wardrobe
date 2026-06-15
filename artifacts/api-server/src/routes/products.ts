@@ -705,16 +705,18 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     staffQuotesClean.map(q => {
       const initial = (q.name || "?")[0].toUpperCase();
       const avatarImg = q.imageUrl
-        ? `<img src="${q.imageUrl}" alt="${q.name}" style="width:160px;height:160px;border-radius:50%;object-fit:cover;object-position:top;border:3px solid #1e3a5f;box-shadow:0 2px 8px rgba(30,58,95,0.25);display:block" />`
+        ? `<img src="${q.imageUrl}" alt="${q.name}" style="width:160px;height:160px;border-radius:50%;object-fit:cover;object-position:center top;border:3px solid #1e3a5f;box-shadow:0 2px 8px rgba(30,58,95,0.25);display:block;image-rendering:auto" />`
         : `<div style="width:160px;height:160px;border-radius:50%;background:linear-gradient(135deg,#1e3a5f,#2d5491);color:#fff;display:flex;align-items:center;justify-content:center;font-size:3em;font-weight:700;box-shadow:0 2px 8px rgba(30,58,95,0.3)">${initial}</div>`;
       return `<div style="border:1.5px solid #e2e8f0;border-radius:14px;padding:18px 20px;margin-bottom:14px;background:linear-gradient(135deg,#f8fafc,#fff);box-shadow:0 2px 12px rgba(0,0,0,0.06)">` +
-        `<div style="display:flex;align-items:center;gap:24px">` +
-          `<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;text-align:center;min-width:160px">` +
+        `<div style="display:flex;align-items:flex-start;gap:24px">` +
+          `<div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0;text-align:center;width:160px">` +
             avatarImg +
             `<div style="font-weight:700;color:#1e3a5f;font-size:1.05em;line-height:1.3;margin-top:10px">${q.name}</div>` +
             `${q.role ? `<div style="color:#64748b;font-size:0.82em;font-weight:500;margin-top:3px">${q.role}</div>` : ''}` +
           `</div>` +
-          `<p style="margin:0;font-style:italic;color:#374151;font-size:0.95em;line-height:1.7;border-left:4px solid #1e3a5f;padding:10px 14px;border-radius:0 8px 8px 0;background:#f0f4ff;flex:1;min-width:0">&ldquo;${q.quote}&rdquo;</p>` +
+          `<div style="flex:1;min-width:0;display:flex;align-items:center;min-height:160px">` +
+            `<p style="margin:0;font-style:italic;color:#374151;font-size:0.95em;line-height:1.7;border-left:4px solid #1e3a5f;padding:10px 14px;border-radius:0 8px 8px 0;background:#f0f4ff;width:100%">&ldquo;${q.quote}&rdquo;</p>` +
+          `</div>` +
         `</div>` +
       `</div>`;
     }).join("") +

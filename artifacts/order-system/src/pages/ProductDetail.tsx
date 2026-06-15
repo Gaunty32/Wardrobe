@@ -2089,20 +2089,22 @@ export default function ProductDetail() {
                       <div className="grid gap-3">
                         {guidance.staffQuotes.map((q) => (
                           <div key={q.id} className="flex items-start gap-4 border border-border rounded-lg p-3 bg-muted/20">
-                            <div className="w-20 h-20 rounded-full bg-primary/10 flex-shrink-0 overflow-hidden flex items-center justify-center text-xl font-bold text-primary">
-                              {q.staffImageUrl
-                                ? <img src={q.staffImageUrl} alt={q.staffName} className="w-full h-full object-cover object-top" />
-                                : q.staffName.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-sm font-semibold">{q.staffName}</span>
-                                {q.staffRole && <span className="text-xs text-muted-foreground">{q.staffRole}</span>}
-                                {q.rewritten && <span className="text-xs text-primary/70 flex items-center gap-0.5"><Sparkles className="w-3 h-3" /> AI-polished</span>}
+                            {/* Photo + name + role stacked in left column */}
+                            <div className="flex flex-col items-center flex-shrink-0 w-24 text-center gap-1">
+                              <div className="w-24 h-24 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center text-2xl font-bold text-primary">
+                                {q.staffImageUrl
+                                  ? <img src={q.staffImageUrl} alt={q.staffName} className="w-full h-full object-cover object-center" />
+                                  : q.staffName.charAt(0).toUpperCase()}
                               </div>
+                              <span className="text-sm font-semibold leading-tight">{q.staffName}</span>
+                              {q.staffRole && <span className="text-xs text-muted-foreground">{q.staffRole}</span>}
+                              {q.rewritten && <span className="text-xs text-primary/70 flex items-center justify-center gap-0.5"><Sparkles className="w-3 h-3" /> AI-polished</span>}
+                            </div>
+                            {/* Quote centred to photo height */}
+                            <div className="flex-1 min-w-0 flex items-center" style={{ minHeight: "96px" }}>
                               <p className="text-sm text-muted-foreground italic">"{q.rewritten || q.draft}"</p>
                             </div>
-                            <div className="flex gap-1 flex-shrink-0">
+                            <div className="flex gap-1 flex-shrink-0 self-start">
                               <button
                                 type="button"
                                 onClick={() => {
