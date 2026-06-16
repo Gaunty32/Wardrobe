@@ -678,9 +678,9 @@ export default function ProductDetail() {
       const dx = SIZE / 2 - w / 2 + cropOffsetX * canvasScale;
       const dy = SIZE / 2 - h / 2 + cropOffsetY * canvasScale;
       ctx.drawImage(img, dx, dy, w, h);
-      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/png"));
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, "image/jpeg", 0.85));
       if (!blob) return;
-      const file = new File([blob], "staff-crop.png", { type: "image/png" });
+      const file = new File([blob], "staff-crop.jpg", { type: "image/jpeg" });
       const res = await uploadStaffPhoto(file);
       if (res) {
         setStaffFormImageUrl(`/api/storage${res.objectPath}`);
