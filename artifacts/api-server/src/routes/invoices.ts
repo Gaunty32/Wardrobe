@@ -367,6 +367,25 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
   }
 });
 
+// ─── Mark invoice as sent without emailing (move directly to To Post to Xero) ─
+
+router.post("/invoices/:orderId/mark-sent", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  try {
+    const [order] = await db.select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber })
+      .from(ordersTable).where(eq(ordersTable.id, idParse.data));
+    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    await db.update(ordersTable)
+      .set({ invoiceEmailSentAt: new Date(), invoiceScheduledSendAt: null, updatedAt: new Date() })
+      .where(eq(ordersTable.id, idParse.data));
+    await logOrderAction(idParse.data, "Invoice marked as sent", getActor(req), "Moved to Xero queue without sending email");
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to mark as sent" });
+  }
+});
+
 // ─── Schedule / cancel scheduled invoice send ────────────────────────────────
 
 router.patch("/invoices/:orderId/schedule", async (req, res): Promise<void> => {

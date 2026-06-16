@@ -261,6 +261,15 @@ function OrderRow({
     onError: (e: Error) => toast({ title: "High Level error", description: parseApiError(e), variant: "destructive" }),
   });
 
+  const markSent = useMutation({
+    mutationFn: () => apiFetch(`/invoices/${order.id}/mark-sent`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      toast({ title: "Moved to Xero queue", description: "Invoice marked as sent — no email was sent to the customer." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: parseApiError(e), variant: "destructive" }),
+  });
+
   const scheduleSend = useMutation({
     mutationFn: (scheduledSendAt: string | null) =>
       apiFetch(`/invoices/${order.id}/schedule`, { method: "PATCH", body: JSON.stringify({ scheduledSendAt }) }),
@@ -425,6 +434,17 @@ function OrderRow({
                 >
                   {sendEmail.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
                   Send Invoice
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => markSent.mutate()}
+                  disabled={markSent.isPending}
+                  title="Move to Xero queue without emailing the customer"
+                >
+                  {markSent.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
+                  Skip email
                 </Button>
                 {poMissing && (
                   <span className="text-xs text-red-600 flex items-center gap-1">
