@@ -1374,6 +1374,7 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
   const [noteDialog, setNoteDialog] = useState<{ itemId: number; context: string; current: string } | null>(null);
   const [noteText, setNoteText] = useState("");
   const [cancelConfirm, setCancelConfirm] = useState<{ itemId: number; context: string } | null>(null);
+  const [mismatchConfirm, setMismatchConfirm] = useState<{ itemId: number; entered: number; expected: number; context: string } | null>(null);
 
   // Sync upward values when items change (e.g. after "Receive All")
   useEffect(() => {
@@ -1545,6 +1546,12 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
                                   const v = parseInt(e.target.value);
                                   handleQtyChange(cellItemId, isNaN(v) ? 0 : Math.max(0, v));
                                 }}
+                                onBlur={() => {
+                                  const entered = localQtys.get(cellItemId) ?? 0;
+                                  if (entered > 0 && entered !== ordQty) {
+                                    setMismatchConfirm({ itemId: cellItemId, entered, expected: ordQty, context: noteContext });
+                                  }
+                                }}
                                 className={`w-12 h-7 text-center text-sm rounded border focus:outline-none focus:ring-1 focus:ring-primary transition-colors ${
                                   cellFull
                                     ? "border-green-400 bg-green-50 text-green-700 font-semibold"
@@ -1609,6 +1616,58 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
                 }}
               >
                 Cancel Line
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Quantity mismatch confirmation dialog */}
+      {mismatchConfirm && (
+        <Dialog open onOpenChange={() => setMismatchConfirm(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="text-sm flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-500" /> Quantity Mismatch
+              </DialogTitle>
+              <p className="text-xs text-muted-foreground font-mono pt-0.5">{mismatchConfirm.context}</p>
+            </DialogHeader>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Expected</span>
+                <span className="font-semibold">{mismatchConfirm.expected}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Entered</span>
+                <span className={`font-semibold ${mismatchConfirm.entered > mismatchConfirm.expected ? "text-red-600" : "text-amber-700"}`}>
+                  {mismatchConfirm.entered}
+                  {mismatchConfirm.entered > mismatchConfirm.expected
+                    ? ` (+${mismatchConfirm.entered - mismatchConfirm.expected} over)`
+                    : ` (${mismatchConfirm.entered - mismatchConfirm.expected} short)`}
+                </span>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {mismatchConfirm.entered > mismatchConfirm.expected
+                ? "You've entered more than was ordered. Are you sure this is correct?"
+                : "You've entered less than was ordered. The shortfall will become a backorder on completion."}
+            </p>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  handleQtyChange(mismatchConfirm.itemId, mismatchConfirm.expected);
+                  setMismatchConfirm(null);
+                }}
+              >
+                Reset to {mismatchConfirm.expected}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setMismatchConfirm(null)}
+              >
+                Keep {mismatchConfirm.entered}
               </Button>
             </div>
           </DialogContent>
