@@ -55,10 +55,10 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
   const css = `
     @page { size: 4in 4in; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; }
+    html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; padding: 8mm; }
     .label {
       width: 100%;
-      height: 4in;
+      height: calc(4in - 16mm);
       overflow: hidden;
       display: flex;
       flex-direction: column;
