@@ -53,12 +53,12 @@ function shippingLabel(method: string | null | undefined): string {
 
 function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "box" | number): string {
   const css = `
-    @page { size: 4in 4in; margin: 8mm; }
+    @page { size: 4in 4in; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; }
     .label {
       width: 100%;
-      height: calc(4in - 16mm);
+      height: 4in;
       overflow: hidden;
       display: flex;
       flex-direction: column;
