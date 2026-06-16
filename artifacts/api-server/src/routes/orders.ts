@@ -4,7 +4,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   db, ordersTable, orderItemsTable, orderLogsTable, orderEmailLogsTable, customersTable, productsTable,
-  worksheetsTable, worksheetItemsTable, customerEmployeesTable,
+  worksheetsTable, worksheetItemsTable, customerEmployeesTable, customerTeamsTable,
   customerDeliveryAddressesTable, customerEmployeeSizesTable, suppliersTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
   customerProcessesTable, customerFinishProcessesTable, processStockTable,
@@ -3612,10 +3612,29 @@ router.get("/orders/:id/label-data", async (req, res): Promise<void> => {
   const isNamed = (item: typeof allItems[0]) =>
     item.recipientType === "person" && !!(item.recipientName || item.recipientEmployeeId);
 
-  const wearerMap = new Map<string, { name: string; jobTitle: string | null; items: Array<{ productName: string; colour: string | null; size: string | null; quantity: number; finishName: string | null }> }>();
+  // Fetch team names for any employees that have a teamId
+  const teamIds = [...new Set(allItems.map(i => (i.employee as any)?.teamId as number | null | undefined).filter((id): id is number => id != null))];
+  const teamMap = new Map<number, string>();
+  if (teamIds.length > 0) {
+    const teams = await db.select({ id: customerTeamsTable.id, name: customerTeamsTable.name })
+      .from(customerTeamsTable)
+      .where(inArray(customerTeamsTable.id, teamIds));
+    for (const t of teams) teamMap.set(t.id, t.name);
+  }
+
+  const wearerMap = new Map<string, { name: string; jobTitle: string | null; employeeNumber: string | null; team: string | null; items: Array<{ productName: string; colour: string | null; size: string | null; quantity: number; finishName: string | null }> }>();
   for (const item of allItems.filter(isNamed)) {
     const name = empName(item) ?? "Unknown";
-    if (!wearerMap.has(name)) wearerMap.set(name, { name, jobTitle: item.employee?.jobTitle ?? null, items: [] });
+    if (!wearerMap.has(name)) {
+      const teamId = (item.employee as any)?.teamId as number | null | undefined;
+      wearerMap.set(name, {
+        name,
+        jobTitle: item.employee?.jobTitle ?? null,
+        employeeNumber: (item.employee as any)?.employeeNumber ?? null,
+        team: teamId ? (teamMap.get(teamId) ?? null) : null,
+        items: [],
+      });
+    }
     wearerMap.get(name)!.items.push({
       productName: item.productName,
       colour: item.colour ?? null,

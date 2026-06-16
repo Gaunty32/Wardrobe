@@ -19,6 +19,8 @@ interface LabelData {
   wearers: Array<{
     name: string;
     jobTitle: string | null;
+    employeeNumber: string | null;
+    team: string | null;
     items: Array<{
       productName: string;
       colour: string | null;
@@ -119,6 +121,7 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
       word-break: break-word;
       flex-shrink: 0;
     }
+    .wearer-emp-num { font-size: 9pt; color: #555; font-weight: 600; margin-top: 2pt; flex-shrink: 0; }
     .wearer-title { font-size: 9pt; color: #555; margin-top: 2pt; margin-bottom: 5pt; flex-shrink: 0; }
     .w-divider { border-top: 2pt solid #000; margin-bottom: 5pt; flex-shrink: 0; }
     table { width: 100%; border-collapse: collapse; }
@@ -142,15 +145,27 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
     }
     tbody td.r { text-align: right; font-weight: 800; }
     .finish { font-size: 7pt; color: #666; display: block; margin-top: 1pt; }
-    .w-footer {
+    .w-bottom {
       margin-top: auto;
+      flex-shrink: 0;
+    }
+    .wearer-team {
+      text-align: center;
+      font-size: 10pt;
+      font-weight: 700;
+      color: #1e3a5f;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: 5pt 0 4pt;
+      border-top: 1.5pt solid #1e3a5f;
+    }
+    .w-footer {
       padding-top: 3pt;
       border-top: 1pt solid #ccc;
       display: flex;
       justify-content: space-between;
       font-size: 7pt;
       color: #999;
-      flex-shrink: 0;
     }
   `;
 
@@ -194,6 +209,7 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
     </div>
   </div>
   <div class="wearer-name" style="font-size:${wPt}pt">${esc(w.name)}</div>
+  ${w.employeeNumber ? `<div class="wearer-emp-num">#${esc(w.employeeNumber)}</div>` : ""}
   ${w.jobTitle ? `<div class="wearer-title">${esc(w.jobTitle)}</div>` : `<div style="margin-bottom:5pt"></div>`}
   <div class="w-divider"></div>
   <table>
@@ -209,7 +225,10 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
       </tr>`).join("")}
     </tbody>
   </table>
-  <div class="w-footer"><span>${esc(data.customerName)}</span><span>${esc(data.orderNumber)}</span></div>
+  <div class="w-bottom">
+    ${w.team ? `<div class="wearer-team">${esc(w.team)}</div>` : ""}
+    <div class="w-footer"><span>${esc(data.customerName)}</span><span>${esc(data.orderNumber)}</span></div>
+  </div>
 </div>`;
   };
 
