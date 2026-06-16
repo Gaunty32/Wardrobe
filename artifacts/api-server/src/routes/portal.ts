@@ -1109,27 +1109,47 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const submitterEmployeeId: number | null =
     previewEmployeeId ?? ((userRows.rows[0] as any)?.linked_employee_id ?? null);
 
-  // If the submitting employee has their own delivery address, prefer it over the customer default
+  // Resolve the delivery address for this order:
+  // Priority 1 — submitter's linked employee ID (most direct, works for both real logins and previews)
+  // Priority 2 — email match against employee records (fallback if ID lookup yields nothing)
+  // Priority 3 — single-recipient order: if all items go to the same employee, use that employee's address
+  // Priority 4 — customer default address
   let defaultAddressId: number | null = customerDefaultAddressId;
-  if (submitterEmail) {
+  let resolvedEmpAddrId: number | null = null;
+
+  if (submitterEmployeeId) {
+    const empAddrRows = await db.execute(sql`
+      SELECT delivery_address_id FROM customer_employees
+      WHERE id = ${submitterEmployeeId} AND delivery_address_id IS NOT NULL
+      LIMIT 1
+    `);
+    resolvedEmpAddrId = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
+  }
+
+  if (!resolvedEmpAddrId && submitterEmail) {
     const empAddrRows = await db.execute(sql`
       SELECT delivery_address_id FROM customer_employees
       WHERE customer_id = ${customerId} AND lower(email) = lower(${submitterEmail})
         AND delivery_address_id IS NOT NULL
       LIMIT 1
     `);
-    const empAddrId: number | null = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
-    if (empAddrId) defaultAddressId = empAddrId;
-  } else if (submitterEmployeeId) {
-    // Preview sessions have no email — look up by employee ID instead
-    const empAddrRows = await db.execute(sql`
-      SELECT delivery_address_id FROM customer_employees
-      WHERE id = ${submitterEmployeeId} AND delivery_address_id IS NOT NULL
-      LIMIT 1
-    `);
-    const empAddrId: number | null = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
-    if (empAddrId) defaultAddressId = empAddrId;
+    resolvedEmpAddrId = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
   }
+
+  // If submitter has no address of their own, check whether all items go to a single employee
+  if (!resolvedEmpAddrId && Array.isArray(body.items) && body.items.length > 0) {
+    const recipientIds = [...new Set((body.items as any[]).map((it: any) => it.recipientEmployeeId).filter(Boolean))];
+    if (recipientIds.length === 1) {
+      const empAddrRows = await db.execute(sql`
+        SELECT delivery_address_id FROM customer_employees
+        WHERE id = ${recipientIds[0]} AND delivery_address_id IS NOT NULL
+        LIMIT 1
+      `);
+      resolvedEmpAddrId = (empAddrRows.rows[0] as any)?.delivery_address_id ?? null;
+    }
+  }
+
+  if (resolvedEmpAddrId) defaultAddressId = resolvedEmpAddrId;
   let submitterName: string | null = null;
   if (submitterEmail) {
     const empRows = await db.execute(sql`
