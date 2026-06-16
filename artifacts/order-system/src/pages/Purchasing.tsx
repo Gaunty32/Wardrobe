@@ -1696,7 +1696,7 @@ function MarkOrderedDialog({ po, open, onClose, onConfirm }: {
 }
 
 function POCard({
-  po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll, onCancelLine,
+  po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll, onCancelLine, hideMatrix,
 }: {
   po: PurchaseOrder;
   onStatusChange: (id: number, status: string, extra?: Record<string, unknown>) => void;
@@ -1706,6 +1706,7 @@ function POCard({
   onRefresh: () => void;
   onReceiveAll: (id: number) => void;
   onCancelLine: (poId: number, itemId: number) => void;
+  hideMatrix?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
@@ -1850,21 +1851,25 @@ function POCard({
             <div className="text-sm text-muted-foreground py-4 text-center">No lines on this PO yet.</div>
           ) : (
             <>
-              <POMatrixView
-                items={po.items}
-                currency={po.supplierCurrency}
-                onDeleteLine={po.status !== "delivered" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
-                onLineUpdate={(po.status === "draft" || po.status === "ordered") ? (itemId, qty) => onLineUpdate(po.id, itemId, { quantityOrdered: qty }) : undefined}
-                onDueDateChange={po.status === "ordered" ? (itemIds, date) => {
-                  itemIds.forEach(itemId => onLineUpdate(po.id, itemId, { estimatedDueDate: date }));
-                } : undefined}
-              />
+              {!hideMatrix && (
+                <POMatrixView
+                  items={po.items}
+                  currency={po.supplierCurrency}
+                  onDeleteLine={po.status !== "delivered" ? (itemId) => onDeleteLine(po.id, itemId) : undefined}
+                  onLineUpdate={(po.status === "draft" || po.status === "ordered") ? (itemId, qty) => onLineUpdate(po.id, itemId, { quantityOrdered: qty }) : undefined}
+                  onDueDateChange={po.status === "ordered" ? (itemIds, date) => {
+                    itemIds.forEach(itemId => onLineUpdate(po.id, itemId, { estimatedDueDate: date }));
+                  } : undefined}
+                />
+              )}
 
               {po.status === "ordered" && (
-                <div className="space-y-3 pt-3 border-t border-border">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                    <Truck className="w-3.5 h-3.5" /> Book In Delivery
-                  </h4>
+                <div className={`space-y-3 ${!hideMatrix ? "pt-3 border-t border-border" : ""}`}>
+                  {!hideMatrix && (
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Truck className="w-3.5 h-3.5" /> Book In Delivery
+                    </h4>
+                  )}
                   <BookInMatrix
                     items={po.items}
                     poId={po.id}
@@ -2542,6 +2547,7 @@ export default function Purchasing() {
                       <POCard
                         key={po.id}
                         po={po}
+                        hideMatrix
                         onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
                         onDelete={(id) => deleteMutation.mutate(id)}
                         onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
@@ -2600,6 +2606,7 @@ export default function Purchasing() {
                     <POCard
                       key={po.id}
                       po={po}
+                      hideMatrix
                       onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
                       onDelete={(id) => deleteMutation.mutate(id)}
                       onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
