@@ -78,16 +78,8 @@ function resolveStockPrice(item: StockItem, processes: StockProcess[]): number {
   if (item.special_price != null && item.special_price !== "") {
     return parseFloat(item.special_price);
   }
-  const unitPrice = item.unit_price ? parseFloat(item.unit_price) : 0;
-  if (unitPrice <= 0) return 0;
-  // unit_price is the garment base; add decoration surcharges (all extras except cheapest)
-  const finishProcs = item.finish_id != null
-    ? processes.filter(p => p.finish_id === item.finish_id)
-    : [];
-  if (finishProcs.length === 0) return unitPrice;
-  const prices = finishProcs.map(p => parseFloat(p.price ?? "0") || 0).sort((a, b) => a - b);
-  const extras = prices.slice(1).reduce((s, p) => s + p, 0); // cheapest is included
-  return unitPrice + extras;
+  // unit_price is the all-in agreed customer price — garment + all decorations already included
+  return item.unit_price ? parseFloat(item.unit_price) : 0;
 }
 
 interface Movement {

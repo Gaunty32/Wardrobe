@@ -526,7 +526,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
   // qty: the actual per-size quantity (used for the order line itself).
   const resolveItemPricing = (wi: any, qty: number, qtyForBreaks?: number): { garmentPrice: number; processLines: ProcessLine[]; unitPrice: number } => {
     const breakQty = qtyForBreaks ?? qty;
-    const finishProcs = processes.filter((p: any) => p.finish_id === wi.finish_id);
+    const finishProcs = processes.filter((p: any) => Number(p.finish_id) === Number(wi.finish_id));
 
     // Special price → total all-in price, all processes included
     if (wi.special_price != null && wi.special_price !== "") {
