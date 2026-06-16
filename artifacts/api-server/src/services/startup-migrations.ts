@@ -1357,6 +1357,8 @@ export async function runStartupMigrations(): Promise<void> {
   // phantom-requeue migration skipped it because "a PO exists".  The item ends up
   // showing as "All stock in" in Production even though it hasn't arrived.
   // Safe to re-run: becomes a no-op once the PO is fully delivered.
+  // GUARD: never re-queue items that are already covered by a fully-delivered PO line —
+  // those items genuinely have their stock and must not be sent back to purchasing.
   await db.execute(sql`
     UPDATE order_items oi
     SET purchase_required  = true,
@@ -1379,6 +1381,15 @@ export async function runStartupMigrations(): Promise<void> {
           AND (poi.order_item_id = oi.id
                OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
       )
+      AND NOT EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        JOIN purchase_orders po2 ON po2.id = poi.po_id
+        WHERE po2.status = 'delivered'
+          AND poi.quantity_delivered >= poi.quantity_ordered
+          AND poi.quantity_ordered > 0
+          AND (poi.order_item_id = oi.id
+               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
+      )
   `);
   console.log("[startup] Re-queued allocated-but-outstanding PO items for purchasing");
 
@@ -1386,6 +1397,7 @@ export async function runStartupMigrations(): Promise<void> {
   // outstanding PO regardless of product stock_quantity (the earlier pass above
   // only fires when stock_quantity is already low; this catches cases where the
   // stock figure looks OK but the PO hasn't been delivered yet).
+  // GUARD: never touch items already covered by a fully-delivered PO line.
   {
     const { rowCount: broaderCount } = await db.execute(sql`
       UPDATE order_items oi
@@ -1400,6 +1412,15 @@ export async function runStartupMigrations(): Promise<void> {
         AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
         AND NOT EXISTS (
           SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po2 ON po2.id = poi.po_id
+          WHERE po2.status = 'delivered'
+            AND poi.quantity_delivered >= poi.quantity_ordered
+            AND poi.quantity_ordered > 0
+            AND (poi.order_item_id = oi.id
+                 OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
         )
         AND (
           EXISTS (
@@ -1993,6 +2014,7 @@ export async function refreshProductIssues(): Promise<void> {
   // delivered (quantity_delivered >= quantity_ordered). This catches cases where the delivery
   // was recorded but allocatePODelivery() was never triggered (e.g. direct quantity edits,
   // or the item had a direct order_item_id link that the "broken links" migration skipped).
+  // Covers both direct order_item_id links AND consolidated source_order_item_ids JSON arrays.
   // Plain items (no finish) go to 'complete'; decorated items go to 'allocated' for picking.
   await db.execute(sql`
     UPDATE order_items oi
@@ -2000,12 +2022,16 @@ export async function refreshProductIssues(): Promise<void> {
         purchase_quantity  = NULL,
         stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
         stock_allocated_at = NOW()
-    FROM purchase_order_items poi
-    WHERE poi.order_item_id = oi.id
-      AND poi.quantity_delivered >= poi.quantity_ordered
-      AND poi.quantity_ordered > 0
-      AND oi.purchase_required = true
-      AND COALESCE(oi.stock_status, '') NOT IN ('in_production', 'complete', 'allocated')
+    WHERE oi.purchase_required = true
+      AND EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.po_id
+        WHERE po.status = 'delivered'
+          AND poi.quantity_delivered >= poi.quantity_ordered
+          AND poi.quantity_ordered > 0
+          AND (poi.order_item_id = oi.id
+               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
+      )
   `);
   console.log("[startup] Safety Net D: allocated items on fully-delivered PO lines");
 
