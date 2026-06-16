@@ -538,8 +538,8 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate, onDueDateCh
             <TableHead className="font-semibold text-white">Colour</TableHead>
             {allSizes.map((s) => <TableHead key={s} className="text-center font-semibold text-white">{s}</TableHead>)}
             <TableHead className="text-center font-semibold text-white">Total</TableHead>
-            {showDueDateCol && <TableHead className="font-semibold text-white text-xs whitespace-nowrap">Due Date</TableHead>}
-            {onDeleteLine && <TableHead className="w-8" />}
+            {showDueDateCol && <TableHead className="font-semibold text-white text-xs whitespace-nowrap w-24">Due</TableHead>}
+            {onDeleteLine && <TableHead className="w-6 min-w-[1.5rem]" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -612,29 +612,29 @@ function POMatrixView({ items, currency, onDeleteLine, onLineUpdate, onDueDateCh
                       })}
                       <TableCell className="text-center font-bold">{rowTotal}</TableCell>
                       {showDueDateCol && (
-                        <TableCell className="p-1.5">
-                          <div className="flex items-center gap-1 min-w-[130px]">
+                        <TableCell className="p-1 w-24">
+                          <div className="flex items-center gap-0.5">
                             <input
                               type="date"
                               value={rowDueDate}
                               onChange={e => handleRowDueDateChange(rowKey, rowIds, e.target.value)}
-                              className="h-7 w-28 text-xs rounded border border-input bg-background px-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                              className="h-6 w-20 text-[10px] rounded border border-input bg-background px-1 focus:outline-none focus:ring-1 focus:ring-primary"
                               title="Set backorder due date for this row"
                             />
                             {rowDueDate && (
                               <button
                                 type="button"
                                 onClick={() => handleRowDueDateClear(rowKey, rowIds)}
-                                className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                                className="h-4 w-4 flex items-center justify-center rounded text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
                                 title="Clear due date"
                               >
-                                <X className="w-3 h-3" />
+                                <X className="w-2.5 h-2.5" />
                               </button>
                             )}
                           </div>
                           {rowDueDate && (
-                            <span className="inline-flex items-center gap-0.5 mt-0.5 text-[10px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">
-                              <CalendarDays className="w-2.5 h-2.5" /> Backorder
+                            <span className="inline-flex items-center gap-0.5 mt-0.5 text-[9px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-px">
+                              <CalendarDays className="w-2 h-2" /> Backorder
                             </span>
                           )}
                         </TableCell>
