@@ -178,7 +178,7 @@ schedule("0 9 * * *", async () => {
 schedule("* * * * *", async () => {
   try {
     const due = await db
-      .select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber })
+      .select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber, invoiceScheduledSendAt: ordersTable.invoiceScheduledSendAt })
       .from(ordersTable)
       .where(
         and(
@@ -189,22 +189,32 @@ schedule("* * * * *", async () => {
       );
 
     for (const order of due) {
-      try {
-        // Clear schedule first so a retry loop can't double-fire
-        await db.update(ordersTable)
-          .set({ invoiceScheduledSendAt: null, updatedAt: new Date() })
-          .where(eq(ordersTable.id, order.id));
+      // Atomically claim by clearing schedule — prevents double-fire if two instances run.
+      // On failure below we restore it so the next tick will retry.
+      await db.update(ordersTable)
+        .set({ invoiceScheduledSendAt: null, updatedAt: new Date() })
+        .where(eq(ordersTable.id, order.id));
 
+      try {
         await sendInvoiceEmail(order.id);
         console.log(`[invoice-scheduler] Sent scheduled invoice for ${order.orderNumber}`);
 
         try {
           await postInvoiceToXero(order.id);
         } catch {
-          // Xero not connected — non-fatal
+          // Xero not connected — non-fatal; order will appear in "To Post to Xero"
         }
       } catch (err) {
         console.error(`[invoice-scheduler] Failed to send invoice for ${order.orderNumber}:`, err);
+        // Restore the original scheduled time so the job retries on the next tick.
+        // Leave a short delay (2 min) to avoid hammering a broken service.
+        const retryAt = new Date(Date.now() + 2 * 60 * 1000);
+        await db.update(ordersTable)
+          .set({ invoiceScheduledSendAt: retryAt, updatedAt: new Date() })
+          .where(eq(ordersTable.id, order.id))
+          .catch((restoreErr: unknown) => {
+            console.error(`[invoice-scheduler] Could not restore schedule for ${order.orderNumber}:`, restoreErr);
+          });
       }
     }
   } catch (err) {
