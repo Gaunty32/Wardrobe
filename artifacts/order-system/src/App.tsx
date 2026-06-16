@@ -89,8 +89,8 @@ import StaffLogin from "@/pages/StaffLogin";
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: true,
-      staleTime: 0,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
     }
   }
 });
