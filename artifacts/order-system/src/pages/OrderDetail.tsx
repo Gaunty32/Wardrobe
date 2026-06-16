@@ -849,7 +849,12 @@ export default function OrderDetail() {
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["pack-status", orderId] });
       queryClient.invalidateQueries({ queryKey: ["order-logs", orderId] });
-      toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Order added to Pre-Production." });
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey({ id: order.id }) });
+      if (data.worksheetNumber) {
+        toast({ title: `Worksheet ${data.worksheetNumber} created`, description: "Order added to Pre-Production." });
+      } else {
+        toast({ title: "Items marked as complete", description: "No decoration needed — items moved straight to dispatch." });
+      }
       setIsSendToProductionOpen(false);
       setProductionNotes("");
     },
