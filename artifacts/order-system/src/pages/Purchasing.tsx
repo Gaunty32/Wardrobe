@@ -1458,16 +1458,16 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
           All lines fully received — click <strong className="mx-1">Complete Delivery</strong> above to allocate stock to orders.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
+        <div className="overflow-x-auto overflow-y-auto rounded-lg border border-border max-h-[60vh]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10">
               <TableRow className="bg-slate-800 text-white">
-                <TableHead className="font-semibold text-white">Code</TableHead>
-                <TableHead className="font-semibold text-white">Colour</TableHead>
+                <TableHead className="font-semibold text-white bg-slate-800">Code</TableHead>
+                <TableHead className="font-semibold text-white bg-slate-800">Colour</TableHead>
                 {allSizes.map(s => (
-                  <TableHead key={s} className="text-center font-semibold text-white px-2 py-2.5">{s}</TableHead>
+                  <TableHead key={s} className="text-center font-semibold text-white px-2 py-2.5 bg-slate-800">{s}</TableHead>
                 ))}
-                <TableHead className="text-center font-semibold text-white">Rcvd/Ord</TableHead>
+                <TableHead className="text-center font-semibold text-white bg-slate-800">Rcvd/Ord</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
