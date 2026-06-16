@@ -153,11 +153,11 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
       text-align: center;
       font-size: 10pt;
       font-weight: 700;
-      color: #1e3a5f;
+      color: #000;
       letter-spacing: .06em;
       text-transform: uppercase;
       padding: 5pt 0 4pt;
-      border-top: 1.5pt solid #1e3a5f;
+      border-top: 1.5pt solid #000;
     }
     .w-footer {
       padding-top: 3pt;
