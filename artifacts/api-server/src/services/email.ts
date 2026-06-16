@@ -845,7 +845,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     const footY = pageH - margin - 16;
     doc.fontSize(6.5).fillColor("#9ca3af").font("Helvetica")
       .text(
-        `Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE  ·  ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk  ·  www.selectbranding.co.uk`,
+        `Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE  ·  ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk  ·  www.selectbranding.co.uk  ·  VAT No. 514880485`,
         margin, footY, { align: "center", width: contentW, lineBreak: false }
       );
 
@@ -1098,7 +1098,7 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
     const footY = pageH - margin - 16;
     doc.fontSize(6.5).fillColor("#9ca3af").font("Helvetica")
       .text(
-        `Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE  ·  ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk  ·  www.selectbranding.co.uk`,
+        `Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds LS13 3HE  ·  ${SBS_PHONE_DISPLAY}  ·  info@selectbranding.co.uk  ·  www.selectbranding.co.uk  ·  VAT No. 514880485`,
         margin, footY, { align: "center", width: contentW, lineBreak: false }
       );
 
