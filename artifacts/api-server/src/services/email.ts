@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
-import { db, settingsTable, ordersTable, orderItemsTable, customersTable, customerEmployeesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, settingsTable, ordersTable, orderItemsTable, customersTable, customerEmployeesTable, customerDeliveryAddressesTable } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
 import { getResendClient } from "./resend-client.js";
 import { ObjectStorageService } from "../lib/objectStorage.js";
@@ -513,6 +513,8 @@ export interface AckOrderData {
   /** When true all VAT is suppressed on the PDF (Channel Islands / zero-rated customers) */
   zeroVat?: boolean;
   items: AckOrderItem[];
+  /** When set (multi-address orders), items are grouped and rendered under per-address section headers */
+  deliveryGroups?: Array<{ addressLabel: string; addressText: string; items: AckOrderItem[] }>;
 }
 
 export async function generateOrderAcknowledgementPdf(order: AckOrderData): Promise<Buffer> {
@@ -603,42 +605,16 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       bundleRef: string | null;
       isBundleHeader: boolean;
     };
-    const groupKeys: string[] = [];
-    const groups = new Map<string, Group>();
+
+    // Collect all items across all delivery groups (or fall back to order.items)
+    const allItemsFlat: AckOrderItem[] = order.deliveryGroups?.length
+      ? order.deliveryGroups.flatMap(g => g.items)
+      : order.items;
+
     const allSizes: string[] = [];
-
-    const sortedItems = [...order.items].sort((a, b) => {
-      const aB = !!(a.bundleRef), bB = !!(b.bundleRef);
-      if (aB !== bB) return aB ? -1 : 1;
-      if (aB && bB) {
-        const rc = (a.bundleRef ?? "").localeCompare(b.bundleRef ?? "");
-        if (rc !== 0) return rc;
-        if (a.isBundleHeader !== b.isBundleHeader) return a.isBundleHeader ? -1 : 1;
-      }
-      return ((a.sku ?? a.productName ?? "").toLowerCase()).localeCompare(((b.sku ?? b.productName ?? "").toLowerCase()));
-    });
-
-    for (const item of sortedItems) {
-      // Bundle items get dedicated group keys so they preserve ordering and get special styling
-      const gk = item.bundleRef
-        ? (item.isBundleHeader
-            ? `__BDL_HDR__:${item.bundleRef}`
-            : `__BDL_CMP__:${item.bundleRef}:${item.productName}||${item.finishName ?? ""}`)
-        : `${item.productName}||${item.finishName ?? ""}||${item.recipientName ?? ""}`;
-      if (!groups.has(gk)) {
-        groupKeys.push(gk);
-        groups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, recipientName: item.recipientName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0, vatRate: item.vatRate ?? 0.20, bundleRef: item.bundleRef ?? null, isBundleHeader: item.isBundleHeader ?? false });
-      }
-      const g = groups.get(gk)!;
-      const c = item.colour ?? "—";
+    for (const item of allItemsFlat) {
       const s = normalizeSize(item.size ?? "One Size");
-      if (!g.colours.includes(c)) g.colours.push(c);
-      if (!g.sizes.includes(s)) g.sizes.push(s);
-      // Exclude bundle header items from the column-width calculation — they render without matrix rows
       if (!item.isBundleHeader && !allSizes.includes(s)) allSizes.push(s);
-      if (!g.qty.has(c)) g.qty.set(c, new Map());
-      g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantity);
-      g.lineTotal += item.lineTotal;
     }
     allSizes.sort((a, b) => {
       const ai = SIZE_ORDER.indexOf(a); const bi = SIZE_ORDER.indexOf(b);
@@ -649,17 +625,13 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
 
     const tableStartY = infoY + 26;
     const rowH = 13;
-    // Give the header enough height to wrap two-word sizes like "8/Long Sleeve"
     const tblHdrH = 22;
-
     const colourW    = 76;
     const unitPriceW = 44;
     const totalW     = 48;
     const qtyW       = 28;
-    // Size columns: cap at 36pt each so they don't get absurdly wide with few sizes
     const sizeColW   = allSizes.length > 0 ? Math.min(36, Math.floor((contentW * 0.28) / allSizes.length)) : 36;
     const sizeW      = sizeColW * Math.max(allSizes.length, 1);
-    // itemName absorbs all remaining space so the table always spans the full content width
     const itemNameW  = contentW - colourW - sizeW - qtyW - unitPriceW - totalW;
     const tableW     = contentW;
 
@@ -681,32 +653,63 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     let y = tableStartY + tblHdrH;
     let rowAlt = false;
 
-    for (const gk of groupKeys) {
-      const g = groups.get(gk)!;
-
-      // ── Bundle header row — spans full width, SBS navy, no matrix columns ──
-      if (g.isBundleHeader) {
-        const bundleQty = [...g.qty.values()].reduce((s, m) => s + [...m.values()].reduce((a, b) => a + b, 0), 0);
-        doc.rect(margin, y, tableW, rowH + 3).fill("#1e3a5f");
-        doc.fillColor("#94a3b8").fontSize(6.5).font("Helvetica-Bold").text("BUNDLE", margin + 6, y + 4);
-        const bundleLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
-        doc.fillColor("#ffffff").fontSize(7).font("Helvetica-Bold")
-          .text(bundleLabel, margin + 52, y + 4, { width: tableW - 52 - totalW - unitPriceW - qtyW - 6 });
-        doc.fillColor("#94a3b8").font("Helvetica").fontSize(7)
-          .text(`× ${bundleQty}`, margin + tableW - totalW - unitPriceW - qtyW, y + 4, { width: qtyW - 2, align: "center" });
-        doc.text(`£${g.unitPrice.toFixed(2)}`, margin + tableW - totalW - unitPriceW, y + 4, { width: unitPriceW - 2, align: "right" });
-        doc.fillColor("#ffffff").font("Helvetica-Bold")
-          .text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 4, { width: totalW - 3, align: "right" });
-        y += rowH + 3;
-        if (y > pageH - 120) { doc.addPage(); y = margin; drawTableHeader(y); y += tblHdrH; rowAlt = false; }
-        continue;
+    // Helper: build groups from an item list and render them into the table
+    const renderItems = (itemList: AckOrderItem[]) => {
+      const rGroupKeys: string[] = [];
+      const rGroups = new Map<string, Group>();
+      const sortedGItems = [...itemList].sort((a, b) => {
+        const aB = !!(a.bundleRef), bB = !!(b.bundleRef);
+        if (aB !== bB) return aB ? -1 : 1;
+        if (aB && bB) {
+          const rc = (a.bundleRef ?? "").localeCompare(b.bundleRef ?? "");
+          if (rc !== 0) return rc;
+          if (a.isBundleHeader !== b.isBundleHeader) return a.isBundleHeader ? -1 : 1;
+        }
+        return ((a.sku ?? a.productName ?? "").toLowerCase()).localeCompare(((b.sku ?? b.productName ?? "").toLowerCase()));
+      });
+      for (const item of sortedGItems) {
+        const gk = item.bundleRef
+          ? (item.isBundleHeader
+              ? `__BDL_HDR__:${item.bundleRef}`
+              : `__BDL_CMP__:${item.bundleRef}:${item.productName}||${item.finishName ?? ""}`)
+          : `${item.productName}||${item.finishName ?? ""}||${item.recipientName ?? ""}`;
+        if (!rGroups.has(gk)) {
+          rGroupKeys.push(gk);
+          rGroups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, recipientName: item.recipientName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0, vatRate: item.vatRate ?? 0.20, bundleRef: item.bundleRef ?? null, isBundleHeader: item.isBundleHeader ?? false });
+        }
+        const g = rGroups.get(gk)!;
+        const c = item.colour ?? "—";
+        const s = normalizeSize(item.size ?? "One Size");
+        if (!g.colours.includes(c)) g.colours.push(c);
+        if (!g.sizes.includes(s)) g.sizes.push(s);
+        if (!g.qty.has(c)) g.qty.set(c, new Map());
+        g.qty.get(c)!.set(s, (g.qty.get(c)!.get(s) ?? 0) + item.quantity);
+        g.lineTotal += item.lineTotal;
       }
 
-      const isBundleComp = !!(g.bundleRef);
+      for (const gk of rGroupKeys) {
+        const g = rGroups.get(gk)!;
 
-      // Product name row (taller when finish / recipient / vat note is present)
-      const hasVatNote = g.vatRate !== 0.20;
-      const hasSubLine = !!(g.finishName || g.recipientName || hasVatNote);
+        if (g.isBundleHeader) {
+          const bundleQty = [...g.qty.values()].reduce((s, m) => s + [...m.values()].reduce((a, b) => a + b, 0), 0);
+          doc.rect(margin, y, tableW, rowH + 3).fill("#1e3a5f");
+          doc.fillColor("#94a3b8").fontSize(6.5).font("Helvetica-Bold").text("BUNDLE", margin + 6, y + 4);
+          const bundleLabel = g.sku ? `${g.sku}  ${g.productName}` : g.productName;
+          doc.fillColor("#ffffff").fontSize(7).font("Helvetica-Bold")
+            .text(bundleLabel, margin + 52, y + 4, { width: tableW - 52 - totalW - unitPriceW - qtyW - 6 });
+          doc.fillColor("#94a3b8").font("Helvetica").fontSize(7)
+            .text(`× ${bundleQty}`, margin + tableW - totalW - unitPriceW - qtyW, y + 4, { width: qtyW - 2, align: "center" });
+          doc.text(`£${g.unitPrice.toFixed(2)}`, margin + tableW - totalW - unitPriceW, y + 4, { width: unitPriceW - 2, align: "right" });
+          doc.fillColor("#ffffff").font("Helvetica-Bold")
+            .text(`£${g.lineTotal.toFixed(2)}`, margin + tableW - totalW, y + 4, { width: totalW - 3, align: "right" });
+          y += rowH + 3;
+          if (y > pageH - 120) { doc.addPage(); y = margin; drawTableHeader(y); y += tblHdrH; rowAlt = false; }
+          continue;
+        }
+
+        const isBundleComp = !!(g.bundleRef);
+        const hasVatNote = g.vatRate !== 0.20;
+        const hasSubLine = !!(g.finishName || g.recipientName || hasVatNote);
       const productRowH = hasSubLine ? rowH + 9 : rowH;
       doc.rect(margin, y, tableW, productRowH).fill(isBundleComp ? "#f5f7fa" : "#f0f4f8");
       doc.fillColor("#111827").fontSize(7).font("Helvetica-Bold");
@@ -767,6 +770,20 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
         y += tblHdrH;
         rowAlt = false;
       }
+    }
+    };  // end renderItems
+
+    if (order.deliveryGroups && order.deliveryGroups.length > 1) {
+      for (const dg of order.deliveryGroups) {
+        const dgLabel = dg.addressLabel ? `${dg.addressLabel}  ·  ${dg.addressText}` : dg.addressText;
+        doc.rect(margin, y, tableW, rowH + 3).fill("#78350f");
+        doc.fillColor("#fef3c7").fontSize(6).font("Helvetica-Bold").text("DELIVER TO", margin + 6, y + 4, { width: 62 });
+        doc.fillColor("#fffbeb").fontSize(7).font("Helvetica").text(dgLabel, margin + 68, y + 4, { width: tableW - 74 });
+        y += rowH + 3;
+        renderItems(dg.items);
+      }
+    } else {
+      renderItems(order.items);
     }
 
     // ── Totals ────────────────────────────────────────────────────────────────
@@ -2259,6 +2276,8 @@ interface InvoiceData {
   poNumber?: string | null;
   /** Items not yet dispatched — shown in an amber "To Follow" section, NOT included in totals */
   toFollowItems?: InvoiceToFollowItem[];
+  /** When set, a delivery address breakdown is appended after the To-Follow section */
+  deliveryGroups?: Array<{ addressLabel: string; addressText: string; items: InvoiceLineItem[] }>;
 }
 
 export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
@@ -2574,6 +2593,63 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       y += 8;
     }
 
+    // ── Per-address delivery breakdown (multi-address orders) ────────────────
+    if (data.deliveryGroups && data.deliveryGroups.length > 1) {
+      y += 12;
+      if (y + 60 > PAGE_H - 80) { doc.addPage(); y = MARGIN; }
+
+      const DA_HDR_H = 24;
+      doc.rect(MARGIN, y, W, DA_HDR_H).fill("#1e3a5f");
+      doc.fillColor("white").fontSize(9).font("Helvetica-Bold")
+        .text("DELIVERY ADDRESS BREAKDOWN", MARGIN + 8, y + 7, { width: W / 2, lineBreak: false });
+      doc.fillColor("#94a3b8").fontSize(8).font("Helvetica")
+        .text("Items grouped by delivery address for this order.", MARGIN + 8, y + 8, { width: W - 16, align: "right", lineBreak: false });
+      y += DA_HDR_H;
+
+      const DA_COL_DESC = Math.floor(W * 0.42);
+      const DA_COL_CS   = Math.floor(W * 0.2);
+      const DA_COL_QTY  = Math.floor(W * 0.08);
+      const DA_COL_TOT  = W - DA_COL_DESC - DA_COL_CS - DA_COL_QTY;
+
+      for (const dg of data.deliveryGroups) {
+        if (y + 50 > PAGE_H - 80) { doc.addPage(); y = MARGIN; }
+        const dgLabel = dg.addressLabel ? `${dg.addressLabel}  ·  ${dg.addressText}` : dg.addressText;
+        doc.rect(MARGIN, y, W, 20).fill("#fffbeb");
+        doc.fillColor("#78350f").fontSize(8).font("Helvetica-Bold")
+          .text(dgLabel, MARGIN + 6, y + 6, { width: W - 12, lineBreak: false, ellipsis: true });
+        y += 20;
+
+        doc.rect(MARGIN, y, W, 16).fill("#fef3c7");
+        doc.fillColor("#92400e").fontSize(7).font("Helvetica-Bold");
+        doc.text("Item",           MARGIN + 6, y + 4, { width: DA_COL_DESC - 6, lineBreak: false });
+        doc.text("Colour / Size",  MARGIN + 6 + DA_COL_DESC, y + 4, { width: DA_COL_CS, lineBreak: false });
+        doc.text("Qty",            MARGIN + 6 + DA_COL_DESC + DA_COL_CS, y + 4, { width: DA_COL_QTY, align: "right", lineBreak: false });
+        doc.text("Total",          MARGIN + 6 + DA_COL_DESC + DA_COL_CS + DA_COL_QTY, y + 4, { width: DA_COL_TOT - 6, align: "right", lineBreak: false });
+        y += 16;
+
+        let daAlt = false;
+        for (const item of dg.items) {
+          if (item.orderRef !== undefined) continue;
+          if (y + ROW_H > PAGE_H - 80) { doc.addPage(); y = MARGIN; }
+          if (daAlt) doc.rect(MARGIN, y, W, ROW_H).fill("#fffbeb");
+          const daDesc = item.productName + (item.finishName ? ` [${item.finishName}]` : "") + (item.recipientName ? ` — ${item.recipientName}` : "");
+          const daCs   = [item.colour, item.size].filter(Boolean).join(" / ") || "—";
+          doc.fillColor(TEXT).fontSize(8).font("Helvetica")
+            .text(daDesc, MARGIN + 6, y + 6, { width: DA_COL_DESC - 6, lineBreak: false, ellipsis: true });
+          doc.fillColor(DIM)
+            .text(daCs, MARGIN + 6 + DA_COL_DESC, y + 6, { width: DA_COL_CS, lineBreak: false, ellipsis: true });
+          doc.fillColor(TEXT).font("Helvetica-Bold")
+            .text(String(item.quantity), MARGIN + 6 + DA_COL_DESC + DA_COL_CS, y + 6, { width: DA_COL_QTY, align: "right", lineBreak: false });
+          doc.font("Helvetica")
+            .text(`£${parseFloat(item.lineTotal).toFixed(2)}`, MARGIN + 6 + DA_COL_DESC + DA_COL_CS + DA_COL_QTY, y + 6, { width: DA_COL_TOT - 6, align: "right", lineBreak: false });
+          doc.rect(MARGIN, y + ROW_H - 1, W, 1).fill("#fde68a");
+          y += ROW_H;
+          daAlt = !daAlt;
+        }
+        y += 8;
+      }
+    }
+
     // ── Footer ────────────────────────────────────────────────────────────────
     doc.rect(0, PAGE_H - 36, PAGE_W, 36).fill(DARK);
     // Zero the bottom margin so PDFKit doesn't auto-insert a new page for text
@@ -2596,7 +2672,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
 // Helper to build invoice data from the DB (shared between send + preview)
 export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   order: typeof ordersTable.$inferSelect;
-  items: (typeof orderItemsTable.$inferSelect & { employeeName: string | null })[];
+  items: (typeof orderItemsTable.$inferSelect & { employeeName: string | null; empDeliveryAddressId: number | null })[];
   customerEmail: string | null;
   contactFirstName: string | null;
   customerLogoDataUrl: string | null;
@@ -2604,6 +2680,7 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   customerAddress: string | null;
   customerCity: string | null;
   customerPostcode: string | null;
+  invoiceDeliveryGroups: Array<{ addressLabel: string; addressText: string; items: InvoiceLineItem[] }> | undefined;
 }> {
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) throw new Error("Order not found.");
@@ -2620,6 +2697,7 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
     employeeName: r.employee
       ? [r.employee.firstName, r.employee.lastName].filter(Boolean).join(" ") || null
       : (r.item.recipientName ?? null),
+    empDeliveryAddressId: r.employee?.deliveryAddressId ?? null,
   }));
 
   const items = order.status === "part_shipped"
@@ -2647,13 +2725,58 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
     if (customer?.logoUrl) customerLogoDataUrl = await fetchLogoDataUrl(customer.logoUrl);
   }
 
-  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode };
+  // Compute per-address delivery groups when employees have distinct delivery addresses
+  const getEffAddrId = (item: typeof items[0]) =>
+    item.empDeliveryAddressId ?? (order.deliveryAddressId ?? null);
+  const uniqueAddrIds = [...new Set(items.map(i => getEffAddrId(i)))];
+  let invoiceDeliveryGroups: Array<{ addressLabel: string; addressText: string; items: InvoiceLineItem[] }> | undefined;
+
+  if (uniqueAddrIds.length > 1) {
+    const addrIds = uniqueAddrIds.filter((id): id is number => id !== null);
+    const addrRows = addrIds.length > 0
+      ? await db.select().from(customerDeliveryAddressesTable).where(inArray(customerDeliveryAddressesTable.id, addrIds))
+      : [];
+    const addrMap = new Map(addrRows.map(a => [a.id, a]));
+
+    const groupMap = new Map<string, typeof items>();
+    for (const item of items) {
+      const effId = getEffAddrId(item);
+      const key = effId !== null ? String(effId) : "null";
+      if (!groupMap.has(key)) groupMap.set(key, []);
+      groupMap.get(key)!.push(item);
+    }
+    invoiceDeliveryGroups = [];
+    for (const [key, gItems] of groupMap) {
+      const addrId = key !== "null" ? Number(key) : null;
+      const addr = addrId !== null ? addrMap.get(addrId) : null;
+      const addressText = addr
+        ? [addr.line1, addr.line2, addr.city, addr.postcode].filter(Boolean).join(", ")
+        : "—";
+      invoiceDeliveryGroups.push({
+        addressLabel: addr?.label ?? "",
+        addressText,
+        items: gItems.map(i => ({
+          productName: i.productName,
+          colour: i.colour,
+          size: i.size,
+          finishName: i.finishName,
+          recipientName: i.employeeName,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice as string,
+          lineTotal: i.lineTotal as string,
+          vatRate: parseFloat(i.vatRate as string),
+        })),
+      });
+    }
+  }
+
+  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups };
 }
 
 export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: string }> {
   if (!isEmailConfigured) throw new Error("Email not configured. Go to Settings → Email to set up.");
 
-  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(orderId);
+  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups } = await buildInvoiceDataForOrder(orderId);
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
   // Always regenerate the Stripe payment link before sending so the amount
@@ -2755,6 +2878,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     })),
     totalAmount: order.totalAmount as string,
     notes: order.notes,
+    deliveryGroups: invoiceDeliveryGroups,
   });
 
   const result = await sendEmail({

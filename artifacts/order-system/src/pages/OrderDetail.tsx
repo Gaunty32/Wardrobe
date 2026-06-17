@@ -2513,6 +2513,21 @@ export default function OrderDetail() {
                     </div>
                   );
                 })()}
+                {((order as any).addressGroups?.length ?? 0) > 1 && (
+                  <div className="mt-3 pt-3 border-t space-y-2">
+                    <p className="text-xs font-semibold text-amber-700 flex items-center gap-1.5">
+                      <TriangleAlert className="w-3.5 h-3.5" />
+                      Multiple delivery addresses — documents will be split per address
+                    </p>
+                    {(order as any).addressGroups.map((g: any, i: number) => (
+                      <div key={i} className="text-xs bg-muted/40 rounded-md px-3 py-2 border border-border/40">
+                        <p className="font-medium text-foreground">{g.address?.label || [g.address?.line1, g.address?.city].filter(Boolean).join(", ")}</p>
+                        <p className="text-muted-foreground">{[g.address?.line1, g.address?.city, g.address?.postcode].filter(Boolean).join(", ")}</p>
+                        <p className="text-muted-foreground/60 mt-0.5">{g.itemIds?.length} item{(g.itemIds?.length ?? 0) !== 1 ? "s" : ""}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 

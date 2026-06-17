@@ -520,12 +520,43 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     }
   }
 
+  // Compute per-address groupings when employees have different delivery addresses
+  let addressGroups: Array<{ address: Record<string, unknown>; itemIds: number[] }> = [];
+  {
+    const itemEmpRows = (await db.execute(sql`
+      SELECT oi.id, e.delivery_address_id AS emp_addr_id
+      FROM order_items oi
+      LEFT JOIN customer_employees e ON e.id = oi.recipient_employee_id
+      WHERE oi.order_id = ${order.id}
+    `)).rows as Array<{ id: number; emp_addr_id: number | null }>;
+
+    const effectiveAddrMap = new Map<number, number[]>();
+    for (const r of itemEmpRows) {
+      const effId = r.emp_addr_id ?? order.deliveryAddressId ?? -1;
+      if (!effectiveAddrMap.has(effId)) effectiveAddrMap.set(effId, []);
+      effectiveAddrMap.get(effId)!.push(r.id);
+    }
+    if (effectiveAddrMap.size > 1) {
+      const addrIds = [...effectiveAddrMap.keys()].filter(id => id > 0);
+      if (addrIds.length > 0) {
+        const addrs = await db.select().from(customerDeliveryAddressesTable)
+          .where(inArray(customerDeliveryAddressesTable.id, addrIds));
+        const addrMap = new Map(addrs.map(a => [a.id, a as Record<string, unknown>]));
+        for (const [effId, itemIds] of effectiveAddrMap) {
+          const addr = addrMap.get(effId);
+          if (addr) addressGroups.push({ address: addr, itemIds });
+        }
+      }
+    }
+  }
+
   res.json({
     ...order,
     totalAmount: numericToFloat(order.totalAmount),
     deliveryAddress,
     customerEmail,
     customerMainAddress,
+    addressGroups,
     items: itemRows.map(({ item, catalogueProductName, productSku, supplierPrice, priceBreaks }) => {
       const raw = item as any;
       const qty = raw.quantity ?? 1;
@@ -1320,10 +1351,12 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       COALESCE(p.sku, b.sku)            AS sku,
       oi.colour, oi.size, oi.quantity, oi.unit_price, oi.line_total, oi.vat_rate,
       oi.recipient_name, oi.finish_name,
-      oi.bundle_ref, oi.is_bundle_header
+      oi.bundle_ref, oi.is_bundle_header,
+      e.delivery_address_id AS emp_delivery_address_id
     FROM order_items oi
-    LEFT JOIN products p ON p.id = oi.product_id
-    LEFT JOIN bundles  b ON b.id = oi.bundle_def_id
+    LEFT JOIN products          p ON p.id = oi.product_id
+    LEFT JOIN bundles           b ON b.id = oi.bundle_def_id
+    LEFT JOIN customer_employees e ON e.id = oi.recipient_employee_id
     WHERE oi.order_id = ${params.data.id}
     ORDER BY oi.id
   `);
@@ -1340,7 +1373,49 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     finishName: r.finish_name ?? null,
     bundleRef: r.bundle_ref ?? null,
     isBundleHeader: r.is_bundle_header ?? false,
+    empDeliveryAddressId: r.emp_delivery_address_id ? Number(r.emp_delivery_address_id) : null,
   }));
+
+  // Build per-address delivery groups for the PDF when employees have distinct delivery addresses
+  type AckItem = {
+    productName: string; sku: string | null; colour: string | null; size: string | null;
+    quantity: number; unitPrice: number; lineTotal: number; vatRate: number;
+    recipientName: string | null; finishName: string | null;
+    bundleRef: string | null; isBundleHeader: boolean;
+  };
+  let ackDeliveryGroups: Array<{ addressLabel: string; addressText: string; items: AckItem[] }> | undefined;
+  const getEffAddrId = (item: typeof items[0]) =>
+    item.empDeliveryAddressId ?? (order.deliveryAddressId ? order.deliveryAddressId : null);
+  const uniqueAddrIds = [...new Set(items.map(i => getEffAddrId(i)))];
+  if (uniqueAddrIds.length > 1 || (uniqueAddrIds.length === 1 && uniqueAddrIds[0] !== null)) {
+    const addrIds = uniqueAddrIds.filter((id): id is number => id !== null);
+    const addrRows = addrIds.length > 0
+      ? await db.select().from(customerDeliveryAddressesTable).where(inArray(customerDeliveryAddressesTable.id, addrIds))
+      : [];
+    const addrMap = new Map(addrRows.map(a => [a.id, a]));
+    if (uniqueAddrIds.length > 1) {
+      const groupMap = new Map<string | null, AckItem[]>();
+      for (const item of items) {
+        const effId = getEffAddrId(item);
+        const key = effId !== null ? String(effId) : "null";
+        if (!groupMap.has(key)) groupMap.set(key, []);
+        groupMap.get(key)!.push(item);
+      }
+      ackDeliveryGroups = [];
+      for (const [key, gItems] of groupMap) {
+        const addrId = key !== "null" ? Number(key) : null;
+        const addr = addrId !== null ? addrMap.get(addrId) : null;
+        const addressText = addr
+          ? [addr.line1, addr.line2, addr.city, addr.postcode].filter(Boolean).join(", ")
+          : (order.deliveryAddressId ? "Order delivery address" : "—");
+        ackDeliveryGroups.push({
+          addressLabel: addr?.label ?? "",
+          addressText,
+          items: gItems,
+        });
+      }
+    }
+  }
 
   // Resolve customer email and address
   const body = z.object({ toEmail: z.string().optional(), previewOnly: z.boolean().optional() }).safeParse(req.body);
@@ -1466,13 +1541,14 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       customerAddress,
       customerCity,
       customerPostcode,
-      deliveryAddress: deliveryAddressText,
+      deliveryAddress: ackDeliveryGroups ? null : deliveryAddressText,
       shippingMethod: order.shippingMethod ?? null,
       customerLogoBuffer,
       totalAmount: numericToFloat(order.totalAmount),
       shippingAmount: numericToFloat(order.carriageAmount),
       zeroVat: sendAckZeroVat,
       items: mappedItems,
+      deliveryGroups: ackDeliveryGroups,
     });
     attachments = [{ filename: `Order-Acknowledgement-${order.orderNumber}.pdf`, content: pdfBuffer, contentType: "application/pdf" }];
   } catch (_err) {
@@ -2647,6 +2723,30 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     }
   }
 
+  // Multi-address: group items by their effective delivery address ID
+  const getEffAddrId = (item: typeof allItems[0]): number | null =>
+    (item.employee as any)?.deliveryAddressId ?? order.deliveryAddressId ?? null;
+
+  const addrGroupMap = new Map<number | null, { dispItems: typeof allItems; pendItems: typeof allItems }>();
+  for (const item of [...dispatchedItems, ...pendingItems]) {
+    const id = getEffAddrId(item);
+    if (!addrGroupMap.has(id)) addrGroupMap.set(id, { dispItems: [], pendItems: [] });
+  }
+  for (const item of dispatchedItems) { addrGroupMap.get(getEffAddrId(item))!.dispItems.push(item); }
+  for (const item of pendingItems) { addrGroupMap.get(getEffAddrId(item))!.pendItems.push(item); }
+  const isMultiAddr = addrGroupMap.size > 1;
+
+  // Fetch all delivery addresses referenced across all groups
+  const dnAddrById = new Map<number, typeof deliveryAddress>();
+  {
+    const idsNeeded = [...new Set([...addrGroupMap.keys()].filter((id): id is number => id != null && id > 0))];
+    if (idsNeeded.length > 0) {
+      const fetched = await db.select().from(customerDeliveryAddressesTable).where(inArray(customerDeliveryAddressesTable.id, idsNeeded));
+      for (const a of fetched) dnAddrById.set(a.id, a as typeof deliveryAddress);
+    }
+  }
+  if (deliveryAddress && order.deliveryAddressId) dnAddrById.set(order.deliveryAddressId, deliveryAddress);
+
   const backorderMap = new Map<number, { estimatedDueDate: string | null }>();
   if (pendingItems.length > 0) {
     const pendingIds = pendingItems.map(i => i.id);
@@ -2679,10 +2779,6 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
   const fmtDate = (d: Date | string | null | undefined) =>
     d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
 
-  const addrLines = deliveryAddress
-    ? [deliveryAddress.line1, deliveryAddress.line2, deliveryAddress.city, deliveryAddress.county, deliveryAddress.postcode, deliveryAddress.country].filter(Boolean)
-    : [customerPostalAddress, customerPostalCity, customerPostalPostcode].filter(Boolean);
-
   const empName = (item: typeof allItems[0]) => {
     if (item.employee) return [item.employee.firstName, item.employee.lastName].filter(Boolean).join(" ");
     return item.recipientName ?? null;
@@ -2690,18 +2786,6 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
 
   const isNamed = (item: typeof allItems[0]) =>
     item.recipientType === "person" && !!(item.recipientName || item.recipientEmployeeId);
-
-  const recipientGroups = new Map<string, { name: string; jobTitle: string | null; items: typeof allItems }>();
-  const stockItems: typeof allItems = [];
-  for (const item of dispatchedItems) {
-    if (isNamed(item)) {
-      const name = empName(item) ?? "Unknown";
-      if (!recipientGroups.has(name)) recipientGroups.set(name, { name, jobTitle: item.employee?.jobTitle ?? null, items: [] });
-      recipientGroups.get(name)!.items.push(item);
-    } else {
-      stockItems.push(item);
-    }
-  }
 
   const renderRow = (item: typeof allItems[0]) =>
     `<tr>
@@ -2711,57 +2795,130 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
       <td style="padding:5px 10px;border-bottom:1px solid #e5e7eb;font-size:10pt;text-align:center;font-weight:700;">${item.quantity}</td>
     </tr>`;
 
-  const groupRows = [...recipientGroups.values()].map(g =>
-    `<tr style="background:#e8edf5;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-      <td colspan="4" style="padding:5px 10px;font-size:10pt;border-bottom:1px solid #ccd5e0;font-weight:700;">${g.name}${g.jobTitle ? ` <span style="font-weight:normal;font-size:9pt;color:#555;"> — ${g.jobTitle}</span>` : ""}</td>
-    </tr>
-    ${g.items.map(renderRow).join("")}`
-  ).join("");
+  // Per-address sheet builder (used for both single and multi-address modes)
+  const buildSheetHtml = (effAddrId: number | null, dispItems: typeof allItems, pendItems: typeof allItems): string => {
+    const addrObj = effAddrId != null ? dnAddrById.get(effAddrId) : null;
+    const effAddrLines = addrObj
+      ? [addrObj.line1, addrObj.line2, addrObj.city, (addrObj as any).county ?? null, addrObj.postcode, addrObj.country].filter((x): x is string => !!x)
+      : [customerPostalAddress, customerPostalCity, customerPostalPostcode].filter((x): x is string => !!x);
+    const addrLabelLine = addrObj && (addrObj as any).label ? `<br><em style="color:#6b7280;font-size:9pt;">${(addrObj as any).label}</em>` : "";
+    const dtBlock = `<strong>${order.customerName ?? ""}</strong>${effAddrLines.length > 0 ? "<br>" + effAddrLines.join("<br>") + addrLabelLine : `<br><em style="color:#aaa">No delivery address</em>`}`;
 
-  const stockRows = stockItems.length > 0
-    ? `<tr style="background:#e8edf5;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-        <td colspan="4" style="padding:5px 10px;font-size:10pt;border-bottom:1px solid #ccd5e0;font-weight:700;">General Stock</td>
+    const rGroups = new Map<string, { name: string; jobTitle: string | null; items: typeof allItems }>();
+    const sItems: typeof allItems = [];
+    for (const item of dispItems) {
+      if (isNamed(item)) {
+        const name = empName(item) ?? "Unknown";
+        if (!rGroups.has(name)) rGroups.set(name, { name, jobTitle: item.employee?.jobTitle ?? null, items: [] });
+        rGroups.get(name)!.items.push(item);
+      } else { sItems.push(item); }
+    }
+    const gRows = [...rGroups.values()].map(g =>
+      `<tr style="background:#e8edf5;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+        <td colspan="4" style="padding:5px 10px;font-size:10pt;border-bottom:1px solid #ccd5e0;font-weight:700;">${g.name}${g.jobTitle ? ` <span style="font-weight:normal;font-size:9pt;color:#555;"> — ${g.jobTitle}</span>` : ""}</td>
       </tr>
-      ${stockItems.map(renderRow).join("")}`
-    : "";
+      ${g.items.map(renderRow).join("")}`
+    ).join("");
+    const sRows = sItems.length > 0
+      ? `<tr style="background:#e8edf5;-webkit-print-color-adjust:exact;print-color-adjust:exact;"><td colspan="4" style="padding:5px 10px;font-size:10pt;border-bottom:1px solid #ccd5e0;font-weight:700;">General Stock</td></tr>${sItems.map(renderRow).join("")}`
+      : "";
+    const totQty = dispItems.reduce((s, i) => s + i.quantity, 0);
+    const isPart = dispatchedIds !== null || pendItems.length > 0;
 
-  const totalQty = dispatchedItems.reduce((s, i) => s + i.quantity, 0);
+    const toFollow = pendItems.length > 0 ? `
+      <div style="margin-top:22px;border:2px solid #f59e0b;border-radius:6px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-inside:avoid;break-inside:avoid;">
+        <div style="background:#f59e0b;padding:8px 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+          <span style="font-size:11pt;font-weight:900;color:#fff;letter-spacing:.06em;text-transform:uppercase;">Items To Follow</span>
+          <span style="font-size:9pt;color:#fff;opacity:.9;margin-left:12px;">Outstanding items — will be dispatched as soon as they are available</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#fffbeb;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+              <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Item</th>
+              <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Colour</th>
+              <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Size</th>
+              <th style="padding:6px 10px;text-align:center;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Qty O/S</th>
+              <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Est. Due</th>
+              <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Named Wearer</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pendItems.map(item => {
+              const bo = backorderMap.get(item.id);
+              const recipient = empName(item);
+              return `<tr>
+                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.productName}${item.finishName ? ` <span style="color:#4f46e5;font-size:8.5pt;">(${item.finishName})</span>` : ""}</td>
+                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.colour ?? "—"}</td>
+                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.size ?? "—"}</td>
+                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;text-align:center;font-weight:700;">${item.quantity}</td>
+                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${bo?.estimatedDueDate ? fmtDate(bo.estimatedDueDate) : "<em style='color:#aaa'>TBC</em>"}</td>
+                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${recipient ?? "—"}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>` : "";
 
-  const isPartial = dispatchedIds !== null || pendingItems.length > 0;
-
-  const toFollowSection = pendingItems.length > 0 ? `
-    <div style="margin-top:22px;border:2px solid #f59e0b;border-radius:6px;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;page-break-inside:avoid;break-inside:avoid;">
-      <div style="background:#f59e0b;padding:8px 14px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-        <span style="font-size:11pt;font-weight:900;color:#fff;letter-spacing:.06em;text-transform:uppercase;">Items To Follow</span>
-        <span style="font-size:9pt;color:#fff;opacity:.9;margin-left:12px;">Outstanding items — will be dispatched as soon as they are available</span>
+    return `
+      ${isDraft ? `<div style="background:#dc2626;color:white;text-align:center;font-size:11pt;font-weight:900;letter-spacing:.14em;padding:7px 0;-webkit-print-color-adjust:exact;print-color-adjust:exact;">DRAFT — PARTIAL DISPATCH — NOT ALL ITEMS INCLUDED</div>` : ""}
+      <div style="background:#1e293b;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+        ${sbsLogoHtml}
+        <div style="text-align:center;">
+          <div style="font-size:14pt;font-weight:900;color:white;letter-spacing:.08em;text-transform:uppercase;">Delivery Note</div>
+          <div style="font-size:9pt;color:#94a3b8;margin-top:2px;font-family:monospace;">${order.orderNumber}</div>
+        </div>
+        ${custLogoHtml}
       </div>
-      <table style="width:100%;border-collapse:collapse;">
-        <thead>
-          <tr style="background:#fffbeb;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-            <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Item</th>
-            <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Colour</th>
-            <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Size</th>
-            <th style="padding:6px 10px;text-align:center;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Qty O/S</th>
-            <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Est. Due</th>
-            <th style="padding:6px 10px;text-align:left;font-size:8pt;color:#92400e;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #fde68a;">Named Wearer</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pendingItems.map(item => {
-            const bo = backorderMap.get(item.id);
-            const recipient = empName(item);
-            return `<tr>
-              <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.productName}${item.finishName ? ` <span style="color:#4f46e5;font-size:8.5pt;">(${item.finishName})</span>` : ""}</td>
-              <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.colour ?? "—"}</td>
-              <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.size ?? "—"}</td>
-              <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;text-align:center;font-weight:700;">${item.quantity}</td>
-              <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${bo?.estimatedDueDate ? fmtDate(bo.estimatedDueDate) : "<em style='color:#aaa'>TBC</em>"}</td>
-              <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${recipient ?? "—"}</td>
-            </tr>`;
-          }).join("")}
-        </tbody>
-      </table>
-    </div>` : "";
+      <div style="background:#1e3a5f;padding:10px 0 10px 18px;display:flex;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+        ${infoStripCols}
+      </div>
+      <div style="padding:18px 28px 0;">
+        <div style="display:flex;gap:32px;margin-bottom:16px;">
+          <div style="flex:1;">
+            <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:5px;">Deliver To</div>
+            <p style="font-size:10pt;line-height:1.6;">${dtBlock}</p>
+          </div>
+          <div style="flex:1;">
+            <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:5px;">Select Branding Solutions</div>
+            <p style="font-size:9pt;line-height:1.6;color:#555;">Spence Mills, Mill Lane<br>Leeds, LS13 3HE<br>info@selectbranding.co.uk<br>www.selectbranding.co.uk</p>
+          </div>
+        </div>
+        ${isPart ? `<div style="background:#1e293b;padding:7px 10px;margin-bottom:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;"><span style="font-size:10.5pt;font-weight:900;color:white;letter-spacing:.04em;text-transform:uppercase;">Items Delivered Now</span></div>` : ""}
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#1e293b;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+              <th style="padding:7px 10px;text-align:left;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Item</th>
+              <th style="padding:7px 10px;text-align:left;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Colour</th>
+              <th style="padding:7px 10px;text-align:left;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Size</th>
+              <th style="padding:7px 10px;text-align:center;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Qty</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${gRows}
+            ${sRows}
+            <tr style="border-top:2px solid #1e293b;">
+              <td colspan="3" style="padding:7px 10px;text-align:right;font-weight:700;font-size:10pt;">Total Items</td>
+              <td style="padding:7px 10px;text-align:center;font-weight:900;font-size:13pt;">${totQty}</td>
+            </tr>
+          </tbody>
+        </table>
+        ${toFollow}
+        <div style="margin-top:22px;display:flex;gap:40px;">
+          <div style="flex:1;border-top:1px solid #999;padding-top:5px;font-size:9pt;color:#555;">Packed by: ______________________</div>
+          <div style="flex:1;border-top:1px solid #999;padding-top:5px;font-size:9pt;color:#555;">Checked by: ______________________</div>
+          <div style="flex:1;border-top:1px solid #999;padding-top:5px;font-size:9pt;color:#555;">Date: ______________________</div>
+        </div>
+        ${shippingLabel ? `
+        <div style="margin-top:18px;background:#0f172a;border-radius:6px;padding:10px 18px;display:flex;align-items:center;gap:16px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+          <span style="font-size:7pt;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#64748b;flex-shrink:0;">Delivery Method</span>
+          <span style="font-size:15pt;font-weight:900;color:#fff;letter-spacing:.02em;">${shippingLabel}</span>
+        </div>` : ""}
+        <div style="margin-top:14px;margin-bottom:20px;font-size:8pt;color:#aaa;border-top:1px solid #e5e7eb;padding-top:8px;text-align:center;">
+          Please check contents carefully. Any discrepancies should be reported within 48 hours of receipt.${pendItems.length > 0 ? " Outstanding items will be dispatched as soon as they become available." : ""}<br>
+          Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, LS13 3HE · info@selectbranding.co.uk
+        </div>
+      </div>`;
+  };
 
   const infoCols: { label: string; value: string }[] = [
     { label: "Order Date", value: fmtDate(order.orderDate) },
@@ -2788,7 +2945,15 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     ? `<img src="${customerLogoDataUrl}" alt="${(order.customerName ?? "").replace(/"/g, "&quot;")}" style="height:44px;width:auto;max-width:130px;display:block;" />`
     : `<span></span>`;
 
-  const deliverToBlock = `<strong>${order.customerName ?? ""}</strong>${addrLines.length > 0 ? "<br>" + addrLines.join("<br>") : `<br><em style="color:#aaa">No delivery address</em>`}`;
+  // Build sheet(s): one per address group (single sheet for single-address orders)
+  const sheetsHtml = isMultiAddr
+    ? [...addrGroupMap.entries()].map(([effId, { dispItems, pendItems }]) =>
+        `<div style="background:white;width:210mm;box-shadow:0 4px 24px rgba(0,0,0,.15);">${buildSheetHtml(effId as number | null, dispItems, pendItems)}</div>`
+      ).join("")
+    : `<div id="sheet">${buildSheetHtml(
+        deliveryAddress && order.deliveryAddressId ? order.deliveryAddressId : null,
+        dispatchedItems, pendingItems
+      )}</div>`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -2803,13 +2968,14 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     #toolbar button{padding:7px 22px;border:none;border-radius:5px;font-size:13px;font-weight:700;cursor:pointer}
     #btn-print{background:#22c55e;color:white}
     #btn-close{background:rgba(255,255,255,.15);color:white}
-    #page{display:flex;justify-content:center;padding:28px 0 48px}
+    #page{display:flex;flex-direction:column;align-items:center;gap:24px;padding:28px 0 48px}
     #sheet{background:white;width:210mm;box-shadow:0 4px 24px rgba(0,0,0,.15)}
     @media print{
       #toolbar{display:none}
       body{background:white}
-      #page{padding:0}
-      #sheet{box-shadow:none;width:100%}
+      #page{padding:0;gap:0}
+      #sheet,#page>div{box-shadow:none;width:100%;page-break-after:always}
+      #sheet:last-child,#page>div:last-child{page-break-after:avoid}
       @page{size:A4;margin:12mm}
       *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
     }
@@ -2817,91 +2983,13 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
 </head>
 <body>
   <div id="toolbar">
-    <span class="title">📄 ${isDraft ? "DRAFT — " : ""}Delivery Note · ${order.orderNumber} · ${(order.customerName ?? "").replace(/</g, "&lt;")}</span>
+    <span class="title">📄 ${isDraft ? "DRAFT — " : ""}Delivery Note · ${order.orderNumber} · ${(order.customerName ?? "").replace(/</g, "&lt;")}${isMultiAddr ? ` · ${addrGroupMap.size} addresses` : ""}</span>
     <button id="btn-box" onclick="window.open('/api/orders/${orderId}/shipping-label','_blank')" style="background:#f59e0b;color:white">🏷 Print Box Label</button>
     <button id="btn-print" onclick="window.print()">🖨 Print Delivery Note</button>
     <button id="btn-close" onclick="window.close()">✕ Close</button>
   </div>
   <div id="page">
-    <div id="sheet">
-      ${isDraft ? `<div style="background:#dc2626;color:white;text-align:center;font-size:11pt;font-weight:900;letter-spacing:.14em;padding:7px 0;-webkit-print-color-adjust:exact;print-color-adjust:exact;">DRAFT — PARTIAL DISPATCH — NOT ALL ITEMS INCLUDED</div>` : ""}
-
-      <!-- Header bar -->
-      <div style="background:#1e293b;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-        ${sbsLogoHtml}
-        <div style="text-align:center;">
-          <div style="font-size:14pt;font-weight:900;color:white;letter-spacing:.08em;text-transform:uppercase;">Delivery Note</div>
-          <div style="font-size:9pt;color:#94a3b8;margin-top:2px;font-family:monospace;">${order.orderNumber}</div>
-        </div>
-        ${custLogoHtml}
-      </div>
-
-      <!-- Info strip -->
-      <div style="background:#1e3a5f;padding:10px 0 10px 18px;display:flex;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-        ${infoStripCols}
-      </div>
-
-      <!-- Body -->
-      <div style="padding:18px 28px 0;">
-
-        <!-- Deliver To -->
-        <div style="display:flex;gap:32px;margin-bottom:16px;">
-          <div style="flex:1;">
-            <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:5px;">Deliver To</div>
-            <p style="font-size:10pt;line-height:1.6;">${deliverToBlock}</p>
-          </div>
-          <div style="flex:1;">
-            <div style="font-size:7.5pt;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#888;margin-bottom:5px;">Select Branding Solutions</div>
-            <p style="font-size:9pt;line-height:1.6;color:#555;">Spence Mills, Mill Lane<br>Leeds, LS13 3HE<br>info@selectbranding.co.uk<br>www.selectbranding.co.uk</p>
-          </div>
-        </div>
-
-        <!-- Items Delivered Now header (only when partial) -->
-        ${isPartial ? `<div style="background:#1e293b;padding:7px 10px;margin-bottom:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;"><span style="font-size:10.5pt;font-weight:900;color:white;letter-spacing:.04em;text-transform:uppercase;">Items Delivered Now</span></div>` : ""}
-
-        <!-- Items table -->
-        <table style="width:100%;border-collapse:collapse;">
-          <thead>
-            <tr style="background:#1e293b;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-              <th style="padding:7px 10px;text-align:left;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Item</th>
-              <th style="padding:7px 10px;text-align:left;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Colour</th>
-              <th style="padding:7px 10px;text-align:left;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Size</th>
-              <th style="padding:7px 10px;text-align:center;font-size:8.5pt;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;">Qty</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${groupRows}
-            ${stockRows}
-            <tr style="border-top:2px solid #1e293b;">
-              <td colspan="3" style="padding:7px 10px;text-align:right;font-weight:700;font-size:10pt;">Total Items</td>
-              <td style="padding:7px 10px;text-align:center;font-weight:900;font-size:13pt;">${totalQty}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        ${toFollowSection}
-
-        <!-- Signature block -->
-        <div style="margin-top:22px;display:flex;gap:40px;">
-          <div style="flex:1;border-top:1px solid #999;padding-top:5px;font-size:9pt;color:#555;">Packed by: ______________________</div>
-          <div style="flex:1;border-top:1px solid #999;padding-top:5px;font-size:9pt;color:#555;">Checked by: ______________________</div>
-          <div style="flex:1;border-top:1px solid #999;padding-top:5px;font-size:9pt;color:#555;">Date: ______________________</div>
-        </div>
-
-        ${shippingLabel ? `
-        <!-- Delivery method banner -->
-        <div style="margin-top:18px;background:#0f172a;border-radius:6px;padding:10px 18px;display:flex;align-items:center;gap:16px;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
-          <span style="font-size:7pt;font-weight:900;text-transform:uppercase;letter-spacing:.12em;color:#64748b;flex-shrink:0;">Delivery Method</span>
-          <span style="font-size:15pt;font-weight:900;color:#fff;letter-spacing:.02em;">${shippingLabel}</span>
-        </div>` : ""}
-
-        <!-- Footer -->
-        <div style="margin-top:14px;margin-bottom:20px;font-size:8pt;color:#aaa;border-top:1px solid #e5e7eb;padding-top:8px;text-align:center;">
-          Please check contents carefully. Any discrepancies should be reported within 48 hours of receipt.${pendingItems.length > 0 ? " Outstanding items will be dispatched as soon as they become available." : ""}<br>
-          Select Branding Solutions Ltd · Spence Mills, Mill Lane, Leeds, LS13 3HE · info@selectbranding.co.uk
-        </div>
-      </div>
-    </div>
+    ${sheetsHtml}
   </div>
   <script>document.getElementById('btn-print').focus();</script>
 </body>

@@ -1933,6 +1933,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
               <TableHead className="hidden sm:table-cell">Team</TableHead>
               <TableHead className="hidden md:table-cell">Role</TableHead>
               <TableHead className="hidden lg:table-cell">Email</TableHead>
+              <TableHead className="hidden xl:table-cell">Delivery Address</TableHead>
               <TableHead className="text-right w-28">Actions</TableHead>
             </TableRow>
             <TableRow className="hover:bg-transparent border-b border-border/50">
@@ -1989,6 +1990,7 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                   onChange={e => setEmpEmailSearch(e.target.value)}
                 />
               </TableHead>
+              <TableHead className="hidden xl:table-cell py-1" />
               <TableHead className="py-1 w-28" />
             </TableRow>
           </TableHeader>
@@ -2023,6 +2025,19 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                     : <span className="text-muted-foreground/40">—</span>}
                 </TableCell>
                 <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{e.email || '—'}</TableCell>
+                <TableCell className="hidden xl:table-cell text-sm">
+                  {(() => {
+                    if (!e.deliveryAddressId) return <span className="text-muted-foreground/40">—</span>;
+                    const addr = (addresses as any[])?.find((a: any) => a.id === e.deliveryAddressId);
+                    if (!addr) return <span className="text-muted-foreground/40">—</span>;
+                    return (
+                      <div>
+                        {addr.label && <p className="font-medium text-foreground text-xs">{addr.label}</p>}
+                        <p className="text-xs text-muted-foreground">{[addr.line1, addr.city, addr.postcode].filter(Boolean).join(", ")}</p>
+                      </div>
+                    );
+                  })()}
+                </TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     {e.email && !portalEmailSet.has(e.email.toLowerCase()) && (

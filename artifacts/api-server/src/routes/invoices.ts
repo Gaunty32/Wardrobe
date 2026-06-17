@@ -432,7 +432,7 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
   const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
   try {
-    const { order, items, customerEmail, invoiceCustomerName, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(idParse.data);
+    const { order, items, customerEmail, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups } = await buildInvoiceDataForOrder(idParse.data);
     const pdfBuffer = await generateInvoicePDF({
       orderNumber: order.orderNumber,
       customerName: invoiceCustomerName ?? order.customerName ?? "Customer",
@@ -460,6 +460,7 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
       })),
       totalAmount: order.totalAmount as string,
       notes: order.notes,
+      deliveryGroups: invoiceDeliveryGroups,
     });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="Invoice-${order.orderNumber}.pdf"`);
