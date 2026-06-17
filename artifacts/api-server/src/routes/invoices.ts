@@ -48,6 +48,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       customerHighLevelContactId: customersTable.highLevelContactId,
       poNumber: ordersTable.poNumber,
       poNumberRequired: customersTable.poNumberRequired,
+      deliveryAddressId: ordersTable.deliveryAddressId,
     })
     .from(ordersTable)
     .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -205,7 +206,8 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
     }
 
     const totalAmount = orderRows.reduce((s, o) => s + parseFloat(String(o.totalAmount ?? "0")), 0);
-    const totalCarriage = orderRows.reduce((s, o) => s + parseFloat(String(o.carriageAmount ?? "0")), 0);
+    // Use the single highest carriage among the orders — combined shipments have one shipping charge
+    const totalCarriage = Math.max(...orderRows.map((o) => parseFloat(String(o.carriageAmount ?? "0"))));
 
     const consolidatedZeroVat = firstOrder.zeroVat ?? false;
 

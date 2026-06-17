@@ -54,6 +54,7 @@ interface InvoiceOrder {
   customerHighLevelContactId: string | null;
   poNumber?: string | null;
   poNumberRequired?: boolean | null;
+  deliveryAddressId?: number | null;
 }
 
 function toWhatsAppNumber(phone: string): string {
@@ -704,6 +705,121 @@ function OrderRow({
   );
 }
 
+function ShipmentGroupPanel({ orders, onSent }: { orders: InvoiceOrder[]; onSent: () => void }) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const goodsTotal = orders.reduce((s, o) => s + parseFloat(o.totalAmount ?? "0"), 0);
+  const singleCarriage = Math.max(...orders.map((o) => parseFloat(o.carriageAmount ?? "0")));
+  const combinedTotal = goodsTotal + singleCarriage;
+  const hasPo = orders.some((o) => o.poNumber);
+  const posMissing = orders.some((o) => o.poNumberRequired && !o.poNumber);
+  const dispatchDate = orders[0].dispatchedAt ? formatDate(orders[0].dispatchedAt) : "—";
+  const customerName = orders[0].customerName ?? "Customer";
+  const invoiceRef = orders.map((o) => o.orderNumber).join("+");
+
+  const send = useMutation({
+    mutationFn: () =>
+      apiFetch<{ ok: boolean; sentTo: string; invoiceRef: string }>("/invoices/consolidated/send-email", {
+        method: "POST",
+        body: JSON.stringify({ orderIds: orders.map((o) => o.id) }),
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      qc.invalidateQueries({ queryKey: ["invoices-by-customer"] });
+      setOpen(false);
+      onSent();
+      toast({ title: "Combined invoice sent", description: `Invoice ${res.invoiceRef} emailed to ${res.sentTo}.` });
+    },
+    onError: (e: Error) => toast({ title: "Failed to send", description: parseApiError(e), variant: "destructive" }),
+  });
+
+  return (
+    <>
+      <div className="rounded-xl border-2 border-violet-200 bg-violet-50 overflow-hidden">
+        <div className="flex items-center gap-3 px-4 py-3 flex-wrap">
+          <Truck className="w-4 h-4 text-violet-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-sm text-violet-900">{customerName}</span>
+              <span className="inline-flex items-center gap-1 text-xs font-medium bg-violet-100 text-violet-700 border border-violet-300 rounded-full px-2 py-0.5">
+                <Package className="w-3 h-3" /> Same-day shipment
+              </span>
+            </div>
+            <div className="text-xs text-violet-700 mt-0.5 font-mono">
+              {orders.map((o) => o.orderNumber).join(" + ")}
+              <span className="font-sans ml-2 text-violet-600">· dispatched {dispatchDate}</span>
+              {singleCarriage > 0 && (
+                <span className="font-sans ml-2 text-violet-600">· {formatCurrency(singleCarriage)} shipping (×1)</span>
+              )}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="font-semibold text-sm text-violet-900">{formatCurrency(combinedTotal * 1.2)} inc VAT</div>
+            <div className="text-xs text-violet-600">{formatCurrency(combinedTotal)} ex VAT</div>
+          </div>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 text-white shrink-0"
+            onClick={() => setOpen(true)}
+            disabled={posMissing || send.isPending}
+            title={posMissing ? "Add PO numbers before sending" : undefined}
+          >
+            {send.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+            Send Combined Invoice
+          </Button>
+        </div>
+        {posMissing && (
+          <div className="px-4 pb-2.5 text-xs text-red-600 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" />
+            Add PO number{orders.filter((o) => o.poNumberRequired && !o.poNumber).length > 1 ? "s" : ""} before sending
+          </div>
+        )}
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send Combined Invoice — {orders.length} orders</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              These orders were dispatched together on {dispatchDate}. A single invoice PDF will be generated with one shipping charge and emailed to the customer.
+            </p>
+            <div className="rounded-lg bg-muted/50 border p-3 space-y-1.5">
+              <div><span className="text-muted-foreground">Customer:</span> <strong>{customerName}</strong></div>
+              <div><span className="text-muted-foreground">Orders:</span> <strong className="font-mono">{invoiceRef}</strong></div>
+              {hasPo && (
+                <div>
+                  <span className="text-muted-foreground">PO refs:</span>{" "}
+                  <strong className="font-mono">{[...new Set(orders.map((o) => o.poNumber).filter(Boolean))].join(", ")}</strong>
+                </div>
+              )}
+              <div><span className="text-muted-foreground">Goods total:</span> <strong>{formatCurrency(goodsTotal)} ex VAT</strong></div>
+              {singleCarriage > 0 && (
+                <div><span className="text-muted-foreground">Shipping (×1):</span> <strong>{formatCurrency(singleCarriage)}</strong></div>
+              )}
+              <div><span className="text-muted-foreground">Invoice total:</span> <strong>{formatCurrency(combinedTotal * 1.2)} inc. VAT</strong></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => send.mutate()}
+              disabled={send.isPending}
+              className="gap-1.5 bg-violet-600 hover:bg-violet-700"
+            >
+              {send.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+              Send Combined Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function makeCols(selectable: boolean) {
   return (
     <TableRow className="bg-muted/40">
@@ -860,6 +976,24 @@ export default function Invoices() {
   const done = data?.done ?? [];
   const groups = poGroups ?? [];
 
+  // Auto-detect same-day/same-address shipment groups (2+ orders shipped together)
+  const shipmentGroups = (() => {
+    const groupMap = new Map<string, InvoiceOrder[]>();
+    for (const order of toSend) {
+      if (!order.dispatchedAt) continue;
+      const dateKey = new Date(order.dispatchedAt).toISOString().slice(0, 10);
+      const customerKey = order.customerId != null ? `c${order.customerId}` : `n:${order.customerName ?? "?"}`;
+      const addrKey = order.deliveryAddressId != null ? `a${order.deliveryAddressId}` : "main";
+      const key = `${customerKey}__${dateKey}__${addrKey}`;
+      const arr = groupMap.get(key) ?? [];
+      arr.push(order);
+      groupMap.set(key, arr);
+    }
+    return [...groupMap.values()].filter((g) => g.length >= 2);
+  })();
+  const groupedOrderIds = new Set(shipmentGroups.flatMap((g) => g.map((o) => o.id)));
+  const ungroupedOrders = toSend.filter((o) => !groupedOrderIds.has(o.id));
+
   const allInvoices = [...toSend, ...toPost, ...done];
   const searchTrimmed = searchQuery.trim().toLowerCase();
   const searchResults = searchTrimmed
@@ -870,8 +1004,8 @@ export default function Invoices() {
       )
     : null;
 
-  // Selection — orders the user has ticked in To Send or search results
-  const selectablePool = searchResults ?? toSend;
+  // Selection — orders the user has ticked in ungrouped To Send rows or search results
+  const selectablePool = searchResults ?? ungroupedOrders;
   const selectedOrders = selectablePool.filter((o) => selectedIds.has(o.id));
   const selectedCustomerKey = selectedOrders.length > 0
     ? (selectedOrders[0].customerId ? String(selectedOrders[0].customerId) : selectedOrders[0].customerName ?? "")
@@ -1058,6 +1192,16 @@ export default function Invoices() {
               </div>
             ) : (
               <div className="space-y-3">
+                {/* Auto-detected same-day shipment groups */}
+                {shipmentGroups.map((group) => (
+                  <ShipmentGroupPanel
+                    key={group.map((o) => o.id).join("-")}
+                    orders={group}
+                    onSent={() => { refetchInvoices(); refetchCustomer(); }}
+                  />
+                ))}
+
+                {/* Manual combine bar for individually ticked ungrouped orders */}
                 {showCombineBar && searchResults === null && (
                   <CombineBar
                     orders={selectedOrders}
@@ -1065,27 +1209,31 @@ export default function Invoices() {
                     onSent={() => { refetchInvoices(); refetchCustomer(); }}
                   />
                 )}
-                {!showCombineBar && toSend.length > 1 && (
+                {!showCombineBar && ungroupedOrders.length > 1 && (
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                     <Layers className="w-3.5 h-3.5" /> Tick multiple orders from the same customer to send a combined invoice
                   </p>
                 )}
-                <div className="rounded-xl border border-border overflow-hidden">
-                  <Table>
-                    <TableHeader>{makeCols(true)}</TableHeader>
-                    <TableBody>
-                      {toSend.map((order) => (
-                        <OrderRow
-                          key={order.id}
-                          order={order}
-                          showSendEmail
-                          selected={selectedIds.has(order.id)}
-                          onToggle={toggleSelect}
-                        />
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+
+                {/* Individual ungrouped orders */}
+                {ungroupedOrders.length > 0 && (
+                  <div className="rounded-xl border border-border overflow-hidden">
+                    <Table>
+                      <TableHeader>{makeCols(true)}</TableHeader>
+                      <TableBody>
+                        {ungroupedOrders.map((order) => (
+                          <OrderRow
+                            key={order.id}
+                            order={order}
+                            showSendEmail
+                            selected={selectedIds.has(order.id)}
+                            onToggle={toggleSelect}
+                          />
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
               </div>
             )}
           </TabsContent>
