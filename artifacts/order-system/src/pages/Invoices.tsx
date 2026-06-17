@@ -237,6 +237,7 @@ function OrderRow({
   });
 
   const isCollection = ["office_collection", "warehouse_collection"].includes(order.shippingMethod ?? "");
+  const isLocalDelivery = ["free_local", "local_delivery"].includes(order.shippingMethod ?? "");
   const poMissing = !!(order.poNumberRequired && !order.poNumber);
 
   const saveInvoiceDate = useMutation({
@@ -642,7 +643,7 @@ function OrderRow({
                   Refresh Stripe link
                 </Button>
               )}
-              {isCollection && (order.customerHighLevelContactId || order.customerPhone) && (
+              {(isCollection || isLocalDelivery) && (order.customerHighLevelContactId || order.customerPhone) && (
                 <Button
                   variant="outline"
                   size="sm"
