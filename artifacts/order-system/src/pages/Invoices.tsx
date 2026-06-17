@@ -17,7 +17,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   FileText, Mail, BookOpen, Loader2, ExternalLink, CheckCircle2,
   Truck, Clock, AlertTriangle, Package, Hash, ChevronDown, ChevronRight,
-  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap, Search, RefreshCw, Layers,
+  Eye, MessageSquare, BadgeCheck, CircleDashed, CalendarClock, X, Zap, Search, RefreshCw, Layers, Pencil,
 } from "lucide-react";
 
 const API_BASE = "/api";
@@ -222,6 +222,19 @@ function OrderRow({
       : ""
   );
 
+  const [editingCarriage, setEditingCarriage] = useState(false);
+  const [carriageInput, setCarriageInput] = useState("");
+
+  const saveCarriage = useMutation({
+    mutationFn: (val: string) => {
+      const v = parseFloat(val);
+      if (isNaN(v) || v < 0) throw new Error("Invalid amount");
+      return apiFetch(`/orders/${order.id}`, { method: "PATCH", body: JSON.stringify({ carriageAmount: v }) });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["invoices"] }); setEditingCarriage(false); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const isCollection = ["office_collection", "warehouse_collection"].includes(order.shippingMethod ?? "");
   const poMissing = !!(order.poNumberRequired && !order.poNumber);
 
@@ -376,6 +389,37 @@ function OrderRow({
         <TableCell className="text-sm text-right font-medium">
           <div>{formatCurrency(total)}</div>
           <div className="text-xs text-muted-foreground">ex VAT {formatCurrency(subtotal)}</div>
+          {editingCarriage ? (
+            <div className="flex items-center justify-end gap-1 mt-1" onClick={(e) => e.stopPropagation()}>
+              <span className="text-xs text-muted-foreground">£</span>
+              <Input
+                value={carriageInput}
+                onChange={(e) => setCarriageInput(e.target.value)}
+                className="h-6 w-16 text-xs text-right px-1 py-0"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveCarriage.mutate(carriageInput);
+                  if (e.key === "Escape") setEditingCarriage(false);
+                }}
+              />
+              <Button size="sm" className="h-6 px-1.5 text-xs" onClick={() => saveCarriage.mutate(carriageInput)} disabled={saveCarriage.isPending}>
+                {saveCarriage.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "✓"}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 px-1 text-xs" onClick={() => setEditingCarriage(false)}>
+                <X className="w-3 h-3" />
+              </Button>
+            </div>
+          ) : (
+            <button
+              className="flex items-center justify-end gap-1 mt-1 w-full text-xs text-muted-foreground hover:text-foreground group"
+              onClick={() => { setCarriageInput(carriage.toFixed(2)); setEditingCarriage(true); }}
+              title="Edit carriage charge"
+            >
+              <Truck className="w-3 h-3 shrink-0" />
+              <span>{carriage > 0 ? formatCurrency(carriage) : <span className="italic opacity-60">no carriage</span>}</span>
+              <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 transition-opacity shrink-0" />
+            </button>
+          )}
         </TableCell>
         <TableCell className="text-xs text-muted-foreground">
           {order.dispatchedAt ? formatDate(order.dispatchedAt) : "—"}
