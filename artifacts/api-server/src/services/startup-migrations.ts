@@ -2065,4 +2065,17 @@ export async function refreshProductIssues(): Promise<void> {
     )
   `);
   console.log("[startup] feedback_items table ensured");
+
+  // Fix: invite_token must NOT be unique — a portal user can hold accounts under multiple
+  // customers, and the magic-link login sets the same token on all rows for that email address.
+  // The unique constraint causes a 500 for multi-customer users. Replace it with a plain index.
+  await db.execute(sql`
+    ALTER TABLE customer_portal_users
+      DROP CONSTRAINT IF EXISTS customer_portal_users_invite_token_key
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS idx_customer_portal_users_invite_token
+      ON customer_portal_users (invite_token)
+  `);
+  console.log("[startup] invite_token unique constraint replaced with plain index");
 }
