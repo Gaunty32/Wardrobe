@@ -2658,7 +2658,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
     doc.page.margins.bottom = 0;
     doc.fillColor("#64748b").fontSize(8).font("Helvetica")
       .text(
-        "Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds, LS13 3HE  ·  accounts@selectbranding.co.uk  ·  0113 255 2694  ·  selectbranding.co.uk",
+        "Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds, LS13 3HE  ·  accounts@selectbranding.co.uk  ·  0113 255 2694  ·  selectbranding.co.uk  ·  VAT No. 514880485",
         0, PAGE_H - 23, { align: "center", width: PAGE_W, lineBreak: false }
       );
     doc.page.margins.bottom = savedBottom;
