@@ -985,7 +985,8 @@ export default function Invoices() {
       const dateKey = new Date(order.dispatchedAt).toISOString().slice(0, 10);
       const customerKey = order.customerId != null ? `c${order.customerId}` : `n:${order.customerName ?? "?"}`;
       const addrKey = order.deliveryAddressId != null ? `a${order.deliveryAddressId}` : "main";
-      const key = `${customerKey}__${dateKey}__${addrKey}`;
+      const poKey = order.poNumber ? `po:${order.poNumber}` : "no-po";
+      const key = `${customerKey}__${dateKey}__${addrKey}__${poKey}`;
       const arr = groupMap.get(key) ?? [];
       arr.push(order);
       groupMap.set(key, arr);
