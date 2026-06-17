@@ -2049,4 +2049,20 @@ export async function refreshProductIssues(): Promise<void> {
       )
   `);
   console.log("[startup] Safety Net E: closed fully-delivered POs still in ordered status");
+
+  // Feedback items table
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS feedback_items (
+      id           SERIAL PRIMARY KEY,
+      type         TEXT NOT NULL CHECK (type IN ('critical','minor','feature')),
+      title        TEXT NOT NULL,
+      description  TEXT NOT NULL DEFAULT '',
+      submitted_by TEXT NOT NULL DEFAULT '',
+      source       TEXT NOT NULL DEFAULT 'staff' CHECK (source IN ('staff','portal')),
+      status       TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','resolved')),
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[startup] feedback_items table ensured");
 }

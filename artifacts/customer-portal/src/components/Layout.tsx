@@ -1,12 +1,15 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { useLocation, Link } from "wouter";
-import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard, Bell, CheckCheck, Truck, ThumbsUp, AlertCircle, Info, Boxes, History, ArrowLeftRight } from "lucide-react";
+import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard, Bell, CheckCheck, Truck, ThumbsUp, AlertCircle, Info, Boxes, History, ArrowLeftRight, MessageCircle, AlertTriangle, Lightbulb } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const BASKET_LS_KEY = "portal-new-order";
 
@@ -168,11 +171,87 @@ function NotificationBell() {
   );
 }
 
+function PortalFeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [type, setType] = useState<"critical" | "minor" | "feature">("minor");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [done, setDone] = useState(false);
+
+  const submit = useMutation({
+    mutationFn: () => apiFetch("/portal/feedback", { method: "POST", body: JSON.stringify({ type, title, description }) }),
+    onSuccess: () => { setDone(true); setTitle(""); setDescription(""); setType("minor"); },
+  });
+
+  const handleClose = () => { setDone(false); onClose(); };
+
+  const TYPES = [
+    { value: "critical" as const, label: "Urgent Issue", desc: "System broken / urgent", icon: AlertTriangle, cls: "border-red-200 bg-red-50 text-red-700" },
+    { value: "minor" as const, label: "Minor Issue", desc: "Something not quite right", icon: AlertCircle, cls: "border-amber-200 bg-amber-50 text-amber-700" },
+    { value: "feature" as const, label: "Suggestion", desc: "Idea or improvement", icon: Lightbulb, cls: "border-blue-200 bg-blue-50 text-blue-700" },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Report an Issue or Share a Suggestion</DialogTitle>
+        </DialogHeader>
+        {done ? (
+          <div className="py-8 text-center space-y-2">
+            <p className="text-3xl">✓</p>
+            <p className="font-semibold">Thank you for your feedback!</p>
+            <p className="text-sm text-muted-foreground">We'll look into it as soon as possible.</p>
+            <Button className="mt-4" onClick={handleClose}>Close</Button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-4 py-1">
+              <div className="grid grid-cols-3 gap-2">
+                {TYPES.map(t => {
+                  const Icon = t.icon;
+                  const sel = type === t.value;
+                  return (
+                    <button
+                      key={t.value}
+                      onClick={() => setType(t.value)}
+                      className={cn("flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition-all", t.cls, sel && "ring-2 ring-offset-1 ring-current")}
+                    >
+                      <Icon className="w-5 h-5" />
+                      <span className="text-xs font-semibold leading-tight">{t.label}</span>
+                      <span className="text-[10px] opacity-70 leading-tight">{t.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Summary <span className="text-destructive">*</span></label>
+                <Input placeholder="Brief description…" value={title} onChange={e => setTitle(e.target.value)} maxLength={200} />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">More detail (optional)</label>
+                <Textarea placeholder="Steps to reproduce, or any extra context…" value={description} onChange={e => setDescription(e.target.value)} rows={3} maxLength={2000} />
+              </div>
+              {submit.isError && <p className="text-xs text-destructive">Something went wrong — please try again.</p>}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={handleClose}>Cancel</Button>
+              <Button onClick={() => submit.mutate()} disabled={!title.trim() || submit.isPending}>
+                {submit.isPending ? "Sending…" : "Send"}
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function PortalLayout({ children }: { children: React.ReactNode }) {
   const { user, logout, isPreview, isManager, isDeptManager, previewEmployeeName } = useAuth();
   const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [switchingBusiness, setSwitchingBusiness] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const basketCount = useBasketCount(isPreview);
 
   const hasMultipleBusinesses = (() => {
@@ -266,6 +345,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
 
         <div className="hidden sm:flex items-center gap-2">
           {!isPreview && <NotificationBell />}
+          {!isPreview && (
+            <Button variant="ghost" size="sm" onClick={() => setFeedbackOpen(true)} className="gap-1.5 text-muted-foreground">
+              <MessageCircle className="w-4 h-4" /> Report Issue
+            </Button>
+          )}
           {user && (
             <span className="text-xs text-muted-foreground truncate max-w-[160px]">{user.user?.email}</span>
           )}
@@ -313,6 +397,11 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
           ))}
           <div className="border-t mt-2 pt-2 flex flex-col gap-1">
             <span className="text-xs text-muted-foreground px-1">{user?.user?.email}</span>
+            {!isPreview && (
+              <Button variant="ghost" size="sm" onClick={() => { setFeedbackOpen(true); setMobileOpen(false); }} className="justify-start gap-1.5 text-muted-foreground">
+                <MessageCircle className="w-4 h-4" /> Report Issue
+              </Button>
+            )}
             {!isPreview && hasMultipleBusinesses && (
               <Button variant="ghost" size="sm" onClick={switchBusiness} disabled={switchingBusiness} className="justify-start gap-1.5 text-muted-foreground">
                 <ArrowLeftRight className="w-4 h-4" /> Switch business
@@ -332,6 +421,8 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
         <span className="text-xs text-muted-foreground/60 uppercase tracking-widest font-medium">Powered by</span>
         <img src={logo} alt="Select Branding Solutions" className="h-10 w-auto opacity-70" />
       </footer>
+
+      <PortalFeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );
 }

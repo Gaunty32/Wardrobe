@@ -73,6 +73,7 @@ import Quotes from "@/pages/Quotes";
 import QuoteDetail from "@/pages/QuoteDetail";
 import WooOrders from "@/pages/WooOrders";
 import Bundles from "@/pages/Bundles";
+import Feedback from "@/pages/Feedback";
 import NotFound from "@/pages/not-found";
 import DemoGate from "@/pages/DemoGate";
 import DemoDashboard from "@/pages/DemoDashboard";
@@ -166,6 +167,7 @@ function Router() {
       <Route path="/quotes/:id" component={QuoteDetail} />
       <Route path="/woo-orders" component={WooOrders} />
       <Route path="/bundles" component={Bundles} />
+      <Route path="/feedback" component={Feedback} />
       <Route component={NotFound} />
     </Switch>
   );

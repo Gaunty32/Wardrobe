@@ -1,9 +1,14 @@
 import { ReactNode, useEffect, useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2 } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isStaffAuthenticated, clearStaffToken } from "@/lib/staff-auth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = "/api";
 
@@ -184,6 +189,86 @@ function MessagesBell() {
   );
 }
 
+function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const [type, setType] = useState<"critical" | "minor" | "feature">("minor");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+
+  const submit = useMutation({
+    mutationFn: () =>
+      fetch(`${API_BASE}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, title, description, submitted_by: getStoredActor() }),
+      }).then(r => { if (!r.ok) throw new Error(); return r.json(); }),
+    onSuccess: () => {
+      toast({ title: type === "critical" ? "🚨 Critical issue reported — you will be notified" : "✓ Feedback submitted", description: "Thank you for the report." });
+      setTitle(""); setDescription(""); setType("minor");
+      onClose();
+    },
+    onError: () => toast({ title: "Failed to submit", variant: "destructive" }),
+  });
+
+  const TYPES = [
+    { value: "critical" as const, label: "Critical Issue", desc: "System broken / urgent", icon: AlertTriangle, color: "border-red-300 bg-red-50 text-red-700 data-[sel=true]:ring-2 data-[sel=true]:ring-red-400 data-[sel=true]:bg-red-100" },
+    { value: "minor" as const, label: "Minor Issue", desc: "Something not quite right", icon: AlertCircle, color: "border-amber-300 bg-amber-50 text-amber-700 data-[sel=true]:ring-2 data-[sel=true]:ring-amber-400 data-[sel=true]:bg-amber-100" },
+    { value: "feature" as const, label: "Feature Request", desc: "Idea or improvement", icon: Lightbulb, color: "border-blue-300 bg-blue-50 text-blue-700 data-[sel=true]:ring-2 data-[sel=true]:ring-blue-400 data-[sel=true]:bg-blue-100" },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Report an Issue / Request a Feature</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="grid grid-cols-3 gap-2">
+            {TYPES.map(t => {
+              const Icon = t.icon;
+              const sel = type === t.value;
+              return (
+                <button
+                  key={t.value}
+                  data-sel={sel}
+                  onClick={() => setType(t.value)}
+                  className={cn("flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition-all", t.color, sel && "ring-2")}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-xs font-semibold leading-tight">{t.label}</span>
+                  <span className="text-[10px] opacity-70 leading-tight">{t.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {type === "critical" && (
+            <div className="flex items-start gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>A notification email will be sent immediately for critical issues.</span>
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Title <span className="text-destructive">*</span></label>
+            <Input placeholder="Brief description of the issue or feature…" value={title} onChange={e => setTitle(e.target.value)} maxLength={200} />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1 block">Details (optional)</label>
+            <Textarea placeholder="Steps to reproduce, expected behaviour, or more detail…" value={description} onChange={e => setDescription(e.target.value)} rows={3} maxLength={2000} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit.mutate()} disabled={!title.trim() || submit.isPending}>
+            {submit.isPending ? "Submitting…" : "Submit"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 interface LayoutProps {
   children: ReactNode;
 }
@@ -193,6 +278,7 @@ type NavSection = { label: string; items: NavItem[] };
 
 export default function Layout({ children }: LayoutProps) {
   const [location, setLocation] = useLocation();
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     if (!isStaffAuthenticated()) {
@@ -301,6 +387,13 @@ export default function Layout({ children }: LayoutProps) {
           <div className="flex items-center px-1 pb-1">
             <MessagesBell />
           </div>
+          <button
+            onClick={() => setFeedbackOpen(true)}
+            className="flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200 group"
+          >
+            <MessageCircle className="w-5 h-5 mr-3 text-white/50 group-hover:text-white/80 transition-colors shrink-0" />
+            Feedback
+          </button>
           {bottomNavItems.map((item) => {
             const isActive = location === item.href || location.startsWith(item.href);
             return (
@@ -367,6 +460,8 @@ export default function Layout({ children }: LayoutProps) {
           );
         })}
       </nav>
+
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
     </div>
   );
 }
