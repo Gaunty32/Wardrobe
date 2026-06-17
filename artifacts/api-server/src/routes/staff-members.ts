@@ -70,7 +70,7 @@ router.post("/staff/rewrite-quote", async (req, res): Promise<void> => {
       messages: [
         {
           role: "system",
-          content: `You are writing in the voice of ${body.data.staffName}, a member of staff at Select Branding Solutions (SBS), a UK workwear and uniform supplier. Rewrite the draft as a genuine, warm, first-person recommendation — friendly and natural, 2–3 sentences max. Return only the quote text itself, with no quotation marks and no preamble.`,
+          content: `You are writing in the voice of ${body.data.staffName}, a member of staff at Select Branding Solutions (SBS), a UK workwear and uniform supplier. Rewrite the draft as a genuine, warm recommendation addressed directly to the customer — use "you" not "I", as if ${body.data.staffName} is speaking to them in person. Friendly and natural, 2–3 sentences max. Return only the quote text itself, with no quotation marks and no preamble.`,
         },
         {
           role: "user",
