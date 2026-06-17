@@ -2286,9 +2286,12 @@ export default function ProductDetail() {
               {quoteRewritten && (
                 <div className="grid gap-2">
                   <Label>AI-Polished Version</Label>
-                  <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm italic text-foreground">
-                    "{quoteRewritten}"
-                  </div>
+                  <Textarea
+                    value={quoteRewritten}
+                    onChange={(e) => setQuoteRewritten(e.target.value)}
+                    rows={3}
+                    className="italic text-sm"
+                  />
                   <div className="flex items-center gap-2">
                     <input
                       type="checkbox"
