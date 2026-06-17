@@ -485,28 +485,45 @@ export default function OrderDetail() {
   const [deleteOrderConfirmOpen, setDeleteOrderConfirmOpen] = useState(false);
 
   const [editingDeliveryAddress, setEditingDeliveryAddress] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("none");
+
+  // Initialise local dropdown value whenever the edit panel opens
+  useEffect(() => {
+    if (editingDeliveryAddress) {
+      setSelectedAddressId((order as any)?.deliveryAddressId?.toString() ?? "none");
+    }
+  }, [editingDeliveryAddress]);
 
   const updateDeliveryAddressMutation = useMutation({
     mutationFn: (addressId: number | null) =>
       apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ deliveryAddressId: addressId }) }),
+    onMutate: (addressId) => {
+      const selectedAddr = customerDeliveryAddresses?.find(a => a.id === addressId) ?? null;
+      queryClient.setQueryData(getGetOrderQueryKey(orderId), (old: any) =>
+        old ? { ...old, deliveryAddressId: addressId, deliveryAddress: selectedAddr } : old
+      );
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
       toast({ title: "Delivery address updated" });
       setEditingDeliveryAddress(false);
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Error saving delivery address", description: e.message, variant: "destructive" });
+    },
   });
 
-  // Auto-set delivery address when order has none but customer has a default
+  // Auto-set delivery address when order has none but customer has addresses
   useEffect(() => {
-    if (!order || order.deliveryAddressId || !customerDeliveryAddresses?.length) return;
-    const def = customerDeliveryAddresses.find(a => a.isDefault) ?? customerDeliveryAddresses[0];
+    if (!order || (order as any).deliveryAddressId || !customerDeliveryAddresses?.length) return;
+    const def = customerDeliveryAddresses.find((a: any) => a.isDefault) ?? customerDeliveryAddresses[0];
     if (def) {
       apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ deliveryAddressId: def.id }) })
         .then(() => queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }))
-        .catch(() => {});
+        .catch((err: Error) => console.error("Auto-set delivery address failed:", err.message));
     }
-  }, [order?.deliveryAddressId, customerDeliveryAddresses?.length]);
+  }, [(order as any)?.deliveryAddressId, customerDeliveryAddresses?.length]);
 
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState("");
@@ -2482,13 +2499,13 @@ export default function OrderDetail() {
                 {editingDeliveryAddress ? (
                   <div className="flex items-center gap-2">
                     <Select
-                      value={(order as any).deliveryAddressId?.toString() ?? "none"}
-                      onValueChange={(v) => updateDeliveryAddressMutation.mutate(v === "none" ? null : parseInt(v, 10))}
+                      value={selectedAddressId}
+                      onValueChange={setSelectedAddressId}
                     >
                       <SelectTrigger className="text-sm flex-1"><SelectValue placeholder="Select address…" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Not set</SelectItem>
-                        {customerDeliveryAddresses?.map(a => (
+                        {customerDeliveryAddresses?.map((a: any) => (
                           <SelectItem key={a.id} value={a.id.toString()}>
                             {a.label ? `${a.label} — ` : ""}{[a.line1, a.city, a.postcode].filter(Boolean).join(", ")}
                             {a.isDefault ? " (default)" : ""}
@@ -2496,6 +2513,20 @@ export default function OrderDetail() {
                         ))}
                       </SelectContent>
                     </Select>
+                    <Button
+                      size="icon"
+                      variant="default"
+                      className="h-8 w-8 shrink-0"
+                      disabled={updateDeliveryAddressMutation.isPending}
+                      onClick={() => {
+                        const id = selectedAddressId === "none" ? null : parseInt(selectedAddressId, 10);
+                        updateDeliveryAddressMutation.mutate(id);
+                      }}
+                    >
+                      {updateDeliveryAddressMutation.isPending
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Check className="w-3.5 h-3.5" />}
+                    </Button>
                     <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setEditingDeliveryAddress(false)}>
                       <X className="w-3.5 h-3.5" />
                     </Button>
