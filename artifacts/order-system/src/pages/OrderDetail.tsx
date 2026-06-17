@@ -260,7 +260,7 @@ function useCustomerWardrobeData(customerId: number | null) {
 function useCustomerDeliveryAddresses(customerId: number | null) {
   return useQuery<DeliveryAddress[]>({
     queryKey: ["customer-delivery-addresses", customerId],
-    queryFn: () => apiFetch(`/customers/${customerId}/delivery-addresses`),
+    queryFn: () => apiFetch(`/customers/${customerId}/addresses`),
     enabled: customerId !== null && customerId > 0,
   });
 }
