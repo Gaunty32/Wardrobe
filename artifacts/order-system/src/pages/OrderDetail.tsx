@@ -2471,7 +2471,7 @@ export default function OrderDetail() {
                   <CardTitle className="font-display text-lg flex items-center">
                     <MapPin className="w-4 h-4 mr-2 text-muted-foreground" /> Delivery Address
                   </CardTitle>
-                  {!editingDeliveryAddress && (customerDeliveryAddresses?.length ?? 0) > 0 && (
+                  {!editingDeliveryAddress && (
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingDeliveryAddress(true)}>
                       <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
                     </Button>
@@ -2479,7 +2479,7 @@ export default function OrderDetail() {
                 </div>
               </CardHeader>
               <CardContent className="py-4 space-y-3">
-                {editingDeliveryAddress && (customerDeliveryAddresses?.length ?? 0) > 0 ? (
+                {editingDeliveryAddress ? (
                   <div className="flex items-center gap-2">
                     <Select
                       value={(order as any).deliveryAddressId?.toString() ?? "none"}
