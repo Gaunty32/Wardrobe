@@ -1899,6 +1899,7 @@ export function buildInvoiceEmail(params: {
   stripePaymentLinkUrl?: string | null;
   poNumber?: string | null;
   carriageAmount?: number | null;
+  zeroVat?: boolean;
   items: Array<{
     productName: string;
     colour?: string | null;
@@ -1928,10 +1929,13 @@ export function buildInvoiceEmail(params: {
     : new Date(Date.now() + 14 * 86400000);
   const paymentDueStr = fmtDate(paymentDueDate);
 
+  const carriageVatRate = params.zeroVat ? 0 : 0.2;
   const subtotal = params.items.reduce((s, i) => s + i.lineTotal, 0);
   const carriage = params.carriageAmount ?? 0;
-  const vatAmount = params.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.2), 0) + carriage * 0.2;
+  const vatAmount = params.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.2), 0) + carriage * carriageVatRate;
   const totalIncVat = subtotal + carriage + vatAmount;
+  const effectiveVatRate = vatAmount > 0 ? (vatAmount / (subtotal + carriage)) : 0;
+  const vatLabel = params.zeroVat ? "VAT (0%)" : (Math.abs(effectiveVatRate - 0.2) < 0.001 ? "VAT (20%)" : "VAT");
 
   const itemRows = params.items
     .map(
@@ -2080,7 +2084,7 @@ export function buildInvoiceEmail(params: {
             <tfoot>
               <tr style="background:#f8fafc;"><td colspan="4" style="padding:10px 14px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">Subtotal (exc. VAT)</td><td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#1e293b;border-top:1px solid #e2e8f0;">£${subtotal.toFixed(2)}</td></tr>
               ${carriage > 0 ? `<tr style="background:#f8fafc;"><td colspan="4" style="padding:6px 14px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">Shipping &amp; Handling</td><td style="padding:6px 14px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${carriage.toFixed(2)}</td></tr>` : ""}
-              <tr style="background:#f8fafc;"><td colspan="4" style="padding:6px 14px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">VAT (20%)</td><td style="padding:6px 14px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${vatAmount.toFixed(2)}</td></tr>
+              <tr style="background:#f8fafc;"><td colspan="4" style="padding:6px 14px;text-align:right;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;">${vatLabel}</td><td style="padding:6px 14px;text-align:right;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">£${vatAmount.toFixed(2)}</td></tr>
               <tr style="background:#1e293b;"><td colspan="4" style="padding:12px 14px;text-align:right;font-size:13px;font-weight:700;color:#ffffff;">Total (inc. VAT)</td><td style="padding:12px 14px;text-align:right;font-size:15px;font-weight:800;color:#ffffff;">£${totalIncVat.toFixed(2)}</td></tr>
             </tfoot>
           </table>
@@ -2145,7 +2149,7 @@ export function buildInvoiceEmail(params: {
     ),
     ``,
     `Subtotal (exc. VAT): £${subtotal.toFixed(2)}`,
-    `VAT (20%):           £${vatAmount.toFixed(2)}`,
+    `${vatLabel}:${" ".repeat(Math.max(1, 20 - vatLabel.length))}£${vatAmount.toFixed(2)}`,
     `Total (inc. VAT):    £${totalIncVat.toFixed(2)}`,
     ``,
     !isPaid
@@ -2271,6 +2275,7 @@ interface InvoiceData {
   items: InvoiceLineItem[];
   totalAmount: string;
   carriageAmount?: number | null;
+  zeroVat?: boolean;
   notes?: string | null;
   /** Customer purchase-order reference — printed on the invoice */
   poNumber?: string | null;
@@ -2474,10 +2479,12 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
     };
 
     const pdfCarriage = data.carriageAmount ?? 0;
-    vatCalc += pdfCarriage * 0.2;
+    const pdfCarriageVatRate = data.zeroVat ? 0 : 0.2;
+    vatCalc += pdfCarriage * pdfCarriageVatRate;
+    const pdfVatLabel = data.zeroVat ? "VAT (0%)" : "VAT (20%)";
     drawTotRow("Subtotal (exc. VAT)", `£${subtotalCalc.toFixed(2)}`, false, ALT);
     if (pdfCarriage > 0) drawTotRow("Shipping & Handling", `£${pdfCarriage.toFixed(2)}`, false, ALT);
-    drawTotRow("VAT (20%)", `£${vatCalc.toFixed(2)}`, false, ALT);
+    drawTotRow(pdfVatLabel, `£${vatCalc.toFixed(2)}`, false, ALT);
 
     doc.rect(totX, y, totW, 28).fill(DARK);
     doc.fillColor("white").fontSize(10).font("Helvetica-Bold")
@@ -2770,13 +2777,17 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
     }
   }
 
-  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups };
+  const zeroVat = (order.customerId
+    ? await db.select({ zeroVat: customersTable.zeroVat }).from(customersTable).where(eq(customersTable.id, order.customerId)).then(r => r[0]?.zeroVat ?? false)
+    : false);
+
+  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat };
 }
 
 export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: string }> {
   if (!isEmailConfigured) throw new Error("Email not configured. Go to Settings → Email to set up.");
 
-  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups } = await buildInvoiceDataForOrder(orderId);
+  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat } = await buildInvoiceDataForOrder(orderId);
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
   // Always regenerate the Stripe payment link before sending so the amount
@@ -2848,6 +2859,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     stripePaymentLinkUrl: freshPaymentLinkUrl,
     poNumber: order.poNumber,
     carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
+    zeroVat,
     items: mappedItems,
   });
 
@@ -2865,6 +2877,7 @@ export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: strin
     stripePaymentLinkUrl: freshPaymentLinkUrl,
     poNumber: order.poNumber,
     carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
+    zeroVat,
     items: items.map((i) => ({
       productName: i.productName,
       colour: i.colour,

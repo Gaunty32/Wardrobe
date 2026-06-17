@@ -128,6 +128,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
         customerCity: customersTable.city,
         customerPostcode: customersTable.postcode,
         poNumberRequired: customersTable.poNumberRequired,
+        zeroVat: customersTable.zeroVat,
       })
       .from(ordersTable)
       .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -206,6 +207,8 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
     const totalAmount = orderRows.reduce((s, o) => s + parseFloat(String(o.totalAmount ?? "0")), 0);
     const totalCarriage = orderRows.reduce((s, o) => s + parseFloat(String(o.carriageAmount ?? "0")), 0);
 
+    const consolidatedZeroVat = firstOrder.zeroVat ?? false;
+
     // Generate consolidated PDF
     const pdfBuffer = await generateInvoicePDF({
       orderNumber: invoiceRef,
@@ -217,6 +220,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
       invoiceDate: new Date(),
       poNumber,
       carriageAmount: totalCarriage,
+      zeroVat: consolidatedZeroVat,
       items: allItems,
       totalAmount: totalAmount.toFixed(2),
       notes: null,
@@ -231,6 +235,7 @@ router.post("/invoices/consolidated/send-email", async (req, res): Promise<void>
       invoiceDate: new Date(),
       poNumber,
       carriageAmount: totalCarriage,
+      zeroVat: consolidatedZeroVat,
       items: allItems.map((i) => ({
         ...i,
         unitPrice: parseFloat(i.unitPrice),
@@ -432,7 +437,7 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
   const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
   try {
-    const { order, items, customerEmail, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups } = await buildInvoiceDataForOrder(idParse.data);
+    const { order, items, customerEmail, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat } = await buildInvoiceDataForOrder(idParse.data);
     const pdfBuffer = await generateInvoicePDF({
       orderNumber: order.orderNumber,
       customerName: invoiceCustomerName ?? order.customerName ?? "Customer",
@@ -447,6 +452,7 @@ router.get("/invoices/:orderId/preview-pdf", async (req, res): Promise<void> => 
       stripePaymentLinkUrl: order.stripePaymentLinkUrl,
       poNumber: order.poNumber,
       carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
+      zeroVat,
       items: items.map((i) => ({
         productName: i.productName,
         colour: i.colour,
@@ -476,7 +482,7 @@ router.get("/invoices/:orderId/preview-email", async (req, res): Promise<void> =
   const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
   try {
-    const { order, items, contactFirstName, customerLogoDataUrl, customerAddress, customerCity, customerPostcode } = await buildInvoiceDataForOrder(idParse.data);
+    const { order, items, contactFirstName, customerLogoDataUrl, customerAddress, customerCity, customerPostcode, zeroVat } = await buildInvoiceDataForOrder(idParse.data);
     const mappedItems = items.map((i) => ({
       productName: i.productName,
       colour: i.colour,
@@ -503,6 +509,7 @@ router.get("/invoices/:orderId/preview-email", async (req, res): Promise<void> =
       stripePaymentLinkUrl: order.stripePaymentLinkUrl,
       poNumber: order.poNumber,
       carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
+      zeroVat,
       items: mappedItems,
     });
     res.json({ subject, html });
