@@ -484,12 +484,15 @@ export default function OrderDetail() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [deleteOrderConfirmOpen, setDeleteOrderConfirmOpen] = useState(false);
 
+  const [editingDeliveryAddress, setEditingDeliveryAddress] = useState(false);
+
   const updateDeliveryAddressMutation = useMutation({
     mutationFn: (addressId: number | null) =>
       apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ deliveryAddressId: addressId }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
       toast({ title: "Delivery address updated" });
+      setEditingDeliveryAddress(false);
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -2464,27 +2467,39 @@ export default function OrderDetail() {
 
             <Card className="shadow-sm border-border/50">
               <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
-                <CardTitle className="font-display text-lg flex items-center">
-                  <MapPin className="w-4 h-4 mr-2 text-muted-foreground" /> Delivery Address
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-display text-lg flex items-center">
+                    <MapPin className="w-4 h-4 mr-2 text-muted-foreground" /> Delivery Address
+                  </CardTitle>
+                  {!editingDeliveryAddress && (customerDeliveryAddresses?.length ?? 0) > 0 && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingDeliveryAddress(true)}>
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="py-4 space-y-3">
-                {(customerDeliveryAddresses?.length ?? 0) > 0 ? (
-                  <Select
-                    value={(order as any).deliveryAddressId?.toString() ?? "none"}
-                    onValueChange={(v) => updateDeliveryAddressMutation.mutate(v === "none" ? null : parseInt(v, 10))}
-                  >
-                    <SelectTrigger className="text-sm"><SelectValue placeholder="Select address…" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Not set</SelectItem>
-                      {customerDeliveryAddresses?.map(a => (
-                        <SelectItem key={a.id} value={a.id.toString()}>
-                          {a.label ? `${a.label} — ` : ""}{[a.line1, a.city, a.postcode].filter(Boolean).join(", ")}
-                          {a.isDefault ? " (default)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                {editingDeliveryAddress && (customerDeliveryAddresses?.length ?? 0) > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={(order as any).deliveryAddressId?.toString() ?? "none"}
+                      onValueChange={(v) => updateDeliveryAddressMutation.mutate(v === "none" ? null : parseInt(v, 10))}
+                    >
+                      <SelectTrigger className="text-sm flex-1"><SelectValue placeholder="Select address…" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not set</SelectItem>
+                        {customerDeliveryAddresses?.map(a => (
+                          <SelectItem key={a.id} value={a.id.toString()}>
+                            {a.label ? `${a.label} — ` : ""}{[a.line1, a.city, a.postcode].filter(Boolean).join(", ")}
+                            {a.isDefault ? " (default)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setEditingDeliveryAddress(false)}>
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
                 ) : null}
                 {(() => {
                   const addr = (order as any).deliveryAddress as DeliveryAddress | null | undefined;
