@@ -1754,6 +1754,196 @@ function MarkOrderedDialog({ po, open, onClose, onConfirm }: {
   );
 }
 
+interface ManualPOLine {
+  productName: string;
+  colour: string;
+  size: string;
+  supplierCode: string;
+  quantity: string;
+  unitPrice: string;
+}
+
+function emptyManualLine(): ManualPOLine {
+  return { productName: "", colour: "", size: "", supplierCode: "", quantity: "1", unitPrice: "" };
+}
+
+function ManualPODialog({ open, onClose, onCreated, allSuppliers }: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: () => void;
+  allSuppliers: Array<{ id: number; name: string; email?: string | null }>;
+}) {
+  const { toast } = useToast();
+  const [supplierId, setSupplierId] = useState<number | null>(null);
+  const [supplierName, setSupplierName] = useState("");
+  const [supplierEmail, setSupplierEmail] = useState("");
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState<ManualPOLine[]>([emptyManualLine()]);
+  const [saving, setSaving] = useState(false);
+
+  const handleClose = () => {
+    setSupplierId(null); setSupplierName(""); setSupplierEmail(""); setNotes("");
+    setLines([emptyManualLine()]); setSaving(false);
+    onClose();
+  };
+
+  const handleSupplierSelect = (val: string) => {
+    if (val === "__custom__") {
+      setSupplierId(null); setSupplierName(""); setSupplierEmail("");
+    } else {
+      const sup = allSuppliers.find(s => String(s.id) === val);
+      if (sup) { setSupplierId(sup.id); setSupplierName(sup.name); setSupplierEmail((sup as any).email ?? ""); }
+    }
+  };
+
+  const updateLine = (idx: number, field: keyof ManualPOLine, val: string) =>
+    setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: val } : l));
+  const addLine = () => setLines(prev => [...prev, emptyManualLine()]);
+  const removeLine = (idx: number) => setLines(prev => prev.filter((_, i) => i !== idx));
+
+  const handleCreate = async () => {
+    if (!supplierName.trim()) {
+      toast({ title: "Supplier required", description: "Please select or enter a supplier name.", variant: "destructive" });
+      return;
+    }
+    const validLines = lines.filter(l => l.productName.trim() && parseInt(l.quantity) > 0);
+    if (validLines.length === 0) {
+      toast({ title: "Add at least one valid line", description: "Each line needs a product name and quantity ≥ 1.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiFetch("/purchasing/purchase-orders/manual", {
+        method: "POST",
+        body: JSON.stringify({
+          supplierId: supplierId ?? null,
+          supplierName: supplierName.trim(),
+          supplierEmail: supplierEmail.trim() || null,
+          notes: notes.trim() || null,
+          items: validLines.map(l => ({
+            productName: l.productName.trim(),
+            colour: l.colour.trim() || null,
+            size: l.size.trim() || null,
+            supplierCode: l.supplierCode.trim() || null,
+            quantityOrdered: parseInt(l.quantity),
+            supplierPrice: l.unitPrice ? parseFloat(l.unitPrice) : null,
+          })),
+        }),
+      });
+      toast({ title: "Draft PO created", description: `Manual PO for ${supplierName} added to Draft tab.` });
+      onCreated();
+      handleClose();
+    } catch (e: any) {
+      toast({ title: "Error creating PO", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="w-5 h-5 text-primary" /> New Manual Purchase Order
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-1">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Select existing supplier</Label>
+              <Select onValueChange={handleSupplierSelect}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose supplier…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__custom__">— Type manually below —</SelectItem>
+                  {allSuppliers.map(s => (
+                    <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Supplier name <span className="text-muted-foreground text-xs">(editable)</span></Label>
+              <Input value={supplierName} onChange={e => setSupplierName(e.target.value)} placeholder="e.g. Orn Clothing" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Supplier email <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Input value={supplierEmail} onChange={e => setSupplierEmail(e.target.value)} placeholder="orders@supplier.com" type="email" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>PO notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
+              <Input value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. Stock top-up for O114" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Order Lines</Label>
+            <div className="rounded-lg border border-border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="text-xs min-w-[180px]">Product Name *</TableHead>
+                    <TableHead className="text-xs w-28">Colour</TableHead>
+                    <TableHead className="text-xs w-20">Size</TableHead>
+                    <TableHead className="text-xs w-28">Supp. Code</TableHead>
+                    <TableHead className="text-xs w-16">Qty *</TableHead>
+                    <TableHead className="text-xs w-28">Unit Price (£)</TableHead>
+                    <TableHead className="w-8" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lines.map((line, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell className="p-1">
+                        <Input value={line.productName} onChange={e => updateLine(idx, "productName", e.target.value)} placeholder="Product name" className="h-8 text-sm" />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <Input value={line.colour} onChange={e => updateLine(idx, "colour", e.target.value)} placeholder="Red" className="h-8 text-sm" />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <Input value={line.size} onChange={e => updateLine(idx, "size", e.target.value)} placeholder="M" className="h-8 text-sm" />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <Input value={line.supplierCode} onChange={e => updateLine(idx, "supplierCode", e.target.value)} placeholder="ABC123" className="h-8 text-sm" />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <Input type="number" min={1} value={line.quantity} onChange={e => updateLine(idx, "quantity", e.target.value)} className="h-8 text-sm text-center" />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        <Input type="number" min={0} step={0.01} value={line.unitPrice} onChange={e => updateLine(idx, "unitPrice", e.target.value)} placeholder="0.00" className="h-8 text-sm" />
+                      </TableCell>
+                      <TableCell className="p-1">
+                        {lines.length > 1 && (
+                          <button onClick={() => removeLine(idx)} className="text-red-400 hover:text-red-600 p-1 rounded">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={addLine}>
+              <Plus className="w-3.5 h-3.5" /> Add Row
+            </Button>
+          </div>
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleCreate} disabled={saving} className="gap-1.5">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+            Create Draft PO
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function POCard({
   po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll, onCancelLine, hideMatrix,
 }: {
@@ -1770,6 +1960,9 @@ function POCard({
   const [expanded, setExpanded] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [markOrderedOpen, setMarkOrderedOpen] = useState(false);
+  const [addLineOpen, setAddLineOpen] = useState(false);
+  const [addLineForm, setAddLineForm] = useState<ManualPOLine>(emptyManualLine());
+  const [addLineSaving, setAddLineSaving] = useState(false);
   const latestQtysRef = useRef<Map<number, number>>(new Map());
   const cfg = STATUS_CFG[po.status];
   const StatusIcon = cfg.icon;
@@ -1940,6 +2133,103 @@ function POCard({
               )}
             </>
           )}
+
+          {po.status === "draft" && (
+            <div className="pt-2 border-t border-border">
+              {!addLineOpen ? (
+                <button
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
+                  onClick={() => setAddLineOpen(true)}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Add manual line
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Add Manual Line</p>
+                  <div className="grid grid-cols-6 gap-1.5 items-center">
+                    <div className="col-span-2">
+                      <Input
+                        value={addLineForm.productName}
+                        onChange={e => setAddLineForm(f => ({ ...f, productName: e.target.value }))}
+                        placeholder="Product name *"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <Input
+                      value={addLineForm.colour}
+                      onChange={e => setAddLineForm(f => ({ ...f, colour: e.target.value }))}
+                      placeholder="Colour"
+                      className="h-8 text-xs"
+                    />
+                    <Input
+                      value={addLineForm.size}
+                      onChange={e => setAddLineForm(f => ({ ...f, size: e.target.value }))}
+                      placeholder="Size"
+                      className="h-8 text-xs"
+                    />
+                    <Input
+                      type="number"
+                      min={1}
+                      value={addLineForm.quantity}
+                      onChange={e => setAddLineForm(f => ({ ...f, quantity: e.target.value }))}
+                      placeholder="Qty *"
+                      className="h-8 text-xs text-center"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      value={addLineForm.unitPrice}
+                      onChange={e => setAddLineForm(f => ({ ...f, unitPrice: e.target.value }))}
+                      placeholder="£ price"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={addLineForm.supplierCode}
+                      onChange={e => setAddLineForm(f => ({ ...f, supplierCode: e.target.value }))}
+                      placeholder="Supplier code (optional)"
+                      className="h-8 text-xs max-w-[180px]"
+                    />
+                    <Button
+                      size="sm"
+                      className="h-8 text-xs gap-1.5"
+                      disabled={addLineSaving || !addLineForm.productName.trim() || parseInt(addLineForm.quantity) < 1}
+                      onClick={async () => {
+                        setAddLineSaving(true);
+                        try {
+                          await apiFetch(`/purchasing/purchase-orders/${po.id}/process-stock-items`, {
+                            method: "POST",
+                            body: JSON.stringify({
+                              items: [{
+                                productName: addLineForm.productName.trim(),
+                                colour: addLineForm.colour.trim() || null,
+                                size: addLineForm.size.trim() || null,
+                                supplierCode: addLineForm.supplierCode.trim() || null,
+                                quantityOrdered: parseInt(addLineForm.quantity),
+                                supplierPrice: addLineForm.unitPrice ? parseFloat(addLineForm.unitPrice) : null,
+                              }],
+                            }),
+                          });
+                          onRefresh();
+                          setAddLineOpen(false);
+                          setAddLineForm(emptyManualLine());
+                        } catch { /* silent */ }
+                        setAddLineSaving(false);
+                      }}
+                    >
+                      {addLineSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                      Save Line
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => { setAddLineOpen(false); setAddLineForm(emptyManualLine()); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -1980,6 +2270,7 @@ export default function Purchasing() {
   const [selectedCompletedSupplier, setSelectedCompletedSupplier] = useState<string | null>(null);
   const [selectedDraftSupplier, setSelectedDraftSupplier] = useState<string | null>(null);
   const [selectedBackordersSupplier, setSelectedBackordersSupplier] = useState<string | null>(null);
+  const [manualPOOpen, setManualPOOpen] = useState(false);
 
   const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
@@ -2328,16 +2619,25 @@ export default function Purchasing() {
             </h1>
             <p className="text-muted-foreground mt-1">Manage purchase requirements and supplier orders.</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 shrink-0"
-            onClick={recheckAndRefresh}
-            disabled={isRechecking || reqFetching || posFetching}
-          >
-            <RefreshCw className={`w-4 h-4 ${isRechecking || reqFetching || posFetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="gap-1.5 shrink-0"
+              onClick={() => setManualPOOpen(true)}
+            >
+              <Plus className="w-4 h-4" /> New Manual PO
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 shrink-0"
+              onClick={recheckAndRefresh}
+              disabled={isRechecking || reqFetching || posFetching}
+            >
+              <RefreshCw className={`w-4 h-4 ${isRechecking || reqFetching || posFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
         </div>
 
         <Tabs defaultValue="requirements">
@@ -3000,6 +3300,13 @@ export default function Purchasing() {
         {emailGroup && (
           <EmailDialog group={emailGroup} open={!!emailGroup} onClose={() => setEmailGroup(null)} onSent={(_ids) => { setEmailGroup(null); queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] }); }} />
         )}
+
+        <ManualPODialog
+          open={manualPOOpen}
+          onClose={() => setManualPOOpen(false)}
+          onCreated={() => { refetchPos(); refetchReqs(); }}
+          allSuppliers={allSuppliers}
+        />
 
         {/* ── What's Next dialog — shown after receiving a PO ── */}
         <Dialog open={!!nextStepData} onOpenChange={(open) => { if (!open) setNextStepData(null); }}>

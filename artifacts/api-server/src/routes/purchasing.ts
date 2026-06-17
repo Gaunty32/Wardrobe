@@ -770,6 +770,51 @@ router.get("/purchasing/purchase-orders/:id", async (req, res): Promise<void> =>
   res.json(po);
 });
 
+router.post("/purchasing/purchase-orders/manual", async (req, res): Promise<void> => {
+  const parsed = z.object({
+    supplierId: z.number().int().positive().optional().nullable(),
+    supplierName: z.string().min(1),
+    supplierEmail: z.string().optional().nullable(),
+    notes: z.string().optional().nullable(),
+    items: z.array(z.object({
+      productName: z.string().min(1),
+      colour: z.string().optional().nullable(),
+      size: z.string().optional().nullable(),
+      supplierCode: z.string().optional().nullable(),
+      supplierPrice: z.number().optional().nullable(),
+      quantityOrdered: z.number().int().min(1),
+    })).min(1),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const now = new Date();
+  const poNumber = `PO-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${Math.floor(Math.random() * 9000) + 1000}`;
+
+  const [po] = await db.insert(purchaseOrdersTable).values({
+    poNumber,
+    supplierId: parsed.data.supplierId ?? null,
+    supplierName: parsed.data.supplierName,
+    supplierEmail: parsed.data.supplierEmail ?? null,
+    status: "draft",
+    notes: parsed.data.notes ?? null,
+  }).returning();
+
+  const poItems = parsed.data.items.map(item => ({
+    poId: po.id,
+    productName: item.productName,
+    colour: item.colour ?? null,
+    size: item.size ?? null,
+    supplierCode: item.supplierCode ?? null,
+    supplierPrice: item.supplierPrice != null ? String(item.supplierPrice) : null,
+    quantityOrdered: item.quantityOrdered,
+    quantityDelivered: 0,
+  }));
+  await db.insert(purchaseOrderItemsTable).values(poItems);
+
+  const result = await getPoWithItems(po.id);
+  res.status(201).json(result);
+});
+
 router.post("/purchasing/purchase-orders/for-process-stock", async (req, res): Promise<void> => {
   const parsed = z.object({
     supplierId: z.number().int().positive().optional().nullable(),
@@ -1054,6 +1099,8 @@ router.post("/purchasing/purchase-orders/:id/process-stock-items", async (req, r
     items: z.array(z.object({
       processStockId: z.number().int().positive().optional().nullable(),
       productName: z.string().min(1),
+      colour: z.string().optional().nullable(),
+      size: z.string().optional().nullable(),
       supplierCode: z.string().optional().nullable(),
       supplierPrice: z.number().optional().nullable(),
       quantityOrdered: z.number().int().min(1),
@@ -1081,6 +1128,8 @@ router.post("/purchasing/purchase-orders/:id/process-stock-items", async (req, r
       poId: po.id,
       processStockId: item.processStockId ?? null,
       productName: item.productName,
+      colour: item.colour ?? null,
+      size: item.size ?? null,
       supplierCode: item.supplierCode ?? null,
       supplierPrice: item.supplierPrice != null ? String(item.supplierPrice) : null,
       quantityOrdered: item.quantityOrdered,
