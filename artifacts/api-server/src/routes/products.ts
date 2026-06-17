@@ -504,6 +504,12 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   if ("secondarySupplierCode" in req.body) {
     updateData.secondarySupplierCode = req.body.secondarySupplierCode || null;
   }
+  if ("guidanceBestFor" in req.body) {
+    updateData.guidanceBestFor = req.body.guidanceBestFor || null;
+  }
+  if ("guidanceNotIdealFor" in req.body) {
+    updateData.guidanceNotIdealFor = req.body.guidanceNotIdealFor || null;
+  }
   if ("guidanceTags" in req.body) {
     updateData.guidanceTags = Array.isArray(req.body.guidanceTags) ? req.body.guidanceTags : null;
   }
