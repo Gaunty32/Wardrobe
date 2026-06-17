@@ -279,6 +279,19 @@ type NavSection = { label: string; items: NavItem[] };
 export default function Layout({ children }: LayoutProps) {
   const [location, setLocation] = useLocation();
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+  const [navScrollable, setNavScrollable] = useState(false);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    const check = () => setNavScrollable(el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", check); ro.disconnect(); };
+  }, []);
 
   useEffect(() => {
     if (!isStaffAuthenticated()) {
@@ -348,7 +361,8 @@ export default function Layout({ children }: LayoutProps) {
           />
         </div>
 
-        <nav className="flex-1 px-4 py-5 overflow-y-auto space-y-4">
+        <div className="flex-1 relative min-h-0">
+          <nav ref={navRef} className="h-full px-4 py-5 overflow-y-auto space-y-4">
           {navSections.map((section) => (
             <div key={section.label || "__top__"}>
               {section.label && (
@@ -381,7 +395,11 @@ export default function Layout({ children }: LayoutProps) {
               </div>
             </div>
           ))}
-        </nav>
+          </nav>
+          {navScrollable && (
+            <div className="pointer-events-none absolute bottom-0 inset-x-0 h-16" style={{ background: "linear-gradient(to top, hsl(var(--sidebar)), transparent)" }} />
+          )}
+        </div>
 
         <div className="p-4 border-t border-white/10 space-y-1">
           <div className="flex items-center px-1 pb-1">
