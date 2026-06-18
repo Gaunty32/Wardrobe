@@ -55,6 +55,7 @@ interface InvoiceOrder {
   poNumber?: string | null;
   poNumberRequired?: boolean | null;
   deliveryAddressId?: number | null;
+  zeroVat?: boolean | null;
 }
 
 function toWhatsAppNumber(phone: string): string {
@@ -82,12 +83,14 @@ interface PoGroupOrder {
   dispatchedAt: string | null;
   invoiceEmailSentAt: string | null;
   xeroInvoiceId: string | null;
+  zeroVat?: boolean | null;
 }
 
 interface PoGroup {
   poNumber: string;
   customerName: string | null;
   customerId: number | null;
+  zeroVat?: boolean | null;
   orders: PoGroupOrder[];
   totalEx: number;
   totalInc: number;
@@ -96,6 +99,7 @@ interface PoGroup {
 interface CustomerGroup {
   customerId: number | null;
   customerName: string | null;
+  zeroVat?: boolean | null;
   orders: PoGroupOrder[];
   totalEx: number;
   totalInc: number;
@@ -355,7 +359,8 @@ function OrderRow({
 
   const subtotal = parseFloat(order.totalAmount);
   const carriage = parseFloat(String(order.carriageAmount ?? 0));
-  const total = (subtotal + carriage) * 1.2;
+  const vatMultiplier = order.zeroVat ? 1 : 1.2;
+  const total = (subtotal + carriage) * vatMultiplier;
 
   return (
     <>
@@ -714,6 +719,8 @@ function ShipmentGroupPanel({ orders, onSent }: { orders: InvoiceOrder[]; onSent
   const goodsTotal = orders.reduce((s, o) => s + parseFloat(o.totalAmount ?? "0"), 0);
   const singleCarriage = Math.max(...orders.map((o) => parseFloat(o.carriageAmount ?? "0")));
   const combinedTotal = goodsTotal + singleCarriage;
+  const groupZeroVat = orders[0]?.zeroVat ?? false;
+  const groupVatMult = groupZeroVat ? 1 : 1.2;
   const hasPo = orders.some((o) => o.poNumber);
   const posMissing = orders.some((o) => o.poNumberRequired && !o.poNumber);
   const dispatchDate = orders[0].dispatchedAt ? formatDate(orders[0].dispatchedAt) : "—";
@@ -757,7 +764,7 @@ function ShipmentGroupPanel({ orders, onSent }: { orders: InvoiceOrder[]; onSent
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="font-semibold text-sm text-violet-900">{formatCurrency(combinedTotal * 1.2)} inc VAT</div>
+            <div className="font-semibold text-sm text-violet-900">{formatCurrency(combinedTotal * groupVatMult)} inc VAT</div>
             <div className="text-xs text-violet-600">{formatCurrency(combinedTotal)} ex VAT</div>
           </div>
           <Button
@@ -801,7 +808,7 @@ function ShipmentGroupPanel({ orders, onSent }: { orders: InvoiceOrder[]; onSent
               {singleCarriage > 0 && (
                 <div><span className="text-muted-foreground">Shipping (×1):</span> <strong>{formatCurrency(singleCarriage)}</strong></div>
               )}
-              <div><span className="text-muted-foreground">Invoice total:</span> <strong>{formatCurrency(combinedTotal * 1.2)} inc. VAT</strong></div>
+              <div><span className="text-muted-foreground">Invoice total:</span> <strong>{formatCurrency(combinedTotal * groupVatMult)} inc. VAT</strong></div>
             </div>
           </div>
           <DialogFooter>
@@ -852,6 +859,8 @@ function CombineBar({
   const [open, setOpen] = useState(false);
 
   const totalEx = orders.reduce((s, o) => s + parseFloat(o.totalAmount), 0);
+  const combineZeroVat = orders[0]?.zeroVat ?? false;
+  const combineVatMult = combineZeroVat ? 1 : 1.2;
   const customerName = orders[0]?.customerName ?? "customer";
 
   const send = useMutation({
@@ -882,7 +891,7 @@ function CombineBar({
           <span className="font-semibold">{orders.length} order{orders.length !== 1 ? "s" : ""}</span>
           {" "}selected for <span className="font-semibold">{customerName}</span>
           <span className="text-blue-600 ml-2 font-mono text-xs">
-            {formatCurrency(totalEx)} ex VAT · {formatCurrency(totalEx * 1.2)} inc VAT
+            {formatCurrency(totalEx)} ex VAT · {formatCurrency(totalEx * combineVatMult)} inc VAT
           </span>
         </div>
         <Button
@@ -917,7 +926,7 @@ function CombineBar({
               {orders.some((o) => o.poNumber) && (
                 <div><span className="text-muted-foreground">PO refs:</span> <strong className="font-mono">{[...new Set(orders.map((o) => o.poNumber).filter(Boolean))].join(", ")}</strong></div>
               )}
-              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(totalEx * 1.2)} inc. VAT</strong></div>
+              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(totalEx * combineVatMult)} inc. VAT</strong></div>
             </div>
           </div>
           <DialogFooter>
@@ -1352,6 +1361,7 @@ function CustomerGroupRow({ group, onRefresh }: { group: CustomerGroup; onRefres
   );
   const alreadyInvoiced = group.orders.filter((o) => !!o.invoiceEmailSentAt);
   const consolidatedTotal = dispatchedUnsent.reduce((s, o) => s + parseFloat(o.totalAmount ?? "0"), 0);
+  const cgVatMult = group.zeroVat ? 1 : 1.2;
 
   const sendConsolidated = useMutation({
     mutationFn: () =>
@@ -1417,7 +1427,7 @@ function CustomerGroupRow({ group, onRefresh }: { group: CustomerGroup; onRefres
             <span className="font-semibold">{dispatchedUnsent.length} dispatched order{dispatchedUnsent.length !== 1 ? "s" : ""}</span>
             {" "}ready to invoice
             <span className="text-amber-600 ml-2 font-mono text-xs">
-              {formatCurrency(consolidatedTotal)} ex VAT · {formatCurrency(consolidatedTotal * 1.2)} inc VAT
+              {formatCurrency(consolidatedTotal)} ex VAT · {formatCurrency(consolidatedTotal * cgVatMult)} inc VAT
             </span>
             {dispatchedUnsent.some(o => o.poNumber) && (
               <span className="text-amber-600 ml-2 text-xs">
@@ -1502,7 +1512,7 @@ function CustomerGroupRow({ group, onRefresh }: { group: CustomerGroup; onRefres
               {dispatchedUnsent.some(o => o.poNumber) && (
                 <div><span className="text-muted-foreground">PO refs:</span> <strong className="font-mono">{[...new Set(dispatchedUnsent.map(o => o.poNumber).filter(Boolean))].join(", ")}</strong></div>
               )}
-              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(consolidatedTotal * 1.2)} inc. VAT</strong></div>
+              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(consolidatedTotal * cgVatMult)} inc. VAT</strong></div>
             </div>
           </div>
           <DialogFooter>
@@ -1565,6 +1575,7 @@ function PoGroupRow({ group }: { group: PoGroup }) {
 
   const allInvoiced = group.orders.every((o) => !!o.invoiceEmailSentAt);
   const consolidatedTotal = dispatchedUnsent.reduce((s, o) => s + parseFloat(o.totalAmount ?? "0"), 0);
+  const pgVatMult = group.zeroVat ? 1 : 1.2;
 
   return (
     <div className="rounded-xl border border-border overflow-hidden">
@@ -1605,7 +1616,7 @@ function PoGroupRow({ group }: { group: PoGroup }) {
               <span className="text-amber-600 ml-1">· {pendingOrders.length} order{pendingOrders.length !== 1 ? "s" : ""} still in production (to follow)</span>
             )}
             <span className="text-amber-600 ml-2 font-mono text-xs">
-              {formatCurrency(consolidatedTotal)} ex VAT · {formatCurrency(consolidatedTotal * 1.2)} inc VAT
+              {formatCurrency(consolidatedTotal)} ex VAT · {formatCurrency(consolidatedTotal * pgVatMult)} inc VAT
             </span>
           </div>
           <Button
@@ -1687,7 +1698,7 @@ function PoGroupRow({ group }: { group: PoGroup }) {
               <div><span className="text-muted-foreground">Customer:</span> <strong>{group.customerName}</strong></div>
               <div><span className="text-muted-foreground">PO Ref:</span> <strong className="font-mono">{group.poNumber}</strong></div>
               <div><span className="text-muted-foreground">Orders covered:</span> <strong>{dispatchedUnsent.map((o) => o.orderNumber).join(", ")}</strong></div>
-              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(consolidatedTotal * 1.2)} inc. VAT</strong></div>
+              <div><span className="text-muted-foreground">Total:</span> <strong>{formatCurrency(consolidatedTotal * pgVatMult)} inc. VAT</strong></div>
             </div>
             {pendingOrders.length > 0 && (
               <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">

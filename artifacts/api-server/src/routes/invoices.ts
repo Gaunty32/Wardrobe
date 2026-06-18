@@ -49,6 +49,7 @@ router.get("/invoices", async (_req, res): Promise<void> => {
       poNumber: ordersTable.poNumber,
       poNumberRequired: customersTable.poNumberRequired,
       deliveryAddressId: ordersTable.deliveryAddressId,
+      zeroVat: customersTable.zeroVat,
     })
     .from(ordersTable)
     .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
@@ -564,14 +565,17 @@ router.get("/invoices/by-customer", async (_req, res): Promise<void> => {
       dispatchedAt: ordersTable.dispatchedAt,
       invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
       xeroInvoiceId: ordersTable.xeroInvoiceId,
+      zeroVat: customersTable.zeroVat,
     })
     .from(ordersTable)
+    .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
     .where(sql`${ordersTable.status} IN ('shipped', 'dispatched', 'part_shipped')`)
     .orderBy(desc(ordersTable.dispatchedAt));
 
   const groupMap = new Map<string, {
     customerId: number | null;
     customerName: string | null;
+    zeroVat: boolean;
     orders: typeof orders;
     totalEx: number;
     totalInc: number;
@@ -579,15 +583,16 @@ router.get("/invoices/by-customer", async (_req, res): Promise<void> => {
 
   for (const o of orders) {
     const key = o.customerId ? String(o.customerId) : `name__${o.customerName ?? "unknown"}`;
+    const zeroVat = o.zeroVat ?? false;
     if (!groupMap.has(key)) {
-      groupMap.set(key, { customerId: o.customerId, customerName: o.customerName, orders: [], totalEx: 0, totalInc: 0 });
+      groupMap.set(key, { customerId: o.customerId, customerName: o.customerName, zeroVat, orders: [], totalEx: 0, totalInc: 0 });
     }
     const g = groupMap.get(key)!;
     g.orders.push(o);
     const ex = parseFloat(String(o.totalAmount ?? 0));
     const carriage = parseFloat(String(o.carriageAmount ?? 0));
     g.totalEx += ex + carriage;
-    g.totalInc += (ex + carriage) * 1.2;
+    g.totalInc += (ex + carriage) * (zeroVat ? 1 : 1.2);
   }
 
   res.json([...groupMap.values()].map((g) => ({
@@ -614,8 +619,10 @@ router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
       dispatchedAt: ordersTable.dispatchedAt,
       invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
       xeroInvoiceId: ordersTable.xeroInvoiceId,
+      zeroVat: customersTable.zeroVat,
     })
     .from(ordersTable)
+    .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
     .where(isNotNull(ordersTable.poNumber))
     .orderBy(ordersTable.poNumber, desc(ordersTable.orderDate));
 
@@ -624,6 +631,7 @@ router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
     poNumber: string;
     customerName: string | null;
     customerId: number | null;
+    zeroVat: boolean;
     orders: typeof orders;
     totalEx: number;
     totalInc: number;
@@ -631,15 +639,16 @@ router.get("/invoices/by-po-number", async (_req, res): Promise<void> => {
 
   for (const o of orders) {
     const key = `${o.poNumber}__${o.customerId ?? "none"}`;
+    const zeroVat = o.zeroVat ?? false;
     if (!groupMap.has(key)) {
-      groupMap.set(key, { poNumber: o.poNumber!, customerName: o.customerName, customerId: o.customerId, orders: [], totalEx: 0, totalInc: 0 });
+      groupMap.set(key, { poNumber: o.poNumber!, customerName: o.customerName, customerId: o.customerId, zeroVat, orders: [], totalEx: 0, totalInc: 0 });
     }
     const g = groupMap.get(key)!;
     g.orders.push(o);
     const ex = parseFloat(String(o.totalAmount ?? 0));
     const carriage = parseFloat(String(o.carriageAmount ?? 0));
     g.totalEx += ex + carriage;
-    g.totalInc += (ex + carriage) * 1.2;
+    g.totalInc += (ex + carriage) * (zeroVat ? 1 : 1.2);
   }
 
   res.json([...groupMap.values()].map((g) => ({
