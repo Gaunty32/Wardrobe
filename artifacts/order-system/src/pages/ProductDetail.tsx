@@ -930,7 +930,6 @@ export default function ProductDetail() {
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
-          setGuidance(null);
           toast({ title: "Guidance saved" });
           setGuidanceDirty(false);
         },
