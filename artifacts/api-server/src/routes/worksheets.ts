@@ -65,8 +65,13 @@ router.get("/picking-list", async (req, res): Promise<void> => {
            ON  pv.product_id = oi.product_id
            AND (pv.colour = oi.colour OR (pv.colour IS NULL AND oi.colour IS NULL))
            AND (pv.size   = oi.size   OR (pv.size   IS NULL AND oi.size   IS NULL))
-    WHERE oi.stock_status = 'allocated'
-      AND oi.finish_id IS NOT NULL
+    WHERE (
+        -- Decorated items awaiting production pick
+        (oi.stock_status = 'allocated' AND oi.finish_id IS NOT NULL)
+        OR
+        -- Plain (undecorated) items whose stock has arrived — need a physical warehouse pick
+        (oi.stock_status = 'complete' AND oi.finish_id IS NULL)
+      )
       AND oi.dispatched_at IS NULL
       AND COALESCE(p.is_service, false) = false
       AND NOT EXISTS (

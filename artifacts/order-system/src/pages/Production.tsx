@@ -2895,9 +2895,13 @@ function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; high
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-medium text-sm">{item.productName}</span>
-                              {item.finishName && (
+                              {item.finishName ? (
                                 <span className="inline-flex items-center gap-1 text-xs bg-blue-100 text-blue-800 border border-blue-200 rounded px-1.5 py-0.5 font-medium">
                                   <Sparkles className="w-3 h-3" />{item.finishName}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-800 border border-green-200 rounded px-1.5 py-0.5 font-medium">
+                                  Plain Stock
                                 </span>
                               )}
                             </div>
