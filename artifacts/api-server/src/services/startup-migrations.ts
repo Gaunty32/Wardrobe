@@ -1711,21 +1711,19 @@ export async function runStartupMigrations(): Promise<void> {
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS woo_status varchar(20)`);
 
   // ── Cascade product-level supplier prices to variants ──────────────────────
-  // Variant supplier_price overrides the product price in order GP calculations.
-  // Before the cascade-on-update fix was added, editing a product's supplier_price
-  // left variant rows with stale values that shadowed the new product price.
-  // This one-time sync brings all variants into line with their parent product price
-  // so that existing orders immediately reflect any product price edits already made.
+  // Only copies a product price DOWN to its variants when:
+  //   a) the product actually has a price (not NULL), AND
+  //   b) the variant price differs from the product price
+  // This ensures variants with an explicit per-variant price are never overwritten
+  // by a NULL product price on server restart.
   await db.execute(sql`
     UPDATE product_variants pv
     SET supplier_price = p.supplier_price,
         secondary_supplier_price = p.secondary_supplier_price
     FROM products p
     WHERE pv.product_id = p.id
-      AND (
-        pv.supplier_price IS DISTINCT FROM p.supplier_price
-        OR pv.secondary_supplier_price IS DISTINCT FROM p.secondary_supplier_price
-      )
+      AND p.supplier_price IS NOT NULL
+      AND pv.supplier_price IS DISTINCT FROM p.supplier_price
   `);
   console.log("[startup] Variant supplier prices synced to product level");
 }
