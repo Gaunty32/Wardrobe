@@ -381,6 +381,7 @@ function ConfirmedMergeableBanner() {
     try { return new Set(JSON.parse(localStorage.getItem(MERGE_IGNORE_KEY) ?? "[]")); }
     catch { return new Set(); }
   });
+  const [showIgnored, setShowIgnored] = useState(false);
 
   function ignoreGroup(key: string) {
     setIgnoredKeys(prev => {
@@ -390,9 +391,18 @@ function ConfirmedMergeableBanner() {
     });
   }
 
+  function unignoreGroup(key: string) {
+    setIgnoredKeys(prev => {
+      const next = new Set([...prev]);
+      next.delete(key);
+      try { localStorage.setItem(MERGE_IGNORE_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
+
   const { data: confirmedOrders = [] } = useListOrders({ status: "confirmed" }, { query: { refetchInterval: 15_000 } });
 
-  const groups = useMemo(() => {
+  const { groups, ignoredGroups } = useMemo(() => {
     const poMap = new Map<string, any[]>();
     for (const o of confirmedOrders) {
       const po = (o as any).poNumber;
@@ -403,16 +413,19 @@ function ConfirmedMergeableBanner() {
         poMap.get(key)!.push(o);
       }
     }
-    const result: Array<{ key: string; po: string; customer: string; orders: any[] }> = [];
+    const groups: Array<{ key: string; po: string; customer: string; orders: any[] }> = [];
+    const ignoredGroups: Array<{ key: string; po: string; customer: string; orders: any[] }> = [];
     for (const [key, orders] of poMap.entries()) {
-      if (orders.length > 1 && !ignoredKeys.has(key)) {
-        result.push({ key, po: orders[0].poNumber, customer: orders[0].customerName, orders });
+      if (orders.length > 1) {
+        const entry = { key, po: orders[0].poNumber, customer: orders[0].customerName, orders };
+        if (ignoredKeys.has(key)) ignoredGroups.push(entry);
+        else groups.push(entry);
       }
     }
-    return result;
+    return { groups, ignoredGroups };
   }, [confirmedOrders, ignoredKeys]);
 
-  if (groups.length === 0) return null;
+  if (groups.length === 0 && ignoredGroups.length === 0) return null;
 
   async function mergeGroup(orderIds: number[], groupKey: string) {
     setMergingIds(s => new Set([...s, groupKey]));
@@ -428,70 +441,69 @@ function ConfirmedMergeableBanner() {
     }
   }
 
+  function GroupRow({ g, ignored = false }: { g: { key: string; po: string; customer: string; orders: any[] }; ignored?: boolean }) {
+    const isMerging = mergingIds.has(g.key);
+    const totalValue = g.orders.reduce((s: number, o: any) => s + (o.totalAmount ?? 0), 0);
+    return (
+      <div key={g.key} className={cn("px-5 py-3 flex items-center gap-4 flex-wrap", ignored && "opacity-50")}>
+        <div className="flex items-center gap-2 min-w-0">
+          <GitMerge className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          <span className="text-sm font-medium text-blue-900">{toTitleCase(g.customer)}</span>
+          <span className="text-xs text-blue-600 font-mono bg-blue-100 px-1.5 py-0.5 rounded">PO# {g.po}</span>
+          <span className="text-xs text-blue-700">{g.orders.length} orders · {formatCurrency(totalValue)}</span>
+        </div>
+        <div className="flex items-center gap-2 ml-auto flex-wrap">
+          <div className="flex gap-1.5 flex-wrap">
+            {g.orders.map((o: any) => (
+              <button key={o.id} className="text-xs font-mono text-blue-700 hover:text-blue-900 hover:underline" onClick={() => setLocation(`/orders/${o.id}`)}>
+                {o.orderNumber}
+              </button>
+            ))}
+          </div>
+          {ignored ? (
+            <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-100 shrink-0" onClick={() => unignoreGroup(g.key)}>
+              <XCircle className="w-3 h-3" />
+              Unignore
+            </Button>
+          ) : (
+            <>
+              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-100 shrink-0" disabled={isMerging} onClick={() => ignoreGroup(g.key)} title="Hide this suggestion">
+                <XCircle className="w-3 h-3" />
+                Ignore
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 bg-white shrink-0" disabled={isMerging} onClick={() => mergeGroup(g.orders.map((o: any) => o.id), g.key)}>
+                {isMerging ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitMerge className="w-3 h-3" />}
+                {isMerging ? "Merging…" : "Merge into one order"}
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Card className="border-blue-200 bg-blue-50/40 shadow-sm">
       <CardHeader className="py-3 px-5 border-b border-blue-200/60 flex flex-row items-center gap-2">
         <GitMerge className="w-4 h-4 text-blue-600" />
         <span className="font-semibold text-blue-800 text-sm">Confirmed Orders — Mergeable by PO Number</span>
-        <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
-          {groups.length}
-        </span>
+        {groups.length > 0 && (
+          <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-blue-600 text-white text-xs font-bold">
+            {groups.length}
+          </span>
+        )}
+        {ignoredGroups.length > 0 && (
+          <button
+            className="ml-auto text-xs text-blue-500 hover:text-blue-700 underline underline-offset-2"
+            onClick={() => setShowIgnored(v => !v)}
+          >
+            {ignoredGroups.length} ignored · {showIgnored ? "Hide" : "Show"}
+          </button>
+        )}
       </CardHeader>
       <CardContent className="p-0 divide-y divide-blue-100">
-        {groups.map(g => {
-          const isMerging = mergingIds.has(g.key);
-          const totalValue = g.orders.reduce((s: number, o: any) => s + (o.totalAmount ?? 0), 0);
-          return (
-            <div key={g.key} className="px-5 py-3 flex items-center gap-4 flex-wrap">
-              <div className="flex items-center gap-2 min-w-0">
-                <GitMerge className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <span className="text-sm font-medium text-blue-900">
-                  {toTitleCase(g.customer)}
-                </span>
-                <span className="text-xs text-blue-600 font-mono bg-blue-100 px-1.5 py-0.5 rounded">
-                  PO# {g.po}
-                </span>
-                <span className="text-xs text-blue-700">
-                  {g.orders.length} orders · {formatCurrency(totalValue)}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 ml-auto flex-wrap">
-                <div className="flex gap-1.5 flex-wrap">
-                  {g.orders.map((o: any) => (
-                    <button
-                      key={o.id}
-                      className="text-xs font-mono text-blue-700 hover:text-blue-900 hover:underline"
-                      onClick={() => setLocation(`/orders/${o.id}`)}
-                    >
-                      {o.orderNumber}
-                    </button>
-                  ))}
-                </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs gap-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-100 shrink-0"
-                  disabled={isMerging}
-                  onClick={() => ignoreGroup(g.key)}
-                  title="Hide this suggestion"
-                >
-                  <XCircle className="w-3 h-3" />
-                  Ignore
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 bg-white shrink-0"
-                  disabled={isMerging}
-                  onClick={() => mergeGroup(g.orders.map((o: any) => o.id), g.key)}
-                >
-                  {isMerging ? <Loader2 className="w-3 h-3 animate-spin" /> : <GitMerge className="w-3 h-3" />}
-                  {isMerging ? "Merging…" : "Merge into one order"}
-                </Button>
-              </div>
-            </div>
-          );
-        })}
+        {groups.map(g => <GroupRow key={g.key} g={g} />)}
+        {showIgnored && ignoredGroups.map(g => <GroupRow key={g.key} g={g} ignored />)}
       </CardContent>
     </Card>
   );
