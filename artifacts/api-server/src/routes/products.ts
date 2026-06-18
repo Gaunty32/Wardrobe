@@ -361,7 +361,7 @@ router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => 
 
   await db.execute(sql`UPDATE products SET woo_status = ${status} WHERE id = ${id}`);
 
-  const [product] = await db.execute(sql`SELECT woo_commerce_id FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
+  const [product] = await db.execute(sql`SELECT woo_commerce_id, unit_price FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
   if (!product?.woo_commerce_id) {
     res.json({ ok: true, wooPushed: false, status, message: "Status saved locally (no WooCommerce ID)" });
     return;
@@ -377,10 +377,15 @@ router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => 
   url.searchParams.set("consumer_key", settings.ck);
   url.searchParams.set("consumer_secret", settings.cs);
 
+  const wooPayload: Record<string, string> = { status };
+  if (product.unit_price != null) {
+    wooPayload.regular_price = parseFloat(product.unit_price).toFixed(2);
+  }
+
   const wooRes = await fetch(url.toString(), {
     method: "PUT",
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(wooPayload),
   });
 
   if (!wooRes.ok) {
@@ -389,7 +394,7 @@ router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => 
     return;
   }
 
-  res.json({ ok: true, wooPushed: true, status });
+  res.json({ ok: true, wooPushed: true, status, pricePushed: product.unit_price != null });
 });
 
 router.get("/products/analytics", async (req, res): Promise<void> => {
