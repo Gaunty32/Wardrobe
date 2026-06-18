@@ -2078,4 +2078,26 @@ export async function refreshProductIssues(): Promise<void> {
       ON customer_portal_users (invite_token)
   `);
   console.log("[startup] invite_token unique constraint replaced with plain index");
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS manual_purchase_requirements (
+      id              SERIAL PRIMARY KEY,
+      supplier_id     INTEGER REFERENCES suppliers(id),
+      supplier_name   TEXT NOT NULL,
+      supplier_email  TEXT,
+      supplier_currency TEXT NOT NULL DEFAULT 'GBP',
+      product_id      INTEGER REFERENCES products(id),
+      product_name    TEXT NOT NULL,
+      product_sku     TEXT,
+      supplier_code   TEXT,
+      colour          TEXT,
+      size            TEXT,
+      quantity        INTEGER NOT NULL DEFAULT 1,
+      supplier_price  NUMERIC(10,2),
+      notes           TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      fulfilled_at    TIMESTAMPTZ
+    )
+  `);
+  console.log("[startup] manual_purchase_requirements table ensured");
 }

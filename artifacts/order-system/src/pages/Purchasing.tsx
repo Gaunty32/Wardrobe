@@ -47,6 +47,7 @@ interface PurchaseRequirement {
   supplierPrice: number | null;
   orderCreatedAt: string | null;
   queuedAt: string | null;
+  isManual?: boolean;
 }
 interface SupplierGroup {
   supplierId: number | null; supplierName: string; supplierEmail: string | null; supplierCurrency: string; items: PurchaseRequirement[];
@@ -2253,6 +2254,164 @@ function POCard({
   );
 }
 
+function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose: () => void; onAdded: () => void }) {
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<any>(null);
+  const [variants, setVariants] = useState<any[]>([]);
+  const [colour, setColour] = useState("");
+  const [size, setSize] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const { data: productResults = [], isFetching: searching } = useQuery<any[]>({
+    queryKey: ["product-search-manual-req", debouncedSearch],
+    queryFn: () => apiFetch(`/products?search=${encodeURIComponent(debouncedSearch)}`),
+    enabled: debouncedSearch.length >= 2,
+  });
+
+  const handleSelectProduct = async (product: any) => {
+    setSelectedProduct(product);
+    setColour(""); setSize("");
+    try {
+      const v = await apiFetch<any[]>(`/products/${product.id}/variants`);
+      setVariants(v);
+    } catch { setVariants([]); }
+  };
+
+  const uniqueColours = useMemo(() => [...new Set(variants.map((v: any) => v.colour).filter(Boolean))], [variants]);
+  const sizesForColour = useMemo(() => {
+    const filtered = variants.filter((v: any) => !colour || v.colour === colour);
+    return [...new Set(filtered.map((v: any) => v.size).filter(Boolean))];
+  }, [variants, colour]);
+
+  const handleSubmit = async () => {
+    if (!selectedProduct) return;
+    setSaving(true);
+    try {
+      await apiFetch("/purchasing/manual-requirements", {
+        method: "POST",
+        body: JSON.stringify({ productId: selectedProduct.id, productName: selectedProduct.name, productSku: selectedProduct.sku || null, colour: colour || null, size: size || null, quantity }),
+      });
+      toast({ title: "Requirement added", description: `${selectedProduct.name}${colour ? ` · ${colour}` : ""}${size ? ` / ${size}` : ""} × ${quantity}` });
+      onAdded(); handleClose();
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally { setSaving(false); }
+  };
+
+  const handleClose = () => {
+    setSearch(""); setDebouncedSearch(""); setSelectedProduct(null);
+    setVariants([]); setColour(""); setSize(""); setQuantity(1);
+    onClose();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Plus className="w-5 h-5 text-primary" /> Add Manual Requirement
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {!selectedProduct ? (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Search by FCC code or product name</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input className="pl-9" placeholder="e.g. FCC3373 or Eagle Two Tone..." value={search} onChange={(e) => setSearch(e.target.value)} autoFocus />
+                </div>
+              </div>
+              {debouncedSearch.length >= 2 && (
+                <div className="border border-border rounded-lg divide-y max-h-64 overflow-y-auto">
+                  {searching && (
+                    <div className="flex items-center justify-center py-6 text-muted-foreground text-sm gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Searching...
+                    </div>
+                  )}
+                  {!searching && productResults.length === 0 && (
+                    <div className="py-6 text-center text-muted-foreground text-sm">No products found</div>
+                  )}
+                  {!searching && productResults.map((p: any) => (
+                    <button key={p.id} className="w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors" onClick={() => handleSelectProduct(p)}>
+                      <div className="font-medium text-sm">{p.name}</div>
+                      <div className="flex gap-2 mt-0.5">
+                        {p.sku && <span className="font-mono text-xs text-indigo-500">{p.sku}</span>}
+                        {p.supplierCode && <span className="text-xs text-muted-foreground">Supplier code: {p.supplierCode}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-start justify-between rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
+                <div>
+                  <div className="font-semibold text-sm">{selectedProduct.name}</div>
+                  {selectedProduct.sku && <div className="font-mono text-xs text-indigo-500 mt-0.5">{selectedProduct.sku}</div>}
+                </div>
+                <button className="text-muted-foreground hover:text-foreground mt-0.5" onClick={() => { setSelectedProduct(null); setVariants([]); }}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Colour</Label>
+                  {uniqueColours.length > 0 ? (
+                    <Select value={colour} onValueChange={setColour}>
+                      <SelectTrigger><SelectValue placeholder="Select colour" /></SelectTrigger>
+                      <SelectContent>{uniqueColours.map((c: string) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                    </Select>
+                  ) : (
+                    <Input placeholder="e.g. Black/Purple" value={colour} onChange={(e) => setColour(e.target.value)} />
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Size</Label>
+                  {sizesForColour.length > 0 ? (
+                    <Select value={size} onValueChange={setSize}>
+                      <SelectTrigger><SelectValue placeholder="Select size" /></SelectTrigger>
+                      <SelectContent>{sizesForColour.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                    </Select>
+                  ) : (
+                    <Input placeholder="e.g. L, XL, one size" value={size} onChange={(e) => setSize(e.target.value)} />
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Quantity</Label>
+                <div className="flex items-center gap-2">
+                  <button type="button" className="w-8 h-8 rounded border border-border bg-background hover:bg-muted flex items-center justify-center text-lg leading-none" onClick={() => setQuantity(q => Math.max(1, q - 1))}>−</button>
+                  <Input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))} className="w-20 text-center font-semibold" />
+                  <button type="button" className="w-8 h-8 rounded border border-border bg-background hover:bg-muted flex items-center justify-center text-lg leading-none" onClick={() => setQuantity(q => q + 1)}>+</button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          {selectedProduct && (
+            <Button onClick={handleSubmit} disabled={saving || quantity < 1} className="gap-1.5">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              Add Requirement
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Purchasing() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -2276,6 +2435,7 @@ export default function Purchasing() {
   const [selectedDraftSupplier, setSelectedDraftSupplier] = useState<string | null>(null);
   const [selectedBackordersSupplier, setSelectedBackordersSupplier] = useState<string | null>(null);
   const [manualPOOpen, setManualPOOpen] = useState(false);
+  const [addManualReqOpen, setAddManualReqOpen] = useState(false);
 
   const { data: groups = [], isFetching: reqFetching, refetch: refetchReqs } = useQuery<SupplierGroup[]>({
     queryKey: ["purchasing-requirements"],
@@ -2437,8 +2597,14 @@ export default function Purchasing() {
   });
 
   const deleteRequirementMutation = useMutation({
-    mutationFn: (itemIds: number[]) =>
-      apiFetch(`/purchasing/requirements`, { method: "DELETE", body: JSON.stringify({ itemIds }) }),
+    mutationFn: async (itemIds: number[]) => {
+      const regularIds = itemIds.filter(id => id > 0);
+      const manualIds = itemIds.filter(id => id < 0).map(id => -id);
+      const calls: Promise<unknown>[] = [];
+      if (regularIds.length > 0) calls.push(apiFetch(`/purchasing/requirements`, { method: "DELETE", body: JSON.stringify({ itemIds: regularIds }) }));
+      for (const mid of manualIds) calls.push(apiFetch(`/purchasing/manual-requirements/${mid}`, { method: "DELETE" }));
+      return Promise.all(calls);
+    },
     onSuccess: () => {
       invalidateAll();
       toast({ title: "Requirement removed", description: "Stock checked and requirement cleared." });
@@ -2767,7 +2933,7 @@ export default function Purchasing() {
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
-                                onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.map((i) => i.itemId) })}
+                                onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.map((i) => i.itemId).filter(id => id > 0) })}
                                 disabled={addToPoMutation.isPending}>
                                 <Plus className="w-3.5 h-3.5" /> Add to Draft PO ({existingDraft.poNumber})
                               </Button>
@@ -2778,6 +2944,9 @@ export default function Purchasing() {
                             )}
                             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEmailGroup(group)}>
                               <Mail className="w-3.5 h-3.5" /> Email
+                            </Button>
+                            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setAddManualReqOpen(true)}>
+                              <Plus className="w-3.5 h-3.5" /> Add Requirement
                             </Button>
                           </div>
                         </div>
@@ -3289,7 +3458,7 @@ export default function Purchasing() {
                     supplierName: createPoGroup.supplierName,
                     supplierEmail: createPoGroup.supplierEmail,
                     notes: createPoNotes || null,
-                    itemIds: createPoGroup.items.map((i) => i.itemId),
+                    itemIds: createPoGroup.items.map((i) => i.itemId).filter((id: number) => id > 0),
                     qtyOverrides: reqQtyOverrides[createPoGroup.supplierName] ?? {},
                   })}
                   disabled={createPoMutation.isPending}
@@ -3373,6 +3542,11 @@ export default function Purchasing() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      <AddManualReqDialog
+        open={addManualReqOpen}
+        onClose={() => setAddManualReqOpen(false)}
+        onAdded={() => { queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] }); }}
+      />
       </div>
     </Layout>
   );

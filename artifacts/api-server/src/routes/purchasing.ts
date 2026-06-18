@@ -383,6 +383,46 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
     grouped[key].items.push(row);
   }
 
+  // Merge in unfulfilled manual purchase requirements
+  const manualRows = await db.execute(sql`
+    SELECT * FROM manual_purchase_requirements WHERE fulfilled_at IS NULL ORDER BY supplier_name, product_name
+  `);
+  for (const mr of manualRows.rows as any[]) {
+    const key = (mr.supplier_name as string) ?? "Unknown Supplier";
+    if (!grouped[key]) {
+      grouped[key] = {
+        supplierId: mr.supplier_id ?? null,
+        supplierName: key,
+        supplierEmail: mr.supplier_email ?? null,
+        supplierCurrency: mr.supplier_currency ?? "GBP",
+        items: [],
+      };
+    }
+    grouped[key].items.push({
+      itemId: -(mr.id as number),
+      orderId: 0,
+      orderNumber: null,
+      customerName: null,
+      productId: mr.product_id ?? null,
+      productName: mr.product_name as string,
+      colour: mr.colour ?? null,
+      size: mr.size ?? null,
+      purchaseQuantity: mr.quantity as number,
+      supplierId: mr.supplier_id ?? null,
+      supplierName: key,
+      resolvedSupplierName: key,
+      supplierEmail: mr.supplier_email ?? null,
+      supplierCode: mr.supplier_code ?? null,
+      secondarySupplierCode: null,
+      productSku: mr.product_sku ?? null,
+      canonicalProductName: null,
+      supplierPrice: mr.supplier_price != null ? parseFloat(String(mr.supplier_price)) : null,
+      supplierCurrency: mr.supplier_currency ?? "GBP",
+      orderCreatedAt: null,
+      queuedAt: mr.created_at ? new Date(mr.created_at as string).toISOString() : null,
+    } as any);
+  }
+
   const sortedGroups = Object.values(grouped).sort((a, b) => {
     const aUnknown = a.supplierId === null;
     const bUnknown = b.supplierId === null;
@@ -399,6 +439,102 @@ router.post("/purchasing/mark-fulfilled", async (req, res): Promise<void> => {
   for (const itemId of parsed.data.itemIds) {
     await db.update(orderItemsTable).set({ purchaseRequired: false, purchaseQuantity: null }).where(eq(orderItemsTable.id, itemId));
   }
+  res.json({ ok: true });
+});
+
+// ─── Manual purchase requirements ────────────────────────────────────────────
+
+router.post("/purchasing/manual-requirements", async (req, res): Promise<void> => {
+  const schema = z.object({
+    productId: z.number().int().positive().optional(),
+    productName: z.string().min(1),
+    productSku: z.string().optional().nullable(),
+    colour: z.string().optional().nullable(),
+    size: z.string().optional().nullable(),
+    quantity: z.number().int().positive(),
+    notes: z.string().optional().nullable(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const { productId, productName, productSku, colour, size, quantity, notes } = parsed.data;
+
+  let supplierId: number | null = null;
+  let supplierName: string | null = null;
+  let supplierEmail: string | null = null;
+  let supplierCurrency = "GBP";
+  let supplierCode: string | null = null;
+  let supplierPrice: number | null = null;
+
+  if (productId) {
+    // Try variant-level supplier (colour+size match first, then colour-only)
+    const variantRow = await db.execute(sql`
+      SELECT pv.supplier_code, pv.supplier_price, pv.primary_supplier_id,
+             s.name AS supplier_name, s.email AS supplier_email, s.currency AS supplier_currency
+      FROM product_variants pv
+      LEFT JOIN suppliers s ON s.id = pv.primary_supplier_id
+      WHERE pv.product_id = ${productId}
+        AND pv.primary_supplier_id IS NOT NULL
+        AND (
+          (LOWER(TRIM(COALESCE(pv.colour,''))) = LOWER(TRIM(COALESCE(${colour ?? ""}, '')))
+           AND LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(COALESCE(${size ?? ""}, ''))))
+          OR
+          LOWER(TRIM(COALESCE(pv.colour,''))) = LOWER(TRIM(COALESCE(${colour ?? ""}, '')))
+        )
+      ORDER BY
+        CASE WHEN LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(COALESCE(${size ?? ""}, ''))) THEN 0 ELSE 1 END
+      LIMIT 1
+    `);
+
+    if (variantRow.rows.length > 0) {
+      const vr = variantRow.rows[0] as any;
+      supplierId = vr.primary_supplier_id;
+      supplierName = vr.supplier_name;
+      supplierEmail = vr.supplier_email;
+      supplierCurrency = vr.supplier_currency ?? "GBP";
+      supplierCode = vr.supplier_code;
+      supplierPrice = vr.supplier_price != null ? parseFloat(String(vr.supplier_price)) : null;
+    } else {
+      // Fall back to product-level supplier
+      const prodRow = await db.execute(sql`
+        SELECT p.supplier_id, p.supplier_code, p.supplier_price, s.name, s.email, s.currency
+        FROM products p
+        LEFT JOIN suppliers s ON s.id = p.supplier_id
+        WHERE p.id = ${productId}
+      `);
+      if (prodRow.rows.length > 0) {
+        const pr = prodRow.rows[0] as any;
+        supplierId = pr.supplier_id;
+        supplierName = pr.name;
+        supplierEmail = pr.email;
+        supplierCurrency = pr.currency ?? "GBP";
+        supplierCode = pr.supplier_code;
+        supplierPrice = pr.supplier_price != null ? parseFloat(String(pr.supplier_price)) : null;
+      }
+    }
+  }
+
+  if (!supplierName) {
+    res.status(400).json({ error: "Could not determine supplier for this product. Please set a supplier on the product or variant first." });
+    return;
+  }
+
+  await db.execute(sql`
+    INSERT INTO manual_purchase_requirements
+      (supplier_id, supplier_name, supplier_email, supplier_currency, product_id, product_name, product_sku, supplier_code, colour, size, quantity, supplier_price, notes)
+    VALUES
+      (${supplierId}, ${supplierName}, ${supplierEmail ?? null}, ${supplierCurrency},
+       ${productId ?? null}, ${productName}, ${productSku ?? null}, ${supplierCode ?? null},
+       ${colour ?? null}, ${size ?? null}, ${quantity}, ${supplierPrice ?? null}, ${notes ?? null})
+  `);
+
+  res.status(201).json({ ok: true });
+});
+
+router.delete("/purchasing/manual-requirements/:id", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  await db.execute(sql`DELETE FROM manual_purchase_requirements WHERE id = ${parsed.data.id}`);
   res.json({ ok: true });
 });
 
