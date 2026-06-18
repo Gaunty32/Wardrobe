@@ -890,11 +890,27 @@ router.get("/worksheets/:id", async (req, res): Promise<void> => {
 
   const items = await db.select().from(worksheetItemsTable).where(eq(worksheetItemsTable.worksheetId, ws.id));
 
+  // Look up productSku (FCC code) for each item via its linked order_item → product
+  const orderItemIds = items.map(i => i.orderItemId).filter((id): id is number => id != null);
+  const skuMap = new Map<number, string | null>();
+  if (orderItemIds.length > 0) {
+    const skuRows = await db.execute(sql`
+      SELECT oi.id, p.sku
+      FROM order_items oi
+      LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.id = ANY(ARRAY[${sql.raw(orderItemIds.join(","))}]::integer[])
+    `);
+    for (const row of skuRows.rows as any[]) {
+      skuMap.set(Number(row.id), (row.sku as string | null) ?? null);
+    }
+  }
+
   res.json({
     ...ws,
     items: items.map((i) => ({
       ...i,
       processes: i.processesSnapshot ? JSON.parse(i.processesSnapshot) : [],
+      productSku: i.orderItemId ? (skuMap.get(i.orderItemId) ?? null) : null,
     })),
   });
 });

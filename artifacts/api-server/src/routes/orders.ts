@@ -2656,9 +2656,10 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
   }
 
   const itemRows = await db
-    .select({ item: orderItemsTable, employee: customerEmployeesTable })
+    .select({ item: orderItemsTable, employee: customerEmployeesTable, productSku: productsTable.sku })
     .from(orderItemsTable)
     .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(eq(orderItemsTable.orderId, orderId));
 
   const allItems = itemRows.map(r => ({
@@ -2666,6 +2667,7 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     unitPrice: parseFloat(String(r.item.unitPrice ?? "0")),
     lineTotal: parseFloat(String(r.item.lineTotal ?? "0")),
     employee: r.employee ?? null,
+    productSku: r.productSku ?? null,
   }));
 
   // Split into dispatched-now vs to-follow:
@@ -2789,7 +2791,7 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
 
   const renderRow = (item: typeof allItems[0]) =>
     `<tr>
-      <td style="padding:5px 10px;border-bottom:1px solid #e5e7eb;font-size:10pt;">${item.productName}${item.finishName ? ` <span style="color:#4f46e5;font-size:8.5pt;">(${item.finishName})</span>` : ""}</td>
+      <td style="padding:5px 10px;border-bottom:1px solid #e5e7eb;font-size:10pt;">${item.productName}${item.finishName ? ` <span style="color:#4f46e5;font-size:8.5pt;">(${item.finishName})</span>` : ""}${item.productSku ? `<br><span style="font-family:monospace;font-size:8pt;color:#4338ca;">${item.productSku}</span>` : ""}</td>
       <td style="padding:5px 10px;border-bottom:1px solid #e5e7eb;font-size:10pt;">${item.colour ?? "—"}</td>
       <td style="padding:5px 10px;border-bottom:1px solid #e5e7eb;font-size:10pt;">${item.size ?? "—"}</td>
       <td style="padding:5px 10px;border-bottom:1px solid #e5e7eb;font-size:10pt;text-align:center;font-weight:700;">${item.quantity}</td>
@@ -2847,7 +2849,7 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
               const bo = backorderMap.get(item.id);
               const recipient = empName(item);
               return `<tr>
-                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.productName}${item.finishName ? ` <span style="color:#4f46e5;font-size:8.5pt;">(${item.finishName})</span>` : ""}</td>
+                <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.productName}${item.finishName ? ` <span style="color:#4f46e5;font-size:8.5pt;">(${item.finishName})</span>` : ""}${(item as any).productSku ? `<br><span style="font-family:monospace;font-size:8pt;color:#4338ca;">${(item as any).productSku}</span>` : ""}</td>
                 <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.colour ?? "—"}</td>
                 <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;">${item.size ?? "—"}</td>
                 <td style="padding:5px 10px;border-bottom:1px solid #fef3c7;font-size:10pt;text-align:center;font-weight:700;">${item.quantity}</td>

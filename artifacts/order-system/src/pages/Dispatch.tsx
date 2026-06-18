@@ -34,7 +34,8 @@ interface Employee {
   jobTitle: string | null; department: string | null;
 }
 interface DispatchItem {
-  id: number; orderId: number; productName: string; colour: string | null;
+  id: number; orderId: number; productName: string; productSku: string | null;
+  colour: string | null;
   size: string | null; quantity: number; recipientType: string;
   recipientName: string | null; recipientEmployeeId: number | null;
   finishName: string | null; unitPrice: number; lineTotal: number;
@@ -392,6 +393,9 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                   <Package className={`w-3.5 h-3.5 flex-shrink-0 ${item.blockedByPo ? "text-amber-500" : "text-muted-foreground"}`} />
                   <div className="flex-1 min-w-0">
                     <span className="font-medium">{item.productName}</span>
+                    {item.productSku && (
+                      <span className="font-mono text-xs text-indigo-500 ml-1.5">{item.productSku}</span>
+                    )}
                     {(item.colour || item.size) && (
                       <span className="text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
                     )}
@@ -684,6 +688,9 @@ function ShippedRow({ order }: { order: ShippedOrder }) {
                   <Package className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <span className="font-medium">{item.productName}</span>
+                    {item.productSku && (
+                      <span className="font-mono text-xs text-indigo-500 ml-1.5">{item.productSku}</span>
+                    )}
                     {(item.colour || item.size) && (
                       <span className="text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
                     )}
