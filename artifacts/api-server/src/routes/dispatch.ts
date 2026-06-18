@@ -131,10 +131,18 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
           (i.stockStatus === "complete" || i.stockStatus === "allocated")
         );
       } else {
+        // An order is complete when all items are done — either via a completed
+        // worksheet, or directly (stock_status='complete' with no outstanding PO).
+        // For decorated orders we normally require worksheets, but if every item is
+        // already stock_status='complete' (e.g. service charges auto-completed) we
+        // treat the order as ready without needing worksheets.
+        const allItemsDirectlyComplete = items.every(
+          i => !blockedByPoItemIds.has(i.id) && i.stockStatus === "complete"
+        );
         allComplete = items.length > 0 && !hasOutstandingItems && (
           hasDecoratedItems
-            ? orderWs.length > 0 && !hasIncompleteWorksheets
-            : items.every(i => !blockedByPoItemIds.has(i.id) && i.stockStatus === "complete")
+            ? (orderWs.length > 0 && !hasIncompleteWorksheets) || allItemsDirectlyComplete
+            : allItemsDirectlyComplete
         );
       }
 
@@ -310,10 +318,11 @@ router.get("/dispatch/orders/:id/ready", async (req, res): Promise<void> => {
       i.stockStatus === "complete" || wsCompleteItemIds.has(i.id)
     );
   } else {
+    const allItemsDirectlyComplete = items.every(i => i.stockStatus === "complete");
     isComplete = items.length > 0 && !hasOutstandingItems && (
       hasDecoratedItems
-        ? worksheets.length > 0 && !hasIncompleteWorksheets
-        : items.every(i => i.stockStatus === "complete")
+        ? (worksheets.length > 0 && !hasIncompleteWorksheets) || allItemsDirectlyComplete
+        : allItemsDirectlyComplete
     );
   }
 
