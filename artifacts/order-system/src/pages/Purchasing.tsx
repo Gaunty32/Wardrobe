@@ -361,13 +361,13 @@ function ReqMatrixView({ items, overrides, onQtyChange, onDeleteRow, currency }:
               const lineTotal = g.price != null ? g.price * rowTotal : null;
               return (
                 <TableRow key={`${gk}-${colour}`} className={ci % 2 === 0 ? "bg-white" : "bg-muted/30"}>
-                  <TableCell className="font-mono font-bold text-xs text-indigo-700">
+                  <TableCell className="font-mono font-bold text-xs text-indigo-700 min-w-[110px]">
                     <div>{g.code ?? "—"}</div>
                     {ci === 0 && (
-                      <div className="text-xs font-normal text-muted-foreground font-sans truncate max-w-[90px]">{g.productName}</div>
+                      <div className="text-xs font-normal text-muted-foreground font-sans break-words">{g.productName}</div>
                     )}
                     {ci === 0 && g.productSku && (
-                      <div className="text-xs font-mono text-indigo-400 truncate max-w-[90px]">{g.productSku}</div>
+                      <div className="text-xs font-mono text-indigo-400">{g.productSku}</div>
                     )}
                   </TableCell>
                   <TableCell className="font-medium text-sm">
@@ -1491,13 +1491,13 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
                         isFading ? "opacity-0 bg-green-50" : ci % 2 === 0 ? "bg-white" : "bg-muted/30"
                       }`}
                     >
-                      <TableCell className="align-top pt-2.5">
+                      <TableCell className="align-top pt-2.5 min-w-[120px]">
                         <div className={`font-mono font-bold text-sm ${ci === 0 ? "text-indigo-700" : "text-indigo-300"}`}>{g.code ?? "—"}</div>
                         {ci === 0 && (
-                          <div className="text-xs font-sans truncate max-w-[100px] text-muted-foreground">{g.productName}</div>
+                          <div className="text-xs font-sans break-words text-muted-foreground">{g.productName}</div>
                         )}
                         {ci === 0 && g.productSku && (
-                          <div className="text-xs font-mono text-indigo-400 truncate max-w-[100px]">{g.productSku}</div>
+                          <div className="text-xs font-mono text-indigo-400">{g.productSku}</div>
                         )}
                       </TableCell>
                       <TableCell className="font-medium text-sm">{colour}</TableCell>
