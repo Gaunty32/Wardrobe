@@ -2159,4 +2159,36 @@ export async function refreshProductIssues(): Promise<void> {
     )
   `);
   console.log("[startup] manual_purchase_requirements table ensured");
+
+  // ── One-time data fix: O144 trouser line (item 561) was prematurely dispatched ──
+  // The York Waistease Trouser on O144 had no PO and zero stock, but was included
+  // in the dispatch batch when the delivery note was produced (June 16).
+  // The order had not physically left the building.
+  // Fix: restore purchase_required, clear the premature dispatched_at, and set
+  // the order to part_shipped (other items on the order are legitimately dispatched).
+  // Guard: only runs when item 561 still has dispatched_at set and purchase_required=false.
+  await db.execute(sql`
+    UPDATE order_items
+    SET purchase_required  = true,
+        purchase_quantity  = 2,
+        stock_status       = NULL,
+        stock_allocated_at = NULL,
+        dispatched_at      = NULL
+    WHERE id = 561
+      AND dispatched_at IS NOT NULL
+      AND purchase_required = false
+      AND stock_status = 'complete'
+  `);
+
+  await db.execute(sql`
+    UPDATE orders
+    SET status = 'part_shipped'
+    WHERE id = 112
+      AND status = 'shipped'
+      AND EXISTS (
+        SELECT 1 FROM order_items
+        WHERE order_id = 112 AND dispatched_at IS NULL
+      )
+  `);
+  console.log("[startup] O144 trouser line restored to purchasing queue (if applicable)");
 }

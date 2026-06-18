@@ -597,6 +597,13 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
   });
 });
 
+// Local extension: adds 'part_shipped' which the generated schema omits
+// (part_shipped is set internally by the dispatch flow but also needs to be
+// settable directly when correcting a premature full-dispatch).
+const UpdateOrderBodyExtended = UpdateOrderBody.extend({
+  status: z.enum(["draft", "confirmed", "shipped", "delivered", "cancelled", "part_shipped"]).optional(),
+});
+
 router.patch("/orders/:id", async (req, res): Promise<void> => {
   const params = UpdateOrderParams.safeParse(req.params);
   if (!params.success) {
@@ -604,7 +611,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const parsed = UpdateOrderBody.safeParse(req.body);
+  const parsed = UpdateOrderBodyExtended.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -2349,6 +2356,7 @@ const UpdateOrderItemBodyExtended = z.object({
   colour: z.string().nullable().optional(),
   stockStatus: z.string().nullable().optional(),
   stockAllocatedAt: z.string().nullable().optional(),
+  dispatchedAt: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
@@ -2390,6 +2398,7 @@ router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
   if (parsed.data.colour !== undefined) updateData.colour = parsed.data.colour;
   if (parsed.data.stockStatus !== undefined) updateData.stockStatus = parsed.data.stockStatus;
   if (parsed.data.stockAllocatedAt !== undefined) updateData.stockAllocatedAt = parsed.data.stockAllocatedAt ? new Date(parsed.data.stockAllocatedAt) : null;
+  if (parsed.data.dispatchedAt !== undefined) updateData.dispatchedAt = parsed.data.dispatchedAt ? new Date(parsed.data.dispatchedAt) : null;
   if (parsed.data.notes !== undefined) updateData.notes = parsed.data.notes;
 
   const [item] = await db
