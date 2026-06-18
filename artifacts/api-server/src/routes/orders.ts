@@ -398,7 +398,12 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Join product_variants to get variant-level supplier price (COALESCE variant → product)
+  // Join product_variants to get variant-level supplier price (COALESCE variant → product).
+  // Size matching handles two formats:
+  //   1. Direct: variant.size = oi.size (most products)
+  //   2. Split: order item stores "collar/sleeve" (e.g. "17.0/Short Sleeve") but the variant
+  //      has size = "17.0" and sleeve = "Short Sleeve" as separate columns (shirts).
+  // Prefer the direct match; fall back to the split match.
   const itemRowsRaw = await db.execute(sql`
     SELECT
       oi.*,
@@ -413,7 +418,15 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       FROM product_variants
       WHERE product_id = oi.product_id
         AND (colour IS NOT DISTINCT FROM oi.colour)
-        AND (size   IS NOT DISTINCT FROM oi.size)
+        AND (
+          (size IS NOT DISTINCT FROM oi.size)
+          OR (
+            oi.size LIKE '%/%'
+            AND size = split_part(oi.size, '/', 1)
+            AND sleeve = split_part(oi.size, '/', 2)
+          )
+        )
+      ORDER BY CASE WHEN size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
       LIMIT 1
     ) pv ON true
     WHERE oi.order_id = ${order.id}
