@@ -1492,7 +1492,12 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
                     >
                       <TableCell className="align-top pt-2.5">
                         <div className={`font-mono font-bold text-sm ${ci === 0 ? "text-indigo-700" : "text-indigo-300"}`}>{g.code ?? "—"}</div>
-                        <div className={`text-xs font-sans truncate max-w-[90px] ${ci === 0 ? "text-muted-foreground" : "text-muted-foreground/40"}`}>{g.productName}</div>
+                        {ci === 0 && (
+                          <div className="text-xs font-sans truncate max-w-[100px] text-muted-foreground">{g.productName}</div>
+                        )}
+                        {ci === 0 && g.productSku && (
+                          <div className="text-xs font-mono text-indigo-400 truncate max-w-[100px]">{g.productSku}</div>
+                        )}
                       </TableCell>
                       <TableCell className="font-medium text-sm">{colour}</TableCell>
                       {allSizes.map(sz => {
