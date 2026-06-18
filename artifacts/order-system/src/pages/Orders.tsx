@@ -370,11 +370,25 @@ function PortalPendingOrders() {
   );
 }
 
+const MERGE_IGNORE_KEY = "sbs-merge-ignored";
+
 function ConfirmedMergeableBanner() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [mergingIds, setMergingIds] = useState<Set<string>>(new Set());
   const [, setLocation] = useLocation();
+  const [ignoredKeys, setIgnoredKeys] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(MERGE_IGNORE_KEY) ?? "[]")); }
+    catch { return new Set(); }
+  });
+
+  function ignoreGroup(key: string) {
+    setIgnoredKeys(prev => {
+      const next = new Set([...prev, key]);
+      try { localStorage.setItem(MERGE_IGNORE_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
 
   const { data: confirmedOrders = [] } = useListOrders({ status: "confirmed" }, { query: { refetchInterval: 15_000 } });
 
@@ -391,12 +405,12 @@ function ConfirmedMergeableBanner() {
     }
     const result: Array<{ key: string; po: string; customer: string; orders: any[] }> = [];
     for (const [key, orders] of poMap.entries()) {
-      if (orders.length > 1) {
+      if (orders.length > 1 && !ignoredKeys.has(key)) {
         result.push({ key, po: orders[0].poNumber, customer: orders[0].customerName, orders });
       }
     }
     return result;
-  }, [confirmedOrders]);
+  }, [confirmedOrders, ignoredKeys]);
 
   if (groups.length === 0) return null;
 
@@ -453,6 +467,17 @@ function ConfirmedMergeableBanner() {
                     </button>
                   ))}
                 </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs gap-1.5 text-blue-400 hover:text-blue-600 hover:bg-blue-100 shrink-0"
+                  disabled={isMerging}
+                  onClick={() => ignoreGroup(g.key)}
+                  title="Hide this suggestion"
+                >
+                  <XCircle className="w-3 h-3" />
+                  Ignore
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
