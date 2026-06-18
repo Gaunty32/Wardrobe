@@ -182,6 +182,15 @@ export default function DemoGate() {
         <p className="mt-6 text-slate-600 text-xs text-center leading-relaxed">
           Customer data is anonymised. Financial figures are illustrative only.
         </p>
+
+        <p className="mt-4 text-center">
+          <button
+            onClick={() => setLocation("/login")}
+            className="text-xs text-slate-600 hover:text-slate-400 transition-colors underline underline-offset-2"
+          >
+            Staff login
+          </button>
+        </p>
       </div>
 
       {/* ── Right panel: scrolling screenshot mosaic ── */}
