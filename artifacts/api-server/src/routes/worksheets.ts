@@ -869,13 +869,16 @@ router.get("/worksheets", async (req, res): Promise<void> => {
     };
   });
 
-  // Sort by requiredDate asc (nulls last), then createdAt desc
+  // Sort by F-number numerically ascending (F102 → F103 → F106), falling back to createdAt asc
+  const fNum = (n: string | null | undefined) => {
+    if (n && /^F[0-9]+$/.test(n)) return parseInt(n.slice(1), 10);
+    return Infinity;
+  };
   result.sort((a, b) => {
-    if (a.requiredDate && b.requiredDate)
-      return new Date(a.requiredDate as unknown as string).getTime() - new Date(b.requiredDate as unknown as string).getTime();
-    if (a.requiredDate) return -1;
-    if (b.requiredDate) return 1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    const fa = fNum(a.worksheetNumber);
+    const fb = fNum(b.worksheetNumber);
+    if (fa !== fb) return fa - fb;
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
   });
 
   res.json(result);
