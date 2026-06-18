@@ -715,7 +715,7 @@ export default function ProductDetail() {
     mutationFn: (status: "draft" | "publish") =>
       apiFetch(`/products/${productId}/push-woo-status`, { method: "POST", body: JSON.stringify({ status }) }),
     onSuccess: (_data: any, status) => {
-      queryClient.invalidateQueries({ queryKey: ["product", productId] });
+      qc.invalidateQueries({ queryKey: ["product", productId] });
       toast({ title: status === "draft" ? "Product set to draft on WooCommerce" : "Product published on WooCommerce" });
     },
     onError: (e: any) => toast({ title: "WooCommerce status update failed", description: e?.message, variant: "destructive" }),
