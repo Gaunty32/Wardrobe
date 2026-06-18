@@ -1951,7 +1951,7 @@ function ManualPODialog({ open, onClose, onCreated, allSuppliers }: {
 }
 
 function POCard({
-  po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll, onCancelLine, hideMatrix,
+  po, onStatusChange, onDelete, onDeleteLine, onLineUpdate, onRefresh, onReceiveAll, onCancelLine, onCleanup, hideMatrix,
 }: {
   po: PurchaseOrder;
   onStatusChange: (id: number, status: string, extra?: Record<string, unknown>) => void;
@@ -1961,9 +1961,11 @@ function POCard({
   onRefresh: () => void;
   onReceiveAll: (id: number) => void;
   onCancelLine: (poId: number, itemId: number) => void;
+  onCleanup?: (poId: number) => void;
   hideMatrix?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [markOrderedOpen, setMarkOrderedOpen] = useState(false);
   const [addLineOpen, setAddLineOpen] = useState(false);
@@ -2037,6 +2039,35 @@ function POCard({
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          {po.status === "draft" && onCleanup && (
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+              disabled={cleaningUp}
+              title="Remove lines that have already been received into stock"
+              onClick={async () => {
+                setCleaningUp(true);
+                try {
+                  const res = await apiFetch<{ removed: number; remaining: number }>(
+                    `/purchasing/purchase-orders/${po.id}/cleanup-fulfilled`, { method: "POST" }
+                  );
+                  if (res.removed === 0) {
+                    alert("No fulfilled lines found — all lines still need ordering.");
+                  } else {
+                    alert(`Removed ${res.removed} already-fulfilled line${res.removed !== 1 ? "s" : ""}. ${res.remaining} line${res.remaining !== 1 ? "s" : ""} remain.`);
+                    onCleanup(po.id);
+                  }
+                } catch (e: any) {
+                  alert("Error: " + e.message);
+                } finally {
+                  setCleaningUp(false);
+                }
+              }}
+            >
+              {cleaningUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              Clean up
+            </Button>
+          )}
           {(po.status === "draft" || po.status === "ordered") && (
             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEmailOpen(true)}>
               <Mail className="w-3.5 h-3.5" /> Email PO
@@ -3020,6 +3051,7 @@ export default function Purchasing() {
                       onRefresh={() => { refetchPos(); refetchReqs(); }}
                       onReceiveAll={(id) => receiveAllMutation.mutate(id)}
                       onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
+                      onCleanup={() => { refetchPos(); refetchReqs(); }}
                     />
                   ))}
                 </div>
@@ -3088,6 +3120,7 @@ export default function Purchasing() {
                         onRefresh={() => { refetchPos(); refetchReqs(); }}
                         onReceiveAll={(id) => receiveAllMutation.mutate(id)}
                         onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
+                        onCleanup={() => { refetchPos(); refetchReqs(); }}
                       />
                     ))}
                   </div>
@@ -3147,6 +3180,7 @@ export default function Purchasing() {
                       onRefresh={() => { refetchPos(); refetchReqs(); }}
                       onReceiveAll={(id) => receiveAllMutation.mutate(id)}
                       onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
+                      onCleanup={() => { refetchPos(); refetchReqs(); }}
                     />
                   ))}
                 </div>
@@ -3209,6 +3243,7 @@ export default function Purchasing() {
                     onRefresh={() => { refetchPos(); refetchReqs(); }}
                     onReceiveAll={(id) => receiveAllMutation.mutate(id)}
                     onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
+                    onCleanup={() => { refetchPos(); refetchReqs(); }}
                   />
                 ))}
               </div>

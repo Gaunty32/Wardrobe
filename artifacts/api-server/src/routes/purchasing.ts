@@ -1858,6 +1858,52 @@ router.delete("/purchasing/purchase-orders/:poId/items/:itemId", async (req, res
   res.sendStatus(204);
 });
 
+// ─── Cleanup fulfilled lines from a draft PO ─────────────────────────────────
+// Removes PO lines where the linked order item(s) no longer need purchasing
+// (purchase_required = false), i.e. stock has already arrived via another route.
+// Unlike the normal delete, this does NOT restore purchase_required — the
+// requirement is already met.
+router.post("/purchasing/purchase-orders/:id/cleanup-fulfilled", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const poId = parsed.data.id;
+  const [po] = await db.select({ status: purchaseOrdersTable.status }).from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
+  if (!po) { res.status(404).json({ error: "Purchase order not found" }); return; }
+  if (po.status === "delivered") { res.status(400).json({ error: "Cannot modify a delivered PO" }); return; }
+
+  const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, poId));
+
+  let removed = 0;
+  for (const item of poItems) {
+    // Collect all linked order item IDs for this PO line
+    const linkedIds = [
+      ...(item.orderItemId != null ? [item.orderItemId] : []),
+      ...((item.sourceOrderItemIds as number[] | null) ?? []),
+    ];
+    const uniqueIds = [...new Set(linkedIds)];
+
+    if (uniqueIds.length === 0) continue; // Manual line — skip
+
+    // Check if ALL linked order items have purchase_required = false
+    const stillNeeded = await db.execute(sql`
+      SELECT COUNT(*) AS cnt
+      FROM order_items oi
+      WHERE oi.id = ANY(ARRAY[${sql.raw(uniqueIds.join(","))}]::integer[])
+        AND oi.purchase_required = true
+    `);
+    const cnt = parseInt(String((stillNeeded.rows[0] as any)?.cnt ?? "0"), 10);
+
+    if (cnt === 0) {
+      // All linked items are fulfilled — remove this PO line
+      await db.delete(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.id, item.id));
+      removed++;
+    }
+  }
+
+  res.json({ removed, remaining: poItems.length - removed });
+});
+
 // ─── Re-queue stuck order items for purchasing ────────────────────────────────
 // Fixes items that ended up with purchaseRequired=false + stockStatus='allocated'
 // but no actual stock (e.g. after a PO line was deleted with no linked order item IDs).
