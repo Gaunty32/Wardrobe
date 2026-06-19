@@ -65,31 +65,34 @@ router.get("/picking-list", async (req, res): Promise<void> => {
            ON  pv.product_id = oi.product_id
            AND (pv.colour = oi.colour OR (pv.colour IS NULL AND oi.colour IS NULL))
            AND (pv.size   = oi.size   OR (pv.size   IS NULL AND oi.size   IS NULL))
-    WHERE (
-        -- Decorated items awaiting production pick
-        (oi.stock_status = 'allocated' AND oi.finish_id IS NOT NULL)
-        OR
-        -- Plain (undecorated) items whose stock has arrived — need a physical warehouse pick
-        (oi.stock_status = 'complete' AND oi.finish_id IS NULL)
-      )
-      AND oi.dispatched_at IS NULL
-      AND COALESCE(p.is_service, false) = false
-      AND NOT EXISTS (
-        -- Exclude items still waiting for PO delivery (direct link)
-        SELECT 1 FROM purchase_order_items poi
-        INNER JOIN purchase_orders po ON po.id = poi.po_id
-        WHERE po.status NOT IN ('cancelled', 'delivered')
-          AND poi.quantity_delivered < poi.quantity_ordered
-          AND poi.order_item_id = oi.id
-      )
-      AND NOT EXISTS (
-        -- Exclude items still waiting for PO delivery (consolidated source link)
-        SELECT 1 FROM purchase_order_items poi
-        INNER JOIN purchase_orders po ON po.id = poi.po_id
-        WHERE po.status NOT IN ('cancelled', 'delivered')
-          AND poi.quantity_delivered < poi.quantity_ordered
-          AND COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
-      )
+    WHERE
+        -- Only decorated items awaiting production pick (plain items go straight to Dispatch)
+        oi.stock_status = 'allocated'
+        AND oi.finish_id IS NOT NULL
+        -- Exclude completed / shipped / cancelled orders
+        AND o.status NOT IN (
+          'shipped', 'delivered', 'completed', 'invoiced',
+          'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending'
+        )
+        AND oi.dispatched_at IS NULL
+        -- Exclude service products (LEFT JOIN: NULL product_id items are excluded too)
+        AND (oi.product_id IS NULL OR COALESCE(p.is_service, false) = false)
+        AND NOT EXISTS (
+          -- Exclude items still waiting for PO delivery (direct link)
+          SELECT 1 FROM purchase_order_items poi
+          INNER JOIN purchase_orders po ON po.id = poi.po_id
+          WHERE po.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND poi.order_item_id = oi.id
+        )
+        AND NOT EXISTS (
+          -- Exclude items still waiting for PO delivery (consolidated source link)
+          SELECT 1 FROM purchase_order_items poi
+          INNER JOIN purchase_orders po ON po.id = poi.po_id
+          WHERE po.status NOT IN ('cancelled', 'delivered')
+            AND poi.quantity_delivered < poi.quantity_ordered
+            AND COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+        )
     ORDER BY o.required_date NULLS LAST, o.id
   `);
 

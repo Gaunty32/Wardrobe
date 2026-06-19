@@ -644,6 +644,7 @@ router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
 
   // Also promote stock-covered items that have no stock_status yet.
   // Plain items (no finish) go straight to 'complete'; decorated items to 'allocated'.
+  // Exclude service products — they never need picking or production.
   await db.execute(sql`
     UPDATE order_items oi
     SET stock_status = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
@@ -653,6 +654,7 @@ router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
       AND oi.purchase_required = false
       AND oi.stock_status IS NULL
       AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived')
+      AND NOT EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.is_service = true)
   `);
 
   res.json({ ok: true, promoted });
@@ -1142,6 +1144,7 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
     // stock_status=null after allocation (covers cases where sourceOrderItemIds
     // was empty or the item IDs didn't match).  Only promote items that have no
     // OTHER outstanding PO line still awaiting delivery.
+    // Exclude service products — they never need picking or production.
     await db.execute(sql`
       UPDATE order_items oi
       SET stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
@@ -1154,6 +1157,7 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
           'shipped','completed','delivered','invoiced',
           'cancelled','archived','draft','portal_draft','portal_pending'
         )
+        AND NOT EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.is_service = true)
         AND NOT EXISTS (
           SELECT 1 FROM purchase_order_items poi
           JOIN purchase_orders po2 ON po2.id = poi.po_id
@@ -1343,6 +1347,7 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
       const allocation = await allocatePODelivery(params.data.id);
       // Safety-net: promote any remaining purchase_required=false, stock_status=null items.
       // Plain items (no finish) go straight to 'complete'; decorated items to 'allocated'.
+      // Exclude service products — they never need picking or production.
       await db.execute(sql`
         UPDATE order_items oi
         SET stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
@@ -1355,6 +1360,7 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
             'shipped','completed','delivered','invoiced',
             'cancelled','archived','draft','portal_draft','portal_pending'
           )
+          AND NOT EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.is_service = true)
           AND NOT EXISTS (
             SELECT 1 FROM purchase_order_items poi
             JOIN purchase_orders po2 ON po2.id = poi.po_id

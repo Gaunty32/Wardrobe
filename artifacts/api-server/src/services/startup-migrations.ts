@@ -1008,6 +1008,7 @@ export async function runStartupMigrations(): Promise<void> {
       AND oi.purchase_required = false
       AND oi.stock_status IS NULL
       AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
+      AND NOT EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.is_service = true)
   `);
 
   // Retroactive fix: existing plain items that are 'allocated' should be 'complete'
@@ -2021,6 +2022,7 @@ export async function refreshProductIssues(): Promise<void> {
         stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
         stock_allocated_at = NOW()
     WHERE oi.purchase_required = true
+      AND NOT EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.is_service = true)
       AND EXISTS (
         SELECT 1 FROM purchase_order_items poi
         JOIN purchase_orders po ON po.id = poi.po_id
