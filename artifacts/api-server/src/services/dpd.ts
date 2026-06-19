@@ -192,6 +192,7 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
 
   const shipJson = await shipRes.json() as {
     data?: {
+      jobId?: number;
       shipmentId?: number;
       consolidated?: boolean;
       consignmentDetail?: Array<{ consignmentNumber?: string; parcelNumbers?: string[] }>;
@@ -205,49 +206,68 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
   }
 
   const consignmentNumber = shipJson.data?.consignmentDetail?.[0]?.consignmentNumber ?? "";
-  const shipmentId = shipJson.data?.shipmentId ?? 0;
+  // DPD Local API returns jobId (used for label retrieval), not shipmentId
+  const jobId = shipJson.data?.jobId ?? shipJson.data?.shipmentId ?? 0;
 
-  // Fetch label HTML (non-fatal if it fails — dispatch still proceeds)
+  console.log(`[DPD] Shipment created — consignment: ${consignmentNumber}, jobId: ${jobId}`);
+  console.log(`[DPD] Full shipment response: ${JSON.stringify(shipJson.data)}`);
+
+  // Fetch label HTML using the correct DPD Local label endpoint
+  // Endpoint: GET /user/label/{jobId}  (Accept: text/html)
   let labelHtml: string | null = null;
-  try {
-    const labelRes = await fetch(
-      `${DPD_BASE}/shipping/shipment/${shipmentId}/label/`,
-      {
-        headers: {
-          ...authHeaders,
-          Accept: "text/html",
-        },
+  if (jobId) {
+    try {
+      const labelRes = await fetch(
+        `${DPD_BASE}/user/label/${jobId}`,
+        {
+          headers: {
+            ...authHeaders,
+            Accept: "text/html",
+          },
+        }
+      );
+      if (labelRes.ok) {
+        labelHtml = await labelRes.text();
+        console.log(`[DPD] Label fetched successfully for jobId ${jobId} (${labelHtml.length} chars)`);
+      } else {
+        const labelErr = await labelRes.text();
+        console.error(`[DPD] Label fetch failed (${labelRes.status}): ${labelErr}`);
       }
-    );
-    if (labelRes.ok) {
-      labelHtml = await labelRes.text();
+    } catch (e) {
+      console.error(`[DPD] Label fetch exception: ${e instanceof Error ? e.message : String(e)}`);
     }
-  } catch {
-    // Label fetch is best-effort; dispatch still succeeds
+  } else {
+    console.error("[DPD] No jobId in shipment response — cannot fetch label. Full response:", JSON.stringify(shipJson));
   }
 
   return {
     consignmentNumber,
-    shipmentId,
+    shipmentId: jobId,
     trackingUrl: `https://track.dpdlocal.co.uk/search?reference=${consignmentNumber}&postcode=${encodeURIComponent(params.delivery.postcode)}`,
     labelHtml,
   };
 }
 
-export async function reprrintDpdLabel(shipmentId: number): Promise<string | null> {
+export async function reprrintDpdLabel(jobId: number): Promise<string | null> {
   try {
     const cfg = getConfig();
     const geoSession = await login(cfg);
-    const res = await fetch(`${DPD_BASE}/shipping/shipment/${shipmentId}/label/`, {
+    const res = await fetch(`${DPD_BASE}/user/label/${jobId}`, {
       headers: {
+        "Content-Type": "application/json",
+        Accept: "text/html",
         GeoClient: `account/${cfg.accountNumber}`,
         GeoSession: geoSession,
-        Accept: "text/html",
       },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[DPD] Reprint label failed (${res.status}): ${body}`);
+      return null;
+    }
     return await res.text();
-  } catch {
+  } catch (e) {
+    console.error(`[DPD] Reprint label exception: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 }
