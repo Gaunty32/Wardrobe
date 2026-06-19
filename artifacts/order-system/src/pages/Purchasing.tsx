@@ -28,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate, cn } from "@/lib/utils";
 import { useListSuppliers } from "@workspace/api-client-react";
+import { printWorksheetFromData } from "@/utils/printWorksheet";
 import { UploadedImage } from "@/components/UploadedImage";
 
 const API_BASE = "/api";
@@ -198,6 +199,27 @@ async function printBookInSlip(affectedOrderIds: number[]) {
   const idSet = new Set(affectedOrderIds);
   const relevantOrders = (pickingList as any[]).filter((o: any) => idSet.has(o.orderId));
   if (relevantOrders.length === 0) return;
+
+  // Auto-pick decorated items so the production worksheet is created immediately.
+  // Plain items stay on the picking list (warehouse staff physically pulls them later).
+  const decoratedItemIds = relevantOrders.flatMap((o: any) =>
+    (o.items as any[]).filter((i: any) => i.finishId != null).map((i: any) => i.itemId)
+  );
+  if (decoratedItemIds.length > 0) {
+    try {
+      const pickResult = await fetch(`${API_BASE}/picking-list/pick`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIds: decoratedItemIds }),
+      }).then(r => r.json());
+      // Print each worksheet that was just created
+      if (pickResult?.worksheets?.length > 0) {
+        for (const ws of pickResult.worksheets) {
+          printWorksheetFromData(ws);
+        }
+      }
+    } catch { /* non-fatal — slip still prints below */ }
+  }
 
   const dateStr = new Date().toLocaleDateString("en-GB");
   const thStyle = `background:#374151;color:white;padding:4px 7px;font-size:9.5px;text-align:center;white-space:nowrap`;
