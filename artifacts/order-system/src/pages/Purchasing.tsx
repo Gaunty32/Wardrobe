@@ -2140,7 +2140,18 @@ function POCard({
   const [addLineOpen, setAddLineOpen] = useState(false);
   const [addLineForm, setAddLineForm] = useState<ManualPOLine>(emptyManualLine());
   const [addLineSaving, setAddLineSaving] = useState(false);
+  const [codeFilter, setCodeFilter] = useState("");
   const latestQtysRef = useRef<Map<number, number>>(new Map());
+
+  const filteredItems = codeFilter.trim()
+    ? po.items.filter((i) => {
+        const q = codeFilter.trim().toLowerCase();
+        return (
+          (i.supplierCode ?? "").toLowerCase().includes(q) ||
+          (i.secondarySupplierCode ?? "").toLowerCase().includes(q)
+        );
+      })
+    : po.items;
   const cfg = STATUS_CFG[po.status];
   const StatusIcon = cfg.icon;
 
