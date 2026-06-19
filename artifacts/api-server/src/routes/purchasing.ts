@@ -1340,7 +1340,7 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
 
     if (allDelivered) {
       await db.execute(sql`UPDATE purchase_orders SET status = 'delivered', updated_at = now() WHERE id = ${params.data.id}`);
-      await allocatePODelivery(params.data.id);
+      const allocation = await allocatePODelivery(params.data.id);
       // Safety-net: promote any remaining purchase_required=false, stock_status=null items.
       // Plain items (no finish) go straight to 'complete'; decorated items to 'allocated'.
       await db.execute(sql`
@@ -1366,6 +1366,8 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
               )
           )
       `);
+      res.json({ ...poItem, autoCompleted: true, allocation });
+      return;
     }
   }
 

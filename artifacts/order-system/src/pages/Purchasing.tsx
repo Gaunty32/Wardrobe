@@ -2784,6 +2784,11 @@ export default function Purchasing() {
       setStatusFilter("all");
       if (vars.status === "delivered" && data?.allocation && data.allocation.pickingItems > 0) {
         setNextStepData(data.allocation);
+        // Auto-print picking slip + worksheets for decorated items
+        const affectedOrderIds = (data.allocation.summary ?? [])
+          .filter((s) => s.pickingCount > 0 || s.worksheetCount > 0)
+          .map((s) => s.orderId);
+        if (affectedOrderIds.length > 0) printBookInSlip(affectedOrderIds);
       } else {
         const msgs: Record<string, string> = {
           ordered: "PO marked as Ordered — now showing in the Ordered tab.",
@@ -2791,6 +2796,13 @@ export default function Purchasing() {
           draft: "PO moved back to Draft.",
         };
         toast({ title: "Status updated", description: msgs[vars.status] });
+        // Even with no picking items, still check if any decorated items need worksheets
+        if (vars.status === "delivered") {
+          const affectedOrderIds = (data?.allocation?.summary ?? [])
+            .filter((s) => s.pickingCount > 0 || s.worksheetCount > 0)
+            .map((s) => s.orderId);
+          if (affectedOrderIds.length > 0) printBookInSlip(affectedOrderIds);
+        }
       }
     },
     onError: () => toast({ title: "Error", variant: "destructive" }),
@@ -2862,11 +2874,18 @@ export default function Purchasing() {
 
   const lineUpdateMutation = useMutation({
     mutationFn: ({ poId, itemId, data }: { poId: number; itemId: number; data: Record<string, unknown> }) =>
-      apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
-    onSuccess: () => {
+      apiFetch<any>(`/purchasing/purchase-orders/${poId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: (response: any) => {
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
       queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
       queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      // If the save caused a server-side auto-complete, print picking slip + worksheets
+      if (response?.autoCompleted && response?.allocation) {
+        const affectedOrderIds: number[] = (response.allocation.summary ?? [])
+          .filter((s: any) => s.pickingCount > 0 || s.worksheetCount > 0)
+          .map((s: any) => s.orderId);
+        if (affectedOrderIds.length > 0) printBookInSlip(affectedOrderIds);
+      }
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
