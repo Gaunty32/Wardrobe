@@ -2087,20 +2087,22 @@ export default function ProductDetail() {
                     ) : (
                       <div className="grid gap-3">
                         {guidance.staffQuotes.map((q) => (
-                          <div key={q.id} className="flex items-start gap-4 border border-border rounded-lg p-3 bg-muted/20">
-                            {/* Photo + name + role stacked in left column */}
-                            <div className="flex flex-col items-center flex-shrink-0 w-24 text-center gap-1">
-                              <div className="w-24 h-24 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center text-2xl font-bold text-primary">
+                          <div key={q.id} className="flex flex-col sm:flex-row items-start gap-3 border border-border rounded-lg p-3 bg-muted/20">
+                            {/* Top row on mobile: avatar + name/role inline; left column on desktop */}
+                            <div className="flex flex-row sm:flex-col items-center gap-3 sm:gap-1 flex-shrink-0 sm:w-24 sm:text-center">
+                              <div className="w-14 h-14 sm:w-24 sm:h-24 rounded-full bg-primary/10 overflow-hidden flex items-center justify-center text-xl sm:text-2xl font-bold text-primary flex-shrink-0">
                                 {q.staffImageUrl
                                   ? <img src={q.staffImageUrl} alt={q.staffName} className="w-full h-full object-cover object-center" />
                                   : q.staffName.charAt(0).toUpperCase()}
                               </div>
-                              <span className="text-sm font-semibold leading-tight">{q.staffName}</span>
-                              {q.staffRole && <span className="text-xs text-muted-foreground">{q.staffRole}</span>}
-                              {q.rewritten && <span className="text-xs text-primary/70 flex items-center justify-center gap-0.5"><Sparkles className="w-3 h-3" /> AI-polished</span>}
+                              <div className="flex flex-col sm:items-center gap-0.5">
+                                <span className="text-sm font-semibold leading-tight">{q.staffName}</span>
+                                {q.staffRole && <span className="text-xs text-muted-foreground">{q.staffRole}</span>}
+                                {q.rewritten && <span className="text-xs text-primary/70 flex items-center gap-0.5"><Sparkles className="w-3 h-3" /> AI-polished</span>}
+                              </div>
                             </div>
-                            {/* Quote centred to photo height */}
-                            <div className="flex-1 min-w-0 flex items-center" style={{ minHeight: "96px" }}>
+                            {/* Quote text — full width on mobile */}
+                            <div className="flex-1 min-w-0 flex items-center sm:min-h-[96px]">
                               <p className="text-sm text-muted-foreground italic">"{q.rewritten || q.draft}"</p>
                             </div>
                             <div className="flex gap-1 flex-shrink-0 self-start">
