@@ -169,6 +169,175 @@ function sortSizes(sizes: string[]): string[] {
   });
 }
 
+// ── Auto-print slip after booking in a PO line ──────────────────────────────
+// Fetches the picking list filtered to the affected orders and opens a print
+// window with a per-customer picking slip (same format as Production page).
+// Alias to avoid name collision with the local sortSizes declared below
+const sortSizesLocal = (sizes: string[]) => {
+  const SIZE_ORDER_LOCAL = ["XXS","XS","S","M","L","XL","2XL","XXL","3XL","XXXL","4XL","5XL","6XL","7XL","8XL",
+    "One Size","OS","Free Size","6","7","8","9","10","11","12","13","14","15","16",
+    "3/4 Sleeve","Short Sleeve","Long Sleeve","Regular","Slim","Tailored"];
+  return [...sizes].sort((a, b) => {
+    const ai = SIZE_ORDER_LOCAL.indexOf(a), bi = SIZE_ORDER_LOCAL.indexOf(b);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1; if (bi !== -1) return 1;
+    const an = parseFloat(a), bn = parseFloat(b);
+    if (!isNaN(an) && !isNaN(bn)) return an - bn;
+    return a.localeCompare(b);
+  });
+};
+
+async function printBookInSlip(affectedOrderIds: number[]) {
+  if (affectedOrderIds.length === 0) return;
+  let pickingList: any[];
+  try {
+    pickingList = await fetch(`${API_BASE}/picking-list`).then(r => r.json());
+  } catch { return; }
+
+  // Filter to only the orders affected by this book-in
+  const idSet = new Set(affectedOrderIds);
+  const relevantOrders = (pickingList as any[]).filter((o: any) => idSet.has(o.orderId));
+  if (relevantOrders.length === 0) return;
+
+  const dateStr = new Date().toLocaleDateString("en-GB");
+  const thStyle = `background:#374151;color:white;padding:4px 7px;font-size:9.5px;text-align:center;white-space:nowrap`;
+  const thLeftStyle = `background:#374151;color:white;padding:4px 7px;font-size:9.5px;text-align:left`;
+  const tdStyle = `padding:4px 7px;border-bottom:1px solid #e5e7eb;text-align:center;font-size:10px`;
+  const tdLeftStyle = `padding:4px 7px;border-bottom:1px solid #e5e7eb;font-size:10px`;
+
+  const slipPages = relevantOrders.map((order: any, pageIdx: number) => {
+    const items: any[] = order.items ?? [];
+    const totalQty = items.reduce((s: number, i: any) => s + i.quantity, 0);
+    const requiredDate = order.requiredDate
+      ? new Date(order.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+      : null;
+
+    // Group by finish
+    const finishMap = new Map<string, any[]>();
+    for (const item of items) {
+      const fk = item.finishName ?? "Plain (No Finish)";
+      if (!finishMap.has(fk)) finishMap.set(fk, []);
+      finishMap.get(fk)!.push(item);
+    }
+    const finishKeys = Array.from(finishMap.keys()).sort((a, b) => {
+      if (a === "Plain (No Finish)") return 1;
+      if (b === "Plain (No Finish)") return -1;
+      return a.localeCompare(b);
+    });
+
+    const finishSections = finishKeys.map(finishName => {
+      const fItems = finishMap.get(finishName)!;
+      const matMap = new Map<string, { meta: any; sizes: Map<string, number> }>();
+      const matSizes = new Set<string>();
+      for (const item of fItems) {
+        const key = [item.supplierCode ?? "", item.productSku ?? "", item.productName, item.colour ?? ""].join("||");
+        if (!matMap.has(key)) matMap.set(key, { meta: item, sizes: new Map() });
+        const sk = item.size ?? "—";
+        matSizes.add(sk);
+        matMap.get(key)!.sizes.set(sk, (matMap.get(key)!.sizes.get(sk) ?? 0) + item.quantity);
+      }
+      const sortedSizes = sortSizesLocal(Array.from(matSizes));
+      const matRows = Array.from(matMap.values());
+      const finishTotal = fItems.reduce((s: number, i: any) => s + i.quantity, 0);
+      const sizeHeaders = sortedSizes.map(s => `<th style="${thStyle}">${s}</th>`).join("");
+      const tableRows = matRows.map(({ meta, sizes }, i) => {
+        const rowTotal = Array.from(sizes.values()).reduce((s, v) => s + v, 0);
+        const sizeCells = sortedSizes.map(s => {
+          const qty = sizes.get(s) ?? 0;
+          return `<td style="${tdStyle}${qty > 0 ? ";font-weight:bold" : ";color:#bbb"}">${qty > 0 ? qty : "—"}</td>`;
+        }).join("");
+        return `<tr style="background:${i % 2 === 0 ? "#f9fafb" : "white"}">
+          <td style="${tdLeftStyle}">
+            ${meta.supplierCode ? `<span style="font-family:monospace;font-weight:bold;font-size:10px">${meta.supplierCode}</span> ` : ""}
+            ${meta.productSku ? `<span style="font-size:9px;color:#2563eb">${meta.productSku}</span><br>` : ""}
+            ${meta.binLocation ? `<span style="font-size:9px;color:#059669;font-weight:bold">📦 ${meta.binLocation}</span><br>` : ""}
+            <span style="font-size:10px">${meta.productName}</span>
+          </td>
+          <td style="${tdLeftStyle}">${meta.colour ?? "—"}</td>
+          ${sizeCells}
+          <td style="${tdStyle};font-weight:bold;background:#f0f4ff">${rowTotal}</td>
+          <td style="${tdStyle}"><span style="display:inline-block;width:20px;height:20px;border:1.5px solid #999;border-radius:3px">&nbsp;</span></td>
+        </tr>`;
+      }).join("");
+      return `
+        <div style="margin-bottom:5mm">
+          <div style="display:inline-block;margin-bottom:1.5mm;padding:2px 9px;background:#1e3a5f;color:white;border-radius:3px;font-size:10px;font-weight:700;letter-spacing:0.4px">${finishName}</div>
+          <table style="width:100%;border-collapse:collapse">
+            <thead><tr>
+              <th style="${thLeftStyle}">Product / Style</th>
+              <th style="${thLeftStyle}">Colour</th>
+              ${sizeHeaders}
+              <th style="${thStyle};background:#1e3a5f">Total</th>
+              <th style="${thStyle}">Picked ✓</th>
+            </tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+          <div style="text-align:right;font-size:9px;color:#888;margin-top:1mm">${matRows.length} style${matRows.length !== 1 ? "s" : ""} · ${finishTotal} unit${finishTotal !== 1 ? "s" : ""}</div>
+        </div>`;
+    }).join("");
+
+    const hasDecoration = items.some((i: any) => i.finishId != null);
+    const isLast = pageIdx === relevantOrders.length - 1;
+    return `
+      <div class="slip${isLast ? "" : " page-break"}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid #1e3a5f;padding-bottom:3mm;margin-bottom:3mm">
+          <div>
+            <div style="font-size:22px;font-weight:900;color:#1e3a5f;line-height:1.1">${order.customerName ?? "Unknown Customer"}</div>
+            <div style="font-size:11px;font-weight:700;color:#374151;letter-spacing:0.5px;margin-top:1.5mm">${hasDecoration ? "PICKING SLIP — FOR PRODUCTION" : "PICKING SLIP"}</div>
+            <div style="font-size:10px;color:#555;margin-top:2mm">
+              <span style="font-family:monospace;font-size:10px;color:#1e3a5f">${order.orderNumber}</span>
+              ${requiredDate ? `&nbsp;·&nbsp;<span style="color:#b45309;font-weight:bold">Due: ${requiredDate}</span>` : ""}
+            </div>
+            <div style="font-size:10px;color:#666;margin-top:1mm">${finishKeys.length} finish${finishKeys.length !== 1 ? "es" : ""} &nbsp;·&nbsp; Total qty <strong>${totalQty}</strong></div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:8mm">
+            <div style="font-weight:bold;font-size:12px">Select Branding Solutions</div>
+            <div style="color:#555;font-size:10px">Booked in: ${dateStr}</div>
+            ${hasDecoration ? `<div style="margin-top:2mm;padding:2px 8px;background:#dbeafe;color:#1e40af;border-radius:3px;font-size:10px;font-weight:600">⚙ Needs decoration</div>` : `<div style="margin-top:2mm;padding:2px 8px;background:#dcfce7;color:#166534;border-radius:3px;font-size:10px;font-weight:600">✓ Ready to pick &amp; dispatch</div>`}
+          </div>
+        </div>
+        ${finishSections}
+        <div style="margin-top:6mm;display:flex;gap:24px;border-top:1px solid #e5e7eb;padding-top:3mm">
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Picked by: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Date picked: ___________________________</div>
+          <div style="flex:1;border-bottom:1px solid #999;padding-bottom:2mm;font-size:9.5px;color:#666">Checked by: ___________________________</div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html><head><title>Picking Slip — Booked In</title>
+    <style>
+      *{box-sizing:border-box}
+      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:10px;color:#111}
+      #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+      #toolbar span{flex:1;font-size:14px;font-weight:600}
+      #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+      #btn-print{background:#22c55e;color:white}#btn-close{background:rgba(255,255,255,.15);color:white}
+      #page{display:flex;flex-direction:column;align-items:center;padding:24px 0 40px;gap:24px}
+      .slip{background:white;padding:10mm 12mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:257mm}
+      @media print{
+        #toolbar{display:none}body{background:white}#page{padding:0;gap:0}
+        .slip{box-shadow:none;width:100%;padding:0}
+        .page-break{page-break-after:always}
+        @page{size:A4 portrait;margin:10mm}
+      }
+    </style>
+  </head><body>
+    <div id="toolbar">
+      <span>📋 Picking Slip — ${relevantOrders.length} order${relevantOrders.length !== 1 ? "s" : ""} booked in</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print</button>
+      <button id="btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+    <div id="page">${slipPages}</div>
+    <script>window.onload=function(){window.print();};<\/script>
+  </body></html>`;
+
+  const win = window.open("", "_blank", "width=1100,height=800");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+}
+
 type POCellInfo = { orderNumber: string | null; customerName: string | null };
 
 function buildPOMatrix(items: POItem[]) {
@@ -2590,6 +2759,11 @@ export default function Purchasing() {
       invalidateAll();
       if (data?.allocation && data.allocation.pickingItems > 0) {
         setNextStepData(data.allocation);
+        // Auto-open picking slips for all affected orders
+        const affectedOrderIds = (data.allocation.summary ?? [])
+          .filter((s) => s.pickingCount > 0 || s.worksheetCount > 0)
+          .map((s) => s.orderId);
+        if (affectedOrderIds.length > 0) printBookInSlip(affectedOrderIds);
       } else {
         toast({ title: "Delivery booked in", description: "All lines marked as received." });
       }
@@ -2679,7 +2853,7 @@ export default function Purchasing() {
   const bookInBackorderMutation = useMutation({
     mutationFn: ({ poId, itemId, quantity }: { poId: number; itemId: number; quantity: number; remaining: number }) =>
       apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantity }) }),
-    onSuccess: (_data, { itemId, quantity, remaining }) => {
+    onSuccess: (data: any, { itemId, quantity, remaining }) => {
       setBackorderDrafts(prev => { const next = { ...prev }; delete next[itemId]; return next; });
       queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
       queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
@@ -2690,6 +2864,13 @@ export default function Purchasing() {
           ? "Line fully received and allocated to orders."
           : `${quantity} unit${quantity !== 1 ? "s" : ""} received — ${remaining - quantity} still outstanding.`,
       });
+      // Auto-open picking slip / worksheet for any orders now ready
+      const affectedOrderIds: number[] = (data?.allocation?.summary ?? [])
+        .filter((s: any) => s.pickingCount > 0 || s.worksheetCount > 0)
+        .map((s: any) => s.orderId);
+      if (affectedOrderIds.length > 0) {
+        printBookInSlip(affectedOrderIds);
+      }
     },
     onError: (e: Error) => toast({ title: "Error booking in", description: e.message, variant: "destructive" }),
   });
