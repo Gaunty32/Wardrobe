@@ -2617,6 +2617,7 @@ function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; high
       queryClient.invalidateQueries({ queryKey: ["picking-list"] });
       queryClient.invalidateQueries({ queryKey: ["worksheets"] });
       queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      queryClient.invalidateQueries({ queryKey: ["dispatch-orders"] });
       setChecked(new Set());
       setQtyOverrides(new Map());
       setProcessStockBlocker(null);
