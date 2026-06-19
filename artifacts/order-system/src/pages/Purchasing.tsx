@@ -1545,6 +1545,7 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
   const [noteText, setNoteText] = useState("");
   const [cancelConfirm, setCancelConfirm] = useState<{ itemId: number; context: string } | null>(null);
   const [mismatchConfirm, setMismatchConfirm] = useState<{ itemId: number; entered: number; expected: number; context: string } | null>(null);
+  const [focusedCell, setFocusedCell] = useState<string | null>(null); // "{gk}||{colour}||{sz}"
 
   // Sync upward values when items change (e.g. after "Receive All")
   useEffect(() => {
@@ -1708,26 +1709,35 @@ function BookInMatrix({ items, poId, onSave, onQtysChange, onCancelLine }: {
                             <Ban className="w-3 h-3" />
                           </button>
                         ) : null;
+                        const cellKey = `${rowKey}||${sz}`;
+                        const isFocused = focusedCell === cellKey;
                         return (
                           <TableCell key={sz} className="p-1 text-center relative group">
                             {cancelBtn}
                             <div className="flex flex-col items-center gap-0.5">
+                              {isFocused && (
+                                <span className="absolute -top-5 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap z-20 pointer-events-none shadow">
+                                  {sz}
+                                </span>
+                              )}
                               <input
                                 type="number"
                                 min={0}
                                 value={rcvd === 0 ? "" : rcvd}
                                 placeholder="0"
+                                onFocus={() => setFocusedCell(cellKey)}
                                 onChange={e => {
                                   const v = parseInt(e.target.value);
                                   handleQtyChange(cellItemId, isNaN(v) ? 0 : Math.max(0, v));
                                 }}
                                 onBlur={() => {
+                                  setFocusedCell(null);
                                   const entered = localQtys.get(cellItemId) ?? 0;
                                   if (entered > 0 && entered !== ordQty) {
                                     setMismatchConfirm({ itemId: cellItemId, entered, expected: ordQty, context: noteContext });
                                   }
                                 }}
-                                className={`w-12 h-7 text-center text-sm rounded border focus:outline-none focus:ring-1 focus:ring-primary transition-colors ${
+                                className={`w-12 h-7 text-center text-sm rounded border focus:outline-none focus:ring-2 focus:ring-primary transition-colors ${
                                   cellFull
                                     ? "border-green-400 bg-green-50 text-green-700 font-semibold"
                                     : cellPartial
