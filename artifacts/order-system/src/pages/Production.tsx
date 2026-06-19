@@ -3391,9 +3391,12 @@ export default function Production() {
     returnToPickingMutation.mutate(id);
   };
 
-  const preWipWorksheets = filterWorksheets(allWorksheets.filter((w) => w.status === "pre_wip"), filters);
-  const wip = filterWorksheets(allWorksheets.filter((w) => w.status === "wip"), filters);
-  const complete = filterWorksheets(allWorksheets.filter((w) => w.status === "complete"), filters);
+  // When a search term is active, ignore the process-type pill so the search
+  // sweeps all WIP (DTF + Embroidery + Print) rather than just the active type.
+  const filtersForWorksheets = filters.search ? { ...filters, process: "" } : filters;
+  const preWipWorksheets = filterWorksheets(allWorksheets.filter((w) => w.status === "pre_wip"), filtersForWorksheets);
+  const wip = filterWorksheets(allWorksheets.filter((w) => w.status === "wip"), filtersForWorksheets);
+  const complete = filterWorksheets(allWorksheets.filter((w) => w.status === "complete"), filtersForWorksheets);
 
   const filterBySearchAndDate = <T extends { customerName: string | null; orderNumber: string; requiredDate: string | Date | null }>(arr: T[]): T[] =>
     arr.filter((o) => {
