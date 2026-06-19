@@ -7,7 +7,7 @@ import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
   CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip, Upload,
-  CheckCircle2, ListChecks, Sparkles, StickyNote, Ban, Search, X,
+  CheckCircle2, ListChecks, Sparkles, StickyNote, Ban, Search, X, Pencil, RotateCcw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -2172,6 +2172,11 @@ function POCard({
   const [addLineSaving, setAddLineSaving] = useState(false);
   const [codeFilter, setCodeFilter] = useState("");
   const latestQtysRef = useRef<Map<number, number>>(new Map());
+  const [correctMode, setCorrectMode] = useState(false);
+  const [localCorrections, setLocalCorrections] = useState<Map<number, number>>(new Map());
+  const [savingCorrections, setSavingCorrections] = useState(false);
+  const [reopeningPo, setReopeningPo] = useState(false);
+  const { toast } = useToast();
 
   const filteredItems = codeFilter.trim()
     ? po.items.filter((i) => {
@@ -2310,6 +2315,41 @@ function POCard({
               {allDelivered ? "Complete Delivery" : "Book Partial Delivery"}
             </Button>
           )}
+          {po.status === "delivered" && (
+            <Button
+              size="sm" variant="outline"
+              className={`gap-1.5 text-xs ${correctMode ? "border-orange-500 bg-orange-50 text-orange-700" : "border-orange-400 text-orange-700 hover:bg-orange-50"}`}
+              onClick={(e) => { e.stopPropagation(); setCorrectMode(!correctMode); if (!correctMode) setExpanded(true); setLocalCorrections(new Map()); }}
+              title="Correct received quantities on this delivered PO"
+            >
+              <Pencil className="w-3.5 h-3.5" /> {correctMode ? "Cancel Correction" : "Correct Book-in"}
+            </Button>
+          )}
+          {po.status === "delivered" && (
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 text-xs border-amber-400 text-amber-700 hover:bg-amber-50"
+              disabled={reopeningPo}
+              title="Return PO to Awaiting Delivery to re-enter quantities"
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!confirm(`Re-open ${po.poNumber}?\n\nThis will reset all received quantities and return the PO to Awaiting Delivery. Items already being picked or in production will NOT be affected.`)) return;
+                setReopeningPo(true);
+                try {
+                  await apiFetch(`/purchasing/purchase-orders/${po.id}/reopen`, { method: "POST" });
+                  onRefresh();
+                  toast({ title: "PO re-opened", description: `${po.poNumber} is back in Awaiting Delivery — enter the correct quantities to complete the booking.` });
+                } catch (err: any) {
+                  toast({ title: "Error re-opening PO", description: err.message, variant: "destructive" });
+                } finally {
+                  setReopeningPo(false);
+                }
+              }}
+            >
+              {reopeningPo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+              Re-open PO
+            </Button>
+          )}
           {(po.status === "draft" || po.status === "ordered") && (
             <Button
               size="icon" variant="ghost" className="h-8 w-8 text-red-500 hover:bg-red-50"
@@ -2376,6 +2416,103 @@ function POCard({
                     onQtysChange={(qtys) => { latestQtysRef.current = qtys; }}
                     onCancelLine={(poId, itemId) => onCancelLine(poId, itemId)}
                   />
+                </div>
+              )}
+
+              {po.status === "delivered" && correctMode && (
+                <div className="pt-3 border-t border-border space-y-3">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Pencil className="w-3.5 h-3.5 text-orange-500" /> Correct Received Quantities
+                  </h4>
+                  <p className="text-xs text-muted-foreground">
+                    Edit the actual received quantity for each line. Lines set below the ordered quantity will be returned to the purchasing queue.
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="text-xs">Product</TableHead>
+                          <TableHead className="text-xs">Colour</TableHead>
+                          <TableHead className="text-xs">Size</TableHead>
+                          <TableHead className="text-xs text-center">Ordered</TableHead>
+                          <TableHead className="text-xs text-center w-28">Received</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {po.items.map(item => {
+                          const corrected = localCorrections.has(item.id) ? localCorrections.get(item.id)! : item.quantityDelivered;
+                          const changed = corrected !== item.quantityDelivered;
+                          const short = corrected < item.quantityOrdered;
+                          return (
+                            <TableRow key={item.id} className={changed ? "bg-orange-50/60" : ""}>
+                              <TableCell className="text-xs font-medium">
+                                {item.supplierCode && <span className="font-mono text-indigo-700 mr-1">{item.supplierCode}</span>}
+                                {item.productName}
+                              </TableCell>
+                              <TableCell className="text-xs">{item.colour ?? "—"}</TableCell>
+                              <TableCell className="text-xs">{item.size ?? "—"}</TableCell>
+                              <TableCell className="text-xs text-center font-semibold">{item.quantityOrdered}</TableCell>
+                              <TableCell className="text-xs text-center p-1">
+                                <div className="flex flex-col items-center gap-0.5">
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={corrected}
+                                    onChange={e => {
+                                      const v = Math.max(0, parseInt(e.target.value) || 0);
+                                      setLocalCorrections(prev => new Map(prev).set(item.id, v));
+                                    }}
+                                    className={`h-7 w-20 text-xs text-center ${short ? "border-amber-400 bg-amber-50" : ""}`}
+                                  />
+                                  {short && <span className="text-[10px] text-amber-600">↑ short</span>}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
+                      disabled={savingCorrections}
+                      onClick={async () => {
+                        const changes = po.items.filter(i =>
+                          localCorrections.has(i.id) && localCorrections.get(i.id) !== i.quantityDelivered
+                        );
+                        if (changes.length === 0) { setCorrectMode(false); return; }
+                        setSavingCorrections(true);
+                        try {
+                          for (const item of changes) {
+                            await apiFetch(`/purchasing/purchase-orders/${po.id}/items/${item.id}/set-delivered`, {
+                              method: "PATCH",
+                              body: JSON.stringify({ quantityDelivered: localCorrections.get(item.id) }),
+                            });
+                          }
+                          onRefresh();
+                          setCorrectMode(false);
+                          setLocalCorrections(new Map());
+                          toast({ title: "Quantities corrected", description: `${changes.length} line${changes.length !== 1 ? "s" : ""} updated and allocation re-run.` });
+                        } catch (err: any) {
+                          toast({ title: "Error saving corrections", description: err.message, variant: "destructive" });
+                        } finally {
+                          setSavingCorrections(false);
+                        }
+                      }}
+                    >
+                      {savingCorrections ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                      Save Corrections
+                    </Button>
+                    <Button
+                      size="sm" variant="outline" className="text-xs"
+                      disabled={savingCorrections}
+                      onClick={() => { setCorrectMode(false); setLocalCorrections(new Map()); }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </div>
               )}
             </>

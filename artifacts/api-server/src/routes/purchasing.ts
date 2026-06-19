@@ -1716,6 +1716,60 @@ router.post("/purchasing/purchase-orders/:id/items/:itemId/receive", async (req,
   res.json({ ok: true, quantityDelivered: newDelivered, allocation });
 });
 
+// ── Re-open a delivered PO back to ordered: resets received quantities,
+//    un-allocates items still in the picking queue (not yet in production) ─────
+router.post("/purchasing/purchase-orders/:id/reopen", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const poId = parsed.data.id;
+  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
+  if (!po) { res.status(404).json({ error: "PO not found" }); return; }
+  if (po.status !== "delivered") { res.status(400).json({ error: "Only delivered POs can be re-opened" }); return; }
+
+  const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, poId));
+
+  // Reset all quantityDelivered to 0
+  for (const item of poItems) {
+    await db.update(purchaseOrderItemsTable)
+      .set({ quantityDelivered: 0, updatedAt: new Date() })
+      .where(eq(purchaseOrderItemsTable.id, item.id));
+  }
+
+  // Collect all linked order item IDs
+  const linkedIds = [
+    ...new Set([
+      ...poItems.map(i => i.orderItemId).filter((id): id is number => id != null),
+      ...poItems.flatMap(i => (i.sourceOrderItemIds as number[] | null) ?? []),
+    ]),
+  ];
+
+  if (linkedIds.length > 0) {
+    // Un-allocate items that are still in "allocated" state (not yet picked or in production)
+    await db.update(orderItemsTable)
+      .set({ purchaseRequired: true, purchaseQuantity: sql`quantity`, stockStatus: null, stockAllocatedAt: null })
+      .where(and(
+        inArray(orderItemsTable.id, linkedIds),
+        eq(orderItemsTable.stockStatus, "allocated"),
+      ));
+    // Restore purchaseRequired on items with null stock_status too (never reached allocation)
+    await db.update(orderItemsTable)
+      .set({ purchaseRequired: true })
+      .where(and(
+        inArray(orderItemsTable.id, linkedIds),
+        sql`stock_status IS NULL`,
+      ));
+  }
+
+  // Return the PO to "ordered" status
+  await db.update(purchaseOrdersTable)
+    .set({ status: "ordered", updatedAt: new Date() })
+    .where(eq(purchaseOrdersTable.id, poId));
+
+  const result = await getPoWithItems(poId);
+  res.json(result);
+});
+
 // ── Backorders: PO lines that are either:
 //    (a) manually flagged with an estimatedDueDate set on the line, OR
 //    (b) more than 5 days overdue (sent > 5 days ago, still with outstanding qty)
