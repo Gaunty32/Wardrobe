@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate, formatCurrency } from "@/lib/utils";
 import { sortSizes } from "@/lib/sizeUtils";
-import { printWorksheetFromData as printWorksheetFromDataShared } from "@/utils/printWorksheet";
+import { printWorksheetFromData as printWorksheetFromDataShared, printWorksheetsFromData } from "@/utils/printWorksheet";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const API_BASE = `${BASE}/api`;
@@ -2463,7 +2463,7 @@ function PickingListTab({ filters, highlightOrderIds }: { filters: Filters; high
       }
       toast({ title: "Picked", description: parts.join(" · ") || "Items confirmed" });
       if (data.worksheets && data.worksheets.length > 0) {
-        data.worksheets.forEach((ws) => printWorksheetFromData(ws));
+        printWorksheetsFromData(data.worksheets);
       }
     },
     onError: (err: any, vars) => {

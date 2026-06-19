@@ -27,9 +27,7 @@ export interface WsPrintData {
   items: WsPrintItem[];
 }
 
-export function printWorksheetFromData(ws: WsPrintData) {
-  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-
+function buildSheetHtml(ws: WsPrintData, dateStr: string): string {
   const finishMap = new Map<string, WsPrintItem[]>();
   for (const item of ws.items) {
     const fk = item.finishName ?? "Plain (No Finish)";
@@ -130,26 +128,8 @@ export function printWorksheetFromData(ws: WsPrintData) {
     ? new Date(ws.requiredDate).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
     : null;
 
-  const html = `<!DOCTYPE html><html><head><title>Worksheet ${ws.worksheetNumber}</title>
-    <style>
-      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
-      #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
-      #toolbar span{flex:1;font-size:14px;font-weight:600;letter-spacing:.5px}
-      #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
-      #btn-print{background:#22c55e;color:white}#btn-print:hover{background:#16a34a}
-      #btn-close{background:rgba(255,255,255,.15);color:white}#btn-close:hover{background:rgba(255,255,255,.25)}
-      #page{display:flex;justify-content:center;padding:24px 0 40px}
-      #sheet{background:white;padding:12mm 15mm;box-shadow:0 4px 24px rgba(0,0,0,.15);width:210mm}
-      @media print{#toolbar{display:none}body{background:white}#page{padding:0}#sheet{box-shadow:none;padding:0}@page{size:A4 portrait;margin:12mm}}
-    </style>
-  </head><body>
-    <div id="toolbar">
-      <span>📋 ${ws.worksheetNumber} — ${ws.customerName ?? ws.orderNumber ?? "Worksheet"}</span>
-      <button id="btn-print" onclick="window.print()">🖨 Print</button>
-      <button id="btn-close" onclick="window.close()">✕ Close</button>
-    </div>
-    <div id="page"><div id="sheet">
+  return `
+    <div style="background:white;padding:12mm 15mm;width:210mm;box-sizing:border-box">
       <div style="margin-bottom:5mm;border-bottom:2px solid #1e3a5f;padding-bottom:4mm">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:3mm">
           <div>
@@ -188,13 +168,63 @@ export function printWorksheetFromData(ws: WsPrintData) {
         <span>Select Branding Solutions — Internal Use Only</span>
         <span>${ws.worksheetNumber} · ${dateStr}</span>
       </div>
-    </div></div>
-  </body></html>`;
+    </div>`;
+}
 
+function openPrintWindow(title: string, toolbarLabel: string, sheetsHtml: string): void {
   const win = window.open("", "_blank", "width=1100,height=800");
   if (!win) return;
+
+  const html = `<!DOCTYPE html><html><head><title>${title}</title>
+    <style>
+      *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      body{margin:0;background:#e5e7eb;font-family:Arial,sans-serif;font-size:11px;color:#111}
+      #toolbar{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;padding:10px 20px;background:#1e3a5f;color:white;box-shadow:0 2px 6px rgba(0,0,0,.3)}
+      #toolbar span{flex:1;font-size:14px;font-weight:600;letter-spacing:.5px}
+      #toolbar button{padding:6px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer}
+      #btn-print{background:#22c55e;color:white}#btn-print:hover{background:#16a34a}
+      #btn-close{background:rgba(255,255,255,.15);color:white}#btn-close:hover{background:rgba(255,255,255,.25)}
+      .sheet-wrap{display:flex;justify-content:center;padding:24px 0}
+      .sheet-wrap+.sheet-wrap{padding-top:0}
+      @media print{
+        #toolbar{display:none}
+        body{background:white}
+        .sheet-wrap{padding:0;display:block}
+        .page-break{page-break-before:always}
+        @page{size:A4 portrait;margin:12mm}
+      }
+    </style>
+  </head><body>
+    <div id="toolbar">
+      <span>📋 ${toolbarLabel}</span>
+      <button id="btn-print" onclick="window.print()">🖨 Print</button>
+      <button id="btn-close" onclick="window.close()">✕ Close</button>
+    </div>
+    ${sheetsHtml}
+  </body></html>`;
+
   win.document.write(html);
   win.document.close();
   win.focus();
   win.onload = () => win.print();
+}
+
+export function printWorksheetFromData(ws: WsPrintData): void {
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const sheetHtml = `<div class="sheet-wrap">${buildSheetHtml(ws, dateStr)}</div>`;
+  const label = `${ws.worksheetNumber} — ${ws.customerName ?? ws.orderNumber ?? "Worksheet"}`;
+  openPrintWindow(`Worksheet ${ws.worksheetNumber}`, label, sheetHtml);
+}
+
+export function printWorksheetsFromData(sheets: WsPrintData[]): void {
+  if (sheets.length === 0) return;
+  if (sheets.length === 1) { printWorksheetFromData(sheets[0]); return; }
+
+  const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const sheetsHtml = sheets
+    .map((ws, idx) => `<div class="sheet-wrap${idx > 0 ? " page-break" : ""}">${buildSheetHtml(ws, dateStr)}</div>`)
+    .join("\n");
+
+  const label = `Production Worksheets (${sheets.length}) — ${dateStr}`;
+  openPrintWindow(`Production Worksheets (${sheets.length})`, label, sheetsHtml);
 }

@@ -28,7 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate, cn } from "@/lib/utils";
 import { useListSuppliers } from "@workspace/api-client-react";
-import { printWorksheetFromData } from "@/utils/printWorksheet";
+import { printWorksheetsFromData } from "@/utils/printWorksheet";
 import { UploadedImage } from "@/components/UploadedImage";
 
 const API_BASE = "/api";
@@ -212,11 +212,9 @@ async function printBookInSlip(affectedOrderIds: number[]) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ itemIds: decoratedItemIds }),
       }).then(r => r.json());
-      // Print each worksheet that was just created
+      // Print all worksheets in a single window (one per page)
       if (pickResult?.worksheets?.length > 0) {
-        for (const ws of pickResult.worksheets) {
-          printWorksheetFromData(ws);
-        }
+        printWorksheetsFromData(pickResult.worksheets);
       }
     } catch { /* non-fatal — slip still prints below */ }
   }
