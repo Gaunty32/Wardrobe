@@ -292,6 +292,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
 
         <div className="flex items-center gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          <ZebraLabels orderId={order.id} orderNumber={order.orderNumber} hasNamedRecipients={order.items.some((i) => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId))} />
           <Button
             size="sm"
             variant="outline"
