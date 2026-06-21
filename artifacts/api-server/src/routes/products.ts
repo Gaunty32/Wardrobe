@@ -379,16 +379,19 @@ router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => 
     return;
   }
 
-  const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
-  url.searchParams.set("consumer_key", settings.ck);
-  url.searchParams.set("consumer_secret", settings.cs);
+  const wooBase = settings.baseUrl.replace(/\/$/, "");
+  const wooProductId = product.woo_commerce_id;
+  const priceStr = product.unit_price != null ? parseFloat(product.unit_price).toFixed(2) : null;
+
+  // ── Update parent product (status + regular_price) ────────────────────────
+  const parentUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${wooProductId}`);
+  parentUrl.searchParams.set("consumer_key", settings.ck);
+  parentUrl.searchParams.set("consumer_secret", settings.cs);
 
   const wooPayload: Record<string, string> = { status };
-  if (product.unit_price != null) {
-    wooPayload.regular_price = parseFloat(product.unit_price).toFixed(2);
-  }
+  if (priceStr != null) wooPayload.regular_price = priceStr;
 
-  const wooRes = await fetch(url.toString(), {
+  const wooRes = await fetch(parentUrl.toString(), {
     method: "PUT",
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
     body: JSON.stringify(wooPayload),
@@ -400,7 +403,32 @@ router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => 
     return;
   }
 
-  res.json({ ok: true, wooPushed: true, status, pricePushed: product.unit_price != null });
+  // ── For variable products: also push price to every variation ─────────────
+  // WooCommerce ignores parent-level regular_price for variable products;
+  // the price shown is controlled entirely by each variation record.
+  let variationsPushed = 0;
+  if (priceStr != null) {
+    const varRows = await db.execute(sql`
+      SELECT woo_variation_id FROM product_variants
+      WHERE product_id = ${id} AND woo_variation_id IS NOT NULL
+    `).then(r => (r.rows ?? r) as any[]);
+
+    if (varRows.length > 0) {
+      await Promise.all(varRows.map(async (v: any) => {
+        const varUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${wooProductId}/variations/${v.woo_variation_id}`);
+        varUrl.searchParams.set("consumer_key", settings.ck);
+        varUrl.searchParams.set("consumer_secret", settings.cs);
+        const r = await fetch(varUrl.toString(), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ regular_price: priceStr }),
+        });
+        if (r.ok) variationsPushed++;
+      }));
+    }
+  }
+
+  res.json({ ok: true, wooPushed: true, status, pricePushed: priceStr != null, variationsPushed });
 });
 
 router.get("/products/analytics", async (req, res): Promise<void> => {
