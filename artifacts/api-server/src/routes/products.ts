@@ -353,11 +353,17 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
 router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const body = z.object({ status: z.enum(["draft", "publish"]) }).safeParse(req.body);
+  const body = z.object({ status: z.enum(["draft", "publish"]), unitPrice: z.number().positive().optional() }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   const { id } = parsed.data;
-  const { status } = body.data;
+  const { status, unitPrice } = body.data;
+
+  // If the caller supplies unitPrice (i.e. the form has unsaved changes), persist it now
+  // so the WooCommerce push always reflects the latest value — not a stale DB value.
+  if (unitPrice !== undefined) {
+    await db.execute(sql`UPDATE products SET unit_price = ${unitPrice.toFixed(2)}, updated_at = NOW() WHERE id = ${id}`);
+  }
 
   await db.execute(sql`UPDATE products SET woo_status = ${status} WHERE id = ${id}`);
 

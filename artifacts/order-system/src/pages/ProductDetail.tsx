@@ -712,11 +712,13 @@ export default function ProductDetail() {
   });
 
   const pushWooStatusMut = useMutation({
-    mutationFn: (status: "draft" | "publish") =>
-      apiFetch(`/products/${productId}/push-woo-status`, { method: "POST", body: JSON.stringify({ status }) }),
-    onSuccess: (_data: any, status) => {
+    mutationFn: ({ status, unitPrice }: { status: "draft" | "publish"; unitPrice?: number }) =>
+      apiFetch(`/products/${productId}/push-woo-status`, { method: "POST", body: JSON.stringify({ status, unitPrice }) }),
+    onSuccess: (_data: any, vars) => {
       qc.invalidateQueries({ queryKey: ["product", productId] });
-      toast({ title: status === "draft" ? "Product set to draft on WooCommerce" : "Product published on WooCommerce" });
+      qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
+      toast({ title: vars.status === "draft" ? "Product set to draft on WooCommerce" : "Product published on WooCommerce" });
+      setDetailsDirty(false);
     },
     onError: (e: any) => toast({ title: "WooCommerce status update failed", description: e?.message, variant: "destructive" }),
   });
@@ -1301,7 +1303,7 @@ export default function ProductDetail() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => pushWooStatusMut.mutate("draft")}
+                            onClick={() => pushWooStatusMut.mutate({ status: "draft", unitPrice: details ? Number(details.unitPrice) : undefined })}
                             disabled={pushWooStatusMut.isPending || (product as any).wooStatus === "draft"}
                             className="h-7 text-xs border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-40"
                           >
@@ -1311,7 +1313,7 @@ export default function ProductDetail() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => pushWooStatusMut.mutate("publish")}
+                            onClick={() => pushWooStatusMut.mutate({ status: "publish", unitPrice: details ? Number(details.unitPrice) : undefined })}
                             disabled={pushWooStatusMut.isPending || (product as any).wooStatus === "publish"}
                             className="h-7 text-xs border-green-300 text-green-700 hover:bg-green-50 disabled:opacity-40"
                           >
