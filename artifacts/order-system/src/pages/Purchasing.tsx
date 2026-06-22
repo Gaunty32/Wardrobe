@@ -1347,7 +1347,7 @@ function ProcessMaterialsLineTable({
                   <div className="flex flex-col gap-0.5">
                     {req.orders.map((o) => (
                       <span key={o.orderId} className="text-xs">
-                        <a href={`/orders/${o.orderId}`} className="text-primary hover:underline font-mono font-semibold">{o.orderNumber}</a>
+                        <a href={`/orders/${o.orderId}`} className="text-primary hover:underline font-mono font-semibold" title={o.customerName ?? undefined}>{o.orderNumber}</a>
                         {` ×${o.qty}`}
                       </span>
                     ))}
