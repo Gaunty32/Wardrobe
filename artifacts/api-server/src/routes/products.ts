@@ -379,7 +379,8 @@ router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => 
     return;
   }
 
-  const wooBase = settings.baseUrl.replace(/\/$/, "");
+  // Force HTTPS — WordPress HTTP→HTTPS 301 redirects silently downgrade PUT to GET
+  const wooBase = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
   const wooProductId = product.woo_commerce_id;
   const priceStr = product.unit_price != null ? parseFloat(product.unit_price).toFixed(2) : null;
 

@@ -714,10 +714,14 @@ export default function ProductDetail() {
   const pushWooStatusMut = useMutation({
     mutationFn: ({ status, unitPrice }: { status: "draft" | "publish"; unitPrice?: number }) =>
       apiFetch(`/products/${productId}/push-woo-status`, { method: "POST", body: JSON.stringify({ status, unitPrice }) }),
-    onSuccess: (_data: any, vars) => {
-      qc.invalidateQueries({ queryKey: ["product", productId] });
+    onSuccess: (data: any, vars) => {
+      qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
       qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
-      toast({ title: vars.status === "draft" ? "Product set to draft on WooCommerce" : "Product published on WooCommerce" });
+      if (data?.wooPushed === false) {
+        toast({ title: "Status saved locally", description: data?.message ?? "This product isn't linked to a WooCommerce product.", variant: "destructive" });
+      } else {
+        toast({ title: vars.status === "draft" ? "Product set to draft on WooCommerce" : "Product published on WooCommerce" });
+      }
       setDetailsDirty(false);
     },
     onError: (e: any) => toast({ title: "WooCommerce status update failed", description: e?.message, variant: "destructive" }),
