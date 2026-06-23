@@ -1417,7 +1417,10 @@ router.get("/portal/products", portalAuth, async (req: Request, res: Response) =
            p.is_bespoke,
            (SELECT COUNT(*) FROM product_variants pv WHERE pv.product_id = p.id) as variant_count,
            (SELECT json_agg(DISTINCT pv.colour ORDER BY pv.colour) FILTER (WHERE pv.colour IS NOT NULL)
-              FROM product_variants pv WHERE pv.product_id = p.id) as colours
+              FROM product_variants pv WHERE pv.product_id = p.id) as colours,
+           (SELECT pv.image_url FROM product_variants pv
+              WHERE pv.product_id = p.id AND pv.image_url IS NOT NULL AND pv.image_url != ''
+              ORDER BY pv.id LIMIT 1) as first_variant_image_url
     FROM products p
     WHERE p.customer_id IS NULL OR p.customer_id = ${customerId}
     ORDER BY p.is_bespoke ASC, p.category NULLS LAST, p.name

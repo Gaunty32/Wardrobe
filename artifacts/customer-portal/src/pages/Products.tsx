@@ -83,6 +83,7 @@ type PortalProduct = {
   sku: string | null;
   unit_price: string | null;
   image_url: string | null;
+  first_variant_image_url: string | null;
   category: string | null;
   description: string | null;
   variant_count: string;
@@ -476,11 +477,11 @@ export default function Products() {
                     className="overflow-hidden hover:border-primary/40 hover:shadow-md transition-all cursor-pointer group"
                     onClick={() => setSelectedProduct(product)}
                   >
-                    {/* Image */}
+                    {/* Image — prefer variant image over main product image */}
                     <div className="aspect-[4/3] bg-muted overflow-hidden relative">
-                      {product.image_url ? (
+                      {(product.first_variant_image_url ?? product.image_url) ? (
                         <img
-                          src={product.image_url}
+                          src={product.first_variant_image_url ?? product.image_url!}
                           alt={product.name}
                           className="w-full h-full object-contain p-2 transition-transform duration-300 group-hover:scale-105"
                         />
