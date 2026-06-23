@@ -1191,39 +1191,62 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
   if (po.status !== "draft") { res.status(400).json({ error: "Can only add items to a draft PO" }); return; }
 
   // Collect order item IDs already covered by this PO (via direct FK or sourceOrderItemIds JSON array)
+  // Also collect product+colour+size keys for manually-entered lines (no order link) so we don't
+  // create duplicate lines for garments that were already typed in manually.
   const existingLines = await db
-    .select({ orderItemId: purchaseOrderItemsTable.orderItemId, sourceOrderItemIds: purchaseOrderItemsTable.sourceOrderItemIds })
+    .select({
+      orderItemId: purchaseOrderItemsTable.orderItemId,
+      sourceOrderItemIds: purchaseOrderItemsTable.sourceOrderItemIds,
+      productName: purchaseOrderItemsTable.productName,
+      colour: purchaseOrderItemsTable.colour,
+      size: purchaseOrderItemsTable.size,
+    })
     .from(purchaseOrderItemsTable)
     .where(eq(purchaseOrderItemsTable.poId, po.id));
 
   const alreadyCovered = new Set<number>();
+  // Keys for manually-added PO lines (no order link) — used to prevent duplicate product rows
+  const manualLineKeys = new Set<string>();
   for (const line of existingLines) {
     if (line.orderItemId) alreadyCovered.add(line.orderItemId);
     const sourceIds = (line.sourceOrderItemIds as number[] | null) ?? [];
     for (const id of sourceIds) alreadyCovered.add(id);
+    // If neither orderItemId nor sourceOrderItemIds links this line to an order item,
+    // track it by product+colour+size so we skip adding a duplicate from requirements.
+    if (!line.orderItemId && sourceIds.length === 0) {
+      manualLineKeys.add([line.productName ?? "", line.colour ?? "", line.size ?? ""].join("|"));
+    }
   }
 
   const newItemIds = parsed.data.itemIds.filter((id) => !alreadyCovered.has(id));
   if (newItemIds.length > 0) {
     const poItems = await buildPoItems(newItemIds, po.id);
-    if (poItems.length > 0) {
-      await db.insert(purchaseOrderItemsTable).values(poItems);
-      // Only clear purchaseRequired on items that were actually inserted into the PO.
-      // Collect the order item IDs that ended up in a real PO line (via direct FK or
-      // sourceOrderItemIds) so we don't silently drop items where buildPoItems returned
-      // nothing (e.g. product lookup failed).
-      const coveredIds = new Set<number>();
-      for (const pi of poItems) {
-        if (pi.orderItemId) coveredIds.add(pi.orderItemId);
-        const srcIds = (pi.sourceOrderItemIds as number[] | null) ?? [];
-        for (const id of srcIds) coveredIds.add(id);
-      }
-      const idsToClose = newItemIds.filter((id) => coveredIds.has(id));
-      if (idsToClose.length > 0) {
-        await db.update(orderItemsTable)
-          .set({ purchaseRequired: false, purchaseQuantity: null })
-          .where(inArray(orderItemsTable.id, idsToClose));
-      }
+    // Separate items that are blocked by an existing manual PO line (same product/colour/size)
+    // from items that should genuinely be inserted.
+    const itemsToInsert = poItems.filter(
+      (pi) => !manualLineKeys.has([pi.productName ?? "", pi.colour ?? "", pi.size ?? ""].join("|"))
+    );
+    const blockedItems = poItems.filter(
+      (pi) => manualLineKeys.has([pi.productName ?? "", pi.colour ?? "", pi.size ?? ""].join("|"))
+    );
+
+    if (itemsToInsert.length > 0) {
+      await db.insert(purchaseOrderItemsTable).values(itemsToInsert);
+    }
+
+    // Collect all order item IDs that ended up covered (either inserted or already on PO manually)
+    const coveredIds = new Set<number>();
+    for (const pi of [...itemsToInsert, ...blockedItems]) {
+      if (pi.orderItemId) coveredIds.add(pi.orderItemId);
+      const srcIds = (pi.sourceOrderItemIds as number[] | null) ?? [];
+      for (const id of srcIds) coveredIds.add(id);
+    }
+    // Clear purchaseRequired for all covered items — the garment is on the PO either way
+    const idsToClose = newItemIds.filter((id) => coveredIds.has(id));
+    if (idsToClose.length > 0) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: false, purchaseQuantity: null })
+        .where(inArray(orderItemsTable.id, idsToClose));
     }
   }
 

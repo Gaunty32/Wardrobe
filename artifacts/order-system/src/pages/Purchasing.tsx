@@ -3342,7 +3342,7 @@ export default function Purchasing() {
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
-                                onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.map((i) => i.itemId).filter(id => id > 0) })}
+                                onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.filter(i => i.itemId > 0 && i.orderNumber !== null).map(i => i.itemId) })}
                                 disabled={addToPoMutation.isPending}>
                                 <Plus className="w-3.5 h-3.5" /> Add to Draft PO ({existingDraft.poNumber})
                               </Button>
@@ -3871,7 +3871,7 @@ export default function Purchasing() {
                     supplierName: createPoGroup.supplierName,
                     supplierEmail: createPoGroup.supplierEmail,
                     notes: createPoNotes || null,
-                    itemIds: createPoGroup.items.map((i) => i.itemId).filter((id: number) => id > 0),
+                    itemIds: createPoGroup.items.filter((i) => i.itemId > 0 && i.orderNumber !== null).map((i) => i.itemId),
                     qtyOverrides: reqQtyOverrides[createPoGroup.supplierName] ?? {},
                   })}
                   disabled={createPoMutation.isPending}
