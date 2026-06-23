@@ -79,28 +79,34 @@ router.post("/products/:productId/social-posts/generate", async (req, res): Prom
   const tags = Array.isArray(product.guidance_tags) ? product.guidance_tags : (typeof product.guidance_tags === "string" ? JSON.parse(product.guidance_tags || "[]") : []);
   const staffQuotes = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : (typeof product.guidance_staff_quotes === "string" ? JSON.parse(product.guidance_staff_quotes || "[]") : []);
 
-  const prompt = `You are a social media expert for Select Branding Solutions (SBS), a UK-based branded promotional garments and merchandise company. Create social media posts for this product.
+  const prompt = `You are a content strategist for Select Branding Solutions (SBS), a UK-based branded promotional garments and merchandise company. Your goal is to build a helpful knowledgebase — posts that genuinely answer the questions people search for on Google, Facebook, and ChatGPT.
+
+GUIDING PRINCIPLES:
+- Be educational and genuinely helpful. Answer real questions people ask.
+- Never mention price, never sell, never push people to buy.
+- Write like an expert sharing knowledge, not a brand promoting itself.
+- Think: "What would someone type into Google or ChatGPT about this product type?"
+- Examples of the RIGHT angle: "What to look for when choosing branded workwear", "How long does embroidery last on polo shirts", "What's the difference between screen print and embroidery for logos"
+- The content should be so useful that people save it, share it, or come back to it.
 
 PRODUCT DETAILS:
 Name: ${product.name}
 SKU: ${product.sku || "N/A"}
 Category: ${product.category || "Branded merchandise"}
-Price: ${price || "Contact us for pricing"}
 Description: ${product.description || "A quality branded product"}
 ${bestFor ? `Best for: ${bestFor}` : ""}
 ${notIdeal ? `Not ideal for: ${notIdeal}` : ""}
 ${badges.length > 0 ? `Badges: ${badges.join(", ")}` : ""}
 ${tags.length > 0 ? `Tags: ${tags.join(", ")}` : ""}
-${staffQuotes.length > 0 ? `Staff say: "${staffQuotes[0]}"` : ""}
-Supplier: ${product.supplier_name || "Quality supplier"}
+${staffQuotes.length > 0 ? `Staff knowledge: "${staffQuotes[0]}"` : ""}
 
 Generate TWO posts in JSON format:
 
-1. FACEBOOK POST: Engaging, warm, conversational. Use 2-4 relevant emojis. Include a call to action. 150-300 words. Mention "Select Branding Solutions" or "SBS". Optimised for Facebook engagement.
+1. FACEBOOK POST: Conversational and genuinely helpful. Pick ONE specific question someone would ask about this product category and answer it thoroughly. Use 2-3 emojis naturally (not forced). 150-250 words. Sign off with "— The SBS Team" or similar. Do NOT mention price or encourage purchasing.
 
-2. GOOGLE BUSINESS POST: Professional, keyword-rich, great for local SEO. Mention branded merchandise, corporate gifts, customisation. 150-250 words. Clear call to action. Good for Google Business Profile visibility.
+2. GOOGLE BUSINESS POST: Educational and keyword-rich for local SEO and AI search. Answer a practical question about this type of product — suitable for someone researching their options. 150-200 words. Rich in the kind of language people use when searching. Do NOT mention price or encourage purchasing.
 
-3. HASHTAGS: 8-12 relevant hashtags (no # symbol, comma separated) targeting: branded merchandise, corporate gifts, UK business, the product category, and SBS brand.
+3. HASHTAGS: 8-12 relevant hashtags (no # symbol, comma separated) focused on: the product topic, the industry, helpful/educational content themes, UK business context, and branded merchandise knowledge.
 
 Respond ONLY with valid JSON in this exact format:
 {
