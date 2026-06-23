@@ -337,6 +337,7 @@ export default function Layout({ children }: LayoutProps) {
       items: [
         { name: "Portal Orders", href: "/reports", icon: BarChart2 },
         { name: "Select Extra", href: "/select-extra", icon: Gift },
+        { name: "Feedback & Issues", href: "/feedback", icon: MessageCircle },
       ],
     },
   ];
