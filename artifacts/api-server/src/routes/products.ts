@@ -14,6 +14,58 @@ import {
 
 const BESPOKE_TIES_CATEGORY = "Bespoke Ties";
 
+/**
+ * Fire-and-forget helper: push an updated unit price to WooCommerce for a product
+ * that is already published. Silently no-ops if WooCommerce is not configured or the
+ * product has no woo_commerce_id. Errors are logged to stderr only — the caller's HTTP
+ * response is never blocked or failed by this call.
+ */
+async function pushPriceToWoo(productId: number, priceStr: string): Promise<void> {
+  try {
+    const [product] = await db.execute(sql`
+      SELECT woo_commerce_id, woo_status FROM products WHERE id = ${productId}
+    `).then(r => (r.rows ?? r) as any[]);
+    if (!product?.woo_commerce_id || product.woo_status !== "publish") return;
+
+    const settings = await getWooSettings();
+    if (!settings) return;
+
+    const wooBase = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+    const wooProductId = product.woo_commerce_id;
+
+    const parentUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${wooProductId}`);
+    parentUrl.searchParams.set("consumer_key", settings.ck);
+    parentUrl.searchParams.set("consumer_secret", settings.cs);
+
+    await fetch(parentUrl.toString(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ regular_price: priceStr }),
+    });
+
+    // For variable products: push to every variation as well
+    const varRows = await db.execute(sql`
+      SELECT woo_variation_id FROM product_variants
+      WHERE product_id = ${productId} AND woo_variation_id IS NOT NULL
+    `).then(r => (r.rows ?? r) as any[]);
+
+    if (varRows.length > 0) {
+      await Promise.all(varRows.map(async (v: any) => {
+        const varUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${wooProductId}/variations/${v.woo_variation_id}`);
+        varUrl.searchParams.set("consumer_key", settings.ck);
+        varUrl.searchParams.set("consumer_secret", settings.cs);
+        await fetch(varUrl.toString(), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ regular_price: priceStr }),
+        });
+      }));
+    }
+  } catch (err) {
+    console.error("[woo-price-push] failed:", err instanceof Error ? err.message : err);
+  }
+}
+
 const BESPOKE_TIE_SIZES: { label: string; suffix: string; sortOrder: number }[] = [
   { label: "Full Length Tie", suffix: "FLT", sortOrder: 0 },
   { label: "Clip-On Tie",     suffix: "COT", sortOrder: 1 },
@@ -588,6 +640,13 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     `);
   }
   if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku, product);
+
+  // If the unit price changed, push the update to WooCommerce in the background.
+  // This is fire-and-forget — response is never delayed or blocked by WooCommerce latency.
+  if (parsed.data.unitPrice !== undefined) {
+    void pushPriceToWoo(product.id, parseFloat(String(product.unitPrice ?? "0")).toFixed(2));
+  }
+
   res.json(fmtProduct(product));
 });
 
