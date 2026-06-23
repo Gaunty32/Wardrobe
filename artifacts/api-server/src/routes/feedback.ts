@@ -75,7 +75,7 @@ router.post("/feedback", async (req, res): Promise<void> => {
 // GET /feedback — list all feedback (staff admin)
 router.get("/feedback", async (_req, res): Promise<void> => {
   const result = await db.execute(sql`
-    SELECT id, type, title, description, submitted_by, source, status, created_at, updated_at
+    SELECT id, type, title, description, submitted_by, source, status, admin_note, created_at, updated_at
     FROM feedback_items
     ORDER BY
       CASE WHEN status = 'open' THEN 0 WHEN status = 'in_progress' THEN 1 ELSE 2 END,
@@ -85,19 +85,22 @@ router.get("/feedback", async (_req, res): Promise<void> => {
   res.json(result.rows);
 });
 
-// PATCH /feedback/:id — update status
+// PATCH /feedback/:id — update status and/or admin note
 router.patch("/feedback/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const parsed = z.object({
-    status: z.enum(["open", "in_progress", "resolved"]),
+    status: z.enum(["open", "in_progress", "resolved"]).optional(),
+    admin_note: z.string().max(2000).optional(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  await db.execute(sql`
-    UPDATE feedback_items SET status = ${parsed.data.status}, updated_at = NOW() WHERE id = ${id}
-  `);
+  const sets: string[] = ["updated_at = NOW()"];
+  if (parsed.data.status !== undefined) sets.push(`status = '${parsed.data.status}'`);
+  if (parsed.data.admin_note !== undefined) sets.push(`admin_note = '${parsed.data.admin_note.replace(/'/g, "''")}'`);
+
+  await db.execute(sql.raw(`UPDATE feedback_items SET ${sets.join(", ")} WHERE id = ${id}`));
   res.json({ ok: true });
 });
 

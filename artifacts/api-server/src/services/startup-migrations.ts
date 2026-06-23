@@ -2123,6 +2123,9 @@ export async function refreshProductIssues(): Promise<void> {
       updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await db.execute(sql`
+    ALTER TABLE feedback_items ADD COLUMN IF NOT EXISTS admin_note TEXT NOT NULL DEFAULT ''
+  `);
   console.log("[startup] feedback_items table ensured");
 
   // Fix: invite_token must NOT be unique — a portal user can hold accounts under multiple
