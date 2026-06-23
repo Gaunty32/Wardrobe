@@ -382,14 +382,18 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
     return;
   }
 
-  const url = new URL(`${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
+  const wooBase = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+  const priceStr = newPrice.toFixed(2);
+
+  // Push to parent product
+  const url = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
   url.searchParams.set("consumer_key", settings.ck);
   url.searchParams.set("consumer_secret", settings.cs);
 
   const wooRes = await fetch(url.toString(), {
     method: "PUT",
     headers: { "Content-Type": "application/json", "Accept": "application/json" },
-    body: JSON.stringify({ regular_price: newPrice.toFixed(2) }),
+    body: JSON.stringify({ regular_price: priceStr }),
   });
 
   if (!wooRes.ok) {
@@ -398,7 +402,29 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({ ok: true, wooPushed: true, newPrice });
+  // For variable products: WooCommerce ignores the parent regular_price — the displayed
+  // price comes from each variation. Push to every variation so the price range updates.
+  const varRows = await db.execute(sql`
+    SELECT woo_variation_id FROM product_variants
+    WHERE product_id = ${id} AND woo_variation_id IS NOT NULL
+  `).then(r => (r.rows ?? r) as any[]);
+
+  let variationsPushed = 0;
+  if (varRows.length > 0) {
+    await Promise.all(varRows.map(async (v: any) => {
+      const varUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}/variations/${v.woo_variation_id}`);
+      varUrl.searchParams.set("consumer_key", settings.ck);
+      varUrl.searchParams.set("consumer_secret", settings.cs);
+      const r = await fetch(varUrl.toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({ regular_price: priceStr }),
+      });
+      if (r.ok) variationsPushed++;
+    }));
+  }
+
+  res.json({ ok: true, wooPushed: true, newPrice, variationsPushed });
 });
 
 // ── Push WooCommerce publish status (draft ↔ publish) ──────────────────────
