@@ -314,6 +314,25 @@ router.post("/products/:productId/push-woo-availability", async (req, res): Prom
 });
 
 // Delete a variant
+// Bulk delete variants by IDs — DELETE /products/:productId/variants/bulk
+router.delete("/products/:productId/variants/bulk", async (req, res): Promise<void> => {
+  const p = productIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+
+  const parsed = z.object({ ids: z.array(z.number().int().positive()).min(1) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const deleted = await db.delete(productVariantsTable)
+    .where(and(
+      eq(productVariantsTable.productId, p.data.productId),
+      inArray(productVariantsTable.id, parsed.data.ids),
+    ))
+    .returning();
+
+  await rollupProductStock(p.data.productId);
+  res.json({ deleted: deleted.length });
+});
+
 router.delete("/products/:productId/variants/:id", async (req, res): Promise<void> => {
   const p = subIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }

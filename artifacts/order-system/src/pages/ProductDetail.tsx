@@ -1004,6 +1004,19 @@ export default function ProductDetail() {
     onError: () => toast({ title: "Bulk update failed", variant: "destructive" }),
   });
 
+  const bulkDeleteMut = useMutation({
+    mutationFn: (ids: number[]) =>
+      apiFetch(`/products/${productId}/variants/bulk`, {
+        method: "DELETE",
+        body: JSON.stringify({ ids }),
+      }),
+    onSuccess: (_data: any, ids) => {
+      refetchVariants();
+      toast({ title: `Deleted ${ids.length} variant${ids.length !== 1 ? "s" : ""}` });
+    },
+    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+  });
+
   // ── Must be computed before any early returns (React Rules of Hooks) ──────
   // Group variants — colour-first (preserving API order), then size within each group.
   // Wrapped in useMemo so the array reference is stable, preventing useEffect dep loops.
@@ -1915,6 +1928,20 @@ export default function ProductDetail() {
                                             Default: {defSup.name}{details.supplierCode ? ` · ${details.supplierCode}` : ""}
                                           </span>
                                         )}
+                                        <Button
+                                          size="sm"
+                                          variant="ghost"
+                                          className="h-7 text-xs gap-1 text-destructive hover:text-destructive hover:bg-destructive/10 ml-auto shrink-0"
+                                          disabled={bulkDeleteMut.isPending}
+                                          onClick={() => {
+                                            if (confirm(`Delete all ${groupVariants.length} ${g.colour ?? g.sleeve ?? ""} variant${groupVariants.length !== 1 ? "s" : ""}? This cannot be undone.`)) {
+                                              bulkDeleteMut.mutate(g.variantIds);
+                                            }
+                                          }}
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                          Delete colour
+                                        </Button>
                                       </div>
                                     </TableCell>
                                   </TableRow>
