@@ -31,6 +31,7 @@ import wooRouter from "./woo";
 import staffMembersRouter from "./staff-members";
 import bundlesRouter from "./bundles";
 import feedbackRouter from "./feedback";
+import socialPostsRouter from "./social-posts";
 
 const router: IRouter = Router();
 
@@ -66,5 +67,6 @@ router.use(wooRouter);
 router.use(staffMembersRouter);
 router.use(bundlesRouter);
 router.use(feedbackRouter);
+router.use(socialPostsRouter);
 
 export default router;

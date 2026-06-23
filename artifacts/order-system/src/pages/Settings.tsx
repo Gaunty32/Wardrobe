@@ -4,7 +4,7 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck
+  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -801,6 +801,12 @@ export default function Settings() {
   // Xero sync progress bar state — effect is placed after syncXeroContactsMutation declaration below
   const [xeroSyncProgress, setXeroSyncProgress] = useState(0);
 
+  // Social / Facebook fields
+  const [fbPageId, setFbPageId] = useState("");
+  const [fbAccessToken, setFbAccessToken] = useState("");
+  const [fbFormLoaded, setFbFormLoaded] = useState(false);
+  const [savingFb, setSavingFb] = useState(false);
+
   // Email / SMTP fields
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
@@ -913,6 +919,30 @@ export default function Settings() {
       setFormLoaded(true);
     }
   }, [rawSettings, formLoaded]);
+
+  useEffect(() => {
+    if (rawSettings && !fbFormLoaded) {
+      setFbPageId(rawSettings["facebook_page_id"] ?? "");
+      setFbAccessToken(rawSettings["facebook_page_access_token"] ?? "");
+      setFbFormLoaded(true);
+    }
+  }, [rawSettings, fbFormLoaded]);
+
+  async function saveFacebookSettings() {
+    setSavingFb(true);
+    try {
+      await fetch(`${API_BASE}/settings`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ facebook_page_id: fbPageId || null, facebook_page_access_token: fbAccessToken || null }),
+      });
+      toast({ title: "Facebook settings saved" });
+    } catch {
+      toast({ title: "Failed to save Facebook settings", variant: "destructive" });
+    } finally {
+      setSavingFb(false);
+    }
+  }
 
   useEffect(() => {
     if (rawSettings && !smtpFormLoaded) {
@@ -1052,6 +1082,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="dpd" className="gap-2">
               <Truck className="w-4 h-4" /> DPD Courier
+            </TabsTrigger>
+            <TabsTrigger value="social" className="gap-2">
+              <Share2 className="w-4 h-4" /> Social Media
             </TabsTrigger>
           </TabsList>
 
@@ -1606,6 +1639,41 @@ export default function Settings() {
           {/* ─── DPD Tab ───────────────────────────────────────────── */}
           <TabsContent value="dpd" className="mt-6">
             <DpdTab />
+          </TabsContent>
+
+          {/* ─── Social Media Tab ──────────────────────────────────── */}
+          <TabsContent value="social" className="mt-6">
+            <div className="space-y-6 max-w-xl">
+              <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm space-y-5">
+                <div>
+                  <h2 className="font-semibold text-base flex items-center gap-2">
+                    <Share2 className="w-4 h-4 text-blue-600" /> Facebook Page
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Connect your Facebook Page so SBS can auto-post product content. You'll need a Page Access Token with <code className="text-xs bg-muted px-1 rounded">pages_manage_posts</code> and <code className="text-xs bg-muted px-1 rounded">pages_read_engagement</code> permissions.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Facebook Page ID</Label>
+                  <Input value={fbPageId} onChange={e => setFbPageId(e.target.value)} placeholder="e.g. 123456789012345" />
+                  <p className="text-xs text-muted-foreground">Find this in your Page's About section or via the Graph API Explorer.</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Page Access Token</Label>
+                  <Input type="password" value={fbAccessToken} onChange={e => setFbAccessToken(e.target.value)} placeholder="EAAxxxxxx…" />
+                  <p className="text-xs text-muted-foreground">Generate a long-lived page access token from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline">Meta Graph API Explorer</a>. Long-lived tokens last ~60 days.</p>
+                </div>
+                <Button onClick={saveFacebookSettings} disabled={savingFb} className="gap-2">
+                  {savingFb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                  Save Facebook Settings
+                </Button>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-2">
+                <p className="font-semibold">Google Business Profile</p>
+                <p>Google's API requires OAuth and is not currently automated. When you generate a social post for a product, the Google content appears in the Social Post tab — simply copy and paste it into your <a href="https://business.google.com" target="_blank" rel="noreferrer" className="underline font-medium">Google Business Profile</a>.</p>
+              </div>
+            </div>
           </TabsContent>
 
         </Tabs>

@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "@google-cloud/storage": "^7.19.0",
     "@types/pdfkit": "^0.17.5",
     "@workspace/api-zod": "workspace:*",

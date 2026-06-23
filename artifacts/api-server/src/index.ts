@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler, normalizeCustomerCasing } from "./services/scheduler";
 import { runStartupMigrations, refreshProductIssues } from "./services/startup-migrations";
+import { startSocialPostScheduler } from "./routes/social-posts";
 
 const rawPort = process.env["PORT"];
 
@@ -51,5 +52,11 @@ app.listen(port, async (err) => {
     await normalizeCustomerCasing();
   } catch (e) {
     logger.warn({ err: e }, "Customer casing normalisation failed on startup");
+  }
+
+  try {
+    startSocialPostScheduler();
+  } catch (e) {
+    logger.warn({ err: e }, "Social post scheduler failed to start");
   }
 });

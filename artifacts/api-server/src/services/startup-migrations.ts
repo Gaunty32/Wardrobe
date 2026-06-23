@@ -2191,4 +2191,25 @@ export async function refreshProductIssues(): Promise<void> {
       )
   `);
   console.log("[startup] O144 trouser line restored to purchasing queue (if applicable)");
+
+  // Social posts table
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS social_posts (
+      id               SERIAL PRIMARY KEY,
+      product_id       INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      facebook_content TEXT NOT NULL DEFAULT '',
+      google_content   TEXT NOT NULL DEFAULT '',
+      hashtags         TEXT NOT NULL DEFAULT '',
+      platforms        TEXT[] NOT NULL DEFAULT ARRAY['facebook','google'],
+      status           TEXT NOT NULL DEFAULT 'draft'
+                         CHECK (status IN ('draft','scheduled','publishing','published','failed')),
+      scheduled_at     TIMESTAMPTZ,
+      published_at     TIMESTAMPTZ,
+      auto_reschedule  BOOLEAN NOT NULL DEFAULT FALSE,
+      error_message    TEXT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[startup] social_posts table ensured");
 }
