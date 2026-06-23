@@ -714,17 +714,19 @@ export default function ProductDetail() {
   const pushWooStatusMut = useMutation({
     mutationFn: ({ status, unitPrice }: { status: "draft" | "publish"; unitPrice?: number }) =>
       apiFetch(`/products/${productId}/push-woo-status`, { method: "POST", body: JSON.stringify({ status, unitPrice }) }),
-    onSuccess: (data: any, vars) => {
+  });
+
+  const pushWooPriceMut = useMutation({
+    mutationFn: (newPrice: number) =>
+      apiFetch(`/products/${productId}/push-woo-price`, { method: "POST", body: JSON.stringify({ newPrice }) }),
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
       qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
-      if (data?.wooPushed === false) {
-        toast({ title: "Status saved locally", description: data?.message ?? "This product isn't linked to a WooCommerce product.", variant: "destructive" });
-      } else {
-        toast({ title: vars.status === "draft" ? "Product set to draft on WooCommerce" : "Product published on WooCommerce" });
-      }
       setDetailsDirty(false);
+      const varsPushed = data?.variationsPushed ?? 0;
+      toast({ title: varsPushed > 0 ? `Price pushed to WooCommerce (${varsPushed} variation${varsPushed !== 1 ? "s" : ""} updated)` : "Price saved locally (no WooCommerce link)" });
     },
-    onError: (e: any) => toast({ title: "WooCommerce status update failed", description: e?.message, variant: "destructive" }),
+    onError: (err: any) => toast({ title: err.message || "Failed to push price", variant: "destructive" }),
   });
 
   // Upload one image and apply it to every variant that shares the same colour
@@ -1336,6 +1338,16 @@ export default function ProductDetail() {
                           >
                             {pushWooStatusMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
                             Publish
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => pushWooPriceMut.mutate(Number(details?.unitPrice ?? product.unitPrice))}
+                            disabled={pushWooPriceMut.isPending}
+                            className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                          >
+                            {pushWooPriceMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Cloud className="w-3 h-3 mr-1" />}
+                            Push Price
                           </Button>
                         </div>
                       </div>
