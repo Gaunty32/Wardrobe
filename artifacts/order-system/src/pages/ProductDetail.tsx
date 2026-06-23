@@ -221,10 +221,10 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
     updateMut.mutate({
       stockQuantity: parseInt(editStock, 10) || 0,
       imageUrl: editImageUrl || null,
-      primarySupplierId: primaryId !== "none" ? Number(primaryId) : null,
+      primarySupplierId: primaryId && primaryId !== "none" ? Number(primaryId) : null,
       supplierCode: variantSupplierCode || null,
       supplierPrice: variantSupplierPrice !== "" ? parseFloat(variantSupplierPrice) : null,
-      secondarySupplierId: secondaryId !== "none" ? Number(secondaryId) : null,
+      secondarySupplierId: secondaryId && secondaryId !== "none" ? Number(secondaryId) : null,
       secondarySupplierCode: secondarySupplierCode || null,
       secondarySupplierPrice: secondarySupplierPrice !== "" ? parseFloat(secondarySupplierPrice) : null,
     });
@@ -506,8 +506,8 @@ function AddVariantDialog({ open, onClose, productId, attributes, suppliers, def
       size: finalSize,
       sleeve: finalSleeve,
       stockQuantity: parseInt(stock, 10) || 0,
-      primarySupplierId: primaryId !== "none" ? Number(primaryId) : null,
-      secondarySupplierId: secondaryId !== "none" ? Number(secondaryId) : null,
+      primarySupplierId: primaryId && primaryId !== "none" ? Number(primaryId) : null,
+      secondarySupplierId: secondaryId && secondaryId !== "none" ? Number(secondaryId) : null,
     });
   };
 
@@ -2194,8 +2194,8 @@ export default function ProductDetail() {
           productId={productId}
           attributes={attributes}
           suppliers={suppliers}
-          defaultPrimaryId={defaultPrimaryId}
-          defaultSecondaryId={defaultSecondaryId}
+          defaultPrimaryId={defaultPrimaryId !== null ? String(defaultPrimaryId) : "none"}
+          defaultSecondaryId={defaultSecondaryId !== null ? String(defaultSecondaryId) : "none"}
           onRefresh={refetchVariants}
         />
 
