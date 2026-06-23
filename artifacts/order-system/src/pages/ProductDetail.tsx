@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
   Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles, Shuffle, Search,
-  Share2, Globe, CalendarDays, Send, Clock, CheckCircle2, RefreshCw
+  Share2, Globe, CalendarDays, Send, Clock, CheckCircle2, RefreshCw, Eye
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -721,7 +721,7 @@ export default function ProductDetail() {
   const generateSocialMut = useMutation({
     mutationFn: () => apiFetch<any>(`/products/${productId}/social-posts/generate`, { method: "POST" }),
     onSuccess: (data: any) => {
-      setSocialDraft(p => ({ ...p, facebookContent: data.facebookContent || "", googleContent: data.googleContent || "", hashtags: data.hashtags || "", editingId: null }));
+      setSocialDraft(p => ({ ...p, facebookContent: data.facebookContent || "", googleContent: data.googleContent || "", hashtags: data.hashtags || "", productImageUrl: data.productImageUrl ?? p.productImageUrl, editingId: null }));
       toast({ title: "Post generated — review and save or schedule" });
     },
     onError: (e: any) => toast({ title: "AI generation failed", description: e?.message, variant: "destructive" }),
@@ -729,7 +729,7 @@ export default function ProductDetail() {
 
   const saveSocialMut = useMutation({
     mutationFn: () => {
-      const body = JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule });
+      const body = JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl });
       return socialDraft.editingId
         ? apiFetch<any>(`/social-posts/${socialDraft.editingId}`, { method: "PATCH", body })
         : apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body });
@@ -746,7 +746,7 @@ export default function ProductDetail() {
     mutationFn: async () => {
       let id = socialDraft.editingId;
       if (!id) {
-        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule }) });
+        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl }) });
         id = saved.id;
         setSocialDraft(p => ({ ...p, editingId: id ?? p.editingId }));
       }
@@ -764,7 +764,7 @@ export default function ProductDetail() {
     mutationFn: async () => {
       let id = socialDraft.editingId;
       if (!id) {
-        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule }) });
+        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl }) });
         id = saved.id;
         setSocialDraft(p => ({ ...p, editingId: id ?? p.editingId }));
       }
@@ -772,7 +772,7 @@ export default function ProductDetail() {
     },
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["social-posts", productId] });
-      if (data.ok) toast({ title: "Published to Facebook!" });
+      if (data.ok) toast({ title: "Published!" });
       else toast({ title: "Published with notes", description: "Check post history for details", variant: "destructive" });
     },
     onError: (e: any) => toast({ title: "Publish failed", description: e?.message, variant: "destructive" }),
@@ -782,10 +782,16 @@ export default function ProductDetail() {
     mutationFn: (id: number) => apiFetch<any>(`/social-posts/${id}/publish`, { method: "POST" }),
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["social-posts", productId] });
-      if (data.ok) toast({ title: "Published to Facebook!" });
+      if (data.ok) toast({ title: "Published!" });
       else toast({ title: "Published with notes", variant: "destructive" });
     },
     onError: (e: any) => toast({ title: "Publish failed", description: e?.message, variant: "destructive" }),
+  });
+
+  const refreshStatsMut = useMutation({
+    mutationFn: (id: number) => apiFetch<any>(`/social-posts/${id}/insights`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["social-posts", productId] }),
+    onError: () => toast({ title: "Could not fetch stats — check Facebook is connected", variant: "destructive" }),
   });
 
   const deleteSocialMut = useMutation({
@@ -863,7 +869,9 @@ export default function ProductDetail() {
   const [socialDraft, setSocialDraft] = useState<{
     facebookContent: string; googleContent: string; hashtags: string;
     platforms: string[]; autoReschedule: boolean; editingId: number | null;
-  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: false, editingId: null });
+    productImageUrl: string | null;
+  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: false, editingId: null, productImageUrl: null });
+  const [socialShowPreview, setSocialShowPreview] = useState(false);
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   const [quoteDraft, setQuoteDraft] = useState("");
@@ -1326,7 +1334,9 @@ export default function ProductDetail() {
               </TabsTrigger>
               <TabsTrigger value="social" className="flex items-center gap-1.5">
                 <Share2 className="w-3.5 h-3.5" /> Social Post
-                {(socialPostsQuery.data?.filter((p: any) => p.status === "scheduled").length ?? 0) > 0 && (
+                {(socialPostsQuery.data?.some((p: any) => p.new_activity)) ? (
+                  <span className="ml-1 bg-red-100 text-red-700 text-xs font-semibold px-1.5 py-0.5 rounded-full animate-pulse">!</span>
+                ) : (socialPostsQuery.data?.filter((p: any) => p.status === "scheduled").length ?? 0) > 0 && (
                   <span className="ml-1 bg-amber-100 text-amber-700 text-xs font-medium px-1.5 py-0.5 rounded-full">
                     {socialPostsQuery.data!.filter((p: any) => p.status === "scheduled").length}
                   </span>
@@ -2329,20 +2339,62 @@ export default function ProductDetail() {
                       <h3 className="font-semibold flex items-center gap-2">
                         <Share2 className="w-4 h-4 text-blue-500" /> Social Post Composer
                       </h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">Generate and schedule posts for Facebook and Google Business</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Generate and schedule posts for Facebook and Google Business — uses the WooCommerce product image</p>
                     </div>
                     <div className="flex items-center gap-2">
                       {socialDraft.editingId && (
-                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null })}>
+                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null, productImageUrl: null })}>
                           <X className="w-3 h-3" /> New draft
                         </Button>
                       )}
+                      <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialShowPreview(v => !v)}>
+                        <Eye className="w-3.5 h-3.5" /> {socialShowPreview ? "Hide preview" : "Preview"}
+                      </Button>
                       <Button onClick={() => generateSocialMut.mutate()} disabled={generateSocialMut.isPending} className="gap-2">
                         {generateSocialMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                         {generateSocialMut.isPending ? "Generating…" : "Generate with AI"}
                       </Button>
                     </div>
                   </div>
+
+                  {/* Post Preview */}
+                  {socialShowPreview && (socialDraft.facebookContent || socialDraft.googleContent) && (
+                    <div className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Facebook preview */}
+                      {socialDraft.facebookContent && (
+                        <div className="rounded-xl overflow-hidden border border-[#ddd] shadow-sm bg-white text-sm">
+                          <div className="bg-[#1877f2] text-white text-xs font-semibold px-3 py-1.5 flex items-center gap-1.5">
+                            <Share2 className="w-3 h-3" /> Facebook Post Preview
+                          </div>
+                          {socialDraft.productImageUrl && (
+                            <img src={socialDraft.productImageUrl} alt="Product" className="w-full h-44 object-cover" onError={e => (e.currentTarget.style.display = "none")} />
+                          )}
+                          <div className="p-3 space-y-2">
+                            <p className="text-xs font-semibold text-[#1c1e21]">Select Branding Solutions</p>
+                            <p className="text-xs text-[#1c1e21] leading-relaxed whitespace-pre-wrap">{socialDraft.facebookContent}</p>
+                            {socialDraft.hashtags && (
+                              <p className="text-xs text-[#1877f2]">{socialDraft.hashtags.split(",").map(h => `#${h.trim()}`).join(" ")}</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {/* Google Business preview */}
+                      {socialDraft.googleContent && (
+                        <div className="rounded-xl overflow-hidden border border-[#ddd] shadow-sm bg-white text-sm">
+                          <div className="bg-[#34a853] text-white text-xs font-semibold px-3 py-1.5 flex items-center gap-1.5">
+                            <Globe className="w-3 h-3" /> Google Business Preview
+                          </div>
+                          {socialDraft.productImageUrl && (
+                            <img src={socialDraft.productImageUrl} alt="Product" className="w-full h-44 object-cover" onError={e => (e.currentTarget.style.display = "none")} />
+                          )}
+                          <div className="p-3 space-y-2">
+                            <p className="text-xs font-semibold text-[#202124]">Select Branding Solutions</p>
+                            <p className="text-xs text-[#202124] leading-relaxed whitespace-pre-wrap">{socialDraft.googleContent}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="space-y-4">
                     {/* Facebook post */}
@@ -2361,12 +2413,12 @@ export default function ProductDetail() {
                       <div className="flex items-center justify-between">
                         <Label className="flex items-center gap-1.5 font-medium">
                           <Globe className="w-3.5 h-3.5 text-green-600" /> Google Business Post
-                          <span className="text-xs text-muted-foreground font-normal">(copy-paste into Google Business Profile)</span>
+                          <span className="text-xs text-muted-foreground font-normal">(auto-posted if GBP connected)</span>
                         </Label>
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-muted-foreground">{socialDraft.googleContent.length} chars</span>
                           {socialDraft.googleContent && (
-                            <Button size="sm" variant="ghost" className="h-6 text-xs px-2 gap-1" onClick={() => { navigator.clipboard.writeText(socialDraft.googleContent); toast({ title: "Google content copied to clipboard" }); }}>
+                            <Button size="sm" variant="ghost" className="h-6 text-xs px-2 gap-1" onClick={() => { navigator.clipboard.writeText(socialDraft.googleContent); toast({ title: "Google content copied" }); }}>
                               Copy
                             </Button>
                           )}
@@ -2384,7 +2436,7 @@ export default function ProductDetail() {
                     {/* Platform toggles */}
                     <div className="flex items-center gap-6 pt-1">
                       <span className="text-sm font-medium">Post to:</span>
-                      {[{ id: "facebook", label: "Facebook (auto-post)" }, { id: "google", label: "Google Business (copy-paste)" }].map(p => (
+                      {[{ id: "facebook", label: "Facebook (auto-post with image)" }, { id: "google", label: "Google Business (auto-post if connected)" }].map(p => (
                         <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input type="checkbox" checked={socialDraft.platforms.includes(p.id)} onChange={e => setSocialDraft(prev => ({ ...prev, platforms: e.target.checked ? [...prev.platforms, p.id] : prev.platforms.filter(x => x !== p.id) }))} className="rounded" />
                           {p.label}
@@ -2396,7 +2448,7 @@ export default function ProductDetail() {
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="checkbox" checked={socialDraft.autoReschedule} onChange={e => setSocialDraft(p => ({ ...p, autoReschedule: e.target.checked }))} className="rounded" />
                       <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span>Auto-reschedule every 6 months after publishing</span>
+                      <span>Auto-reschedule every ~6 months after publishing</span>
                     </label>
 
                     {/* Action buttons */}
@@ -2407,7 +2459,7 @@ export default function ProductDetail() {
                       </Button>
                       <Button variant="outline" onClick={() => scheduleSocialMut.mutate()} disabled={scheduleSocialMut.isPending || !socialDraft.facebookContent} className="gap-2 text-amber-700 border-amber-300 hover:bg-amber-50">
                         {scheduleSocialMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarDays className="w-4 h-4" />}
-                        Schedule (~6 months)
+                        Schedule (within 30 days)
                       </Button>
                       <Button onClick={() => publishSocialMut.mutate()} disabled={publishSocialMut.isPending || !socialDraft.facebookContent} className="gap-2 bg-blue-600 hover:bg-blue-700 text-white">
                         {publishSocialMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -2427,7 +2479,7 @@ export default function ProductDetail() {
                   ) : !socialPostsQuery.data?.length ? (
                     <p className="text-sm text-muted-foreground text-center py-8">No posts yet — generate your first one above.</p>
                   ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {socialPostsQuery.data.map((post: any) => {
                         const STATUS_CFG: Record<string, { label: string; cls: string; Icon: any }> = {
                           draft:      { label: "Draft",       cls: "bg-slate-100 text-slate-700",  Icon: Save },
@@ -2438,38 +2490,103 @@ export default function ProductDetail() {
                         };
                         const cfg = STATUS_CFG[post.status] ?? STATUS_CFG.draft;
                         const { Icon } = cfg;
+                        const lastComments: any[] = Array.isArray(post.last_comments) ? post.last_comments : (post.last_comments ? JSON.parse(post.last_comments) : []);
                         return (
-                          <div key={post.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 bg-muted/20">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
-                                  <Icon className="w-3 h-3" /> {cfg.label}
-                                </span>
-                                {post.scheduled_at && (
-                                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                                    <CalendarDays className="w-3 h-3" />
-                                    {new Date(post.scheduled_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                                  </span>
-                                )}
-                                {post.published_at && (
-                                  <span className="text-xs text-muted-foreground">
-                                    Published {new Date(post.published_at).toLocaleDateString("en-GB")}
-                                  </span>
-                                )}
-                                {post.auto_reschedule && (
-                                  <span className="text-xs text-blue-600 flex items-center gap-1">
-                                    <RefreshCw className="w-3 h-3" /> Auto-reschedule on
-                                  </span>
-                                )}
+                          <div key={post.id} className="rounded-lg border border-border/50 bg-muted/20 overflow-hidden">
+                            {/* Image strip if present */}
+                            {post.product_image_url && (
+                              <div className="flex gap-0">
+                                <img src={post.product_image_url} alt="" className="h-20 w-20 object-cover flex-shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+                                <div className="flex-1 p-3 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                    <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
+                                      <Icon className="w-3 h-3" /> {cfg.label}
+                                    </span>
+                                    {post.new_activity && (
+                                      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 animate-pulse">
+                                        New activity!
+                                      </span>
+                                    )}
+                                    {post.scheduled_at && (
+                                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                        <CalendarDays className="w-3 h-3" />
+                                        {new Date(post.scheduled_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                      </span>
+                                    )}
+                                    {post.published_at && (
+                                      <span className="text-xs text-muted-foreground">
+                                        Published {new Date(post.published_at).toLocaleDateString("en-GB")}
+                                      </span>
+                                    )}
+                                    {post.auto_reschedule && (
+                                      <span className="text-xs text-blue-600 flex items-center gap-1">
+                                        <RefreshCw className="w-3 h-3" /> Auto-reschedule
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-muted-foreground line-clamp-2">{post.facebook_content || post.google_content}</p>
+                                </div>
                               </div>
-                              <p className="text-xs text-muted-foreground line-clamp-2">
-                                {post.facebook_content || post.google_content}
-                              </p>
-                              {post.error_message && (
-                                <p className="text-xs text-red-600 mt-1">{post.error_message}</p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
+                            )}
+                            {/* No image — original layout */}
+                            {!post.product_image_url && (
+                              <div className="p-3">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.cls}`}>
+                                    <Icon className="w-3 h-3" /> {cfg.label}
+                                  </span>
+                                  {post.new_activity && (
+                                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 animate-pulse">
+                                      New activity!
+                                    </span>
+                                  )}
+                                  {post.scheduled_at && (
+                                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                                      <CalendarDays className="w-3 h-3" />{new Date(post.scheduled_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                                    </span>
+                                  )}
+                                  {post.published_at && (
+                                    <span className="text-xs text-muted-foreground">Published {new Date(post.published_at).toLocaleDateString("en-GB")}</span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground line-clamp-2">{post.facebook_content || post.google_content}</p>
+                              </div>
+                            )}
+                            {/* Engagement stats */}
+                            {post.status === "published" && post.fb_post_id && (
+                              <div className="px-3 pb-2 flex items-center gap-4">
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">👍 {post.fb_reactions ?? 0} reactions</span>
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">💬 {post.fb_comments ?? 0} comments</span>
+                                <span className="text-xs text-muted-foreground flex items-center gap-1">↗️ {post.fb_shares ?? 0} shares</span>
+                                {post.fb_stats_at && (
+                                  <span className="text-xs text-muted-foreground opacity-60">· updated {new Date(post.fb_stats_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</span>
+                                )}
+                                <Button size="sm" variant="ghost" className="h-6 text-xs px-2 ml-auto gap-1" onClick={() => refreshStatsMut.mutate(post.id)} disabled={refreshStatsMut.isPending}>
+                                  <RefreshCw className={`w-3 h-3 ${refreshStatsMut.isPending ? "animate-spin" : ""}`} /> Refresh
+                                </Button>
+                              </div>
+                            )}
+                            {/* Recent comments */}
+                            {lastComments.length > 0 && (
+                              <div className="px-3 pb-3 space-y-1.5 border-t border-border/40 pt-2">
+                                <p className="text-xs font-medium text-muted-foreground">Recent comments</p>
+                                {lastComments.map((c: any, i: number) => (
+                                  <div key={i} className="text-xs bg-white rounded px-2 py-1.5 border border-border/40">
+                                    <span className="font-medium">{c.from}</span>
+                                    <span className="text-muted-foreground mx-1">·</span>
+                                    <span>{c.message}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Error */}
+                            {post.error_message && (
+                              <div className="px-3 pb-2">
+                                <p className="text-xs text-red-600">{post.error_message}</p>
+                              </div>
+                            )}
+                            {/* Actions */}
+                            <div className="px-3 pb-2 flex items-center gap-1 border-t border-border/30 pt-2">
                               <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => setSocialDraft({
                                 facebookContent: post.facebook_content || "",
                                 googleContent: post.google_content || "",
@@ -2477,15 +2594,21 @@ export default function ProductDetail() {
                                 platforms: post.platforms || ["facebook", "google"],
                                 autoReschedule: post.auto_reschedule || false,
                                 editingId: post.id,
+                                productImageUrl: post.product_image_url || null,
                               })}>
                                 <Edit2 className="w-3 h-3" /> Edit
                               </Button>
                               {(post.status === "draft" || post.status === "scheduled") && (
                                 <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-blue-600" onClick={() => publishSocialById.mutate(post.id)} disabled={publishSocialById.isPending}>
-                                  <Send className="w-3 h-3" /> Publish
+                                  <Send className="w-3 h-3" /> Publish Now
                                 </Button>
                               )}
-                              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive" onClick={() => deleteSocialMut.mutate(post.id)} disabled={deleteSocialMut.isPending}>
+                              {post.new_activity && (
+                                <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-slate-600" onClick={() => apiFetch(`/social-posts/${post.id}/seen`, { method: "POST" }).then(() => qc.invalidateQueries({ queryKey: ["social-posts", productId] }))}>
+                                  Mark seen
+                                </Button>
+                              )}
+                              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1 text-destructive ml-auto" onClick={() => deleteSocialMut.mutate(post.id)} disabled={deleteSocialMut.isPending}>
                                 <Trash2 className="w-3 h-3" />
                               </Button>
                             </div>

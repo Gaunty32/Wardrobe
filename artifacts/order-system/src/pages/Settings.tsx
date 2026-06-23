@@ -4,7 +4,7 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2
+  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -807,6 +807,12 @@ export default function Settings() {
   const [fbFormLoaded, setFbFormLoaded] = useState(false);
   const [savingFb, setSavingFb] = useState(false);
 
+  // Google Business Profile fields
+  const [gbpClientId, setGbpClientId] = useState("");
+  const [gbpClientSecret, setGbpClientSecret] = useState("");
+  const [savingGbp, setSavingGbp] = useState(false);
+  const [gbpSelectedLocation, setGbpSelectedLocation] = useState<{ name: string; title: string } | null>(null);
+
   // Email / SMTP fields
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
@@ -818,10 +824,11 @@ export default function Settings() {
   const [smtpFormLoaded, setSmtpFormLoaded] = useState(false);
   const [testEmailTo, setTestEmailTo] = useState("");
 
-  // Detect ?xero=connected redirect from OAuth callback
+  // Detect ?xero=connected and ?gbp=connected redirects from OAuth callbacks
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const xeroParam = params.get("xero");
+    const gbpParam = params.get("gbp");
     const msg = params.get("msg");
     if (xeroParam === "connected") {
       toast({ title: "Xero connected", description: "Your Xero account has been linked successfully." });
@@ -829,6 +836,15 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ["xero-status"] });
     } else if (xeroParam === "error") {
       toast({ title: "Xero connection failed", description: msg ?? "Unknown error", variant: "destructive" });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+    if (gbpParam === "connected") {
+      toast({ title: "Google Business Profile connected!", description: "You can now select your business location below." });
+      window.history.replaceState({}, "", window.location.pathname);
+      queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
+      queryClient.invalidateQueries({ queryKey: ["gbp-locations"] });
+    } else if (gbpParam === "error") {
+      toast({ title: "Google connection failed", description: msg ?? "Unknown error", variant: "destructive" });
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -843,6 +859,19 @@ export default function Settings() {
     queryKey: ["xero-redirect-uri"],
     queryFn: () => apiFetch("/xero/redirect-uri"),
     staleTime: Infinity,
+  });
+
+  // GBP status + locations
+  const { data: gbpStatus, refetch: refetchGbpStatus } = useQuery<{ connected: boolean; locationName?: string; locationTitle?: string }>({
+    queryKey: ["gbp-status"],
+    queryFn: () => apiFetch("/gbp/status"),
+    refetchInterval: 60_000,
+  });
+
+  const { data: gbpLocations } = useQuery<{ name: string; title: string }[]>({
+    queryKey: ["gbp-locations"],
+    queryFn: () => apiFetch("/gbp/locations"),
+    enabled: !!gbpStatus?.connected,
   });
 
   // Editable redirect URI — pre-fill once the auto-detected value arrives
@@ -1669,9 +1698,115 @@ export default function Settings() {
                 </Button>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 space-y-2">
-                <p className="font-semibold">Google Business Profile</p>
-                <p>Google's API requires OAuth and is not currently automated. When you generate a social post for a product, the Google content appears in the Social Post tab — simply copy and paste it into your <a href="https://business.google.com" target="_blank" rel="noreferrer" className="underline font-medium">Google Business Profile</a>.</p>
+              {/* Google Business Profile OAuth */}
+              <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm space-y-5">
+                <div>
+                  <h2 className="font-semibold text-base flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-green-600" /> Google Business Profile
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Connect your Google Business Profile so SBS can auto-post product content. Requires a Google Cloud project with the <strong>Business Profile API</strong> enabled and an OAuth 2.0 Web client credential.
+                  </p>
+                </div>
+
+                {gbpStatus?.connected ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                      <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                      Connected to Google Business Profile
+                      {gbpStatus.locationTitle && <span className="ml-1 font-medium">— {gbpStatus.locationTitle}</span>}
+                    </div>
+
+                    {/* Location selector */}
+                    {gbpLocations && gbpLocations.length > 0 && (
+                      <div className="grid gap-2">
+                        <Label>Business Location</Label>
+                        <select
+                          className="border border-border rounded-md px-3 py-2 text-sm bg-background"
+                          value={gbpSelectedLocation?.name ?? gbpStatus.locationName ?? ""}
+                          onChange={e => {
+                            const loc = gbpLocations.find(l => l.name === e.target.value);
+                            if (loc) setGbpSelectedLocation(loc);
+                          }}
+                        >
+                          <option value="">— select location —</option>
+                          {gbpLocations.map(l => (
+                            <option key={l.name} value={l.name}>{l.title}</option>
+                          ))}
+                        </select>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={savingGbp || !gbpSelectedLocation}
+                          onClick={async () => {
+                            if (!gbpSelectedLocation) return;
+                            setSavingGbp(true);
+                            try {
+                              await apiFetch("/gbp/location", { method: "POST", body: JSON.stringify({ name: gbpSelectedLocation.name, title: gbpSelectedLocation.title }) });
+                              toast({ title: "Location saved", description: gbpSelectedLocation.title });
+                              queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
+                            } catch { toast({ title: "Failed to save location", variant: "destructive" }); }
+                            finally { setSavingGbp(false); }
+                          }}
+                          className="w-fit gap-2"
+                        >
+                          {savingGbp ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                          Save Location
+                        </Button>
+                      </div>
+                    )}
+
+                    <Button
+                      size="sm" variant="outline"
+                      className="text-red-600 border-red-300 hover:bg-red-50 gap-2 w-fit"
+                      onClick={async () => {
+                        await apiFetch("/gbp/disconnect", { method: "POST" });
+                        queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
+                        toast({ title: "Google Business Profile disconnected" });
+                      }}
+                    >
+                      Disconnect Google
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="grid gap-2">
+                      <Label>Google Cloud Client ID</Label>
+                      <Input value={gbpClientId} onChange={e => setGbpClientId(e.target.value)} placeholder="1234567890-abc….apps.googleusercontent.com" />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Google Cloud Client Secret</Label>
+                      <Input type="password" value={gbpClientSecret} onChange={e => setGbpClientSecret(e.target.value)} placeholder="GOCSPX-…" />
+                      <p className="text-xs text-muted-foreground">
+                        Create these in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="underline">Google Cloud Console</a> → APIs &amp; Services → Credentials → Create OAuth 2.0 Client ID (Web application). Enable the <strong>Google My Business API</strong>. Add <code className="bg-muted px-1 rounded">/api/gbp/callback</code> as an authorised redirect URI.
+                      </p>
+                    </div>
+                    <div className="flex gap-3">
+                      <Button
+                        variant="outline"
+                        disabled={savingGbp || !gbpClientId || !gbpClientSecret}
+                        onClick={async () => {
+                          setSavingGbp(true);
+                          try {
+                            await apiFetch("/gbp/credentials", { method: "POST", body: JSON.stringify({ clientId: gbpClientId, clientSecret: gbpClientSecret }) });
+                            toast({ title: "Credentials saved — click Connect to authorise" });
+                          } catch { toast({ title: "Failed to save credentials", variant: "destructive" }); }
+                          finally { setSavingGbp(false); }
+                        }}
+                        className="gap-2"
+                      >
+                        {savingGbp ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                        Save Credentials
+                      </Button>
+                      <Button
+                        className="gap-2 bg-green-700 hover:bg-green-800 text-white"
+                        onClick={() => { window.location.href = `${API_BASE}/gbp/connect`; }}
+                      >
+                        <Globe className="w-4 h-4" /> Connect to Google Business
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </TabsContent>

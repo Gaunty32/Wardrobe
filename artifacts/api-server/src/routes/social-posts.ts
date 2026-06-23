@@ -1,8 +1,15 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
+import {
+  generateGbpAuthUrl, handleGbpCallback, getGbpAccessToken,
+  getGbpStatus, listGbpLocations, publishGbpPost, disconnectGbp,
+  autoGbpRedirectUri,
+} from "../services/google-business.js";
+import { db as _db, settingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -11,6 +18,18 @@ const anthropic = new Anthropic({
   baseURL: process.env.AI_INTEGRATIONS_ANTHROPIC_BASE_URL,
 });
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function getSetting(key: string): Promise<string | null> {
+  const [row] = await db.select().from(settingsTable).where(eq(settingsTable.key, key));
+  return row?.value ?? null;
+}
+
+async function setSetting(key: string, value: string | null): Promise<void> {
+  await db.insert(settingsTable).values({ key, value })
+    .onConflictDoUpdate({ target: settingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
 async function getFbSettings() {
   const rows = await db.execute(sql`SELECT key, value FROM settings WHERE key IN ('facebook_page_id','facebook_page_access_token')`);
   const map: Record<string, string> = {};
@@ -18,36 +37,159 @@ async function getFbSettings() {
   return map.facebook_page_id && map.facebook_page_access_token ? map : null;
 }
 
-async function publishToFacebook(pageId: string, token: string, message: string, link?: string | null): Promise<{ ok: boolean; postId?: string; error?: string }> {
-  const body: any = { message, access_token: token };
-  if (link) body.link = link;
+/** Post with image via /{page}/photos (shows image prominently). Falls back to /feed if no image. */
+async function publishToFacebook(
+  pageId: string, token: string, message: string, imageUrl?: string | null
+): Promise<{ ok: boolean; postId?: string; error?: string }> {
+  if (imageUrl) {
+    // Use photos endpoint — creates a photo post with caption
+    const body = new URLSearchParams({ url: imageUrl, caption: message, access_token: token });
+    const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/photos`, {
+      method: "POST",
+      body,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.status.toString());
+      return { ok: false, error: `Facebook photo post error ${res.status}: ${text}` };
+    }
+    const data: any = await res.json();
+    // photos endpoint returns { id, post_id } — post_id is the feed post for insights
+    return { ok: true, postId: data.post_id ?? data.id };
+  }
+
+  // Plain text post via /feed
   const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/feed`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ message, access_token: token }),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.status.toString());
-    return { ok: false, error: `Facebook returned ${res.status}: ${text}` };
+    return { ok: false, error: `Facebook feed error ${res.status}: ${text}` };
   }
   const data: any = await res.json();
   return { ok: true, postId: data.id };
 }
 
-/** Returns a random Date between minMonths and maxMonths from now. */
-function randomFutureDate(minMonths: number, maxMonths: number): Date {
-  const minMs = minMonths * 30.44 * 24 * 60 * 60 * 1000;
-  const maxMs = maxMonths * 30.44 * 24 * 60 * 60 * 1000;
+/** Fetch engagement stats for a Facebook post. */
+async function fetchFbInsights(postId: string, token: string): Promise<{
+  reactions: number; comments: number; shares: number; lastComments: any[];
+} | null> {
+  const fields = "reactions.summary(true),comments.summary(true){message,from,created_time},shares";
+  const res = await fetch(
+    `https://graph.facebook.com/v20.0/${postId}?fields=${fields}&access_token=${encodeURIComponent(token)}`
+  );
+  if (!res.ok) return null;
+  const d: any = await res.json();
+  return {
+    reactions: d.reactions?.summary?.total_count ?? 0,
+    comments: d.comments?.summary?.total_count ?? 0,
+    shares: d.shares?.count ?? 0,
+    lastComments: (d.comments?.data ?? []).slice(0, 5).map((c: any) => ({
+      message: c.message,
+      from: c.from?.name ?? "Unknown",
+      time: c.created_time,
+    })),
+  };
+}
+
+/** Pick a random date within [0, withinDays) that has no scheduled post yet. Max 30 attempts. */
+async function pickAvailableDate(withinDays: number): Promise<Date> {
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const daysAhead = Math.random() * withinDays;
+    const candidate = new Date(Date.now() + daysAhead * 86_400_000);
+    const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+    const existing = await db.execute(sql`
+      SELECT id FROM social_posts
+      WHERE status IN ('scheduled','publishing')
+        AND scheduled_at BETWEEN ${dayStart.toISOString()} AND ${dayEnd.toISOString()}
+      LIMIT 1
+    `);
+    if (!(existing.rows ?? existing as any[]).length) return candidate;
+  }
+  // All days taken — add 1 day buffer at the end
+  return new Date(Date.now() + (withinDays + 1) * 86_400_000);
+}
+
+/** Pick a random date ~6 months (5.5–6.5 months) from now. */
+function rescheduleDate(): Date {
+  const minMs = 5.5 * 30.44 * 86_400_000;
+  const maxMs = 6.5 * 30.44 * 86_400_000;
   return new Date(Date.now() + minMs + Math.random() * (maxMs - minMs));
 }
 
+// ── Google Business Profile OAuth routes ──────────────────────────────────────
+
+router.get("/gbp/status", async (_req, res): Promise<void> => {
+  res.json(await getGbpStatus());
+});
+
+router.post("/gbp/credentials", async (req, res): Promise<void> => {
+  const parsed = z.object({ clientId: z.string().min(1), clientSecret: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  await setSetting("gbp_client_id", parsed.data.clientId);
+  await setSetting("gbp_client_secret", parsed.data.clientSecret);
+  res.json({ ok: true });
+});
+
+router.get("/gbp/connect", async (req, res): Promise<void> => {
+  try {
+    const redirectUri = autoGbpRedirectUri(req);
+    const url = await generateGbpAuthUrl(redirectUri);
+    res.redirect(url);
+  } catch (err) {
+    res.status(400).send(`<h2>Google Connect Error</h2><p>${err instanceof Error ? err.message : "Unknown error"}</p>`);
+  }
+});
+
+router.get("/gbp/callback", async (req, res): Promise<void> => {
+  const { code, error } = req.query as Record<string, string>;
+  if (error) { res.redirect(`/settings?gbp=error&msg=${encodeURIComponent(error)}`); return; }
+  if (!code) { res.redirect("/settings?gbp=error&msg=Missing+code"); return; }
+  try {
+    const redirectUri = autoGbpRedirectUri(req);
+    await handleGbpCallback(code, redirectUri);
+    res.redirect("/settings?gbp=connected");
+  } catch (err) {
+    res.redirect(`/settings?gbp=error&msg=${encodeURIComponent(err instanceof Error ? err.message : "Unknown error")}`);
+  }
+});
+
+router.get("/gbp/locations", async (_req, res): Promise<void> => {
+  try {
+    const token = await getGbpAccessToken();
+    if (!token) { res.status(401).json({ error: "Not connected to Google Business Profile" }); return; }
+    res.json(await listGbpLocations(token));
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+router.post("/gbp/location", async (req, res): Promise<void> => {
+  const parsed = z.object({ name: z.string().min(1), title: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  await setSetting("gbp_location_name", parsed.data.name);
+  await setSetting("gbp_location_title", parsed.data.title);
+  res.json({ ok: true });
+});
+
+router.post("/gbp/disconnect", async (_req, res): Promise<void> => {
+  await disconnectGbp();
+  res.json({ ok: true });
+});
+
 // ── List posts for a product ──────────────────────────────────────────────────
+
 router.get("/products/:productId/social-posts", async (req, res): Promise<void> => {
   const pid = parseInt(req.params.productId, 10);
   if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
   const rows = await db.execute(sql`
-    SELECT id, product_id, facebook_content, google_content, hashtags,
-           platforms, status, scheduled_at, published_at, auto_reschedule, error_message, created_at
+    SELECT id, product_id, facebook_content, google_content, hashtags, platforms,
+           status, scheduled_at, published_at, auto_reschedule, error_message,
+           fb_post_id, gbp_post_name, product_image_url,
+           fb_reactions, fb_comments, fb_shares, fb_stats_at, last_comments, new_activity,
+           created_at
     FROM social_posts WHERE product_id = ${pid}
     ORDER BY created_at DESC
   `);
@@ -55,15 +197,16 @@ router.get("/products/:productId/social-posts", async (req, res): Promise<void> 
 });
 
 // ── AI generate post content ──────────────────────────────────────────────────
+
 router.post("/products/:productId/social-posts/generate", async (req, res): Promise<void> => {
   const pid = parseInt(req.params.productId, 10);
   if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
 
   const [product] = (await db.execute(sql`
-    SELECT p.name, p.sku, p.description, p.unit_price, p.category,
+    SELECT p.name, p.sku, p.description, p.unit_price, p.category, p.image_url,
            p.guidance_best_for, p.guidance_not_ideal_for, p.guidance_staff_quotes,
            p.guidance_badges, p.guidance_tags, p.guidance_value_rating,
-           p.guidance_durability_rating, p.guidance_smart_rating, p.image_url,
+           p.guidance_durability_rating, p.guidance_smart_rating,
            s.name AS supplier_name
     FROM products p
     LEFT JOIN suppliers s ON s.id = p.supplier_id
@@ -72,7 +215,6 @@ router.post("/products/:productId/social-posts/generate", async (req, res): Prom
 
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
 
-  const price = product.unit_price ? `£${parseFloat(product.unit_price).toFixed(2)}` : null;
   const bestFor = product.guidance_best_for || null;
   const notIdeal = product.guidance_not_ideal_for || null;
   const badges = Array.isArray(product.guidance_badges) ? product.guidance_badges : (typeof product.guidance_badges === "string" ? JSON.parse(product.guidance_badges || "[]") : []);
@@ -122,24 +264,22 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   const text = message.content[0].type === "text" ? message.content[0].text : "";
-  // Strip markdown code fences if present
   const cleaned = text.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
   let parsed: any;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    res.status(500).json({ error: "AI returned invalid JSON", raw: text });
-    return;
+  try { parsed = JSON.parse(cleaned); } catch {
+    res.status(500).json({ error: "AI returned invalid JSON", raw: text }); return;
   }
 
   res.json({
     facebookContent: parsed.facebook || "",
     googleContent: parsed.google || "",
     hashtags: parsed.hashtags || "",
+    productImageUrl: product.image_url || null,
   });
 });
 
 // ── Create a social post ──────────────────────────────────────────────────────
+
 router.post("/products/:productId/social-posts", async (req, res): Promise<void> => {
   const pid = parseInt(req.params.productId, 10);
   if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
@@ -149,23 +289,34 @@ router.post("/products/:productId/social-posts", async (req, res): Promise<void>
     googleContent: z.string().default(""),
     hashtags: z.string().default(""),
     platforms: z.array(z.string()).default(["facebook", "google"]),
-    autoReschedule: z.boolean().default(false),
+    autoReschedule: z.boolean().default(true),
     scheduledAt: z.string().datetime().optional().nullable(),
+    productImageUrl: z.string().url().optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { facebookContent, googleContent, hashtags, platforms, autoReschedule, scheduledAt } = parsed.data;
+  const { facebookContent, googleContent, hashtags, platforms, autoReschedule, scheduledAt, productImageUrl } = parsed.data;
+
+  // If no image provided, fetch from product
+  let imageUrl = productImageUrl;
+  if (!imageUrl) {
+    const [prod] = (await db.execute(sql`SELECT image_url FROM products WHERE id = ${pid}`)).rows as any[];
+    imageUrl = prod?.image_url ?? null;
+  }
+
   const status = scheduledAt ? "scheduled" : "draft";
+  const platformsSql = sql.raw(`ARRAY[${platforms.map(p => `'${p.replace(/'/g, "")}'`).join(",")}]::text[]`);
 
   const result = await db.execute(sql`
-    INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule)
-    VALUES (${pid}, ${facebookContent}, ${googleContent}, ${hashtags}, ${sql.raw(`ARRAY[${platforms.map(p => `'${p.replace(/'/g, "")}'`).join(",")}]::text[]`)}, ${status}, ${scheduledAt ?? null}, ${autoReschedule})
+    INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url)
+    VALUES (${pid}, ${facebookContent}, ${googleContent}, ${hashtags}, ${platformsSql}, ${status}, ${scheduledAt ?? null}, ${autoReschedule}, ${imageUrl ?? null})
     RETURNING *
   `);
   res.status(201).json((result.rows[0] ?? result) as any);
 });
 
 // ── Update a social post ──────────────────────────────────────────────────────
+
 router.patch("/social-posts/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -178,6 +329,8 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
     autoReschedule: z.boolean().optional(),
     status: z.enum(["draft", "scheduled", "published", "failed"]).optional(),
     scheduledAt: z.string().datetime().optional().nullable(),
+    newActivity: z.boolean().optional(),
+    productImageUrl: z.string().url().optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -190,13 +343,16 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
   if (d.autoReschedule !== undefined) sets.push(`auto_reschedule = ${d.autoReschedule}`);
   if (d.status !== undefined) sets.push(`status = '${d.status}'`);
   if (d.scheduledAt !== undefined) sets.push(`scheduled_at = ${d.scheduledAt ? `'${d.scheduledAt}'` : "NULL"}`);
+  if (d.newActivity !== undefined) sets.push(`new_activity = ${d.newActivity}`);
+  if (d.productImageUrl !== undefined) sets.push(`product_image_url = ${d.productImageUrl ? `'${d.productImageUrl.replace(/'/g, "''")}'` : "NULL"}`);
 
   await db.execute(sql.raw(`UPDATE social_posts SET ${sets.join(", ")} WHERE id = ${id}`));
   const rows = await db.execute(sql`SELECT * FROM social_posts WHERE id = ${id}`);
   res.json((rows.rows[0] ?? rows) as any);
 });
 
-// ── Delete a social post ──────────────────────────────────────────────────────
+// ── Delete ────────────────────────────────────────────────────────────────────
+
 router.delete("/social-posts/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -204,7 +360,38 @@ router.delete("/social-posts/:id", async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
+// ── Get live engagement stats from Facebook ───────────────────────────────────
+
+router.get("/social-posts/:id/insights", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const rows = await db.execute(sql`SELECT fb_post_id FROM social_posts WHERE id = ${id}`);
+  const post = (rows.rows[0] ?? rows) as any;
+  if (!post?.fb_post_id) { res.status(404).json({ error: "No Facebook post ID stored" }); return; }
+
+  const fb = await getFbSettings();
+  if (!fb) { res.status(400).json({ error: "Facebook not configured" }); return; }
+
+  const stats = await fetchFbInsights(post.fb_post_id, fb.facebook_page_access_token);
+  if (!stats) { res.status(502).json({ error: "Could not fetch stats from Facebook" }); return; }
+
+  // Store updated stats
+  await db.execute(sql.raw(`
+    UPDATE social_posts SET
+      fb_reactions = ${stats.reactions},
+      fb_comments = ${stats.comments},
+      fb_shares = ${stats.shares},
+      fb_stats_at = NOW(),
+      last_comments = '${JSON.stringify(stats.lastComments).replace(/'/g, "''")}',
+      new_activity = (${stats.comments} > COALESCE(fb_comments, 0)),
+      updated_at = NOW()
+    WHERE id = ${id}
+  `));
+  res.json(stats);
+});
+
 // ── Publish a post immediately ────────────────────────────────────────────────
+
 router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -214,51 +401,75 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   if (!post) { res.status(404).json({ error: "Post not found" }); return; }
 
   const fbSettings = await getFbSettings();
-  const platforms: string[] = post.platforms ?? ["facebook"];
+  const gbpStatus = await getGbpStatus();
+  const platforms: string[] = post.platforms ?? ["facebook", "google"];
+  const imageUrl: string | null = post.product_image_url ?? null;
 
   const results: Record<string, any> = {};
   let anyFailed = false;
+  let fbPostId: string | null = null;
+  let gbpPostName: string | null = null;
+
   let message = post.facebook_content;
   if (post.hashtags) message += `\n\n${post.hashtags.split(",").map((h: string) => `#${h.trim()}`).join(" ")}`;
 
+  // ── Facebook
   if (platforms.includes("facebook")) {
     if (!fbSettings) {
-      results.facebook = { ok: false, error: "Facebook not configured — add Page ID and Access Token in Settings → Social" };
+      results.facebook = { ok: false, error: "Facebook not configured — add Page ID and Access Token in Settings → Social Media" };
       anyFailed = true;
     } else {
-      const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message);
+      const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl);
       results.facebook = fbResult;
-      if (!fbResult.ok) anyFailed = true;
+      if (fbResult.ok) fbPostId = fbResult.postId ?? null;
+      else anyFailed = true;
     }
   }
 
+  // ── Google Business Profile
   if (platforms.includes("google")) {
-    results.google = { ok: false, note: "Google Business Profile posts must be published manually — copy the Google post content from the Social Post tab." };
+    const token = await getGbpAccessToken();
+    const locationName = gbpStatus.locationName;
+    if (!token || !locationName) {
+      results.google = { ok: false, note: "Google Business Profile not connected — configure it in Settings → Social Media. Copy the Google post content manually for now." };
+    } else {
+      const googleMessage = post.google_content || message;
+      const gbpResult = await publishGbpPost(locationName, token, googleMessage, imageUrl);
+      results.google = gbpResult;
+      if (gbpResult.ok) gbpPostName = gbpResult.postName ?? null;
+      else { results.google.note = "GBP post failed — you can still copy the content manually"; }
+    }
   }
 
   const newStatus = anyFailed ? "failed" : "published";
-  const errMsg = anyFailed ? Object.values(results).filter((r: any) => !r.ok).map((r: any) => r.error || r.note).join("; ") : null;
+  const errMsg = anyFailed ? Object.values(results).filter((r: any) => !r.ok && r.error).map((r: any) => r.error).join("; ") : null;
 
-  await db.execute(sql`
-    UPDATE social_posts
-    SET status = ${newStatus}, published_at = ${anyFailed ? null : new Date().toISOString()},
-        error_message = ${errMsg}, updated_at = NOW()
-    WHERE id = ${id}
-  `);
+  const updateParts = [
+    `status = '${newStatus}'`,
+    `published_at = ${anyFailed ? "NULL" : `'${new Date().toISOString()}'`}`,
+    `error_message = ${errMsg ? `'${errMsg.replace(/'/g, "''")}'` : "NULL"}`,
+    `fb_post_id = ${fbPostId ? `'${fbPostId}'` : "NULL"}`,
+    `gbp_post_name = ${gbpPostName ? `'${gbpPostName}'` : "NULL"}`,
+    "new_activity = FALSE",
+    "updated_at = NOW()",
+  ];
+  await db.execute(sql.raw(`UPDATE social_posts SET ${updateParts.join(", ")} WHERE id = ${id}`));
 
-  // If auto-reschedule, create a new draft post scheduled for ~6 months from now
+  // Auto-reschedule ~6 months from now
   if (!anyFailed && post.auto_reschedule) {
-    const nextDate = randomFutureDate(5.5, 6.5);
-    await db.execute(sql`
-      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule)
-      VALUES (${post.product_id}, ${post.facebook_content}, ${post.google_content}, ${post.hashtags}, ${sql.raw(`ARRAY[${platforms.map((p: string) => `'${p}'`).join(",")}]::text[]`)}, 'scheduled', ${nextDate.toISOString()}, true)
-    `);
+    const nextDate = rescheduleDate();
+    const pArr = platforms.map((p: string) => `'${p}'`).join(",");
+    await db.execute(sql.raw(`
+      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url)
+      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"})
+    `));
   }
 
   res.json({ ok: !anyFailed, results });
 });
 
-// ── Schedule a post for a random date ~6 months from now ─────────────────────
+// ── Schedule a post (random within 30 days) ───────────────────────────────────
+
 router.post("/social-posts/:id/schedule", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -271,57 +482,82 @@ router.post("/social-posts/:id/schedule", async (req, res): Promise<void> => {
 
   const scheduledAt = parsed.data.scheduledAt
     ? new Date(parsed.data.scheduledAt)
-    : randomFutureDate(5.5, 6.5);
+    : await pickAvailableDate(30);   // within 30 days, 1-per-day guard
 
-  await db.execute(sql`
+  await db.execute(sql.raw(`
     UPDATE social_posts
-    SET status = 'scheduled', scheduled_at = ${scheduledAt.toISOString()},
+    SET status = 'scheduled', scheduled_at = '${scheduledAt.toISOString()}',
         auto_reschedule = ${parsed.data.autoReschedule}, updated_at = NOW()
     WHERE id = ${id}
-  `);
+  `));
   res.json({ ok: true, scheduledAt: scheduledAt.toISOString() });
 });
 
-// ── Scheduler: check for due posts every 5 minutes ───────────────────────────
+// ── Mark activity as seen ─────────────────────────────────────────────────────
+
+router.post("/social-posts/:id/seen", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.execute(sql`UPDATE social_posts SET new_activity = FALSE, updated_at = NOW() WHERE id = ${id}`);
+  res.json({ ok: true });
+});
+
+// ── Scheduler ─────────────────────────────────────────────────────────────────
+
 export function startSocialPostScheduler(): void {
-  const checkDuePosts = async () => {
+  const publish = async () => {
     try {
       const due = await db.execute(sql`
         SELECT * FROM social_posts
         WHERE status = 'scheduled' AND scheduled_at <= NOW()
         LIMIT 10
       `);
-      const posts = (due.rows ?? due) as any[];
-      for (const post of posts) {
-        // Mark as publishing to prevent double-fire
-        await db.execute(sql`UPDATE social_posts SET status = 'publishing', updated_at = NOW() WHERE id = ${post.id} AND status = 'scheduled'`);
-
+      for (const post of (due.rows ?? due) as any[]) {
+        await db.execute(sql.raw(`UPDATE social_posts SET status = 'publishing', updated_at = NOW() WHERE id = ${post.id} AND status = 'scheduled'`));
         const fbSettings = await getFbSettings();
-        const platforms: string[] = post.platforms ?? ["facebook"];
-        let failed = false;
-        let errMsg = "";
+        const gbpStatus = await getGbpStatus();
+        const platforms: string[] = post.platforms ?? ["facebook", "google"];
+        const imageUrl: string | null = post.product_image_url ?? null;
+        let failed = false; let errMsg = "";
+        let fbPostId: string | null = null; let gbpPostName: string | null = null;
 
         if (platforms.includes("facebook") && fbSettings) {
           let message = post.facebook_content;
           if (post.hashtags) message += `\n\n${post.hashtags.split(",").map((h: string) => `#${h.trim()}`).join(" ")}`;
-          const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message);
-          if (!fbResult.ok) { failed = true; errMsg = fbResult.error || "Facebook error"; }
+          const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl);
+          if (fbResult.ok) fbPostId = fbResult.postId ?? null;
+          else { failed = true; errMsg = fbResult.error ?? "Facebook error"; }
+        }
+
+        if (platforms.includes("google") && gbpStatus.locationName) {
+          const token = await getGbpAccessToken();
+          if (token) {
+            const googleMessage = post.google_content || post.facebook_content;
+            const gbpResult = await publishGbpPost(gbpStatus.locationName, token, googleMessage, imageUrl);
+            if (gbpResult.ok) gbpPostName = gbpResult.postName ?? null;
+            else console.warn(`[social] GBP post ${post.id} failed: ${gbpResult.error}`);
+          }
         }
 
         const newStatus = failed ? "failed" : "published";
-        await db.execute(sql`
-          UPDATE social_posts
-          SET status = ${newStatus}, published_at = ${failed ? null : new Date().toISOString()},
-              error_message = ${failed ? errMsg : null}, updated_at = NOW()
+        await db.execute(sql.raw(`
+          UPDATE social_posts SET
+            status = '${newStatus}',
+            published_at = ${failed ? "NULL" : `'${new Date().toISOString()}'`},
+            error_message = ${failed ? `'${errMsg.replace(/'/g, "''")}'` : "NULL"},
+            fb_post_id = ${fbPostId ? `'${fbPostId}'` : "NULL"},
+            gbp_post_name = ${gbpPostName ? `'${gbpPostName}'` : "NULL"},
+            updated_at = NOW()
           WHERE id = ${post.id}
-        `);
+        `));
 
         if (!failed && post.auto_reschedule) {
-          const nextDate = randomFutureDate(5.5, 6.5);
-          await db.execute(sql`
-            INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule)
-            VALUES (${post.product_id}, ${post.facebook_content}, ${post.google_content}, ${post.hashtags}, ${sql.raw(`ARRAY[${platforms.map((p: string) => `'${p}'`).join(",")}]::text[]`)}, 'scheduled', ${nextDate.toISOString()}, true)
-          `);
+          const nextDate = rescheduleDate();
+          const pArr = platforms.map((p: string) => `'${p}'`).join(",");
+          await db.execute(sql.raw(`
+            INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url)
+            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"})
+          `));
         }
         console.log(`[social] Post ${post.id} → ${newStatus}`);
       }
@@ -330,9 +566,47 @@ export function startSocialPostScheduler(): void {
     }
   };
 
-  // Run on startup and then every 5 minutes
-  checkDuePosts();
-  setInterval(checkDuePosts, 5 * 60 * 1000);
+  // Refresh engagement stats for recently published posts (~every 30 min)
+  const refreshStats = async () => {
+    try {
+      const fb = await getFbSettings();
+      if (!fb) return;
+      // Published in last 30 days with a FB post ID, stats not refreshed in last 30 min
+      const recent = await db.execute(sql`
+        SELECT id, fb_post_id, fb_comments FROM social_posts
+        WHERE status = 'published'
+          AND fb_post_id IS NOT NULL
+          AND published_at >= NOW() - INTERVAL '30 days'
+          AND (fb_stats_at IS NULL OR fb_stats_at < NOW() - INTERVAL '29 minutes')
+        LIMIT 20
+      `);
+      for (const post of (recent.rows ?? recent) as any[]) {
+        const stats = await fetchFbInsights(post.fb_post_id, fb.facebook_page_access_token);
+        if (!stats) continue;
+        const hasNew = stats.comments > (post.fb_comments ?? 0);
+        await db.execute(sql.raw(`
+          UPDATE social_posts SET
+            fb_reactions = ${stats.reactions},
+            fb_comments = ${stats.comments},
+            fb_shares = ${stats.shares},
+            fb_stats_at = NOW(),
+            last_comments = '${JSON.stringify(stats.lastComments).replace(/'/g, "''")}',
+            new_activity = (new_activity OR ${hasNew}),
+            updated_at = NOW()
+          WHERE id = ${post.id}
+        `));
+      }
+    } catch (err) {
+      console.error("[social] Stats refresh error:", err);
+    }
+  };
+
+  publish();
+  setInterval(publish, 5 * 60 * 1000);
+  setTimeout(() => {
+    refreshStats();
+    setInterval(refreshStats, 30 * 60 * 1000);
+  }, 10_000); // slight delay so it doesn't pile up at startup
 }
 
 export default router;

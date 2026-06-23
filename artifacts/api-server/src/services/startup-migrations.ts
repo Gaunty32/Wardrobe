@@ -2214,5 +2214,14 @@ export async function refreshProductIssues(): Promise<void> {
       updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS fb_post_id TEXT`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS gbp_post_name TEXT`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS product_image_url TEXT`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS fb_reactions INTEGER NOT NULL DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS fb_comments INTEGER NOT NULL DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS fb_shares INTEGER NOT NULL DEFAULT 0`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS fb_stats_at TIMESTAMPTZ`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS last_comments JSONB`);
+  await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS new_activity BOOLEAN NOT NULL DEFAULT FALSE`);
   console.log("[startup] social_posts table ensured");
 }
