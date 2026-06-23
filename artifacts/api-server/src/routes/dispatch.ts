@@ -672,6 +672,78 @@ router.post("/dispatch/orders/:id/return", async (req, res): Promise<void> => {
   res.json({ returned: itemsToReset.length });
 });
 
+// ── Reduce an item quantity and create a backorder for the difference ──────────
+// Used when stock is unavailable (damaged/lost). The item is updated to the new
+// quantity (keeping its status so it can still be dispatched); a new sibling item
+// is created for the shortfall with purchaseRequired=true so it flows back through
+// the purchasing and picking pipeline automatically.
+router.post("/dispatch/orders/:orderId/items/:itemId/reduce", async (req, res): Promise<void> => {
+  const params = z.object({
+    orderId: z.coerce.number().int().positive(),
+    itemId: z.coerce.number().int().positive(),
+  }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Bad request" }); return; }
+
+  const body = z.object({ newQuantity: z.number().int().positive() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { orderId, itemId } = params.data;
+  const { newQuantity } = body.data;
+
+  const [item] = await db.select().from(orderItemsTable).where(
+    and(eq(orderItemsTable.id, itemId), eq(orderItemsTable.orderId, orderId)),
+  );
+  if (!item) { res.status(404).json({ error: "Order item not found" }); return; }
+  if (item.dispatchedAt) { res.status(400).json({ error: "Cannot edit a dispatched item" }); return; }
+  if (newQuantity >= item.quantity) { res.status(400).json({ error: "New quantity must be less than current quantity" }); return; }
+
+  const diff = item.quantity - newQuantity;
+  const unitPrice = parseFloat(String(item.unitPrice ?? "0"));
+  const now = new Date();
+
+  // Reduce the existing item quantity — keep its stockStatus/worksheetStatus intact
+  // so it remains ready-to-dispatch at the new lower quantity.
+  await db.update(orderItemsTable)
+    .set({ quantity: newQuantity, lineTotal: String(newQuantity * unitPrice) })
+    .where(eq(orderItemsTable.id, itemId));
+
+  // Create a new sibling item for the shortfall in purchasing state
+  await db.insert(orderItemsTable).values({
+    orderId,
+    productId: item.productId,
+    productName: item.productName,
+    colour: item.colour,
+    size: item.size,
+    finishId: item.finishId,
+    finishName: item.finishName,
+    recipientType: item.recipientType,
+    recipientName: item.recipientName,
+    recipientEmployeeId: item.recipientEmployeeId,
+    quantity: diff,
+    unitPrice: item.unitPrice,
+    lineTotal: String(diff * unitPrice),
+    vatRate: item.vatRate,
+    supplierId: item.supplierId,
+    supplierName: item.supplierName,
+    purchaseRequired: true,
+    purchaseQuantity: diff,
+    stockStatus: null,
+    purchasingQueuedAt: now,
+    notes: item.notes ? `${item.notes} [backorder — ${diff} unit(s) short on dispatch]` : `Backorder — ${diff} unit(s) short on dispatch`,
+  });
+
+  // Recalculate order total
+  const allItems = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+  const total = allItems.reduce((sum, i) => sum + parseFloat(String(i.lineTotal ?? "0")), 0);
+  await db.update(ordersTable).set({ totalAmount: String(total), updatedAt: now }).where(eq(ordersTable.id, orderId));
+
+  const variantStr = [item.colour, item.size].filter(Boolean).join("/") || "no variant";
+  await logOrderAction(orderId, "Item quantity reduced — backorder created", getActor(req),
+    `${item.productName} (${variantStr}): ${item.quantity} → ${newQuantity}; backorder of ${diff} unit(s) returned to purchasing queue`);
+
+  res.json({ ok: true });
+});
+
 // ── Book DPD for an already-dispatched order (retry after API failure) ────────
 router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);

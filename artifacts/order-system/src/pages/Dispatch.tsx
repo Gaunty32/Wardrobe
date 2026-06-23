@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Truck, Package, CheckCircle, AlertTriangle, Clock, Printer, User,
   RefreshCw, ChevronDown, ChevronRight, FileText, Tag, Send,
-  History, Search, X, ExternalLink, RotateCcw,
+  History, Search, X, ExternalLink, RotateCcw, Pencil, Check,
 } from "lucide-react";
 import ZebraLabels from "@/components/ZebraLabels";
 import { Button } from "@/components/ui/button";
@@ -180,6 +180,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [numberOfParcels, setNumberOfParcels] = useState(1);
   const [totalWeightKg, setTotalWeightKg] = useState<number | "">("");
+  const [editItemId, setEditItemId] = useState<number | null>(null);
+  const [editItemQty, setEditItemQty] = useState<string>("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -201,6 +203,22 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
       toast({ title: "Returned to purchasing", description: `${data.returned} item line${data.returned !== 1 ? "s" : ""} reset` });
     },
     onError: (e: Error) => toast({ title: "Cannot return", description: e.message, variant: "destructive" }),
+  });
+
+  const reduceQtyMutation = useMutation({
+    mutationFn: ({ itemId, newQuantity }: { itemId: number; newQuantity: number }) =>
+      apiFetch(`/dispatch/orders/${order.id}/items/${itemId}/reduce`, {
+        method: "POST",
+        body: JSON.stringify({ newQuantity }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dispatch-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      setEditItemId(null);
+      setEditItemQty("");
+      toast({ title: "Quantity updated", description: "Backorder created for the shortfall — it will re-enter the purchasing queue." });
+    },
+    onError: (e: Error) => toast({ title: "Could not update quantity", description: e.message, variant: "destructive" }),
   });
 
   const dispatchMutation = useMutation({
@@ -431,6 +449,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               const showGroups = readyItems.length > 0 && pendItems.length > 0;
 
               const renderItem = (item: typeof order.items[0], tone: "ready" | "pending" | "done") => {
+                const isEditing = editItemId === item.id;
                 const statusEl = tone === "done"
                   ? <span className="text-xs font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 whitespace-nowrap">Dispatched</span>
                   : tone === "ready"
@@ -438,8 +457,54 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                   : item.blockedByPo
                   ? <span className="text-xs font-medium text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 whitespace-nowrap">Awaiting stock</span>
                   : <span className="text-xs font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 whitespace-nowrap">Outstanding</span>;
+
+                const qtySection = tone === "done" ? (
+                  <Badge variant="secondary" className="text-xs">×{item.quantity}</Badge>
+                ) : isEditing ? (
+                  <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="number"
+                      min={1}
+                      max={item.quantity - 1}
+                      value={editItemQty}
+                      onChange={e => setEditItemQty(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          const n = parseInt(editItemQty, 10);
+                          if (n >= 1 && n < item.quantity) reduceQtyMutation.mutate({ itemId: item.id, newQuantity: n });
+                        }
+                        if (e.key === "Escape") { setEditItemId(null); setEditItemQty(""); }
+                      }}
+                      className="w-14 h-6 text-xs border border-border rounded px-1.5 text-center bg-background"
+                      autoFocus
+                    />
+                    <span className="text-xs text-muted-foreground">of {item.quantity}</span>
+                    <button
+                      className="h-6 w-6 flex items-center justify-center rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                      disabled={reduceQtyMutation.isPending}
+                      onClick={() => {
+                        const n = parseInt(editItemQty, 10);
+                        if (n >= 1 && n < item.quantity) reduceQtyMutation.mutate({ itemId: item.id, newQuantity: n });
+                      }}
+                    ><Check className="w-3 h-3" /></button>
+                    <button
+                      className="h-6 w-6 flex items-center justify-center rounded border border-border hover:bg-muted text-muted-foreground"
+                      onClick={() => { setEditItemId(null); setEditItemQty(""); }}
+                    ><X className="w-3 h-3" /></button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <Badge variant="secondary" className="text-xs">×{item.quantity}</Badge>
+                    <button
+                      title="Reduce quantity — creates a backorder for the difference"
+                      className="h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={e => { e.stopPropagation(); setEditItemId(item.id); setEditItemQty(String(item.quantity - 1)); }}
+                    ><Pencil className="w-3 h-3" /></button>
+                  </div>
+                );
+
                 return (
-                  <div key={item.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
+                  <div key={item.id} className={`group flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
                     tone === "done" ? "bg-muted/20 opacity-60" :
                     tone === "ready" ? "bg-green-50 border border-green-100" :
                     item.blockedByPo ? "bg-amber-50 border border-amber-200" : "bg-muted/30"
@@ -454,7 +519,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                     <span className="text-muted-foreground text-xs">
                       {item.recipientType === "person" && (item.recipientName || item.employee) ? recipientFullName(item) : "Stock"}
                     </span>
-                    <Badge variant="secondary" className="text-xs">×{item.quantity}</Badge>
+                    {qtySection}
                   </div>
                 );
               };
