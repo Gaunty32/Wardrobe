@@ -1932,7 +1932,7 @@ export function buildInvoiceEmail(params: {
   const carriageVatRate = params.zeroVat ? 0 : 0.2;
   const subtotal = params.items.reduce((s, i) => s + i.lineTotal, 0);
   const carriage = params.carriageAmount ?? 0;
-  const vatAmount = params.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.2), 0) + carriage * carriageVatRate;
+  const vatAmount = params.zeroVat ? 0 : (params.items.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.2), 0) + carriage * carriageVatRate);
   const totalIncVat = subtotal + carriage + vatAmount;
   const effectiveVatRate = vatAmount > 0 ? (vatAmount / (subtotal + carriage)) : 0;
   const vatLabel = params.zeroVat ? "VAT (0%)" : (Math.abs(effectiveVatRate - 0.2) < 0.001 ? "VAT (20%)" : "VAT");
@@ -2441,7 +2441,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       const qty  = item.quantity;
       const unit = parseFloat(item.unitPrice);
       const tot  = parseFloat(item.lineTotal);
-      const vatR = item.vatRate ?? 0.2;
+      const vatR = data.zeroVat ? 0 : (item.vatRate ?? 0.2);
       subtotalCalc += tot;
       vatCalc += tot * vatR;
 
