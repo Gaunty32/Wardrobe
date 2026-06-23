@@ -244,7 +244,7 @@ ${staffQuotes.length > 0 ? `Staff knowledge: "${staffQuotes[0]}"` : ""}
 
 Generate TWO posts in JSON format:
 
-1. FACEBOOK POST: Conversational and genuinely helpful. Pick ONE specific question someone would ask about this product category and answer it thoroughly. Use 2-3 emojis naturally (not forced). 150-250 words. Sign off with "— The SBS Team" or similar. Do NOT mention price or encourage purchasing.
+1. FACEBOOK POST: Conversational and genuinely helpful. Pick ONE specific question someone would ask about this product category and answer it thoroughly. Use 2-3 emojis naturally (not forced). 150-250 words. End with exactly this call to action on its own line: "Want to know more? Send us a WhatsApp 0113 2552694 or leave a comment." Do NOT mention price or encourage purchasing.
 
 2. GOOGLE BUSINESS POST: Educational and keyword-rich for local SEO and AI search. Answer a practical question about this type of product — suitable for someone researching their options. 150-200 words. Rich in the kind of language people use when searching. Do NOT mention price or encourage purchasing.
 
