@@ -243,6 +243,13 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
       } else {
         toast({ title: "Order dispatched", description: `${order.orderNumber} marked as shipped.` });
       }
+      // For non-DPD dispatches, also open wearer labels when named recipients exist
+      if (!data.dpd) {
+        const namedItemCount = order.items.filter(i => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId)).length;
+        if (namedItemCount > 0) {
+          setTimeout(() => openWearerLabels(order.id, { dispatchedItemIds: data.dispatchedItemIds }), 800);
+        }
+      }
       onDispatched();
     },
     onError: (e: Error) => toast({ title: "Dispatch failed", description: e.message, variant: "destructive" }),
@@ -342,6 +349,23 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             <span><span className="font-medium">{overdue ? "Overdue" : "Due today"}</span> — production not yet complete.</span>
           </div>
           <div className="flex gap-2 flex-shrink-0 ml-3">
+            {(() => {
+              const readyIds = order.items.filter(i => i.stockStatus === "complete" || i.stockStatus === "allocated").map(i => i.id);
+              if (readyIds.length === 0) return null;
+              const hasNamed = order.items.filter(i => readyIds.includes(i.id)).some(i => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
+              return (
+                <>
+                  {hasNamed && (
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-amber-300 text-amber-800 hover:bg-amber-100" onClick={() => openWearerLabels(order.id, { dispatchedItemIds: readyIds })}>
+                      <Printer className="w-3 h-3" /> Labels
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-amber-300 text-amber-800 hover:bg-amber-100" onClick={() => openDeliveryNote(order.id, order.shippingMethod, readyIds)}>
+                    <FileText className="w-3 h-3" /> Note
+                  </Button>
+                </>
+              );
+            })()}
             <Button size="sm" className="h-7 text-xs bg-amber-600 hover:bg-amber-700 text-white gap-1" onClick={openDispatchModal}>
               <Send className="w-3 h-3" /> Send Now
             </Button>
@@ -352,6 +376,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         const readyLines = order.items.filter(i => i.stockStatus === "complete" || i.stockStatus === "allocated");
         const outstandingLines = order.items.filter(i => i.stockStatus !== "complete" && i.stockStatus !== "allocated");
         if (readyLines.length === 0) return null;
+        const readyIds = readyLines.map(i => i.id);
+        const hasNamed = readyLines.some(i => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
         return (
           <div className="mx-5 mb-3 flex items-center justify-between px-4 py-2.5 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800">
             <div className="flex items-center gap-2">
@@ -361,9 +387,19 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                 {" "}— {outstandingLines.length} still outstanding. Dispatch ready items now, remainder follows when complete.
               </span>
             </div>
-            <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1 flex-shrink-0 ml-3" onClick={openDispatchModal}>
-              <Send className="w-3 h-3" /> Part Dispatch
-            </Button>
+            <div className="flex gap-2 flex-shrink-0 ml-3">
+              {hasNamed && (
+                <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-blue-300 text-blue-700 hover:bg-blue-100" onClick={() => openWearerLabels(order.id, { dispatchedItemIds: readyIds })}>
+                  <Printer className="w-3 h-3" /> Labels
+                </Button>
+              )}
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-blue-300 text-blue-700 hover:bg-blue-100" onClick={() => openDeliveryNote(order.id, order.shippingMethod, readyIds)}>
+                <FileText className="w-3 h-3" /> Note
+              </Button>
+              <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white gap-1" onClick={openDispatchModal}>
+                <Send className="w-3 h-3" /> Part Dispatch
+              </Button>
+            </div>
           </div>
         );
       })()}
@@ -388,31 +424,52 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
 
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Items</h4>
-            <div className="space-y-1">
-              {order.items.map((item) => (
-                <div key={item.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${item.blockedByPo ? "bg-amber-50 border border-amber-200" : "bg-muted/30"}`}>
-                  <Package className={`w-3.5 h-3.5 flex-shrink-0 ${item.blockedByPo ? "text-amber-500" : "text-muted-foreground"}`} />
-                  <div className="flex-1 min-w-0">
-                    <span className="font-medium">{item.productName}</span>
-                    {item.productSku && (
-                      <span className="font-mono text-xs text-indigo-500 ml-1.5">{item.productSku}</span>
-                    )}
-                    {(item.colour || item.size) && (
-                      <span className="text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>
-                    )}
+            {(() => {
+              const dispItems = order.items.filter(i => i.dispatchedAt);
+              const readyItems = order.items.filter(i => !i.dispatchedAt && (i.stockStatus === "complete" || i.stockStatus === "allocated"));
+              const pendItems = order.items.filter(i => !i.dispatchedAt && i.stockStatus !== "complete" && i.stockStatus !== "allocated");
+              const showGroups = readyItems.length > 0 && pendItems.length > 0;
+
+              const renderItem = (item: typeof order.items[0], tone: "ready" | "pending" | "done") => {
+                const statusEl = tone === "done"
+                  ? <span className="text-xs font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 whitespace-nowrap">Dispatched</span>
+                  : tone === "ready"
+                  ? <span className="text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded px-1.5 py-0.5 whitespace-nowrap flex items-center gap-0.5"><CheckCircle className="w-2.5 h-2.5" /> Ready</span>
+                  : item.blockedByPo
+                  ? <span className="text-xs font-medium text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 whitespace-nowrap">Awaiting stock</span>
+                  : <span className="text-xs font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 whitespace-nowrap">Outstanding</span>;
+                return (
+                  <div key={item.id} className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${
+                    tone === "done" ? "bg-muted/20 opacity-60" :
+                    tone === "ready" ? "bg-green-50 border border-green-100" :
+                    item.blockedByPo ? "bg-amber-50 border border-amber-200" : "bg-muted/30"
+                  }`}>
+                    <Package className={`w-3.5 h-3.5 flex-shrink-0 ${tone === "ready" ? "text-green-500" : item.blockedByPo ? "text-amber-500" : "text-muted-foreground"}`} />
+                    <div className="flex-1 min-w-0">
+                      <span className="font-medium">{item.productName}</span>
+                      {item.productSku && <span className="font-mono text-xs text-indigo-500 ml-1.5">{item.productSku}</span>}
+                      {(item.colour || item.size) && <span className="text-muted-foreground ml-2">{[item.colour, item.size].filter(Boolean).join(" / ")}</span>}
+                    </div>
+                    {statusEl}
+                    <span className="text-muted-foreground text-xs">
+                      {item.recipientType === "person" && (item.recipientName || item.employee) ? recipientFullName(item) : "Stock"}
+                    </span>
+                    <Badge variant="secondary" className="text-xs">×{item.quantity}</Badge>
                   </div>
-                  {item.blockedByPo && (
-                    <span className="text-xs font-medium text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5 whitespace-nowrap">Awaiting stock</span>
-                  )}
-                  <span className="text-muted-foreground text-xs">
-                    {item.recipientType === "person" && (item.recipientName || item.employee)
-                      ? recipientFullName(item)
-                      : "Stock"}
-                  </span>
-                  <Badge variant="secondary" className="text-xs">×{item.quantity}</Badge>
+                );
+              };
+
+              return (
+                <div className="space-y-1">
+                  {showGroups && <p className="text-[10px] font-bold text-green-700 uppercase tracking-wide px-1 pb-0.5">Dispatching Now</p>}
+                  {readyItems.map(i => renderItem(i, "ready"))}
+                  {showGroups && <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide px-1 pt-2 pb-0.5">Items to Follow</p>}
+                  {pendItems.map(i => renderItem(i, "pending"))}
+                  {dispItems.length > 0 && <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide px-1 pt-2 pb-0.5">Already Dispatched</p>}
+                  {dispItems.map(i => renderItem(i, "done"))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
           </div>
 
           {(() => {
