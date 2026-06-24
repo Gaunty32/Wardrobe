@@ -1253,9 +1253,10 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
 
   // ── Manual purchase requirements ────────────────────────────────────────────
   if (parsed.data.manualReqIds.length > 0) {
+    const mrIdFragments = parsed.data.manualReqIds.map((id) => sql`${id}`);
     const mrRows = await db.execute(sql`
       SELECT * FROM manual_purchase_requirements
-      WHERE id = ANY(${parsed.data.manualReqIds}::int[]) AND fulfilled_at IS NULL
+      WHERE id IN (${sql.join(mrIdFragments, sql`, `)}) AND fulfilled_at IS NULL
     `);
     const linesToInsert: typeof purchaseOrderItemsTable.$inferInsert[] = [];
     const fulfilledIds: number[] = [];
@@ -1283,8 +1284,10 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
       await db.insert(purchaseOrderItemsTable).values(linesToInsert);
     }
     if (fulfilledIds.length > 0) {
+      const fIdFragments = fulfilledIds.map((id) => sql`${id}`);
       await db.execute(sql`
-        UPDATE manual_purchase_requirements SET fulfilled_at = now() WHERE id = ANY(${fulfilledIds}::int[])
+        UPDATE manual_purchase_requirements SET fulfilled_at = now()
+        WHERE id IN (${sql.join(fIdFragments, sql`, `)})
       `);
     }
   }
