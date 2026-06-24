@@ -1183,7 +1183,10 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
   const params = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
-  const parsed = z.object({ itemIds: z.array(z.number().int().positive()) }).safeParse(req.body);
+  const parsed = z.object({
+    itemIds: z.array(z.number().int().positive()).default([]),
+    manualReqIds: z.array(z.number().int().positive()).default([]),
+  }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, params.data.id));
@@ -1211,18 +1214,15 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
     if (line.orderItemId) alreadyCovered.add(line.orderItemId);
     const sourceIds = (line.sourceOrderItemIds as number[] | null) ?? [];
     for (const id of sourceIds) alreadyCovered.add(id);
-    // If neither orderItemId nor sourceOrderItemIds links this line to an order item,
-    // track it by product+colour+size so we skip adding a duplicate from requirements.
     if (!line.orderItemId && sourceIds.length === 0) {
       manualLineKeys.add([line.productName ?? "", line.colour ?? "", line.size ?? ""].join("|"));
     }
   }
 
+  // ── Order-linked items ──────────────────────────────────────────────────────
   const newItemIds = parsed.data.itemIds.filter((id) => !alreadyCovered.has(id));
   if (newItemIds.length > 0) {
     const poItems = await buildPoItems(newItemIds, po.id);
-    // Separate items that are blocked by an existing manual PO line (same product/colour/size)
-    // from items that should genuinely be inserted.
     const itemsToInsert = poItems.filter(
       (pi) => !manualLineKeys.has([pi.productName ?? "", pi.colour ?? "", pi.size ?? ""].join("|"))
     );
@@ -1232,21 +1232,60 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
 
     if (itemsToInsert.length > 0) {
       await db.insert(purchaseOrderItemsTable).values(itemsToInsert);
+      for (const pi of itemsToInsert) {
+        manualLineKeys.add([pi.productName ?? "", pi.colour ?? "", pi.size ?? ""].join("|"));
+      }
     }
 
-    // Collect all order item IDs that ended up covered (either inserted or already on PO manually)
     const coveredIds = new Set<number>();
     for (const pi of [...itemsToInsert, ...blockedItems]) {
       if (pi.orderItemId) coveredIds.add(pi.orderItemId);
       const srcIds = (pi.sourceOrderItemIds as number[] | null) ?? [];
       for (const id of srcIds) coveredIds.add(id);
     }
-    // Clear purchaseRequired for all covered items — the garment is on the PO either way
     const idsToClose = newItemIds.filter((id) => coveredIds.has(id));
     if (idsToClose.length > 0) {
       await db.update(orderItemsTable)
         .set({ purchaseRequired: false, purchaseQuantity: null })
         .where(inArray(orderItemsTable.id, idsToClose));
+    }
+  }
+
+  // ── Manual purchase requirements ────────────────────────────────────────────
+  if (parsed.data.manualReqIds.length > 0) {
+    const mrRows = await db.execute(sql`
+      SELECT * FROM manual_purchase_requirements
+      WHERE id = ANY(${parsed.data.manualReqIds}::int[]) AND fulfilled_at IS NULL
+    `);
+    const linesToInsert: typeof purchaseOrderItemsTable.$inferInsert[] = [];
+    const fulfilledIds: number[] = [];
+    for (const mr of mrRows.rows as any[]) {
+      const key = [mr.product_name ?? "", mr.colour ?? "", mr.size ?? ""].join("|");
+      if (manualLineKeys.has(key)) continue;
+      linesToInsert.push({
+        poId: po.id,
+        orderItemId: null,
+        sourceOrderItemIds: [],
+        orderId: null,
+        orderNumber: null,
+        productName: mr.product_name ?? null,
+        colour: mr.colour ?? null,
+        size: mr.size ?? null,
+        supplierCode: mr.supplier_code ?? null,
+        supplierPrice: mr.supplier_price != null ? String(mr.supplier_price) : null,
+        quantityOrdered: mr.quantity as number,
+        quantityDelivered: 0,
+      });
+      manualLineKeys.add(key);
+      fulfilledIds.push(mr.id as number);
+    }
+    if (linesToInsert.length > 0) {
+      await db.insert(purchaseOrderItemsTable).values(linesToInsert);
+    }
+    if (fulfilledIds.length > 0) {
+      await db.execute(sql`
+        UPDATE manual_purchase_requirements SET fulfilled_at = now() WHERE id = ANY(${fulfilledIds}::int[])
+      `);
     }
   }
 

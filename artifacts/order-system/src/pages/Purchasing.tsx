@@ -2905,8 +2905,8 @@ export default function Purchasing() {
   });
 
   const addToPoMutation = useMutation({
-    mutationFn: ({ poId, itemIds }: { poId: number; itemIds: number[] }) =>
-      apiFetch(`/purchasing/purchase-orders/${poId}/items`, { method: "POST", body: JSON.stringify({ itemIds }) }),
+    mutationFn: ({ poId, itemIds, manualReqIds }: { poId: number; itemIds: number[]; manualReqIds: number[] }) =>
+      apiFetch(`/purchasing/purchase-orders/${poId}/items`, { method: "POST", body: JSON.stringify({ itemIds, manualReqIds }) }),
     onSuccess: () => { invalidateAll(); toast({ title: "Items added to draft PO" }); },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -3342,7 +3342,11 @@ export default function Purchasing() {
                           <div className="flex items-center gap-2 flex-shrink-0">
                             {existingDraft ? (
                               <Button size="sm" variant="outline" className="gap-1.5 text-xs border-blue-400 text-blue-700 hover:bg-blue-50"
-                                onClick={() => addToPoMutation.mutate({ poId: existingDraft.id, itemIds: group.items.filter(i => i.itemId > 0 && i.orderNumber !== null).map(i => i.itemId) })}
+                                onClick={() => addToPoMutation.mutate({
+                                  poId: existingDraft.id,
+                                  itemIds: group.items.filter(i => i.itemId > 0).map(i => i.itemId),
+                                  manualReqIds: group.items.filter(i => i.itemId < 0).map(i => -i.itemId),
+                                })}
                                 disabled={addToPoMutation.isPending}>
                                 <Plus className="w-3.5 h-3.5" /> Add to Draft PO ({existingDraft.poNumber})
                               </Button>
