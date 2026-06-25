@@ -262,6 +262,48 @@ function matchesDateFilters(requiredDate: string | null | undefined, dateFrom: s
   return true;
 }
 
+function WsSortBar({ sort, onChange }: { sort: "number_asc" | "created_desc" | "due_date"; onChange: (s: "number_asc" | "created_desc" | "due_date") => void }) {
+  const opts: { key: "number_asc" | "created_desc" | "due_date"; label: string }[] = [
+    { key: "number_asc", label: "Worksheet #" },
+    { key: "created_desc", label: "Date Produced" },
+    { key: "due_date", label: "Due Date" },
+  ];
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="text-muted-foreground font-medium">Sort:</span>
+      <div className="inline-flex rounded-md border border-border bg-muted/30 p-0.5 gap-0.5">
+        {opts.map((o) => (
+          <button
+            key={o.key}
+            onClick={() => onChange(o.key)}
+            className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${sort === o.key ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function sortWorksheets(worksheets: Worksheet[], sort: "number_asc" | "created_desc" | "due_date"): Worksheet[] {
+  return [...worksheets].sort((a, b) => {
+    if (sort === "number_asc") {
+      const na = parseInt(a.worksheetNumber.replace(/\D/g, ""), 10) || 0;
+      const nb = parseInt(b.worksheetNumber.replace(/\D/g, ""), 10) || 0;
+      return na - nb;
+    }
+    if (sort === "created_desc") return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (sort === "due_date") {
+      if (!a.requiredDate && !b.requiredDate) return 0;
+      if (!a.requiredDate) return 1;
+      if (!b.requiredDate) return -1;
+      return new Date(a.requiredDate).getTime() - new Date(b.requiredDate).getTime();
+    }
+    return 0;
+  });
+}
+
 function filterWorksheets(worksheets: Worksheet[], f: Filters): Worksheet[] {
   return worksheets.filter((ws) => {
     if (f.search) {
@@ -3193,6 +3235,7 @@ export default function Production() {
     return ids.length > 0 ? new Set(ids) : undefined;
   }, []);
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  const [wsSort, setWsSort] = useState<"number_asc" | "created_desc" | "due_date">("number_asc");
   const [readyOrder, setReadyOrder] = useState<DocOrder | null>(null);
   const [partialOrder, setPartialOrder] = useState<{ order: DocOrder; incompleteItemIds: number[] } | null>(null);
 
@@ -3611,19 +3654,26 @@ export default function Production() {
                 <p className="text-sm text-center max-w-xs">Worksheets appear here once garments have been picked. Mark them complete when decoration is finished.</p>
               </div>
             ) : (() => {
+              const sortedWip = sortWorksheets(wip, wsSort);
               // Group WIP worksheets by order
-              type WipGroup = { orderNumber: string; customerName: string | null; requiredDate: string | null; orderId: number | null; worksheets: Worksheet[] };
+              type WipGroup = { orderNumber: string; customerName: string | null; requiredDate: string | null; orderId: number | null; worksheets: Worksheet[]; minKey: number };
               const wipGroupMap = new Map<string, WipGroup>();
-              for (const ws of wip) {
+              for (const ws of sortedWip) {
                 const key = ws.orderNumber ?? `ws-${ws.id}`;
                 if (!wipGroupMap.has(key)) {
-                  wipGroupMap.set(key, { orderNumber: ws.orderNumber ?? "—", customerName: ws.customerName, requiredDate: ws.requiredDate, orderId: ws.orderId, worksheets: [] });
+                  const minKey = wsSort === "number_asc"
+                    ? parseInt(ws.worksheetNumber.replace(/\D/g, ""), 10) || 0
+                    : wsSort === "created_desc"
+                    ? -new Date(ws.createdAt).getTime()
+                    : new Date(ws.requiredDate ?? "9999").getTime();
+                  wipGroupMap.set(key, { orderNumber: ws.orderNumber ?? "—", customerName: ws.customerName, requiredDate: ws.requiredDate, orderId: ws.orderId, worksheets: [], minKey });
                 }
                 wipGroupMap.get(key)!.worksheets.push(ws);
               }
-              const wipGroups = Array.from(wipGroupMap.values());
+              const wipGroups = Array.from(wipGroupMap.values()).sort((a, b) => a.minKey - b.minKey);
               return (
                 <div className="space-y-4">
+                  <WsSortBar sort={wsSort} onChange={setWsSort} />
                   {wipGroups.map((group) => (
                     <div key={group.orderNumber} className="rounded-xl border border-amber-200 bg-amber-50/30 shadow-sm overflow-hidden">
                       {/* Order header */}
@@ -3689,7 +3739,8 @@ export default function Production() {
               </div>
             ) : (
               <div className="space-y-3">
-                {complete.map((ws) => (
+                <WsSortBar sort={wsSort} onChange={setWsSort} />
+                {sortWorksheets(complete, wsSort).map((ws) => (
                   <WorksheetCard
                     key={ws.id}
                     ws={ws}
