@@ -1734,7 +1734,8 @@ export default function OrderDetail() {
               </div>
             </CardHeader>
             {(() => {
-              // Outstanding items = undispatched non-service lines
+              // Outstanding items = undispatched non-service lines (only shown on confirmed orders)
+              if (order.status === "draft") return null;
               const outstandingItems = (order.items ?? []).filter((i: any) =>
                 i.dispatched_at == null && (i.colour || i.size || i.finish_id)
               );
