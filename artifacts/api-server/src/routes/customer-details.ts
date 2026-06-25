@@ -167,7 +167,7 @@ router.delete("/customers/:customerId/contacts/:id", async (req, res): Promise<v
 
 const processBody = z.object({
   name: z.string().min(1),
-  type: z.string().optional().nullable(),
+  type: z.enum(["embroidery", "print", "DTF", "other"]),
   placement: z.string().optional().nullable(),
   price: z.number().min(0).optional().nullable(),
   processStockId: z.number().int().positive().optional().nullable(),

@@ -455,7 +455,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || isSaving) return;
+    if (!form.name.trim() || !form.type || isSaving) return;
     setIsSaving(true);
     try {
       let stockId: number | null = form.processStockId ? parseInt(form.processStockId, 10) : null;
@@ -659,19 +659,17 @@ function ProcessesTab({ customerId }: { customerId: number }) {
               <Input placeholder="e.g. Left Chest Embroidery Logo" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
-                <Label>Type</Label>
-                <Select value={form.type || "none"} onValueChange={v => {
-                  const newType = v === "none" ? "" : v;
-                  setForm(f => ({ ...f, type: newType, processStockId: newType === "DTF" ? f.processStockId : "" }));
-                  if (newType === "DTF" && !editing) {
+                <Label>Type <span className="text-destructive">*</span></Label>
+                <Select value={form.type || ""} onValueChange={v => {
+                  setForm(f => ({ ...f, type: v, processStockId: v === "DTF" ? f.processStockId : "" }));
+                  if (v === "DTF" && !editing) {
                     const raptor = suppliers?.find((s: any) => s.name.toLowerCase().includes("raptor"));
                     setDtfForm({ ...blankDtf, supplierId: raptor ? String(raptor.id) : "" });
                     fetchAndSetSku();
                   }
                 }}>
-                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <SelectTrigger className={!form.type ? "border-destructive focus:ring-destructive" : ""}><SelectValue placeholder="Select type…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Not specified</SelectItem>
                     {PROCESS_TYPES.map(t => <SelectItem key={t} value={t}>{PROCESS_TYPE_LABELS[t] ?? t}</SelectItem>)}
                   </SelectContent>
                 </Select>
@@ -798,7 +796,7 @@ function ProcessesTab({ customerId }: { customerId: number }) {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
-            <Button onClick={handleSave} disabled={isSaving || !form.name || isUploading}>
+            <Button onClick={handleSave} disabled={isSaving || !form.name || !form.type || isUploading}>
               {isSaving ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving...</> : "Save"}
             </Button>
           </DialogFooter>
