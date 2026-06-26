@@ -448,6 +448,9 @@ export default function OrderDetail() {
   const [wardrobeRecipient, setWardrobeRecipient] = useState<null | "stock" | CustomerEmployee>(null);
   const [wardrobeItemSizes, setWardrobeItemSizes] = useState<Record<number, string>>({});
   const [empSearch, setEmpSearch] = useState("");
+  const [addRecipientOpen, setAddRecipientOpen] = useState(false);
+  const [addRecipientForm, setAddRecipientForm] = useState({ firstName: "", lastName: "", jobTitle: "" });
+  const [addRecipientSaving, setAddRecipientSaving] = useState(false);
   const [wardrobeItemSleeves, setWardrobeItemSleeves] = useState<Record<number, string>>({});
   const [wardrobeItemQtys, setWardrobeItemQtys] = useState<Record<number, number>>({});
   const [wardrobeBulkModes, setWardrobeBulkModes] = useState<Record<number, boolean>>({});
@@ -1048,6 +1051,8 @@ export default function OrderDetail() {
     setWardrobeItemSizes({});
     setWardrobeItemQtys({});
     setEmpSearch("");
+    setAddRecipientOpen(false);
+    setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "" });
     setServiceProductSearchOpen(false);
   };
 
@@ -3051,6 +3056,90 @@ export default function OrderDetail() {
                         return full.includes(empSearch.trim().toLowerCase());
                       }).length === 0 && (
                         <p className="col-span-3 text-sm text-muted-foreground text-center py-6">No employees match "{empSearch}"</p>
+                      )}
+
+                      {/* Add Recipient tile */}
+                      {!empSearch.trim() && !addRecipientOpen && (
+                        <button
+                          onClick={() => setAddRecipientOpen(true)}
+                          className="rounded-xl border border-dashed border-muted-foreground/30 bg-card hover:border-primary hover:shadow-md transition-all p-4 text-left group"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center mb-3 group-hover:bg-primary/10 transition-colors">
+                            <Plus className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
+                          </div>
+                          <p className="font-semibold text-sm text-muted-foreground group-hover:text-foreground">Add Recipient</p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">Create a new person</p>
+                        </button>
+                      )}
+
+                      {/* Inline add-recipient form */}
+                      {addRecipientOpen && (
+                        <div className="col-span-full rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-3">
+                          <p className="text-sm font-semibold text-foreground">New Recipient</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">First name *</label>
+                              <Input
+                                autoFocus
+                                placeholder="First name"
+                                value={addRecipientForm.firstName}
+                                onChange={e => setAddRecipientForm(f => ({ ...f, firstName: e.target.value }))}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">Last name</label>
+                              <Input
+                                placeholder="Last name"
+                                value={addRecipientForm.lastName}
+                                onChange={e => setAddRecipientForm(f => ({ ...f, lastName: e.target.value }))}
+                                className="h-8 text-sm"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">Job title / role</label>
+                            <Input
+                              placeholder="e.g. Driver"
+                              value={addRecipientForm.jobTitle}
+                              onChange={e => setAddRecipientForm(f => ({ ...f, jobTitle: e.target.value }))}
+                              className="h-8 text-sm"
+                            />
+                          </div>
+                          <div className="flex justify-end gap-2 pt-1">
+                            <Button size="sm" variant="ghost" className="h-7" onClick={() => { setAddRecipientOpen(false); setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "" }); }}>
+                              Cancel
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="h-7"
+                              disabled={!addRecipientForm.firstName.trim() || addRecipientSaving}
+                              onClick={async () => {
+                                setAddRecipientSaving(true);
+                                try {
+                                  const newEmp = await apiFetch(`/customers/${customerId}/employees`, {
+                                    method: "POST",
+                                    body: JSON.stringify({
+                                      firstName: addRecipientForm.firstName.trim(),
+                                      lastName: addRecipientForm.lastName.trim() || null,
+                                      jobTitle: addRecipientForm.jobTitle.trim() || null,
+                                    }),
+                                  });
+                                  await queryClient.invalidateQueries({ queryKey: ["customer-employees", customerId] });
+                                  setAddRecipientOpen(false);
+                                  setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "" });
+                                  handleWardrobePersonSelect(newEmp);
+                                } catch {
+                                  toast({ title: "Could not create recipient", variant: "destructive" });
+                                } finally {
+                                  setAddRecipientSaving(false);
+                                }
+                              }}
+                            >
+                              {addRecipientSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Save & Select"}
+                            </Button>
+                          </div>
+                        </div>
                       )}
                     </div>
                   </div>
