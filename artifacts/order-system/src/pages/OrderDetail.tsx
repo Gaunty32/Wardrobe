@@ -32,7 +32,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder, sortSizes, abbreviateSizeLabel } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench, Package2 } from "lucide-react";
+import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench, Package2, GitMerge } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 import { Link } from "wouter";
@@ -803,6 +803,13 @@ export default function OrderDetail() {
     queryFn: () => apiFetch(`/orders/${orderId}/backorders`),
     enabled: orderId > 0,
     refetchInterval: 15_000,
+  });
+
+  interface ConsolidationCandidate { id: number; orderNumber: string; status: string; totalAmount: string | null; poNumber: string | null; itemCount: number; }
+  const { data: consolidationCandidates = [] } = useQuery<ConsolidationCandidate[]>({
+    queryKey: ["consolidation-candidates", orderId],
+    queryFn: () => apiFetch(`/orders/${orderId}/consolidation-candidates`),
+    enabled: orderId > 0,
   });
 
   const printLabel = (recipient: PackRecipient, itemsToPrint?: PackItem[]) => {
@@ -1644,6 +1651,37 @@ export default function OrderDetail() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+          </div>
+        )}
+
+        {/* ── Consolidation suggestion ────────────────────────────────────── */}
+        {order.status === "draft" && consolidationCandidates.length > 0 && (
+          <div className="rounded-xl border border-blue-300 bg-blue-50 px-5 py-4 flex items-start gap-3">
+            <GitMerge className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-blue-900">
+                Consider consolidating with {consolidationCandidates.length === 1 ? "an existing order" : "existing orders"}
+              </p>
+              <p className="text-xs text-blue-700 mt-0.5 mb-2">
+                {consolidationCandidates.length === 1
+                  ? "This customer has another open order with the same delivery address and PO number. You may want to add these items there instead."
+                  : `This customer has ${consolidationCandidates.length} other open orders with the same delivery address and PO number. You may want to add these items to one of them instead.`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {consolidationCandidates.map(c => (
+                  <Link key={c.id} href={`/orders/${c.id}`}>
+                    <Button size="sm" variant="outline" className="h-7 gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 text-xs">
+                      <ExternalLink className="w-3 h-3" />
+                      {c.orderNumber}
+                      <span className="text-blue-500">·</span>
+                      <StatusBadge status={c.status} className="text-[10px] px-1.5 py-0" />
+                      <span className="text-blue-500">·</span>
+                      {c.itemCount} item{c.itemCount !== 1 ? "s" : ""}
+                    </Button>
+                  </Link>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 

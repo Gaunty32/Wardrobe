@@ -2581,6 +2581,51 @@ router.get("/orders/:id/pack-status", async (req, res): Promise<void> => {
   });
 });
 
+// ── Consolidation candidates: other open orders for the same customer that could be merged ──
+router.get("/orders/:id/consolidation-candidates", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const orderId = parsed.data.id;
+
+  const [order] = await db.select({
+    id: ordersTable.id,
+    status: ordersTable.status,
+    customerId: ordersTable.customerId,
+    deliveryAddressId: ordersTable.deliveryAddressId,
+    poNumber: ordersTable.poNumber,
+  }).from(ordersTable).where(eq(ordersTable.id, orderId));
+
+  if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+  // Only suggest consolidation for draft orders
+  if (order.status !== "draft") { res.json([]); return; }
+
+  // Normalise PO number: treat blank/null the same
+  const normPo = (v: string | null | undefined) => (v ?? "").trim() || null;
+  const thisPo = normPo(order.poNumber);
+
+  // Find other open orders for the same customer
+  const candidates = await db.execute(sql`
+    SELECT
+      o.id,
+      o.order_number  AS "orderNumber",
+      o.status,
+      o.total_amount  AS "totalAmount",
+      o.po_number     AS "poNumber",
+      COUNT(oi.id)::int AS "itemCount"
+    FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    WHERE o.customer_id = ${order.customerId}
+      AND o.id != ${orderId}
+      AND o.status IN ('draft', 'confirmed')
+      AND (o.delivery_address_id IS NOT DISTINCT FROM ${order.deliveryAddressId ?? null})
+      AND (NULLIF(TRIM(COALESCE(o.po_number, '')), '') IS NOT DISTINCT FROM ${thisPo})
+    GROUP BY o.id, o.order_number, o.status, o.total_amount, o.po_number
+    ORDER BY o.id DESC
+  `);
+
+  res.json(candidates.rows);
+});
+
 // ── Order backorders: PO lines linked to this order that are still pending ─────
 router.get("/orders/:id/backorders", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
