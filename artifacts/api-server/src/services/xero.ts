@@ -710,33 +710,69 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
 
   let res = await postInvoicePayload();
 
-  // Auto-unarchive: Xero rejects invoice creation if the contact is archived.
-  // Detect this, unarchive the contact, then retry once.
+  // Stale contact ID: Xero rejects invoice creation if the stored ContactID points to an archived
+  // (or deleted) contact record. Our local DB may hold an old ID from a duplicate contact that
+  // was later archived in Xero, while the real active contact exists under a different ID.
+  // Fix: clear the stale ID, re-search Xero for the active contact, link it, and retry once.
   if (!res.ok) {
     const rawText = await res.text();
     console.error(`[xero] POST /Invoices HTTP ${res.status} raw body:`, rawText.slice(0, 1000));
     const isArchivedError = rawText.toLowerCase().includes("archived");
-    if (isArchivedError && xeroContactId) {
-      console.log(`[xero] Contact ${xeroContactId} is archived — attempting to unarchive…`);
+
+    if (isArchivedError && order.customerId && xeroContactId) {
+      console.log(`[xero] Stored contact ${xeroContactId} is archived/stale — clearing and re-searching for active contact…`);
       try {
-        const unarchiveRes = await xeroFetch(`/Contacts/${xeroContactId}`, {
-          method: "POST",
-          body: JSON.stringify({ ContactStatus: "ACTIVE" }),
-        });
-        if (unarchiveRes.ok) {
-          console.log(`[xero] Contact ${xeroContactId} unarchived — retrying invoice creation`);
+        // Clear the stale ID so the re-search runs fresh
+        await db.update(customersTable)
+          .set({ xeroContactId: null, updatedAt: new Date() })
+          .where(eq(customersTable.id, order.customerId));
+        xeroContactId = null;
+
+        // Re-run full contact discovery (sync + search by email/name) to find active contact
+        try { await syncContacts(); } catch { /* non-fatal */ }
+        const [afterSync2] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
+        xeroContactId = afterSync2?.xeroContactId ?? null;
+
+        if (!xeroContactId) {
+          const customerRow = afterSync2;
+          let foundId: string | null = null;
+          if (customerRow?.email) {
+            const r = await xeroFetch(`/Contacts?searchTerm=${encodeURIComponent(customerRow.email)}`);
+            if (r.ok) {
+              const d = await r.json() as { Contacts?: { ContactID: string; EmailAddress?: string; ContactStatus?: string }[] };
+              const hit = d.Contacts?.find((c) => c.ContactStatus !== "ARCHIVED" && c.EmailAddress?.toLowerCase() === customerRow.email!.toLowerCase());
+              foundId = hit?.ContactID ?? null;
+            }
+          }
+          if (!foundId && afterSync2?.name) {
+            const r = await xeroFetch(`/Contacts?searchTerm=${encodeURIComponent(afterSync2.name)}`);
+            if (r.ok) {
+              const d = await r.json() as { Contacts?: { ContactID: string; Name: string; ContactStatus?: string }[] };
+              const active = d.Contacts?.filter((c) => c.ContactStatus !== "ARCHIVED") ?? [];
+              foundId = active.length === 1 ? active[0].ContactID : null;
+            }
+          }
+          if (foundId) {
+            await db.update(customersTable)
+              .set({ xeroContactId: foundId, updatedAt: new Date() })
+              .where(eq(customersTable.id, order.customerId));
+            xeroContactId = foundId;
+          }
+        }
+
+        if (xeroContactId) {
+          // Re-build the invoice payload with the corrected contact ID and retry
+          invoice.Contact = { ContactID: xeroContactId };
+          console.log(`[xero] Found active contact ${xeroContactId} — retrying invoice creation`);
           res = await postInvoicePayload();
-        } else {
-          const unarchiveText = await unarchiveRes.text().catch(() => unarchiveRes.status.toString());
-          console.error(`[xero] Failed to unarchive contact: ${unarchiveText.slice(0, 300)}`);
         }
       } catch (e) {
-        console.error("[xero] Unarchive attempt threw:", e);
+        console.error("[xero] Contact re-link attempt threw:", e);
       }
     }
 
     if (!res.ok) {
-      const text = rawText ?? await res.text().catch(() => res.status.toString());
+      const text = await res.text().catch(() => rawText);
       throw new Error(parseXeroError(res.status, text));
     }
   }
