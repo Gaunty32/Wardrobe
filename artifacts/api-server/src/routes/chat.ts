@@ -26,7 +26,11 @@ router.get("/chat/conversations", async (_req: Request, res: Response): Promise<
       (SELECT m2.content FROM chat_messages m2 WHERE m2.conversation_id = c.id ORDER BY m2.created_at DESC LIMIT 1) AS last_message,
       (SELECT m2.sender_name FROM chat_messages m2 WHERE m2.conversation_id = c.id ORDER BY m2.created_at DESC LIMIT 1) AS last_sender,
       o.order_number,
-      cust.name AS customer_name
+      cust.name AS customer_name,
+      COALESCE(
+        (SELECT json_agg(p.user_name ORDER BY p.added_at) FROM chat_participants p WHERE p.conversation_id = c.id),
+        '[]'::json
+      ) AS participants
     FROM chat_conversations c
     LEFT JOIN orders o ON o.id = c.order_id
     LEFT JOIN customers cust ON cust.id = c.customer_id
@@ -62,7 +66,16 @@ router.post("/chat/conversations", async (req: Request, res: Response): Promise<
     VALUES (${d.type}, ${d.order_id ?? null}, ${d.customer_id ?? null}, ${d.subject ?? null}, ${actor})
     RETURNING *
   `);
-  res.status(201).json(result.rows[0]);
+  const conv = result.rows[0] as any;
+
+  // Auto-add creator as a participant
+  await db.execute(sql`
+    INSERT INTO chat_participants (conversation_id, user_name, added_by)
+    VALUES (${conv.id}, ${actor}, ${actor})
+    ON CONFLICT DO NOTHING
+  `);
+
+  res.status(201).json(conv);
 });
 
 // ─── GET /chat/conversations/:id/messages ────────────────────────────────────
@@ -98,6 +111,13 @@ router.post("/chat/conversations/:id/messages", async (req: Request, res: Respon
   `);
 
   await db.execute(sql`UPDATE chat_conversations SET last_message_at = NOW() WHERE id = ${id}`);
+
+  // Auto-add sender as participant if not already
+  await db.execute(sql`
+    INSERT INTO chat_participants (conversation_id, user_name, added_by)
+    VALUES (${id}, ${actor}, ${actor})
+    ON CONFLICT DO NOTHING
+  `);
 
   const conv = await db.execute(sql`
     SELECT c.*, o.order_number, cust.name AS customer_name
@@ -137,6 +157,58 @@ router.post("/chat/conversations/:id/messages", async (req: Request, res: Respon
   }
 
   res.status(201).json(msg.rows[0]);
+});
+
+// ─── GET /chat/conversations/:id/participants ────────────────────────────────
+router.get("/chat/conversations/:id/participants", async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const rows = await db.execute(sql`
+    SELECT user_name, added_by, added_at FROM chat_participants
+    WHERE conversation_id = ${id}
+    ORDER BY added_at ASC
+  `);
+  res.json(rows.rows);
+});
+
+// ─── POST /chat/conversations/:id/participants ───────────────────────────────
+router.post("/chat/conversations/:id/participants", async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+
+  const parsed = z.object({ user_name: z.string().min(1).max(100) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const actor = actorName(req);
+  await db.execute(sql`
+    INSERT INTO chat_participants (conversation_id, user_name, added_by)
+    VALUES (${id}, ${parsed.data.user_name}, ${actor})
+    ON CONFLICT DO NOTHING
+  `);
+  res.json({ ok: true });
+});
+
+// ─── DELETE /chat/conversations/:id/participants/:userName ───────────────────
+router.delete("/chat/conversations/:id/participants/:userName", async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const userName = decodeURIComponent(req.params.userName);
+  await db.execute(sql`
+    DELETE FROM chat_participants WHERE conversation_id = ${id} AND user_name = ${userName}
+  `);
+  res.json({ ok: true });
+});
+
+// ─── GET /chat/known-users ────────────────────────────────────────────────────
+// Returns distinct sender names from recent messages (for the add-member typeahead)
+router.get("/chat/known-users", async (_req: Request, res: Response): Promise<void> => {
+  const rows = await db.execute(sql`
+    SELECT DISTINCT sender_name AS user_name
+    FROM chat_messages
+    ORDER BY sender_name
+    LIMIT 50
+  `);
+  res.json(rows.rows);
 });
 
 // ─── GET /chat/conversations/by-order/:orderId ───────────────────────────────

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
@@ -7,10 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
 import {
   Hash, Users, ShoppingCart, User, Plus, Send, Bell, BellOff,
-  Loader2, MessageSquare, ChevronRight, X
+  Loader2, MessageSquare, X, UserPlus, Check
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -18,11 +17,11 @@ import { useToast } from "@/hooks/use-toast";
 const API_BASE = "/api";
 
 function getActor(): string {
-  return localStorage.getItem("sbs_actor_name") || "Staff";
+  return localStorage.getItem("sbs_actor_name") || "";
 }
 
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
-  const actor = getActor();
+  const actor = getActor() || "Unknown";
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
     headers: {
@@ -50,6 +49,7 @@ interface Conversation {
   last_sender: string | null;
   order_number: string | null;
   customer_name: string | null;
+  participants: string[];
 }
 
 interface ChatMessage {
@@ -65,6 +65,12 @@ interface NotifPref {
   user_name: string;
   email: string | null;
   notify_email: boolean;
+}
+
+interface Participant {
+  user_name: string;
+  added_by: string;
+  added_at: string;
 }
 
 function convLabel(c: Conversation): string {
@@ -97,9 +103,28 @@ function sameDay(a: string, b: string) {
   return new Date(a).toDateString() === new Date(b).toDateString();
 }
 
+function stringToColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 55%, 42%)`;
+}
+
+function Avatar({ name, size = 7 }: { name: string; size?: number }) {
+  return (
+    <div
+      className={`w-${size} h-${size} rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0`}
+      style={{ backgroundColor: stringToColor(name) }}
+      title={name}
+    >
+      {name.charAt(0).toUpperCase()}
+    </div>
+  );
+}
+
 // ─── Notification settings panel ─────────────────────────────────────────────
 function NotifPanel({ convId, onClose }: { convId: number; onClose: () => void }) {
-  const actor = getActor();
+  const actor = getActor() || "Unknown";
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -166,15 +191,146 @@ function NotifPanel({ convId, onClose }: { convId: number; onClose: () => void }
   );
 }
 
+// ─── Members panel ────────────────────────────────────────────────────────────
+function MembersPanel({ convId, onClose }: { convId: number; onClose: () => void }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [addName, setAddName] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const { data: participants = [], isLoading } = useQuery<Participant[]>({
+    queryKey: ["chat-participants", convId],
+    queryFn: () => apiFetch(`/chat/conversations/${convId}/participants`),
+  });
+
+  const { data: knownUsers = [] } = useQuery<{ user_name: string }[]>({
+    queryKey: ["chat-known-users"],
+    queryFn: () => apiFetch("/chat/known-users"),
+  });
+
+  const suggestions = knownUsers
+    .map(u => u.user_name)
+    .filter(n => n.toLowerCase().includes(addName.toLowerCase()) && !participants.find(p => p.user_name === n));
+
+  const addMember = useMutation({
+    mutationFn: (name: string) => apiFetch(`/chat/conversations/${convId}/participants`, {
+      method: "POST",
+      body: JSON.stringify({ user_name: name }),
+    }),
+    onSuccess: () => {
+      toast({ title: "Member added" });
+      qc.invalidateQueries({ queryKey: ["chat-participants", convId] });
+      qc.invalidateQueries({ queryKey: ["chat-conversations"] });
+      setAddName("");
+      setShowSuggestions(false);
+    },
+    onError: () => toast({ title: "Could not add member", variant: "destructive" }),
+  });
+
+  const removeMember = useMutation({
+    mutationFn: (name: string) => apiFetch(`/chat/conversations/${convId}/participants/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    }),
+    onSuccess: () => {
+      toast({ title: "Member removed" });
+      qc.invalidateQueries({ queryKey: ["chat-participants", convId] });
+      qc.invalidateQueries({ queryKey: ["chat-conversations"] });
+    },
+    onError: () => toast({ title: "Could not remove member", variant: "destructive" }),
+  });
+
+  function handleAdd(name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    addMember.mutate(trimmed);
+  }
+
+  return (
+    <div className="border-b bg-muted/30 px-4 py-3 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Members</p>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="w-3 h-3 animate-spin" /> Loading…
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {participants.map(p => (
+            <div key={p.user_name} className="flex items-center gap-1.5 bg-background border rounded-full pl-1 pr-2 py-0.5">
+              <Avatar name={p.user_name} size={5} />
+              <span className="text-xs font-medium">{p.user_name}</span>
+              <button
+                className="text-muted-foreground hover:text-destructive ml-0.5"
+                title={`Remove ${p.user_name}`}
+                onClick={() => removeMember.mutate(p.user_name)}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+          {participants.length === 0 && (
+            <p className="text-xs text-muted-foreground">No members yet</p>
+          )}
+        </div>
+      )}
+
+      {/* Add member */}
+      <div className="relative">
+        <div className="flex gap-2">
+          <Input
+            placeholder="Add by name…"
+            value={addName}
+            onChange={e => { setAddName(e.target.value); setShowSuggestions(true); }}
+            onFocus={() => setShowSuggestions(true)}
+            onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+            onKeyDown={e => { if (e.key === "Enter") handleAdd(addName); }}
+            className="text-sm h-8 flex-1"
+          />
+          <Button size="sm" className="h-8 px-3" onClick={() => handleAdd(addName)} disabled={!addName.trim() || addMember.isPending}>
+            {addMember.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+          </Button>
+        </div>
+        {showSuggestions && suggestions.length > 0 && (
+          <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-background border rounded-lg shadow-lg overflow-hidden">
+            {suggestions.slice(0, 6).map(name => (
+              <button
+                key={name}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+                onMouseDown={() => handleAdd(name)}
+              >
+                <Avatar name={name} size={5} />
+                {name}
+              </button>
+            ))}
+            {addName.trim() && !suggestions.find(s => s.toLowerCase() === addName.toLowerCase()) && (
+              <button
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2 text-primary"
+                onMouseDown={() => handleAdd(addName)}
+              >
+                <UserPlus className="w-4 h-4" />
+                Add "{addName.trim()}"
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Message bubble ───────────────────────────────────────────────────────────
 function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessage }) {
-  const me = msg.sender_name === getActor();
+  const actor = getActor();
+  const me = msg.sender_name === actor && actor !== "";
   const showName = !prevMsg || prevMsg.sender_name !== msg.sender_name;
-  const showDate = !prevMsg || !sameDay(prevMsg.created_at, msg.created_at);
+  const showDateSep = !prevMsg || !sameDay(prevMsg.created_at, msg.created_at);
 
   return (
     <>
-      {showDate && (
+      {showDateSep && (
         <div className="flex items-center gap-3 my-4">
           <div className="flex-1 h-px bg-border" />
           <span className="text-xs text-muted-foreground font-medium">{fmtDate(msg.created_at)}</span>
@@ -183,10 +339,8 @@ function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessa
       )}
       <div className={cn("flex gap-2.5 px-4", me ? "flex-row-reverse" : "flex-row", showName ? "mt-3" : "mt-0.5")}>
         {!me && (
-          <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5",
-            showName ? "opacity-100" : "opacity-0"
-          )} style={{ backgroundColor: stringToColor(msg.sender_name) }}>
-            {msg.sender_name.charAt(0).toUpperCase()}
+          <div className={cn("shrink-0 mt-0.5", showName ? "opacity-100" : "opacity-0")}>
+            <Avatar name={msg.sender_name} size={7} />
           </div>
         )}
         <div className={cn("max-w-[70%]", me ? "items-end" : "items-start", "flex flex-col gap-0.5")}>
@@ -204,10 +358,8 @@ function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessa
           <span className="text-[10px] text-muted-foreground px-1">{fmtTime(msg.created_at)}</span>
         </div>
         {me && (
-          <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5",
-            showName ? "opacity-100" : "opacity-0"
-          )} style={{ backgroundColor: stringToColor(msg.sender_name) }}>
-            {msg.sender_name.charAt(0).toUpperCase()}
+          <div className={cn("shrink-0 mt-0.5", showName ? "opacity-100" : "opacity-0")}>
+            <Avatar name={msg.sender_name} size={7} />
           </div>
         )}
       </div>
@@ -215,17 +367,11 @@ function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessa
   );
 }
 
-function stringToColor(str: string): string {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  const hue = Math.abs(hash) % 360;
-  return `hsl(${hue}, 55%, 42%)`;
-}
-
 // ─── Conversation sidebar item ────────────────────────────────────────────────
 function ConvItem({ conv, active, onClick }: { conv: Conversation; active: boolean; onClick: () => void }) {
   const label = convLabel(conv);
   const count = parseInt(conv.message_count || "0", 10);
+  const participants = conv.participants ?? [];
 
   return (
     <button
@@ -240,15 +386,33 @@ function ConvItem({ conv, active, onClick }: { conv: Conversation; active: boole
       <span className="shrink-0 opacity-70">{convIcon(conv.type)}</span>
       <div className="flex-1 min-w-0">
         <p className="text-sm truncate leading-tight">{label}</p>
-        {conv.last_message && (
+        {conv.last_message ? (
           <p className="text-xs truncate opacity-60 leading-tight mt-0.5">
             {conv.last_sender ? `${conv.last_sender}: ` : ""}{conv.last_message}
           </p>
+        ) : (
+          <p className="text-xs opacity-40 leading-tight mt-0.5">
+            {conv.created_by && conv.created_by !== "Unknown" ? `by ${conv.created_by}` : ""}
+          </p>
         )}
       </div>
-      {count > 0 && (
-        <span className="text-[10px] opacity-50 shrink-0">{count}</span>
-      )}
+      <div className="flex items-center gap-1 shrink-0">
+        {participants.length > 0 && (
+          <div className="flex -space-x-1.5">
+            {participants.slice(0, 3).map(name => (
+              <div key={name} className="w-4 h-4 rounded-full border border-background text-[8px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: stringToColor(name) }}>
+                {name.charAt(0).toUpperCase()}
+              </div>
+            ))}
+            {participants.length > 3 && (
+              <div className="w-4 h-4 rounded-full border border-background bg-muted text-[8px] font-bold text-muted-foreground flex items-center justify-center">
+                +{participants.length - 3}
+              </div>
+            )}
+          </div>
+        )}
+        {count > 0 && <span className="text-[10px] opacity-50">{count}</span>}
+      </div>
     </button>
   );
 }
@@ -345,7 +509,7 @@ function NewConvDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
                   ))}
                 </div>
               )}
-              {selectedOrderId && <p className="text-xs text-green-600 mt-1">✓ Order selected</p>}
+              {selectedOrderId && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><Check className="w-3 h-3" /> Order selected</p>}
             </div>
           )}
 
@@ -363,7 +527,7 @@ function NewConvDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
                   ))}
                 </div>
               )}
-              {selectedCustomerId && <p className="text-xs text-green-600 mt-1">✓ Customer selected</p>}
+              {selectedCustomerId && <p className="text-xs text-green-600 mt-1 flex items-center gap-1"><Check className="w-3 h-3" /> Customer selected</p>}
             </div>
           )}
         </div>
@@ -379,15 +543,13 @@ function NewConvDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
   );
 }
 
-// ─── Main message area ────────────────────────────────────────────────────────
+// ─── Message area ─────────────────────────────────────────────────────────────
 function MessageArea({ conv }: { conv: Conversation }) {
-  const actor = getActor();
   const qc = useQueryClient();
   const { toast } = useToast();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
-  const [notifOpen, setNotifOpen] = useState(false);
-  const lastSeenRef = useRef<string | undefined>(undefined);
+  const [panel, setPanel] = useState<"none" | "notif" | "members">("none");
 
   const { data: messages = [], isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["chat-messages", conv.id],
@@ -420,6 +582,17 @@ function MessageArea({ conv }: { conv: Conversation }) {
   }
 
   const label = convLabel(conv);
+  const creator = conv.created_by && conv.created_by !== "Unknown" ? conv.created_by : null;
+  const participants: string[] = conv.participants ?? [];
+
+  function subtitle() {
+    const parts: string[] = [];
+    if (conv.type === "order") parts.push("Order chat");
+    else if (conv.type === "customer" && conv.customer_name) parts.push(`Customer: ${conv.customer_name}`);
+    else if (conv.type === "general") parts.push("General channel");
+    if (creator) parts.push(`created by ${creator}`);
+    return parts.join(" · ");
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -428,29 +601,53 @@ function MessageArea({ conv }: { conv: Conversation }) {
         <span className="text-muted-foreground">{convIcon(conv.type)}</span>
         <div className="flex-1 min-w-0">
           <h2 className="font-semibold text-foreground leading-tight">{label}</h2>
-          {conv.type === "order" && conv.order_number && (
-            <p className="text-xs text-muted-foreground">Order chat</p>
-          )}
-          {conv.type === "customer" && conv.customer_name && (
-            <p className="text-xs text-muted-foreground">Customer chat · {conv.customer_name}</p>
-          )}
-          {conv.type === "custom" && (
-            <p className="text-xs text-muted-foreground">Custom topic · created by {conv.created_by}</p>
-          )}
+          <p className="text-xs text-muted-foreground">{subtitle()}</p>
         </div>
+
+        {/* Participant avatars */}
+        {participants.length > 0 && (
+          <button
+            className="flex -space-x-1.5 hover:opacity-80 transition-opacity"
+            title={`Members: ${participants.join(", ")}`}
+            onClick={() => setPanel(p => p === "members" ? "none" : "members")}
+          >
+            {participants.slice(0, 4).map(name => (
+              <div key={name} className="w-6 h-6 rounded-full border-2 border-background text-[9px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: stringToColor(name) }}>
+                {name.charAt(0).toUpperCase()}
+              </div>
+            ))}
+            {participants.length > 4 && (
+              <div className="w-6 h-6 rounded-full border-2 border-background bg-muted text-[9px] font-bold text-muted-foreground flex items-center justify-center">
+                +{participants.length - 4}
+              </div>
+            )}
+          </button>
+        )}
+
         <Button
           variant="ghost"
           size="sm"
-          className={cn("gap-1.5 text-xs h-8", notifOpen && "bg-muted")}
-          onClick={() => setNotifOpen(o => !o)}
+          className={cn("gap-1.5 text-xs h-8", panel === "members" && "bg-muted")}
+          onClick={() => setPanel(p => p === "members" ? "none" : "members")}
         >
-          {notifOpen ? <BellOff className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
+          <Users className="w-3.5 h-3.5" />
+          Members
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          className={cn("gap-1.5 text-xs h-8", panel === "notif" && "bg-muted")}
+          onClick={() => setPanel(p => p === "notif" ? "none" : "notif")}
+        >
+          {panel === "notif" ? <BellOff className="w-3.5 h-3.5" /> : <Bell className="w-3.5 h-3.5" />}
           Notifications
         </Button>
       </div>
 
-      {/* Notif panel */}
-      {notifOpen && <NotifPanel convId={conv.id} onClose={() => setNotifOpen(false)} />}
+      {/* Side panels */}
+      {panel === "notif" && <NotifPanel convId={conv.id} onClose={() => setPanel("none")} />}
+      {panel === "members" && <MembersPanel convId={conv.id} onClose={() => setPanel("none")} />}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto py-4 space-y-0">
@@ -515,7 +712,6 @@ export default function Chat() {
     refetchInterval: 10000,
   });
 
-  // Auto-select general or first conversation
   useEffect(() => {
     if (conversations.length > 0 && activeId === null) {
       const general = conversations.find(c => c.type === "general");
