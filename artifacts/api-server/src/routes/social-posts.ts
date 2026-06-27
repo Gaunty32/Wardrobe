@@ -641,4 +641,97 @@ export function startSocialPostScheduler(): void {
   }, 10_000); // slight delay so it doesn't pile up at startup
 }
 
+// ── Generate hero image prompt ────────────────────────────────────────────────
+
+router.post("/products/:productId/generate-image-prompt", async (req, res): Promise<void> => {
+  const pid = parseInt(req.params.productId, 10);
+  if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
+
+  const bodyParse = z.object({
+    productName: z.string().min(1),
+    garmentType: z.string().min(1),
+    genderFit: z.enum(["Male", "Female", "Unisex"]),
+    category: z.enum(["Trade", "Corporate", "Hospitality", "Outerwear"]),
+    heroColourway: z.string().min(1),
+    availableColourways: z.array(z.string()).min(1),
+    logoText: z.string().default("YOUR LOGO HERE"),
+    imageSize: z.string().default("1000px x 1000px"),
+    notes: z.string().optional(),
+  }).safeParse(req.body);
+
+  if (!bodyParse.success) { res.status(400).json({ error: bodyParse.error.message }); return; }
+  const { productName, garmentType, genderFit, category, heroColourway, availableColourways, logoText, imageSize, notes } = bodyParse.data;
+
+  const categoryEnvs: Record<string, string> = {
+    Trade: "commercial vans, workshops, warehouses, construction sites, landscaping yards, delivery depots",
+    Corporate: "modern offices, hotel reception desks, conference rooms, golf days, business meetings",
+    Hospitality: "hotel lobbies, café counters, restaurant floors, event venues, customer-facing hospitality settings",
+    Outerwear: "outdoor construction sites, delivery routes, facilities management sites, spring and autumn site visits",
+  };
+
+  const genderRules: Record<string, string> = {
+    Male: "ALL models must be male. No female models. Varied ages (20s–50s), ethnicities, body types and hairstyles.",
+    Female: "ALL models must be female. No male models. Varied ages (20s–50s), ethnicities, body types and hairstyles.",
+    Unisex: "Mix of male and female models. Varied ages (20s–50s), ethnicities, body types and hairstyles.",
+  };
+
+  // Thumbnail colourways excluding the hero (used in centre panel)
+  const thumbColours = availableColourways.filter(c => c.toLowerCase() !== heroColourway.toLowerCase());
+
+  const metaPrompt = `You are a commercial catalogue photography art director for Select Uniforms, a UK branded workwear company. Your task is to write a single precise image generation prompt (for Midjourney or DALL-E) that will produce a composite catalogue hero image for the product described below.
+
+PRODUCT:
+- Name: ${productName}
+- Garment type: ${garmentType}
+- Gender fit: ${genderFit}
+- Category: ${category}
+- Hero (centre) colourway: ${heroColourway}
+- All available colourways: ${availableColourways.join(", ")}
+- Thumbnail colourways (exclude hero): ${thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ")}
+- Embroidered logo text: "${logoText}"
+- Output size: ${imageSize}
+${notes ? `- Special instructions: ${notes}` : ""}
+
+LAYOUT YOU MUST DESCRIBE:
+The image is a single ${imageSize} composite panel divided into:
+
+1. LARGE CENTRE HERO PANEL (~60% of image area):
+   - ${genderRules[genderFit]}
+   - 4–6 people wearing the ${heroColourway} ${garmentType}
+   - No cloned or duplicated faces — every person is unique
+   - Realistic ${category} workplace environment: ${categoryEnvs[category]}
+   - "${logoText}" embroidery clearly visible on chest of each garment
+   - Commercial catalogue photography: natural lighting, professional poses, product clearly visible
+   - People are standing or lightly interacting, not obscuring each other's garments
+
+2. SURROUNDING THUMBNAIL PANELS (8–10 smaller panels arranged around the centre hero):
+   - One person per thumbnail, one unique colourway per thumbnail from: ${thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ")}
+   - Do NOT invent any colour not in the above list
+   - Each thumbnail shows a different realistic role or activity within the ${category} environment
+   - No text labels, no colour names overlaid on images
+   - Same commercial photography style as hero
+   - "${logoText}" embroidery visible in each thumbnail
+
+3. TECHNICAL REQUIREMENTS:
+   - ${imageSize} total output
+   - Rounded corners on every panel
+   - Clean white gutters/spacing between all panels (like a professional garment catalogue page)
+   - No cloned faces anywhere in the image
+   - Only use the colourways listed — no invented extras
+   - Ultra-realistic commercial catalogue photography quality throughout
+
+Write ONLY the image generation prompt text — no preamble, no explanation, no headings. Just the prompt, ready to paste directly into Midjourney or DALL-E.`;
+
+  const message = await anthropic.messages.create({
+    model: "claude-opus-4-5",
+    max_tokens: 1500,
+    messages: [{ role: "user", content: metaPrompt }],
+  });
+
+  const content = message.content[0];
+  const generatedPrompt = content.type === "text" ? content.text.trim() : "";
+
+  res.json({ prompt: generatedPrompt });
+});
+
 export default router;

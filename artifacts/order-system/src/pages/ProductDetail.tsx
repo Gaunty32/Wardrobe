@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
   Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles, Shuffle, Search,
-  Share2, Globe, CalendarDays, Send, Clock, CheckCircle2, RefreshCw, Eye
+  Share2, Globe, CalendarDays, Send, Clock, CheckCircle2, RefreshCw, Eye, Wand2, Copy, ImageIcon
 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { sortBySizeWithOrder, sizeRank } from "@/lib/sizeUtils";
@@ -817,6 +817,32 @@ export default function ProductDetail() {
     }
   }, [(product as any)?.wooCommerceId, (product as any)?.wooStatus]);
 
+  // Pre-populate Image Gen form from product + variants when first loaded
+  useEffect(() => {
+    if (!imgGenPopulated && product && variants) {
+      const colours = [...new Set((variants as any[]).map((v: any) => v.colour).filter(Boolean))] as string[];
+      setImgGen(prev => ({
+        ...prev,
+        productName: (product as any).name || prev.productName,
+        heroColourway: colours[0] || prev.heroColourway,
+        availableColourways: colours.length > 0 ? colours : prev.availableColourways,
+      }));
+      setImgGenPopulated(true);
+    }
+  }, [product, variants, imgGenPopulated]);
+
+  const generateImgPromptMut = useMutation({
+    mutationFn: () => apiFetch<any>(`/products/${productId}/generate-image-prompt`, {
+      method: "POST",
+      body: JSON.stringify(imgGen),
+    }),
+    onSuccess: (data: any) => {
+      setImgGenPrompt(data.prompt || "");
+      toast({ title: "Image prompt generated" });
+    },
+    onError: (err: any) => toast({ title: err.message || "Failed to generate prompt", variant: "destructive" }),
+  });
+
   const pushWooPriceMut = useMutation({
     mutationFn: (newPrice: number) =>
       apiFetch(`/products/${productId}/push-woo-price`, { method: "POST", body: JSON.stringify({ newPrice }) }),
@@ -898,6 +924,23 @@ export default function ProductDetail() {
     productImageUrl: string | null;
   }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: false, editingId: null, productImageUrl: null });
   const [socialShowPreview, setSocialShowPreview] = useState(false);
+
+  // Image Generation tab state
+  const [imgGen, setImgGen] = useState({
+    productName: "",
+    garmentType: "",
+    genderFit: "Unisex" as "Male" | "Female" | "Unisex",
+    category: "Corporate" as "Trade" | "Corporate" | "Hospitality" | "Outerwear",
+    heroColourway: "",
+    availableColourways: [] as string[],
+    logoText: "YOUR LOGO HERE",
+    imageSize: "1000px x 1000px",
+    notes: "",
+  });
+  const [imgGenPrompt, setImgGenPrompt] = useState("");
+  const [imgGenPopulated, setImgGenPopulated] = useState(false);
+  const [imgGenNewColour, setImgGenNewColour] = useState("");
+
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
   const [quoteDraft, setQuoteDraft] = useState("");
@@ -1367,6 +1410,9 @@ export default function ProductDetail() {
                     {socialPostsQuery.data!.filter((p: any) => p.status === "scheduled").length}
                   </span>
                 )}
+              </TabsTrigger>
+              <TabsTrigger value="imagegen" className="flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5" /> Image Gen
               </TabsTrigger>
             </TabsList>
 
@@ -2644,6 +2690,207 @@ export default function ProductDetail() {
                     </div>
                   )}
                 </div>
+              </div>
+            </TabsContent>
+
+            {/* ── Image Generation ── */}
+            <TabsContent value="imagegen">
+              <div className="mt-4 space-y-6">
+                {/* Form card */}
+                <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-5">
+                    <div>
+                      <h3 className="font-semibold flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4 text-violet-500" /> Hero Image Prompt Generator
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-0.5">Generate a structured AI image prompt in the Select Uniforms catalogue layout — paste into Midjourney or DALL-E</p>
+                    </div>
+                    <Button
+                      onClick={() => generateImgPromptMut.mutate()}
+                      disabled={generateImgPromptMut.isPending || !imgGen.productName || !imgGen.garmentType || !imgGen.heroColourway || imgGen.availableColourways.length === 0}
+                      className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                    >
+                      {generateImgPromptMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                      {generateImgPromptMut.isPending ? "Generating…" : "Generate Prompt"}
+                    </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {/* Product Name */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Product Name *</Label>
+                      <Input value={imgGen.productName} onChange={e => setImgGen(p => ({ ...p, productName: e.target.value }))} placeholder="e.g. Active Ladies Smash Polo" />
+                    </div>
+
+                    {/* Garment Type */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Garment Type *</Label>
+                      <Input value={imgGen.garmentType} onChange={e => setImgGen(p => ({ ...p, garmentType: e.target.value }))} placeholder="e.g. polo shirt, fleece jacket, hi-vis vest" />
+                    </div>
+
+                    {/* Gender Fit */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Gender Fit</Label>
+                      <div className="flex gap-2">
+                        {(["Male", "Female", "Unisex"] as const).map(g => (
+                          <button
+                            key={g}
+                            type="button"
+                            onClick={() => setImgGen(p => ({ ...p, genderFit: g }))}
+                            className={cn(
+                              "flex-1 py-2 text-sm font-medium rounded-md border transition-colors",
+                              imgGen.genderFit === g
+                                ? "bg-violet-600 text-white border-violet-600"
+                                : "bg-background text-foreground border-border hover:bg-muted"
+                            )}
+                          >
+                            {g === "Male" ? "👨 Male" : g === "Female" ? "👩 Female" : "👥 Unisex"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Category */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Product Category</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["Trade", "Corporate", "Hospitality", "Outerwear"] as const).map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setImgGen(p => ({ ...p, category: cat }))}
+                            className={cn(
+                              "py-2 text-sm font-medium rounded-md border transition-colors text-left px-3",
+                              imgGen.category === cat
+                                ? "bg-violet-600 text-white border-violet-600"
+                                : "bg-background text-foreground border-border hover:bg-muted"
+                            )}
+                          >
+                            {cat === "Trade" ? "🔧 Trade" : cat === "Corporate" ? "💼 Corporate" : cat === "Hospitality" ? "🏨 Hospitality" : "🧥 Outerwear"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Hero Colourway */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Hero Colourway * <span className="text-muted-foreground font-normal">(centre panel)</span></Label>
+                      <Input value={imgGen.heroColourway} onChange={e => setImgGen(p => ({ ...p, heroColourway: e.target.value }))} placeholder="e.g. Navy" />
+                      {imgGen.availableColourways.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {imgGen.availableColourways.map(c => (
+                            <button key={c} type="button" onClick={() => setImgGen(p => ({ ...p, heroColourway: c }))}
+                              className={cn("text-xs px-2 py-0.5 rounded-full border transition-colors",
+                                imgGen.heroColourway === c ? "bg-violet-600 text-white border-violet-600" : "bg-muted text-muted-foreground border-border hover:bg-muted/80")}>
+                              {c}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Available Colourways */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Available Colourways *</Label>
+                      <div className="flex flex-wrap gap-1.5 min-h-[36px] rounded-md border border-border bg-background px-3 py-2">
+                        {imgGen.availableColourways.map(c => (
+                          <span key={c} className="inline-flex items-center gap-1 text-xs bg-violet-100 text-violet-800 border border-violet-200 rounded-full px-2 py-0.5">
+                            {c}
+                            <button type="button" onClick={() => setImgGen(p => ({ ...p, availableColourways: p.availableColourways.filter(x => x !== c), heroColourway: p.heroColourway === c ? "" : p.heroColourway }))} className="hover:text-red-600">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          value={imgGenNewColour}
+                          onChange={e => setImgGenNewColour(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && imgGenNewColour.trim()) {
+                              e.preventDefault();
+                              const col = imgGenNewColour.trim();
+                              if (!imgGen.availableColourways.includes(col)) {
+                                setImgGen(p => ({ ...p, availableColourways: [...p.availableColourways, col] }));
+                              }
+                              setImgGenNewColour("");
+                            }
+                          }}
+                          placeholder="Type a colour, press Enter to add"
+                          className="flex-1"
+                        />
+                        <Button type="button" variant="outline" size="sm" onClick={() => {
+                          const col = imgGenNewColour.trim();
+                          if (col && !imgGen.availableColourways.includes(col)) {
+                            setImgGen(p => ({ ...p, availableColourways: [...p.availableColourways, col] }));
+                          }
+                          setImgGenNewColour("");
+                        }}>Add</Button>
+                      </div>
+                    </div>
+
+                    {/* Logo Text */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Logo Text <span className="text-muted-foreground font-normal">(embroidered)</span></Label>
+                      <Input value={imgGen.logoText} onChange={e => setImgGen(p => ({ ...p, logoText: e.target.value }))} placeholder="YOUR LOGO HERE" />
+                    </div>
+
+                    {/* Image Size */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Image Size</Label>
+                      <div className="flex gap-2">
+                        {["1000px x 1000px", "1200px x 1200px", "800px x 800px"].map(sz => (
+                          <button key={sz} type="button" onClick={() => setImgGen(p => ({ ...p, imageSize: sz }))}
+                            className={cn("flex-1 py-2 text-xs font-medium rounded-md border transition-colors",
+                              imgGen.imageSize === sz ? "bg-violet-600 text-white border-violet-600" : "bg-background text-foreground border-border hover:bg-muted")}>
+                            {sz}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Notes */}
+                    <div className="grid gap-2 md:col-span-2">
+                      <Label className="text-sm font-medium">Notes / Special Instructions</Label>
+                      <Textarea rows={2} value={imgGen.notes} onChange={e => setImgGen(p => ({ ...p, notes: e.target.value }))} placeholder="e.g. include a dog, outdoor summer setting, avoid construction helmets…" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category environment preview */}
+                <div className="bg-muted/40 border border-border/40 rounded-lg px-4 py-3">
+                  <p className="text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">
+                      {imgGen.category === "Trade" ? "🔧 Trade" : imgGen.category === "Corporate" ? "💼 Corporate" : imgGen.category === "Hospitality" ? "🏨 Hospitality" : "🧥 Outerwear"} environment:
+                    </span>{" "}
+                    {imgGen.category === "Trade" && "Commercial vans, workshops, warehouses, construction sites, landscaping yards, delivery depots"}
+                    {imgGen.category === "Corporate" && "Modern offices, hotel reception desks, conference rooms, golf days, business meetings"}
+                    {imgGen.category === "Hospitality" && "Hotel lobbies, café counters, restaurant floors, event venues, customer-facing hospitality roles"}
+                    {imgGen.category === "Outerwear" && "Outdoor construction sites, delivery routes, facilities management, spring and autumn site visits"}
+                  </p>
+                </div>
+
+                {/* Generated prompt output */}
+                {imgGenPrompt && (
+                  <div className="bg-card border border-violet-200 rounded-lg p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold flex items-center gap-2 text-violet-700">
+                        <Wand2 className="w-4 h-4" /> Generated Image Prompt
+                      </h4>
+                      <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
+                        onClick={() => { navigator.clipboard.writeText(imgGenPrompt); toast({ title: "Copied to clipboard" }); }}>
+                        <Copy className="w-3.5 h-3.5" /> Copy prompt
+                      </Button>
+                    </div>
+                    <Textarea
+                      rows={12}
+                      value={imgGenPrompt}
+                      onChange={e => setImgGenPrompt(e.target.value)}
+                      className="font-mono text-xs leading-relaxed bg-muted/30 resize-y"
+                    />
+                    <p className="text-xs text-muted-foreground mt-2">Paste this prompt directly into Midjourney, DALL-E 3, or Adobe Firefly. You can edit it above before copying.</p>
+                  </div>
+                )}
               </div>
             </TabsContent>
 
