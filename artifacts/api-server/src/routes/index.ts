@@ -32,6 +32,7 @@ import staffMembersRouter from "./staff-members";
 import bundlesRouter from "./bundles";
 import feedbackRouter from "./feedback";
 import socialPostsRouter from "./social-posts";
+import chatRouter from "./chat";
 
 const router: IRouter = Router();
 
@@ -68,5 +69,6 @@ router.use(staffMembersRouter);
 router.use(bundlesRouter);
 router.use(feedbackRouter);
 router.use(socialPostsRouter);
+router.use(chatRouter);
 
 export default router;
