@@ -436,44 +436,83 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
     WHERE product_id = ${id} AND woo_variation_id IS NOT NULL
   `).then(r => (r.rows ?? r) as any[]);
 
-  // If no variation IDs are stored locally, discover them from WooCommerce by SKU and save them
+  // Discover WooCommerce variations — fetch all pages
+  const discoverWooVariations = async (): Promise<Array<{ id: number; sku: string }>> => {
+    const all: Array<{ id: number; sku: string }> = [];
+    let page = 1;
+    while (true) {
+      const listUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}/variations`);
+      listUrl.searchParams.set("consumer_key", settings.ck);
+      listUrl.searchParams.set("consumer_secret", settings.cs);
+      listUrl.searchParams.set("per_page", "100");
+      listUrl.searchParams.set("page", String(page));
+      const listRes = await fetch(listUrl.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+      if (!listRes.ok) break;
+      const batch = await listRes.json() as Array<{ id: number; sku: string }>;
+      if (batch.length === 0) break;
+      all.push(...batch);
+      if (batch.length < 100) break;
+      page++;
+    }
+    return all;
+  };
+
+  // If no variation IDs are stored locally, discover them from WooCommerce
   if (varRows.length === 0) {
     try {
-      let page = 1;
-      const allWooVars: Array<{ id: number; sku: string }> = [];
-      while (true) {
-        const listUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}/variations`);
-        listUrl.searchParams.set("consumer_key", settings.ck);
-        listUrl.searchParams.set("consumer_secret", settings.cs);
-        listUrl.searchParams.set("per_page", "100");
-        listUrl.searchParams.set("page", String(page));
-        const listRes = await fetch(listUrl.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
-        if (!listRes.ok) break;
-        const batch = await listRes.json() as Array<{ id: number; sku: string }>;
-        if (batch.length === 0) break;
-        allWooVars.push(...batch);
-        if (batch.length < 100) break;
-        page++;
-      }
-      // Match by SKU and save woo_variation_id back into the local DB
-      const localVars = await db.execute(sql`
-        SELECT id, sku FROM product_variants WHERE product_id = ${id}
-      `).then(r => (r.rows ?? r) as any[]);
-      for (const lv of localVars) {
-        const match = allWooVars.find((wv) => wv.sku && lv.sku && wv.sku === lv.sku);
-        if (match) {
-          await db.execute(sql`UPDATE product_variants SET woo_variation_id = ${String(match.id)} WHERE id = ${lv.id}`);
+      const allWooVars = await discoverWooVariations();
+
+      if (allWooVars.length > 0) {
+        const localVars = await db.execute(sql`
+          SELECT id, sku FROM product_variants WHERE product_id = ${id}
+        `).then(r => (r.rows ?? r) as any[]);
+
+        // Match by SKU where possible; fall back to positional match if no SKUs on WooCommerce variations
+        const hasSku = allWooVars.some((wv) => !!wv.sku);
+        if (hasSku) {
+          for (const lv of localVars) {
+            const match = allWooVars.find((wv) => wv.sku && lv.sku && wv.sku === lv.sku);
+            if (match) {
+              await db.execute(sql`UPDATE product_variants SET woo_variation_id = ${String(match.id)} WHERE id = ${lv.id}`);
+            }
+          }
+        }
+
+        // Reload saved IDs
+        varRows = await db.execute(sql`
+          SELECT id, sku, woo_variation_id FROM product_variants
+          WHERE product_id = ${id} AND woo_variation_id IS NOT NULL
+        `).then(r => (r.rows ?? r) as any[]);
+
+        // If SKU matching found nothing (blank WooCommerce SKUs), push directly using discovered IDs
+        if (varRows.length === 0 && allWooVars.length > 0) {
+          // Push price to all discovered WooCommerce variation IDs
+          let variationsPushed = 0;
+          const errors: string[] = [];
+          await Promise.all(allWooVars.map(async (wv) => {
+            const varUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}/variations/${wv.id}`);
+            varUrl.searchParams.set("consumer_key", settings.ck);
+            varUrl.searchParams.set("consumer_secret", settings.cs);
+            const r = await fetch(varUrl.toString(), {
+              method: "PUT",
+              headers: { "Content-Type": "application/json", "Accept": "application/json" },
+              body: JSON.stringify({ regular_price: priceStr }),
+            });
+            if (r.ok) variationsPushed++;
+            else {
+              const txt = await r.text().catch(() => r.status.toString());
+              errors.push(`var ${wv.id}: ${txt.slice(0, 120)}`);
+            }
+          }));
+          res.json({ ok: true, wooPushed: true, newPrice, variationsPushed, variationsTotal: allWooVars.length, note: "Pushed by WooCommerce variation ID (no SKU match)", errors: errors.length ? errors : undefined });
+          return;
         }
       }
-      // Reload with the newly saved IDs
-      varRows = await db.execute(sql`
-        SELECT id, sku, woo_variation_id FROM product_variants
-        WHERE product_id = ${id} AND woo_variation_id IS NOT NULL
-      `).then(r => (r.rows ?? r) as any[]);
-    } catch { /* fall through — will push zero variations */ }
+    } catch (e) { /* fall through */ }
   }
 
   let variationsPushed = 0;
+  const varErrors: string[] = [];
   if (varRows.length > 0) {
     await Promise.all(varRows.map(async (v: any) => {
       const varUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}/variations/${v.woo_variation_id}`);
@@ -485,10 +524,14 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
         body: JSON.stringify({ regular_price: priceStr }),
       });
       if (r.ok) variationsPushed++;
+      else {
+        const txt = await r.text().catch(() => r.status.toString());
+        varErrors.push(`var ${v.woo_variation_id}: ${txt.slice(0, 120)}`);
+      }
     }));
   }
 
-  res.json({ ok: true, wooPushed: true, newPrice, variationsPushed });
+  res.json({ ok: true, wooPushed: true, newPrice, variationsPushed, variationsTotal: varRows.length, errors: varErrors.length ? varErrors : undefined });
 });
 
 // ── Push WooCommerce publish status (draft ↔ publish) ──────────────────────
