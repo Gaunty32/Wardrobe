@@ -202,8 +202,10 @@ router.post("/social-posts/test", async (req, res): Promise<void> => {
 
   // Google Business Profile
   const token = await getGbpAccessToken();
-  if (!token || !gbpStatus.locationName) {
-    results.google = { ok: false, skipped: true, error: "Not connected — connect Google Business Profile in Settings" };
+  if (!token) {
+    results.google = { ok: false, skipped: true, error: "Not connected — connect Google Business Profile in Settings → Social Media" };
+  } else if (!gbpStatus.locationName) {
+    results.google = { ok: false, skipped: true, error: "Connected but no business location selected — open Settings → Social Media and choose a location from the dropdown, then click Save Location" };
   } else {
     results.google = await publishGbpPost(gbpStatus.locationName, token, testMessage, null);
   }

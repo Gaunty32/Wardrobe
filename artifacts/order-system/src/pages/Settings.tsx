@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
+  Settings2, RefreshCw, CheckCircle, AlertTriangle, AlertCircle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
   UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy
@@ -1725,6 +1725,12 @@ export default function Settings() {
                       Connected to Google Business Profile
                       {gbpStatus.locationTitle && <span className="ml-1 font-medium">— {gbpStatus.locationTitle}</span>}
                     </div>
+                    {!gbpStatus.locationName && (
+                      <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span><strong>No location selected.</strong> Choose your business location from the dropdown below and click Save Location — posts won't work until this is set.</span>
+                      </div>
+                    )}
 
                     {/* Location selector */}
                     {gbpLocations && gbpLocations.length > 0 && (
@@ -1880,7 +1886,15 @@ export default function Settings() {
                             ? `✅ Posted successfully${testPostResults.facebook.postId ? ` (ID: ${testPostResults.facebook.postId})` : ""}`
                             : testPostResults.facebook.skipped
                               ? `⚠️ Skipped — ${testPostResults.facebook.error}`
-                              : `❌ Failed — ${testPostResults.facebook.error}`}
+                              : (() => {
+                                  const err = testPostResults.facebook.error ?? "";
+                                  const isExpired = err.includes("Session has expired") || err.includes("Error validating access token") || err.includes("OAuthException");
+                                  return isExpired ? (
+                                    <span>❌ <strong>Access token expired</strong> — Facebook tokens last ~60 days. Generate a new long-lived page access token from the{" "}
+                                      <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Meta Graph API Explorer</a>, paste it into the Page Access Token field above, and click Save Facebook Settings.
+                                    </span>
+                                  ) : `❌ Failed — ${err}`;
+                                })()}
                         </div>
                       </div>
                     )}
