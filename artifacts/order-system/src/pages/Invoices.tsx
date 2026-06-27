@@ -50,7 +50,9 @@ interface InvoiceOrder {
   xeroInvoiceId: string | null;
   xeroInvoiceStatus: string | null;
   customerPhone: string | null;
+  customerEmail: string | null;
   invoiceScheduledSendAt: string | null;
+  invoiceScheduleToEmail: string | null;
   customerHighLevelContactId: string | null;
   poNumber?: string | null;
   poNumberRequired?: boolean | null;
@@ -227,6 +229,7 @@ function OrderRow({
       ? new Date(order.invoiceScheduledSendAt).toISOString().split("T")[0]
       : ""
   );
+  const [scheduleEmailTo, setScheduleEmailTo] = useState(order.invoiceScheduleToEmail ?? "");
 
   const [editingCarriage, setEditingCarriage] = useState(false);
   const [carriageInput, setCarriageInput] = useState("");
@@ -292,7 +295,7 @@ function OrderRow({
 
   const scheduleSend = useMutation({
     mutationFn: (scheduledSendAt: string | null) =>
-      apiFetch(`/invoices/${order.id}/schedule`, { method: "PATCH", body: JSON.stringify({ scheduledSendAt }) }),
+      apiFetch(`/invoices/${order.id}/schedule`, { method: "PATCH", body: JSON.stringify({ scheduledSendAt, toEmail: scheduleEmailTo.trim() || undefined }) }),
     onSuccess: (_data, scheduledSendAt) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       setConfirmOpen(false);
@@ -687,6 +690,31 @@ function OrderRow({
               <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" /> Schedule for later
             </p>
             <p className="text-xs text-muted-foreground">Pick a future date — the invoice will be sent automatically at 9am on that day.</p>
+
+            {/* Email for scheduled send */}
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Send to</label>
+              <input
+                type="email"
+                placeholder={order.customerEmail ?? "No email on file — enter one below"}
+                value={scheduleEmailTo}
+                onChange={(e) => setScheduleEmailTo(e.target.value)}
+                className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              {!order.customerEmail && !scheduleEmailTo && (
+                <p className="text-xs text-amber-600 flex items-center gap-1">
+                  <span>⚠</span> No email on file — the scheduled send will fail unless you enter one above.
+                </p>
+              )}
+              {(order.customerEmail || scheduleEmailTo) && (
+                <p className="text-xs text-muted-foreground">
+                  {scheduleEmailTo
+                    ? `Will send to: ${scheduleEmailTo}`
+                    : `Will send to: ${order.customerEmail} (from customer record)`}
+                </p>
+              )}
+            </div>
+
             <div className="flex gap-2 items-center">
               <input
                 type="date"
@@ -699,7 +727,8 @@ function OrderRow({
                 size="sm"
                 variant="outline"
                 className="h-8 gap-1.5 text-xs shrink-0"
-                disabled={!scheduledDate || scheduleSend.isPending}
+                disabled={!scheduledDate || scheduleSend.isPending || (!order.customerEmail && !scheduleEmailTo)}
+                title={!order.customerEmail && !scheduleEmailTo ? "Enter an email address to schedule" : undefined}
                 onClick={() => {
                   const dt = new Date(scheduledDate + "T09:00:00Z");
                   scheduleSend.mutate(dt.toISOString());

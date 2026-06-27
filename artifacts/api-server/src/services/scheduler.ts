@@ -178,7 +178,7 @@ schedule("0 9 * * *", async () => {
 schedule("* * * * *", async () => {
   try {
     const due = await db
-      .select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber, invoiceScheduledSendAt: ordersTable.invoiceScheduledSendAt })
+      .select({ id: ordersTable.id, orderNumber: ordersTable.orderNumber, invoiceScheduledSendAt: ordersTable.invoiceScheduledSendAt, invoiceScheduleToEmail: ordersTable.invoiceScheduleToEmail })
       .from(ordersTable)
       .where(
         and(
@@ -196,7 +196,7 @@ schedule("* * * * *", async () => {
         .where(eq(ordersTable.id, order.id));
 
       try {
-        await sendInvoiceEmail(order.id);
+        await sendInvoiceEmail(order.id, order.invoiceScheduleToEmail ?? undefined);
         console.log(`[invoice-scheduler] Sent scheduled invoice for ${order.orderNumber}`);
 
         try {

@@ -42,6 +42,7 @@ export const ordersTable = pgTable("orders", {
   stripePaymentLinkId: text("stripe_payment_link_id"),
   paidAt: timestamp("paid_at", { withTimezone: true }),
   invoiceScheduledSendAt: timestamp("invoice_scheduled_send_at", { withTimezone: true }),
+  invoiceScheduleToEmail: text("invoice_schedule_to_email"),
   attachments: jsonb("attachments").$type<Array<{ name: string; objectPath: string }>>(),
   /** Order numbers absorbed into this order during a merge (e.g. ["P39", "P40"]) */
   absorbedOrderNumbers: text("absorbed_order_numbers").array(),
