@@ -454,20 +454,21 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     }
   }
 
-  // ── PO numbers per order item (direct link + consolidated source_order_item_ids) ─
+  // ── PO numbers (+ status) per order item (direct link + consolidated source_order_item_ids) ─
   const orderItemIds = itemRows.map(r => r.item.id);
   const poByItemId = new Map<number, string[]>();
+  const poInfoByItemId = new Map<number, Array<{ poNumber: string; status: string; poId: number }>>();
   if (orderItemIds.length > 0) {
     const idsStr = orderItemIds.join(",");
     const poRows = await db.execute(sql`
-      SELECT oi_id, po_number FROM (
-        SELECT poi.order_item_id AS oi_id, po.po_number
+      SELECT oi_id, po_number, po_status, po_id FROM (
+        SELECT poi.order_item_id AS oi_id, po.po_number, po.status AS po_status, po.id AS po_id
         FROM purchase_order_items poi
         JOIN purchase_orders po ON po.id = poi.po_id
         WHERE poi.order_item_id IN (${sql.raw(idsStr)})
           AND po.status != 'cancelled'
         UNION
-        SELECT elem::int AS oi_id, po.po_number
+        SELECT elem::int AS oi_id, po.po_number, po.status AS po_status, po.id AS po_id
         FROM purchase_order_items poi
         JOIN purchase_orders po ON po.id = poi.po_id,
         jsonb_array_elements_text(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) AS elem
@@ -476,10 +477,14 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
           AND elem::int IN (${sql.raw(idsStr)})
       ) t
     `);
-    for (const row of poRows.rows as Array<{ oi_id: number; po_number: string }>) {
-      const existing = poByItemId.get(Number(row.oi_id)) ?? [];
+    for (const row of poRows.rows as Array<{ oi_id: number; po_number: string; po_status: string; po_id: number }>) {
+      const id = Number(row.oi_id);
+      const existing = poByItemId.get(id) ?? [];
       existing.push(row.po_number);
-      poByItemId.set(Number(row.oi_id), existing);
+      poByItemId.set(id, existing);
+      const existingInfo = poInfoByItemId.get(id) ?? [];
+      existingInfo.push({ poNumber: row.po_number, status: row.po_status, poId: Number(row.po_id) });
+      poInfoByItemId.set(id, existingInfo);
     }
   }
 
@@ -605,6 +610,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
         garmentCost,
         processCost,
         poNumbers: poByItemId.get(raw.id) ?? [],
+        poInfo: poInfoByItemId.get(raw.id) ?? [],
       };
     }),
   });
@@ -2435,6 +2441,22 @@ router.delete("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
+  }
+
+  const removeFromPo = req.query.removeFromPo === "true";
+
+  // Optionally remove from any draft POs before deleting the item
+  if (removeFromPo) {
+    await db.execute(sql`
+      DELETE FROM purchase_order_items poi
+      USING purchase_orders po
+      WHERE poi.po_id = po.id
+        AND po.status = 'draft'
+        AND (
+          poi.order_item_id = ${params.data.itemId}
+          OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(${params.data.itemId}::int)
+        )
+    `);
   }
 
   const [item] = await db.delete(orderItemsTable).where(eq(orderItemsTable.id, params.data.itemId)).returning();

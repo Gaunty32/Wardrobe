@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -624,6 +625,10 @@ export default function OrderDetail() {
   });
 
   const [editingItemNotes, setEditingItemNotes] = useState<{ id: number; value: string } | null>(null);
+  const [deletingItem, setDeletingItem] = useState<{
+    itemId: number;
+    poInfo: Array<{ poNumber: string; status: string; poId: number }>;
+  } | null>(null);
   const updateItemNotesMutation = useMutation({
     mutationFn: ({ itemId, notes }: { itemId: number; notes: string | null }) =>
       apiFetch(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ notes }) }),
@@ -1411,17 +1416,26 @@ export default function OrderDetail() {
   };
 
   const handleDeleteItem = (itemId: number) => {
-    if (!confirm("Remove this item from the order?")) return;
-    deleteItemMutation.mutate(
-      { id: orderId, itemId },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-          queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
-          toast({ title: "Item removed" });
-        }
-      }
-    );
+    const item = order?.items?.find((i: any) => i.id === itemId);
+    const poInfo: Array<{ poNumber: string; status: string; poId: number }> = (item as any)?.poInfo ?? [];
+    setDeletingItem({ itemId, poInfo });
+  };
+
+  const confirmDeleteItem = (removeFromPo: boolean) => {
+    if (!deletingItem) return;
+    const { itemId } = deletingItem;
+    const url = removeFromPo
+      ? `/orders/${orderId}/items/${itemId}?removeFromPo=true`
+      : `/orders/${orderId}/items/${itemId}`;
+    apiFetch(url, { method: "DELETE" }).then(() => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: "Item removed" });
+      setDeletingItem(null);
+    }).catch((e: Error) => {
+      toast({ title: "Failed to remove item", description: e.message, variant: "destructive" });
+      setDeletingItem(null);
+    });
   };
 
   const postToXeroMutation = useMutation({
@@ -1989,12 +2003,33 @@ export default function OrderDetail() {
                                   <Pencil className="w-3 h-3" />
                                 </button>
                               )}
-                              {(orderItem as { purchaseRequired?: boolean }).purchaseRequired && (
-                                <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1 font-normal">
-                                  <ShoppingBag className="w-3 h-3" />
-                                  Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
-                                </Badge>
-                              )}
+                              {(orderItem as { purchaseRequired?: boolean }).purchaseRequired && (() => {
+                                const itemPoInfo: Array<{ poNumber: string; status: string }> = (orderItem as any).poInfo ?? [];
+                                const badge = (
+                                  <Badge className="text-xs bg-amber-100 text-amber-800 border-amber-300 gap-1 font-normal cursor-default">
+                                    <ShoppingBag className="w-3 h-3" />
+                                    Purchase × {(orderItem as { purchaseQuantity?: number }).purchaseQuantity ?? 0}
+                                  </Badge>
+                                );
+                                if (itemPoInfo.length === 0) return badge;
+                                return (
+                                  <TooltipProvider delayDuration={200}>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+                                      <TooltipContent className="text-xs space-y-1 max-w-[200px]">
+                                        <p className="font-medium text-foreground">On purchase order{itemPoInfo.length > 1 ? "s" : ""}:</p>
+                                        {itemPoInfo.map(p => (
+                                          <div key={p.poNumber} className="flex items-center gap-1.5">
+                                            <ClipboardList className="w-3 h-3 shrink-0" />
+                                            <span className="font-mono">{p.poNumber}</span>
+                                            <span className="text-muted-foreground capitalize">({p.status})</span>
+                                          </div>
+                                        ))}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                );
+                              })()}
                               {!(orderItem as any).purchaseRequired && (
                                 (orderItem as any).stockStatus === 'allocated' ||
                                 ((orderItem as any).stockStatus == null && !((orderItem as any).isService) && !((orderItem as any).isBundleHeader) && ((orderItem as any).poNumbers as string[] | undefined)?.length === 0)
@@ -4001,6 +4036,66 @@ export default function OrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete item — smart PO-aware dialog */}
+      {(() => {
+        if (!deletingItem) return null;
+        const { poInfo } = deletingItem;
+        const draftPOs = poInfo.filter(p => p.status === "draft");
+        const orderedPOs = poInfo.filter(p => p.status !== "draft");
+        const hasPoLink = poInfo.length > 0;
+        return (
+          <AlertDialog open onOpenChange={open => { if (!open) setDeletingItem(null); }}>
+            <AlertDialogContent className="sm:max-w-[420px]">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove item from order?</AlertDialogTitle>
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2 text-sm">
+                    {!hasPoLink && (
+                      <p>This will permanently remove the item from the order.</p>
+                    )}
+                    {draftPOs.length > 0 && (
+                      <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-1">
+                        <p className="font-medium text-amber-800">This item is on a draft purchase order:</p>
+                        {draftPOs.map(p => (
+                          <p key={p.poNumber} className="font-mono text-amber-700 text-xs">{p.poNumber}</p>
+                        ))}
+                        <p className="text-amber-700 mt-1">Do you also want to remove it from the PO?</p>
+                      </div>
+                    )}
+                    {orderedPOs.length > 0 && (
+                      <div className="rounded-md border border-violet-200 bg-violet-50 p-3 space-y-1">
+                        <p className="font-medium text-violet-800">This item has already been ordered:</p>
+                        {orderedPOs.map(p => (
+                          <p key={p.poNumber} className="font-mono text-violet-700 text-xs">{p.poNumber} <span className="capitalize">({p.status})</span></p>
+                        ))}
+                        <p className="text-violet-700 mt-1">The ordered stock will be received into stock when the PO is delivered.</p>
+                      </div>
+                    )}
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter className="flex-wrap gap-2">
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                {draftPOs.length > 0 ? (
+                  <>
+                    <Button variant="outline" onClick={() => confirmDeleteItem(false)}>
+                      Remove item only
+                    </Button>
+                    <Button variant="destructive" onClick={() => confirmDeleteItem(true)}>
+                      Remove item &amp; from PO
+                    </Button>
+                  </>
+                ) : (
+                  <AlertDialogAction onClick={() => confirmDeleteItem(false)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                    Remove item
+                  </AlertDialogAction>
+                )}
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        );
+      })()}
 
       {/* Edit size / colour */}
       <Dialog open={!!editingSizeColour} onOpenChange={open => { if (!open) setEditingSizeColour(null); }}>
