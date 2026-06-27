@@ -523,18 +523,12 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     finishName: r.customerFinishName ?? r.finishName,
   }));
 
-  // Block zero-value invoices before calling Xero.
-  // Xero rejects them but returns a misleading "contact archived" error.
+  // Determine if this is a zero-value invoice — it will be posted as VOIDED (archived) in Xero.
   const lineTotal = items.reduce(
     (sum, item) => sum + parseFloat(item.unitPrice as string) * ((item.quantity as number) ?? 1),
     0
   ) + parseFloat(String(order.carriageAmount ?? 0));
-  if (lineTotal <= 0) {
-    throw new Error(
-      "This invoice has a £0.00 total and cannot be posted to Xero. " +
-      "Please check the line item prices on the order and ensure at least one item has a non-zero price."
-    );
-  }
+  const isZeroValue = lineTotal <= 0;
 
   // Get customer's xeroContactId and zero-VAT flag
   let xeroContactId: string | null = null;
@@ -676,7 +670,7 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     Reference: order.orderNumber,
     DateString: invoiceDateStr,
     DueDateString: dueDateStr,
-    Status: "AUTHORISED",
+    Status: isZeroValue ? "VOIDED" : "AUTHORISED",
     LineAmountTypes: "Exclusive",
     LineItems: lineItems,
   };
