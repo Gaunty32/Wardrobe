@@ -4,7 +4,7 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe
+  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -862,6 +862,11 @@ export default function Settings() {
   });
 
   // GBP status + locations
+  const { data: gbpRedirectUriData } = useQuery<{ redirectUri: string }>({
+    queryKey: ["gbp-redirect-uri"],
+    queryFn: () => apiFetch("/gbp/redirect-uri"),
+  });
+
   const { data: gbpStatus, refetch: refetchGbpStatus } = useQuery<{ connected: boolean; locationName?: string; locationTitle?: string }>({
     queryKey: ["gbp-status"],
     queryFn: () => apiFetch("/gbp/status"),
@@ -1778,9 +1783,28 @@ export default function Settings() {
                       <Label>Google Cloud Client Secret</Label>
                       <Input type="password" value={gbpClientSecret} onChange={e => setGbpClientSecret(e.target.value)} placeholder="GOCSPX-…" />
                       <p className="text-xs text-muted-foreground">
-                        Create these in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="underline">Google Cloud Console</a> → APIs &amp; Services → Credentials → Create OAuth 2.0 Client ID (Web application). Enable the <strong>Google My Business API</strong>. Add <code className="bg-muted px-1 rounded">/api/gbp/callback</code> as an authorised redirect URI.
+                        Create these in <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer" className="underline">Google Cloud Console</a> → APIs &amp; Services → Credentials → Create OAuth 2.0 Client ID (Web application). Enable the <strong>Google My Business API</strong>. Add the redirect URI below as an authorised redirect URI.
                       </p>
                     </div>
+                    {gbpRedirectUriData?.redirectUri && (
+                      <div className="grid gap-2">
+                        <Label>Authorised Redirect URI <span className="text-muted-foreground font-normal">(add this exactly in Google Cloud Console)</span></Label>
+                        <div className="flex items-center gap-2">
+                          <code className="flex-1 bg-muted text-xs px-3 py-2 rounded border border-border break-all select-all">
+                            {gbpRedirectUriData.redirectUri}
+                          </code>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="shrink-0 gap-1"
+                            onClick={() => { navigator.clipboard.writeText(gbpRedirectUriData.redirectUri); toast({ title: "Copied to clipboard" }); }}
+                          >
+                            <Copy className="w-3 h-3" /> Copy
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex gap-3">
                       <Button
                         variant="outline"

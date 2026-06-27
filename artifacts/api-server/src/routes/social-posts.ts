@@ -133,6 +133,10 @@ router.post("/gbp/credentials", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+router.get("/gbp/redirect-uri", (req, res): void => {
+  res.json({ redirectUri: autoGbpRedirectUri(req) });
+});
+
 router.get("/gbp/connect", async (req, res): Promise<void> => {
   try {
     const redirectUri = autoGbpRedirectUri(req);
