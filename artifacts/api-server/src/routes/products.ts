@@ -431,10 +431,47 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
 
   // For variable products: WooCommerce ignores the parent regular_price — the displayed
   // price comes from each variation. Push to every variation so the price range updates.
-  const varRows = await db.execute(sql`
-    SELECT woo_variation_id FROM product_variants
+  let varRows = await db.execute(sql`
+    SELECT id, sku, woo_variation_id FROM product_variants
     WHERE product_id = ${id} AND woo_variation_id IS NOT NULL
   `).then(r => (r.rows ?? r) as any[]);
+
+  // If no variation IDs are stored locally, discover them from WooCommerce by SKU and save them
+  if (varRows.length === 0) {
+    try {
+      let page = 1;
+      const allWooVars: Array<{ id: number; sku: string }> = [];
+      while (true) {
+        const listUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}/variations`);
+        listUrl.searchParams.set("consumer_key", settings.ck);
+        listUrl.searchParams.set("consumer_secret", settings.cs);
+        listUrl.searchParams.set("per_page", "100");
+        listUrl.searchParams.set("page", String(page));
+        const listRes = await fetch(listUrl.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(15_000) });
+        if (!listRes.ok) break;
+        const batch = await listRes.json() as Array<{ id: number; sku: string }>;
+        if (batch.length === 0) break;
+        allWooVars.push(...batch);
+        if (batch.length < 100) break;
+        page++;
+      }
+      // Match by SKU and save woo_variation_id back into the local DB
+      const localVars = await db.execute(sql`
+        SELECT id, sku FROM product_variants WHERE product_id = ${id}
+      `).then(r => (r.rows ?? r) as any[]);
+      for (const lv of localVars) {
+        const match = allWooVars.find((wv) => wv.sku && lv.sku && wv.sku === lv.sku);
+        if (match) {
+          await db.execute(sql`UPDATE product_variants SET woo_variation_id = ${String(match.id)} WHERE id = ${lv.id}`);
+        }
+      }
+      // Reload with the newly saved IDs
+      varRows = await db.execute(sql`
+        SELECT id, sku, woo_variation_id FROM product_variants
+        WHERE product_id = ${id} AND woo_variation_id IS NOT NULL
+      `).then(r => (r.rows ?? r) as any[]);
+    } catch { /* fall through — will push zero variations */ }
+  }
 
   let variationsPushed = 0;
   if (varRows.length > 0) {
