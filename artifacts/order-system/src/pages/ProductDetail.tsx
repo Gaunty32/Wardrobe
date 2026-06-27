@@ -803,7 +803,19 @@ export default function ProductDetail() {
   const pushWooStatusMut = useMutation({
     mutationFn: ({ status, unitPrice }: { status: "draft" | "publish"; unitPrice?: number }) =>
       apiFetch(`/products/${productId}/push-woo-status`, { method: "POST", body: JSON.stringify({ status, unitPrice }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) }),
   });
+
+  // Auto-refresh WooCommerce status from WooCommerce when it's unknown
+  const wooRefreshMut = useMutation({
+    mutationFn: () => apiFetch<any>(`/products/${productId}/woo-refresh`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) }),
+  });
+  useEffect(() => {
+    if ((product as any)?.wooCommerceId && !(product as any)?.wooStatus) {
+      wooRefreshMut.mutate();
+    }
+  }, [(product as any)?.wooCommerceId, (product as any)?.wooStatus]);
 
   const pushWooPriceMut = useMutation({
     mutationFn: (newPrice: number) =>
@@ -814,7 +826,17 @@ export default function ProductDetail() {
       setDetailsDirty(false);
       if (data?.wooPushed) {
         const varsPushed = data?.variationsPushed ?? 0;
-        toast({ title: varsPushed > 0 ? `Price pushed to WooCommerce (${varsPushed} variation${varsPushed !== 1 ? "s" : ""} updated)` : "Price pushed to WooCommerce" });
+        const varsTotal = data?.variationsTotal ?? 0;
+        const errors: string[] = data?.errors ?? [];
+        if (varsPushed > 0) {
+          toast({ title: `Price pushed to WooCommerce (${varsPushed}/${varsTotal > 0 ? varsTotal : varsPushed} variation${varsPushed !== 1 ? "s" : ""} updated)` });
+        } else if (errors.length > 0) {
+          toast({ title: "WooCommerce price push failed", description: errors[0].slice(0, 200), variant: "destructive" });
+        } else if (varsTotal === 0) {
+          toast({ title: "Price pushed to parent product", description: "No variations found in WooCommerce to update." });
+        } else {
+          toast({ title: "Price push: 0 variations updated", description: "All variation updates failed — check WooCommerce API key permissions.", variant: "destructive" });
+        }
       } else {
         toast({ title: "Price saved locally", description: data?.message ?? "No WooCommerce link found" });
       }

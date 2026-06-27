@@ -534,6 +534,58 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
   res.json({ ok: true, wooPushed: true, newPrice, variationsPushed, variationsTotal: varRows.length, errors: varErrors.length ? varErrors : undefined });
 });
 
+// ── Refresh WooCommerce status + price from live WooCommerce ─────────────────
+router.get("/products/:id/woo-refresh", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { id } = parsed.data;
+
+  const [product] = await db.execute(sql`SELECT woo_commerce_id, sku FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
+  const settings = await getWooSettings();
+  if (!settings) { res.json({ ok: false, message: "WooCommerce not configured" }); return; }
+
+  let wooId = product?.woo_commerce_id;
+
+  // Auto-discover if no woo_commerce_id yet
+  if (!wooId && product?.sku) {
+    const wooBase0 = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+    const searchUrl = new URL(`${wooBase0}/wp-json/wc/v3/products`);
+    searchUrl.searchParams.set("consumer_key", settings.ck);
+    searchUrl.searchParams.set("consumer_secret", settings.cs);
+    searchUrl.searchParams.set("sku", product.sku);
+    searchUrl.searchParams.set("per_page", "5");
+    const sr = await fetch(searchUrl.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+    if (sr?.ok) {
+      const hits = await sr.json() as Array<{ id: number; sku: string }>;
+      const match = hits.find((h) => h.sku === product.sku);
+      if (match) {
+        wooId = String(match.id);
+        await db.execute(sql`UPDATE products SET woo_commerce_id = ${wooId} WHERE id = ${id}`);
+      }
+    }
+  }
+
+  if (!wooId) { res.json({ ok: false, message: "Product not found in WooCommerce" }); return; }
+
+  const wooBase = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+  const url = new URL(`${wooBase}/wp-json/wc/v3/products/${wooId}`);
+  url.searchParams.set("consumer_key", settings.ck);
+  url.searchParams.set("consumer_secret", settings.cs);
+
+  const r = await fetch(url.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  if (!r?.ok) {
+    const txt = await r?.text().catch(() => "") ?? "";
+    res.json({ ok: false, message: `WooCommerce returned ${r?.status ?? "error"}: ${txt.slice(0, 200)}` });
+    return;
+  }
+
+  const wooProduct = await r.json() as { id: number; status: string; regular_price: string; price: string };
+  // Save status back to local DB
+  await db.execute(sql`UPDATE products SET woo_status = ${wooProduct.status}, woo_commerce_id = ${String(wooProduct.id)}, updated_at = NOW() WHERE id = ${id}`);
+
+  res.json({ ok: true, status: wooProduct.status, regularPrice: wooProduct.regular_price || wooProduct.price, wooId: wooProduct.id });
+});
+
 // ── Push WooCommerce publish status (draft ↔ publish) ──────────────────────
 router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
