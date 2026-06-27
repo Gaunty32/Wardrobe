@@ -809,7 +809,10 @@ export default function ProductDetail() {
   // Auto-refresh WooCommerce status from WooCommerce when it's unknown
   const wooRefreshMut = useMutation({
     mutationFn: () => apiFetch<any>(`/products/${productId}/woo-refresh`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) }),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
+      if (data?.status) toast({ title: `WooCommerce status: ${data.status}` });
+    },
   });
   useEffect(() => {
     if ((product as any)?.wooCommerceId && !(product as any)?.wooStatus) {
@@ -1478,24 +1481,36 @@ export default function ProductDetail() {
                         <Cloud className="w-3.5 h-3.5 text-blue-500" /> WooCommerce Status
                       </h4>
                       <div className="flex items-center gap-3 flex-wrap">
-                        <span className={cn(
-                          "text-xs font-semibold px-2.5 py-1 rounded-full border",
-                          (product as any).wooStatus === "publish" ? "bg-green-50 text-green-700 border-green-200" :
-                          (product as any).wooStatus === "draft"   ? "bg-amber-50 text-amber-700 border-amber-200" :
-                          "bg-muted text-muted-foreground border-border"
-                        )}>
-                          {(product as any).wooStatus === "publish" ? "● Published" :
-                           (product as any).wooStatus === "draft"   ? "● Draft" :
-                           "● Unknown"}
-                        </span>
+                        {(() => {
+                          const ws = (product as any).wooStatus as string | null;
+                          const label = ws === "publish" ? "● Published" : ws === "draft" ? "● Draft" : ws === "private" ? "● Private" : ws === "pending" ? "● Pending Review" : ws === "trash" ? "● Trashed" : ws ? `● ${ws.charAt(0).toUpperCase() + ws.slice(1)}` : "● Unknown";
+                          const cls = ws === "publish" ? "bg-green-50 text-green-700 border-green-200" : ws === "draft" ? "bg-amber-50 text-amber-700 border-amber-200" : ws === "private" ? "bg-purple-50 text-purple-700 border-purple-200" : ws === "pending" ? "bg-blue-50 text-blue-700 border-blue-200" : ws === "trash" ? "bg-red-50 text-red-700 border-red-200" : "bg-muted text-muted-foreground border-border";
+                          return <span className={cn("text-xs font-semibold px-2.5 py-1 rounded-full border", cls)}>{label}</span>;
+                        })()}
                         <p className="text-xs text-muted-foreground flex-1">
                           {(product as any).wooStatus === "draft"
                             ? "Hidden from your store. Publish when ready."
                             : (product as any).wooStatus === "publish"
                             ? "Live on your store. Set to draft to hide it."
-                            : "Status not yet recorded — use the buttons to set it."}
+                            : (product as any).wooStatus === "private"
+                            ? "Visible only to logged-in admins. Publish to make it public."
+                            : (product as any).wooStatus === "pending"
+                            ? "Awaiting review in WooCommerce before going live."
+                            : (product as any).wooStatus
+                            ? `WooCommerce reports status "${(product as any).wooStatus}" — use Publish or Set to Draft to change it.`
+                            : "Status not yet retrieved — click Refresh to fetch from WooCommerce."}
                         </p>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => wooRefreshMut.mutate()}
+                            disabled={wooRefreshMut.isPending}
+                            className="h-7 text-xs border-border text-muted-foreground hover:bg-muted"
+                          >
+                            {wooRefreshMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                            Refresh
+                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
