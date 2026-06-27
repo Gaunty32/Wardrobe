@@ -675,38 +675,70 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     LineItems: lineItems,
   };
 
-  const res = await xeroFetch("/Invoices", { method: "POST", body: JSON.stringify({ Invoices: [invoice] }) });
-  if (!res.ok) {
-    const text = await res.text();
-    console.error(`[xero] POST /Invoices HTTP ${res.status} raw body:`, text.slice(0, 1000));
-    let errorMsg = `Xero invoice creation failed (HTTP ${res.status})`;
+  /** Parse a Xero error response into a human-readable message string. */
+  function parseXeroError(status: number, text: string): string {
+    let msg = `Xero invoice creation failed (HTTP ${status})`;
     try {
       const body = JSON.parse(text);
-      // 1. Xero 400: body.Elements[0].ValidationErrors (most specific)
       const element = body.Elements?.[0];
       const elemErrors: string[] = (element?.ValidationErrors ?? []).map((e: any) => e.Message).filter(Boolean);
-      // 2. body.Invoices[0].ValidationErrors (200-with-errors path)
       const inv = body.Invoices?.[0];
       const invErrors: string[] = (inv?.ValidationErrors ?? []).map((e: any) => e.Message).filter(Boolean);
-      // 3. Line item errors
       const lineErrors: string[] = [
         ...(inv?.LineItems ?? []),
         ...(element?.LineItems ?? []),
       ].flatMap((li: any) => (li.ValidationErrors ?? []).map((e: any) => e.Message)).filter(Boolean);
       const specific = [...elemErrors, ...invErrors, ...lineErrors];
       if (specific.length) {
-        errorMsg = specific.join("; ");
+        msg = specific.join("; ");
       } else if (body.Detail && body.Detail !== "A validation exception occurred") {
-        errorMsg = body.Detail;
+        msg = body.Detail;
       } else if (body.Message && body.Message !== "A validation exception occurred") {
-        errorMsg = body.Message;
+        msg = body.Message;
       } else if (body.Detail || body.Message) {
-        errorMsg = body.Detail ?? body.Message;
+        msg = body.Detail ?? body.Message;
       }
     } catch {
-      errorMsg = `Xero error (HTTP ${res.status}): ${text.slice(0, 300)}`;
+      msg = `Xero error (HTTP ${status}): ${text.slice(0, 300)}`;
     }
-    throw new Error(errorMsg);
+    return msg;
+  }
+
+  async function postInvoicePayload(): Promise<Response> {
+    return xeroFetch("/Invoices", { method: "POST", body: JSON.stringify({ Invoices: [invoice] }) });
+  }
+
+  let res = await postInvoicePayload();
+
+  // Auto-unarchive: Xero rejects invoice creation if the contact is archived.
+  // Detect this, unarchive the contact, then retry once.
+  if (!res.ok) {
+    const rawText = await res.text();
+    console.error(`[xero] POST /Invoices HTTP ${res.status} raw body:`, rawText.slice(0, 1000));
+    const isArchivedError = rawText.toLowerCase().includes("archived");
+    if (isArchivedError && xeroContactId) {
+      console.log(`[xero] Contact ${xeroContactId} is archived — attempting to unarchive…`);
+      try {
+        const unarchiveRes = await xeroFetch(`/Contacts/${xeroContactId}`, {
+          method: "POST",
+          body: JSON.stringify({ ContactStatus: "ACTIVE" }),
+        });
+        if (unarchiveRes.ok) {
+          console.log(`[xero] Contact ${xeroContactId} unarchived — retrying invoice creation`);
+          res = await postInvoicePayload();
+        } else {
+          const unarchiveText = await unarchiveRes.text().catch(() => unarchiveRes.status.toString());
+          console.error(`[xero] Failed to unarchive contact: ${unarchiveText.slice(0, 300)}`);
+        }
+      } catch (e) {
+        console.error("[xero] Unarchive attempt threw:", e);
+      }
+    }
+
+    if (!res.ok) {
+      const text = rawText ?? await res.text().catch(() => res.status.toString());
+      throw new Error(parseXeroError(res.status, text));
+    }
   }
 
   const data = await res.json() as { Invoices: Array<{ InvoiceID: string; Status: string; InvoiceNumber: string; ValidationErrors?: Array<{ Message: string }> }> };
