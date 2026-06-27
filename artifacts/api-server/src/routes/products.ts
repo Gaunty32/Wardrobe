@@ -375,15 +375,37 @@ router.post("/products/:id/push-woo-price", async (req, res): Promise<void> => {
   `);
 
   // Push to WooCommerce if configured
-  const [product] = await db.execute(sql`SELECT woo_commerce_id FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
-  if (!product?.woo_commerce_id) {
-    res.json({ ok: true, wooPushed: false, message: "Price updated locally (no WooCommerce ID)" });
-    return;
-  }
+  let [product] = await db.execute(sql`SELECT woo_commerce_id, sku FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
 
   const settings = await getWooSettings();
   if (!settings) {
     res.json({ ok: true, wooPushed: false, message: "Price updated locally (WooCommerce not configured)" });
+    return;
+  }
+
+  // Auto-discover WooCommerce ID by SKU if not yet linked
+  if (!product?.woo_commerce_id && product?.sku) {
+    try {
+      const wooBase0 = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+      const searchUrl = new URL(`${wooBase0}/wp-json/wc/v3/products`);
+      searchUrl.searchParams.set("consumer_key", settings.ck);
+      searchUrl.searchParams.set("consumer_secret", settings.cs);
+      searchUrl.searchParams.set("sku", product.sku);
+      searchUrl.searchParams.set("per_page", "5");
+      const searchRes = await fetch(searchUrl.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+      if (searchRes.ok) {
+        const hits = await searchRes.json() as Array<{ id: number; sku: string }>;
+        const match = hits.find((h) => h.sku === product.sku);
+        if (match) {
+          await db.execute(sql`UPDATE products SET woo_commerce_id = ${String(match.id)} WHERE id = ${id}`);
+          product = { ...product, woo_commerce_id: String(match.id) };
+        }
+      }
+    } catch { /* fall through — will respond with wooPushed: false below */ }
+  }
+
+  if (!product?.woo_commerce_id) {
+    res.json({ ok: true, wooPushed: false, message: "Price updated locally (product not found in WooCommerce — publish it first)" });
     return;
   }
 
@@ -450,15 +472,37 @@ router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => 
 
   await db.execute(sql`UPDATE products SET woo_status = ${status} WHERE id = ${id}`);
 
-  const [product] = await db.execute(sql`SELECT woo_commerce_id, unit_price FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
-  if (!product?.woo_commerce_id) {
-    res.json({ ok: true, wooPushed: false, status, message: "Status saved locally (no WooCommerce ID)" });
-    return;
-  }
+  let [product] = await db.execute(sql`SELECT woo_commerce_id, unit_price, sku FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
 
   const settings = await getWooSettings();
   if (!settings) {
     res.json({ ok: true, wooPushed: false, status, message: "Status saved locally (WooCommerce not configured)" });
+    return;
+  }
+
+  // Auto-discover WooCommerce ID by SKU if not yet linked
+  if (!product?.woo_commerce_id && product?.sku) {
+    try {
+      const wooBase0 = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+      const searchUrl = new URL(`${wooBase0}/wp-json/wc/v3/products`);
+      searchUrl.searchParams.set("consumer_key", settings.ck);
+      searchUrl.searchParams.set("consumer_secret", settings.cs);
+      searchUrl.searchParams.set("sku", product.sku);
+      searchUrl.searchParams.set("per_page", "5");
+      const searchRes = await fetch(searchUrl.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) });
+      if (searchRes.ok) {
+        const hits = await searchRes.json() as Array<{ id: number; sku: string }>;
+        const match = hits.find((h) => h.sku === product.sku);
+        if (match) {
+          await db.execute(sql`UPDATE products SET woo_commerce_id = ${String(match.id)} WHERE id = ${id}`);
+          product = { ...product, woo_commerce_id: String(match.id) };
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  if (!product?.woo_commerce_id) {
+    res.json({ ok: true, wooPushed: false, status, message: "Status saved locally (product not found in WooCommerce — publish it first)" });
     return;
   }
 

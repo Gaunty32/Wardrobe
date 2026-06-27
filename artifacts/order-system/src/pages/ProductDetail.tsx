@@ -812,8 +812,12 @@ export default function ProductDetail() {
       qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
       qc.invalidateQueries({ queryKey: getListProductsQueryKey() });
       setDetailsDirty(false);
-      const varsPushed = data?.variationsPushed ?? 0;
-      toast({ title: varsPushed > 0 ? `Price pushed to WooCommerce (${varsPushed} variation${varsPushed !== 1 ? "s" : ""} updated)` : "Price saved locally (no WooCommerce link)" });
+      if (data?.wooPushed) {
+        const varsPushed = data?.variationsPushed ?? 0;
+        toast({ title: varsPushed > 0 ? `Price pushed to WooCommerce (${varsPushed} variation${varsPushed !== 1 ? "s" : ""} updated)` : "Price pushed to WooCommerce" });
+      } else {
+        toast({ title: "Price saved locally", description: data?.message ?? "No WooCommerce link found" });
+      }
     },
     onError: (err: any) => toast({ title: err.message || "Failed to push price", variant: "destructive" }),
   });
