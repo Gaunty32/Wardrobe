@@ -521,8 +521,8 @@ function OrderRow({
               </Button>
             )}
             {showPostXero && total <= 0 && (
-              <span className="text-xs text-amber-600 flex items-center gap-1" title="This is a £0.00 invoice — it will be posted to Xero as voided (archived)">
-                <AlertTriangle className="w-3 h-3" />£0 — will archive
+              <span className="text-xs text-amber-600 flex items-center gap-1" title="This is a £0.00 invoice — it will be posted to Xero as a draft">
+                <AlertTriangle className="w-3 h-3" />£0 — posts as draft
               </span>
             )}
             {showPostXero && (

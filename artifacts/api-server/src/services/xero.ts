@@ -670,7 +670,7 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     Reference: order.orderNumber,
     DateString: invoiceDateStr,
     DueDateString: dueDateStr,
-    Status: isZeroValue ? "VOIDED" : "AUTHORISED",
+    Status: isZeroValue ? "DRAFT" : "AUTHORISED",
     LineAmountTypes: "Exclusive",
     LineItems: lineItems,
   };
