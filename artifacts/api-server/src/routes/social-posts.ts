@@ -183,6 +183,34 @@ router.post("/gbp/disconnect", async (_req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+// ── Send a test post to verify connections ────────────────────────────────────
+
+router.post("/social-posts/test", async (req, res): Promise<void> => {
+  const fbSettings = await getFbSettings();
+  const gbpStatus = await getGbpStatus();
+
+  const testMessage = `🧪 Test post from Select Branding Solutions — ${new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}. If you can see this, the connection is working!`;
+
+  const results: Record<string, any> = {};
+
+  // Facebook
+  if (!fbSettings) {
+    results.facebook = { ok: false, skipped: true, error: "Not configured — add Page ID and Access Token in Settings" };
+  } else {
+    results.facebook = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, testMessage, null);
+  }
+
+  // Google Business Profile
+  const token = await getGbpAccessToken();
+  if (!token || !gbpStatus.locationName) {
+    results.google = { ok: false, skipped: true, error: "Not connected — connect Google Business Profile in Settings" };
+  } else {
+    results.google = await publishGbpPost(gbpStatus.locationName, token, testMessage, null);
+  }
+
+  res.json(results);
+});
+
 // ── List posts for a product ──────────────────────────────────────────────────
 
 router.get("/products/:productId/social-posts", async (req, res): Promise<void> => {

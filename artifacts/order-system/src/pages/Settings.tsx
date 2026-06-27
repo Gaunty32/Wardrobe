@@ -813,6 +813,10 @@ export default function Settings() {
   const [savingGbp, setSavingGbp] = useState(false);
   const [gbpSelectedLocation, setGbpSelectedLocation] = useState<{ name: string; title: string } | null>(null);
 
+  // Social test post
+  const [testingPost, setTestingPost] = useState(false);
+  const [testPostResults, setTestPostResults] = useState<Record<string, { ok: boolean; skipped?: boolean; error?: string; postId?: string; postName?: string }> | null>(null);
+
   // Email / SMTP fields
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
@@ -1832,6 +1836,72 @@ export default function Settings() {
                   </div>
                 )}
               </div>
+
+              {/* Test post card */}
+              <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm space-y-4">
+                <div>
+                  <h2 className="font-semibold text-base flex items-center gap-2">
+                    <Send className="w-4 h-4 text-violet-600" /> Test Connections
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Send a live test post to Facebook and/or Google Business right now to confirm the connections are working.
+                  </p>
+                </div>
+
+                <Button
+                  onClick={async () => {
+                    setTestingPost(true);
+                    setTestPostResults(null);
+                    try {
+                      const data = await apiFetch<any>("/social-posts/test", { method: "POST" });
+                      setTestPostResults(data);
+                    } catch (e: any) {
+                      toast({ title: "Test failed", description: e.message ?? "Unknown error", variant: "destructive" });
+                    } finally {
+                      setTestingPost(false);
+                    }
+                  }}
+                  disabled={testingPost}
+                  className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                >
+                  {testingPost ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {testingPost ? "Sending test post…" : "Send test post"}
+                </Button>
+
+                {testPostResults && (
+                  <div className="space-y-2">
+                    {/* Facebook result */}
+                    {testPostResults.facebook && (
+                      <div className={`flex items-start gap-2 rounded-md px-3 py-2 text-sm ${testPostResults.facebook.ok ? "bg-green-50 border border-green-200 text-green-800" : testPostResults.facebook.skipped ? "bg-slate-50 border border-slate-200 text-slate-600" : "bg-red-50 border border-red-200 text-red-800"}`}>
+                        <Share2 className="w-4 h-4 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-semibold">Facebook: </span>
+                          {testPostResults.facebook.ok
+                            ? `✅ Posted successfully${testPostResults.facebook.postId ? ` (ID: ${testPostResults.facebook.postId})` : ""}`
+                            : testPostResults.facebook.skipped
+                              ? `⚠️ Skipped — ${testPostResults.facebook.error}`
+                              : `❌ Failed — ${testPostResults.facebook.error}`}
+                        </div>
+                      </div>
+                    )}
+                    {/* Google result */}
+                    {testPostResults.google && (
+                      <div className={`flex items-start gap-2 rounded-md px-3 py-2 text-sm ${testPostResults.google.ok ? "bg-green-50 border border-green-200 text-green-800" : testPostResults.google.skipped ? "bg-slate-50 border border-slate-200 text-slate-600" : "bg-red-50 border border-red-200 text-red-800"}`}>
+                        <Globe className="w-4 h-4 mt-0.5 shrink-0" />
+                        <div>
+                          <span className="font-semibold">Google Business: </span>
+                          {testPostResults.google.ok
+                            ? `✅ Posted successfully${testPostResults.google.postName ? ` (${testPostResults.google.postName})` : ""}`
+                            : testPostResults.google.skipped
+                              ? `⚠️ Skipped — ${testPostResults.google.error}`
+                              : `❌ Failed — ${testPostResults.google.error}`}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
             </div>
           </TabsContent>
 
