@@ -228,6 +228,13 @@ const SHIPPING_SERVICES = [
   "Courier",
 ];
 
+function isDpd(v: string) { return v === "DPD" || v === "DPD (Free)" || v === "DPD (Chargeable)"; }
+function dpdDisplayValue(v: string) { return isDpd(v) ? "DPD" : v; }
+function dpdChargeType(v: string): "Free" | "Chargeable" {
+  if (v === "DPD (Free)") return "Free";
+  return "Chargeable";
+}
+
 function CustomerTile({ customer, onEdit, onDelete, onClick }: {
   customer: Customer;
   onEdit: () => void;
@@ -770,8 +777,12 @@ export default function Customers() {
               <div className="grid gap-2">
                 <Label htmlFor="defaultShippingService">Default Shipping Service</Label>
                 <Select
-                  value={formData.defaultShippingService || "none"}
-                  onValueChange={(v) => setFormData({...formData, defaultShippingService: v === "none" ? "" : v})}
+                  value={dpdDisplayValue(formData.defaultShippingService) || "none"}
+                  onValueChange={(v) => {
+                    if (v === "none") { setFormData({...formData, defaultShippingService: ""}); return; }
+                    if (v === "DPD") { setFormData({...formData, defaultShippingService: "DPD (Chargeable)"}); return; }
+                    setFormData({...formData, defaultShippingService: v});
+                  }}
                 >
                   <SelectTrigger id="defaultShippingService" className={!formData.defaultShippingService ? "border-destructive/60" : ""}>
                     <SelectValue placeholder="Select a carrier..." />
@@ -783,6 +794,24 @@ export default function Customers() {
                     ))}
                   </SelectContent>
                 </Select>
+                {isDpd(formData.defaultShippingService) && (
+                  <div className="flex gap-2 mt-1">
+                    {(["Free", "Chargeable"] as const).map(type => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setFormData({...formData, defaultShippingService: `DPD (${type})`})}
+                        className={`flex-1 py-1.5 px-3 rounded-md border text-sm font-medium transition-colors ${
+                          dpdChargeType(formData.defaultShippingService) === type
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-background border-border hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">Pre-fills the shipping service when creating orders for this customer.</p>
               </div>
             </div>
