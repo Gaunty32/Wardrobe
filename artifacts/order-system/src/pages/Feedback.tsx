@@ -30,6 +30,8 @@ interface FeedbackItem {
   source: "staff" | "portal";
   status: "open" | "in_progress" | "resolved";
   admin_note: string;
+  note_by: string | null;
+  note_at: string | null;
   created_at: string;
 }
 
@@ -62,8 +64,10 @@ function FeedbackCard({ item }: { item: FeedbackItem }) {
   });
 
   const saveNote = useMutation({
-    mutationFn: () =>
-      apiFetch(`/feedback/${item.id}`, { method: "PATCH", body: JSON.stringify({ admin_note: noteDraft }) }),
+    mutationFn: () => {
+      const actor = localStorage.getItem("sbs_actor_name") || "";
+      return apiFetch(`/feedback/${item.id}`, { method: "PATCH", body: JSON.stringify({ admin_note: noteDraft, note_by: actor }) });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["feedback"] }),
   });
 
@@ -120,9 +124,17 @@ function FeedbackCard({ item }: { item: FeedbackItem }) {
 
           {/* Existing note (collapsed preview) */}
           {hasNote && !noteOpen && (
-            <div className="mt-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded px-3 py-2 line-clamp-2">
-              <span className="font-semibold text-blue-700 mr-1">Note:</span>
-              {item.admin_note}
+            <div className="mt-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded px-3 py-2">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="font-semibold text-blue-700">Note</span>
+                {item.note_by && (
+                  <span className="text-blue-500">by {item.note_by}</span>
+                )}
+                {item.note_at && (
+                  <span className="text-blue-400">· {fmtDate(item.note_at)}</span>
+                )}
+              </div>
+              <p className="line-clamp-2">{item.admin_note}</p>
             </div>
           )}
 
