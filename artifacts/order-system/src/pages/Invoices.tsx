@@ -217,6 +217,7 @@ function OrderRow({
   const crossMonth = isCrossMonth(order.orderDate, order.invoiceDate);
   const [isPaid, setIsPaid] = useState(!!order.paidAt);
   const [loadingEmailPreview, setLoadingEmailPreview] = useState(false);
+  const [invoiceEmailTo, setInvoiceEmailTo] = useState("");
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -260,7 +261,7 @@ function OrderRow({
   });
 
   const sendEmail = useMutation({
-    mutationFn: () => apiFetch<{ ok: boolean; sentTo: string; xeroInvoiceId?: string }>(`/invoices/${order.id}/send-email`, { method: "POST" }),
+    mutationFn: () => apiFetch<{ ok: boolean; sentTo: string; xeroInvoiceId?: string }>(`/invoices/${order.id}/send-email`, { method: "POST", body: JSON.stringify(invoiceEmailTo.trim() ? { toEmail: invoiceEmailTo.trim() } : {}) }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       setConfirmOpen(false);
@@ -563,6 +564,19 @@ function OrderRow({
                   No tracking number — add one for a better customer experience
                 </div>
               )}
+            </div>
+
+            {/* Email override */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Send To <span className="text-muted-foreground font-normal">(optional — overrides customer email on file)</span></label>
+              <input
+                type="email"
+                placeholder={order.invoiceEmailSentTo ?? "customer@example.com"}
+                value={invoiceEmailTo}
+                onChange={e => setInvoiceEmailTo(e.target.value)}
+                className="flex h-8 w-full rounded-md border border-input bg-background px-2 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground">Leave blank to use the email address on the customer's account.</p>
             </div>
 
             {/* Paid toggle */}

@@ -2784,10 +2784,11 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
   return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat };
 }
 
-export async function sendInvoiceEmail(orderId: number): Promise<{ sentTo: string }> {
+export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string): Promise<{ sentTo: string }> {
   if (!isEmailConfigured) throw new Error("Email not configured. Go to Settings → Email to set up.");
 
-  const { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat } = await buildInvoiceDataForOrder(orderId);
+  const { order, items, customerEmail: resolvedEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat } = await buildInvoiceDataForOrder(orderId);
+  const customerEmail = toEmailOverride?.trim() || resolvedEmail;
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
   // Always regenerate the Stripe payment link before sending so the amount

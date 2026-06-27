@@ -353,7 +353,8 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
       return;
     }
 
-    const result = await sendInvoiceEmail(idParse.data);
+    const { toEmail: toEmailOverride } = (req.body ?? {}) as { toEmail?: string };
+    const result = await sendInvoiceEmail(idParse.data, toEmailOverride);
 
     await logOrderAction(idParse.data, "Invoice sent", getActor(req), `Invoice emailed to ${result.sentTo}`);
 

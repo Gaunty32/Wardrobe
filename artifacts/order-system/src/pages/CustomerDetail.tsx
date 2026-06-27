@@ -674,8 +674,38 @@ function ProcessesTab({ customerId }: { customerId: number }) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid gap-2"><Label>Placement</Label>
-                <Input placeholder="e.g. Left Chest" value={form.placement} onChange={e => setForm({ ...form, placement: e.target.value })} /></div>
+              <div className="grid gap-2">
+                <Label>Placement</Label>
+                {(() => {
+                  const placements = ["Left Chest", "Right Chest", "Centre Chest", "Full Back", "Top Back", "Left Sleeve", "Right Sleeve", "Hood", "Cap Front", "Collar", "Cuff"];
+                  const isCustom = form.placement && !placements.includes(form.placement);
+                  return (
+                    <div className="space-y-1.5">
+                      <Select value={isCustom ? "__custom__" : (form.placement || "none")} onValueChange={v => {
+                        if (v === "none") setForm(f => ({ ...f, placement: "" }));
+                        else if (v !== "__custom__") setForm(f => ({ ...f, placement: v }));
+                      }}>
+                        <SelectTrigger className="text-sm"><SelectValue placeholder="Select placement…" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {placements.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                          {isCustom && <SelectItem value="__custom__">{form.placement} (custom)</SelectItem>}
+                          <SelectItem value="__custom__">Other…</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {(isCustom || form.placement === "__custom__") && (
+                        <Input
+                          autoFocus
+                          placeholder="e.g. Lower Back"
+                          value={form.placement === "__custom__" ? "" : form.placement}
+                          onChange={e => setForm(f => ({ ...f, placement: e.target.value }))}
+                          className="text-sm"
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
             <div className="grid gap-2">
               <Label>Price per unit <span className="text-muted-foreground font-normal">(£, optional)</span></Label>

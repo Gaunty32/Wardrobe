@@ -1109,8 +1109,9 @@ export default function OrderDetail() {
   const handleWardrobeItemAdd = (fi: CustomerFinishedItem) => {
     const size = wardrobeItemSizes[fi.id] ?? "";
     const qty = wardrobeItemQtys[fi.id] ?? 1;
-    const finishExtra = getFiFinishExtra(fi);
-    const effectivePrice = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice + finishExtra;
+    // fi.unitPrice already includes extra process costs (set via calcPriceForFinish when wardrobe was configured).
+    // Do NOT add getFiFinishExtra() again — that would double-charge for multi-process finishes.
+    const effectivePrice = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice;
     const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
     const recipientName = isPersonRecipient
       ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
@@ -1245,8 +1246,10 @@ export default function OrderDetail() {
 
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
     const finishExtra = getFiFinishExtra(fi);
-    const garmentBase = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice;
-    const effectivePrice = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice + finishExtra;
+    // fi.unitPrice already includes extra process costs; subtract finishExtra to derive the garment-only
+    // base for the price breakdown display, but don't add it again to effectivePrice.
+    const garmentBase = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice - finishExtra;
+    const effectivePrice = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice;
     setPriceOverrideEnabled(false);
     setItem({
       ...EMPTY_ITEM,

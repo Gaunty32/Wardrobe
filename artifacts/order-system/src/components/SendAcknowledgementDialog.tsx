@@ -245,7 +245,14 @@ export function SendAcknowledgementDialog({ open, onOpenChange, order, onSent }:
                   value={emailTo}
                   onChange={e => setEmailTo(e.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">Defaults to the customer's manager email(s). Separate multiple addresses with commas.</p>
+                {!emailTo && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1">
+                    <span>⚠</span> No email on file for this customer — please enter an address above.
+                  </p>
+                )}
+                {emailTo && (
+                  <p className="text-xs text-muted-foreground">Separate multiple addresses with commas.</p>
+                )}
               </div>
 
               {/* Preview */}
