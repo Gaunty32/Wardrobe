@@ -171,8 +171,15 @@ function fmtProduct(p: any) {
 
 router.get("/products", async (req, res): Promise<void> => {
   const query = ListProductsQueryParams.safeParse(req.query);
-  const searchTerm = query.success && query.data.search ? `%${query.data.search}%` : null;
+  const searchWords = query.success && query.data.search
+    ? query.data.search.trim().split(/\s+/).filter(Boolean)
+    : [];
   const includeArchived = req.query.include_archived === "true" || req.query.include_archived === "1";
+
+  const wordClauses = searchWords.map(word => {
+    const term = `%${word}%`;
+    return sql`AND (p.name ILIKE ${term} OR p.sku ILIKE ${term} OR p.description ILIKE ${term} OR p.supplier_code ILIKE ${term})`;
+  });
 
   const rows = await db.execute(sql`
     SELECT p.*,
@@ -185,9 +192,7 @@ router.get("/products", async (req, res): Promise<void> => {
     FROM products p
     LEFT JOIN customers c ON c.id = p.customer_id
     WHERE (${includeArchived} OR COALESCE(p.is_archived, false) = false)
-      ${searchTerm
-        ? sql`AND (p.name ILIKE ${searchTerm} OR p.sku ILIKE ${searchTerm} OR p.description ILIKE ${searchTerm} OR p.supplier_code ILIKE ${searchTerm})`
-        : sql``}
+      ${sql.join(wordClauses, sql` `)}
     ORDER BY p.name
   `);
 
