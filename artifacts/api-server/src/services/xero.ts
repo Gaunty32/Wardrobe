@@ -523,12 +523,20 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
     finishName: r.customerFinishName ?? r.finishName,
   }));
 
-  // Determine if this is a zero-value invoice — it will be posted as VOIDED (archived) in Xero.
+  // Determine if this is a zero-value invoice — skip Xero entirely, archive locally.
   const lineTotal = items.reduce(
     (sum, item) => sum + parseFloat(item.unitPrice as string) * ((item.quantity as number) ?? 1),
     0
   ) + parseFloat(String(order.carriageAmount ?? 0));
   const isZeroValue = lineTotal <= 0;
+
+  if (isZeroValue) {
+    // Mark locally as archived (zero-value) — do NOT send to Xero at all.
+    await db.execute(sql`
+      UPDATE orders SET xero_invoice_status = 'ZERO_VALUE', updated_at = NOW() WHERE id = ${orderId}
+    `);
+    return { xeroInvoiceId: undefined, xeroInvoiceStatus: "ZERO_VALUE", skippedZeroValue: true } as any;
+  }
 
   // Get customer's xeroContactId and zero-VAT flag
   let xeroContactId: string | null = null;

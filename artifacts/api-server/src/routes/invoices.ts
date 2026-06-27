@@ -58,9 +58,9 @@ router.get("/invoices", async (_req, res): Promise<void> => {
     .where(sql`${ordersTable.status} IN ('shipped', 'dispatched', 'part_shipped')`)
     .orderBy(desc(ordersTable.dispatchedAt));
 
-  const toSend = orders.filter((o) => !o.invoiceEmailSentAt && !o.xeroInvoiceId);
-  const toPost = orders.filter((o) => o.invoiceEmailSentAt && !o.xeroInvoiceId);
-  const done = orders.filter((o) => !!o.xeroInvoiceId);
+  const toSend = orders.filter((o) => !o.invoiceEmailSentAt && !o.xeroInvoiceId && o.xeroInvoiceStatus !== "ZERO_VALUE");
+  const toPost = orders.filter((o) => o.invoiceEmailSentAt && !o.xeroInvoiceId && o.xeroInvoiceStatus !== "ZERO_VALUE");
+  const done = orders.filter((o) => !!o.xeroInvoiceId || o.xeroInvoiceStatus === "ZERO_VALUE");
 
   res.json({ toSend, toPost, done });
 });
@@ -365,7 +365,9 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
     try {
       const xeroPosted = await postInvoiceToXero(idParse.data);
       xeroResult = { xeroInvoiceId: xeroPosted.xeroInvoiceId, xeroInvoiceStatus: xeroPosted.xeroInvoiceStatus };
-      if (xeroPosted.xeroInvoiceId) {
+      if ((xeroPosted as any).skippedZeroValue) {
+        await logOrderAction(idParse.data, "Skipped Xero — zero value", getActor(req), "Invoice total is £0; not posted to Xero");
+      } else if (xeroPosted.xeroInvoiceId) {
         await logOrderAction(idParse.data, "Posted to Xero", getActor(req), `Xero invoice ID: ${xeroPosted.xeroInvoiceId}`);
       }
     } catch {
@@ -532,6 +534,11 @@ router.post("/invoices/:orderId/post-xero", async (req, res): Promise<void> => {
 
   try {
     const result = await postInvoiceToXero(idParse.data);
+    if ((result as any).skippedZeroValue) {
+      await logOrderAction(idParse.data, "Skipped Xero — zero value", getActor(req), "Invoice total is £0; archived locally without posting to Xero");
+    } else if (result.xeroInvoiceId) {
+      await logOrderAction(idParse.data, "Posted to Xero", getActor(req), `Xero invoice ID: ${result.xeroInvoiceId}`);
+    }
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Failed to post to Xero" });
