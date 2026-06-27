@@ -235,6 +235,14 @@ function useCustomerEmployees(customerId: number | null) {
   });
 }
 
+function useCustomerRoles(customerId: number | null) {
+  return useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ["customer-roles", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/roles`),
+    enabled: customerId !== null && customerId > 0,
+  });
+}
+
 function useCustomerFinishedItems(customerId: number | null) {
   return useQuery<CustomerFinishedItem[]>({
     queryKey: ["customer-finished-items", customerId],
@@ -421,6 +429,7 @@ export default function OrderDetail() {
 
   const { data: customerFinishes } = useCustomerFinishes(customerId);
   const { data: customerEmployees, refetch: refetchEmployees } = useCustomerEmployees(customerId);
+  const { data: customerRoles = [] } = useCustomerRoles(customerId);
   const { data: customerFinishedItems } = useCustomerFinishedItems(customerId);
   const { data: wardrobeData } = useCustomerWardrobeData(customerId);
   const { data: customerDeliveryAddresses } = useCustomerDeliveryAddresses(customerId);
@@ -3102,12 +3111,29 @@ export default function OrderDetail() {
                           </div>
                           <div>
                             <label className="text-xs text-muted-foreground mb-1 block">Job title / role</label>
-                            <Input
-                              placeholder="e.g. Driver"
-                              value={addRecipientForm.jobTitle}
-                              onChange={e => setAddRecipientForm(f => ({ ...f, jobTitle: e.target.value }))}
-                              className="h-8 text-sm"
-                            />
+                            {customerRoles.length > 0 ? (
+                              <Select
+                                value={addRecipientForm.jobTitle || "none"}
+                                onValueChange={v => setAddRecipientForm(f => ({ ...f, jobTitle: v === "none" ? "" : v }))}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Select role…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No role</SelectItem>
+                                  {customerRoles.map(r => (
+                                    <SelectItem key={r.id} value={r.name}>{r.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                placeholder="e.g. Driver"
+                                value={addRecipientForm.jobTitle}
+                                onChange={e => setAddRecipientForm(f => ({ ...f, jobTitle: e.target.value }))}
+                                className="h-8 text-sm"
+                              />
+                            )}
                           </div>
                           <div className="flex justify-end gap-2 pt-1">
                             <Button size="sm" variant="ghost" className="h-7" onClick={() => { setAddRecipientOpen(false); setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "" }); }}>

@@ -333,18 +333,34 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
   const [addOpen, setAddOpen] = useState(false);
   const [newFirst, setNewFirst] = useState("");
   const [newLast, setNewLast] = useState("");
-  const [newJobTitle, setNewJobTitle] = useState("");
-  const [newDept, setNewDept] = useState("");
+  const [newRoleId, setNewRoleId] = useState("none");
+  const [newDeliveryAddressId, setNewDeliveryAddressId] = useState("none");
+
+  const { data: addEmpRoles = [] } = useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ["portal-team-roles"],
+    queryFn: () => apiFetch("/portal/team/roles"),
+    enabled: addOpen,
+  });
+  const { data: addEmpAddresses = [] } = useQuery<any[]>({
+    queryKey: ["portal-addresses"],
+    queryFn: () => apiFetch("/portal/addresses"),
+    enabled: addOpen,
+  });
 
   const addEmpMut = useMutation({
     mutationFn: () => apiFetch("/portal/team/employees", {
       method: "POST",
-      body: JSON.stringify({ firstName: newFirst, lastName: newLast, jobTitle: newJobTitle || null, department: newDept || null }),
+      body: JSON.stringify({
+        firstName: newFirst,
+        lastName: newLast,
+        roleId: newRoleId !== "none" ? parseInt(newRoleId, 10) : null,
+        deliveryAddressId: newDeliveryAddressId !== "none" ? parseInt(newDeliveryAddressId, 10) : null,
+      }),
     }),
     onSuccess: () => {
       toast({ title: "Employee added" });
       setAddOpen(false);
-      setNewFirst(""); setNewLast(""); setNewJobTitle(""); setNewDept("");
+      setNewFirst(""); setNewLast(""); setNewRoleId("none"); setNewDeliveryAddressId("none");
       onEmployeeAdded();
     },
     onError: () => toast({ title: "Could not add employee", variant: "destructive" }),
@@ -1061,14 +1077,40 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                   <Input value={newLast} onChange={e => setNewLast(e.target.value)} placeholder="Smith" />
                 </div>
               </div>
-              <div className="grid gap-1.5">
-                <Label>Job title</Label>
-                <Input value={newJobTitle} onChange={e => setNewJobTitle(e.target.value)} placeholder="e.g. Operative" />
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Department</Label>
-                <Input value={newDept} onChange={e => setNewDept(e.target.value)} placeholder="e.g. Warehouse" />
-              </div>
+              {addEmpRoles.length > 0 && (
+                <div className="grid gap-1.5">
+                  <Label>Job title / role</Label>
+                  <Select value={newRoleId} onValueChange={setNewRoleId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select role…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No role</SelectItem>
+                      {addEmpRoles.map(r => (
+                        <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {addEmpAddresses.length > 1 && (
+                <div className="grid gap-1.5">
+                  <Label>Delivery address</Label>
+                  <Select value={newDeliveryAddressId} onValueChange={setNewDeliveryAddressId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Account address (default)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Account address (default)</SelectItem>
+                      {addEmpAddresses.map((a: any) => (
+                        <SelectItem key={a.id} value={String(a.id)}>
+                          {a.label} — {a.line1}{a.city ? `, ${a.city}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>

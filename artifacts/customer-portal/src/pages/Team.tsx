@@ -231,7 +231,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
         </div>
       </div>
       <div className="space-y-1">
-        <Label>Employee Number *</Label>
+        <Label>Employee Number</Label>
         <Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} />
       </div>
       <div className="space-y-1">
@@ -382,7 +382,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
       <DialogFooter className="pt-2">
         <Button variant="outline" onClick={onCancel}>Cancel</Button>
         <Button
-          disabled={saving || !form.firstName.trim() || !form.lastName.trim() || !form.employeeNumber.trim()}
+          disabled={saving || !form.firstName.trim() || !form.lastName.trim()}
           onClick={() => onSave(
             {
               ...form,

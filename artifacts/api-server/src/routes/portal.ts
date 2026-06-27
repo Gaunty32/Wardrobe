@@ -2789,6 +2789,7 @@ router.post("/portal/team/employees", portalAuth, async (req: Request, res: Resp
     department: z.string().optional().nullable(),
     roleId: z.number().int().optional().nullable(),
     managerId: z.number().int().optional().nullable(),
+    deliveryAddressId: z.number().int().optional().nullable(),
     notes: z.string().optional().nullable(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
@@ -2796,10 +2797,10 @@ router.post("/portal/team/employees", portalAuth, async (req: Request, res: Resp
   const d = body.data;
   const rows = await db.execute(sql`
     INSERT INTO customer_employees
-      (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, role_id, manager_id, notes, is_active)
+      (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, role_id, manager_id, delivery_address_id, notes, is_active)
     VALUES
       (${customerId}, ${d.firstName}, ${d.lastName}, ${d.employeeNumber ?? null}, ${d.email ?? null}, ${d.phone ?? null},
-       ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.roleId ?? null}, ${d.managerId ?? null}, ${d.notes ?? null}, true)
+       ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.roleId ?? null}, ${d.managerId ?? null}, ${d.deliveryAddressId ?? null}, ${d.notes ?? null}, true)
     RETURNING *
   `);
   res.status(201).json(rows.rows[0]);
