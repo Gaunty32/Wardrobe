@@ -520,13 +520,18 @@ function OrderRow({
                 Resend
               </Button>
             )}
+            {showPostXero && total <= 0 && (
+              <span className="text-xs text-red-600 flex items-center gap-1" title="Xero cannot accept a £0.00 invoice — update the line item prices on the order first">
+                <AlertTriangle className="w-3 h-3" />£0 — can't post
+              </span>
+            )}
             {showPostXero && (
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 gap-1 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                className="h-7 gap-1 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                 onClick={() => postXero.mutate()}
-                disabled={postXero.isPending}
+                disabled={postXero.isPending || total <= 0}
               >
                 {postXero.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <BookOpen className="w-3 h-3" />}
                 {order.xeroInvoiceId ? "Re-post to Xero" : "Post to Xero"}
