@@ -1177,10 +1177,11 @@ export default function OrderDetail() {
       ? ""
       : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist;
     const qty = wardrobeItemQtys[id] ?? 1;
-    const garmentBase = wi.special_price != null
+    // wi.unit_price already includes extra process costs (set by calcPriceForFinish when wardrobe was configured).
+    // Do NOT add getWiFinishExtra() again — that would double-charge for multi-process finishes.
+    const effectivePrice = wi.special_price != null
       ? parseFloat(String(wi.special_price))
       : parseFloat(String(wi.unit_price ?? "0"));
-    const effectivePrice = wi.special_price != null ? garmentBase : garmentBase + getWiFinishExtra(wi);
     const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
     const recipientName = isPersonRecipient
       ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
@@ -1221,10 +1222,11 @@ export default function OrderDetail() {
     const qtys = wardrobeBulkQtys[id] ?? {};
     const sizesWithQty = comboOptions.filter(s => (qtys[s] ?? 0) > 0);
     if (sizesWithQty.length === 0) return;
-    const garmentBase = wi.special_price != null
+    // wi.unit_price already includes extra process costs (set by calcPriceForFinish when wardrobe was configured).
+    // Do NOT add getWiFinishExtra() again — that would double-charge for multi-process finishes.
+    const effectivePrice = wi.special_price != null
       ? parseFloat(String(wi.special_price))
       : parseFloat(String(wi.unit_price ?? "0"));
-    const effectivePrice = wi.special_price != null ? garmentBase : garmentBase + getWiFinishExtra(wi);
     const isPersonRecipient = wardrobeRecipient !== null && wardrobeRecipient !== "stock";
     const recipientName = isPersonRecipient
       ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
@@ -3270,10 +3272,10 @@ export default function OrderDetail() {
                             const bulkComboOpts = sleeveOpts.length > 0
                               ? sizeOpts.flatMap(s => sleeveOpts.map(sl => `${s}/${sl}`))
                               : sizeOpts;
-                            const garmentCardBase = wi.special_price != null
+                            // wi.unit_price already includes extra process costs; do NOT add getWiFinishExtra() again.
+                            const effectivePrice = wi.special_price != null
                               ? parseFloat(String(wi.special_price))
                               : parseFloat(String(wi.unit_price ?? "0"));
-                            const effectivePrice = wi.special_price != null ? garmentCardBase : garmentCardBase + getWiFinishExtra(wi);
                             const imageUrl = wi.variant_image_url ?? wi.product_image_url;
                             return (
                               <div key={id} className="rounded-xl border bg-card overflow-hidden flex flex-col">
