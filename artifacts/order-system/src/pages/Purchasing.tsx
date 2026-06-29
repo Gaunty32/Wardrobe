@@ -3355,9 +3355,6 @@ export default function Purchasing() {
                                 <FileText className="w-3.5 h-3.5" /> Create Draft PO
                               </Button>
                             )}
-                            <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setEmailGroup(group)}>
-                              <Mail className="w-3.5 h-3.5" /> Email
-                            </Button>
                             <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setAddManualReqOpen(true)}>
                               <Plus className="w-3.5 h-3.5" /> Add Requirement
                             </Button>
