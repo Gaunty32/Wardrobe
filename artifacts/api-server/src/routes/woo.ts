@@ -335,7 +335,7 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
       await db.execute(sql`
         INSERT INTO order_items (
           order_id, product_id, product_name, colour, size,
-          quantity, unit_price, line_total, recipient_type, notes, created_at
+          quantity, unit_price, line_total, recipient_type, notes
         ) VALUES (
           ${order.id},
           ${productId},
@@ -346,8 +346,7 @@ router.post("/woo/orders/:wooId/import", async (req: Request, res: Response): Pr
           ${unitPrice},
           ${li.total},
           'stock',
-          ${itemNotes},
-          now()
+          ${itemNotes}
         )
       `);
     }
