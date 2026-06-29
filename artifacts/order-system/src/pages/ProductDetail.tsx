@@ -806,6 +806,23 @@ export default function ProductDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) }),
   });
 
+  // Image Generation tab state — declared here so it is initialized before the
+  // useEffect below references imgGenPopulated in its dependency array.
+  const [imgGen, setImgGen] = useState({
+    productName: "",
+    garmentType: "",
+    genderFit: "Unisex" as "Male" | "Female" | "Unisex",
+    category: "Corporate" as "Trade" | "Corporate" | "Hospitality" | "Outerwear",
+    heroColourway: "",
+    availableColourways: [] as string[],
+    logoText: "YOUR LOGO HERE",
+    imageSize: "1000px x 1000px",
+    notes: "",
+  });
+  const [imgGenPrompt, setImgGenPrompt] = useState("");
+  const [imgGenPopulated, setImgGenPopulated] = useState(false);
+  const [imgGenNewColour, setImgGenNewColour] = useState("");
+
   // Auto-refresh WooCommerce status from WooCommerce when it's unknown
   const wooRefreshMut = useMutation({
     mutationFn: () => apiFetch<any>(`/products/${productId}/woo-refresh`),
@@ -927,22 +944,6 @@ export default function ProductDetail() {
     productImageUrl: string | null;
   }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: false, editingId: null, productImageUrl: null });
   const [socialShowPreview, setSocialShowPreview] = useState(false);
-
-  // Image Generation tab state
-  const [imgGen, setImgGen] = useState({
-    productName: "",
-    garmentType: "",
-    genderFit: "Unisex" as "Male" | "Female" | "Unisex",
-    category: "Corporate" as "Trade" | "Corporate" | "Hospitality" | "Outerwear",
-    heroColourway: "",
-    availableColourways: [] as string[],
-    logoText: "YOUR LOGO HERE",
-    imageSize: "1000px x 1000px",
-    notes: "",
-  });
-  const [imgGenPrompt, setImgGenPrompt] = useState("");
-  const [imgGenPopulated, setImgGenPopulated] = useState(false);
-  const [imgGenNewColour, setImgGenNewColour] = useState("");
 
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
   const [editingQuoteId, setEditingQuoteId] = useState<string | null>(null);
