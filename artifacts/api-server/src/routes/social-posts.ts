@@ -37,6 +37,46 @@ async function getFbSettings() {
   return map.facebook_page_id && map.facebook_page_access_token ? map : null;
 }
 
+// ── Facebook token checker — returns pages the token can manage ────────────
+router.post("/facebook/check-token", async (req, res): Promise<void> => {
+  const parsed = z.object({ accessToken: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "accessToken required" }); return; }
+  const { accessToken } = parsed.data;
+  try {
+    const url = `https://graph.facebook.com/v20.0/me/accounts?fields=id,name,category,access_token&access_token=${encodeURIComponent(accessToken)}`;
+    const fbRes = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+    const fbData: any = await fbRes.json();
+    if (!fbRes.ok || fbData.error) {
+      const msg = fbData.error?.message ?? `Facebook error ${fbRes.status}`;
+      const isExpired = msg.includes("Session has expired") || msg.includes("Error validating access token") || msg.includes("OAuthException") || (fbData.error?.code === 190);
+      res.status(400).json({ error: msg, isExpired, isUserToken: false });
+      return;
+    }
+    const pages: { id: string; name: string; category: string; pageToken: string }[] = (fbData.data ?? []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category ?? "",
+      pageToken: p.access_token ?? "",
+    }));
+    if (pages.length === 0) {
+      // Token is valid but it's a User token with no managed pages, or a Page token
+      // Try fetching /me to confirm it's a page token
+      const meRes = await fetch(`https://graph.facebook.com/v20.0/me?fields=id,name,category&access_token=${encodeURIComponent(accessToken)}`, { signal: AbortSignal.timeout(8_000) });
+      const meData: any = await meRes.json();
+      if (meData.category) {
+        // /me returned a page — this IS a page token
+        res.json({ isPageToken: true, pages: [{ id: meData.id, name: meData.name, category: meData.category, pageToken: accessToken }] });
+      } else {
+        res.json({ isPageToken: false, pages: [], noPages: true });
+      }
+      return;
+    }
+    res.json({ isPageToken: false, pages });
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
 /** Post with image via /{page}/photos (shows image prominently). Falls back to /feed if no image. */
 async function publishToFacebook(
   pageId: string, token: string, message: string, imageUrl?: string | null

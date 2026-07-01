@@ -806,6 +806,11 @@ export default function Settings() {
   const [fbAccessToken, setFbAccessToken] = useState("");
   const [fbFormLoaded, setFbFormLoaded] = useState(false);
   const [savingFb, setSavingFb] = useState(false);
+  const [checkingFbToken, setCheckingFbToken] = useState(false);
+  type FbPage = { id: string; name: string; category: string; pageToken: string };
+  const [fbTokenPages, setFbTokenPages] = useState<FbPage[] | null>(null);
+  const [fbTokenError, setFbTokenError] = useState<string | null>(null);
+  const [fbIsPageToken, setFbIsPageToken] = useState(false);
 
   // Google Business Profile fields
   const [gbpClientId, setGbpClientId] = useState("");
@@ -1689,20 +1694,111 @@ export default function Settings() {
                     <Share2 className="w-4 h-4 text-blue-600" /> Facebook Page
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Connect your Facebook Page so SBS can auto-post product content. You'll need a Page Access Token with <code className="text-xs bg-muted px-1 rounded">pages_manage_posts</code> and <code className="text-xs bg-muted px-1 rounded">pages_read_engagement</code> permissions.
+                    Connect your Facebook Page so SBS can auto-post product content.
                   </p>
                 </div>
+
+                {/* Step 1: paste token and check it */}
+                <div className="grid gap-2">
+                  <Label>Page Access Token</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      type="password"
+                      value={fbAccessToken}
+                      onChange={e => { setFbAccessToken(e.target.value); setFbTokenPages(null); setFbTokenError(null); }}
+                      placeholder="EAAxxxxxx…"
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={!fbAccessToken || checkingFbToken}
+                      onClick={async () => {
+                        setCheckingFbToken(true);
+                        setFbTokenPages(null);
+                        setFbTokenError(null);
+                        setFbIsPageToken(false);
+                        try {
+                          const data = await apiFetch<any>("/facebook/check-token", {
+                            method: "POST",
+                            body: JSON.stringify({ accessToken: fbAccessToken }),
+                          });
+                          setFbIsPageToken(data.isPageToken ?? false);
+                          setFbTokenPages(data.pages ?? []);
+                        } catch (e: any) {
+                          // apiFetch throws on non-ok — try to parse the message
+                          const msg = e.message ?? "Request failed";
+                          setFbTokenError(msg);
+                        } finally {
+                          setCheckingFbToken(false);
+                        }
+                      }}
+                      className="shrink-0 gap-1.5"
+                    >
+                      {checkingFbToken ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                      Check Token
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Get a token from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline">Meta Graph API Explorer</a> → select your app → change "User or Page" to your <strong>Page</strong> → Generate Access Token.
+                  </p>
+                </div>
+
+                {/* Token check error */}
+                {fbTokenError && (
+                  <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span><strong>Token error:</strong> {fbTokenError}</span>
+                  </div>
+                )}
+
+                {/* Pages accessible by this token */}
+                {fbTokenPages !== null && fbTokenPages.length === 0 && !fbIsPageToken && (
+                  <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>No pages found for this token. Make sure you selected your <strong>Page</strong> (not your personal profile) in the "User or Page" dropdown in Graph API Explorer before generating.</span>
+                  </div>
+                )}
+
+                {fbIsPageToken && fbTokenPages && fbTokenPages.length > 0 && (
+                  <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                    <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>This is already a Page token for <strong>{fbTokenPages[0].name}</strong> (ID: {fbTokenPages[0].id}).</span>
+                  </div>
+                )}
+
+                {fbTokenPages !== null && fbTokenPages.length > 0 && !fbIsPageToken && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">This User token has access to {fbTokenPages.length} page{fbTokenPages.length > 1 ? "s" : ""}. Select the one you want to post from:</p>
+                    {fbTokenPages.map(page => (
+                      <div key={page.id} className={`flex items-center justify-between rounded-md border px-3 py-2 text-sm ${fbPageId === page.id ? "border-primary bg-primary/5" : "border-border"}`}>
+                        <div>
+                          <p className="font-medium">{page.name}</p>
+                          <p className="text-xs text-muted-foreground">ID: {page.id} · {page.category}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={fbPageId === page.id ? "default" : "outline"}
+                          onClick={() => {
+                            setFbPageId(page.id);
+                            if (page.pageToken) setFbAccessToken(page.pageToken);
+                          }}
+                        >
+                          {fbPageId === page.id ? "Selected ✓" : "Use this page"}
+                        </Button>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground">Clicking "Use this page" also switches the token to that page's own long-lived Page Access Token.</p>
+                  </div>
+                )}
+
+                {/* Page ID — shown after selection or for manual entry */}
                 <div className="grid gap-2">
                   <Label>Facebook Page ID</Label>
                   <Input value={fbPageId} onChange={e => setFbPageId(e.target.value)} placeholder="e.g. 123456789012345" />
-                  <p className="text-xs text-muted-foreground">Find this in your Page's About section or via the Graph API Explorer.</p>
+                  <p className="text-xs text-muted-foreground">Auto-filled when you select a page above, or enter manually.</p>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Page Access Token</Label>
-                  <Input type="password" value={fbAccessToken} onChange={e => setFbAccessToken(e.target.value)} placeholder="EAAxxxxxx…" />
-                  <p className="text-xs text-muted-foreground">Generate a long-lived page access token from <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline">Meta Graph API Explorer</a>. Long-lived tokens last ~60 days.</p>
-                </div>
-                <Button onClick={saveFacebookSettings} disabled={savingFb} className="gap-2">
+
+                <Button onClick={saveFacebookSettings} disabled={savingFb || !fbPageId || !fbAccessToken} className="gap-2">
                   {savingFb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
                   Save Facebook Settings
                 </Button>
