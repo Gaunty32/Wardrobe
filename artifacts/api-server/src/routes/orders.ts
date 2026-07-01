@@ -728,6 +728,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
     let allocatedLines = 0;
     let purchaseLines = 0;
+    let serviceItemCount = 0;
     const allocatedItemIds: number[] = [];
     const shortfallDetails: Array<{
       id: number; productName: string; colour: string | null; size: string | null;
@@ -814,6 +815,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         // Service products need no purchasing — treat as fully allocated
         if (sup?.isService) {
           allocatedLines++;
+          serviceItemCount++;
           allocatedItemIds.push(item.id);
           await db.update(orderItemsTable)
             .set({ purchaseRequired: false, purchaseQuantity: null, stockStatus: "allocated", stockAllocatedAt: new Date() })
@@ -1105,6 +1107,20 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           })
         );
       }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
+    // ── Service-only order: skip purchasing & production, go straight to invoicing
+    // If every item with a product link is a service product (no purchasing, no
+    // worksheet), auto-promote the order status to 'shipped' so it appears on
+    // the invoicing screen immediately.
+    const linkedItemCount = items.filter(i => i.productId != null).length;
+    if (linkedItemCount > 0 && serviceItemCount === linkedItemCount && purchaseLines === 0) {
+      await db.update(ordersTable)
+        .set({ status: "shipped", updatedAt: new Date() })
+        .where(eq(ordersTable.id, params.data.id));
+      await logOrderAction(params.data.id, "Auto-promoted to invoicing", getActor(req),
+        "All items are service products — skipped purchasing and production");
     }
     // ──────────────────────────────────────────────────────────────────────────
 

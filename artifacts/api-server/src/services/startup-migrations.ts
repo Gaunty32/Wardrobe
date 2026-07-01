@@ -2276,4 +2276,26 @@ export async function refreshProductIssues(): Promise<void> {
 
   // Snooze column for product issues
   await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issue_snoozed_until TIMESTAMPTZ`);
+
+  // Auto-promote confirmed service-only orders to 'shipped' so they appear on
+  // the invoicing screen. Targets orders where every order item with a product
+  // link is a service product (is_service = true) and no items need purchasing.
+  const servicePromoResult = await db.execute(sql`
+    UPDATE orders o
+    SET status = 'shipped', updated_at = NOW()
+    WHERE o.status = 'confirmed'
+      AND EXISTS (
+        SELECT 1 FROM order_items oi
+        JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = o.id AND p.is_service = true
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM order_items oi
+        LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = o.id
+          AND (p.id IS NULL OR p.is_service IS NOT TRUE)
+      )
+  `);
+  const promoted = (servicePromoResult as any).rowCount ?? 0;
+  if (promoted > 0) console.log("[startup] Promoted " + promoted + " service-only confirmed order(s) to shipped");
 }
