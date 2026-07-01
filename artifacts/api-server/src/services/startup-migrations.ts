@@ -1360,6 +1360,10 @@ export async function runStartupMigrations(): Promise<void> {
   // Safe to re-run: becomes a no-op once the PO is fully delivered.
   // GUARD: never re-queue items that are already covered by a fully-delivered PO line —
   // those items genuinely have their stock and must not be sent back to purchasing.
+  // IMPORTANT: only fires for OUTSTANDING POs (draft/ordered).  Delivered POs are
+  // intentionally closed-out deliveries — never re-queue items on them, even if some
+  // lines were only partially received.  Consolidated PO lines (sourceOrderItemIds)
+  // especially must not re-queue all source items when the aggregate qty is partial.
   await db.execute(sql`
     UPDATE order_items oi
     SET purchase_required  = true,
@@ -1377,7 +1381,7 @@ export async function runStartupMigrations(): Promise<void> {
       AND EXISTS (
         SELECT 1 FROM purchase_order_items poi
         JOIN purchase_orders po2 ON po2.id = poi.po_id
-        WHERE po2.status NOT IN ('cancelled')
+        WHERE po2.status NOT IN ('cancelled', 'delivered')
           AND poi.quantity_delivered < poi.quantity_ordered
           AND (poi.order_item_id = oi.id
                OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
@@ -1995,6 +1999,51 @@ export async function refreshProductIssues(): Promise<void> {
       AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
   `);
   console.log("[startup] Retroactively cleared purchase_required on PO-delivered items with broken links");
+
+  // Retroactive fix (direct-link): order items that were incorrectly re-queued (purchase_required=true,
+  // stock_status=null) by the startup safety net because they were linked to a delivered PO whose
+  // aggregate quantity_delivered < quantity_ordered (common for consolidated multi-order PO lines).
+  // A delivered PO is an intentionally closed-out delivery — clear purchase_required and restore
+  // stock_status for any item with a direct link (orderItemId or sourceOrderItemIds) to such a PO.
+  {
+    const { rowCount: directLinkCount } = await db.execute(sql`
+      UPDATE order_items oi
+      SET purchase_required    = false,
+          purchase_quantity    = NULL,
+          stock_status         = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
+          stock_allocated_at   = NOW()
+      FROM purchase_order_items poi
+      JOIN purchase_orders po  ON po.id = poi.po_id
+      WHERE po.status = 'delivered'
+        AND oi.purchase_required = true
+        AND oi.stock_status IS NULL
+        AND EXISTS (
+          SELECT 1 FROM orders o
+          WHERE o.id = oi.order_id
+            AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
+        )
+        AND (
+          poi.order_item_id = oi.id
+          OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = oi.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi2
+          JOIN purchase_orders po2 ON po2.id = poi2.po_id
+          WHERE po2.status NOT IN ('cancelled', 'delivered')
+            AND poi2.quantity_delivered < poi2.quantity_ordered
+            AND (
+              poi2.order_item_id = oi.id
+              OR COALESCE(poi2.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+            )
+        )
+    `);
+    if ((directLinkCount ?? 0) > 0) {
+      console.log(`[startup] Restored ${directLinkCount} item(s) incorrectly re-queued from delivered PO links`);
+    }
+  }
 
   // Safety Net C: items that already have stock_status IN ('in_production','complete','allocated')
   // should NEVER have purchase_required=true — that flag is stale and causes them to ghost into
