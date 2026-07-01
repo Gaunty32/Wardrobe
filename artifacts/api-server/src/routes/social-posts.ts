@@ -166,7 +166,9 @@ router.get("/gbp/locations", async (_req, res): Promise<void> => {
     if (!token) { res.status(401).json({ error: "Not connected to Google Business Profile" }); return; }
     res.json(await listGbpLocations(token));
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    console.error("[GBP] /gbp/locations error:", msg);
+    res.status(500).json({ error: msg });
   }
 });
 

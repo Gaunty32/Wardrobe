@@ -877,10 +877,11 @@ export default function Settings() {
     refetchInterval: 60_000,
   });
 
-  const { data: gbpLocations } = useQuery<{ name: string; title: string }[]>({
+  const { data: gbpLocations, error: gbpLocationsError } = useQuery<{ name: string; title: string }[]>({
     queryKey: ["gbp-locations"],
     queryFn: () => apiFetch("/gbp/locations"),
     enabled: !!gbpStatus?.connected,
+    retry: 1,
   });
 
   // Editable redirect URI — pre-fill once the auto-detected value arrives
@@ -1729,6 +1730,14 @@ export default function Settings() {
                       <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                         <span><strong>No location selected.</strong> Choose your business location from the dropdown below and click Save Location — posts won't work until this is set.</span>
+                      </div>
+                    )}
+
+                    {/* Location fetch error */}
+                    {gbpLocationsError && (
+                      <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span><strong>Could not load locations:</strong> {(gbpLocationsError as any)?.message ?? String(gbpLocationsError)}</span>
                       </div>
                     )}
 
