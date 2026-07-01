@@ -836,10 +836,10 @@ export default function ProductDetail() {
     }
   }, [(product as any)?.wooCommerceId, (product as any)?.wooStatus]);
 
-  // Pre-populate Image Gen form from product + variants when first loaded
+  // Pre-populate Image Gen form from product + attributes colour palette when first loaded
   useEffect(() => {
-    if (!imgGenPopulated && product && variants) {
-      const colours = [...new Set((variants as any[]).map((v: any) => v.colour).filter(Boolean))] as string[];
+    if (!imgGenPopulated && product && (attributes as any[]).length > 0) {
+      const colours = (attributes as any[]).filter((a: any) => a.type === "colour").map((a: any) => a.value as string);
       const randomHero = colours.length > 0 ? colours[Math.floor(Math.random() * colours.length)] : "";
       setImgGen(prev => ({
         ...prev,
@@ -849,7 +849,7 @@ export default function ProductDetail() {
       }));
       setImgGenPopulated(true);
     }
-  }, [product, variants, imgGenPopulated]);
+  }, [product, attributes, imgGenPopulated]);
 
   const generateImgPromptMut = useMutation({
     mutationFn: () => apiFetch<any>(`/products/${productId}/generate-image-prompt`, {
