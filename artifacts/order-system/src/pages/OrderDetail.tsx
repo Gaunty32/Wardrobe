@@ -1790,10 +1790,10 @@ export default function OrderDetail() {
                     className="pl-8 pr-3 py-1 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring w-52"
                   />
                 </div>
-                {order.status !== "portal_pending" && order.items && order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length > 0 && (
+                {order.status !== "portal_pending" && order.items && order.items.filter((oi: { purchaseRequired?: boolean; isService?: boolean }) => !oi.purchaseRequired && !oi.isService).length > 0 && (
                   <Button size="sm" variant="outline" className="gap-1.5 border-green-400 text-green-700 hover:bg-green-50" onClick={() => setIsSendToProductionOpen(true)}>
                     <ClipboardList className="w-4 h-4" />
-                    Send to Production ({order.items.filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired).length})
+                    Send to Production ({order.items.filter((oi: { purchaseRequired?: boolean; isService?: boolean }) => !oi.purchaseRequired && !oi.isService).length})
                   </Button>
                 )}
                 <Button size="sm" variant="outline" className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setAddBundleId(null); setAddBundleQty("1"); setIsAddBundleOpen(true); }}>
@@ -3878,7 +3878,7 @@ export default function OrderDetail() {
               This will create a production worksheet for all items that don't need purchasing. It will appear in <strong>Pre-Production</strong> and move to Work in Progress when decoration begins.
             </p>
             {order.items && (() => {
-              const eligible = (order.items as any[]).filter((oi: any) => !oi.purchaseRequired);
+              const eligible = (order.items as any[]).filter((oi: any) => !oi.purchaseRequired && !oi.isService);
               // Group by productName → colour → size → qty
               const productMap = new Map<string, Map<string, Map<string, number>>>();
               for (const oi of eligible) {
@@ -3948,7 +3948,7 @@ export default function OrderDetail() {
               onClick={() => {
                 if (!order.items) return;
                 const eligibleIds = order.items
-                  .filter((oi: { purchaseRequired?: boolean }) => !oi.purchaseRequired)
+                  .filter((oi: { purchaseRequired?: boolean; isService?: boolean }) => !oi.purchaseRequired && !oi.isService)
                   .map((oi: { id: number }) => oi.id);
                 sendToProductionMutation.mutate(eligibleIds);
               }}

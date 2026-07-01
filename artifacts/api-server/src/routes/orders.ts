@@ -610,6 +610,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
         purchaseQuantity: raw.purchase_quantity ?? null,
         supplierId: raw.supplier_id ?? null,
         supplierName: raw.supplier_name ?? null,
+        isService: itemIsService ?? false,
         garmentCost,
         processCost,
         poNumbers: poByItemId.get(raw.id) ?? [],
