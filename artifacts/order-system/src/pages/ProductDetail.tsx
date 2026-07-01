@@ -819,6 +819,7 @@ export default function ProductDetail() {
     notes: "",
   });
   const [imgGenPrompt, setImgGenPrompt] = useState("");
+  const [imgGenImage, setImgGenImage] = useState<string | null>(null);
   const [imgGenPopulated, setImgGenPopulated] = useState(false);
   const [imgGenNewColour, setImgGenNewColour] = useState("");
 
@@ -858,9 +859,10 @@ export default function ProductDetail() {
     }),
     onSuccess: (data: any) => {
       setImgGenPrompt(data.prompt || "");
-      toast({ title: "Image prompt generated" });
+      setImgGenImage(data.image ? `data:image/png;base64,${data.image}` : null);
+      toast({ title: data.image ? "Image generated!" : "Prompt generated" });
     },
-    onError: (err: any) => toast({ title: err.message || "Failed to generate prompt", variant: "destructive" }),
+    onError: (err: any) => toast({ title: err.message || "Failed to generate image", variant: "destructive" }),
   });
 
   const pushWooPriceMut = useMutation({
@@ -2717,9 +2719,9 @@ export default function ProductDetail() {
                   <div className="flex items-center justify-between mb-5">
                     <div>
                       <h3 className="font-semibold flex items-center gap-2">
-                        <ImageIcon className="w-4 h-4 text-violet-500" /> Hero Image Prompt Generator
+                        <ImageIcon className="w-4 h-4 text-violet-500" /> Hero Image Generator
                       </h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">Generate a structured AI image prompt in the Select Uniforms catalogue layout — paste into Midjourney or DALL-E</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Generate a catalogue hero image using AI — takes ~30 seconds</p>
                     </div>
                     <Button
                       onClick={() => generateImgPromptMut.mutate()}
@@ -2727,7 +2729,7 @@ export default function ProductDetail() {
                       className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
                     >
                       {generateImgPromptMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                      {generateImgPromptMut.isPending ? "Generating…" : "Generate Prompt"}
+                      {generateImgPromptMut.isPending ? "Generating image…" : "Generate Image"}
                     </Button>
                   </div>
 
@@ -2881,25 +2883,49 @@ export default function ProductDetail() {
                   </p>
                 </div>
 
-                {/* Generated prompt output */}
-                {imgGenPrompt && (
-                  <div className="bg-card border border-violet-200 rounded-lg p-6 shadow-sm">
-                    <div className="flex items-center justify-between mb-3">
+                {/* Loading state */}
+                {generateImgPromptMut.isPending && (
+                  <div className="bg-card border border-violet-200 rounded-lg p-8 shadow-sm flex flex-col items-center gap-3 text-violet-700">
+                    <Loader2 className="w-8 h-8 animate-spin" />
+                    <p className="text-sm font-medium">Generating your catalogue image…</p>
+                    <p className="text-xs text-muted-foreground">This usually takes 20–40 seconds</p>
+                  </div>
+                )}
+
+                {/* Generated image output */}
+                {imgGenImage && !generateImgPromptMut.isPending && (
+                  <div className="bg-card border border-violet-200 rounded-lg p-6 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
                       <h4 className="font-semibold flex items-center gap-2 text-violet-700">
-                        <Wand2 className="w-4 h-4" /> Generated Image Prompt
+                        <Wand2 className="w-4 h-4" /> Generated Image
                       </h4>
-                      <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
-                        onClick={() => { navigator.clipboard.writeText(imgGenPrompt); toast({ title: "Copied to clipboard" }); }}>
-                        <Copy className="w-3.5 h-3.5" /> Copy prompt
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
+                          onClick={() => {
+                            const a = document.createElement("a");
+                            a.href = imgGenImage;
+                            a.download = `${imgGen.productName.replace(/\s+/g, "-")}-hero.png`;
+                            a.click();
+                          }}>
+                          ⬇ Download
+                        </Button>
+                      </div>
                     </div>
-                    <Textarea
-                      rows={12}
-                      value={imgGenPrompt}
-                      onChange={e => setImgGenPrompt(e.target.value)}
-                      className="font-mono text-xs leading-relaxed bg-muted/30 resize-y"
-                    />
-                    <p className="text-xs text-muted-foreground mt-2">Paste this prompt directly into Midjourney, DALL-E 3, or Adobe Firefly. You can edit it above before copying.</p>
+                    <img src={imgGenImage} alt="Generated catalogue hero" className="w-full rounded-lg border border-violet-100 shadow-sm" />
+                    {imgGenPrompt && (
+                      <details className="group">
+                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none list-none flex items-center gap-1">
+                          <span className="group-open:hidden">▶</span><span className="hidden group-open:inline">▼</span> View / copy prompt (for Midjourney or DALL-E)
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          <Textarea rows={8} value={imgGenPrompt} onChange={e => setImgGenPrompt(e.target.value)} className="font-mono text-xs leading-relaxed bg-muted/30 resize-y" />
+                          <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
+                            onClick={() => { navigator.clipboard.writeText(imgGenPrompt); toast({ title: "Copied to clipboard" }); }}>
+                            <Copy className="w-3.5 h-3.5" /> Copy prompt
+                          </Button>
+                        </div>
+                      </details>
+                    )}
                   </div>
                 )}
               </div>

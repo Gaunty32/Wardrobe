@@ -732,7 +732,18 @@ Write ONLY the image generation prompt text — no preamble, no explanation, no 
   const content = message.content[0];
   const generatedPrompt = content.type === "text" ? content.text.trim() : "";
 
-  res.json({ prompt: generatedPrompt });
+  // Generate the actual image via OpenAI gpt-image-1
+  const { generateImageBuffer } = await import("@workspace/integrations-openai-ai-server/image");
+  // Map requested size to nearest gpt-image-1 supported size
+  const sizeMap: Record<string, "1024x1024" | "1536x1024" | "1024x1536"> = {
+    "1000px x 1000px": "1024x1024",
+    "1200px x 1200px": "1024x1024",
+    "800px x 800px": "1024x1024",
+  };
+  const gpSize = sizeMap[imageSize] ?? "1024x1024";
+  const imageBuffer = await generateImageBuffer(generatedPrompt, gpSize);
+
+  res.json({ prompt: generatedPrompt, image: imageBuffer.toString("base64") });
 });
 
 export default router;
