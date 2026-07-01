@@ -1889,9 +1889,19 @@ export default function Settings() {
                               : (() => {
                                   const err = testPostResults.facebook.error ?? "";
                                   const isExpired = err.includes("Session has expired") || err.includes("Error validating access token") || err.includes("OAuthException");
+                                  const isWrongPage = err.includes("error_subcode\":33") || err.includes('"subcode":33') || (err.includes("does not exist") && err.includes("missing permissions"));
+                                  const isWrongToken = err.includes("error_subcode\":460") || err.includes("password was changed") || err.includes("must be logged in");
                                   return isExpired ? (
                                     <span>❌ <strong>Access token expired</strong> — Facebook tokens last ~60 days. Generate a new long-lived page access token from the{" "}
                                       <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Meta Graph API Explorer</a>, paste it into the Page Access Token field above, and click Save Facebook Settings.
+                                    </span>
+                                  ) : isWrongPage ? (
+                                    <span>❌ <strong>Wrong Page ID or token type</strong> — The token must be a <em>Page Access Token</em> (not a User token) for the exact page whose ID you entered. In the{" "}
+                                      <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Graph API Explorer</a>: select your app → select your page under "User or Page" → click "Generate Access Token" → exchange it for a long-lived token. Then double-check the Page ID matches.
+                                    </span>
+                                  ) : isWrongToken ? (
+                                    <span>❌ <strong>Token is a User token, not a Page token</strong> — In the{" "}
+                                      <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Graph API Explorer</a>, choose your <em>page</em> (not your personal profile) from the "User or Page" dropdown before generating the token.
                                     </span>
                                   ) : `❌ Failed — ${err}`;
                                 })()}
