@@ -1426,7 +1426,22 @@ export default function ProductDetail() {
 
             {/* ── Details ── */}
             <TabsContent value="details">
-              <div className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm">
+              <div
+                className="mt-4 bg-card border border-border/50 rounded-lg p-6 shadow-sm"
+                onKeyDown={e => {
+                  if (e.key === "Enter" && (e.target as HTMLElement).tagName !== "TEXTAREA" && detailsDirty && !updateMutation.isPending) {
+                    e.preventDefault();
+                    saveDetails();
+                  }
+                }}
+              >
+                <div className="flex items-center justify-between mb-5">
+                  <p className="text-sm text-muted-foreground">Product details</p>
+                  <Button size="sm" onClick={saveDetails} disabled={updateMutation.isPending || !detailsDirty} className="gap-1.5">
+                    <Save className="w-3.5 h-3.5" />
+                    {updateMutation.isPending ? "Saving…" : "Save Changes"}
+                  </Button>
+                </div>
                 <div className="grid gap-5 max-w-2xl">
                   <div className="grid gap-2">
                     <Label>Product Name *</Label>
