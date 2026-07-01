@@ -410,6 +410,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
       p.name         AS catalogue_product_name,
       p.sku          AS product_sku,
       p.price_breaks AS price_breaks,
+      p.is_service   AS p_is_service,
       COALESCE(pv.supplier_price, p.supplier_price) AS resolved_supplier_price
     FROM order_items oi
     LEFT JOIN products p ON p.id = oi.product_id
@@ -436,6 +437,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     product_sku: string | null;
     resolved_supplier_price: string | null;
     price_breaks: { qty: number; price: number }[] | null;
+    p_is_service: boolean | null;
   };
   const itemRows = (itemRowsRaw.rows as RawItemRow[]).map(r => ({
     item: r as typeof orderItemsTable.$inferSelect,
@@ -443,6 +445,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     productSku: r.product_sku,
     supplierPrice: r.resolved_supplier_price,
     priceBreaks: (r.price_breaks as { qty: number; price: number }[] | null) ?? null,
+    isService: r.p_is_service ?? false,
   }));
 
   // Sum total quantity per product across all lines — price break tier is per-product total, not per-size
@@ -575,7 +578,7 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
     customerEmail,
     customerMainAddress,
     addressGroups,
-    items: itemRows.map(({ item, catalogueProductName, productSku, supplierPrice, priceBreaks }) => {
+    items: itemRows.map(({ item, catalogueProductName, productSku, supplierPrice, priceBreaks, isService: itemIsService }) => {
       const raw = item as any;
       const qty = raw.quantity ?? 1;
       const finishId: number | null = raw.finish_id ?? null;
