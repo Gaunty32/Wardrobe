@@ -3,7 +3,9 @@ import { eq } from "drizzle-orm";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GBP_API = "https://mybusiness.googleapis.com/v4";
+const GBP_ACCOUNT_API = "https://mybusinessaccountmanagement.googleapis.com/v1";
+const GBP_INFO_API = "https://mybusinessbusinessinformation.googleapis.com/v1";
+const GBP_POST_API = "https://mybusiness.googleapis.com/v4"; // local posts still on v4
 const SCOPE = "https://www.googleapis.com/auth/business.manage";
 
 async function getSetting(key: string): Promise<string | null> {
@@ -88,14 +90,23 @@ export async function getGbpStatus(): Promise<{ connected: boolean; locationName
 }
 
 export async function listGbpLocations(accessToken: string): Promise<{ name: string; title: string }[]> {
-  const accRes = await fetch(`${GBP_API}/accounts`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const accRes = await fetch(`${GBP_ACCOUNT_API}/accounts`, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!accRes.ok) {
+    const errText = await accRes.text();
+    throw new Error(`GBP accounts API error ${accRes.status}: ${errText}`);
+  }
   const accData: any = await accRes.json();
   const accounts: any[] = accData.accounts ?? [];
   const locations: { name: string; title: string }[] = [];
   for (const acc of accounts) {
-    const locRes = await fetch(`${GBP_API}/${acc.name}/locations?readMask=name,title`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const locRes = await fetch(
+      `${GBP_INFO_API}/${acc.name}/locations?readMask=name,title&pageSize=100`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (!locRes.ok) {
+      const errText = await locRes.text();
+      throw new Error(`GBP locations API error ${locRes.status}: ${errText}`);
+    }
     const locData: any = await locRes.json();
     for (const loc of locData.locations ?? []) {
       locations.push({ name: loc.name, title: loc.title ?? loc.name });
@@ -107,7 +118,7 @@ export async function listGbpLocations(accessToken: string): Promise<{ name: str
 export async function publishGbpPost(locationName: string, accessToken: string, text: string, imageUrl?: string | null): Promise<{ ok: boolean; postName?: string; error?: string }> {
   const body: any = { topicType: "STANDARD", summary: text };
   if (imageUrl) body.media = [{ mediaFormat: "PHOTO", sourceUrl: imageUrl }];
-  const res = await fetch(`${GBP_API}/${locationName}/localPosts`, {
+  const res = await fetch(`${GBP_POST_API}/${locationName}/localPosts`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
