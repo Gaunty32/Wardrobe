@@ -326,6 +326,7 @@ router.get("/products/issues", async (req, res): Promise<void> => {
     LEFT JOIN suppliers s ON s.id = p.supplier_id
     WHERE (p.issue_no_image = true OR p.issue_low_gp = true)
       AND p.is_archived = false
+      AND (p.issue_snoozed_until IS NULL OR p.issue_snoozed_until < NOW())
     ORDER BY p.issue_no_image DESC, gp_pct ASC NULLS LAST, p.name
   `);
   const products = ((rows.rows ?? rows) as any[]).map(r => ({
@@ -848,6 +849,22 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   }
   if (product.category === BESPOKE_TIES_CATEGORY) await ensureBespokeTieSizes(product.id, product.sku, product);
 
+  // Refresh issue flags whenever price-relevant fields change
+  if (parsed.data.unitPrice !== undefined || "supplierPrice" in req.body || "imageUrl" in req.body) {
+    await db.execute(sql`
+      UPDATE products SET
+        issue_no_image = (image_url IS NULL OR TRIM(image_url) = '' OR image_url LIKE 'blob:%'),
+        issue_low_gp = (
+          supplier_price IS NOT NULL AND unit_price IS NOT NULL
+          AND CAST(unit_price AS float) > 0
+          AND (CAST(unit_price AS float) - CAST(supplier_price AS float))
+              / CAST(unit_price AS float) * 100 < 80
+        ),
+        issues_checked_at = NOW()
+      WHERE id = ${params.data.id}
+    `);
+  }
+
   // If the unit price changed, push the update to WooCommerce in the background.
   // This is fire-and-forget — response is never delayed or blocked by WooCommerce latency.
   if (parsed.data.unitPrice !== undefined) {
@@ -855,6 +872,16 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   }
 
   res.json(fmtProduct(product));
+});
+
+// ── Snooze product issue warnings for 30 days ──────────────────────────────
+router.post("/products/:id/snooze-issue", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  await db.execute(sql`
+    UPDATE products SET issue_snoozed_until = NOW() + INTERVAL '30 days' WHERE id = ${parsed.data.id}
+  `);
+  res.json({ ok: true });
 });
 
 router.delete("/products/:id", async (req, res): Promise<void> => {

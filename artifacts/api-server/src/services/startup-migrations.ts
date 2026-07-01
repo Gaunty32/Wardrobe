@@ -2273,4 +2273,7 @@ export async function refreshProductIssues(): Promise<void> {
   await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS last_comments JSONB`);
   await db.execute(sql`ALTER TABLE social_posts ADD COLUMN IF NOT EXISTS new_activity BOOLEAN NOT NULL DEFAULT FALSE`);
   console.log("[startup] social_posts table ensured");
+
+  // Snooze column for product issues
+  await db.execute(sql`ALTER TABLE products ADD COLUMN IF NOT EXISTS issue_snoozed_until TIMESTAMPTZ`);
 }

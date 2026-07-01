@@ -27,7 +27,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore, AlertTriangle, ImageOff as NoImageIcon } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore, AlertTriangle, ImageOff as NoImageIcon, BellOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -126,7 +126,20 @@ export default function Products() {
     queryKey: ["product-issues"],
     queryFn: () => apiFetch("/products/issues"),
     enabled: viewMode === "issues",
-    staleTime: 5 * 60 * 1000,
+    staleTime: 0,
+  });
+  const [snoozingId, setSnoozingId] = useState<number | null>(null);
+  const snoozeMutation = useMutation({
+    mutationFn: (id: number) =>
+      fetch(`${BASE}/api/products/${id}/snooze-issue`, { method: "POST" })
+        .then(async r => { if (!r.ok) throw new Error((await r.json()).error ?? r.statusText); return r.json(); }),
+    onMutate: (id) => setSnoozingId(id),
+    onSettled: () => setSnoozingId(null),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["product-issues"] });
+      toast({ title: "Snoozed for 30 days", description: "This product won't appear in Issues until then." });
+    },
+    onError: () => toast({ title: "Failed to snooze", variant: "destructive" }),
   });
   const [pushingPrice, setPushingPrice] = useState<Record<number, boolean>>({});
   const pushPriceMutation = useMutation({
@@ -616,6 +629,7 @@ export default function Products() {
                       <TableHead className="text-right w-20">GP%</TableHead>
                       <TableHead className="text-right w-44">Suggested price</TableHead>
                       <TableHead className="w-24">Issues</TableHead>
+                      <TableHead className="w-10"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -682,6 +696,18 @@ export default function Products() {
                               </span>
                             )}
                           </div>
+                        </TableCell>
+                        <TableCell onClick={e => e.stopPropagation()}>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            title="Snooze this issue for 30 days"
+                            disabled={snoozingId === p.id}
+                            onClick={() => snoozeMutation.mutate(p.id)}
+                          >
+                            {snoozingId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <BellOff className="w-3.5 h-3.5" />}
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
