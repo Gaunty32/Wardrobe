@@ -256,25 +256,47 @@ router.get("/customers/:id/invoice-summary", async (req, res): Promise<void> => 
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid customer ID" }); return; }
 
-  const invoicedOrders = await db
-    .select({
-      id: ordersTable.id,
-      orderNumber: ordersTable.orderNumber,
-      totalAmount: ordersTable.totalAmount,
-      invoiceEmailSentAt: ordersTable.invoiceEmailSentAt,
-      xeroInvoiceId: ordersTable.xeroInvoiceId,
-      xeroInvoiceStatus: ordersTable.xeroInvoiceStatus,
-      dispatchedAt: ordersTable.dispatchedAt,
-      orderDate: ordersTable.orderDate,
-    })
-    .from(ordersTable)
-    .where(
-      and(
-        eq(ordersTable.customerId, id),
-        isNotNull(ordersTable.invoiceEmailSentAt),
-      )
-    )
-    .orderBy(ordersTable.invoiceEmailSentAt);
+  // Compute gross (inc-VAT) total per order by joining order_items.
+  // Mirrors the exact formula used in the invoice email:
+  //   gross = totalAmount + carriageAmount + SUM(lineTotal * vatRate) + carriageAmount * 0.20
+  const rows = await db.execute(sql`
+    SELECT
+      o.id,
+      o.order_number         AS "orderNumber",
+      o.total_amount         AS "totalAmount",
+      o.carriage_amount      AS "carriageAmount",
+      o.invoice_email_sent_at AS "invoiceEmailSentAt",
+      o.xero_invoice_id      AS "xeroInvoiceId",
+      o.xero_invoice_status  AS "xeroInvoiceStatus",
+      o.dispatched_at        AS "dispatchedAt",
+      o.order_date           AS "orderDate",
+      COALESCE(SUM(oi.line_total::numeric * oi.vat_rate::numeric), 0) AS "vatOnItems",
+      o.total_amount::numeric
+        + o.carriage_amount::numeric
+        + COALESCE(SUM(oi.line_total::numeric * oi.vat_rate::numeric), 0)
+        + o.carriage_amount::numeric * 0.20
+        AS "grossTotal"
+    FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    WHERE o.customer_id = ${id}
+      AND o.invoice_email_sent_at IS NOT NULL
+    GROUP BY o.id
+    ORDER BY o.invoice_email_sent_at
+  `);
+
+  const invoicedOrders = rows.rows as Array<{
+    id: number;
+    orderNumber: string;
+    totalAmount: string;
+    carriageAmount: string;
+    invoiceEmailSentAt: string;
+    xeroInvoiceId: string | null;
+    xeroInvoiceStatus: string | null;
+    dispatchedAt: string | null;
+    orderDate: string | null;
+    vatOnItems: string;
+    grossTotal: string;
+  }>;
 
   const PAID_STATUSES = ["PAID", "VOIDED", "DELETED"];
   const unpaid = invoicedOrders.filter(
@@ -288,8 +310,8 @@ router.get("/customers/:id/invoice-summary", async (req, res): Promise<void> => 
     (o) => o.invoiceEmailSentAt && new Date(o.invoiceEmailSentAt) < cutoff
   );
 
-  const balanceDue = unpaid.reduce((sum, o) => sum + parseFloat(o.totalAmount || "0"), 0);
-  const overdueTotal = overdue.reduce((sum, o) => sum + parseFloat(o.totalAmount || "0"), 0);
+  const balanceDue = unpaid.reduce((sum, o) => sum + parseFloat(o.grossTotal || "0"), 0);
+  const overdueTotal = overdue.reduce((sum, o) => sum + parseFloat(o.grossTotal || "0"), 0);
 
   res.json({
     balanceDue: balanceDue.toFixed(2),
@@ -299,7 +321,7 @@ router.get("/customers/:id/invoice-summary", async (req, res): Promise<void> => 
     overdueInvoices: overdue.map((o) => ({
       id: o.id,
       orderNumber: o.orderNumber,
-      amount: parseFloat(o.totalAmount || "0").toFixed(2),
+      amount: parseFloat(o.grossTotal || "0").toFixed(2),
       invoicedAt: o.invoiceEmailSentAt,
       daysOverdue: Math.floor((Date.now() - new Date(o.invoiceEmailSentAt!).getTime()) / 86400000) - 14,
       xeroInvoiceId: o.xeroInvoiceId,
