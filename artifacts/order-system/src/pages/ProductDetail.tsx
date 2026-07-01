@@ -1079,7 +1079,9 @@ export default function ProductDetail() {
           qc.invalidateQueries({ queryKey: ["product", productId, "attributes"] });
           qc.invalidateQueries({ queryKey: ["product", productId, "variants"] });
           qc.invalidateQueries({ queryKey: getGetProductQueryKey(productId) });
-          setDetails(null);
+          // Don't null details — the form already shows the correct saved values.
+          // Nulling here causes a race: the useEffect repopulates from stale product
+          // data before the refetch completes, then the guard blocks the correction.
           toast({ title: "Product saved" });
           setDetailsDirty(false);
         },
