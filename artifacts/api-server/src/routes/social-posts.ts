@@ -656,13 +656,12 @@ router.post("/products/:productId/generate-image-prompt", async (req, res): Prom
     category: z.enum(["Trade", "Corporate", "Hospitality", "Outerwear"]),
     heroColourway: z.string().min(1),
     availableColourways: z.array(z.string()).min(1),
-    logoText: z.string().default("YOUR LOGO HERE"),
     imageSize: z.string().default("1000px x 1000px"),
     notes: z.string().optional(),
   }).safeParse(req.body);
 
   if (!bodyParse.success) { res.status(400).json({ error: bodyParse.error.message }); return; }
-  const { productName, garmentType, genderFit, category, heroColourway, availableColourways, logoText, imageSize, notes } = bodyParse.data;
+  const { productName, garmentType, genderFit, category, heroColourway, availableColourways, imageSize, notes } = bodyParse.data;
 
   const categoryEnvs: Record<string, string> = {
     Trade: "commercial vans, workshops, warehouses, construction sites, landscaping yards, delivery depots",
@@ -690,7 +689,7 @@ PRODUCT:
 - Hero (centre) colourway: ${heroColourway}
 - All available colourways: ${availableColourways.join(", ")}
 - Thumbnail colourways (exclude hero): ${thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ")}
-- Embroidered logo text: "${logoText}"
+- Logo: "YOUR LOGO HERE" placeholder embroidered on LEFT CHEST of every garment
 - Output size: ${imageSize}
 ${notes ? `- Special instructions: ${notes}` : ""}
 
@@ -702,7 +701,7 @@ The image is a single ${imageSize} composite panel divided into:
    - 4–6 people wearing the ${heroColourway} ${garmentType}
    - No cloned or duplicated faces — every person is unique
    - Realistic ${category} workplace environment: ${categoryEnvs[category]}
-   - "${logoText}" embroidery clearly visible on chest of each garment
+   - "YOUR LOGO HERE" placeholder embroidery clearly visible on LEFT CHEST of each garment
    - Commercial catalogue photography: natural lighting, professional poses, product clearly visible
    - People are standing or lightly interacting, not obscuring each other's garments
 
@@ -712,7 +711,7 @@ The image is a single ${imageSize} composite panel divided into:
    - Each thumbnail shows a different realistic role or activity within the ${category} environment
    - No text labels, no colour names overlaid on images
    - Same commercial photography style as hero
-   - "${logoText}" embroidery visible in each thumbnail
+   - "YOUR LOGO HERE" placeholder embroidery on LEFT CHEST visible in each thumbnail
 
 3. TECHNICAL REQUIREMENTS:
    - ${imageSize} total output

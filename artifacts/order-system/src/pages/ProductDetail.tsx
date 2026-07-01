@@ -815,7 +815,6 @@ export default function ProductDetail() {
     category: "Corporate" as "Trade" | "Corporate" | "Hospitality" | "Outerwear",
     heroColourway: "",
     availableColourways: [] as string[],
-    logoText: "YOUR LOGO HERE",
     imageSize: "1000px x 1000px",
     notes: "",
   });
@@ -841,10 +840,11 @@ export default function ProductDetail() {
   useEffect(() => {
     if (!imgGenPopulated && product && variants) {
       const colours = [...new Set((variants as any[]).map((v: any) => v.colour).filter(Boolean))] as string[];
+      const randomHero = colours.length > 0 ? colours[Math.floor(Math.random() * colours.length)] : "";
       setImgGen(prev => ({
         ...prev,
         productName: (product as any).name || prev.productName,
-        heroColourway: colours[0] || prev.heroColourway,
+        heroColourway: randomHero || prev.heroColourway,
         availableColourways: colours.length > 0 ? colours : prev.availableColourways,
       }));
       setImgGenPopulated(true);
@@ -2791,9 +2791,21 @@ export default function ProductDetail() {
                     {/* Hero Colourway */}
                     <div className="grid gap-2">
                       <Label className="text-sm font-medium">Hero Colourway * <span className="text-muted-foreground font-normal">(centre panel)</span></Label>
-                      <Input value={imgGen.heroColourway} onChange={e => setImgGen(p => ({ ...p, heroColourway: e.target.value }))} placeholder="e.g. Navy" />
+                      <div className="flex gap-2">
+                        <Input value={imgGen.heroColourway} onChange={e => setImgGen(p => ({ ...p, heroColourway: e.target.value }))} placeholder="e.g. Navy" className="flex-1" />
+                        {imgGen.availableColourways.length > 0 && (
+                          <Button type="button" variant="outline" size="sm" className="shrink-0 text-xs"
+                            onClick={() => {
+                              const others = imgGen.availableColourways.filter(c => c !== imgGen.heroColourway);
+                              const pool = others.length > 0 ? others : imgGen.availableColourways;
+                              setImgGen(p => ({ ...p, heroColourway: pool[Math.floor(Math.random() * pool.length)] }));
+                            }}>
+                            🎲 Random
+                          </Button>
+                        )}
+                      </div>
                       {imgGen.availableColourways.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="flex flex-wrap gap-1">
                           {imgGen.availableColourways.map(c => (
                             <button key={c} type="button" onClick={() => setImgGen(p => ({ ...p, heroColourway: c }))}
                               className={cn("text-xs px-2 py-0.5 rounded-full border transition-colors",
@@ -2805,50 +2817,33 @@ export default function ProductDetail() {
                       )}
                     </div>
 
-                    {/* Available Colourways */}
+                    {/* Available Colourways — auto-populated from WooCommerce variants */}
                     <div className="grid gap-2">
-                      <Label className="text-sm font-medium">Available Colourways *</Label>
-                      <div className="flex flex-wrap gap-1.5 min-h-[36px] rounded-md border border-border bg-background px-3 py-2">
+                      <Label className="text-sm font-medium">Available Colourways *
+                        <span className="text-muted-foreground font-normal ml-1">(from WooCommerce variants)</span>
+                      </Label>
+                      <div className="flex flex-wrap gap-1.5 min-h-[36px] rounded-md border border-border bg-muted/30 px-3 py-2">
+                        {imgGen.availableColourways.length === 0 && (
+                          <span className="text-xs text-muted-foreground italic">No colours found — check product has WooCommerce variants</span>
+                        )}
                         {imgGen.availableColourways.map(c => (
                           <span key={c} className="inline-flex items-center gap-1 text-xs bg-violet-100 text-violet-800 border border-violet-200 rounded-full px-2 py-0.5">
                             {c}
-                            <button type="button" onClick={() => setImgGen(p => ({ ...p, availableColourways: p.availableColourways.filter(x => x !== c), heroColourway: p.heroColourway === c ? "" : p.heroColourway }))} className="hover:text-red-600">
+                            <button type="button" onClick={() => setImgGen(p => ({ ...p, availableColourways: p.availableColourways.filter(x => x !== c), heroColourway: p.heroColourway === c ? (p.availableColourways.filter(x => x !== c)[0] ?? "") : p.heroColourway }))} className="hover:text-red-600">
                               <X className="w-3 h-3" />
                             </button>
                           </span>
                         ))}
                       </div>
-                      <div className="flex gap-2">
-                        <Input
-                          value={imgGenNewColour}
-                          onChange={e => setImgGenNewColour(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === "Enter" && imgGenNewColour.trim()) {
-                              e.preventDefault();
-                              const col = imgGenNewColour.trim();
-                              if (!imgGen.availableColourways.includes(col)) {
-                                setImgGen(p => ({ ...p, availableColourways: [...p.availableColourways, col] }));
-                              }
-                              setImgGenNewColour("");
-                            }
-                          }}
-                          placeholder="Type a colour, press Enter to add"
-                          className="flex-1"
-                        />
-                        <Button type="button" variant="outline" size="sm" onClick={() => {
-                          const col = imgGenNewColour.trim();
-                          if (col && !imgGen.availableColourways.includes(col)) {
-                            setImgGen(p => ({ ...p, availableColourways: [...p.availableColourways, col] }));
-                          }
-                          setImgGenNewColour("");
-                        }}>Add</Button>
-                      </div>
                     </div>
 
-                    {/* Logo Text */}
+                    {/* Logo — always the SBS "Your Logo Here" placeholder on left chest */}
                     <div className="grid gap-2">
-                      <Label className="text-sm font-medium">Logo Text <span className="text-muted-foreground font-normal">(embroidered)</span></Label>
-                      <Input value={imgGen.logoText} onChange={e => setImgGen(p => ({ ...p, logoText: e.target.value }))} placeholder="YOUR LOGO HERE" />
+                      <Label className="text-sm font-medium">Logo <span className="text-muted-foreground font-normal">(left chest — embroidered)</span></Label>
+                      <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
+                        <img src="/your-logo-here.png" alt="Your Logo Here" className="h-10 w-auto object-contain" />
+                        <span className="text-xs text-muted-foreground">Standard "Your Logo Here" placeholder · Left chest position</span>
+                      </div>
                     </div>
 
                     {/* Image Size */}
