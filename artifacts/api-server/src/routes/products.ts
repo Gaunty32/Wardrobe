@@ -316,12 +316,7 @@ router.get("/products/issues", async (req, res): Promise<void> => {
            / CAST(p.unit_price AS float) * 100)::numeric, 1)
         ELSE NULL
       END AS gp_pct,
-      -- Minimum whole-pound price that achieves ≥80% GP: ceil(cost / 0.20)
-      CASE
-        WHEN p.issue_low_gp = true AND p.supplier_price IS NOT NULL
-        THEN CEIL(CAST(p.supplier_price AS float) / 0.20)
-        ELSE NULL
-      END AS suggested_price
+      NULL::numeric AS suggested_price
     FROM products p
     LEFT JOIN suppliers s ON s.id = p.supplier_id
     WHERE (p.issue_no_image = true OR p.issue_low_gp = true)

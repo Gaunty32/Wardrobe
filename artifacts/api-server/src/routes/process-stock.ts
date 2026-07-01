@@ -161,7 +161,10 @@ router.get("/purchasing/process-stock-requirements", async (_req, res): Promise<
     })
     .from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .where(eq(ordersTable.status, "confirmed"));
+    .where(and(
+      eq(ordersTable.status, "confirmed"),
+      sql`${orderItemsTable.dispatchedAt} IS NULL`,
+    ));
 
   const itemsWithFinish = confirmedItems.filter(i => i.finishId != null);
   if (itemsWithFinish.length === 0) { res.json([]); return; }

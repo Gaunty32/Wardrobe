@@ -627,7 +627,6 @@ export default function Products() {
                       <TableHead className="text-right">Sell price</TableHead>
                       <TableHead className="text-right">Cost</TableHead>
                       <TableHead className="text-right w-20">GP%</TableHead>
-                      <TableHead className="text-right w-44">Suggested price</TableHead>
                       <TableHead className="w-24">Issues</TableHead>
                       <TableHead className="w-10"></TableHead>
                     </TableRow>
@@ -662,26 +661,6 @@ export default function Products() {
                               "bg-red-50 text-red-600"
                             )}>{p.gpPct.toFixed(1)}%</span>
                           ) : <span className="text-xs text-muted-foreground/50">—</span>}
-                        </TableCell>
-                        {/* Suggested price + Apply & Push button */}
-                        <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                          {p.issueLowGp && p.suggestedPrice != null ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <span className="tabular-nums text-sm font-semibold text-green-700">{formatCurrency(p.suggestedPrice)}</span>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs px-2 border-green-400 text-green-700 hover:bg-green-50 whitespace-nowrap"
-                                disabled={pushingPrice[p.id]}
-                                onClick={() => pushPriceMutation.mutate({ id: p.id, newPrice: p.suggestedPrice! })}
-                              >
-                                {pushingPrice[p.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <TrendingUp className="w-3 h-3" />}
-                                {p.wooCommerceId ? "Apply & Push" : "Apply"}
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground/40">—</span>
-                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
