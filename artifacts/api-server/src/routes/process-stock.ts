@@ -144,6 +144,21 @@ router.delete("/process-stock/:id", async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
+// Book in received stock — increments stock_quantity by the given amount
+router.post("/process-stock/:id/book-in", async (req, res): Promise<void> => {
+  const parsed = idParam.safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const body = z.object({ quantity: z.number().int().positive() }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: "quantity (positive integer) required" }); return; }
+  const [row] = await db
+    .update(processStockTable)
+    .set({ stockQuantity: sql`${processStockTable.stockQuantity} + ${body.data.quantity}`, updatedAt: new Date() })
+    .where(eq(processStockTable.id, parsed.data.id))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Process stock item not found" }); return; }
+  res.json({ id: row.id, stockQuantity: row.stockQuantity });
+});
+
 // ── Process stock requirements for all confirmed orders ───────────────────────
 // Walks: confirmed order items → finish → processes → process stock
 // and returns total needed vs. available, grouped by process stock item.

@@ -7,7 +7,7 @@ import {
   ShoppingBag, Package, AlertTriangle, CheckCircle, Mail, ChevronDown, ChevronRight,
   RefreshCw, Plus, FileText, Truck, Clock, TriangleAlert, Trash2, ArrowRight,
   CalendarDays, PackageCheck, Send, Loader2, ChevronUp, TrendingUp, ClipboardList, Layers, Boxes, Paperclip, Upload,
-  CheckCircle2, ListChecks, Sparkles, StickyNote, Ban, Search, X, Pencil, RotateCcw,
+  CheckCircle2, ListChecks, Sparkles, StickyNote, Ban, Search, X, Pencil, RotateCcw, PackagePlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1318,6 +1318,32 @@ function ProcessMaterialsLineTable({
   onQtyChange?: (processStockId: number, qty: number) => void;
   onRemove?: (processStockId: number) => void;
 }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [bookingInId, setBookingInId] = useState<number | null>(null);
+  const [bookInQty, setBookInQty] = useState("");
+  const [bookingInProgress, setBookingInProgress] = useState(false);
+
+  async function confirmBookIn(psId: number) {
+    const qty = parseInt(bookInQty, 10);
+    if (isNaN(qty) || qty <= 0) return;
+    setBookingInProgress(true);
+    try {
+      await apiFetch(`/process-stock/${psId}/book-in`, {
+        method: "POST",
+        body: JSON.stringify({ quantity: qty }),
+      });
+      await qc.invalidateQueries({ queryKey: ["process-stock-requirements"] });
+      toast({ title: "Stock booked in", description: `Added ${qty} units to stock.` });
+      setBookingInId(null);
+      setBookInQty("");
+    } catch {
+      toast({ title: "Failed to book in stock", variant: "destructive" });
+    } finally {
+      setBookingInProgress(false);
+    }
+  }
+
   return (
     <div className="overflow-x-auto rounded-lg border border-border">
       <Table>
@@ -1332,11 +1358,46 @@ function ProcessMaterialsLineTable({
         <TableBody>
           {items.map((req) => {
             const qty = overrides?.[req.processStockId] ?? req.shortfall;
+            const isBookingThis = bookingInId === req.processStockId;
             return (
               <TableRow key={req.processStockId}>
                 <TableCell>
                   <div className="font-medium text-sm">{req.name}</div>
                   <div className="text-xs text-muted-foreground">In stock: {req.stockQuantity} · Need: {req.totalNeeded}</div>
+                  {isBookingThis ? (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <input
+                        autoFocus
+                        type="number"
+                        min={1}
+                        value={bookInQty}
+                        onChange={e => setBookInQty(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") confirmBookIn(req.processStockId);
+                          if (e.key === "Escape") { setBookingInId(null); setBookInQty(""); }
+                        }}
+                        placeholder="Qty received"
+                        className="w-24 border border-border rounded px-2 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <Button size="sm" variant="default" className="h-6 text-xs px-2 gap-1"
+                        disabled={bookingInProgress || !bookInQty}
+                        onClick={() => confirmBookIn(req.processStockId)}>
+                        {bookingInProgress ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                        Confirm
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs px-1"
+                        onClick={() => { setBookingInId(null); setBookInQty(""); }}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      className="mt-1 flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800 hover:underline"
+                      onClick={() => { setBookingInId(req.processStockId); setBookInQty(String(req.shortfall)); }}
+                    >
+                      <PackagePlus className="w-3 h-3" /> Book in received stock
+                    </button>
+                  )}
                 </TableCell>
                 <TableCell>
                   {req.sku
