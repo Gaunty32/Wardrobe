@@ -28,3 +28,28 @@ export function isStaffAuthenticated(): boolean {
     return false;
   }
 }
+
+export interface StaffJwtPayload {
+  role: string;
+  email?: string | null;
+  name?: string | null;
+  exp?: number;
+}
+
+export function getStaffJwtPayload(): StaffJwtPayload | null {
+  const token = getStaffToken();
+  if (!token) return null;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    return JSON.parse(atob(parts[1])) as StaffJwtPayload;
+  } catch {
+    return null;
+  }
+}
+
+// Returns Authorization header value for secure API calls
+export function staffAuthHeader(): Record<string, string> {
+  const token = getStaffToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}

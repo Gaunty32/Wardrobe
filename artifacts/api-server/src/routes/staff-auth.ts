@@ -216,7 +216,13 @@ router.post("/auth/staff/verify-otp", async (req, res): Promise<void> => {
   }
 
   await db.delete(settingsTable).where(eq(settingsTable.key, otpKey));
-  const token = jwt.sign({ role: "staff" }, JWT_SECRET, { expiresIn: "7d" });
+  const accounts = await getStaffAccounts();
+  const account = accounts.find(a => a.email === normEmail);
+  const token = jwt.sign(
+    { role: "staff", email: normEmail, name: account?.name ?? null },
+    JWT_SECRET,
+    { expiresIn: "7d" }
+  );
   res.json({ token });
 });
 

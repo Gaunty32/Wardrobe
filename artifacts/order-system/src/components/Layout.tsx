@@ -2,7 +2,7 @@ import { ReactNode, useEffect, useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle, Hash, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { isStaffAuthenticated, clearStaffToken } from "@/lib/staff-auth";
+import { isStaffAuthenticated, clearStaffToken, staffAuthHeader, getStaffJwtPayload } from "@/lib/staff-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -345,7 +345,32 @@ export default function Layout({ children }: LayoutProps) {
     setLocation("/");
   }
 
-  const navSections: NavSection[] = [
+  // ── Current user permissions ──────────────────────────────────────────────
+  const jwtPayload = getStaffJwtPayload();
+  const { data: staffMe } = useQuery<{
+    name: string | null;
+    email: string | null;
+    is_superuser: boolean;
+    allowed_nav: string[] | null;
+  }>({
+    queryKey: ["staff-me"],
+    queryFn: () =>
+      apiFetch("/auth/staff/me", {
+        headers: staffAuthHeader() as Record<string, string>,
+      }),
+    staleTime: 60_000,
+    enabled: isStaffAuthenticated(),
+  });
+
+  // null = all access (default before data loads or for password login)
+  const allowedNav: string[] | null = staffMe?.allowed_nav ?? null;
+
+  function isNavAllowed(href: string): boolean {
+    if (allowedNav === null) return true; // full access
+    return allowedNav.includes(href);
+  }
+
+  const rawNavSections: NavSection[] = [
     {
       label: "",
       items: [
@@ -377,17 +402,31 @@ export default function Layout({ children }: LayoutProps) {
         { name: "Portal Orders", href: "/reports", icon: BarChart2 },
         { name: "Select Extra", href: "/select-extra", icon: Gift },
         { name: "Feedback & Issues", href: "/feedback", icon: MessageCircle },
-      { name: "Chat", href: "/chat", icon: Hash },
+        { name: "Chat", href: "/chat", icon: Hash },
       ],
     },
   ];
 
+  // Filter nav items based on user's allowed_nav
+  const navSections: NavSection[] = rawNavSections
+    .map(section => ({
+      ...section,
+      items: section.items.filter(item => isNavAllowed(item.href)),
+    }))
+    .filter(section => section.items.length > 0);
+
   const allNavItems = navSections.flatMap(s => s.items);
 
-  const bottomNavItems = [
+  const rawBottomNavItems = [
     { name: "Settings", href: "/settings", icon: Settings2 },
     { name: "Demo", href: "/demo", icon: MonitorPlay },
   ];
+
+  // Superusers always see Settings; filter others by allowed_nav
+  const isSuperuser = staffMe?.is_superuser ?? !jwtPayload?.email;
+  const bottomNavItems = rawBottomNavItems.filter(item =>
+    item.href === "/settings" ? (isSuperuser || isNavAllowed(item.href)) : isNavAllowed(item.href)
+  );
 
   return (
     <div className="min-h-screen bg-background flex flex-col md:flex-row">

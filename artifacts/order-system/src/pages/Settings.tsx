@@ -4,8 +4,10 @@ import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, AlertCircle, Play,
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
-  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy
+  UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy,
+  Shield, ShieldCheck, UserCog, ChevronRight,
 } from "lucide-react";
+import { staffAuthHeader, getStaffJwtPayload } from "@/lib/staff-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -781,6 +783,458 @@ function PrintingTab() {
   );
 }
 
+// ── Users tab ────────────────────────────────────────────────────────────────
+
+const ALL_NAV_PAGES = [
+  { label: "Dashboard", href: "/dashboard", group: "Main" },
+  { label: "Orders", href: "/orders", group: "Main" },
+  { label: "WooCommerce", href: "/woo-orders", group: "Main" },
+  { label: "Quotes", href: "/quotes", group: "Main" },
+  { label: "Customers", href: "/customers", group: "Main" },
+  { label: "Products", href: "/products", group: "Main" },
+  { label: "Bundles", href: "/bundles", group: "Main" },
+  { label: "Stock", href: "/stock", group: "Operations" },
+  { label: "Process Stock", href: "/process-stock", group: "Operations" },
+  { label: "Production", href: "/production", group: "Operations" },
+  { label: "Purchasing", href: "/purchasing", group: "Operations" },
+  { label: "Dispatch", href: "/dispatch", group: "Operations" },
+  { label: "Invoicing", href: "/invoices", group: "Operations" },
+  { label: "Suppliers", href: "/suppliers", group: "Operations" },
+  { label: "Tasks", href: "/tasks", group: "Operations" },
+  { label: "Portal Orders", href: "/reports", group: "Reports" },
+  { label: "Select Extra", href: "/select-extra", group: "Reports" },
+  { label: "Feedback & Issues", href: "/feedback", group: "Reports" },
+  { label: "Chat", href: "/chat", group: "Reports" },
+  { label: "Settings", href: "/settings", group: "Admin" },
+  { label: "Demo", href: "/demo", group: "Admin" },
+];
+
+const NAV_GROUPS = ["Main", "Operations", "Reports", "Admin"] as const;
+
+interface StaffUserAccount {
+  name: string;
+  email: string;
+  is_superuser?: boolean;
+  allowed_nav?: string[] | null;
+}
+
+function UserInitials({ name }: { name: string }) {
+  const parts = name.trim().split(/\s+/);
+  const initials =
+    parts.length > 1
+      ? parts[0][0] + parts[parts.length - 1][0]
+      : parts[0].slice(0, 2);
+  return (
+    <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm shrink-0 uppercase">
+      {initials}
+    </div>
+  );
+}
+
+function UsersTab() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [selectedEmail, setSelectedEmail] = useState<string | null>(null);
+  const [addingUser, setAddingUser] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+
+  const jwtPayload = getStaffJwtPayload();
+
+  const { data: me } = useQuery<{
+    name: string | null;
+    email: string | null;
+    is_superuser: boolean;
+    allowed_nav: string[] | null;
+  }>({
+    queryKey: ["staff-me"],
+    queryFn: () =>
+      apiFetch("/auth/staff/me", {
+        headers: staffAuthHeader() as Record<string, string>,
+      }),
+    staleTime: 30_000,
+  });
+
+  const isSuperuser = me?.is_superuser ?? !jwtPayload?.email;
+
+  const { data: accountsData, isLoading } = useQuery<{
+    accounts: StaffUserAccount[];
+  }>({
+    queryKey: ["staff-accounts"],
+    queryFn: () => apiFetch("/auth/staff/accounts"),
+  });
+  const accounts = accountsData?.accounts ?? [];
+  const selectedAccount = accounts.find(a => a.email === selectedEmail) ?? null;
+
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editSuperuser, setEditSuperuser] = useState(false);
+  const [editAllAccess, setEditAllAccess] = useState(true);
+  const [editAllowedNav, setEditAllowedNav] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (selectedAccount) {
+      setEditName(selectedAccount.name);
+      setEditEmail(selectedAccount.email);
+      setEditSuperuser(!!selectedAccount.is_superuser);
+      const nav = selectedAccount.allowed_nav;
+      setEditAllAccess(nav == null);
+      setEditAllowedNav(nav ?? []);
+    }
+  }, [selectedEmail, accountsData]);
+
+  const saveMutation = useMutation({
+    mutationFn: (vars: {
+      email: string;
+      body: Partial<StaffUserAccount & { email: string }>;
+    }) =>
+      apiFetch(`/auth/staff/accounts/${encodeURIComponent(vars.email)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(staffAuthHeader() as Record<string, string>),
+        },
+        body: JSON.stringify(vars.body),
+      }),
+    onSuccess: (_: unknown, vars: { email: string; body: Partial<StaffUserAccount & { email: string }> }) => {
+      queryClient.invalidateQueries({ queryKey: ["staff-accounts"] });
+      const newEmailVal = vars.body.email;
+      if (newEmailVal && newEmailVal !== vars.email) setSelectedEmail(newEmailVal);
+      toast({ title: "User updated" });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (email: string) =>
+      apiFetch(`/auth/staff/accounts/${encodeURIComponent(email)}`, {
+        method: "DELETE",
+        headers: staffAuthHeader() as Record<string, string>,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-accounts"] });
+      setSelectedEmail(null);
+      toast({ title: "User removed" });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const addMutation = useMutation({
+    mutationFn: () =>
+      apiFetch("/auth/staff/accounts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(staffAuthHeader() as Record<string, string>),
+        },
+        body: JSON.stringify({
+          name: newName.trim(),
+          email: newEmail.trim().toLowerCase(),
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-accounts"] });
+      setAddingUser(false);
+      setNewName("");
+      setNewEmail("");
+      toast({ title: "User added" });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  function handleSave() {
+    if (!selectedAccount) return;
+    const body: Partial<StaffUserAccount & { email: string }> = {
+      name: editName,
+      is_superuser: editSuperuser,
+      allowed_nav: editAllAccess ? null : editAllowedNav,
+    };
+    if (editEmail !== selectedAccount.email) body.email = editEmail;
+    saveMutation.mutate({ email: selectedAccount.email, body });
+  }
+
+  function togglePage(href: string) {
+    setEditAllowedNav(prev =>
+      prev.includes(href) ? prev.filter(h => h !== href) : [...prev, href]
+    );
+  }
+
+  const grouped = Object.fromEntries(
+    NAV_GROUPS.map(g => [g, ALL_NAV_PAGES.filter(p => p.group === g)])
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-8">
+        <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-6 min-h-[520px]">
+      {/* Left: user list */}
+      <div className="w-64 shrink-0 border-r pr-4 space-y-1">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+          Staff Accounts
+        </p>
+        {accounts.map(a => (
+          <button
+            key={a.email}
+            onClick={() => {
+              setSelectedEmail(a.email);
+              setAddingUser(false);
+            }}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-left text-sm transition-colors ${
+              selectedEmail === a.email
+                ? "bg-primary/10 text-primary"
+                : "hover:bg-muted"
+            }`}
+          >
+            <UserInitials name={a.name} />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium truncate">{a.name}</p>
+              <p className="text-xs text-muted-foreground truncate">{a.email}</p>
+            </div>
+            {a.is_superuser && (
+              <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+            )}
+          </button>
+        ))}
+        {isSuperuser && (
+          <button
+            onClick={() => {
+              setAddingUser(true);
+              setSelectedEmail(null);
+              setNewName("");
+              setNewEmail("");
+            }}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors border border-dashed border-border mt-2"
+          >
+            <UserPlus className="w-4 h-4" /> Add user
+          </button>
+        )}
+        {accounts.length === 0 && !isSuperuser && (
+          <p className="text-xs text-muted-foreground px-2 py-4">No users configured</p>
+        )}
+      </div>
+
+      {/* Right: detail / edit */}
+      <div className="flex-1 min-w-0">
+        {addingUser ? (
+          <div className="space-y-4 max-w-md">
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <UserPlus className="w-4 h-4" /> Add New User
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <Label>Full name</Label>
+                <Input
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  placeholder="e.g. Sarah Jones"
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <Label>Email address</Label>
+                <Input
+                  value={newEmail}
+                  onChange={e => setNewEmail(e.target.value)}
+                  placeholder="e.g. sarah@example.com"
+                  className="mt-1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  This email is used for OTP login
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => addMutation.mutate()}
+                disabled={
+                  !newName.trim() ||
+                  !newEmail.includes("@") ||
+                  addMutation.isPending
+                }
+              >
+                {addMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                ) : (
+                  <UserPlus className="w-4 h-4 mr-1" />
+                )}
+                Add User
+              </Button>
+              <Button variant="outline" onClick={() => setAddingUser(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : selectedAccount ? (
+          <div className="space-y-5 max-w-lg">
+            <div className="flex items-center gap-3">
+              <UserInitials name={selectedAccount.name} />
+              <div>
+                <h3 className="text-base font-semibold">{selectedAccount.name}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {selectedAccount.email}
+                </p>
+              </div>
+              {selectedAccount.is_superuser && (
+                <Badge className="ml-auto bg-primary/10 text-primary border-primary/20">
+                  <ShieldCheck className="w-3 h-3 mr-1" /> Superuser
+                </Badge>
+              )}
+            </div>
+
+            {isSuperuser ? (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Full name</Label>
+                    <Input
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label>Email address</Label>
+                    <Input
+                      value={editEmail}
+                      onChange={e => setEditEmail(e.target.value)}
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 rounded-lg border p-3 bg-muted/30">
+                  <ShieldCheck className="w-5 h-5 text-primary shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Superuser access</p>
+                    <p className="text-xs text-muted-foreground">
+                      Can manage users and access all settings
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditSuperuser(v => !v)}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
+                      editSuperuser ? "bg-primary" : "bg-input"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        editSuperuser ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Page access</Label>
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={editAllAccess}
+                        onChange={() => setEditAllAccess(true)}
+                        className="accent-primary"
+                      />
+                      Full access (all pages)
+                    </label>
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        checked={!editAllAccess}
+                        onChange={() => setEditAllAccess(false)}
+                        className="accent-primary"
+                      />
+                      Restricted
+                    </label>
+                  </div>
+
+                  {!editAllAccess && (
+                    <div className="border rounded-lg p-4 space-y-4 bg-muted/20">
+                      {NAV_GROUPS.map(group => (
+                        <div key={group}>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                            {group}
+                          </p>
+                          <div className="grid grid-cols-2 gap-y-1.5 gap-x-4">
+                            {grouped[group].map(page => (
+                              <label
+                                key={page.href}
+                                className="flex items-center gap-2 text-sm cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={editAllowedNav.includes(page.href)}
+                                  onChange={() => togglePage(page.href)}
+                                  className="accent-primary"
+                                />
+                                {page.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10"
+                    onClick={() => {
+                      if (
+                        confirm(
+                          `Remove ${selectedAccount.name}? They will no longer be able to log in.`
+                        )
+                      ) {
+                        deleteMutation.mutate(selectedAccount.email);
+                      }
+                    }}
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove user
+                  </Button>
+                  <Button onClick={handleSave} disabled={saveMutation.isPending}>
+                    {saveMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                    ) : null}
+                    Save changes
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="rounded-lg border p-4 text-sm text-muted-foreground bg-muted/20 flex items-center gap-2">
+                <Shield className="w-4 h-4 shrink-0" />
+                Only superusers can edit user permissions.
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground py-20">
+            <UserCog className="w-10 h-10 mb-3 opacity-30" />
+            <p className="font-medium">Select a user to view or edit</p>
+            <p className="text-xs mt-1">
+              {isSuperuser
+                ? "Or use the button on the left to add a new user"
+                : "Contact your administrator to change account settings"}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1129,6 +1583,9 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="social" className="gap-2">
               <Share2 className="w-4 h-4" /> Social Media
+            </TabsTrigger>
+            <TabsTrigger value="users" className="gap-2">
+              <Users className="w-4 h-4" /> Users
             </TabsTrigger>
           </TabsList>
 
@@ -2032,6 +2489,10 @@ export default function Settings() {
               </div>
 
             </div>
+          </TabsContent>
+
+          <TabsContent value="users" className="mt-6">
+            <UsersTab />
           </TabsContent>
 
         </Tabs>
