@@ -18,7 +18,12 @@ async function getPasswordHash(): Promise<string | null> {
 
 // ── Staff accounts ───────────────────────────────────────────────────────────
 
-interface StaffAccount { name: string; email: string; }
+interface StaffAccount {
+  name: string;
+  email: string;
+  is_superuser?: boolean;
+  allowed_nav?: string[] | null; // null = all access, array = restricted
+}
 
 async function getStaffAccounts(): Promise<StaffAccount[]> {
   const [row] = await db.select().from(settingsTable).where(eq(settingsTable.key, "staff_accounts"));
@@ -30,6 +35,26 @@ async function saveStaffAccounts(accounts: StaffAccount[]): Promise<void> {
   await db.insert(settingsTable)
     .values({ key: "staff_accounts", value: JSON.stringify(accounts) })
     .onConflictDoUpdate({ target: settingsTable.key, set: { value: JSON.stringify(accounts), updatedAt: new Date() } });
+}
+
+// Decode JWT from Authorization header and return payload (or null if invalid)
+function decodeStaffJwt(req: import("express").Request): Record<string, unknown> | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  try {
+    const payload = jwt.verify(authHeader.slice(7), JWT_SECRET) as Record<string, unknown>;
+    return payload.role === "staff" ? payload : null;
+  } catch { return null; }
+}
+
+// Check if the requester is a superuser (password-login with no email = full access)
+async function isSuperuser(req: import("express").Request): Promise<boolean> {
+  const payload = decodeStaffJwt(req);
+  if (!payload) return false;
+  if (!payload.email) return true; // password login → full access
+  const accounts = await getStaffAccounts();
+  const account = accounts.find(a => a.email === (payload.email as string));
+  return !!account?.is_superuser;
 }
 
 router.get("/auth/staff/accounts", async (_req, res): Promise<void> => {
@@ -49,9 +74,24 @@ router.post("/auth/staff/accounts", async (req, res): Promise<void> => {
     res.status(409).json({ error: "An account with this email already exists" });
     return;
   }
-  accounts.push({ name: name.trim(), email: normEmail });
+  accounts.push({ name: name.trim(), email: normEmail, is_superuser: false, allowed_nav: null });
   await saveStaffAccounts(accounts);
   res.json({ ok: true, accounts });
+});
+
+router.patch("/auth/staff/accounts/:email", async (req, res): Promise<void> => {
+  if (!await isSuperuser(req)) { res.status(403).json({ error: "Superuser access required" }); return; }
+  const normEmail = decodeURIComponent(req.params.email).trim().toLowerCase();
+  const accounts = await getStaffAccounts();
+  const idx = accounts.findIndex(a => a.email === normEmail);
+  if (idx === -1) { res.status(404).json({ error: "Account not found" }); return; }
+  const body = req.body ?? {};
+  if (typeof body.name === "string" && body.name.trim()) accounts[idx].name = body.name.trim();
+  if (typeof body.email === "string" && body.email.includes("@")) accounts[idx].email = body.email.trim().toLowerCase();
+  if (typeof body.is_superuser === "boolean") accounts[idx].is_superuser = body.is_superuser;
+  if ("allowed_nav" in body) accounts[idx].allowed_nav = Array.isArray(body.allowed_nav) ? body.allowed_nav : null;
+  await saveStaffAccounts(accounts);
+  res.json({ ok: true, account: accounts[idx] });
 });
 
 router.delete("/auth/staff/accounts/:email", async (req, res): Promise<void> => {
@@ -59,6 +99,30 @@ router.delete("/auth/staff/accounts/:email", async (req, res): Promise<void> => 
   const accounts = await getStaffAccounts();
   await saveStaffAccounts(accounts.filter(a => a.email !== normEmail));
   res.json({ ok: true });
+});
+
+// ── /auth/staff/me — return current user's profile ───────────────────────────
+router.get("/auth/staff/me", async (req, res): Promise<void> => {
+  const payload = decodeStaffJwt(req);
+  if (!payload) { res.status(401).json({ error: "Not authenticated" }); return; }
+  // Password login — no specific identity, full access
+  if (!payload.email) {
+    res.json({ name: null, email: null, is_superuser: true, allowed_nav: null });
+    return;
+  }
+  const accounts = await getStaffAccounts();
+  const account = accounts.find(a => a.email === (payload.email as string));
+  if (!account) {
+    // Account deleted since login — still valid JWT, give read-only access
+    res.json({ name: payload.name ?? null, email: payload.email, is_superuser: false, allowed_nav: [] });
+    return;
+  }
+  res.json({
+    name: account.name,
+    email: account.email,
+    is_superuser: !!account.is_superuser,
+    allowed_nav: account.allowed_nav ?? null,
+  });
 });
 
 // ── Email OTP login ──────────────────────────────────────────────────────────
