@@ -74,7 +74,7 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
       border-bottom: 2pt solid #000;
       flex-shrink: 0;
     }
-    .top-bar-logo { height: 22pt; width: auto; display: block; }
+    .top-bar-logo { height: 22pt; width: auto; display: block; filter: brightness(0); }
     .top-bar-right { display: flex; flex-direction: column; align-items: flex-end; }
     .top-bar-type { font-size: 6pt; text-transform: uppercase; letter-spacing: .12em; color: #888; font-weight: 700; }
     .top-bar-order { font-size: 14pt; font-weight: 900; line-height: 1; }
