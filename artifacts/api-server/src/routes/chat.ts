@@ -199,6 +199,40 @@ router.delete("/chat/conversations/:id/participants/:userName", async (req: Requ
   res.json({ ok: true });
 });
 
+// ─── GET /chat/unread-count ───────────────────────────────────────────────────
+// Returns unread message count for the requesting actor
+router.get("/chat/unread-count", async (req: Request, res: Response): Promise<void> => {
+  const actor = actorName(req);
+  if (!actor || actor === "Unknown") { res.json({ count: 0 }); return; }
+  const rows = await db.execute(sql`
+    SELECT COUNT(*) AS count
+    FROM chat_messages m
+    JOIN chat_participants p ON p.conversation_id = m.conversation_id AND p.user_name = ${actor}
+    WHERE m.sender_name != ${actor}
+    AND NOT EXISTS (
+      SELECT 1 FROM chat_message_reads r WHERE r.message_id = m.id AND r.user_name = ${actor}
+    )
+  `);
+  const count = parseInt((rows.rows[0] as any)?.count ?? "0", 10);
+  res.json({ count });
+});
+
+// ─── POST /chat/conversations/:id/mark-read ───────────────────────────────────
+router.post("/chat/conversations/:id/mark-read", async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const actor = actorName(req);
+  if (!actor || actor === "Unknown") { res.json({ ok: true }); return; }
+  await db.execute(sql`
+    INSERT INTO chat_message_reads (message_id, user_name)
+    SELECT m.id, ${actor}
+    FROM chat_messages m
+    WHERE m.conversation_id = ${id}
+    ON CONFLICT DO NOTHING
+  `);
+  res.json({ ok: true });
+});
+
 // ─── GET /chat/known-users ────────────────────────────────────────────────────
 // Returns distinct sender names from recent messages (for the add-member typeahead)
 router.get("/chat/known-users", async (_req: Request, res: Response): Promise<void> => {

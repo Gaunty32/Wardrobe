@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle, Hash } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle, Hash, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isStaffAuthenticated, clearStaffToken } from "@/lib/staff-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -16,9 +16,15 @@ function getStoredActor(): string {
   return localStorage.getItem("sbs_actor_name") || "";
 }
 
-async function apiFetch<T = unknown>(path: string): Promise<T> {
+async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+  const actor = getStoredActor();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(actor ? { "x-actor": actor } : {}),
+      ...opts?.headers,
+    },
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -186,6 +192,37 @@ function MessagesBell() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Chat unread notification bell ───────────────────────────────────────────
+function ChatBell() {
+  const [, navigate] = useLocation();
+  const actor = getStoredActor();
+
+  const { data } = useQuery<{ count: number }>({
+    queryKey: ["chat-unread-count", actor],
+    queryFn: () => apiFetch(`/chat/unread-count`),
+    enabled: isStaffAuthenticated() && !!actor,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+
+  const count = data?.count ?? 0;
+
+  return (
+    <button
+      onClick={() => navigate("/chat")}
+      className="relative p-2 rounded-xl text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+      title={count > 0 ? `${count} unread chat message${count !== 1 ? "s" : ""}` : "Chat"}
+    >
+      <Mail className={cn("w-5 h-5", count > 0 && "animate-pulse text-amber-400")} />
+      {count > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold px-1 leading-none">
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -404,8 +441,9 @@ export default function Layout({ children }: LayoutProps) {
         </div>
 
         <div className="p-4 border-t border-white/10 space-y-1">
-          <div className="flex items-center px-1 pb-1">
+          <div className="flex items-center gap-1 px-1 pb-1">
             <MessagesBell />
+            <ChatBell />
           </div>
           <button
             onClick={() => setFeedbackOpen(true)}

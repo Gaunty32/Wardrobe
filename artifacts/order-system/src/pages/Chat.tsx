@@ -557,6 +557,14 @@ function MessageArea({ conv }: { conv: Conversation }) {
     refetchInterval: 5000,
   });
 
+  // Mark conversation as read when opened or when new messages arrive
+  const qcRef = qc;
+  useEffect(() => {
+    apiFetch(`/chat/conversations/${conv.id}/mark-read`, { method: "POST" })
+      .then(() => qcRef.invalidateQueries({ queryKey: ["chat-unread-count"] }))
+      .catch(() => {});
+  }, [conv.id, messages.length]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);

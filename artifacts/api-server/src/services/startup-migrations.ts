@@ -2298,4 +2298,16 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   const promoted = (servicePromoResult as any).rowCount ?? 0;
   if (promoted > 0) console.log("[startup] Promoted " + promoted + " service-only confirmed order(s) to shipped");
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS chat_message_reads (
+      id SERIAL PRIMARY KEY,
+      message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+      user_name TEXT NOT NULL,
+      read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(message_id, user_name)
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_message_reads_user_idx ON chat_message_reads(user_name)`);
+  console.log("[startup] chat_message_reads table ensured");
 }
