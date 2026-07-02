@@ -233,18 +233,28 @@ export function ProcessStockTab() {
 
     const raptorId = suppliers?.find(s => s.name.toLowerCase().includes("raptor"))?.id ?? null;
     const sku = form.sku.trim() || null;
-    saveMutation.mutate({
+    const parsedQty = parseInt(form.stockQuantity, 10) || 0;
+    const payload: Record<string, unknown> = {
       name: form.name.trim(),
       sku,
       description: null,
       unitCost: parseFloat(form.unitCost) || 0,
-      stockQuantity: parseInt(form.stockQuantity, 10) || 0,
-      supplierId: raptorId,
+      // When editing, preserve the existing supplier — the hardcoded Raptor
+      // default should only apply to newly created items.
+      supplierId: editing ? editing.supplierId : raptorId,
       supplierCode: sku,
       customerId: form.customerId ? parseInt(form.customerId, 10) : null,
       notes: form.notes.trim() || null,
       fileUrl,
-    });
+    };
+    // Only include stockQuantity in the payload when creating a new item, or
+    // when the user explicitly changed it from the value loaded into the form.
+    // This prevents a stale edit dialog from overwriting stock that was booked
+    // in after the dialog was opened.
+    if (!editing || parsedQty !== editing.stockQuantity) {
+      payload.stockQuantity = parsedQty;
+    }
+    saveMutation.mutate(payload);
   };
 
   const handleDelete = (item: ProcessStockItem) => {

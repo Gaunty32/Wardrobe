@@ -177,7 +177,10 @@ router.get("/purchasing/process-stock-requirements", async (_req, res): Promise<
     .from(orderItemsTable)
     .innerJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
     .where(and(
-      eq(ordersTable.status, "confirmed"),
+      // Include both confirmed and part-shipped orders — undispatched items in
+      // part-shipped orders still need process stock even though the order is
+      // partially complete.
+      inArray(ordersTable.status, ["confirmed", "part_shipped"]),
       sql`${orderItemsTable.dispatchedAt} IS NULL`,
     ));
 
