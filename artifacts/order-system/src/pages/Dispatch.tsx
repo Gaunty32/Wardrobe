@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { printDpdLabelHtml } from "@/utils/printDpdLabel";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Truck, Package, CheckCircle, AlertTriangle, Clock, Printer, User,
@@ -153,26 +154,6 @@ interface DispatchResponse {
   dpd: { consignmentNumber: string; trackingUrl: string; labelHtml: string | null } | null;
   dpdError: string | null;
   dpdConfigured: boolean;
-}
-
-function printDpdLabelHtml(html: string) {
-  const win = window.open("", "_blank");
-  if (!win) return;
-  // DPD's HTML label is sized for A4 (adds outer padding for laser printing).
-  // Override the page size to 100×150mm (standard DPD thermal label stock) and
-  // strip all outer margins so the label content prints at the correct size on
-  // the TSC thermal printer without scaling down the barcode.
-  const thermalCss = `<style>
-    @page { size: 4in 4in; margin: 0mm; }
-    html, body { margin: 0 !important; padding: 0 !important; }
-  </style>`;
-  const modified = html.includes("</head>")
-    ? html.replace("</head>", thermalCss + "</head>")
-    : thermalCss + html;
-  win.document.open();
-  win.document.write(modified);
-  win.document.close();
-  setTimeout(() => { win.print(); }, 600);
 }
 
 function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatched: () => void }) {

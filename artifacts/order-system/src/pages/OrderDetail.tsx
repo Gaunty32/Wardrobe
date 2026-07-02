@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { printDpdLabelHtml } from "@/utils/printDpdLabel";
 import Layout from "@/components/Layout";
 import { useRoute, useLocation } from "wouter";
 import {
@@ -45,22 +46,6 @@ const DEFAULT_CLOTHING_SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", 
 
 function getStoredActor(): string {
   return localStorage.getItem("sbs_actor_name") || "";
-}
-
-function printDpdLabelHtml(html: string) {
-  const win = window.open("", "_blank");
-  if (!win) return;
-  const thermalCss = `<style>
-    @page { size: 4in 4in; margin: 0mm; }
-    html, body { margin: 0 !important; padding: 0 !important; }
-  </style>`;
-  const modified = html.includes("</head>")
-    ? html.replace("</head>", thermalCss + "</head>")
-    : thermalCss + html;
-  win.document.open();
-  win.document.write(modified);
-  win.document.close();
-  setTimeout(() => { win.print(); }, 600);
 }
 
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {

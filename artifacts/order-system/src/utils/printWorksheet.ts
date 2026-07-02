@@ -1,5 +1,42 @@
 import { sortSizes } from "@/lib/sizeUtils";
 
+const A4_PRINTER_KEY = "sbs_a4_printer";
+
+function getA4Printer(): string {
+  try { return localStorage.getItem(A4_PRINTER_KEY) ?? ""; } catch { return ""; }
+}
+
+function buildQzAutoScript(printer: string): string {
+  return `<script>(function(){
+    var p=${JSON.stringify(printer)};
+    function status(t){var el=document.getElementById('_qz_st');if(el)el.textContent=t;}
+    function cleanHtml(){
+      var c=document.documentElement.cloneNode(true);
+      [].slice.call(c.querySelectorAll('#_qz_st,script')).forEach(function(n){n.parentNode&&n.parentNode.removeChild(n);});
+      return '<!DOCTYPE html><html>'+c.innerHTML+'</html>';
+    }
+    window.addEventListener('load',function(){
+      status('Connecting\u2026');
+      var s=document.createElement('script');
+      s.src='https://cdn.jsdelivr.net/npm/qz-tray@2.2.4/qz-tray.js';
+      s.onload=function(){
+        var qz=window.qz;
+        qz.security.setCertificatePromise(function(){return Promise.resolve('');});
+        qz.security.setSignatureAlgorithm('SHA512');
+        qz.security.setSignaturePromise(function(){return Promise.resolve('');});
+        (qz.websocket.isActive()?Promise.resolve():qz.websocket.connect({retries:1,delay:0.5}))
+          .then(function(){status('Sending to '+p+'\u2026');return qz.print(qz.configs.create(p),[{type:'pixel',format:'html',flavor:'plain',data:cleanHtml()}]);})
+          .then(function(){status('\u2714 Sent to '+p);})
+          .catch(function(){status('QZ error \u2014 using dialog');window.print();});
+      };
+      s.onerror=function(){status('QZ not running \u2014 using dialog');window.print();};
+      document.head.appendChild(s);
+    });
+  })();<\/script>`;
+}
+
+const STATUS_DIV = '<div id="_qz_st" style="position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,.75);color:#fff;padding:4px 12px;border-radius:4px;font-size:11px;z-index:9999;font-family:sans-serif;pointer-events:none">Preparing\u2026</div>';
+
 export interface WsPrintProcess {
   name: string;
   type: string | null;
@@ -175,6 +212,8 @@ function openPrintWindow(title: string, toolbarLabel: string, sheetsHtml: string
   const win = window.open("", "_blank", "width=1100,height=800");
   if (!win) return;
 
+  const printer = getA4Printer();
+
   const html = `<!DOCTYPE html><html><head><title>${title}</title>
     <style>
       *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -194,6 +233,7 @@ function openPrintWindow(title: string, toolbarLabel: string, sheetsHtml: string
         @page{size:A4 portrait;margin:12mm}
       }
     </style>
+    ${printer ? buildQzAutoScript(printer) : ""}
   </head><body>
     <div id="toolbar">
       <span>📋 ${toolbarLabel}</span>
@@ -201,12 +241,15 @@ function openPrintWindow(title: string, toolbarLabel: string, sheetsHtml: string
       <button id="btn-close" onclick="window.close()">✕ Close</button>
     </div>
     ${sheetsHtml}
+    ${printer ? STATUS_DIV : ""}
   </body></html>`;
 
   win.document.write(html);
   win.document.close();
   win.focus();
-  win.onload = () => win.print();
+  if (!printer) {
+    win.onload = () => win.print();
+  }
 }
 
 export function printWorksheetFromData(ws: WsPrintData): void {

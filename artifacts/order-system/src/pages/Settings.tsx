@@ -723,43 +723,78 @@ function SecurityTab() {
 }
 
 const LABEL_PRINTER_KEY = "sbs_label_printer";
+const A4_PRINTER_KEY = "sbs_a4_printer";
 
-function PrintingTab() {
+function PrinterRow({
+  label, description, storageKey, placeholder, uses,
+}: {
+  label: string; description: string; storageKey: string; placeholder: string; uses: string;
+}) {
   const [printerName, setPrinterName] = useState(() => {
-    try { return localStorage.getItem(LABEL_PRINTER_KEY) || "TSC DA210"; } catch { return "TSC DA210"; }
+    try { return localStorage.getItem(storageKey) || ""; } catch { return ""; }
   });
   const [saved, setSaved] = useState(false);
 
   function save() {
-    try { localStorage.setItem(LABEL_PRINTER_KEY, printerName.trim() || "TSC DA210"); } catch { /* ignore */ }
+    try {
+      const val = printerName.trim();
+      if (val) localStorage.setItem(storageKey, val);
+      else localStorage.removeItem(storageKey);
+    } catch { /* ignore */ }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }
 
   return (
+    <div className="border rounded-lg p-4">
+      <h4 className="font-semibold text-sm mb-0.5">{label}</h4>
+      <p className="text-xs text-muted-foreground mb-3">{description}</p>
+      <div className="flex gap-2 items-end">
+        <div className="flex-1">
+          <Label className="mb-1 block text-xs">Printer name</Label>
+          <Input
+            value={printerName}
+            onChange={e => { setPrinterName(e.target.value); setSaved(false); }}
+            placeholder={placeholder}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            Must match exactly as shown in Windows → Printers &amp; scanners.
+            Leave blank to always use the browser dialog.
+          </p>
+        </div>
+        <Button onClick={save} className="gap-2 shrink-0">
+          {saved ? <><CheckCircle className="w-4 h-4" /> Saved</> : "Save"}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground mt-2 italic">Used for: {uses}</p>
+    </div>
+  );
+}
+
+function PrintingTab() {
+  return (
     <div className="grid gap-6 max-w-2xl">
       <div>
-        <h3 className="text-base font-semibold mb-1">Label Printer (QZ Tray)</h3>
+        <h3 className="text-base font-semibold mb-1">Default Printers (QZ Tray)</h3>
         <p className="text-sm text-muted-foreground mb-4">
-          When <strong>QZ Tray</strong> is running on this computer, wearer and box labels print
-          directly to the named printer below — no dialog required. If QZ Tray isn't running,
-          the browser print dialog opens as normal.
+          When <strong>QZ Tray</strong> is running, documents send directly to the saved printer — no dialog, no switching.
+          If QZ Tray isn't running or no printer is saved, the normal browser print dialog opens as a fallback.
         </p>
-        <div className="flex gap-2 items-end">
-          <div className="flex-1">
-            <Label className="mb-1 block">Printer name</Label>
-            <Input
-              value={printerName}
-              onChange={e => { setPrinterName(e.target.value); setSaved(false); }}
-              placeholder="TSC DA210"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Must match the printer name exactly as shown in Windows → Printers &amp; scanners.
-            </p>
-          </div>
-          <Button onClick={save} className="gap-2 shrink-0">
-            {saved ? <><CheckCircle className="w-4 h-4" /> Saved</> : "Save"}
-          </Button>
+        <div className="grid gap-3">
+          <PrinterRow
+            label="Label Printer"
+            description="Thermal label printer for small-format labels."
+            storageKey={LABEL_PRINTER_KEY}
+            placeholder="TSC DA210"
+            uses="Wearer labels, box labels, DPD shipping labels"
+          />
+          <PrinterRow
+            label="Document Printer (A4)"
+            description="Standard A4 printer for documents."
+            storageKey={A4_PRINTER_KEY}
+            placeholder="HP LaserJet Pro"
+            uses="Production worksheets, picking slips"
+          />
         </div>
       </div>
 
@@ -771,12 +806,11 @@ function PrintingTab() {
           <li>Download and install <strong>QZ Tray</strong> from <a href="https://qz.io/download/" target="_blank" rel="noreferrer" className="underline text-foreground">qz.io/download</a></li>
           <li>Launch QZ Tray — it runs in the system tray (bottom-right of taskbar)</li>
           <li>Right-click the QZ Tray icon → <strong>Advanced</strong> → tick <strong>Allow unsigned content</strong></li>
-          <li>Set the printer name above to match your label printer exactly, then click Save</li>
-          <li>Open any order and print wearer or box labels — they will send automatically</li>
+          <li>Set the printer names above and click Save for each</li>
+          <li>Print any label or document — it will go straight to the correct printer</li>
         </ol>
         <p className="text-xs text-muted-foreground mt-3">
-          QZ Tray must be running whenever labels need to print silently. If it's not running,
-          labels still open and print via the normal browser dialog.
+          QZ Tray must be running whenever you want silent printing. It's a small background app — set it to start with Windows for convenience.
         </p>
       </div>
     </div>
