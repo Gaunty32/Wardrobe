@@ -1918,8 +1918,13 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
     .where(and(
       inArray(purchaseOrdersTable.status, ["ordered", "delivered"]),
       lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
-      // Manually flagged (due date set) OR overdue by more than 5 days
-      sql`(${purchaseOrderItemsTable.estimatedDueDate} IS NOT NULL OR ${purchaseOrdersTable.sentAt} < NOW() - INTERVAL '5 days')`,
+      // Delivered POs with shortfalls are confirmed backorders — always show them.
+      // For still-ordered POs: show if manually flagged with a due date OR overdue by >5 days.
+      sql`(
+        ${purchaseOrdersTable.status} = 'delivered'
+        OR ${purchaseOrderItemsTable.estimatedDueDate} IS NOT NULL
+        OR ${purchaseOrdersTable.sentAt} < NOW() - INTERVAL '5 days'
+      )`,
     ))
     .orderBy(purchaseOrderItemsTable.estimatedDueDate, purchaseOrdersTable.sentAt);
 
