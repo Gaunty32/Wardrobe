@@ -15,7 +15,6 @@
  *   DPD_NETWORK_CODE    – Service network code (default: "2^12" = Parcel Next Day)
  */
 
-import { createHash } from "crypto";
 
 const DPD_BASE = "https://api.dpdlocal.co.uk";
 
@@ -45,13 +44,11 @@ function getConfig() {
 
 /**
  * Authenticate with DPD Local API.
- * Per spec: base64-encode "username:md5(password)" — password must be MD5-hashed.
+ * Per spec (v3.2): base64-encode "username:password" as plain text — no hashing.
  * Returns a GeoSession token valid for the day.
  */
 async function login(cfg: ReturnType<typeof getConfig>): Promise<string> {
-  // DPD Local API requires the password to be MD5-hashed before base64 encoding
-  const hashedPassword = createHash("md5").update(cfg.password).digest("hex");
-  const credentials = Buffer.from(`${cfg.username}:${hashedPassword}`).toString("base64");
+  const credentials = Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
   const res = await fetch(`${DPD_BASE}/user/?action=login`, {
     method: "POST",
     headers: {
