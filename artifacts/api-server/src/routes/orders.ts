@@ -3286,7 +3286,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
   if (!order) { res.status(404).send("Order not found"); return; }
 
   const itemRows = await db
-    .select({ item: orderItemsTable, employee: customerEmployeesTable, productSku: productsTable.sku })
+    .select({ item: orderItemsTable, employee: customerEmployeesTable, productSku: productsTable.sku, isService: productsTable.isService })
     .from(orderItemsTable)
     .leftJoin(customerEmployeesTable, eq(orderItemsTable.recipientEmployeeId, customerEmployeesTable.id))
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
@@ -3298,10 +3298,13 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     lineTotal:  parseFloat(String(r.item.lineTotal ?? "0")),
     employee: r.employee ?? null,
     productSku: r.productSku ?? null,
+    isService: r.isService ?? false,
   }));
 
   const dispatchedItems = dispatchedIds ? allItems.filter(i => dispatchedIds.includes(i.id)) : allItems;
-  const pendingItems    = dispatchedIds ? allItems.filter(i => !dispatchedIds.includes(i.id)) : [];
+  // Service items (e.g. "Logo Conversion to Stitches") are never physical goods — exclude them
+  // from "Items to Follow" as they cannot be delivered separately.
+  const pendingItems    = dispatchedIds ? allItems.filter(i => !dispatchedIds.includes(i.id) && !i.isService) : [];
 
   let deliveryAddress: { line1: string | null; line2: string | null; city: string | null; postcode: string | null; country: string | null; notes: string | null } | null = null;
   let customerContact: { contactFirstName: string | null; contactLastName: string | null; phone: string | null; address: string | null; city: string | null; postcode: string | null } | null = null;
