@@ -2321,12 +2321,36 @@ export default function Settings() {
                     )}
 
                     {/* Location fetch error */}
-                    {gbpLocationsError && (
-                      <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        <span><strong>Could not load locations:</strong> {(gbpLocationsError as any)?.message ?? String(gbpLocationsError)}</span>
-                      </div>
-                    )}
+                    {gbpLocationsError && (() => {
+                      const msg = (gbpLocationsError as any)?.message ?? String(gbpLocationsError);
+                      if (msg.startsWith("SERVICE_DISABLED:")) {
+                        const activationUrl = msg.replace("SERVICE_DISABLED:", "");
+                        return (
+                          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5">
+                            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <div className="space-y-1">
+                              <p><strong>My Business Account Management API is not enabled</strong> in your Google Cloud project.</p>
+                              <p>You need to enable it before locations can be loaded.</p>
+                              <a
+                                href={activationUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 underline font-medium hover:text-red-900"
+                              >
+                                Enable the API in Google Cloud Console ↗
+                              </a>
+                              <p className="text-xs text-red-500 mt-1">After enabling, wait a minute then refresh this page.</p>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                          <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                          <span><strong>Could not load locations:</strong> {msg}</span>
+                        </div>
+                      );
+                    })()}
 
                     {/* Location selector */}
                     {gbpLocations && gbpLocations.length > 0 && (

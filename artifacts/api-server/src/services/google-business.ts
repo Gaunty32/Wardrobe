@@ -89,11 +89,24 @@ export async function getGbpStatus(): Promise<{ connected: boolean; locationName
   return { connected: !!refreshToken, locationName: locationName ?? undefined, locationTitle: locationTitle ?? undefined };
 }
 
+function parseGbpError(status: number, errText: string, context: string): Error {
+  try {
+    const errJson = JSON.parse(errText);
+    const detail = (errJson?.error?.details ?? []).find((d: any) => d.reason === "SERVICE_DISABLED");
+    if (detail?.metadata?.activationUrl) {
+      return new Error(`SERVICE_DISABLED:${detail.metadata.activationUrl}`);
+    }
+    if (errJson?.error?.message) {
+      return new Error(errJson.error.message);
+    }
+  } catch { /* not JSON — fall through */ }
+  return new Error(`${context} error ${status}: ${errText}`);
+}
+
 export async function listGbpLocations(accessToken: string): Promise<{ name: string; title: string }[]> {
   const accRes = await fetch(`${GBP_ACCOUNT_API}/accounts`, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!accRes.ok) {
-    const errText = await accRes.text();
-    throw new Error(`GBP accounts API error ${accRes.status}: ${errText}`);
+    throw parseGbpError(accRes.status, await accRes.text(), "GBP accounts API");
   }
   const accData: any = await accRes.json();
   const accounts: any[] = accData.accounts ?? [];
@@ -104,8 +117,7 @@ export async function listGbpLocations(accessToken: string): Promise<{ name: str
       { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if (!locRes.ok) {
-      const errText = await locRes.text();
-      throw new Error(`GBP locations API error ${locRes.status}: ${errText}`);
+      throw parseGbpError(locRes.status, await locRes.text(), "GBP locations API");
     }
     const locData: any = await locRes.json();
     for (const loc of locData.locations ?? []) {
