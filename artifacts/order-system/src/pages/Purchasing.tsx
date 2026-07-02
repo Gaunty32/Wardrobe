@@ -2237,6 +2237,7 @@ function POCard({
   const [localCorrections, setLocalCorrections] = useState<Map<number, number>>(new Map());
   const [savingCorrections, setSavingCorrections] = useState(false);
   const [reopeningPo, setReopeningPo] = useState(false);
+  const [recreditingPo, setRecreditingPo] = useState(false);
   const { toast } = useToast();
 
   const filteredItems = codeFilter.trim()
@@ -2384,6 +2385,31 @@ function POCard({
               title="Correct received quantities on this delivered PO"
             >
               <Pencil className="w-3.5 h-3.5" /> {correctMode ? "Cancel Correction" : "Correct Book-in"}
+            </Button>
+          )}
+          {po.status === "delivered" && processStockItems.length > 0 && (
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 text-xs border-indigo-400 text-indigo-700 hover:bg-indigo-50"
+              disabled={recreditingPo}
+              title="Re-apply stock credit for all process stock lines on this PO"
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (!confirm(`Re-credit process stock for ${po.poNumber}?\n\nThis will add the delivered quantities back to each process stock item's available stock. Only use this if the stock wasn't updated when the PO was originally received.`)) return;
+                setRecreditingPo(true);
+                try {
+                  const result: { credited: { sku: string; qty: number }[] } = await apiFetch(`/purchasing/purchase-orders/${po.id}/reapply-process-stock`, { method: "POST" });
+                  onRefresh();
+                  toast({ title: "Stock credited", description: `Credited ${result.credited.map(c => `${c.sku} ×${c.qty}`).join(", ")}` });
+                } catch (err: any) {
+                  toast({ title: "Error re-crediting stock", description: err.message, variant: "destructive" });
+                } finally {
+                  setRecreditingPo(false);
+                }
+              }}
+            >
+              {recreditingPo ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PackagePlus className="w-3.5 h-3.5" />}
+              Re-credit Stock
             </Button>
           )}
           {po.status === "delivered" && (

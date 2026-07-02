@@ -1409,6 +1409,16 @@ router.patch("/purchasing/purchase-orders/:id/items/:itemId", async (req, res): 
 
     if (allDelivered) {
       await db.execute(sql`UPDATE purchase_orders SET status = 'delivered', updated_at = now() WHERE id = ${params.data.id}`);
+
+      // Increment process_stock.stock_quantity for any process stock lines on this PO
+      const fullLines = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, params.data.id));
+      for (const line of fullLines.filter(l => l.processStockId != null)) {
+        const qtyReceived = (line.quantityDelivered != null && line.quantityDelivered > 0)
+          ? line.quantityDelivered
+          : line.quantityOrdered;
+        await db.execute(sql`UPDATE process_stock SET stock_quantity = stock_quantity + ${qtyReceived}, updated_at = now() WHERE id = ${line.processStockId}`);
+      }
+
       const allocation = await allocatePODelivery(params.data.id);
       // Safety-net: promote any remaining purchase_required=false, stock_status=null items.
       // Plain items (no finish) go straight to 'complete'; decorated items to 'allocated'.
@@ -1667,6 +1677,14 @@ router.post("/purchasing/purchase-orders/:id/receive-all", async (req, res): Pro
     .set({ status: "delivered", updatedAt: new Date() })
     .where(eq(purchaseOrdersTable.id, poId));
 
+  // Increment process_stock.stock_quantity for any process stock lines on this PO
+  for (const item of poItems.filter(i => i.processStockId != null)) {
+    const qtyReceived = (item.quantityDelivered != null && item.quantityDelivered > 0)
+      ? item.quantityDelivered
+      : item.quantityOrdered;
+    await db.execute(sql`UPDATE process_stock SET stock_quantity = stock_quantity + ${qtyReceived}, updated_at = now() WHERE id = ${item.processStockId}`);
+  }
+
   // Clear purchaseRequired on ALL linked order items — both direct FK and consolidated sourceOrderItemIds
   const linkedOrderItemIds = [
     ...new Set([
@@ -1833,6 +1851,35 @@ router.post("/purchasing/purchase-orders/:id/reopen", async (req, res): Promise<
 
   const result = await getPoWithItems(poId);
   res.json(result);
+});
+
+// ── Re-apply process stock credit for a delivered PO (recovery tool for POs delivered before the ──
+// ── auto-complete path had the increment fix) ─────────────────────────────────────────────────────
+router.post("/purchasing/purchase-orders/:id/reapply-process-stock", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const poId = parsed.data.id;
+  const [po] = await db.select().from(purchaseOrdersTable).where(eq(purchaseOrdersTable.id, poId));
+  if (!po) { res.status(404).json({ error: "PO not found" }); return; }
+  if (po.status !== "delivered") { res.status(400).json({ error: "Only delivered POs can have stock re-credited" }); return; }
+
+  const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, poId));
+  const psItems = poItems.filter(i => i.processStockId != null);
+
+  if (psItems.length === 0) { res.status(400).json({ error: "This PO has no process stock lines" }); return; }
+
+  const credited: { sku: string; qty: number }[] = [];
+  for (const item of psItems) {
+    const qtyReceived = (item.quantityDelivered != null && item.quantityDelivered > 0)
+      ? item.quantityDelivered
+      : item.quantityOrdered;
+    await db.execute(sql`UPDATE process_stock SET stock_quantity = stock_quantity + ${qtyReceived}, updated_at = now() WHERE id = ${item.processStockId}`);
+    const [ps] = await db.execute(sql`SELECT sku FROM process_stock WHERE id = ${item.processStockId}`);
+    credited.push({ sku: (ps as any)?.sku ?? String(item.processStockId), qty: qtyReceived });
+  }
+
+  res.json({ credited });
 });
 
 // ── Backorders: PO lines that are either:
