@@ -1892,14 +1892,19 @@ router.post("/purchasing/purchase-orders/:id/reapply-process-stock", async (req,
 //    (a) manually flagged with an estimatedDueDate set on the line, OR
 //    (b) more than 5 days overdue (sent > 5 days ago, still with outstanding qty)
 router.get("/purchasing/backorders", async (req, res): Promise<void> => {
+  const primarySupplier = alias(suppliersTable, "primary_supplier");
+  const secondarySupplier = alias(suppliersTable, "secondary_supplier");
+
   const rows = await db
     .select({
       id: purchaseOrderItemsTable.id,
       poId: purchaseOrderItemsTable.poId,
       poNumber: purchaseOrdersTable.poNumber,
       supplierName: purchaseOrdersTable.supplierName,
+      supplierEmail: primarySupplier.email,
       sentAt: purchaseOrdersTable.sentAt,
       productName: purchaseOrderItemsTable.productName,
+      productId: purchaseOrderItemsTable.productId,
       colour: purchaseOrderItemsTable.colour,
       size: purchaseOrderItemsTable.size,
       supplierCode: purchaseOrderItemsTable.supplierCode,
@@ -1910,11 +1915,16 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
       orderNumber: ordersTable.orderNumber,
       customerName: ordersTable.customerName,
       requiredDate: ordersTable.requiredDate,
+      secondarySupplierName: secondarySupplier.name,
+      secondarySupplierEmail: secondarySupplier.email,
     })
     .from(purchaseOrderItemsTable)
     .innerJoin(purchaseOrdersTable, eq(purchaseOrderItemsTable.poId, purchaseOrdersTable.id))
+    .leftJoin(primarySupplier, eq(purchaseOrdersTable.supplierId, primarySupplier.id))
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
+    .leftJoin(productsTable, eq(purchaseOrderItemsTable.productId, productsTable.id))
+    .leftJoin(secondarySupplier, eq(productsTable.secondarySupplierId, secondarySupplier.id))
     .where(and(
       inArray(purchaseOrdersTable.status, ["ordered", "delivered"]),
       lt(purchaseOrderItemsTable.quantityDelivered, purchaseOrderItemsTable.quantityOrdered),
@@ -1935,6 +1945,63 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
       ? Math.max(0, Math.floor((Date.now() - new Date(r.sentAt).getTime()) / 86_400_000) - 5)
       : null,
   })));
+});
+
+// ── Cancel a backorder line and re-queue for purchasing from secondary supplier ─
+router.post("/purchasing/purchase-orders/:id/items/:itemId/cancel-and-reorder", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+
+  const body = z.object({
+    emailTo: z.string().email().optional(),
+    emailSubject: z.string().optional(),
+    emailBody: z.string().optional(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const [item] = await db.select().from(purchaseOrderItemsTable)
+    .where(and(eq(purchaseOrderItemsTable.id, params.data.itemId), eq(purchaseOrderItemsTable.poId, params.data.id)));
+  if (!item) { res.status(404).json({ error: "PO line not found" }); return; }
+
+  const remaining = item.quantityOrdered - item.quantityDelivered;
+
+  // Shrink the PO line to what was actually delivered
+  await db.update(purchaseOrderItemsTable)
+    .set({ quantityOrdered: item.quantityDelivered, updatedAt: new Date() })
+    .where(eq(purchaseOrderItemsTable.id, params.data.itemId));
+
+  // Restore purchase_required = true on linked order items so they re-enter the queue
+  const linkedIds: number[] = [
+    ...(item.orderItemId != null ? [item.orderItemId] : []),
+    ...((item.sourceOrderItemIds as number[] | null) ?? []),
+  ];
+  if (linkedIds.length > 0) {
+    const linkedItems = await db.select({ id: orderItemsTable.id, quantity: orderItemsTable.quantity })
+      .from(orderItemsTable).where(inArray(orderItemsTable.id, linkedIds));
+    for (const li of linkedItems) {
+      await db.update(orderItemsTable)
+        .set({ purchaseRequired: true, purchaseQuantity: li.quantity ?? null })
+        .where(eq(orderItemsTable.id, li.id));
+    }
+  }
+
+  // Send cancellation email if requested
+  let emailSent = false;
+  if (body.data.emailTo && body.data.emailSubject && body.data.emailBody && isEmailConfigured()) {
+    try {
+      await sendEmail({
+        to: body.data.emailTo,
+        subject: body.data.emailSubject,
+        html: `<pre style="font-family:Arial,sans-serif;white-space:pre-wrap">${body.data.emailBody}</pre>`,
+        text: body.data.emailBody,
+      });
+      emailSent = true;
+    } catch (e) {
+      console.error("[cancel-and-reorder] email failed:", e);
+    }
+  }
+
+  res.json({ ok: true, remaining, emailSent });
 });
 
 router.delete("/purchasing/purchase-orders/:id", async (req, res): Promise<void> => {

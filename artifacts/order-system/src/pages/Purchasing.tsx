@@ -112,8 +112,10 @@ interface BackorderLine {
   poId: number;
   poNumber: string;
   supplierName: string;
+  supplierEmail: string | null;
   sentAt: string | null;
   productName: string;
+  productId: number | null;
   colour: string | null;
   size: string | null;
   supplierCode: string | null;
@@ -126,6 +128,8 @@ interface BackorderLine {
   orderNumber: string | null;
   customerName: string | null;
   requiredDate: string | null;
+  secondarySupplierName: string | null;
+  secondarySupplierEmail: string | null;
 }
 
 const STATUS_CFG = {
@@ -3175,6 +3179,58 @@ export default function Purchasing() {
     onError: (e: Error) => toast({ title: "Error undoing book-in", description: e.message, variant: "destructive" }),
   });
 
+  const [cancelReorderDialog, setCancelReorderDialog] = useState<BackorderLine | null>(null);
+  const [cancelEmailTo, setCancelEmailTo] = useState("");
+  const [cancelEmailSubject, setCancelEmailSubject] = useState("");
+  const [cancelEmailBody, setCancelEmailBody] = useState("");
+
+  const cancelAndReorderMutation = useMutation({
+    mutationFn: ({ poId, itemId, emailTo, emailSubject, emailBody }: {
+      poId: number; itemId: number; emailTo: string; emailSubject: string; emailBody: string;
+    }) => apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}/cancel-and-reorder`, {
+      method: "POST",
+      body: JSON.stringify({ emailTo: emailTo || undefined, emailSubject: emailSubject || undefined, emailBody: emailBody || undefined }),
+    }),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      setCancelReorderDialog(null);
+      toast({
+        title: "Backorder cancelled & re-queued",
+        description: data?.emailSent
+          ? "Cancellation email sent. Items added back to purchasing requirements."
+          : "Items added back to purchasing requirements. No email sent.",
+      });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  function openCancelReorder(b: BackorderLine) {
+    setCancelEmailTo(b.supplierEmail ?? "");
+    setCancelEmailSubject(`Cancellation of outstanding backorder — ${b.poNumber}`);
+    const lines = [b.colour, b.size].filter(Boolean).join(" / ");
+    const variantStr = lines ? ` (${lines})` : "";
+    const body = [
+      `Dear ${b.supplierName},`,
+      ``,
+      `We are writing to advise that we are cancelling the remaining outstanding quantity on the above purchase order.`,
+      ``,
+      `Product: ${b.productName}${variantStr}`,
+      `PO Number: ${b.poNumber}`,
+      `Outstanding quantity being cancelled: ${b.remaining}`,
+      ``,
+      `Please do not dispatch the above quantity. We will be sourcing this stock from an alternative supplier.`,
+      ``,
+      `We apologise for any inconvenience caused and thank you for your understanding.`,
+      ``,
+      `Kind regards,`,
+      `Select Branding Solutions`,
+    ].join("\n");
+    setCancelEmailBody(body);
+    setCancelReorderDialog(b);
+  }
+
   const toggleGroup = (name: string) => setExpandedGroups((prev) => ({ ...prev, [name]: !prev[name] }));
   const totalItems = groups.reduce((s, g) => s + g.items.length, 0);
 
@@ -3845,6 +3901,14 @@ export default function Purchasing() {
                             Order req. {new Date(b.requiredDate).toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
                           </span>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-50 hover:text-red-800 gap-1 mt-1"
+                          onClick={() => openCancelReorder(b)}
+                        >
+                          <Ban className="w-3 h-3" /> Cancel &amp; Reorder
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -3858,6 +3922,109 @@ export default function Purchasing() {
             <ProcessStockTab />
           </TabsContent>
         </Tabs>
+
+        {/* ── Cancel & Reorder dialog ── */}
+        {cancelReorderDialog && (
+          <Dialog open onOpenChange={() => setCancelReorderDialog(null)}>
+            <DialogContent className="max-w-lg flex flex-col max-h-[90vh]">
+              <DialogHeader className="shrink-0">
+                <DialogTitle className="flex items-center gap-2 text-red-700">
+                  <Ban className="w-5 h-5" /> Cancel Backorder &amp; Re-Queue for Reorder
+                </DialogTitle>
+              </DialogHeader>
+              <div className="flex flex-col gap-4 py-2 min-h-0 overflow-y-auto flex-1 text-sm">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 space-y-1">
+                  <div className="font-semibold text-sm">{cancelReorderDialog.productName}
+                    {(cancelReorderDialog.colour || cancelReorderDialog.size) && (
+                      <span className="font-normal text-muted-foreground ml-2">{[cancelReorderDialog.colour, cancelReorderDialog.size].filter(Boolean).join(" / ")}</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
+                    <span>PO: <span className="font-mono font-medium text-foreground">{cancelReorderDialog.poNumber}</span></span>
+                    <span>Supplier: <span className="font-medium text-foreground">{cancelReorderDialog.supplierName}</span></span>
+                    <span>Cancelling: <span className="font-semibold text-red-700">{cancelReorderDialog.remaining} units</span></span>
+                  </div>
+                  {cancelReorderDialog.secondarySupplierName && (
+                    <div className="text-xs text-blue-700 flex items-center gap-1 pt-0.5">
+                      <ArrowRight className="w-3 h-3" />
+                      Will re-queue for <span className="font-semibold">{cancelReorderDialog.secondarySupplierName}</span>
+                    </div>
+                  )}
+                  {!cancelReorderDialog.secondarySupplierName && (
+                    <div className="text-xs text-muted-foreground flex items-center gap-1 pt-0.5">
+                      <ArrowRight className="w-3 h-3" />
+                      Items will appear in purchasing requirements — select a supplier when creating the new PO.
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  This will write off the outstanding quantity from {cancelReorderDialog.supplierName} and restore the items to the purchasing queue so you can raise a new PO with a different supplier.
+                </p>
+
+                <div className="space-y-3">
+                  <p className="text-xs font-medium text-foreground">Cancellation email (optional — edit or clear before sending)</p>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">To</Label>
+                    <Input
+                      value={cancelEmailTo}
+                      onChange={e => setCancelEmailTo(e.target.value)}
+                      placeholder="supplier@example.com"
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Subject</Label>
+                    <Input
+                      value={cancelEmailSubject}
+                      onChange={e => setCancelEmailSubject(e.target.value)}
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Message</Label>
+                    <Textarea
+                      value={cancelEmailBody}
+                      onChange={e => setCancelEmailBody(e.target.value)}
+                      rows={10}
+                      className="text-sm font-mono resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="shrink-0 gap-2 flex-col sm:flex-row">
+                <Button variant="outline" onClick={() => setCancelReorderDialog(null)}>Keep Backorder</Button>
+                <Button
+                  variant="outline"
+                  className="border-red-300 text-red-700 hover:bg-red-50"
+                  disabled={cancelAndReorderMutation.isPending}
+                  onClick={() => cancelAndReorderMutation.mutate({
+                    poId: cancelReorderDialog.poId,
+                    itemId: cancelReorderDialog.id,
+                    emailTo: "",
+                    emailSubject: "",
+                    emailBody: "",
+                  })}
+                >
+                  <Ban className="w-4 h-4 mr-1" /> Cancel Only (no email)
+                </Button>
+                <Button
+                  className="bg-red-700 hover:bg-red-800 text-white gap-1"
+                  disabled={cancelAndReorderMutation.isPending || !cancelEmailTo}
+                  onClick={() => cancelAndReorderMutation.mutate({
+                    poId: cancelReorderDialog.poId,
+                    itemId: cancelReorderDialog.id,
+                    emailTo: cancelEmailTo,
+                    emailSubject: cancelEmailSubject,
+                    emailBody: cancelEmailBody,
+                  })}
+                >
+                  {cancelAndReorderMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  Send Email &amp; Cancel
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* ── Create Process Material PO dialog ── */}
         {createProcessPoGroup && (
