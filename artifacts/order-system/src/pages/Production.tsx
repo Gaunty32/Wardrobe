@@ -248,6 +248,7 @@ interface DailyPlan {
     thisWeek: number;
     upcoming: number;
     urgentCount: number;
+    urgentItems: number;
     totalItems: number;
   };
 }
@@ -3184,36 +3185,27 @@ function DailyPlanTab({ onNavigate, pendingCount, readyCount }: { onNavigate: (t
         </div>
       )}
 
-      {/* ── Due soon (1–2 days) ── */}
+      {/* ── Due soon (next 2 working days) ── */}
       {soonGroups.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-amber-600" />
-            <h3 className="font-semibold text-amber-700">Due in 1–2 Days — Plan Today</h3>
+            <h3 className="font-semibold text-amber-700">Due in Next 2 Working Days — Plan Today</h3>
           </div>
           {soonGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
         </div>
       )}
 
-      {/* ── This week ── */}
-      {weekGroups.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-blue-600" />
-            <h3 className="font-semibold text-blue-700">Due This Week</h3>
-          </div>
-          {weekGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
-        </div>
-      )}
-
-      {/* ── Upcoming ── */}
-      {upcomingGroups.length > 0 && (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
-            <h3 className="font-semibold text-muted-foreground">Upcoming</h3>
-          </div>
-          {upcomingGroups.map((g) => <TaskGroupCard key={g.finishName} group={g} onNavigate={onNavigate} />)}
+      {/* ── Later work (not shown in Today's Plan) ── */}
+      {(weekGroups.length > 0 || upcomingGroups.length > 0) && (
+        <div className="rounded-lg border border-border bg-muted/30 px-4 py-3 flex items-center gap-3 text-sm text-muted-foreground">
+          <Calendar className="w-4 h-4 flex-shrink-0" />
+          <span>
+            <span className="font-medium text-foreground">
+              {weekGroups.length + upcomingGroups.length} further batch{weekGroups.length + upcomingGroups.length !== 1 ? "es" : ""} later this week / upcoming
+            </span>
+            {" "}— not due within the next 2 working days. View them in the <button className="underline text-primary font-medium" onClick={() => onNavigate("wip")}>Work in Progress</button> tab.
+          </span>
         </div>
       )}
     </div>
@@ -3476,7 +3468,7 @@ export default function Production() {
   });
 
   const urgentPlanCount = dailyPlan?.summary.urgentCount ?? 0;
-  const planQtyTotal    = dailyPlan?.summary.totalItems ?? urgentPlanCount;
+  const planQtyTotal    = dailyPlan?.summary.urgentItems ?? urgentPlanCount;
 
   const TAB_COUNTS = [
     { key: "plan",         label: "Today's Plan",      count: urgentPlanCount,                            qty: planQtyTotal,        byType: {} as Record<string,number>, icon: Zap,          color: "text-primary" },

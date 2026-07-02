@@ -663,9 +663,22 @@ router.get("/production/pending", async (req, res): Promise<void> => {
 // ── Daily Work Plan ───────────────────────────────────────────────────────────
 // Returns all active production work grouped by finish type so staff can
 // batch identical processes together and prioritise by required date.
+function addWorkingDays(from: Date, days: number): Date {
+  const result = new Date(from);
+  let added = 0;
+  while (added < days) {
+    result.setDate(result.getDate() + 1);
+    const dow = result.getDay();
+    if (dow !== 0 && dow !== 6) added++;
+  }
+  return result;
+}
+
 router.get("/production/daily-plan", async (req, res): Promise<void> => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  // End of 2nd working day from today (cutoff for "Today's Plan")
+  const twoDaysCutoff = addWorkingDays(today, 2);
 
   // 1. Picking list items that need decoration (finish set)
   const pickingRows = await db.execute(sql`
@@ -751,7 +764,7 @@ router.get("/production/daily-plan", async (req, res): Promise<void> => {
     if (daysUntilDue === null)   urgency = "upcoming";
     else if (daysUntilDue < 0)  urgency = "overdue";
     else if (daysUntilDue === 0) urgency = "today";
-    else if (daysUntilDue <= 2) urgency = "soon";
+    else if (earliestDate != null && earliestDate <= twoDaysCutoff) urgency = "soon";
     else if (daysUntilDue <= 7) urgency = "this_week";
     else                        urgency = "upcoming";
 
@@ -844,6 +857,9 @@ router.get("/production/daily-plan", async (req, res): Promise<void> => {
       thisWeek:   taskGroups.filter((g) => g.urgency === "this_week").length,
       upcoming:   taskGroups.filter((g) => g.urgency === "upcoming").length,
       urgentCount,
+      urgentItems: taskGroups
+        .filter((g) => g.urgency === "overdue" || g.urgency === "today" || g.urgency === "soon")
+        .reduce((s, g) => s + g.totalQty, 0),
       totalItems: taskGroups.reduce((s, g) => s + g.totalQty, 0),
     },
   });
