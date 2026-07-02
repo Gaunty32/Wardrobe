@@ -1220,7 +1220,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
                       <Button
                         size="sm"
                         className="gap-1.5 text-xs bg-green-600 hover:bg-green-700 text-white"
-                        onClick={() => { window.location.href = "/dispatch"; }}
+                        onClick={() => { window.location.href = "/dispatch?search=" + encodeURIComponent(ws.orderNumber ?? ""); }}
                       >
                         <ArrowRight className="w-3.5 h-3.5" /> Go to Dispatch
                       </Button>
@@ -2283,7 +2283,7 @@ function IncompleteOrderModal({
           <Button
             variant="outline"
             className="gap-1.5"
-            onClick={() => { window.location.href = "/dispatch"; }}
+            onClick={() => { window.location.href = "/dispatch?search=" + encodeURIComponent(order.orderNumber ?? ""); }}
           >
             <ArrowRight className="w-4 h-4" /> Go to Dispatch
           </Button>
@@ -2404,7 +2404,7 @@ function ReadyToDispatchModal({ order, onClose }: { order: DocOrder; onClose: ()
           <Button variant="ghost" onClick={onClose}>Close</Button>
           <Button
             className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
-            onClick={() => { window.location.href = "/dispatch"; }}
+            onClick={() => { window.location.href = "/dispatch?search=" + encodeURIComponent(order.orderNumber ?? ""); }}
           >
             <ArrowRight className="w-4 h-4" /> Go to Dispatch
           </Button>

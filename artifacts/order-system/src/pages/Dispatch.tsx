@@ -1033,7 +1033,10 @@ export default function Dispatch() {
   const [tab, setTab] = useState<"queue" | "history">("queue");
   const [bulkLabelsOpen, setBulkLabelsOpen] = useState(false);
   const [queueFilter, setQueueFilter] = useState<"all" | "ready" | "pending" | "urgent">("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("search") ?? "";
+  });
 
   const { data: orders = [], isLoading, refetch } = useQuery<DispatchOrder[]>({
     queryKey: ["dispatch-orders"],
