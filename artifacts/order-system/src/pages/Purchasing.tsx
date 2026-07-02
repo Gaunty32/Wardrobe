@@ -2258,6 +2258,7 @@ function POCard({
   const totalDelivered = po.items.reduce((s, i) => s + i.quantityDelivered, 0);
   const allDelivered = po.items.length > 0 && po.items.every((i) => i.quantityDelivered >= i.quantityOrdered);
   const someDelivered = po.items.some((i) => i.quantityDelivered > 0);
+  const processStockItems = po.items.filter((i) => i.processStockId != null);
 
   // Auto-complete the PO once server confirms all lines are fully received
   useEffect(() => {
