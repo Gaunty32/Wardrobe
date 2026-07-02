@@ -1312,11 +1312,13 @@ function ProcessMaterialsLineTable({
   overrides,
   onQtyChange,
   onRemove,
+  showBookIn = true,
 }: {
   items: ProcessStockRequirement[];
   overrides?: Record<number, number>;
   onQtyChange?: (processStockId: number, qty: number) => void;
   onRemove?: (processStockId: number) => void;
+  showBookIn?: boolean;
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -1364,7 +1366,7 @@ function ProcessMaterialsLineTable({
                 <TableCell>
                   <div className="font-medium text-sm">{req.name}</div>
                   <div className="text-xs text-muted-foreground">In stock: {req.stockQuantity} · Need: {req.totalNeeded}</div>
-                  {isBookingThis ? (
+                  {showBookIn && (isBookingThis ? (
                     <div className="flex items-center gap-1.5 mt-1.5">
                       <input
                         autoFocus
@@ -1397,7 +1399,7 @@ function ProcessMaterialsLineTable({
                     >
                       <PackagePlus className="w-3 h-3" /> Book in received stock
                     </button>
-                  )}
+                  ))}
                 </TableCell>
                 <TableCell>
                   {req.sku
@@ -3497,6 +3499,7 @@ export default function Purchasing() {
                           <ProcessMaterialsLineTable
                             items={itemsWithOverrides}
                             overrides={psOverrides}
+                            showBookIn={false}
                             onQtyChange={(processStockId, qty) => setPsQtyOverrides((prev) => ({ ...prev, [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: qty } }))}
                             onRemove={(processStockId) => setPsQtyOverrides((prev) => ({ ...prev, [psGroup.supplierName]: { ...(prev[psGroup.supplierName] ?? {}), [processStockId]: 0 } }))}
                           />
