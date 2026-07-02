@@ -55,16 +55,16 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
   const css = `
     @page { size: 4in 4in; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; padding: 8mm; }
+    html, body { font-family: Arial, Helvetica, sans-serif; background: #fff; margin: 0; padding: 0; }
     .label {
-      width: 100%;
-      height: calc(4in - 16mm);
+      width: 4in;
+      height: 4in;
+      padding: 8mm;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      page-break-after: always;
     }
-    .label:last-child { page-break-after: auto; }
+    .label:not(:last-child) { break-after: page; page-break-after: always; }
     .top-bar {
       display: flex;
       justify-content: space-between;
