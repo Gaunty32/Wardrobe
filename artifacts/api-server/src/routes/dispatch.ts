@@ -37,11 +37,11 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
     : [];
 
   const orderItemRows = await db
-    .select({ item: orderItemsTable, productSku: productsTable.sku })
+    .select({ item: orderItemsTable, productSku: productsTable.sku, isService: productsTable.isService })
     .from(orderItemsTable)
     .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .where(inArray(orderItemsTable.orderId, orderIds));
-  const orderItems = orderItemRows.map(r => ({ ...r.item, productSku: r.productSku ?? null }));
+  const orderItems = orderItemRows.map(r => ({ ...r.item, productSku: r.productSku ?? null, isService: r.isService ?? false }));
 
   // Item IDs that are still on outstanding PO lines — treat as "not ready" even if
   // stock_status='complete', because physical stock hasn't arrived yet.
@@ -113,22 +113,30 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
           .flatMap(w => wsItems.filter(wi => wi.worksheetId === w.id).map(wi => wi.orderItemId))
       );
 
+      // Service items (e.g. logo digitising fees) have no physical stock and are never
+      // on a worksheet — they must be ignored for all readiness checks.
+      const isServiceItem = (i: typeof items[0]) => i.isService === true;
+
       // Items NOT on a completed worksheet that are not yet in a ready state —
       // e.g. plain items still in purchasing (ordered, purchaseRequired, etc.)
       // Also treat items blocked by an outstanding PO as "outstanding" even if
       // their stock_status is 'complete' (stock hasn't physically arrived yet).
+      // Service items are never outstanding — they carry no stock obligation.
       const hasOutstandingItems = items.some(i =>
-        blockedByPoItemIds.has(i.id) ||
-        (!wsCompleteItemIdsForOrder.has(i.id) &&
-         i.stockStatus !== "complete" &&
-         i.stockStatus !== "allocated")
+        !isServiceItem(i) && (
+          blockedByPoItemIds.has(i.id) ||
+          (!wsCompleteItemIdsForOrder.has(i.id) &&
+           i.stockStatus !== "complete" &&
+           i.stockStatus !== "allocated")
+        )
       );
 
       let allComplete: boolean;
       if (isPartShipped) {
         allComplete = remainingItems.length > 0 && remainingItems.every(i =>
-          !blockedByPoItemIds.has(i.id) &&
-          (i.stockStatus === "complete" || i.stockStatus === "allocated")
+          isServiceItem(i) ||
+          (!blockedByPoItemIds.has(i.id) &&
+           (i.stockStatus === "complete" || i.stockStatus === "allocated"))
         );
       } else {
         // An order is complete when all items are done — either via a completed
@@ -136,8 +144,9 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
         // For decorated orders we normally require worksheets, but if every item is
         // already stock_status='complete' (e.g. service charges auto-completed) we
         // treat the order as ready without needing worksheets.
+        // Service items are treated as always-complete — they have no stock or worksheet.
         const allItemsDirectlyComplete = items.every(
-          i => !blockedByPoItemIds.has(i.id) && i.stockStatus === "complete"
+          i => isServiceItem(i) || (!blockedByPoItemIds.has(i.id) && i.stockStatus === "complete")
         );
         allComplete = items.length > 0 && !hasOutstandingItems && (
           hasDecoratedItems
@@ -146,12 +155,14 @@ router.get("/dispatch/orders", async (req, res): Promise<void> => {
         );
       }
 
-      // Items that ARE ready to dispatch right now (complete worksheet or picked/plain-complete).
+      // Items that ARE ready to dispatch right now (complete worksheet, picked/plain-complete,
+      // or a service item with no physical stock obligation).
       // 'allocated' means "in the picking list for production" — not ready for dispatch yet.
       // Items blocked by an outstanding PO are excluded even if stock_status='complete'.
       const hasAnyReadyItems = items.some(i =>
-        !blockedByPoItemIds.has(i.id) &&
-        (wsCompleteItemIdsForOrder.has(i.id) || i.stockStatus === "complete")
+        isServiceItem(i) ||
+        (!blockedByPoItemIds.has(i.id) &&
+         (wsCompleteItemIdsForOrder.has(i.id) || i.stockStatus === "complete"))
       );
 
       // Show in dispatch queue if:
