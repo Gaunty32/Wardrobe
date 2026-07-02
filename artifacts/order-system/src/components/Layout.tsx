@@ -117,15 +117,16 @@ function MessagesBell() {
   };
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative w-full" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
-        className="relative p-2 rounded-xl text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+        className="relative flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200 group"
         title="Internal messages"
       >
-        <MessageSquare className="w-5 h-5" />
+        <MessageSquare className="w-5 h-5 mr-3 text-white/50 group-hover:text-white/80 transition-colors shrink-0" />
+        Job Messages
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">
+          <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
@@ -213,12 +214,13 @@ function ChatBell() {
   return (
     <button
       onClick={() => navigate("/chat")}
-      className="relative p-2 rounded-xl text-white/60 hover:bg-white/10 hover:text-white transition-colors"
+      className="relative flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200 group"
       title={count > 0 ? `${count} unread chat message${count !== 1 ? "s" : ""}` : "Chat"}
     >
-      <Mail className={cn("w-5 h-5", count > 0 && "animate-pulse text-amber-400")} />
+      <Mail className={cn("w-5 h-5 mr-3 text-white/50 group-hover:text-white/80 transition-colors shrink-0", count > 0 && "animate-pulse text-amber-400")} />
+      Chat
       {count > 0 && (
-        <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold px-1 leading-none">
+        <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold px-1 leading-none">
           {count > 99 ? "99+" : count}
         </span>
       )}
@@ -441,10 +443,8 @@ export default function Layout({ children }: LayoutProps) {
         </div>
 
         <div className="p-4 border-t border-white/10 space-y-1">
-          <div className="flex items-center gap-1 px-1 pb-1">
-            <MessagesBell />
-            <ChatBell />
-          </div>
+          <MessagesBell />
+          <ChatBell />
           <button
             onClick={() => setFeedbackOpen(true)}
             className="flex items-center w-full px-3 py-2.5 rounded-xl text-sm font-medium text-white/60 hover:bg-white/10 hover:text-white transition-all duration-200 group"
