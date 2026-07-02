@@ -93,6 +93,22 @@ router.get("/picking-list", async (req, res): Promise<void> => {
             AND poi.quantity_delivered < poi.quantity_ordered
             AND COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
         )
+        -- Exclude items that have PO lines but none has delivered any stock yet
+        -- (covers the case where a PO was marked 'delivered' before goods arrived,
+        -- or a Correct Book-in zeroed the qty after allocation already ran)
+        AND (
+          NOT EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            WHERE poi.order_item_id = oi.id
+               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id)
+          )
+          OR EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            WHERE (poi.order_item_id = oi.id
+                   OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
+              AND poi.quantity_delivered > 0
+          )
+        )
     ORDER BY o.required_date NULLS LAST, o.id
   `);
 
