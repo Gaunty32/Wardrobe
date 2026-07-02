@@ -1904,7 +1904,7 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
       supplierEmail: primarySupplier.email,
       sentAt: purchaseOrdersTable.sentAt,
       productName: purchaseOrderItemsTable.productName,
-      productId: purchaseOrderItemsTable.productId,
+      productId: orderItemsTable.productId,
       colour: purchaseOrderItemsTable.colour,
       size: purchaseOrderItemsTable.size,
       supplierCode: purchaseOrderItemsTable.supplierCode,
@@ -1923,7 +1923,7 @@ router.get("/purchasing/backorders", async (req, res): Promise<void> => {
     .leftJoin(primarySupplier, eq(purchaseOrdersTable.supplierId, primarySupplier.id))
     .leftJoin(orderItemsTable, eq(purchaseOrderItemsTable.orderItemId, orderItemsTable.id))
     .leftJoin(ordersTable, eq(orderItemsTable.orderId, ordersTable.id))
-    .leftJoin(productsTable, eq(purchaseOrderItemsTable.productId, productsTable.id))
+    .leftJoin(productsTable, eq(orderItemsTable.productId, productsTable.id))
     .leftJoin(secondarySupplier, eq(productsTable.secondarySupplierId, secondarySupplier.id))
     .where(and(
       inArray(purchaseOrdersTable.status, ["ordered", "delivered"]),
