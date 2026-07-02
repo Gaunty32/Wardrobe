@@ -1370,11 +1370,14 @@ export default function Settings() {
     refetchInterval: 60_000,
   });
 
-  const { data: gbpLocations, error: gbpLocationsError } = useQuery<{ name: string; title: string }[]>({
+  const { data: gbpLocations, error: gbpLocationsError, refetch: refetchGbpLocations, isFetching: gbpLocationsFetching } = useQuery<{ name: string; title: string }[]>({
     queryKey: ["gbp-locations"],
     queryFn: () => apiFetch("/gbp/locations"),
     enabled: !!gbpStatus?.connected,
-    retry: 1,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: true,
+    staleTime: 5 * 60_000,
   });
 
   // Editable redirect URI — pre-fill once the auto-detected value arrives
@@ -2323,31 +2326,38 @@ export default function Settings() {
                     {/* Location fetch error */}
                     {gbpLocationsError && (() => {
                       const msg = (gbpLocationsError as any)?.message ?? String(gbpLocationsError);
+                      let content: React.ReactNode;
                       if (msg.startsWith("SERVICE_DISABLED:")) {
                         const activationUrl = msg.replace("SERVICE_DISABLED:", "");
-                        return (
-                          <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5">
-                            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                            <div className="space-y-1">
-                              <p><strong>My Business Account Management API is not enabled</strong> in your Google Cloud project.</p>
-                              <p>You need to enable it before locations can be loaded.</p>
-                              <a
-                                href={activationUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 underline font-medium hover:text-red-900"
-                              >
-                                Enable the API in Google Cloud Console ↗
-                              </a>
-                              <p className="text-xs text-red-500 mt-1">After enabling, wait a minute then refresh this page.</p>
-                            </div>
+                        content = (
+                          <div className="space-y-1">
+                            <p><strong>My Business Account Management API is not enabled</strong> in your Google Cloud project.</p>
+                            <a href={activationUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline font-medium hover:text-red-900">
+                              Enable the API in Google Cloud Console ↗
+                            </a>
+                            <p className="text-xs text-red-500">After enabling, wait a minute then click Retry.</p>
                           </div>
                         );
+                      } else if (msg.includes("RATE_LIMIT_EXCEEDED") || msg.includes("429") || msg.includes("Quota exceeded")) {
+                        content = (
+                          <div className="space-y-1">
+                            <p><strong>Rate limit hit</strong> — the Google Business API has a low default quota for new projects.</p>
+                            <p className="text-xs text-red-500">Wait 60 seconds then click Retry. If it keeps failing, the project may need quota approved by Google.</p>
+                          </div>
+                        );
+                      } else {
+                        content = <span><strong>Could not load locations:</strong> {msg}</span>;
                       }
                       return (
-                        <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+                        <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2.5">
                           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                          <span><strong>Could not load locations:</strong> {msg}</span>
+                          <div className="flex-1 space-y-2">
+                            {content}
+                            <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100 gap-1.5" onClick={() => refetchGbpLocations()} disabled={gbpLocationsFetching}>
+                              {gbpLocationsFetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                              Retry
+                            </Button>
+                          </div>
                         </div>
                       );
                     })()}
