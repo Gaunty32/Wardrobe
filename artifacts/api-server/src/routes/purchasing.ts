@@ -1795,6 +1795,12 @@ router.post("/purchasing/purchase-orders/:id/items/:itemId/receive", async (req,
     }
   }
 
+  // Credit process stock: increment by the quantity received in this call
+  if (existing.processStockId != null) {
+    const qtyThisReceive = body.data.quantity;
+    await db.execute(sql`UPDATE process_stock SET stock_quantity = COALESCE(stock_quantity, 0) + ${qtyThisReceive}, updated_at = now() WHERE id = ${existing.processStockId}`);
+  }
+
   const allocation = await allocatePODelivery(params.data.id);
   res.json({ ok: true, quantityDelivered: newDelivered, allocation });
 });

@@ -2357,4 +2357,31 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_message_reads_user_idx ON chat_message_reads(user_name)`);
   console.log("[startup] chat_message_reads table ensured");
+
+  // Safety Net G: credit process_stock.stock_quantity for delivered PO lines where the
+  // per-item receive path was used (which previously skipped the process stock credit).
+  // For each process_stock item, compute the expected credit = SUM(quantity_delivered)
+  // across all delivered PO lines that reference it. If current stock_quantity is less
+  // than expected, top it up by the difference.
+  await db.execute(sql`
+    UPDATE process_stock ps
+    SET stock_quantity = COALESCE(ps.stock_quantity, 0) + sub.missing,
+        updated_at = NOW()
+    FROM (
+      SELECT poi.process_stock_id AS ps_id,
+             SUM(poi.quantity_delivered) AS total_delivered,
+             COALESCE(MAX(ps2.stock_quantity), 0) AS current_qty,
+             GREATEST(0, SUM(poi.quantity_delivered) - COALESCE(MAX(ps2.stock_quantity), 0)) AS missing
+      FROM purchase_order_items poi
+      JOIN purchase_orders po ON po.id = poi.po_id
+      JOIN process_stock ps2 ON ps2.id = poi.process_stock_id
+      WHERE poi.process_stock_id IS NOT NULL
+        AND po.status = 'delivered'
+        AND poi.quantity_delivered > 0
+      GROUP BY poi.process_stock_id
+      HAVING GREATEST(0, SUM(poi.quantity_delivered) - COALESCE(MAX(ps2.stock_quantity), 0)) > 0
+    ) sub
+    WHERE ps.id = sub.ps_id
+  `);
+  console.log("[startup] Safety Net G: topped up process_stock quantities from delivered PO lines");
 }
