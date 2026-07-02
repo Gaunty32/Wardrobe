@@ -210,7 +210,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         numberOfParcels,
         totalWeightKg: totalWeightKg === "" ? undefined : totalWeightKg,
         bookDpd: isDpdShipping,
-        networkCode: packageType === "bag" ? "9^12" : undefined,
+        networkCode: packageType === "bag" ? "2^32" : "2^12",
       }),
     }),
     onSuccess: (data) => {
@@ -610,7 +610,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                 <div className="grid grid-cols-2 gap-2">
                   {([
                     { value: "parcel", label: "📦 Box / Parcel", desc: "DPD Parcel service" },
-                    { value: "bag",    label: "🛍 Bag",          desc: "DPD Expresspak5 service" },
+                    { value: "bag",    label: "🛍 Bag",          desc: "DPD Expresspak 5 Next Day" },
                   ] as const).map(opt => (
                     <button
                       key={opt.value}

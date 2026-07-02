@@ -194,13 +194,16 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
       shipmentId?: number;
       consolidated?: boolean;
       consignmentDetail?: Array<{ consignmentNumber?: string; parcelNumbers?: string[] }>;
-    };
-    error?: { errorCode?: number; errorMessage?: string } | null;
+    } | null;
+    error?: { errorCode?: number | string; errorMessage?: string } | Array<{ errorCode?: number | string; errorMessage?: string }> | null;
   };
 
-  if (shipJson.error && (shipJson.error as { errorCode?: number }).errorCode) {
-    const err = shipJson.error as { errorCode?: number; errorMessage?: string };
-    throw new Error(`DPD error ${err.errorCode}: ${err.errorMessage}`);
+  // DPD returns error as either an object or an array of objects depending on version
+  const shipError = Array.isArray(shipJson.error)
+    ? (shipJson.error as Array<{ errorCode?: number | string; errorMessage?: string }>)[0]
+    : (shipJson.error as { errorCode?: number | string; errorMessage?: string } | null);
+  if (shipError?.errorCode) {
+    throw new Error(`DPD error ${shipError.errorCode}: ${shipError.errorMessage}`);
   }
 
   const consignmentNumber = shipJson.data?.consignmentDetail?.[0]?.consignmentNumber ?? "";
