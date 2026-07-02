@@ -396,6 +396,7 @@ const DispatchBody = z.object({
   numberOfParcels: z.number().int().positive().optional(),
   totalWeightKg: z.number().positive().optional(),
   bookDpd: z.boolean().optional(),
+  networkCode: z.string().optional(),
 });
 
 router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> => {
@@ -405,7 +406,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
   const body = DispatchBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
-  const { numberOfParcels, totalWeightKg, bookDpd } = body.data;
+  const { numberOfParcels, totalWeightKg, bookDpd, networkCode } = body.data;
 
   // Fetch the order + delivery address before dispatching
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, parsed.data.id));
@@ -457,6 +458,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
           },
           numberOfParcels,
           totalWeightKg,
+          networkCode,
         });
       } catch (err: unknown) {
         dpdError = err instanceof Error ? err.message : "DPD booking failed";

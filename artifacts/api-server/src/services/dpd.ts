@@ -94,6 +94,7 @@ export interface BookConsignmentParams {
   numberOfParcels: number;
   totalWeightKg: number;
   collectionDate?: Date;
+  networkCode?: string;
 }
 
 export interface ConsignmentResult {
@@ -161,7 +162,7 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
             mobile: params.delivery.mobile ?? "",
           },
         },
-        networkCode: cfg.networkCode,
+        networkCode: params.networkCode ?? cfg.networkCode,
         numberOfParcels: params.numberOfParcels,
         totalWeight: params.totalWeightKg,
         shippingRef1: params.orderNumber.slice(0, 25),

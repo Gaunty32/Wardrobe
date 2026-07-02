@@ -161,6 +161,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [numberOfParcels, setNumberOfParcels] = useState(1);
   const [totalWeightKg, setTotalWeightKg] = useState<number | "">("");
+  const [packageType, setPackageType] = useState<"parcel" | "bag">("parcel");
   const [editItemId, setEditItemId] = useState<number | null>(null);
   const [editItemQty, setEditItemQty] = useState<string>("");
   const { toast } = useToast();
@@ -209,6 +210,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         numberOfParcels,
         totalWeightKg: totalWeightKg === "" ? undefined : totalWeightKg,
         bookDpd: isDpdShipping,
+        networkCode: packageType === "bag" ? "9^12" : undefined,
       }),
     }),
     onSuccess: (data) => {
@@ -602,9 +604,35 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               </p>
             )}
 
+            {isDpdShipping && (
+              <div className="space-y-1.5">
+                <Label>Package type</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { value: "parcel", label: "📦 Box / Parcel", desc: "DPD Parcel service" },
+                    { value: "bag",    label: "🛍 Bag",          desc: "DPD Expresspak5 service" },
+                  ] as const).map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPackageType(opt.value)}
+                      className={`flex flex-col items-start px-3 py-2.5 rounded-lg border text-left transition-colors ${
+                        packageType === opt.value
+                          ? "border-[#1e3a5f] bg-[#1e3a5f]/5 ring-1 ring-[#1e3a5f]"
+                          : "border-border bg-card hover:bg-muted/50"
+                      }`}
+                    >
+                      <span className="text-sm font-semibold">{opt.label}</span>
+                      <span className="text-xs text-muted-foreground">{opt.desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className={`grid gap-3 ${isDpdShipping ? "grid-cols-2" : "grid-cols-1"}`}>
               <div className="space-y-1.5">
-                <Label htmlFor="parcels">Number of boxes</Label>
+                <Label htmlFor="parcels">{packageType === "bag" ? "Number of bags" : "Number of boxes"}</Label>
                 <Input
                   id="parcels"
                   type="number"
