@@ -82,13 +82,11 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
     .customer-name {
       font-size: 23pt;
       font-weight: 900;
-      line-height: 1;
+      line-height: 1.1;
       padding-bottom: 5pt;
       margin-bottom: 6pt;
       border-bottom: 1.5pt solid #000;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      word-break: break-word;
       flex-shrink: 0;
     }
     .info-grid { display: flex; flex-direction: column; gap: 4pt; flex: 1; }
@@ -174,7 +172,7 @@ function buildLabelHtml(data: LabelData, logoDataUrl: string, which: "all" | "bo
     : `<span style="font-size:8pt;font-weight:900">Select Branding Solutions</span>`;
 
   const nameLen = data.customerName.length;
-  const namePt = nameLen > 22 ? 16 : nameLen > 16 ? 19 : 23;
+  const namePt = nameLen > 35 ? 12 : nameLen > 28 ? 14 : nameLen > 22 ? 16 : nameLen > 16 ? 19 : 23;
 
   const boxLabelHtml = `
 <div class="label">

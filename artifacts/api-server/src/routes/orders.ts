@@ -3233,7 +3233,7 @@ router.get("/orders/:id/shipping-label", async (req, res): Promise<void> => {
     .dl-header{background:white;color:#000;padding:0.1in 0.2in 0.08in;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000}
     .dl-badge{font-size:8pt;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
     .dl-order{font-size:11pt;font-weight:900;font-family:monospace}
-    .dl-customer{font-size:18pt;font-weight:900;color:#000;padding:0.08in 0.2in 0.04in;line-height:1.1}
+    .dl-customer{font-size:18pt;font-weight:900;color:#000;padding:0.08in 0.2in 0.04in;line-height:1.1;word-break:break-word}
     .dl-divider{border-top:1.5px solid #000;margin:0 0.2in 0.06in}
     .dl-row{display:flex;align-items:baseline;gap:8px;padding:0.03in 0.2in}
     .dl-key{font-size:7pt;color:#000;text-transform:uppercase;letter-spacing:.06em;width:0.7in;flex-shrink:0;font-weight:700}
@@ -3475,7 +3475,7 @@ router.get("/orders/:id/wearer-labels", async (req, res): Promise<void> => {
     .dl-header{background:white;color:#000;padding:0.07in 0.18in 0.06in;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #000}
     .dl-badge{font-size:7.5pt;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
     .dl-order{font-size:10pt;font-weight:900;font-family:monospace}
-    .dl-customer{font-size:15pt;font-weight:900;color:#000;padding:0.05in 0.18in 0.03in;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .dl-customer{font-size:15pt;font-weight:900;color:#000;padding:0.05in 0.18in 0.03in;line-height:1.15;word-break:break-word}
     .dl-divider{border-top:1.5px solid #000;margin:0 0.18in 0.04in}
     .dl-row{display:flex;align-items:baseline;gap:8px;padding:0.025in 0.18in}
     .dl-key{font-size:6.5pt;color:#000;text-transform:uppercase;letter-spacing:.06em;width:0.9in;flex-shrink:0;font-weight:700}
