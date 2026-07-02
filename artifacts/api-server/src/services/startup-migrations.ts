@@ -2259,37 +2259,32 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   console.log("[startup] manual_purchase_requirements table ensured");
 
-  // ── One-time data fix: O144 trouser line (item 561) was prematurely dispatched ──
-  // The York Waistease Trouser on O144 had no PO and zero stock, but was included
-  // in the dispatch batch when the delivery note was produced (June 16).
-  // The order had not physically left the building.
-  // Fix: restore purchase_required, clear the premature dispatched_at, and set
-  // the order to part_shipped (other items on the order are legitimately dispatched).
-  // Guard: only runs when item 561 still has dispatched_at set and purchase_required=false.
+  // ── O144 trouser line final fix: item 561 is now properly dispatched ──────────
+  // The startup migration that was undoing its dispatch has been removed.
+  // This one-time correction restores item 561 to dispatched state (if it was left
+  // stuck by the old migration) and marks order 112 as fully shipped.
   await db.execute(sql`
     UPDATE order_items
-    SET purchase_required  = true,
-        purchase_quantity  = 2,
-        stock_status       = NULL,
-        stock_allocated_at = NULL,
-        dispatched_at      = NULL
+    SET dispatched_at      = NOW(),
+        purchase_required  = false,
+        purchase_quantity  = NULL,
+        stock_status       = 'complete',
+        stock_allocated_at = NOW()
     WHERE id = 561
-      AND dispatched_at IS NOT NULL
-      AND purchase_required = false
-      AND stock_status = 'complete'
+      AND dispatched_at IS NULL
+      AND purchase_required = true
   `);
-
   await db.execute(sql`
     UPDATE orders
-    SET status = 'part_shipped'
+    SET status = 'shipped'
     WHERE id = 112
-      AND status = 'shipped'
-      AND EXISTS (
+      AND status = 'part_shipped'
+      AND NOT EXISTS (
         SELECT 1 FROM order_items
         WHERE order_id = 112 AND dispatched_at IS NULL
       )
   `);
-  console.log("[startup] O144 trouser line restored to purchasing queue (if applicable)");
+  console.log("[startup] O144 item 561 dispatch corrected");
 
   // Social posts table
   await db.execute(sql`
