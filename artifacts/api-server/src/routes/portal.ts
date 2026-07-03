@@ -161,6 +161,26 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   res.json({ inviteUrl, token, email, portalRole, expiresAt: expires, emailSent, emailError });
 });
 
+// ─── admin: preview the invite email HTML (no send, no token/DB writes) ──────
+
+router.get("/portal/admin/invite/preview", async (req: Request, res: Response) => {
+  const parsed = z.object({
+    customerId: z.coerce.number().int().positive(),
+  }).safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).send("Invalid customerId");
+    return;
+  }
+  const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${parsed.data.customerId}`);
+  const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+  const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
+  const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
+  const sampleInviteUrl = `${proto}://${host}/customer-portal/accept-invite?token=preview-only-not-a-real-link`;
+  const { html } = buildInviteEmail("preview@example.com", sampleInviteUrl, customerName);
+  res.set("Content-Type", "text/html");
+  res.send(html);
+});
+
 // ─── admin: create user directly (generates a magic link, no password) ────────
 
 router.post("/portal/admin/create-user", async (req: Request, res: Response) => {

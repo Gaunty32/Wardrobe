@@ -21,7 +21,7 @@ import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet, Warehouse } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet, Warehouse, Mail } from "lucide-react";
 import { ImportSpreadsheetDialog } from "@/components/ImportSpreadsheetDialog";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 
@@ -2840,6 +2840,16 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   Generates a sign-in link for the customer. If email is working, we'll send it automatically — otherwise you can copy and share the link yourself.
                 </p>
               </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-fit gap-1.5"
+                onClick={() => window.open(`${API_BASE}/portal/admin/invite/preview?customerId=${customerId}`, "_blank")}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                Preview email
+              </Button>
               <div className="grid gap-2">
                 <Label>Recipient *</Label>
                 {suggestedEmployees.length > 0 ? (
