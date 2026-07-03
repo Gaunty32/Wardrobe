@@ -2893,36 +2893,71 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
   }
 });
 
+// Accepts "", null, or undefined as "no email", but validates real strings as proper email addresses.
+const optionalEmailField = z.string().trim().optional().nullable()
+  .transform((v) => (v === "" || v === undefined ? null : v))
+  .refine((v) => v === null || z.string().email().safeParse(v).success, { message: "Invalid email address" });
+
+// Blank/whitespace-only strings are treated as "not set" rather than a literal empty string in the DB.
+const optionalTextField = z.string().optional().nullable()
+  .transform((v) => (v == null ? null : (v.trim() === "" ? null : v)));
+
+// Roles considered "managerial" for Team Manager dropdown eligibility and role-change safety checks.
+function isManagerialRoleName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n.includes("manager") || n.includes("supervisor") || n.includes("team leader") || n.includes("teamleader");
+}
+
+function friendlyDbError(err: any): string {
+  if (err?.code === "23505") {
+    if (String(err?.constraint ?? "").includes("emp_num")) return "That employee number is already in use.";
+    return "That value is already in use.";
+  }
+  if (err?.code === "23503") return "Referenced role, manager, or address no longer exists.";
+  return err?.message || "Unexpected server error";
+}
+
 router.post("/portal/team/employees", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
   if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
 
   const body = z.object({
-    firstName: z.string().min(1),
-    lastName: z.string().min(1),
-    employeeNumber: z.string().optional().nullable(),
-    email: z.string().email().optional().nullable(),
-    phone: z.string().optional().nullable(),
-    jobTitle: z.string().optional().nullable(),
-    department: z.string().optional().nullable(),
+    firstName: z.string().min(1, "First name is required"),
+    lastName: z.string().min(1, "Last name is required"),
+    employeeNumber: optionalTextField,
+    email: optionalEmailField,
+    phone: optionalTextField,
+    jobTitle: optionalTextField,
+    department: optionalTextField,
     roleId: z.number().int().optional().nullable(),
     managerId: z.number().int().optional().nullable(),
     deliveryAddressId: z.number().int().optional().nullable(),
-    notes: z.string().optional().nullable(),
+    notes: optionalTextField,
   }).safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) {
+    const firstIssue = body.error.issues[0];
+    console.error("[portal/team/employees POST] validation failed:", JSON.stringify(body.error.issues), "payload:", JSON.stringify(req.body));
+    res.status(400).json({ error: firstIssue?.message ?? "Invalid employee data" });
+    return;
+  }
 
   const d = body.data;
-  const rows = await db.execute(sql`
-    INSERT INTO customer_employees
-      (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, role_id, manager_id, delivery_address_id, notes, is_active)
-    VALUES
-      (${customerId}, ${d.firstName}, ${d.lastName}, ${d.employeeNumber ?? null}, ${d.email ?? null}, ${d.phone ?? null},
-       ${d.jobTitle ?? null}, ${d.department ?? null}, ${d.roleId ?? null}, ${d.managerId ?? null}, ${d.deliveryAddressId ?? null}, ${d.notes ?? null}, true)
-    RETURNING *
-  `);
-  res.status(201).json(rows.rows[0]);
+  try {
+    const rows = await db.execute(sql`
+      INSERT INTO customer_employees
+        (customer_id, first_name, last_name, employee_number, email, phone, job_title, department, role_id, manager_id, delivery_address_id, notes, is_active)
+      VALUES
+        (${customerId}, ${d.firstName}, ${d.lastName}, ${d.employeeNumber}, ${d.email}, ${d.phone},
+         ${d.jobTitle}, ${d.department}, ${d.roleId ?? null}, ${d.managerId ?? null}, ${d.deliveryAddressId ?? null}, ${d.notes}, true)
+      RETURNING *
+    `);
+    res.status(201).json(rows.rows[0]);
+  } catch (err: any) {
+    console.error("[portal/team/employees POST] DB error:", err?.message, err?.code, err?.constraint, "payload:", JSON.stringify(d));
+    res.status(400).json({ error: friendlyDbError(err) });
+  }
 });
 
 router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res: Response) => {
@@ -2936,47 +2971,108 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
   const body = z.object({
     firstName: z.string().min(1).optional(),
     lastName: z.string().min(1).optional(),
-    employeeNumber: z.string().optional().nullable(),
-    email: z.string().email().optional().nullable(),
-    phone: z.string().optional().nullable(),
-    jobTitle: z.string().optional().nullable(),
-    department: z.string().optional().nullable(),
+    employeeNumber: optionalTextField,
+    email: optionalEmailField,
+    phone: optionalTextField,
+    jobTitle: optionalTextField,
+    department: optionalTextField,
     roleId: z.number().int().optional().nullable(),
     managerId: z.number().int().optional().nullable(),
-    notes: z.string().optional().nullable(),
+    notes: optionalTextField,
     isActive: z.boolean().optional(),
     deliveryAddressId: z.number().int().optional().nullable(),
     allowance: z.number().min(0).optional().nullable(),
     allowanceTopup: z.number().min(0).optional().nullable(),
+    // Resolution for the "this employee still manages people" conflict — see isManagerialRoleName below.
+    reassignReportsTo: z.number().int().optional().nullable(),
+    clearReports: z.boolean().optional(),
   }).safeParse(req.body);
-  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  if (!body.success) {
+    const firstIssue = body.error.issues[0];
+    console.error(`[portal/team/employees PATCH ${id}] validation failed:`, JSON.stringify(body.error.issues), "payload:", JSON.stringify(req.body));
+    res.status(400).json({ error: firstIssue?.message ?? "Invalid employee data" });
+    return;
+  }
 
   const d = body.data;
-  const sets: string[] = [];
-  if (d.firstName !== undefined) sets.push(`first_name = '${d.firstName.replace(/'/g, "''")}'`);
-  if (d.lastName !== undefined) sets.push(`last_name = '${d.lastName.replace(/'/g, "''")}'`);
-  if (d.employeeNumber !== undefined) sets.push(`employee_number = ${d.employeeNumber === null ? "NULL" : `'${d.employeeNumber.replace(/'/g, "''")}'`}`);
-  if (d.email !== undefined) sets.push(`email = ${d.email === null ? "NULL" : `'${d.email.replace(/'/g, "''")}'`}`);
-  if (d.phone !== undefined) sets.push(`phone = ${d.phone === null ? "NULL" : `'${d.phone.replace(/'/g, "''")}'`}`);
-  if (d.jobTitle !== undefined) sets.push(`job_title = ${d.jobTitle === null ? "NULL" : `'${d.jobTitle.replace(/'/g, "''")}'`}`);
-  if (d.department !== undefined) sets.push(`department = ${d.department === null ? "NULL" : `'${d.department.replace(/'/g, "''")}'`}`);
-  if (d.roleId !== undefined) sets.push(`role_id = ${d.roleId === null ? "NULL" : d.roleId}`);
-  if (d.managerId !== undefined) sets.push(`manager_id = ${d.managerId === null ? "NULL" : d.managerId}`);
-  if (d.notes !== undefined) sets.push(`notes = ${d.notes === null ? "NULL" : `'${d.notes.replace(/'/g, "''")}'`}`);
-  if (d.isActive !== undefined) sets.push(`is_active = ${d.isActive}`);
-  if (d.deliveryAddressId !== undefined) sets.push(`delivery_address_id = ${d.deliveryAddressId === null ? "NULL" : d.deliveryAddressId}`);
-  if (d.allowance !== undefined) sets.push(`allowance = ${d.allowance === null ? "NULL" : d.allowance}`);
-  if (d.allowanceTopup !== undefined) sets.push(`allowance_topup = ${d.allowanceTopup === null ? "0" : d.allowanceTopup}`);
 
-  if (sets.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
+  try {
+    // If the role is changing, make sure we're not orphaning direct reports by demoting a manager.
+    if (d.roleId !== undefined) {
+      const currentRows = await db.execute(sql`
+        SELECT e.role_id, cr.name AS role_name
+        FROM customer_employees e
+        LEFT JOIN customer_roles cr ON cr.id = e.role_id
+        WHERE e.id = ${id} AND e.customer_id = ${customerId}
+      `);
+      const current = currentRows.rows[0] as any;
+      if (!current) { res.status(404).json({ error: "Employee not found" }); return; }
 
-  const rows = await db.execute(sql`
-    UPDATE customer_employees SET ${sql.raw(sets.join(", "))}, updated_at = now()
-    WHERE id = ${id} AND customer_id = ${customerId}
-    RETURNING *
-  `);
-  if (rows.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
-  res.json(rows.rows[0]);
+      const wasManagerial = isManagerialRoleName(current.role_name);
+      let newRoleName: string | null = null;
+      if (d.roleId !== null) {
+        const newRoleRows = await db.execute(sql`SELECT name FROM customer_roles WHERE id = ${d.roleId} AND customer_id = ${customerId}`);
+        newRoleName = (newRoleRows.rows[0] as any)?.name ?? null;
+      }
+      const willBeManagerial = isManagerialRoleName(newRoleName);
+
+      if (wasManagerial && !willBeManagerial && !d.clearReports && d.reassignReportsTo === undefined) {
+        const reportsRows = await db.execute(sql`
+          SELECT id, first_name, last_name FROM customer_employees
+          WHERE manager_id = ${id} AND customer_id = ${customerId} AND is_active = true
+        `);
+        if (reportsRows.rows.length > 0) {
+          res.status(409).json({
+            error: "has_reports",
+            count: reportsRows.rows.length,
+            employees: reportsRows.rows.map((r: any) => ({ id: r.id, name: `${r.first_name} ${r.last_name ?? ""}`.trim() })),
+          });
+          return;
+        }
+      }
+
+      if (d.reassignReportsTo !== undefined && d.reassignReportsTo !== null) {
+        await db.execute(sql`
+          UPDATE customer_employees SET manager_id = ${d.reassignReportsTo}, updated_at = now()
+          WHERE manager_id = ${id} AND customer_id = ${customerId}
+        `);
+      } else if (d.clearReports) {
+        await db.execute(sql`
+          UPDATE customer_employees SET manager_id = NULL, updated_at = now()
+          WHERE manager_id = ${id} AND customer_id = ${customerId}
+        `);
+      }
+    }
+
+    const sets: string[] = [];
+    if (d.firstName !== undefined) sets.push(`first_name = '${d.firstName.replace(/'/g, "''")}'`);
+    if (d.lastName !== undefined) sets.push(`last_name = '${d.lastName.replace(/'/g, "''")}'`);
+    if (d.employeeNumber !== undefined) sets.push(`employee_number = ${d.employeeNumber === null ? "NULL" : `'${d.employeeNumber.replace(/'/g, "''")}'`}`);
+    if (d.email !== undefined) sets.push(`email = ${d.email === null ? "NULL" : `'${d.email.replace(/'/g, "''")}'`}`);
+    if (d.phone !== undefined) sets.push(`phone = ${d.phone === null ? "NULL" : `'${d.phone.replace(/'/g, "''")}'`}`);
+    if (d.jobTitle !== undefined) sets.push(`job_title = ${d.jobTitle === null ? "NULL" : `'${d.jobTitle.replace(/'/g, "''")}'`}`);
+    if (d.department !== undefined) sets.push(`department = ${d.department === null ? "NULL" : `'${d.department.replace(/'/g, "''")}'`}`);
+    if (d.roleId !== undefined) sets.push(`role_id = ${d.roleId === null ? "NULL" : d.roleId}`);
+    if (d.managerId !== undefined) sets.push(`manager_id = ${d.managerId === null ? "NULL" : d.managerId}`);
+    if (d.notes !== undefined) sets.push(`notes = ${d.notes === null ? "NULL" : `'${d.notes.replace(/'/g, "''")}'`}`);
+    if (d.isActive !== undefined) sets.push(`is_active = ${d.isActive}`);
+    if (d.deliveryAddressId !== undefined) sets.push(`delivery_address_id = ${d.deliveryAddressId === null ? "NULL" : d.deliveryAddressId}`);
+    if (d.allowance !== undefined) sets.push(`allowance = ${d.allowance === null ? "NULL" : d.allowance}`);
+    if (d.allowanceTopup !== undefined) sets.push(`allowance_topup = ${d.allowanceTopup === null ? "0" : d.allowanceTopup}`);
+
+    if (sets.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
+
+    const rows = await db.execute(sql`
+      UPDATE customer_employees SET ${sql.raw(sets.join(", "))}, updated_at = now()
+      WHERE id = ${id} AND customer_id = ${customerId}
+      RETURNING *
+    `);
+    if (rows.rows.length === 0) { res.status(404).json({ error: "Employee not found" }); return; }
+    res.json(rows.rows[0]);
+  } catch (err: any) {
+    console.error(`[portal/team/employees PATCH ${id}] DB error:`, err?.message, err?.code, err?.constraint, "payload:", JSON.stringify(d));
+    res.status(400).json({ error: friendlyDbError(err) });
+  }
 });
 
 // ─── portal: team — manager top-up credits for an employee ───────────────────

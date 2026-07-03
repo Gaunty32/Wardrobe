@@ -14,13 +14,80 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import {
   Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw,
   ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet, Search, X,
+  ChevronsUpDown, Check, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
+import { ApiError } from "@/lib/api";
+
+// Roles considered "managerial" for Team Manager eligibility — mirrors isManagerialRoleName on the API server.
+function isManagerialRoleName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const n = name.toLowerCase();
+  return n.includes("manager") || n.includes("supervisor") || n.includes("team leader") || n.includes("teamleader");
+}
+
+// Searchable, mobile-friendly Team Manager picker (full-width popover with instant filtering).
+function ManagerCombobox({ value, onChange, options, placeholder = "No manager" }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<{ id: number; first_name: string; last_name?: string }>;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find(o => String(o.id) === value);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-full min-h-12 justify-between font-normal"
+        >
+          <span className="truncate">{selected ? `${selected.first_name} ${selected.last_name ?? ""}` : placeholder}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search managers…" className="h-11" />
+          <CommandList className="max-h-56">
+            <CommandEmpty>No matching manager found.</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="none"
+                onSelect={() => { onChange("none"); setOpen(false); }}
+                className="min-h-11"
+              >
+                <Check className={`h-4 w-4 ${value === "none" ? "opacity-100" : "opacity-0"}`} />
+                No manager
+              </CommandItem>
+              {options.map((e) => (
+                <CommandItem
+                  key={e.id}
+                  value={`${e.first_name} ${e.last_name ?? ""}`}
+                  onSelect={() => { onChange(String(e.id)); setOpen(false); }}
+                  className="min-h-11"
+                >
+                  <Check className={`h-4 w-4 ${value === String(e.id) ? "opacity-100" : "opacity-0"}`} />
+                  <span className="truncate">{e.first_name} {e.last_name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 const ROLE_LABELS: Record<string, string> = {
   manager: "Admin",
@@ -177,7 +244,7 @@ function BinZone({
 
 // ─── Employee form ─────────────────────────────────────────────────────────────
 
-function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, onSave, onCancel, saving }: {
+function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, onSave, onCancel, saving, error }: {
   initial?: any;
   initialSizes?: Array<{ label: string; size: string }>;
   addresses: any[];
@@ -186,7 +253,10 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
   onSave: (data: any, sizes: Array<{ label: string; size: string }>) => void;
   onCancel: () => void;
   saving: boolean;
+  error?: string | null;
 }) {
+  // Form state is only ever cleared on successful save (parent unmounts/closes the dialog) — on
+  // error this component stays mounted with everything the user entered intact.
   const [form, setForm] = useState({
     firstName: initial?.first_name ?? "",
     lastName: initial?.last_name ?? "",
@@ -202,13 +272,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  const selectedRoleName = roles.find(r => String(r.id) === form.roleId)?.name ?? "";
-  const isOperativeRole = selectedRoleName.toLowerCase().includes("operative");
-  const managerOptions = allEmployees.filter((e: any) => {
-    if (e.id === initial?.id) return false;
-    if (isOperativeRole) return (e.role_name ?? "").toLowerCase().includes("team manager");
-    return true;
-  });
+  const managerOptions = allEmployees.filter((e: any) => e.id !== initial?.id && isManagerialRoleName(e.role_name));
 
   const [sizes, setSizes] = useState<Array<{ label: string; size: string }>>(initialSizes ?? []);
   const addSize = () => setSizes(s => [...s, { label: "", size: "" }]);
@@ -219,169 +283,171 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
   const validSizes = sizes.filter(s => s.label.trim() && s.size.trim());
 
   return (
-    <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label>First name *</Label>
-          <Input value={form.firstName} onChange={e => set("firstName", e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label>Last name *</Label>
-          <Input value={form.lastName} onChange={e => set("lastName", e.target.value)} />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <Label>Employee Number</Label>
-        <Input placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} />
-      </div>
-      <div className="space-y-1">
-        <Label>Email</Label>
-        <Input type="email" value={form.email} onChange={e => set("email", e.target.value)} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label>Phone</Label>
-          <Input value={form.phone} onChange={e => set("phone", e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label>Job title</Label>
-          <Input value={form.jobTitle} onChange={e => set("jobTitle", e.target.value)} />
-        </div>
-      </div>
-      <div className="space-y-1">
-        <Label>Department</Label>
-        <Input value={form.department} onChange={e => set("department", e.target.value)} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        {roles.length > 0 && (
-          <div className="space-y-1">
-            <Label>Role</Label>
-            <Select value={form.roleId} onValueChange={v => set("roleId", v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="No role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No role</SelectItem>
-                {roles.map((r) => (
-                  <SelectItem key={r.id} value={String(r.id)}>{r.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+    <div className="flex flex-col max-h-[75vh] sm:max-h-[70vh]">
+      <div className="flex-1 overflow-y-auto pr-1 -mr-1 space-y-4">
+        {error && (
+          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
           </div>
         )}
-        {managerOptions.length > 0 && (
-          <div className="space-y-1">
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>First name *</Label>
+            <Input className="min-h-12 text-base sm:text-sm sm:min-h-9" value={form.firstName} onChange={e => set("firstName", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Last name *</Label>
+            <Input className="min-h-12 text-base sm:text-sm sm:min-h-9" value={form.lastName} onChange={e => set("lastName", e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Employee Number</Label>
+          <Input className="min-h-12 text-base sm:text-sm sm:min-h-9" placeholder="e.g. EMP-001" value={form.employeeNumber} onChange={e => set("employeeNumber", e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Email</Label>
+          <Input className="min-h-12 text-base sm:text-sm sm:min-h-9" type="email" value={form.email} onChange={e => set("email", e.target.value)} />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>Phone</Label>
+            <Input className="min-h-12 text-base sm:text-sm sm:min-h-9" value={form.phone} onChange={e => set("phone", e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Job title</Label>
+            <Input className="min-h-12 text-base sm:text-sm sm:min-h-9" value={form.jobTitle} onChange={e => set("jobTitle", e.target.value)} />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Department</Label>
+          <Input className="min-h-12 text-base sm:text-sm sm:min-h-9" value={form.department} onChange={e => set("department", e.target.value)} />
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {roles.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Role</Label>
+              <Select value={form.roleId} onValueChange={v => set("roleId", v)}>
+                <SelectTrigger className="min-h-12 sm:min-h-9">
+                  <SelectValue placeholder="No role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No role</SelectItem>
+                  {roles.map((r) => (
+                    <SelectItem key={r.id} value={String(r.id)} className="min-h-11 sm:min-h-8">{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="space-y-1.5">
             <Label>Team Manager</Label>
-            <Select value={form.managerId} onValueChange={v => set("managerId", v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="No manager" />
+            {managerOptions.length > 0 ? (
+              <ManagerCombobox value={form.managerId} onChange={v => set("managerId", v)} options={managerOptions} />
+            ) : (
+              <div className="min-h-12 sm:min-h-9 flex items-center px-3 rounded-md border border-dashed text-sm text-muted-foreground">
+                No managers available
+              </div>
+            )}
+          </div>
+        </div>
+
+        {addresses.length > 0 && (
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
+              Delivery address
+            </Label>
+            <Select value={form.deliveryAddressId} onValueChange={v => set("deliveryAddressId", v)}>
+              <SelectTrigger className="min-h-12 sm:min-h-9">
+                <SelectValue placeholder="Account address (default)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No manager</SelectItem>
-                {managerOptions.map((e: any) => (
-                  <SelectItem key={e.id} value={String(e.id)}>
-                    {e.first_name} {e.last_name}
+                <SelectItem value="none">Account address (default)</SelectItem>
+                {addresses.map((a: any) => (
+                  <SelectItem key={a.id} value={String(a.id)} className="min-h-11 sm:min-h-8 whitespace-normal">
+                    {a.label} — {a.line1}{a.city ? `, ${a.city}` : ""}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              If not set, orders default to the account address.
+            </p>
           </div>
         )}
-      </div>
 
-      {addresses.length > 0 && (
-        <div className="space-y-1">
+        <div className="space-y-1.5 pt-1">
           <Label className="flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-            Delivery address
+            <Wallet className="w-3.5 h-3.5 text-muted-foreground" />
+            Annual allowance override (£)
+            <span className="font-normal text-muted-foreground ml-1">(leave blank to use role default)</span>
           </Label>
-          <Select value={form.deliveryAddressId} onValueChange={v => set("deliveryAddressId", v)}>
-            <SelectTrigger>
-              <SelectValue placeholder="Account address (default)" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Account address (default)</SelectItem>
-              {addresses.map((a: any) => (
-                <SelectItem key={a.id} value={String(a.id)}>
-                  {a.label} — {a.line1}{a.city ? `, ${a.city}` : ""}
-                </SelectItem>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="e.g. 250.00"
+              className="pl-7 min-h-12 text-base sm:text-sm sm:min-h-9"
+              value={form.allowance}
+              onChange={e => set("allowance", e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2 pt-1">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <Label className="flex items-center gap-1.5">
+              <Ruler className="w-3.5 h-3.5 text-muted-foreground" />
+              Clothing sizes
+              <span className="font-normal text-muted-foreground ml-1">(used as suggestions when ordering)</span>
+            </Label>
+            <Button type="button" variant="ghost" size="sm" className="h-9 text-xs gap-1" onClick={addSize}>
+              <Plus className="w-3 h-3" /> Add size
+            </Button>
+          </div>
+          {sizes.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">
+              No sizes saved — add entries like "Polo Shirt: L" or "Jacket: XL".
+            </p>
+          ) : (
+            <div className="space-y-1.5">
+              {sizes.map((row, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <Input
+                    className="h-10 text-sm"
+                    placeholder="Item (e.g. Polo Shirt)"
+                    value={row.label}
+                    onChange={e => updateSize(i, "label", e.target.value)}
+                  />
+                  <Input
+                    className="h-10 text-sm w-24 shrink-0"
+                    placeholder="Size"
+                    value={row.size}
+                    onChange={e => updateSize(i, "size", e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-destructive shrink-0 p-2 -m-2"
+                    onClick={() => removeSize(i)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            If not set, orders default to the account address.
-          </p>
-        </div>
-      )}
-
-      <div className="space-y-1 pt-1">
-        <Label className="flex items-center gap-1.5">
-          <Wallet className="w-3.5 h-3.5 text-muted-foreground" />
-          Annual allowance override (£)
-          <span className="font-normal text-muted-foreground ml-1">(leave blank to use role default)</span>
-        </Label>
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            placeholder="e.g. 250.00"
-            className="pl-7"
-            value={form.allowance}
-            onChange={e => set("allowance", e.target.value)}
-          />
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="space-y-2 pt-1">
-        <div className="flex items-center justify-between">
-          <Label className="flex items-center gap-1.5">
-            <Ruler className="w-3.5 h-3.5 text-muted-foreground" />
-            Clothing sizes
-            <span className="font-normal text-muted-foreground ml-1">(used as suggestions when ordering)</span>
-          </Label>
-          <Button type="button" variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={addSize}>
-            <Plus className="w-3 h-3" /> Add size
-          </Button>
-        </div>
-        {sizes.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic">
-            No sizes saved — add entries like "Polo Shirt: L" or "Jacket: XL".
-          </p>
-        ) : (
-          <div className="space-y-1.5">
-            {sizes.map((row, i) => (
-              <div key={i} className="flex gap-2 items-center">
-                <Input
-                  className="h-8 text-sm"
-                  placeholder="Item (e.g. Polo Shirt)"
-                  value={row.label}
-                  onChange={e => updateSize(i, "label", e.target.value)}
-                />
-                <Input
-                  className="h-8 text-sm w-24 shrink-0"
-                  placeholder="Size"
-                  value={row.size}
-                  onChange={e => updateSize(i, "size", e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-destructive shrink-0"
-                  onClick={() => removeSize(i)}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <DialogFooter className="pt-2">
-        <Button variant="outline" onClick={onCancel}>Cancel</Button>
+      <DialogFooter className="pt-3 mt-1 border-t sticky bottom-0 bg-background flex-row gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
+        <Button variant="outline" className="min-h-12 sm:min-h-9" onClick={onCancel}>Cancel</Button>
         <Button
+          className="min-h-12 sm:min-h-9"
           disabled={saving || !form.firstName.trim() || !form.lastName.trim()}
           onClick={() => onSave(
             {
@@ -533,14 +599,28 @@ function EmployeesTab() {
       await apiFetch(`/portal/team/employees/${empId}/sizes`, { method: "PUT", body: JSON.stringify(sizes) });
   };
 
+  // When a role change would leave direct reports orphaned, the API returns 409 { error: "has_reports", ... }
+  // instead of applying the change. We surface that as a dedicated confirmation dialog rather than a generic error.
+  const [reportsConflict, setReportsConflict] = useState<{
+    id: number; data: any; sizes: Array<{ label: string; size: string }>; count: number; employees: any[];
+  } | null>(null);
+  const [reassignTarget, setReassignTarget] = useState("none");
+
   const addMutation = useMutation({
     mutationFn: async ({ data, sizes }: { data: any; sizes: Array<{ label: string; size: string }> }) => {
       const emp = await apiFetch("/portal/team/employees", { method: "POST", body: JSON.stringify(data) });
       if (sizes.length > 0) await saveSizes(emp.id, sizes);
       return emp;
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-team-employees"] }); setAddOpen(false); toast({ title: "Employee added" }); },
-    onError: () => toast({ title: "Failed to add employee", variant: "destructive" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
+      setAddOpen(false);
+      toast({ title: "✅ Employee added successfully" });
+    },
+    onError: (err: any) => {
+      // Leave the dialog + form data exactly as the user left it so they can fix the issue and retry.
+      toast({ title: err instanceof ApiError ? err.message : "Failed to add employee", variant: "destructive" });
+    },
   });
 
   const editMutation = useMutation({
@@ -548,13 +628,23 @@ function EmployeesTab() {
       await apiFetch(`/portal/team/employees/${id}`, { method: "PATCH", body: JSON.stringify(data) });
       await saveSizes(id, sizes);
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       qc.invalidateQueries({ queryKey: ["portal-team-employees"] });
       qc.invalidateQueries({ queryKey: ["portal-employee-sizes"] });
       setEditTarget(null);
-      toast({ title: "Employee updated" });
+      setReportsConflict(null);
+      toast({ title: "✅ Employee updated successfully" });
     },
-    onError: () => toast({ title: "Failed to update employee", variant: "destructive" }),
+    onError: (err: any, variables) => {
+      if (err instanceof ApiError && err.status === 409 && err.body?.error === "has_reports") {
+        setReportsConflict({
+          id: variables.id, data: variables.data, sizes: variables.sizes,
+          count: err.body.count ?? 0, employees: err.body.employees ?? [],
+        });
+        return;
+      }
+      toast({ title: err instanceof ApiError ? err.message : "Failed to update employee", variant: "destructive" });
+    },
   });
 
   const statusMutation = useMutation({
@@ -952,23 +1042,84 @@ function EmployeesTab() {
 
       {/* ── Dialogs ────────────────────────────────────────────────────────────── */}
 
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent>
+      <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) addMutation.reset(); }}>
+        <DialogContent className="max-h-[90vh] flex flex-col">
           <DialogHeader><DialogTitle>Add employee</DialogTitle></DialogHeader>
           <EmployeeForm addresses={addresses} roles={roles} allEmployees={allEmployees}
             onSave={(data, sizes) => addMutation.mutate({ data, sizes })}
-            onCancel={() => setAddOpen(false)} saving={addMutation.isPending} />
+            onCancel={() => setAddOpen(false)} saving={addMutation.isPending}
+            error={addMutation.isError ? (addMutation.error instanceof ApiError ? addMutation.error.message : "Failed to add employee") : null} />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o) setEditTarget(null); }}>
-        <DialogContent>
+      <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o) { setEditTarget(null); editMutation.reset(); } }}>
+        <DialogContent className="max-h-[90vh] flex flex-col">
           <DialogHeader><DialogTitle>Edit employee</DialogTitle></DialogHeader>
           {editTarget && (
             <EmployeeForm initial={editTarget} initialSizes={editSizes} addresses={addresses} roles={roles} allEmployees={allEmployees}
               onSave={(data, sizes) => editMutation.mutate({ id: editTarget.id, data, sizes })}
-              onCancel={() => setEditTarget(null)} saving={editMutation.isPending} />
+              onCancel={() => setEditTarget(null)} saving={editMutation.isPending}
+              error={editMutation.isError && !reportsConflict ? (editMutation.error instanceof ApiError ? editMutation.error.message : "Failed to update employee") : null} />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!reportsConflict} onOpenChange={(o) => { if (!o) { setReportsConflict(null); setReassignTarget("none"); } }}>
+        <DialogContent className="max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0" />
+              This person manages {reportsConflict?.count ?? 0} employee{(reportsConflict?.count ?? 0) === 1 ? "" : "s"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 overflow-y-auto">
+            <p className="text-sm text-muted-foreground">
+              Changing this role means they can no longer manage a team. Reassign their direct reports to another
+              manager, or remove the manager assignment from those reports before continuing.
+            </p>
+            <div className="rounded-md border divide-y max-h-32 overflow-y-auto">
+              {(reportsConflict?.employees ?? []).map((e: any) => (
+                <div key={e.id} className="px-3 py-2 text-sm">{e.first_name} {e.last_name}</div>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Reassign to</Label>
+              <ManagerCombobox
+                value={reassignTarget}
+                onChange={setReassignTarget}
+                options={allEmployees.filter((e: any) => e.id !== reportsConflict?.id && isManagerialRoleName(e.role_name))}
+                placeholder="Choose a new manager"
+              />
+            </div>
+          </div>
+          <DialogFooter className="pt-3 mt-1 border-t flex-row gap-2 [&>*]:flex-1 sm:[&>*]:flex-none">
+            <Button
+              variant="outline"
+              className="min-h-12 sm:min-h-9"
+              disabled={editMutation.isPending}
+              onClick={() => {
+                if (!reportsConflict) return;
+                editMutation.mutate({ id: reportsConflict.id, data: { ...reportsConflict.data, clearReports: true }, sizes: reportsConflict.sizes });
+              }}
+            >
+              Remove their manager assignments
+            </Button>
+            <Button
+              className="min-h-12 sm:min-h-9"
+              disabled={editMutation.isPending || reassignTarget === "none"}
+              onClick={() => {
+                if (!reportsConflict) return;
+                editMutation.mutate({
+                  id: reportsConflict.id,
+                  data: { ...reportsConflict.data, reassignReportsTo: parseInt(reassignTarget, 10) },
+                  sizes: reportsConflict.sizes,
+                });
+              }}
+            >
+              {editMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+              Reassign & continue
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

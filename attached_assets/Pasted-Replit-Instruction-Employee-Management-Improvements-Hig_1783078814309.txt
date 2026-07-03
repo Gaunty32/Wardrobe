@@ -1,0 +1,324 @@
+Replit Instruction - Employee Management Improvements (High Priority)
+
+We have received customer feedback from real-world testing of the Employee Management section. This work should focus on fixing the underlying issue while also improving the experience for mobile users.
+
+Our long-term goal is for customers to manage employees primarily from Android and iPhone devices, so mobile usability takes priority over desktop.
+
+1. Critical Bug - Team Manager Assignment
+
+There appears to be a problem when assigning a Team Manager.
+
+Current Behaviour
+
+The customer can:
+
+Create a new employee
+Select a Role
+Select a Team Manager
+
+However when they press Add Employee they receive:
+
+Failed to add employee
+
+Exactly the same happens when editing an existing employee.
+
+Example:
+
+Current employee:
+
+Danny Carling
+
+Current Role:
+
+Operative
+
+Customer changes to:
+
+Role = Manager
+
+Team Manager = Ricky Berry
+
+Presses Save
+
+Result:
+
+Failed to update employee
+
+Required Investigation
+
+Please investigate the complete create/update flow.
+
+Check:
+
+validation rules
+database constraints
+foreign keys
+manager relationship
+role relationship
+API request payload
+backend validation
+null handling
+
+There should be no validation conflict simply because an employee has a manager assigned.
+
+Improve Error Logging
+
+Currently the UI only displays
+
+Failed to add employee
+
+or
+
+Failed to update employee
+
+This is not useful.
+
+Please:
+
+log the backend exception
+log the API response
+log validation errors
+log SQL/database errors
+
+Display a meaningful message during development so the issue can be identified quickly.
+
+2. Team Manager Dropdown Logic
+
+The Team Manager list should only display employees who can actually manage people.
+
+Current behaviour appears inconsistent.
+
+Instead:
+
+Only show employees where:
+
+Role = Manager
+Role = Supervisor
+Role = Team Leader
+
+(or whatever roles are configured as managerial)
+
+Do not list ordinary operatives.
+
+If no managers exist:
+
+Display
+
+No managers available
+
+rather than allowing invalid selections.
+
+3. Mobile First Layout
+
+This screen will primarily be used on phones.
+
+It should be redesigned mobile-first.
+
+Desktop
+
+Desktop can continue using two columns where appropriate.
+
+Mobile
+
+On mobile:
+
+Everything should become a single vertical flow.
+
+Instead of
+
+First Name | Last Name
+
+show
+
+First Name
+
+Last Name
+
+Then
+
+Employee Number
+
+Email
+
+Phone
+
+Job Title
+
+Department
+
+Role
+
+Team Manager
+
+Delivery Address
+
+Annual Allowance
+
+Clothing Sizes
+
+Buttons
+
+This removes horizontal scrolling and makes one-handed use much easier.
+
+4. Sticky Action Buttons
+
+On mobile, after scrolling to the bottom the user should never lose the action buttons.
+
+Make
+
+Cancel
+
+Save Employee
+
+(or Update Employee)
+
+stick to the bottom of the modal.
+
+Buttons should remain visible while scrolling.
+
+5. Larger Touch Targets
+
+Increase spacing between controls.
+
+Minimum touch height:
+
+48px
+
+Increase dropdown hit area.
+
+Buttons should be thumb-friendly.
+
+6. Better Dropdown Behaviour
+
+On phones:
+
+Dropdowns should:
+
+open full width
+scroll independently
+not extend off screen
+close after selection
+
+Currently long names become awkward.
+
+Allow text wrapping or ellipsis where appropriate.
+
+7. Searchable Team Manager
+
+As companies grow, selecting a manager from a long list becomes difficult.
+
+Replace the dropdown with a searchable select.
+
+Typing:
+
+"Ric"
+
+should immediately find
+
+Ricky Berry
+
+Typing
+
+"Ann"
+
+should locate
+
+Anna
+
+This is much quicker on mobile.
+
+8. Role Change Logic
+
+Changing an employee's role should never fail because of existing relationships.
+
+Examples:
+
+Operative → Manager
+
+Manager → Supervisor
+
+Supervisor → Operative
+
+should all update correctly.
+
+If changing to a non-manager role leaves employees reporting to them:
+
+Ask:
+
+This employee currently manages 6 employees.
+
+Would you like to:
+
+• Reassign them
+• Remove their manager assignments
+
+Never simply fail.
+
+9. Improve Success Feedback
+
+Instead of silently closing:
+
+Display
+
+✅ Employee added successfully
+
+or
+
+✅ Employee updated successfully
+
+Then refresh the employee list automatically.
+
+10. Preserve Form Data on Error
+
+If saving fails:
+
+Do not clear the form.
+
+Keep:
+
+entered names
+role
+manager
+clothing sizes
+department
+
+Only display the error.
+
+Nothing should be lost.
+
+11. Modal Sizing
+
+The current modal feels tall and cramped.
+
+Improve spacing.
+
+Reduce unnecessary whitespace.
+
+Allow the content to scroll independently while keeping the header and footer fixed.
+
+12. Mobile User Experience Goal
+
+A customer standing on a building site should be able to:
+
+Open the portal
+Add a new employee
+Choose their manager
+Save
+
+...within 30 seconds using one hand on a phone.
+
+Every design decision should optimise for that workflow rather than desktop use.
+
+Acceptance Criteria
+✅ Employees can be created with a Team Manager.
+✅ Existing employees can have their Role and Team Manager updated successfully.
+✅ Manager assignment persists correctly in the database.
+✅ Useful backend error logging is implemented.
+✅ Mobile layout is single-column and touch-friendly.
+✅ Searchable Team Manager selector.
+✅ Sticky action buttons on mobile.
+✅ Form values are retained if validation fails.
+✅ Success confirmation shown after save.
+✅ Tested on Android, iPhone, tablet and desktop with responsive layouts.
+
+This work will significantly improve both reliability and usability, aligning the portal with your goal of making mobile ordering and employee management the primary customer experience.

@@ -2,6 +2,19 @@ import { z } from "zod";
 
 export const API_BASE = import.meta.env.BASE_URL.replace(/\/$/, "").replace(/\/customer-portal$/, "") + "/api";
 
+// Thrown by apiFetch on non-2xx responses. Carries the full parsed response body (when JSON) so
+// callers can branch on structured error payloads, not just the display message.
+export class ApiError extends Error {
+  status: number;
+  body: any;
+  constructor(message: string, status: number, body: any) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export async function apiFetch(path: string, opts?: RequestInit) {
   const token = localStorage.getItem("portal_token");
   const res = await fetch(API_BASE + path, {
@@ -28,11 +41,12 @@ export async function apiFetch(path: string, opts?: RequestInit) {
 
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
+    let body: any = null;
     try {
-      const body = await res.json();
+      body = await res.json();
       if (body?.error) msg = body.error;
     } catch {}
-    throw new Error(msg);
+    throw new ApiError(msg, res.status, body);
   }
 
   return res.json();

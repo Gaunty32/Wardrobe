@@ -8,7 +8,9 @@ import nodemailer from "nodemailer";
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET ?? "dev-secret-change-me";
-const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET ?? "portal-secret-change-me";
+// Must match the fallback used in portal.ts / staff-auth.ts — otherwise tokens signed here
+// (e.g. the staff demo "preview as customer" flow) fail verification when PORTAL_JWT_SECRET is unset.
+const PORTAL_JWT_SECRET = process.env.PORTAL_JWT_SECRET || "sbs-portal-secret-change-in-production";
 const DEMO_TOKEN_TTL = "48h";
 
 // ─── demo auth middleware ──────────────────────────────────────────────────────
