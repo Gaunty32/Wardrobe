@@ -441,20 +441,48 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
       }
     }
 
-    if (!address) {
+    // Final fallback: the customer's account address — this is what the delivery
+    // note and order-detail UI already fall back to when no specific delivery
+    // address is set, so DPD booking should honour the same fallback instead of
+    // erroring out on orders that only ever had an account-level address.
+    let accountAddress: { line1: string; line2?: string; city: string; postcode: string; country: string } | null = null;
+    if (!address && order.customerId) {
+      const [c] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
+      if (c?.address && c?.postcode) {
+        accountAddress = {
+          line1: c.address,
+          city: c.city ?? "",
+          postcode: c.postcode,
+          country: "United Kingdom",
+        };
+      }
+    }
+
+    if (!address && !accountAddress) {
       dpdError = "No delivery address set on this order — DPD booking skipped.";
     } else {
+      const resolvedAddress = address
+        ? {
+            line1: address.line1 ?? "",
+            line2: address.line2 ?? undefined,
+            town: address.city ?? "",
+            postcode: address.postcode ?? "",
+            countryCode: address.country === "United Kingdom" || !address.country ? "GB" : address.country,
+          }
+        : {
+            line1: accountAddress!.line1,
+            line2: accountAddress!.line2,
+            town: accountAddress!.city,
+            postcode: accountAddress!.postcode,
+            countryCode: "GB",
+          };
       try {
         dpdResult = await bookDpdConsignment({
           orderNumber: order.orderNumber,
           delivery: {
             contactName: order.customerName ?? "Recipient",
             organisation: order.customerName ?? undefined,
-            line1: address.line1 ?? "",
-            line2: address.line2 ?? undefined,
-            town: address.city ?? "",
-            postcode: address.postcode ?? "",
-            countryCode: address.country === "United Kingdom" || !address.country ? "GB" : address.country,
+            ...resolvedAddress,
           },
           numberOfParcels,
           totalWeightKg,
@@ -530,11 +558,31 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     } : {}),
   };
 
-  const [updated] = await db
-    .update(ordersTable)
-    .set(updateFields)
-    .where(eq(ordersTable.id, parsed.data.id))
-    .returning();
+  // Saving the DPD result must never undo a booking that already succeeded with
+  // the courier. If persisting the DPD-specific fields fails for any reason
+  // (e.g. an unexpected data shape), fall back to saving the dispatch itself
+  // without those fields so the order still dispatches and the despatch note
+  // can still be produced — surface the save failure via dpdError instead of
+  // crashing the whole request.
+  let updated: typeof ordersTable.$inferSelect;
+  try {
+    [updated] = await db
+      .update(ordersTable)
+      .set(updateFields)
+      .where(eq(ordersTable.id, parsed.data.id))
+      .returning();
+  } catch (err) {
+    console.error("Dispatch order update failed, retrying without DPD fields:", err);
+    if (dpdResult) {
+      dpdError = `DPD booked (consignment ${dpdResult.consignmentNumber}) but saving the result failed — record the tracking number manually. ${err instanceof Error ? err.message : ""}`;
+    }
+    const { trackingNumber: _t, dpdConsignmentId: _c, dpdJobId: _j, ...safeFields } = updateFields;
+    [updated] = await db
+      .update(ordersTable)
+      .set(safeFields)
+      .where(eq(ordersTable.id, parsed.data.id))
+      .returning();
+  }
 
   await logOrderAction(parsed.data.id,
     isPartialShipment ? "Order part-shipped" : "Order dispatched",
@@ -791,19 +839,41 @@ router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> =>
       address = a ?? null;
     }
   }
-  if (!address) { res.status(400).json({ error: "No delivery address on this order" }); return; }
+
+  // Final fallback: the customer's account address (same fallback used for
+  // display elsewhere in the app — see the primary dispatch route above).
+  let accountAddress: { line1: string; line2?: string; city: string; postcode: string } | null = null;
+  if (!address && order.customerId) {
+    const [c] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
+    if (c?.address && c?.postcode) {
+      accountAddress = { line1: c.address, city: c.city ?? "", postcode: c.postcode };
+    }
+  }
+
+  if (!address && !accountAddress) { res.status(400).json({ error: "No delivery address on this order" }); return; }
 
   const { numberOfParcels, totalWeightKg } = body.data;
+  const resolvedAddress = address
+    ? {
+        line1: address.line1 ?? "",
+        line2: address.line2 ?? undefined,
+        town: address.city ?? "",
+        postcode: address.postcode ?? "",
+        countryCode: address.country === "United Kingdom" || !address.country ? "GB" : address.country,
+      }
+    : {
+        line1: accountAddress!.line1,
+        line2: accountAddress!.line2,
+        town: accountAddress!.city,
+        postcode: accountAddress!.postcode,
+        countryCode: "GB",
+      };
   const dpdResult = await bookDpdConsignment({
     orderNumber: order.orderNumber,
     delivery: {
       contactName: order.customerName ?? "Recipient",
       organisation: order.customerName ?? undefined,
-      line1: address.line1 ?? "",
-      line2: address.line2 ?? undefined,
-      town: address.city ?? "",
-      postcode: address.postcode ?? "",
-      countryCode: address.country === "United Kingdom" || !address.country ? "GB" : address.country,
+      ...resolvedAddress,
     },
     numberOfParcels,
     totalWeightKg,

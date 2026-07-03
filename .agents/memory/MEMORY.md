@@ -5,3 +5,5 @@
 - [Split size/sleeve matching](split-size-sleeve-matching.md) — order_items.size can be "SIZE/SLEEVE" combined while product_variants splits size+sleeve; raw equality joins silently break for these products
 - [Portal JWT secret fallback](portal-jwt-secret-fallback.md) — multiple portal route files each hardcode their own PORTAL_JWT_SECRET fallback string; keep them identical or tokens silently fail cross-file verification
 - [Zod optional string fields](zod-optional-blank-fields.md) — frontend forms send "" for unset optional fields (email, text); z.string().email().optional() rejects "" and causes generic save failures
+- [Drizzle push schema drift](drizzle-push-schema-drift.md) — `pnpm --filter db push` proposes dropping many unrelated tables/columns due to pre-existing drift; never accept, use scoped ALTER TABLE via executeSql instead
+- [Dispatch DPD job ID overflow](dispatch-dpd-bigint.md) — dpd_job_id was integer but DPD shipmentId values exceed int32 range, crashing dispatch after a successful courier booking with no note produced

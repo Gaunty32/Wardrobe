@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, numeric, integer, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, numeric, integer, bigint, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { customersTable } from "./customers";
@@ -24,7 +24,7 @@ export const ordersTable = pgTable("orders", {
   xeroInvoiceStatus: text("xero_invoice_status"),
   trackingNumber: text("tracking_number"),
   dpdConsignmentId: text("dpd_consignment_id"),
-  dpdJobId: integer("dpd_job_id"),
+  dpdJobId: bigint("dpd_job_id", { mode: "number" }),
   dpdParcelCount: integer("dpd_parcel_count"),
   invoiceEmailSentAt: timestamp("invoice_email_sent_at", { withTimezone: true }),
   invoiceEmailSentTo: text("invoice_email_sent_to"),
