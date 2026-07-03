@@ -19,6 +19,7 @@ import {
   orderItemsTable,
   ordersTable,
   purchaseOrderItemsTable,
+  worksheetItemsTable,
 } from "@workspace/db";
 
 export interface AllocationResult {
@@ -154,7 +155,26 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
     let wsPickCount = 0;
 
     for (const item of items) {
-      if (item.stockStatus === "allocated" || item.stockStatus === "in_production" || item.stockStatus === "complete") continue;
+      if (item.stockStatus === "allocated" || item.stockStatus === "in_production" || item.stockStatus === "complete") {
+        // Already progressed past picking. If more units for this line arrived on
+        // a later (topped-up) delivery — e.g. a backorder was booked in after the
+        // item was already sent to production — the worksheet item created earlier
+        // can be left short of the true required quantity. Top it up so the extra
+        // units actually reach production/picking instead of silently vanishing.
+        const [wsItem] = await db
+          .select()
+          .from(worksheetItemsTable)
+          .where(eq(worksheetItemsTable.orderItemId, item.id));
+        const requiredQty = item.quantity ?? 0;
+        if (wsItem && wsItem.quantity < requiredQty) {
+          await db
+            .update(worksheetItemsTable)
+            .set({ quantity: requiredQty })
+            .where(eq(worksheetItemsTable.id, wsItem.id));
+          worksheetsUpdated++;
+        }
+        continue;
+      }
       // Plain items (no decoration) skip the picking list and go straight to complete;
       // decorated items land on the picking list as 'allocated' until physically picked.
       const isPlain = item.finishId == null;
