@@ -13,6 +13,20 @@ import { getUncachableStripeClient } from "../services/stripeClient";
 
 const router: IRouter = Router();
 
+// Converts a UK wall-clock time (e.g. "2026-07-04" at 09:00) into the correct UTC instant,
+// automatically accounting for GMT/BST — the business operates on UK local time, but the
+// server (and node-cron) run in UTC, so a naive "09:00Z" literal is wrong for half the year.
+function londonWallTimeToUtc(dateStr: string, hour: number, minute = 0): Date {
+  const naiveUtc = new Date(`${dateStr}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00.000Z`);
+  const offsetPart = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/London",
+    timeZoneName: "shortOffset",
+  }).formatToParts(naiveUtc).find((p) => p.type === "timeZoneName")?.value ?? "GMT";
+  const match = offsetPart.match(/GMT([+-]\d+)?/);
+  const offsetHours = match?.[1] ? parseInt(match[1], 10) : 0;
+  return new Date(naiveUtc.getTime() - offsetHours * 60 * 60 * 1000);
+}
+
 async function setSetting(key: string, value: string | null): Promise<void> {
   await db.insert(settingsTable).values({ key, value })
     .onConflictDoUpdate({ target: settingsTable.key, set: { value, updatedAt: new Date() } });
@@ -404,9 +418,11 @@ router.post("/invoices/:orderId/mark-sent", async (req, res): Promise<void> => {
 router.patch("/invoices/:orderId/schedule", async (req, res): Promise<void> => {
   const idParse = z.coerce.number().int().positive().safeParse(req.params.orderId);
   if (!idParse.success) { res.status(400).json({ error: "Invalid order ID" }); return; }
+  // scheduledSendAt is a plain "YYYY-MM-DD" date — the frontend no longer pre-converts it to a
+  // UTC instant, since that baked in a fixed UTC offset and drifted an hour out during BST.
   const { scheduledSendAt, toEmail } = req.body as { scheduledSendAt: string | null; toEmail?: string };
   try {
-    const val = scheduledSendAt ? new Date(scheduledSendAt) : null;
+    const val = scheduledSendAt ? londonWallTimeToUtc(scheduledSendAt, 9) : null;
     await db.update(ordersTable)
       .set({ invoiceScheduledSendAt: val, invoiceScheduleToEmail: val ? (toEmail?.trim() || null) : null, updatedAt: new Date() })
       .where(eq(ordersTable.id, idParse.data));

@@ -735,8 +735,9 @@ function OrderRow({
                 disabled={!scheduledDate || scheduleSend.isPending || (!order.customerEmail && !scheduleEmailTo)}
                 title={!order.customerEmail && !scheduleEmailTo ? "Enter an email address to schedule" : undefined}
                 onClick={() => {
-                  const dt = new Date(scheduledDate + "T09:00:00Z");
-                  scheduleSend.mutate(dt.toISOString());
+                  // Send the plain date — the backend converts it to 9am UK time,
+                  // correctly accounting for GMT/BST.
+                  scheduleSend.mutate(scheduledDate);
                 }}
               >
                 {scheduleSend.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CalendarClock className="w-3 h-3" />}
