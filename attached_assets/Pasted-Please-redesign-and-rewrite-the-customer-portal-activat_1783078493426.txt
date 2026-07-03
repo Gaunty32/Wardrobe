@@ -1,0 +1,82 @@
+Please redesign and rewrite the customer portal activation email.
+
+The current email feels too dull and transactional. We want it to feel exciting, professional and like the launch of a valuable new service.
+
+This email is for customers whose bespoke Select Branding Solutions ordering portal has been created.
+
+Key requirements:
+
+Include the Select Branding Solutions full-colour logo at the top, alongside or above the customer’s logo. This should feel like a partnership between Select Branding Solutions and the customer, not just a standard system email.
+
+The email should explain that their personal uniform ordering portal is now live.
+
+Tone should be:
+Warm, professional, confident, excited and customer-focused.
+
+Main message:
+This is not just an ordering website. It is a bespoke uniform management portal designed around their business.
+
+The email should highlight that the customer can:
+
+Order branded workwear quickly and easily
+Track orders in real time
+View previous orders
+Manage company wardrobe requirements
+Save employee sizing and preferences
+Order for named employees
+Use the portal on desktop, tablet or mobile
+Download/install it as a mobile app
+Request new products or logo setups when needed
+
+Suggested structure:
+
+Header area
+Select Branding Solutions full-colour logo
+Customer logo
+Visual wording such as “Your bespoke uniform portal is ready”
+Main headline
+Example:
+“Your bespoke uniform portal is now live”
+Intro paragraph
+Explain that we’ve built their own uniform portal to make managing branded workwear quicker, easier and more organised.
+Strong call-to-action button
+Button text:
+“Access Your Portal”
+Benefits section
+Use clean cards or icons for:
+Order Workwear
+Track Orders
+Manage Employees
+Save Sizes
+Use On The Go
+Install As An App
+Smart ordering section
+Explain that the more they use the portal, the smarter it becomes. It can remember employee sizing and repeat order details, making future ordering much easier.
+
+Partnership message
+Include wording along the lines of:
+
+“We’ve set this up in partnership with your business, so your approved garments, logos and ordering preferences are ready when you are.”
+
+Expiry notice
+Keep the activation link expiry clearly visible:
+“Your activation link expires in 7 days.”
+Footer
+Include Select Branding Solutions contact details:
+info@selectbranding.co.uk
+0113 255 2694
+
+Design requirements:
+
+Clean, modern, premium feel
+Use Select Branding Solutions branding
+Full-colour logo at the top
+Include customer logo clearly
+Mobile-friendly layout
+Exciting but not cheesy
+Avoid sounding like a password reset email
+Make the customer feel like they are getting access to a proper managed uniform solution
+
+Final feeling should be:
+
+“Your uniform. Your people. Your control. Anywhere.”

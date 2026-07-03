@@ -14,15 +14,45 @@ import jwt from "jsonwebtoken";
 import { randomBytes } from "crypto";
 import { z } from "zod";
 import { generateInvoicePDF, buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email.js";
-import { SBS_LOGO_DATA_URL } from "../assets/logo-data.js";
+import { SBS_LOGO_DATA_URL, SBS_LOGO_COLOUR_DATA_URL } from "../assets/logo-data.js";
 import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
 import { notifyCustomerManagers, notifyPortalUserByEmail, notifyAllPortalUsers, sendMobileInstructionsEmail } from "../services/notifications.js";
+import { ObjectStorageService } from "../lib/objectStorage.js";
 
 const router: IRouter = Router();
 
 const JWT_SECRET = process.env.PORTAL_JWT_SECRET || "sbs-portal-secret-change-in-production";
 const INVITE_TTL_DAYS = 7;
 const MAGIC_TTL_MINUTES = 30;
+
+const _logoStorageService = new ObjectStorageService();
+
+// Reads a customer logo (relative object-storage path or absolute URL) and returns it as an
+// inline data URL, so it renders reliably in email clients that block remote images.
+async function customerLogoToDataUrl(logoUrl: string | null | undefined): Promise<string | null> {
+  if (!logoUrl) return null;
+  try {
+    if (logoUrl.startsWith("/api/storage/objects/")) {
+      const objectPath = logoUrl.replace("/api/storage", "");
+      const file = await _logoStorageService.getObjectEntityFile(objectPath);
+      const [metadata] = await file.getMetadata();
+      const contentType = (metadata.contentType as string | undefined)?.trim() || "image/png";
+      const chunks: Buffer[] = [];
+      await new Promise<void>((resolve, reject) => {
+        file.createReadStream()
+          .on("data", (c: Buffer) => chunks.push(c))
+          .on("end", resolve)
+          .on("error", reject);
+      });
+      return `data:${contentType};base64,${Buffer.concat(chunks).toString("base64")}`;
+    }
+    const resp = await fetch(logoUrl, { signal: AbortSignal.timeout(5000) });
+    if (!resp.ok) return null;
+    const ct = resp.headers.get("content-type") ?? "image/png";
+    const buf = Buffer.from(await resp.arrayBuffer());
+    return `data:${ct};base64,${buf.toString("base64")}`;
+  } catch { return null; }
+}
 
 function buildMagicLinkEmail(_email: string, magicUrl: string): { html: string; text: string } {
   const html = `
@@ -44,32 +74,99 @@ function buildMagicLinkEmail(_email: string, magicUrl: string): { html: string; 
   return { html, text };
 }
 
-function buildInviteEmail(email: string, inviteUrl: string, customerName: string): { html: string; text: string } {
+function buildInviteEmail(
+  email: string,
+  inviteUrl: string,
+  customerName: string,
+  customerLogoDataUrl?: string | null,
+): { html: string; text: string } {
+  const benefits: Array<{ icon: string; title: string; body: string }> = [
+    { icon: "🧥", title: "Order Workwear", body: "Browse and order branded uniform quickly, any time." },
+    { icon: "📦", title: "Track Orders", body: "See exactly where every order is, in real time." },
+    { icon: "👥", title: "Manage Employees", body: "Order for named employees across your whole team." },
+    { icon: "📏", title: "Save Sizes", body: "Sizing and preferences are remembered for next time." },
+    { icon: "📱", title: "Use On The Go", body: "Works beautifully on desktop, tablet or mobile." },
+    { icon: "⬇️", title: "Install As An App", body: "Add it to your home screen for one-tap access." },
+  ];
+
+  const benefitCards = benefits.map(b => `
+        <td width="33.33%" valign="top" style="padding:0 8px 16px;">
+          <div style="background:#f8fafc;border:1px solid #e6ebf2;border-radius:12px;padding:18px 14px;height:100%;">
+            <div style="font-size:22px;line-height:1;margin-bottom:10px;">${b.icon}</div>
+            <div style="color:#0f172a;font-size:13.5px;font-weight:700;margin:0 0 4px;">${b.title}</div>
+            <div style="color:#64748b;font-size:12px;line-height:1.5;margin:0;">${b.body}</div>
+          </div>
+        </td>`).join("");
+
   const html = `
 <!DOCTYPE html>
 <html>
-<body style="font-family:Arial,sans-serif;background:#f8fafc;padding:32px 0;margin:0">
-  <div style="max-width:500px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;border:1px solid #e2e8f0">
-    <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
-    <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">Your ${customerName} account is ready</h2>
-    <p style="color:#475569;font-size:15px;margin:0 0 8px">Hi,</p>
-    <p style="color:#475569;font-size:15px;margin:0 0 24px">We've set up your account on the Select Branding Solutions wardrobe portal. Use the link below to sign in and get started — it expires in ${INVITE_TTL_DAYS} days.</p>
-    <a href="${inviteUrl}" style="display:inline-block;background:#1e293b;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;margin-bottom:28px">Sign in to your account</a>
-    <div style="background:#f8fafc;border-radius:8px;padding:16px;margin-bottom:24px">
-      <p style="color:#0f172a;font-size:13px;font-weight:600;margin:0 0 8px">From the portal you can:</p>
-      <ul style="color:#475569;font-size:13px;margin:0;padding-left:20px;line-height:1.9">
-        <li>Browse and place orders for branded workwear</li>
-        <li>Track the status of your orders in real time</li>
-        <li>Manage your sizing and wardrobe preferences</li>
-      </ul>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#eef2f8;padding:32px 12px;margin:0;">
+  <div style="max-width:600px;margin:0 auto;">
+
+    <!-- Header banner -->
+    <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);border-radius:16px 16px 0 0;padding:36px 40px 32px;text-align:center;">
+      <table role="presentation" align="center" style="margin:0 auto 20px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+            <img src="${SBS_LOGO_COLOUR_DATA_URL}" alt="Select Branding Solutions" style="height:36px;display:block;" />
+          </td>
+          ${customerLogoDataUrl ? `
+          <td style="padding:0 14px;color:#94a3b8;font-size:20px;vertical-align:middle;">&times;</td>
+          <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+            <img src="${customerLogoDataUrl}" alt="${customerName}" style="height:36px;max-width:140px;display:block;object-fit:contain;" />
+          </td>` : ""}
+        </tr>
+      </table>
+      <p style="color:#93c5fd;font-size:12.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 10px;">A Partnership Between Select Branding Solutions &amp; ${customerName}</p>
+      <h1 style="color:#ffffff;font-size:26px;font-weight:800;margin:0;line-height:1.3;">Your bespoke uniform portal is now live</h1>
     </div>
-    <p style="color:#94a3b8;font-size:13px;margin:0">If you were not expecting this email, please contact us at info@selectbranding.co.uk.</p>
-    <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0" />
-    <p style="color:#94a3b8;font-size:12px;margin:0">Select Branding Solutions &bull; info@selectbranding.co.uk</p>
+
+    <!-- Body -->
+    <div style="background:#ffffff;padding:36px 40px;border-left:1px solid #e6ebf2;border-right:1px solid #e6ebf2;">
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 24px;">
+        Hi, great news — we've built <strong>${customerName}</strong> a dedicated uniform management portal, designed around how your business actually orders workwear. This isn't just an ordering website; it's your own smarter, faster, more organised way to manage branded uniform, from first order to reorder.
+      </p>
+
+      <div style="text-align:center;margin:0 0 32px;">
+        <a href="${inviteUrl}" style="display:inline-block;background:#1e3a8a;color:#ffffff;text-decoration:none;padding:16px 44px;border-radius:10px;font-size:16px;font-weight:700;box-shadow:0 4px 14px rgba(30,58,138,0.35);">Access Your Portal</a>
+      </div>
+
+      <p style="color:#0f172a;font-size:14px;font-weight:700;margin:0 0 14px;">Everything you need, in one place</p>
+      <table role="presentation" width="100%" style="border-collapse:collapse;margin-bottom:8px;">
+        <tr>${benefitCards}</tr>
+      </table>
+
+      <div style="background:#f0f7ff;border:1px solid #dbeafe;border-radius:12px;padding:20px 22px;margin:24px 0;">
+        <p style="color:#1e3a8a;font-size:13.5px;font-weight:700;margin:0 0 6px;">It gets smarter every time you use it</p>
+        <p style="color:#475569;font-size:13.5px;line-height:1.6;margin:0;">The portal remembers employee sizing and repeat order details, so every future order gets quicker and easier — no re-typing, no guesswork.</p>
+      </div>
+
+      <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 24px;">
+        We've set this up in partnership with your business, so your approved garments, logos and ordering preferences are ready when you are. Need a new product added or a logo set up? Just ask your account manager, or request it directly from the portal.
+      </p>
+
+      <div style="border-top:1px dashed #e2e8f0;padding-top:18px;text-align:center;">
+        <p style="color:#94a3b8;font-size:12.5px;margin:0 0 4px;">This activation link is personal to you and expires in <strong style="color:#64748b;">${INVITE_TTL_DAYS} days</strong>.</p>
+        <p style="color:#cbd5e1;font-size:12px;margin:0;">If you weren't expecting this email, contact us at info@selectbranding.co.uk.</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#0f172a;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center;">
+      <p style="color:#93c5fd;font-size:13px;font-weight:700;margin:0 0 4px;">Your uniform. Your people. Your control. Anywhere.</p>
+      <p style="color:#64748b;font-size:11.5px;margin:8px 0 0;">Select Branding Solutions &bull; info@selectbranding.co.uk &bull; 0113 255 2694</p>
+    </div>
+
   </div>
 </body>
 </html>`;
-  const text = `Your ${customerName} account is ready\n\nHi,\n\nWe've set up your account on the Select Branding Solutions wardrobe portal.\n\nSign in here (link expires in ${INVITE_TTL_DAYS} days):\n${inviteUrl}\n\nFrom the portal you can:\n- Browse and place orders for branded workwear\n- Track the status of your orders in real time\n- Manage your sizing and wardrobe preferences\n\nIf you were not expecting this email, please contact us at info@selectbranding.co.uk.\n\nSelect Branding Solutions`;
+
+  const text = `${customerName}, your bespoke uniform portal is now live\n\nWe've built you a dedicated uniform management portal designed around how your business orders workwear.\n\nAccess your portal here (link expires in ${INVITE_TTL_DAYS} days):\n${inviteUrl}\n\nFrom the portal you can:\n- Order branded workwear quickly and easily\n- Track orders in real time\n- View previous orders\n- Manage company wardrobe requirements\n- Save employee sizing and preferences\n- Order for named employees\n- Use it on desktop, tablet or mobile\n- Install it as a mobile app\n- Request new products or logo setups when needed\n\nThe more you use it, the smarter it gets — remembering sizing and repeat order details for faster ordering.\n\nWe've set this up in partnership with your business, so your approved garments, logos and ordering preferences are ready when you are.\n\nIf you weren't expecting this email, contact us at info@selectbranding.co.uk.\n\nSelect Branding Solutions | info@selectbranding.co.uk | 0113 255 2694`;
   return { html, text };
 }
 
@@ -141,9 +238,10 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
     const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
     const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
     const absoluteInviteUrl = `${proto}://${host}${inviteUrl}`;
-    const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
+    const custRows = await db.execute(sql`SELECT name, logo_url FROM customers WHERE id = ${customerId}`);
     const customerName = (custRows.rows[0] as any)?.name ?? "your company";
-    const { html, text } = buildInviteEmail(email, absoluteInviteUrl, customerName);
+    const customerLogoDataUrl = await customerLogoToDataUrl((custRows.rows[0] as any)?.logo_url);
+    const { html, text } = buildInviteEmail(email, absoluteInviteUrl, customerName, customerLogoDataUrl);
     const result = await sendEmail({
       to: email,
       cc: "info@selectbranding.co.uk",
@@ -171,12 +269,13 @@ router.get("/portal/admin/invite/preview", async (req: Request, res: Response) =
     res.status(400).send("Invalid customerId");
     return;
   }
-  const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${parsed.data.customerId}`);
+  const custRows = await db.execute(sql`SELECT name, logo_url FROM customers WHERE id = ${parsed.data.customerId}`);
   const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+  const customerLogoDataUrl = await customerLogoToDataUrl((custRows.rows[0] as any)?.logo_url);
   const proto = req.get("x-forwarded-proto") ?? req.protocol ?? "https";
   const host = req.get("x-forwarded-host") ?? req.get("host") ?? "localhost";
   const sampleInviteUrl = `${proto}://${host}/customer-portal/accept-invite?token=preview-only-not-a-real-link`;
-  const { html } = buildInviteEmail("preview@example.com", sampleInviteUrl, customerName);
+  const { html } = buildInviteEmail("preview@example.com", sampleInviteUrl, customerName, customerLogoDataUrl);
   res.set("Content-Type", "text/html");
   res.send(html);
 });
@@ -3031,9 +3130,10 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
   let emailError: string | undefined;
 
   if (sendNow && isEmailConfigured) {
-    const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
+    const custRows = await db.execute(sql`SELECT name, logo_url FROM customers WHERE id = ${customerId}`);
     const customerName = (custRows.rows[0] as any)?.name ?? "your company";
-    const { html, text } = buildInviteEmail(email, inviteUrl, customerName);
+    const customerLogoDataUrl = await customerLogoToDataUrl((custRows.rows[0] as any)?.logo_url);
+    const { html, text } = buildInviteEmail(email, inviteUrl, customerName, customerLogoDataUrl);
     const result = await sendEmail({
       to: email,
       cc: "info@selectbranding.co.uk",
@@ -3082,14 +3182,15 @@ router.post("/portal/team/users/:id/send-invite", portalAuth, async (req: Reques
   const user = rows.rows[0] as any;
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
+  const custRows = await db.execute(sql`SELECT name, logo_url FROM customers WHERE id = ${customerId}`);
   const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+  const customerLogoDataUrl = await customerLogoToDataUrl((custRows.rows[0] as any)?.logo_url);
 
   const proto = req.headers["x-forwarded-proto"] ?? req.protocol;
   const host = req.headers["x-forwarded-host"] ?? req.headers.host;
   const inviteUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
 
-  const { html, text } = buildInviteEmail(user.email, inviteUrl, customerName);
+  const { html, text } = buildInviteEmail(user.email, inviteUrl, customerName, customerLogoDataUrl);
   const result = await sendEmail({
     to: user.email,
     cc: "info@selectbranding.co.uk",
