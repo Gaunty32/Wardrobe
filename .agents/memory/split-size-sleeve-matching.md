@@ -1,0 +1,10 @@
+---
+name: Split size/sleeve matching in orders/purchasing
+description: order_items.size can be a combined "SIZE/SLEEVE" string while product_variants stores size and sleeve as separate columns — raw equality joins silently break for these products.
+---
+
+For shirt-style products, `order_items.size` is stored as a combined string like `"17.5/Long Sleeve"`, but `product_variants` keeps `size` (`"17.5"`) and `sleeve` (`"Long Sleeve"`) as separate columns. Any query joining/matching `pv.size = oi.size` (or `IS NOT DISTINCT FROM`) directly fails silently for these products.
+
+**Why:** This caused two real production bugs: (1) stock lookups always missed for split-format products, so they were treated as zero stock and always flagged as needing purchasing even when in stock; (2) supplier lookups fell back to the product-level default supplier instead of the correct per-variant/per-sleeve supplier, causing Draft POs to group items under the wrong supplier.
+
+**How to apply:** Any new or edited query matching order items to variants (stock checks, supplier resolution, bin lookups, cost joins) must handle both formats: prefer a direct match (`pv.size IS NOT DISTINCT FROM oi.size`), and fall back to a split match (`oi.size LIKE '%/%' AND pv.size = split_part(oi.size,'/',1) AND pv.sleeve = split_part(oi.size,'/',2)`), with `ORDER BY` preferring the direct match. Do NOT add a further "colour-only, any variant" fallback — that produced non-deterministic results and silently overrode correct values. Known query sites: `artifacts/api-server/src/routes/purchasing.ts`, `orders.ts` (order confirmation stock/supplier allocation is the most critical — runs on every order confirm), `worksheets.ts` (bin lookup). When building in-memory Maps keyed by variant (e.g. for stock deduction), key using the combined size/sleeve string to match how order items store it, but keep the raw `size`/`sleeve` pieces alongside the key so any write-back to `product_variants` uses the real columns, not a re-split of the combined key.

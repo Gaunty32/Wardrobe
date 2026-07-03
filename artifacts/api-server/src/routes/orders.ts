@@ -766,8 +766,16 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
       // Fetch variant-level stock for all relevant products.
       // For plain products (no variants), fall back to product.stock_quantity.
+      // Order items store size as either a plain value ("17.0") or, for split products
+      // like shirts, a combined "size/sleeve" string ("17.0/Short Sleeve") — while the
+      // variant keeps size and sleeve in separate columns. Build the lookup key using the
+      // same combined format so both shapes match correctly (instead of only ever matching
+      // plain-size products and silently treating split products as having zero stock).
+      const combinedSize = (size: string | null, sleeve: string | null) =>
+        sleeve ? `${size ?? ""}/${sleeve}` : (size ?? "");
+
       const variantStockRows = await db.execute(sql`
-        SELECT pv.product_id, pv.colour, pv.size, pv.stock_quantity
+        SELECT pv.product_id, pv.colour, pv.size, pv.sleeve, pv.stock_quantity
         FROM product_variants pv
         WHERE pv.product_id IN (${sql.join(productIds.map(id => sql`${id}`), sql`, `)})
       `);
@@ -779,6 +787,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           productId: productVariantsTable.productId,
           colour: productVariantsTable.colour,
           size: productVariantsTable.size,
+          sleeve: productVariantsTable.sleeve,
           supplierId: productVariantsTable.primarySupplierId,
           supplierName: variantSupplierAlias.name,
           supplierEmail: variantSupplierAlias.email,
@@ -786,10 +795,12 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         .from(productVariantsTable)
         .innerJoin(variantSupplierAlias, eq(productVariantsTable.primarySupplierId, variantSupplierAlias.id))
         .where(inArray(productVariantsTable.productId, productIds));
-      // Key: "productId|colour|size" — colour/size normalised to lower-case for matching
+      // Key: "productId|colour|size" — colour/size normalised to lower-case for matching.
+      // Size uses the combined "size/sleeve" form so split products key the same way order
+      // items store them.
       const variantSupplierMap = new Map(
         variantSupplierRows.map(r => [
-          `${r.productId}|${(r.colour ?? "").toLowerCase()}|${(r.size ?? "").toLowerCase()}`,
+          `${r.productId}|${(r.colour ?? "").toLowerCase()}|${combinedSize(r.size, r.sleeve).toLowerCase()}`,
           { supplierId: r.supplierId!, supplierName: r.supplierName, supplierEmail: r.supplierEmail },
         ])
       );
@@ -800,12 +811,21 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           AND NOT EXISTS (SELECT 1 FROM product_variants pv WHERE pv.product_id = p.id)
       `);
 
-      // Build mutable stock pool keyed by "productId|colour|size"
+      // Build mutable stock pool keyed by "productId|colour|size" (combined size/sleeve form).
+      // Also track the raw pv.size/pv.sleeve pieces per key so the later persistence step
+      // can write back to the correct variant columns instead of re-splitting the combined key.
       const vKey = (pid: number, c: string | null, s: string | null) => `${pid}|${c ?? ""}|${s ?? ""}`;
       const remainingStock = new Map<string, number>();
-      for (const r of [...variantStockRows.rows, ...plainStockRows.rows] as Array<{ product_id: number; colour: string | null; size: string | null; stock_quantity: number | null }>) {
+      const variantKeyParts = new Map<string, { colour: string | null; size: string | null; sleeve: string | null }>();
+      for (const r of variantStockRows.rows as Array<{ product_id: number; colour: string | null; size: string | null; sleeve: string | null; stock_quantity: number | null }>) {
+        const k = vKey(r.product_id, r.colour, combinedSize(r.size, r.sleeve));
+        remainingStock.set(k, Number(r.stock_quantity) || 0);
+        variantKeyParts.set(k, { colour: r.colour, size: r.size, sleeve: r.sleeve });
+      }
+      for (const r of plainStockRows.rows as Array<{ product_id: number; colour: string | null; size: string | null; stock_quantity: number | null }>) {
         const k = vKey(r.product_id, r.colour, r.size);
         remainingStock.set(k, Number(r.stock_quantity) || 0);
+        variantKeyParts.set(k, { colour: r.colour, size: r.size, sleeve: null });
       }
 
       for (const item of items) {
@@ -863,12 +883,16 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         }
       }
 
-      // Persist deductions: update variant stock (+ rollup) or plain product stock
+      // Persist deductions: update variant stock (+ rollup) or plain product stock.
+      // Use the tracked raw size/sleeve pieces (not a re-split of the combined key) so
+      // split-format products (e.g. shirts) write back to the correct variant row.
       for (const [key, remaining] of remainingStock.entries()) {
-        const [pidStr, colour, size] = key.split("|");
+        const [pidStr] = key.split("|");
         const productId = parseInt(pidStr, 10);
-        const colourVal = colour || null;
-        const sizeVal = size || null;
+        const parts = variantKeyParts.get(key);
+        const colourVal = parts?.colour ?? null;
+        const sizeVal = parts?.size ?? null;
+        const sleeveVal = parts?.sleeve ?? null;
 
         if (colourVal !== null || sizeVal !== null) {
           // Variant row — update directly then roll up to product
@@ -878,6 +902,7 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
             WHERE product_id = ${productId}
               AND (colour IS NOT DISTINCT FROM ${colourVal})
               AND (size   IS NOT DISTINCT FROM ${sizeVal})
+              AND (sleeve IS NOT DISTINCT FROM ${sleeveVal})
           `);
           await db.execute(sql`
             UPDATE products
@@ -2277,7 +2302,10 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     const colour = parsed.data.colour ?? null;
     const size = parsed.data.size ?? null;
 
-    // Look up variant or plain product stock
+    // Look up variant or plain product stock.
+    // Size matching handles two stored formats: direct (pv.size = size) and split
+    // ("size/sleeve" order item value vs pv.size + pv.sleeve columns), preferring a
+    // direct match when both are present.
     const stockRows = await db.execute(sql`
       SELECT
         COALESCE(
@@ -2285,7 +2313,11 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
            FROM product_variants pv
            WHERE pv.product_id = ${productId}
              AND (pv.colour IS NOT DISTINCT FROM ${colour})
-             AND (pv.size   IS NOT DISTINCT FROM ${size})
+             AND (
+                  (pv.size IS NOT DISTINCT FROM ${size})
+                  OR (${size}::text LIKE '%/%' AND pv.size = split_part(${size}, '/', 1) AND pv.sleeve = split_part(${size}, '/', 2))
+             )
+           ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
            LIMIT 1),
           CASE WHEN NOT EXISTS (
                  SELECT 1 FROM product_variants pv WHERE pv.product_id = ${productId}
@@ -2294,8 +2326,33 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
                ELSE 0
           END
         ) AS available_stock,
-        p.supplier_id,
-        s.name AS supplier_name
+        COALESCE(
+          (SELECT pv.primary_supplier_id
+           FROM product_variants pv
+           WHERE pv.product_id = ${productId}
+             AND (pv.colour IS NOT DISTINCT FROM ${colour})
+             AND (
+                  (pv.size IS NOT DISTINCT FROM ${size})
+                  OR (${size}::text LIKE '%/%' AND pv.size = split_part(${size}, '/', 1) AND pv.sleeve = split_part(${size}, '/', 2))
+             )
+           ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
+           LIMIT 1),
+          p.supplier_id
+        ) AS supplier_id,
+        COALESCE(
+          (SELECT vs.name
+           FROM product_variants pv
+           JOIN suppliers vs ON vs.id = pv.primary_supplier_id
+           WHERE pv.product_id = ${productId}
+             AND (pv.colour IS NOT DISTINCT FROM ${colour})
+             AND (
+                  (pv.size IS NOT DISTINCT FROM ${size})
+                  OR (${size}::text LIKE '%/%' AND pv.size = split_part(${size}, '/', 1) AND pv.sleeve = split_part(${size}, '/', 2))
+             )
+           ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
+           LIMIT 1),
+          s.name
+        ) AS supplier_name
       FROM products p
       LEFT JOIN suppliers s ON s.id = p.supplier_id
       WHERE p.id = ${productId}
@@ -2310,14 +2367,18 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     resolvedSupplierId = shortfall > 0 ? (stockRow?.supplier_id ?? null) : null;
     resolvedSupplierName = shortfall > 0 ? (stockRow?.supplier_name ?? null) : null;
 
-    // Deduct allocated stock from the variant (or plain product)
+    // Deduct allocated stock from the variant (or plain product).
+    // Same direct-or-split size matching as the stock lookup above.
     if (allocatedQty > 0) {
       await db.execute(sql`
         UPDATE product_variants
         SET stock_quantity = GREATEST(0, stock_quantity - ${allocatedQty})
         WHERE product_id = ${productId}
           AND (colour IS NOT DISTINCT FROM ${colour})
-          AND (size   IS NOT DISTINCT FROM ${size})
+          AND (
+               (size IS NOT DISTINCT FROM ${size})
+               OR (${size}::text LIKE '%/%' AND size = split_part(${size}, '/', 1) AND sleeve = split_part(${size}, '/', 2))
+          )
       `);
       // Roll up to parent product
       await db.execute(sql`

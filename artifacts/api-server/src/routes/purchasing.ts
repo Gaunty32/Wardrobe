@@ -35,12 +35,20 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
            oi.purchase_quantity, oi.colour, oi.size, oi.stock_status,
            -- Variant-level stock when a matching variant exists;
            -- product-level stock only for plain products with no variants at all.
+           -- Size matching handles two stored formats: direct (pv.size = oi.size) and
+           -- split (order item stores "size/sleeve", variant has size + sleeve columns).
+           -- A direct match is always preferred; there is no colour-only fallback because
+           -- that produced non-deterministic results and could pick the wrong supplier/stock.
            COALESCE(
              (SELECT pv.stock_quantity
               FROM product_variants pv
               WHERE pv.product_id = oi.product_id
-                AND (pv.colour IS NOT DISTINCT FROM oi.colour)
-                AND (pv.size   IS NOT DISTINCT FROM oi.size)
+                AND pv.colour IS NOT DISTINCT FROM oi.colour
+                AND (
+                  (pv.size IS NOT DISTINCT FROM oi.size)
+                  OR (oi.size LIKE '%/%' AND pv.size = split_part(oi.size, '/', 1) AND pv.sleeve = split_part(oi.size, '/', 2))
+                )
+              ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
               LIMIT 1),
              CASE WHEN NOT EXISTS (
                     SELECT 1 FROM product_variants pv WHERE pv.product_id = oi.product_id
@@ -54,9 +62,13 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
              (SELECT pv2.primary_supplier_id
               FROM product_variants pv2
               WHERE pv2.product_id = oi.product_id
-                AND (pv2.colour IS NOT DISTINCT FROM oi.colour)
-                AND (pv2.size   IS NOT DISTINCT FROM oi.size)
+                AND pv2.colour IS NOT DISTINCT FROM oi.colour
+                AND (
+                  (pv2.size IS NOT DISTINCT FROM oi.size)
+                  OR (oi.size LIKE '%/%' AND pv2.size = split_part(oi.size, '/', 1) AND pv2.sleeve = split_part(oi.size, '/', 2))
+                )
                 AND pv2.primary_supplier_id IS NOT NULL
+              ORDER BY CASE WHEN pv2.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
               LIMIT 1),
              p.supplier_id
            ) AS supplier_id,
@@ -65,9 +77,13 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
               FROM product_variants pv2
               INNER JOIN suppliers sv ON sv.id = pv2.primary_supplier_id
               WHERE pv2.product_id = oi.product_id
-                AND (pv2.colour IS NOT DISTINCT FROM oi.colour)
-                AND (pv2.size   IS NOT DISTINCT FROM oi.size)
+                AND pv2.colour IS NOT DISTINCT FROM oi.colour
+                AND (
+                  (pv2.size IS NOT DISTINCT FROM oi.size)
+                  OR (oi.size LIKE '%/%' AND pv2.size = split_part(oi.size, '/', 1) AND pv2.sleeve = split_part(oi.size, '/', 2))
+                )
                 AND pv2.primary_supplier_id IS NOT NULL
+              ORDER BY CASE WHEN pv2.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
               LIMIT 1),
              s.name
            ) AS supplier_name,
@@ -76,9 +92,13 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
               FROM product_variants pv2
               INNER JOIN suppliers sv ON sv.id = pv2.primary_supplier_id
               WHERE pv2.product_id = oi.product_id
-                AND (pv2.colour IS NOT DISTINCT FROM oi.colour)
-                AND (pv2.size   IS NOT DISTINCT FROM oi.size)
+                AND pv2.colour IS NOT DISTINCT FROM oi.colour
+                AND (
+                  (pv2.size IS NOT DISTINCT FROM oi.size)
+                  OR (oi.size LIKE '%/%' AND pv2.size = split_part(oi.size, '/', 1) AND pv2.sleeve = split_part(oi.size, '/', 2))
+                )
                 AND pv2.primary_supplier_id IS NOT NULL
+              ORDER BY CASE WHEN pv2.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
               LIMIT 1),
              s.email
            ) AS supplier_email
@@ -239,79 +259,84 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
   const itemSupplier = alias(suppliersTable, "item_supplier");
   const productSupplier = alias(suppliersTable, "product_supplier");
 
-  // Correlated subquery helpers: try exact colour+size match first, then colour-only
-  // (handles order items with no size stored, or products where supplier is set at colour level)
-  const variantSupplierIdSql = sql<number | null>`COALESCE(
+  // Correlated subquery helpers: match the variant by colour + size, where "size" handles
+  // two stored formats:
+  //   1. Direct: pv.size = oi.size (most products)
+  //   2. Split: order item stores "size/sleeve" (e.g. "17.0/Short Sleeve") but the variant
+  //      has size = "17.0" and sleeve = "Short Sleeve" as separate columns (shirts).
+  // A direct match is always preferred over a split match. We deliberately do NOT fall back
+  // to "any variant of this colour" when no size match is found — that produced
+  // non-deterministic results (LIMIT 1 with no stable ordering) and could silently override
+  // an already-correct supplier stored on the order item itself. Callers should COALESCE
+  // these with the order item's own stored supplier fields as the next fallback.
+  const variantSizeMatch = (pvAlias = "pv") => sql`(
+    (${sql.raw(pvAlias)}.size IS NOT DISTINCT FROM ${orderItemsTable.size})
+    OR (
+      ${orderItemsTable.size} LIKE '%/%'
+      AND ${sql.raw(pvAlias)}.size = split_part(${orderItemsTable.size}, '/', 1)
+      AND ${sql.raw(pvAlias)}.sleeve = split_part(${orderItemsTable.size}, '/', 2)
+    )
+  )`;
+
+  const variantSupplierIdSql = sql<number | null>`
     (SELECT pv.primary_supplier_id FROM product_variants pv
      WHERE pv.product_id = ${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
-    (SELECT pv.primary_supplier_id FROM product_variants pv
-     WHERE pv.product_id = ${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
-  )`;
+       AND pv.colour IS NOT DISTINCT FROM ${orderItemsTable.colour}
+       AND ${variantSizeMatch()}
+       AND pv.primary_supplier_id IS NOT NULL
+     ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${orderItemsTable.size} THEN 0 ELSE 1 END
+     LIMIT 1)
+  `;
 
-  const variantSupplierNameSql = sql<string | null>`COALESCE(
+  const variantSupplierNameSql = sql<string | null>`
     (SELECT sv.name FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
      WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
-    (SELECT sv.name FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
-     WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
-  )`;
+       AND pv.colour IS NOT DISTINCT FROM ${orderItemsTable.colour}
+       AND ${variantSizeMatch()}
+       AND pv.primary_supplier_id IS NOT NULL
+     ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${orderItemsTable.size} THEN 0 ELSE 1 END
+     LIMIT 1)
+  `;
 
-  const variantSupplierEmailSql = sql<string | null>`COALESCE(
+  const variantSupplierEmailSql = sql<string | null>`
     (SELECT sv.email FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
      WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
-    (SELECT sv.email FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
-     WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
-  )`;
+       AND pv.colour IS NOT DISTINCT FROM ${orderItemsTable.colour}
+       AND ${variantSizeMatch()}
+       AND pv.primary_supplier_id IS NOT NULL
+     ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${orderItemsTable.size} THEN 0 ELSE 1 END
+     LIMIT 1)
+  `;
 
-  const variantSupplierCurrencySql = sql<string | null>`COALESCE(
+  const variantSupplierCurrencySql = sql<string | null>`
     (SELECT sv.currency FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
      WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1),
-    (SELECT sv.currency FROM product_variants pv JOIN suppliers sv ON sv.id=pv.primary_supplier_id
-     WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND pv.primary_supplier_id IS NOT NULL LIMIT 1)
-  )`;
+       AND pv.colour IS NOT DISTINCT FROM ${orderItemsTable.colour}
+       AND ${variantSizeMatch()}
+       AND pv.primary_supplier_id IS NOT NULL
+     ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${orderItemsTable.size} THEN 0 ELSE 1 END
+     LIMIT 1)
+  `;
 
-  const variantSupplierCodeSql = sql<string | null>`COALESCE(
+  const variantSupplierCodeSql = sql<string | null>`
     (SELECT pv.supplier_code FROM product_variants pv
      WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
-       AND pv.supplier_code IS NOT NULL LIMIT 1),
-    (SELECT pv.supplier_code FROM product_variants pv
-     WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND pv.supplier_code IS NOT NULL LIMIT 1)
-  )`;
+       AND pv.colour IS NOT DISTINCT FROM ${orderItemsTable.colour}
+       AND ${variantSizeMatch()}
+       AND pv.supplier_code IS NOT NULL
+     ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${orderItemsTable.size} THEN 0 ELSE 1 END
+     LIMIT 1)
+  `;
 
-  const variantSupplierPriceSql = sql<string | null>`COALESCE(
+  const variantSupplierPriceSql = sql<string | null>`
     (SELECT pv.supplier_price FROM product_variants pv
      WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND LOWER(TRIM(COALESCE(pv.size,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.size},'')))
-       AND pv.supplier_price IS NOT NULL LIMIT 1),
-    (SELECT pv.supplier_price FROM product_variants pv
-     WHERE pv.product_id=${orderItemsTable.productId}
-       AND LOWER(TRIM(COALESCE(pv.colour,'')))=LOWER(TRIM(COALESCE(${orderItemsTable.colour},'')))
-       AND pv.supplier_price IS NOT NULL LIMIT 1)
-  )`;
+       AND pv.colour IS NOT DISTINCT FROM ${orderItemsTable.colour}
+       AND ${variantSizeMatch()}
+       AND pv.supplier_price IS NOT NULL
+     ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${orderItemsTable.size} THEN 0 ELSE 1 END
+     LIMIT 1)
+  `;
 
   const rows = await db
     .select({
@@ -617,12 +642,18 @@ router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
           CASE WHEN oi.variant_id IS NOT NULL THEN
             (SELECT pv.stock_quantity FROM product_variants pv WHERE pv.id = oi.variant_id)
           ELSE NULL END,
-          -- Fall back to colour+size match on the product
+          -- Fall back to colour+size match on the product. Size matching handles both
+          -- direct (pv.size = oi.size) and split ("size/sleeve" order item vs
+          -- separate size + sleeve columns on the variant, e.g. shirts) formats.
           (SELECT pv.stock_quantity
            FROM product_variants pv
            WHERE pv.product_id = oi.product_id
-             AND (pv.colour IS NOT DISTINCT FROM oi.colour)
-             AND (pv.size   IS NOT DISTINCT FROM oi.size)
+             AND pv.colour IS NOT DISTINCT FROM oi.colour
+             AND (
+               (pv.size IS NOT DISTINCT FROM oi.size)
+               OR (oi.size LIKE '%/%' AND pv.size = split_part(oi.size, '/', 1) AND pv.sleeve = split_part(oi.size, '/', 2))
+             )
+           ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
            LIMIT 1),
           -- Last resort: plain product stock (no variants at all)
           CASE WHEN NOT EXISTS (

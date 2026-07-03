@@ -64,7 +64,10 @@ router.get("/picking-list", async (req, res): Promise<void> => {
     LEFT  JOIN product_variants pv
            ON  pv.product_id = oi.product_id
            AND (pv.colour = oi.colour OR (pv.colour IS NULL AND oi.colour IS NULL))
-           AND (pv.size   = oi.size   OR (pv.size   IS NULL AND oi.size   IS NULL))
+           AND (
+                (pv.size = oi.size OR (pv.size IS NULL AND oi.size IS NULL))
+                OR (oi.size LIKE '%/%' AND pv.size = split_part(oi.size, '/', 1) AND pv.sleeve = split_part(oi.size, '/', 2))
+           )
     WHERE
         -- Only decorated items awaiting production pick (plain items go straight to Dispatch)
         oi.stock_status = 'allocated'

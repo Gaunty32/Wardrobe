@@ -2,3 +2,4 @@
 - [Bundle Feature](bundle-feature.md) — bundles/bundle_components tables, order_items bundle columns, CRUD routes, PDF rendering, Add Bundle dialog in OrderDetail
 - [Part-Dispatch Design](part-dispatch.md) — per-item dispatched_at, part_shipped status, queue/invoice/email filtering rules
 - [Social Post Feature](social-post-feature.md) — social_posts table, AI generation (claude-sonnet-4-6), Facebook auto-post, Google copy-paste, 6-month scheduler, Settings → Social Media tab
+- [Split size/sleeve matching](split-size-sleeve-matching.md) — order_items.size can be "SIZE/SLEEVE" combined while product_variants splits size+sleeve; raw equality joins silently break for these products
