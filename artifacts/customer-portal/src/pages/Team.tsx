@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import PortalLayout from "@/components/Layout";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import {
   Plus, Loader2, Users, UserCheck, UserX, UserMinus, Mail, Pencil, RotateCcw,
   ShieldCheck, MapPin, Ruler, Trash2, Link as LinkIcon, Wallet, Search, X,
-  ChevronsUpDown, Check, AlertTriangle,
+  ChevronsUpDown, Check, AlertTriangle, Camera, ArrowRightLeft,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -117,6 +117,86 @@ const AVATAR_COLORS = [
 ];
 function getAvatarColor(id: number) {
   return AVATAR_COLORS[Math.abs(id) % AVATAR_COLORS.length];
+}
+
+// Renders an uploaded profile photo when available, falling back to colour-coded initials.
+function AvatarCircle({ emp, size = "w-9 h-9", textSize = "text-xs" }: { emp: any; size?: string; textSize?: string }) {
+  if (emp?.avatar_url) {
+    return (
+      <img
+        src={`${API_BASE}/storage${emp.avatar_url}`}
+        alt=""
+        className={`${size} rounded-full object-cover shrink-0 ring-1 ring-black/5`}
+      />
+    );
+  }
+  return (
+    <div className={`${size} rounded-full flex items-center justify-center ${textSize} font-bold shrink-0 ${getAvatarColor(emp?.id ?? 0)}`}>
+      {emp?.first_name?.[0]}{emp?.last_name?.[0]}
+    </div>
+  );
+}
+
+// Uploads a photo via the presigned-URL flow and returns the storage objectPath to persist on the employee record.
+async function uploadAvatarFile(file: File): Promise<string> {
+  const meta = await apiFetch<{ uploadURL: string; objectPath: string }>("/storage/uploads/request-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
+  });
+  await fetch(meta.uploadURL, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  return meta.objectPath;
+}
+
+// Click-to-upload avatar editor: shows the current photo/initials with a camera badge, opens the file picker on click.
+function AvatarUploadField({ emp, avatarUrl, onChange }: { emp: any; avatarUrl: string | null; onChange: (objectPath: string) => void }) {
+  const { toast } = useToast();
+  const [uploading, setUploading] = useState(false);
+  const inputId = `avatar-upload-${emp?.id ?? "new"}`;
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Please choose an image file", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const objectPath = await uploadAvatarFile(file);
+      onChange(objectPath);
+    } catch {
+      toast({ title: "Photo upload failed", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <label htmlFor={inputId} className="relative cursor-pointer group/avatar shrink-0">
+        <AvatarCircle emp={{ ...emp, avatar_url: avatarUrl }} size="w-16 h-16" textSize="text-xl" />
+        <span className="absolute -bottom-1 -right-1 flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground shadow ring-2 ring-background group-hover/avatar:scale-110 transition-transform">
+          {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Camera className="w-3 h-3" />}
+        </span>
+        <input id={inputId} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading} />
+      </label>
+      <div className="flex flex-col gap-1">
+        <p className="text-sm font-medium">Profile photo</p>
+        <p className="text-xs text-muted-foreground">Tap the photo to upload</p>
+        {avatarUrl && (
+          <button type="button" className="text-xs text-destructive text-left hover:underline w-fit" onClick={() => onChange("")}>
+            Remove photo
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function RoleBadge({ role }: { role: string }) {
@@ -269,6 +349,7 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
     roleId: initial?.role_id ? String(initial.role_id) : "none",
     managerId: initial?.manager_id ? String(initial.manager_id) : "none",
     allowance: initial?.allowance != null ? String(initial.allowance) : "",
+    avatarUrl: initial?.avatar_url ?? null as string | null,
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -291,6 +372,8 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
             <span>{error}</span>
           </div>
         )}
+
+        <AvatarUploadField emp={initial} avatarUrl={form.avatarUrl} onChange={(objectPath) => setForm(f => ({ ...f, avatarUrl: objectPath || null }))} />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -735,8 +818,17 @@ function EmployeesTab() {
     onError: () => toast({ title: "Failed to update access", variant: "destructive" }),
   });
 
+  // Managers a member could be moved to, excluding themselves — used by the touch-friendly "Move to…" menu.
+  // Includes every managerial employee, not just those who currently have members (sectionKeys), so a
+  // manager with zero direct reports remains a valid move target.
+  const moveTargets = useMemo(
+    () => (activeEmployees as any[]).filter((e: any) => isManagerialRoleName(e.role_name))
+      .sort((a: any, b: any) => (a.last_name ?? "").localeCompare(b.last_name ?? "")),
+    [activeEmployees],
+  );
+
   // ── member chip renderer ──────────────────────────────────────────────────────
-  const renderMemberChip = (emp: any) => {
+  const renderMemberChip = (emp: any, currentManagerId: number | null) => {
     const isDragging = dragEmpId === emp.id;
     const portalUser = portalByEmpId.get(emp.id);
     return (
@@ -749,16 +841,14 @@ function EmployeesTab() {
           ${isDragging ? "opacity-30 border-dashed scale-95" : "hover:border-primary/40 hover:shadow-sm cursor-grab active:cursor-grabbing"}
         `}
       >
-        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${getAvatarColor(emp.id)}`}>
-          {emp.first_name?.[0]}{emp.last_name?.[0]}
-        </div>
+        <AvatarCircle emp={emp} size="w-7 h-7" textSize="text-[11px]" />
         <div className="flex-1 min-w-0">
           <p className="font-medium text-xs leading-tight truncate">{emp.first_name} {emp.last_name}</p>
           <p className="text-[10px] text-muted-foreground truncate">
             {[emp.employee_number && `#${emp.employee_number}`, emp.role_name || emp.job_title].filter(Boolean).join(" · ")}
           </p>
         </div>
-        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
           {portalUser ? (
             <button onClick={() => openPortal(emp)} title="Manage portal access">
               <RoleBadge role={portalUser.status === "invited" ? "invited" : portalUser.status === "inactive" ? "inactive" : portalUser.portal_role} />
@@ -768,6 +858,34 @@ function EmployeesTab() {
               <Mail className="w-3 h-3" />
             </Button>
           ) : null}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-primary" title="Move to another team manager">
+                <ArrowRightLeft className="w-3 h-3" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-1" align="end">
+              <p className="text-xs font-medium text-muted-foreground px-2 py-1.5">Move to…</p>
+              <div className="max-h-52 overflow-y-auto">
+                <button
+                  className={`w-full text-left text-sm rounded-md px-2 py-2 hover:bg-muted flex items-center gap-2 ${currentManagerId == null ? "font-semibold text-primary" : ""}`}
+                  onClick={() => reassignMutation.mutate({ id: emp.id, managerId: null })}
+                >
+                  Unassigned
+                </button>
+                {moveTargets.filter(m => m.id !== emp.id).map((m: any) => (
+                  <button
+                    key={m.id}
+                    className={`w-full text-left text-sm rounded-md px-2 py-2 hover:bg-muted flex items-center gap-2 ${currentManagerId === m.id ? "font-semibold text-primary" : ""}`}
+                    onClick={() => reassignMutation.mutate({ id: emp.id, managerId: m.id })}
+                  >
+                    <AvatarCircle emp={m} size="w-5 h-5" textSize="text-[9px]" />
+                    <span className="truncate">{m.first_name} {m.last_name}</span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditTarget(emp)} title="Edit">
             <Pencil className="w-3 h-3" />
           </Button>
@@ -824,9 +942,7 @@ function EmployeesTab() {
                 key={emp.id}
                 className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${emp.is_active ? "" : "opacity-60"}`}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${getAvatarColor(emp.id)}`}>
-                  {emp.first_name?.[0]}{emp.last_name?.[0]}
-                </div>
+                <AvatarCircle emp={emp} size="w-8 h-8" textSize="text-xs" />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-sm">
                     {emp.first_name} {emp.last_name}
@@ -894,8 +1010,8 @@ function EmployeesTab() {
                   >
                     {/* Manager header */}
                     <div className="p-5 flex flex-col items-center text-center border-b bg-gradient-to-b from-muted/40 to-transparent">
-                      <div className={`w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold mb-3 ring-4 ring-white shadow-md ${getAvatarColor(leaderId)}`}>
-                        {leader.first_name?.[0]}{leader.last_name?.[0]}
+                      <div className="mb-3 ring-4 ring-white shadow-md rounded-full">
+                        <AvatarCircle emp={leader} size="w-16 h-16" textSize="text-xl" />
                       </div>
                       <p className="font-bold text-sm leading-tight">{leader.first_name} {leader.last_name}</p>
                       {leader.employee_number && (
@@ -942,7 +1058,7 @@ function EmployeesTab() {
                           {dragEmpId != null ? "↓ Drop here to assign" : "No members yet"}
                         </p>
                       ) : (
-                        members.map((emp: any) => renderMemberChip(emp))
+                        members.map((emp: any) => renderMemberChip(emp, leaderId))
                       )}
                     </div>
                   </div>
@@ -972,7 +1088,7 @@ function EmployeesTab() {
                   <div className={`flex-1 p-2 space-y-1.5 min-h-[72px] max-h-60 overflow-y-auto
                     ${isDropTarget(null) ? "bg-primary/5" : ""}
                   `}>
-                    {unassigned.map((emp: any) => renderMemberChip(emp))}
+                    {unassigned.map((emp: any) => renderMemberChip(emp, null))}
                   </div>
                 </div>
               )}
@@ -1696,9 +1812,9 @@ function MyTeamTab() {
     );
   }, [employees, searchTrimmed]);
 
-  const [form, setForm] = useState({ firstName: "", lastName: "", employeeNumber: "", email: "", phone: "", jobTitle: "", department: "" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", employeeNumber: "", email: "", phone: "", jobTitle: "", department: "", avatarUrl: "" });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
-  const resetForm = () => setForm({ firstName: "", lastName: "", employeeNumber: "", email: "", phone: "", jobTitle: "", department: "" });
+  const resetForm = () => setForm({ firstName: "", lastName: "", employeeNumber: "", email: "", phone: "", jobTitle: "", department: "", avatarUrl: "" });
 
   const openEdit = (emp: any) => {
     setForm({
@@ -1709,6 +1825,7 @@ function MyTeamTab() {
       phone: emp.phone ?? "",
       jobTitle: emp.job_title ?? "",
       department: emp.department ?? "",
+      avatarUrl: emp.avatar_url ?? "",
     });
     setEditTarget(emp);
   };
@@ -1761,6 +1878,11 @@ function MyTeamTab() {
   function MemberForm({ saving, onSave, onCancel }: { saving: boolean; onSave: () => void; onCancel: () => void }) {
     return (
       <div className="space-y-3">
+        <AvatarUploadField
+          emp={{ id: editTarget?.id, first_name: form.firstName, last_name: form.lastName }}
+          avatarUrl={form.avatarUrl}
+          onChange={(objectPath) => setForm(f => ({ ...f, avatarUrl: objectPath || "" }))}
+        />
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1"><Label>First name *</Label><Input value={form.firstName} onChange={e => set("firstName", e.target.value)} /></div>
           <div className="space-y-1"><Label>Last name *</Label><Input value={form.lastName} onChange={e => set("lastName", e.target.value)} /></div>
@@ -1823,9 +1945,7 @@ function MyTeamTab() {
               <div className="flex flex-col gap-2">
                 {searchResults.map((emp: any) => (
                   <div key={emp.id} className={`flex items-center gap-3 rounded-lg border px-4 py-3 bg-card ${emp.is_active ? "" : "opacity-60"}`}>
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 ${getAvatarColor(emp.id)}`}>
-                      {emp.first_name?.[0]}{emp.last_name?.[0]}
-                    </div>
+                    <AvatarCircle emp={emp} size="w-8 h-8" textSize="text-xs" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm">
                         {emp.first_name} {emp.last_name}
@@ -1870,9 +1990,7 @@ function MyTeamTab() {
                     ${dragEmpId === emp.id ? "opacity-40 border-dashed scale-[0.98]" : ""}
                   `}
                 >
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${getAvatarColor(emp.id)}`}>
-                    {emp.first_name?.[0]}{emp.last_name?.[0]}
-                  </div>
+                  <AvatarCircle emp={emp} size="w-9 h-9" textSize="text-xs" />
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm">
                       {emp.first_name} {emp.last_name}

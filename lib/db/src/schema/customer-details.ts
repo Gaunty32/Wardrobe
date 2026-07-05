@@ -108,6 +108,7 @@ export const customerEmployeesTable = pgTable("customer_employees", {
   roleId: integer("role_id"),
   email: text("email"),
   phone: text("phone"),
+  avatarUrl: text("avatar_url"),
   teamId: integer("team_id"),
   managerId: integer("manager_id"),
   deliveryAddressId: integer("delivery_address_id").references(() => customerDeliveryAddressesTable.id, { onDelete: "set null" }),

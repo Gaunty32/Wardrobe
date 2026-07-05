@@ -2697,7 +2697,7 @@ router.get("/portal/my-team/employees", portalAuth, async (req: Request, res: Re
 
   const rows = await db.execute(sql`
     SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
-           e.department, e.notes, e.is_active, e.allowance,
+           e.department, e.notes, e.is_active, e.allowance, e.avatar_url,
            COALESCE(e.allowance_topup, 0) AS allowance_topup,
            cr.id as role_id, cr.name as role_name,
            cr.annual_allowance as role_allowance,
@@ -2809,10 +2809,19 @@ router.patch("/portal/my-team/employees/:id", portalAuth, async (req: Request, r
     department: z.string().optional().nullable(),
     notes: z.string().optional().nullable(),
     isActive: z.boolean().optional(),
+    avatarUrl: z.string().optional().nullable(),
+    managerId: z.number().int().optional().nullable(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
   const d = body.data;
+
+  // Moving to a different manager within the same team-manager pool must stay inside this customer.
+  if (d.managerId !== undefined && d.managerId !== null) {
+    const targetCheck = await db.execute(sql`SELECT id FROM customer_employees WHERE id = ${d.managerId} AND customer_id = ${customerId}`);
+    if (targetCheck.rows.length === 0) { res.status(400).json({ error: "Target manager not found" }); return; }
+  }
+
   await db.execute(sql`
     UPDATE customer_employees SET
       first_name = COALESCE(${d.firstName ?? null}, first_name),
@@ -2824,6 +2833,8 @@ router.patch("/portal/my-team/employees/:id", portalAuth, async (req: Request, r
       department = COALESCE(${d.department !== undefined ? d.department : null}, department),
       notes = COALESCE(${d.notes !== undefined ? d.notes : null}, notes),
       is_active = COALESCE(${d.isActive !== undefined ? d.isActive : null}, is_active),
+      avatar_url = CASE WHEN ${d.avatarUrl !== undefined} THEN ${d.avatarUrl ?? null} ELSE avatar_url END,
+      manager_id = CASE WHEN ${d.managerId !== undefined} THEN ${d.managerId ?? null} ELSE manager_id END,
       updated_at = now()
     WHERE id = ${id}
   `);
@@ -3045,7 +3056,7 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
   try {
     const rows = await db.execute(sql`
       SELECT e.id, e.first_name, e.last_name, e.employee_number, e.email, e.phone, e.job_title,
-             e.department, e.notes, e.is_active, e.allowance,
+             e.department, e.notes, e.is_active, e.allowance, e.avatar_url,
              COALESCE(e.allowance_topup, 0) AS allowance_topup,
              cr.id as role_id, cr.name as role_name,
              cr.annual_allowance as role_allowance,
@@ -3176,6 +3187,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
     deliveryAddressId: z.number().int().optional().nullable(),
     allowance: z.number().min(0).optional().nullable(),
     allowanceTopup: z.number().min(0).optional().nullable(),
+    avatarUrl: z.string().optional().nullable(),
     // Resolution for the "this employee still manages people" conflict — see isManagerialRoleName below.
     reassignReportsTo: z.number().int().optional().nullable(),
     clearReports: z.boolean().optional(),
@@ -3252,6 +3264,7 @@ router.patch("/portal/team/employees/:id", portalAuth, async (req: Request, res:
     if (d.deliveryAddressId !== undefined) sets.push(`delivery_address_id = ${d.deliveryAddressId === null ? "NULL" : d.deliveryAddressId}`);
     if (d.allowance !== undefined) sets.push(`allowance = ${d.allowance === null ? "NULL" : d.allowance}`);
     if (d.allowanceTopup !== undefined) sets.push(`allowance_topup = ${d.allowanceTopup === null ? "0" : d.allowanceTopup}`);
+    if (d.avatarUrl !== undefined) sets.push(`avatar_url = ${d.avatarUrl === null ? "NULL" : `'${d.avatarUrl.replace(/'/g, "''")}'`}`);
 
     if (sets.length === 0) { res.status(400).json({ error: "No fields to update" }); return; }
 
