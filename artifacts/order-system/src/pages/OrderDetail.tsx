@@ -3951,6 +3951,7 @@ export default function OrderDetail() {
         order={{
           id: order.id,
           orderNumber: order.orderNumber,
+          customerId: order.customerId ?? null,
           customerName: order.customerName ?? null,
           status: order.status,
           totalAmount: order.totalAmount,

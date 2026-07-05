@@ -498,6 +498,69 @@ export async function getContactBalance(xeroContactId: string): Promise<{
   };
 }
 
+/**
+ * Parses a Xero-style date string, which comes back as either
+ * "/Date(1735689600000+0000)/" or a plain "YYYY-MM-DD" string depending on endpoint.
+ */
+function parseXeroDate(value: string | undefined | null): Date | null {
+  if (!value) return null;
+  const msMatch = /\/Date\((\d+)/.exec(value);
+  if (msMatch) return new Date(parseInt(msMatch[1], 10));
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
+ * Checks a Xero contact's sales invoices for any AUTHORISED invoice with an
+ * amount still due and a due date more than `daysThreshold` days in the past.
+ * Used to warn staff before confirming a new order for a customer who already
+ * has an old outstanding balance.
+ */
+export async function getOverdueBalance(xeroContactId: string, daysThreshold = 30): Promise<{
+  isOverdue: boolean;
+  overdueAmount: number;
+  totalDue: number;
+  oldestDueDate: string | null;
+  invoiceCount: number;
+}> {
+  const where = `Contact.ContactID=Guid("${xeroContactId}")&&Status=="AUTHORISED"&&Type=="ACCREC"`;
+  const res = await xeroFetch(`/Invoices?where=${encodeURIComponent(where)}&statuses=AUTHORISED`);
+  if (!res.ok) throw new Error(`Xero invoices fetch failed: ${await res.text()}`);
+
+  const data = await res.json() as {
+    Invoices?: Array<{ AmountDue: number; DueDate?: string; DueDateString?: string }>;
+  };
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - daysThreshold);
+
+  let overdueAmount = 0;
+  let totalDue = 0;
+  let oldestDueDate: Date | null = null;
+  let invoiceCount = 0;
+
+  for (const inv of data.Invoices ?? []) {
+    const amountDue = Number(inv.AmountDue ?? 0);
+    if (amountDue <= 0) continue;
+    totalDue += amountDue;
+
+    const dueDate = parseXeroDate(inv.DueDate) ?? parseXeroDate(inv.DueDateString);
+    if (dueDate && dueDate < cutoff) {
+      overdueAmount += amountDue;
+      invoiceCount += 1;
+      if (!oldestDueDate || dueDate < oldestDueDate) oldestDueDate = dueDate;
+    }
+  }
+
+  return {
+    isOverdue: overdueAmount > 0,
+    overdueAmount: Math.round(overdueAmount * 100) / 100,
+    totalDue: Math.round(totalDue * 100) / 100,
+    oldestDueDate: oldestDueDate ? oldestDueDate.toISOString().slice(0, 10) : null,
+    invoiceCount,
+  };
+}
+
 // ─── Invoice posting ──────────────────────────────────────────────────────────
 
 export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceId: string; xeroInvoiceStatus: string; invoiceNumber: string }> {

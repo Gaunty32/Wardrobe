@@ -73,8 +73,18 @@ interface AllocationResult {
   stripeCharge?: { success: boolean; paymentIntentId?: string; cardLast4?: string; error?: string } | null;
 }
 
-type Step = "review" | "confirming" | "purchase_orders" | "creating_pos" | "email" | "sending_email" | "done";
+type Step = "review" | "checking_overdue" | "overdue_warning" | "confirming" | "purchase_orders" | "creating_pos" | "email" | "sending_email" | "done";
 type PoAction = "new" | `existing:${number}`;
+
+interface OverdueCheckResult {
+  isOverdue: boolean;
+  overdueAmount: number;
+  totalDue: number;
+  oldestDueDate: string | null;
+  invoiceCount: number;
+  notLinked?: boolean;
+  checkFailed?: boolean;
+}
 
 interface ConfirmOrderDialogProps {
   open: boolean;
@@ -82,6 +92,7 @@ interface ConfirmOrderDialogProps {
   order: {
     id: number;
     orderNumber: string;
+    customerId?: number | null;
     customerName: string | null;
     status: string;
     totalAmount?: number | null;
@@ -111,6 +122,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
   const [paymentLinkLoading, setPaymentLinkLoading] = useState(false);
   const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
   const [paymentLinkCopied, setPaymentLinkCopied] = useState(false);
+  const [overdueCheck, setOverdueCheck] = useState<OverdueCheckResult | null>(null);
 
   const initialRequiredDate = () =>
     order.requiredDate ? new Date(order.requiredDate).toISOString().slice(0, 10) : defaultRequiredDate();
@@ -133,6 +145,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
     setPaymentLinkLoading(false);
     setPaymentLinkError(null);
     setPaymentLinkCopied(false);
+    setOverdueCheck(null);
   };
 
   useEffect(() => {
@@ -182,7 +195,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
   }, [step, open]);
 
   // ─── Step 1: Confirm ──────────────────────────────────────────────────────
-  const handleConfirm = async () => {
+  const doConfirm = async () => {
     setStep("confirming");
     try {
       const data = await apiFetch<AllocationResult & { id: number }>(`/orders/${order.id}`, {
@@ -208,6 +221,28 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
       setStep("review");
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!order.customerId) {
+      doConfirm();
+      return;
+    }
+    setStep("checking_overdue");
+    try {
+      const overdue = await apiFetch<OverdueCheckResult>(
+        `/xero/overdue-check/customer/${order.customerId}?days=30`
+      );
+      if (overdue.isOverdue) {
+        setOverdueCheck(overdue);
+        setStep("overdue_warning");
+      } else {
+        doConfirm();
+      }
+    } catch {
+      // Never block confirmation because the overdue check itself failed
+      doConfirm();
     }
   };
 
@@ -390,6 +425,54 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
               <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
               <Button onClick={handleConfirm} disabled={!requiredDate || !shippingMethod}>
                 <Check className="w-4 h-4 mr-1.5" /> Confirm Order
+              </Button>
+            </DialogFooter>
+          </>
+        )}
+
+        {/* ── STEP: CHECKING OVERDUE BALANCE ── */}
+        {step === "checking_overdue" && (
+          <div className="flex flex-col items-center gap-4 py-10">
+            <Loader2 className="w-10 h-10 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Checking customer account balance…</p>
+          </div>
+        )}
+
+        {/* ── STEP: OVERDUE BALANCE WARNING ── */}
+        {step === "overdue_warning" && overdueCheck && (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-700">
+                <AlertTriangle className="w-5 h-5" />
+                Balance Overdue
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 space-y-2 text-sm">
+                <p className="text-amber-900">
+                  <strong>{order.customerName ?? "This customer"}</strong> has {overdueCheck.invoiceCount} invoice{overdueCheck.invoiceCount !== 1 ? "s" : ""} more than 30 days overdue.
+                </p>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Overdue Amount</span>
+                  <span className="font-semibold text-amber-800">£{overdueCheck.overdueAmount.toFixed(2)}</span>
+                </div>
+                {overdueCheck.oldestDueDate && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Oldest Due Date</span>
+                    <span className="font-medium">{new Date(overdueCheck.oldestDueDate).toLocaleDateString("en-GB")}</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Balance Due</span>
+                  <span className="font-medium">£{overdueCheck.totalDue.toFixed(2)}</span>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">Are you sure you want to confirm this order?</p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setStep("review")}>Cancel</Button>
+              <Button variant="destructive" onClick={doConfirm}>
+                <Check className="w-4 h-4 mr-1.5" /> Confirm Anyway
               </Button>
             </DialogFooter>
           </>

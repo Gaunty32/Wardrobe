@@ -9,6 +9,7 @@ import {
   getXeroStatus,
   syncContacts,
   getContactBalance,
+  getOverdueBalance,
   postInvoiceToXero,
 } from "../services/xero";
 
@@ -165,6 +166,25 @@ router.get("/xero/balance/supplier/:id", async (req, res): Promise<void> => {
     res.json(balance);
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : "Balance fetch failed" });
+  }
+});
+
+// Check whether a customer has a Xero balance overdue by more than N days (default 30)
+router.get("/xero/overdue-check/customer/:id", async (req, res): Promise<void> => {
+  const idParse = z.coerce.number().int().positive().safeParse(req.params.id);
+  if (!idParse.success) { res.status(400).json({ error: "Invalid customer ID" }); return; }
+  const daysThreshold = z.coerce.number().int().positive().safeParse(req.query.days).data ?? 30;
+
+  const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, idParse.data));
+  if (!customer) { res.status(404).json({ error: "Customer not found" }); return; }
+  if (!customer.xeroContactId) { res.json({ isOverdue: false, overdueAmount: 0, totalDue: 0, oldestDueDate: null, invoiceCount: 0, notLinked: true }); return; }
+
+  try {
+    const overdue = await getOverdueBalance(customer.xeroContactId, daysThreshold);
+    res.json(overdue);
+  } catch (err) {
+    // Never block order confirmation because Xero is unreachable — report as unknown instead of erroring the flow.
+    res.json({ isOverdue: false, overdueAmount: 0, totalDue: 0, oldestDueDate: null, invoiceCount: 0, checkFailed: true, error: err instanceof Error ? err.message : "Overdue check failed" });
   }
 });
 
