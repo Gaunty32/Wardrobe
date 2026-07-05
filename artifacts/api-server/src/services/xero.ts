@@ -567,6 +567,16 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
   const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
   if (!order) throw new Error("Order not found.");
 
+  // Idempotency guard: if this order is already linked to a live Xero invoice,
+  // never create a second one — just return the existing link.
+  if (order.xeroInvoiceId && order.xeroInvoiceStatus !== "VOIDED" && order.xeroInvoiceStatus !== "DELETED") {
+    return {
+      xeroInvoiceId: order.xeroInvoiceId,
+      xeroInvoiceStatus: order.xeroInvoiceStatus ?? "AUTHORISED",
+      invoiceNumber: order.xeroInvoiceNumber ?? "",
+    } as any;
+  }
+
   const itemRows = await db
     .select({
       productName: orderItemsTable.productName,
@@ -690,6 +700,34 @@ export async function postInvoiceToXero(orderId: number): Promise<{ xeroInvoiceI
 
   if (!xeroContactId) {
     throw new Error("Could not link or create a Xero contact for this customer. Please check that Xero is connected in Settings.");
+  }
+
+  // Safety-net: if a previous post succeeded in Xero but the local link was
+  // never saved (e.g. a DB write failure right after creation), a plain
+  // xeroInvoiceId check above won't catch it. Look up Xero directly by
+  // reference (order number) for this contact before creating anything new.
+  if (order.orderNumber) {
+    try {
+      const dupWhere = `Reference="${order.orderNumber}"&&Contact.ContactID=Guid("${xeroContactId}")&&Status!="VOIDED"&&Status!="DELETED"`;
+      const dupRes = await xeroFetch(`/Invoices?where=${encodeURIComponent(dupWhere)}`);
+      if (dupRes.ok) {
+        const dupData = await dupRes.json() as { Invoices?: Array<{ InvoiceID: string; InvoiceNumber: string; Status: string }> };
+        const existing = dupData.Invoices?.[0];
+        if (existing?.InvoiceID) {
+          await db.update(ordersTable)
+            .set({ xeroInvoiceId: existing.InvoiceID, xeroInvoiceNumber: existing.InvoiceNumber ?? null, xeroInvoiceStatus: existing.Status, updatedAt: new Date() })
+            .where(eq(ordersTable.id, orderId));
+          return {
+            xeroInvoiceId: existing.InvoiceID,
+            xeroInvoiceStatus: existing.Status,
+            invoiceNumber: existing.InvoiceNumber ?? "",
+          } as any;
+        }
+      }
+    } catch (dupErr) {
+      // Non-fatal — if the lookup fails, fall through to normal creation.
+      console.warn("[xero] Duplicate-invoice safety check failed (non-fatal):", dupErr);
+    }
   }
 
   function xeroTaxType(vatRate: string | null): string | undefined {
