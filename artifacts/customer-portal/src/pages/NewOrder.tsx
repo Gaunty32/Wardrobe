@@ -29,6 +29,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
+function fullName(person: { first_name?: string | null; last_name?: string | null } | null | undefined): string {
+  if (!person) return "";
+  return [person.first_name, person.last_name].filter(Boolean).join(" ");
+}
+
 function ProcessImage({ url, alt }: { url: string; alt: string }) {
   const [failed, setFailed] = useState(false);
   if (failed) {
@@ -352,7 +357,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       method: "POST",
       body: JSON.stringify({
         firstName: newFirst,
-        lastName: newLast,
+        lastName: newLast.trim() || null,
         roleId: newRoleId !== "none" ? parseInt(newRoleId, 10) : null,
         deliveryAddressId: newDeliveryAddressId !== "none" ? parseInt(newDeliveryAddressId, 10) : null,
       }),
@@ -645,7 +650,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
       finishId: wi.finish_id ?? null,
       finishName: wi.finish_name ?? "",
       recipientType,
-      recipientName: employee ? `${employee.first_name} ${employee.last_name}` : "",
+      recipientName: employee ? fullName(employee) : "",
       recipientEmployeeId: employee?.id ?? null,
       quantity: qty,
       garmentBasePrice: garmentPrice,
@@ -868,7 +873,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                     )}>
                       {initials || <User className="w-4 h-4" />}
                     </div>
-                    <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                    <p className="font-semibold text-sm leading-tight">{fullName(emp)}</p>
                     {isOtherTeam && emp.manager_name
                       ? <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.manager_name}'s team</p>
                       : emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>
@@ -922,7 +927,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                     <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm mb-3 group-hover:bg-primary/15 transition-colors">
                       {initials || <User className="w-4 h-4" />}
                     </div>
-                    <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                    <p className="font-semibold text-sm leading-tight">{fullName(emp)}</p>
                     {emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>}
                     {(() => {
                       const spend = parseFloat(emp.spend_12m ?? "0");
@@ -1002,7 +1007,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                           <div className="w-10 h-10 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground font-bold text-sm mb-3 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
                             {initials || <User className="w-4 h-4" />}
                           </div>
-                          <p className="font-semibold text-sm leading-tight">{emp.first_name} {emp.last_name}</p>
+                          <p className="font-semibold text-sm leading-tight">{fullName(emp)}</p>
                           {emp.manager_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.manager_name}'s team</p>}
                         </button>
                       );
@@ -1026,7 +1031,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
             {transferDialogEmp && (
               <div className="space-y-4 py-1">
                 <p className="text-sm text-muted-foreground">
-                  <strong>{transferDialogEmp.first_name} {transferDialogEmp.last_name}</strong> is currently in{" "}
+                  <strong>{fullName(transferDialogEmp)}</strong> is currently in{" "}
                   {transferDialogEmp.manager_name ? <strong>{transferDialogEmp.manager_name}'s team</strong> : "another team"}.
                   Would you like to transfer them to your team, or just order for them without changing their team?
                 </p>
@@ -1073,7 +1078,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                   <Input value={newFirst} onChange={e => setNewFirst(e.target.value)} placeholder="Jane" />
                 </div>
                 <div className="grid gap-1.5">
-                  <Label>Last name *</Label>
+                  <Label>Last name</Label>
                   <Input value={newLast} onChange={e => setNewLast(e.target.value)} placeholder="Smith" />
                 </div>
               </div>
@@ -1116,7 +1121,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
               <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
               <Button
                 onClick={() => addEmpMut.mutate()}
-                disabled={!newFirst.trim() || !newLast.trim() || addEmpMut.isPending}
+                disabled={!newFirst.trim() || addEmpMut.isPending}
               >
                 {addEmpMut.isPending ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Adding…</> : "Add employee"}
               </Button>
@@ -1141,7 +1146,7 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
 
   // ── Product tile grid (recipient selected) ─────────────────────────────────
   const recipientName = selectedEmployee
-    ? `${selectedEmployee.first_name} ${selectedEmployee.last_name}`
+    ? fullName(selectedEmployee)
     : "Bulk Stock";
   const recipientInitials = selectedEmployee
     ? [selectedEmployee.first_name?.[0], selectedEmployee.last_name?.[0]].filter(Boolean).join("").toUpperCase()

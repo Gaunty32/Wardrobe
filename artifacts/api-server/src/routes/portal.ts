@@ -2737,7 +2737,7 @@ router.post("/portal/my-team/employees", portalAuth, async (req: Request, res: R
 
   const body = z.object({
     firstName: z.string().min(1),
-    lastName: z.string().min(1),
+    lastName: optionalTextField,
     employeeNumber: z.string().optional().nullable(),
     email: z.string().email().optional().nullable(),
     phone: z.string().optional().nullable(),
@@ -2925,7 +2925,7 @@ router.post("/portal/team/employees", portalAuth, async (req: Request, res: Resp
 
   const body = z.object({
     firstName: z.string().min(1, "First name is required"),
-    lastName: z.string().min(1, "Last name is required"),
+    lastName: optionalTextField,
     employeeNumber: optionalTextField,
     email: optionalEmailField,
     phone: optionalTextField,
