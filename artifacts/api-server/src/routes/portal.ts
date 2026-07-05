@@ -2832,6 +2832,199 @@ router.patch("/portal/my-team/employees/:id", portalAuth, async (req: Request, r
   res.json(updated.rows[0]);
 });
 
+// ─── portal: my-team — portal users (dept_manager: invite/manage their own team) ──
+
+router.get("/portal/my-team/users", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.json([]); return; }
+
+  const rows = await db.execute(sql`
+    SELECT u.id, u.email, u.status, u.portal_role, u.show_pricing, u.last_login_at, u.created_at,
+           u.linked_employee_id,
+           e.first_name AS linked_first_name, e.last_name AS linked_last_name
+    FROM customer_portal_users u
+    JOIN customer_employees e ON e.id = u.linked_employee_id
+    WHERE u.customer_id = ${customerId} AND e.manager_id = ${myEmpId}
+    ORDER BY u.created_at
+  `);
+  res.json(rows.rows);
+});
+
+router.post("/portal/my-team/users/invite", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.status(400).json({ error: "No linked employee found" }); return; }
+
+  const body = z.object({
+    employeeId: z.number().int().positive(),
+    email: z.string().email(),
+    portalRole: z.enum(["dept_manager", "member"]).default("member"),
+    sendNow: z.boolean().optional().default(false),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { employeeId, email, portalRole: role, sendNow } = body.data;
+
+  // Verify this employee is actually in their team
+  const check = await db.execute(sql`
+    SELECT id FROM customer_employees WHERE id = ${employeeId} AND customer_id = ${customerId} AND manager_id = ${myEmpId}
+  `);
+  if (check.rows.length === 0) { res.status(403).json({ error: "Employee not in your team" }); return; }
+
+  const token = randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400_000);
+
+  try {
+    await db.execute(sql`
+      INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role, show_pricing, linked_employee_id)
+      VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, 'pending', ${role}, false, ${employeeId})
+      ON CONFLICT (email, customer_id) DO UPDATE SET
+        invite_token = ${token},
+        invite_expires_at = ${expires.toISOString()},
+        portal_role = ${role},
+        linked_employee_id = ${employeeId},
+        updated_at = now()
+    `);
+  } catch {
+    res.status(409).json({ error: "Email already registered" });
+    return;
+  }
+
+  const proto = req.headers["x-forwarded-proto"] ?? req.protocol;
+  const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+  const inviteUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
+  const relativeUrl = `/customer-portal/accept-invite?token=${token}`;
+
+  let emailSent = false;
+  let emailError: string | undefined;
+
+  if (sendNow && isEmailConfigured) {
+    const custRows = await db.execute(sql`SELECT name, logo_url FROM customers WHERE id = ${customerId}`);
+    const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+    const customerLogoDataUrl = await customerLogoToDataUrl((custRows.rows[0] as any)?.logo_url);
+    const { html, text } = buildInviteEmail(email, inviteUrl, customerName, customerLogoDataUrl);
+    const result = await sendEmail({
+      to: email,
+      cc: "info@selectbranding.co.uk",
+      subject: `Your ${customerName} account is ready — Select Branding Solutions`,
+      html,
+      text,
+    });
+    emailSent = result.sent;
+    emailError = result.error;
+    if (emailSent) {
+      await db.execute(sql`
+        UPDATE customer_portal_users SET status = 'invited', updated_at = now()
+        WHERE customer_id = ${customerId} AND email = ${email}
+      `);
+    }
+  }
+
+  res.json({ inviteUrl: relativeUrl, token, email, portalRole: role, expiresAt: expires, emailSent, emailError });
+});
+
+router.post("/portal/my-team/users/:id/send-invite", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.status(400).json({ error: "No linked employee found" }); return; }
+
+  if (!isEmailConfigured) {
+    res.status(400).json({ error: "Email is not configured on this server" });
+    return;
+  }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const token = randomBytes(32).toString("hex");
+  const expires = new Date(Date.now() + INVITE_TTL_DAYS * 86400_000);
+
+  const rows = await db.execute(sql`
+    UPDATE customer_portal_users u
+    SET invite_token = ${token}, invite_expires_at = ${expires.toISOString()}, status = 'invited', updated_at = now()
+    FROM customer_employees e
+    WHERE u.id = ${id} AND u.customer_id = ${customerId}
+      AND u.linked_employee_id = e.id AND e.manager_id = ${myEmpId}
+    RETURNING u.email, u.portal_role
+  `);
+
+  const user = rows.rows[0] as any;
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+  const custRows = await db.execute(sql`SELECT name, logo_url FROM customers WHERE id = ${customerId}`);
+  const customerName = (custRows.rows[0] as any)?.name ?? "your company";
+  const customerLogoDataUrl = await customerLogoToDataUrl((custRows.rows[0] as any)?.logo_url);
+  const proto = req.headers["x-forwarded-proto"] ?? req.protocol;
+  const host = req.headers["x-forwarded-host"] ?? req.headers.host;
+  const inviteUrl = `${proto}://${host}/customer-portal/accept-invite?token=${token}`;
+  const { html, text } = buildInviteEmail(user.email, inviteUrl, customerName, customerLogoDataUrl);
+  const result = await sendEmail({
+    to: user.email,
+    cc: "info@selectbranding.co.uk",
+    subject: `Your ${customerName} account is ready — Select Branding Solutions`,
+    html,
+    text,
+  });
+
+  res.json({ emailSent: result.sent, emailError: result.error });
+});
+
+router.patch("/portal/my-team/users/:id/role", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.status(400).json({ error: "No linked employee found" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({ role: z.enum(["dept_manager", "member"]) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  await db.execute(sql`
+    UPDATE customer_portal_users u SET portal_role = ${body.data.role}, updated_at = now()
+    FROM customer_employees e
+    WHERE u.id = ${id} AND u.customer_id = ${customerId}
+      AND u.linked_employee_id = e.id AND e.manager_id = ${myEmpId}
+  `);
+  res.json({ ok: true });
+});
+
+router.patch("/portal/my-team/users/:id/status", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "dept_manager") { res.status(403).json({ error: "Team Manager access required" }); return; }
+
+  const myEmpId = await getDeptManagerLinkedEmployeeId(req);
+  if (!myEmpId) { res.status(400).json({ error: "No linked employee found" }); return; }
+
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
+
+  const body = z.object({ status: z.enum(["active", "inactive"]) }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  await db.execute(sql`
+    UPDATE customer_portal_users u SET status = ${body.data.status}, updated_at = now()
+    FROM customer_employees e
+    WHERE u.id = ${id} AND u.customer_id = ${customerId}
+      AND u.linked_employee_id = e.id AND e.manager_id = ${myEmpId}
+  `);
+  res.json({ ok: true });
+});
+
 // ─── portal: team — employees (manager only) ─────────────────────────────────
 
 router.get("/portal/team/roles", portalAuth, async (req: Request, res: Response) => {

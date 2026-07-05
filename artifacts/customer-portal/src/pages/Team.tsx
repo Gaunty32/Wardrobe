@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -283,8 +283,8 @@ function EmployeeForm({ initial, initialSizes, addresses, roles, allEmployees, o
   const validSizes = sizes.filter(s => s.label.trim() && s.size.trim());
 
   return (
-    <div className="flex flex-col max-h-[75vh] sm:max-h-[70vh]">
-      <div className="flex-1 overflow-y-auto pr-1 -mr-1 space-y-4">
+    <div className="flex flex-col min-h-0 max-h-[75vh] sm:max-h-[70vh]">
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1 space-y-4">
         {error && (
           <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
             <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -1043,7 +1043,7 @@ function EmployeesTab() {
       {/* ── Dialogs ────────────────────────────────────────────────────────────── */}
 
       <Dialog open={addOpen} onOpenChange={(o) => { setAddOpen(o); if (!o) addMutation.reset(); }}>
-        <DialogContent className="max-h-[90vh] flex flex-col">
+        <DialogContent className="max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader><DialogTitle>Add employee</DialogTitle></DialogHeader>
           <EmployeeForm addresses={addresses} roles={roles} allEmployees={allEmployees}
             onSave={(data, sizes) => addMutation.mutate({ data, sizes })}
@@ -1053,7 +1053,7 @@ function EmployeesTab() {
       </Dialog>
 
       <Dialog open={!!editTarget} onOpenChange={(o) => { if (!o) { setEditTarget(null); editMutation.reset(); } }}>
-        <DialogContent className="max-h-[90vh] flex flex-col">
+        <DialogContent className="max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader><DialogTitle>Edit employee</DialogTitle></DialogHeader>
           {editTarget && (
             <EmployeeForm initial={editTarget} initialSizes={editSizes} addresses={addresses} roles={roles} allEmployees={allEmployees}
@@ -1169,6 +1169,9 @@ function EmployeesTab() {
             <DialogTitle>
               {portalTarget?.emp ? `Portal access — ${portalTarget.emp.first_name} ${portalTarget.emp.last_name}` : "Portal access"}
             </DialogTitle>
+            <DialogDescription>
+              Manage customer portal access and permissions for this team member.
+            </DialogDescription>
           </DialogHeader>
           {portalTarget && (
             portalTarget.user ? (
@@ -1621,10 +1624,63 @@ function MyTeamTab() {
   const [dragEmpId, setDragEmpId] = useState<number | null>(null);
   const [dragOverBin, setDragOverBin] = useState(false);
   const [explosionPos, setExplosionPos] = useState<{ x: number; y: number } | null>(null);
+  const [portalTarget, setPortalTarget] = useState<{ emp: any; user: any | null } | null>(null);
+  const [portalInviteRole, setPortalInviteRole] = useState("member");
+  const [portalInviteResult, setPortalInviteResult] = useState<{ emailSent: boolean; inviteUrl: string; email: string } | null>(null);
 
   const { data: employees = [], isLoading } = useQuery<any[]>({
     queryKey: ["portal-my-team-employees", true],
     queryFn: () => apiFetch("/portal/my-team/employees?showInactive=true"),
+  });
+
+  const { data: portalUsers = [] } = useQuery<any[]>({
+    queryKey: ["portal-my-team-users"],
+    queryFn: () => apiFetch("/portal/my-team/users"),
+  });
+  const portalByEmpId = useMemo(() => {
+    const map = new Map<number, any>();
+    for (const u of portalUsers as any[]) if (u.linked_employee_id) map.set(u.linked_employee_id, u);
+    return map;
+  }, [portalUsers]);
+
+  const { data: emailStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ["portal-email-status"],
+    queryFn: () => apiFetch("/portal/team/email-status"),
+  });
+  const emailConfigured = emailStatus?.configured ?? false;
+
+  const openPortal = (emp: any) => {
+    const user = portalByEmpId.get(emp.id) ?? null;
+    setPortalTarget({ emp, user });
+    setPortalInviteRole("member");
+    setPortalInviteResult(null);
+  };
+
+  const inviteFromEmpMutation = useMutation({
+    mutationFn: (data: { employeeId: number; email: string; portalRole: string }) =>
+      apiFetch("/portal/my-team/users/invite", { method: "POST", body: JSON.stringify({ ...data, sendNow: emailConfigured }) }),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ["portal-my-team-users"] });
+      setPortalInviteResult({ emailSent: res.emailSent ?? false, inviteUrl: res.inviteUrl, email: res.email });
+    },
+    onError: (err) => toast({ title: err instanceof ApiError ? err.message : "Failed to send invite", variant: "destructive" }),
+  });
+
+  const portalRoleMutation = useMutation({
+    mutationFn: ({ id, role }: { id: number; role: string }) =>
+      apiFetch(`/portal/my-team/users/${id}/role`, { method: "PATCH", body: JSON.stringify({ role }) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["portal-my-team-users"] }); toast({ title: "Role updated" }); },
+    onError: () => toast({ title: "Failed to update role", variant: "destructive" }),
+  });
+
+  const portalStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      apiFetch(`/portal/my-team/users/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-my-team-users"] });
+      toast({ title: "Updated" });
+    },
+    onError: () => toast({ title: "Failed to update", variant: "destructive" }),
   });
 
   const activeEmployees = useMemo(
@@ -1863,6 +1919,24 @@ function MyTeamTab() {
                   </div>
                   {emp.role_name && <Badge variant="outline" className="text-xs shrink-0">{emp.role_name}</Badge>}
                   <div className="flex items-center gap-1 shrink-0">
+                    {(() => {
+                      const portalUser = portalByEmpId.get(emp.id) ?? null;
+                      if (portalUser) {
+                        return (
+                          <button onClick={() => openPortal(emp)} title="Manage portal access">
+                            <RoleBadge role={portalUser.status === "invited" ? "invited" : portalUser.status === "inactive" ? "inactive" : portalUser.portal_role} />
+                          </button>
+                        );
+                      }
+                      if (emp.email && emp.is_active) {
+                        return (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-primary" onClick={() => openPortal(emp)} title="Invite to portal">
+                            <Mail className="w-3.5 h-3.5" />
+                          </Button>
+                        );
+                      }
+                      return null;
+                    })()}
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(emp)} title="Edit">
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
@@ -1912,6 +1986,106 @@ function MyTeamTab() {
           <DialogHeader><DialogTitle>Edit team member</DialogTitle></DialogHeader>
           {editTarget && (
             <MemberForm saving={editMutation.isPending} onSave={() => editMutation.mutate(editTarget.id)} onCancel={() => setEditTarget(null)} />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!portalTarget} onOpenChange={(o) => { if (!o) { setPortalTarget(null); setPortalInviteResult(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {portalTarget?.emp ? `Portal access — ${portalTarget.emp.first_name} ${portalTarget.emp.last_name}` : "Portal access"}
+            </DialogTitle>
+            <DialogDescription>
+              Manage customer portal access and permissions for this team member.
+            </DialogDescription>
+          </DialogHeader>
+          {portalTarget && (
+            portalTarget.user ? (
+              <div className="space-y-4 py-1">
+                <div className="rounded-lg bg-muted/40 border px-4 py-3 text-sm space-y-1.5">
+                  <div className="flex justify-between"><span className="text-muted-foreground">Email</span><span className="font-medium">{portalTarget.user.email}</span></div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Status</span>
+                    <RoleBadge role={portalTarget.user.status === "invited" ? "invited" : portalTarget.user.status === "inactive" ? "inactive" : portalTarget.user.portal_role} />
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Last sign-in</span>
+                    <span className="text-xs">{portalTarget.user.last_login_at ? new Date(portalTarget.user.last_login_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "Never"}</span>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Portal role</Label>
+                  <Select value={portalTarget.user.portal_role}
+                    onValueChange={(v) => portalRoleMutation.mutate({ id: portalTarget.user.id, role: v })}
+                    disabled={portalTarget.user.status === "inactive" || portalRoleMutation.isPending}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="member">User — place orders for themselves only</SelectItem>
+                      <SelectItem value="dept_manager">Manager — place orders for their team</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" className="mr-auto text-destructive border-destructive/30 hover:bg-destructive/5"
+                    onClick={() => portalStatusMutation.mutate({ id: portalTarget.user.id, status: portalTarget.user.status === "inactive" ? "active" : "inactive" })}
+                    disabled={portalStatusMutation.isPending}>
+                    {portalTarget.user.status === "inactive" ? "Reactivate access" : "Deactivate access"}
+                  </Button>
+                  <Button onClick={() => setPortalTarget(null)}>Done</Button>
+                </DialogFooter>
+              </div>
+            ) : portalInviteResult ? (
+              <div className="space-y-4 py-1">
+                {portalInviteResult.emailSent ? (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3 flex items-start gap-3">
+                    <Mail className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-green-800">Invite email sent</p>
+                      <p className="text-xs text-green-700 mt-0.5">Sent to <strong>{portalInviteResult.email}</strong>. The link expires in 7 days.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">Share this link to give access:</p>
+                    <div className="rounded-md border bg-muted p-3 text-xs font-mono break-all select-all">{window.location.origin}{portalInviteResult.inviteUrl}</div>
+                    <p className="text-xs text-muted-foreground">The link expires in 7 days.</p>
+                  </div>
+                )}
+                <DialogFooter>
+                  {!portalInviteResult.emailSent && (
+                    <Button variant="outline" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}${portalInviteResult!.inviteUrl}`); toast({ title: "Copied to clipboard" }); }}>Copy link</Button>
+                  )}
+                  <Button onClick={() => { setPortalTarget(null); setPortalInviteResult(null); }}>Done</Button>
+                </DialogFooter>
+              </div>
+            ) : (
+              <div className="space-y-4 py-1">
+                {portalTarget.emp?.email && (
+                  <div className="rounded-lg bg-muted/40 border px-3 py-2 text-sm text-muted-foreground">
+                    Inviting <strong className="text-foreground">{portalTarget.emp.email}</strong>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Portal role</Label>
+                  {(["dept_manager", "member"] as const).map((r) => (
+                    <button key={r} type="button" onClick={() => setPortalInviteRole(r)}
+                      className={`w-full text-left rounded-lg border px-4 py-3 transition-colors ${portalInviteRole === r ? "border-primary bg-primary/5" : "border-border hover:border-primary/40 hover:bg-muted/30"}`}>
+                      <p className={`font-semibold text-sm ${portalInviteRole === r ? "text-primary" : ""}`}>{ROLE_LABELS[r]}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{ROLE_DESCRIPTIONS[r]}</p>
+                    </button>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setPortalTarget(null)}>Cancel</Button>
+                  <Button disabled={inviteFromEmpMutation.isPending || !portalTarget.emp?.email}
+                    onClick={() => inviteFromEmpMutation.mutate({ employeeId: portalTarget.emp!.id, email: portalTarget.emp!.email, portalRole: portalInviteRole })}>
+                    {inviteFromEmpMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+                    {emailConfigured ? "Send invite" : "Create invite"}
+                  </Button>
+                </DialogFooter>
+              </div>
+            )
           )}
         </DialogContent>
       </Dialog>
