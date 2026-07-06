@@ -1466,14 +1466,19 @@ export default function Settings() {
   async function saveFacebookSettings() {
     setSavingFb(true);
     try {
-      await fetch(`${API_BASE}/settings`, {
+      const res = await fetch(`${API_BASE}/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ facebook_page_id: fbPageId || null, facebook_page_access_token: fbAccessToken || null }),
       });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Save failed (HTTP ${res.status})`);
+      }
       toast({ title: "Facebook settings saved" });
-    } catch {
-      toast({ title: "Failed to save Facebook settings", variant: "destructive" });
+      qc.invalidateQueries({ queryKey: ["settings"] });
+    } catch (e: any) {
+      toast({ title: "Failed to save Facebook settings", description: e?.message ?? "Unknown error", variant: "destructive" });
     } finally {
       setSavingFb(false);
     }
