@@ -731,39 +731,40 @@ PRODUCT:
 - Hero (centre) colourway: ${heroColourway}
 - All available colourways: ${availableColourways.join(", ")}
 - Thumbnail colourways (exclude hero): ${thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ")}
-- Logo: "YOUR LOGO HERE" placeholder embroidered on LEFT CHEST of every garment
+- Logo: a distinctive small circular multi-coloured logo emblem with the text "YOUR LOGO HERE" in bold clean sans-serif lettering directly beneath/beside it, embroidered/printed on LEFT CHEST of every garment
 - Output size: ${imageSize}
 ${notes ? `- Special instructions: ${notes}` : ""}
 
 LAYOUT YOU MUST DESCRIBE:
-The image is a single ${imageSize} composite panel divided into:
+The image is a single ${imageSize} PHOTO COLLAGE composite, styled like a modern editorial mood-board — NOT a uniform grid. Panels vary in size and orientation (mix of portrait and landscape rectangles plus some squares), arranged tightly together collage-style with a large hero panel positioned centrally among the smaller panels.
 
-1. LARGE CENTRE HERO PANEL (~60% of image area):
+1. LARGE HERO PANEL (~50–60% of image area, positioned centrally, larger than every other panel):
    - ${genderRules[genderFit]}
-   - 4–6 people wearing the ${heroColourway} ${garmentType}
-   - No cloned or duplicated faces — every person is unique
+   - 4–6 people wearing the ${heroColourway} ${garmentType}, standing together as a group
+   - No cloned or duplicated faces — every person is unique in face, hair, and build
    - Realistic ${category} workplace environment: ${categoryEnvs[category]}
-   - "YOUR LOGO HERE" placeholder embroidery clearly visible on LEFT CHEST of each garment
+   - Logo emblem + "YOUR LOGO HERE" text clearly visible on LEFT CHEST of each garment
    - Commercial catalogue photography: natural lighting, professional poses, product clearly visible
    - People are standing or lightly interacting, not obscuring each other's garments
 
-2. SURROUNDING THUMBNAIL PANELS (8–10 smaller panels arranged around the centre hero):
+2. SURROUNDING THUMBNAIL PANELS (8–10 panels of varying sizes and portrait/landscape orientations, tightly collaged around the hero panel):
    - One person per thumbnail, one unique colourway per thumbnail from: ${thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ")}
    - Do NOT invent any colour not in the above list
-   - Each thumbnail shows a different realistic role or activity within the ${category} environment
+   - Each thumbnail shows a different realistic candid moment or activity within the ${category} environment (e.g. greeting someone, on the phone, at a laptop, writing notes, holding a coffee, in conversation) — natural, documentary-style candid framing, not static posed headshots
    - No text labels, no colour names overlaid on images
-   - Same commercial photography style as hero
-   - "YOUR LOGO HERE" placeholder embroidery on LEFT CHEST visible in each thumbnail
+   - Same commercial photography style, lighting and colour grading as hero
+   - Logo emblem + "YOUR LOGO HERE" text on LEFT CHEST visible in each thumbnail
 
 3. TECHNICAL REQUIREMENTS:
    - ${imageSize} total output
    - Rounded corners on every panel
-   - Clean white gutters/spacing between all panels (like a professional garment catalogue page)
+   - Clean white gutters/spacing between all panels (like a professional garment catalogue collage page)
+   - Panels are NOT uniform in size — deliberate variety of portrait, landscape and square panels collaged together
    - No cloned faces anywhere in the image
    - Only use the colourways listed — no invented extras
-   - Ultra-realistic commercial catalogue photography quality throughout
+   - Ultra-realistic commercial catalogue photography quality throughout, consistent warm natural colour grading across every panel
 
-Write ONLY the image generation prompt text — no preamble, no explanation, no headings. Just the prompt, ready to paste directly into Midjourney or DALL-E.`;
+Write ONLY the image generation prompt text — no preamble, no explanation, no headings. Just the prompt, ready to paste directly into gpt-image-1 / ChatGPT image generation.`;
 
   const message = await anthropic.messages.create({
     model: "claude-opus-4-5",

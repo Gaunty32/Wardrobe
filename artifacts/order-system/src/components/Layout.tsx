@@ -1,6 +1,6 @@
 import { ReactNode, useEffect, useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle, Hash, Mail } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle, Hash, Mail, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isStaffAuthenticated, clearStaffToken, staffAuthHeader, getStaffJwtPayload } from "@/lib/staff-auth";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -381,6 +381,7 @@ export default function Layout({ children }: LayoutProps) {
         { name: "Customers", href: "/customers", icon: Users },
         { name: "Products", href: "/products", icon: Package },
         { name: "Bundles", href: "/bundles", icon: Package2 },
+        { name: "Image Prompt Generator", href: "/image-prompt-generator", icon: ImageIcon },
       ],
     },
     {
