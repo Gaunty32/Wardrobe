@@ -214,12 +214,13 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
   console.log(`[DPD] Full shipment response: ${JSON.stringify(shipJson.data)}`);
 
   // Fetch label HTML using the correct DPD Local label endpoint
-  // Endpoint: GET /user/label/{jobId}  (Accept: text/html)
+  // Endpoint: GET /shipping/shipment/{shipmentId}/label/  (Accept: text/html)
+  // Note: the older /user/label/{jobId} endpoint is deprecated by DPD and returns 404.
   let labelHtml: string | null = null;
   if (jobId) {
     try {
       const labelRes = await fetch(
-        `${DPD_BASE}/user/label/${jobId}`,
+        `${DPD_BASE}/shipping/shipment/${jobId}/label/`,
         {
           headers: {
             ...authHeaders,
@@ -253,7 +254,7 @@ export async function reprrintDpdLabel(jobId: number): Promise<string | null> {
   try {
     const cfg = getConfig();
     const geoSession = await login(cfg);
-    const res = await fetch(`${DPD_BASE}/user/label/${jobId}`, {
+    const res = await fetch(`${DPD_BASE}/shipping/shipment/${jobId}/label/`, {
       headers: {
         "Content-Type": "application/json",
         Accept: "text/html",
