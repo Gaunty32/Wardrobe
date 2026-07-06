@@ -26,6 +26,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
+import { usePriceConfirm } from "@/components/PriceConfirmDialog";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore, AlertTriangle, ImageOff as NoImageIcon, BellOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -91,6 +92,7 @@ export default function Products() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { confirmIfNotWhole, dialog: priceConfirmDialog } = usePriceConfirm();
 
   const isArchivedTab = websiteFilter === "archived";
   const { data: products, isLoading: productsLoading } = useQuery<ProductWithCategory[]>({
@@ -287,11 +289,13 @@ export default function Products() {
     setEditingProduct(product);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name || formData.unitPrice < 0) {
       toast({ title: "Validation Error", description: "Name and valid price are required", variant: "destructive" });
       return;
     }
+    const priceOk = await confirmIfNotWhole(formData.unitPrice);
+    if (!priceOk) return;
     if (!formData.isService && formData.customerId === "none" && websiteFilter === "bespoke") {
       toast({ title: "Customer required for bespoke product", description: "Select a customer in the Bespoke Assignment section, or change the filter to create a standard product.", variant: "destructive" });
       return;
@@ -823,7 +827,7 @@ export default function Products() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="price">Unit Price (£) *</Label>
-                <Input id="price" type="number" min="0" step="0.01" value={formData.unitPrice || ""} onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })} />
+                <Input id="price" type="number" min="0" step="1" value={formData.unitPrice || ""} onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })} />
               </div>
               {!formData.isService && !editingProduct && (
                 <div className="grid gap-2">
@@ -992,6 +996,7 @@ export default function Products() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {priceConfirmDialog}
     </Layout>
   );
 }

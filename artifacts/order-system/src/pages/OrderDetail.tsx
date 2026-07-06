@@ -34,6 +34,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { sortSizesWithOrder, sortSizes, abbreviateSizeLabel } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
+import { usePriceConfirm } from "@/components/PriceConfirmDialog";
 import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench, Package2, GitMerge } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
@@ -347,6 +348,7 @@ export default function OrderDetail() {
 
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { confirmIfNotWhole, dialog: priceConfirmDialog } = usePriceConfirm();
   const sizeOrder = useSizeOrder();
 
   const { data: order, isLoading: isOrderLoading } = useGetOrder(orderId);
@@ -1340,6 +1342,11 @@ export default function OrderDetail() {
     }
     const price = parseFloat(item.unitPrice);
     if (isNaN(price)) return;
+
+    if (dialogTab === "custom" || dialogTab === "service") {
+      const priceOk = await confirmIfNotWhole(price);
+      if (!priceOk) return;
+    }
 
     // Custom-tab validations only (wardrobe tab sets colour/size on selection)
     if (dialogTab === "custom") {
@@ -3718,7 +3725,7 @@ export default function OrderDetail() {
                     )}
                     <div className="grid gap-2">
                       <Label htmlFor="price">Unit Price (£)</Label>
-                      <Input id="price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
+                      <Input id="price" type="number" step="1" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
                     </div>
                   </div>
 
@@ -3857,7 +3864,7 @@ export default function OrderDetail() {
                     </div>
                     <div className="grid gap-2">
                       <Label htmlFor="svc-price">Unit Price (£)</Label>
-                      <Input id="svc-price" type="number" step="0.01" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
+                      <Input id="svc-price" type="number" step="1" min="0" value={item.unitPrice} onChange={e => setItem(i => ({ ...i, unitPrice: e.target.value }))} />
                     </div>
                   </div>
 
@@ -4293,6 +4300,7 @@ export default function OrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {priceConfirmDialog}
     </Layout>
   );
 }

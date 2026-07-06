@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { usePriceConfirm } from "@/components/PriceConfirmDialog";
 import {
   ArrowLeft, Package, Loader2, X, Plus, Save, Trash2, Edit2, AlertCircle,
   Layers, Palette, Ruler, Upload, Camera, Wrench, Check, ChevronsUpDown, Cloud, Star, BookOpen, User, Sparkles, Shuffle, Search,
@@ -590,6 +591,7 @@ export default function ProductDetail() {
   const [, navigate] = useLocation();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { confirmIfNotWhole, dialog: priceConfirmDialog } = usePriceConfirm();
   const sizeOrder = useSizeOrder();
 
   const { data: product, isLoading } = useGetProduct(productId);
@@ -1048,8 +1050,10 @@ export default function ProductDetail() {
     setDetailsDirty(true);
   };
 
-  const saveDetails = () => {
+  const saveDetails = async () => {
     if (!details?.name) { toast({ title: "Product name is required", variant: "destructive" }); return; }
+    const priceOk = await confirmIfNotWhole(Number(details.unitPrice));
+    if (!priceOk) return;
     updateMutation.mutate(
       {
         id: productId,
@@ -1454,7 +1458,7 @@ export default function ProductDetail() {
                     </div>
                     <div className="grid gap-2">
                       <Label>Unit Price (£) *</Label>
-                      <Input type="number" min="0" step="0.01" value={details.unitPrice} onChange={e => handleDetailChange("unitPrice", parseFloat(e.target.value) || 0)} />
+                      <Input type="number" min="0" step="1" value={details.unitPrice} onChange={e => handleDetailChange("unitPrice", parseFloat(e.target.value) || 0)} />
                     </div>
                     <div className="grid gap-2">
                       <Label>VAT Rate</Label>
@@ -3335,6 +3339,7 @@ export default function ProductDetail() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        {priceConfirmDialog}
       </Layout>
     </TooltipProvider>
   );

@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePriceConfirm } from "@/components/PriceConfirmDialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Plus, Pencil, Trash2, Box, Check, Package2 } from "lucide-react";
@@ -55,6 +56,7 @@ const EMPTY_FORM = { name: "", sku: "", description: "", price: "", notes: "", i
 
 export default function Bundles() {
   const { toast } = useToast();
+  const { confirmIfNotWhole, dialog: priceConfirmDialog } = usePriceConfirm();
   const qc = useQueryClient();
 
   const { data: bundles = [], isLoading } = useQuery<Bundle[]>({
@@ -277,7 +279,7 @@ export default function Bundles() {
                 <Label>Bundle Price <span className="text-destructive">*</span></Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">£</span>
-                  <Input className="pl-7" type="number" step="0.01" min="0" value={form.price}
+                  <Input className="pl-7" type="number" step="1" min="0" value={form.price}
                     onChange={e => setForm(f => ({ ...f, price: e.target.value }))} placeholder="0.00" />
                 </div>
                 <p className="text-xs text-muted-foreground">Total price charged for one bundle unit</p>
@@ -428,13 +430,18 @@ export default function Bundles() {
             <Button variant="outline" onClick={() => { setDialogOpen(false); setAddCompOpen(false); }}>Cancel</Button>
             <Button
               disabled={!form.name.trim() || !form.price || saveBundleMutation.isPending}
-              onClick={() => saveBundleMutation.mutate(form)}
+              onClick={async () => {
+                const ok = await confirmIfNotWhole(parseFloat(form.price || "0"));
+                if (!ok) return;
+                saveBundleMutation.mutate(form);
+              }}
             >
               {saveBundleMutation.isPending ? "Saving…" : editing ? "Save Changes" : "Create Bundle"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {priceConfirmDialog}
     </Layout>
   );
 }

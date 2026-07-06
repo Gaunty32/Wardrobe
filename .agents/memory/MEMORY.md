@@ -8,3 +8,4 @@
 - [Drizzle push schema drift](drizzle-push-schema-drift.md) — `pnpm --filter db push` proposes dropping many unrelated tables/columns due to pre-existing drift; never accept, use scoped ALTER TABLE via executeSql instead
 - [Dispatch DPD job ID overflow](dispatch-dpd-bigint.md) — dpd_job_id was integer but DPD shipmentId values exceed int32 range, crashing dispatch after a successful courier booking with no note produced
 - [E2E testing across path-routed artifacts](e2e-multi-artifact-paths.md) — always prefix in-app navigation with the artifact's previewPath (e.g. /customer-portal/...) in runTest plans; bare paths silently 404 or hit the wrong artifact
+- [Whole-pound pricing enforcement](whole-pound-pricing.md) — usePriceConfirm hook + step="1" on all customer-facing Unit Price fields; supplier/cost prices excluded
