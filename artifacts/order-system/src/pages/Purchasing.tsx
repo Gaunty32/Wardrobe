@@ -2897,6 +2897,7 @@ export default function Purchasing() {
   const [emailGroup, setEmailGroup] = useState<SupplierGroup | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [poSearch, setPoSearch] = useState("");
+  const [completedSearch, setCompletedSearch] = useState("");
   const [createPoGroup, setCreatePoGroup] = useState<SupplierGroup | null>(null);
   const [createPoNotes, setCreatePoNotes] = useState("");
   const [createProcessPoGroup, setCreateProcessPoGroup] = useState<{ supplierId: number | null; supplierName: string; items: ProcessStockRequirement[] } | null>(null);
@@ -3716,64 +3717,121 @@ export default function Purchasing() {
 
           {/* ── Completed Tab ── */}
           <TabsContent value="completed">
-            {posFetching && purchaseOrders.length === 0 ? (
-              <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
-            ) : deliveredCount === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
-                <PackageCheck className="w-12 h-12 text-muted-foreground/30" />
-                <p className="text-lg font-medium">No completed deliveries yet</p>
-                <p className="text-sm">Deliveries booked in will appear here once marked as delivered.</p>
-              </div>
-            ) : selectedCompletedSupplier === null ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {deliveredBySupplier.map(({ name, pos }) => {
-                  const logoUrl = supplierLogoMap.get(name.toLowerCase());
-                  return (
-                    <button
-                      key={name}
-                      onClick={() => setSelectedCompletedSupplier(name)}
-                      className="flex flex-col items-center gap-3 rounded-xl border border-border bg-white p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
-                    >
-                      <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
-                        {logoUrl ? (
-                          <UploadedImage src={logoUrl} alt={name} className="h-full w-full object-contain p-1.5" fallback={<PackageCheck className="w-7 h-7 text-muted-foreground/40" />} />
-                        ) : (
-                          <PackageCheck className="w-7 h-7 text-muted-foreground/40" />
-                        )}
-                      </div>
-                      <div className="text-center space-y-1 w-full">
-                        <p className="font-semibold text-sm text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors">{name}</p>
-                        <Badge variant="secondary" className="text-xs">{pos.length} PO{pos.length !== 1 ? "s" : ""}</Badge>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSelectedCompletedSupplier(null)}>
-                    <ChevronRight className="w-4 h-4 rotate-180" /> All Suppliers
-                  </Button>
-                  <span className="text-muted-foreground text-sm">/</span>
-                  <span className="font-semibold text-sm">{selectedCompletedSupplier}</span>
-                </div>
-                {purchaseOrders.filter((po) => po.status === "delivered" && po.supplierName === selectedCompletedSupplier).map((po) => (
-                  <POCard
-                    key={po.id}
-                    po={po}
-                    onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
-                    onDelete={(id) => deleteMutation.mutate(id)}
-                    onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
-                    onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
-                    onRefresh={() => { refetchPos(); refetchReqs(); }}
-                    onReceiveAll={(id) => receiveAllMutation.mutate(id)}
-                    onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
-                    onCleanup={() => { refetchPos(); refetchReqs(); }}
+            <div className="space-y-4">
+              {deliveredCount > 0 && (
+                <div className="relative max-w-sm">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search by PO number, supplier, product…"
+                    value={completedSearch}
+                    onChange={e => { setCompletedSearch(e.target.value); setSelectedCompletedSupplier(null); }}
+                    className="pl-9 pr-8 h-9"
                   />
-                ))}
-              </div>
-            )}
+                  {completedSearch && (
+                    <button onClick={() => setCompletedSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {posFetching && purchaseOrders.length === 0 ? (
+                <div className="flex items-center justify-center py-20 text-muted-foreground"><RefreshCw className="w-5 h-5 animate-spin mr-2" />Loading...</div>
+              ) : deliveredCount === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground gap-3">
+                  <PackageCheck className="w-12 h-12 text-muted-foreground/30" />
+                  <p className="text-lg font-medium">No completed deliveries yet</p>
+                  <p className="text-sm">Deliveries booked in will appear here once marked as delivered.</p>
+                </div>
+              ) : completedSearch.trim() ? (() => {
+                const q = completedSearch.trim().toLowerCase();
+                const matched = purchaseOrders.filter((po) =>
+                  po.status === "delivered" && (
+                    po.poNumber.toLowerCase().includes(q) ||
+                    po.supplierName.toLowerCase().includes(q) ||
+                    po.items.some(i =>
+                      i.productName?.toLowerCase().includes(q) ||
+                      i.orderNumber?.toLowerCase().includes(q) ||
+                      i.customerName?.toLowerCase().includes(q) ||
+                      i.supplierCode?.toLowerCase().includes(q)
+                    )
+                  )
+                );
+                return matched.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+                    <Search className="w-10 h-10 text-muted-foreground/30" />
+                    <p className="text-base font-medium">No matching purchase orders</p>
+                    <p className="text-sm">Try searching by PO number, supplier, or product name.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-sm text-muted-foreground">{matched.length} PO{matched.length !== 1 ? "s" : ""} found</p>
+                    {matched.map((po) => (
+                      <POCard
+                        key={po.id}
+                        po={po}
+                        onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
+                        onDelete={(id) => deleteMutation.mutate(id)}
+                        onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
+                        onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
+                        onRefresh={() => { refetchPos(); refetchReqs(); }}
+                        onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                        onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
+                        onCleanup={() => { refetchPos(); refetchReqs(); }}
+                      />
+                    ))}
+                  </div>
+                );
+              })() : selectedCompletedSupplier === null ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {deliveredBySupplier.map(({ name, pos }) => {
+                    const logoUrl = supplierLogoMap.get(name.toLowerCase());
+                    return (
+                      <button
+                        key={name}
+                        onClick={() => setSelectedCompletedSupplier(name)}
+                        className="flex flex-col items-center gap-3 rounded-xl border border-border bg-white p-5 shadow-sm hover:shadow-md hover:border-primary/40 transition-all text-left group cursor-pointer"
+                      >
+                        <div className="w-16 h-16 rounded-xl border border-border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
+                          {logoUrl ? (
+                            <UploadedImage src={logoUrl} alt={name} className="h-full w-full object-contain p-1.5" fallback={<PackageCheck className="w-7 h-7 text-muted-foreground/40" />} />
+                          ) : (
+                            <PackageCheck className="w-7 h-7 text-muted-foreground/40" />
+                          )}
+                        </div>
+                        <div className="text-center space-y-1 w-full">
+                          <p className="font-semibold text-sm text-foreground leading-tight line-clamp-2 group-hover:text-primary transition-colors">{name}</p>
+                          <Badge variant="secondary" className="text-xs">{pos.length} PO{pos.length !== 1 ? "s" : ""}</Badge>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setSelectedCompletedSupplier(null)}>
+                      <ChevronRight className="w-4 h-4 rotate-180" /> All Suppliers
+                    </Button>
+                    <span className="text-muted-foreground text-sm">/</span>
+                    <span className="font-semibold text-sm">{selectedCompletedSupplier}</span>
+                  </div>
+                  {purchaseOrders.filter((po) => po.status === "delivered" && po.supplierName === selectedCompletedSupplier).map((po) => (
+                    <POCard
+                      key={po.id}
+                      po={po}
+                      onStatusChange={(id, status, extra) => statusMutation.mutate({ id, status, extra })}
+                      onDelete={(id) => deleteMutation.mutate(id)}
+                      onDeleteLine={(poId, itemId) => deleteLineMutation.mutate({ poId, itemId })}
+                      onLineUpdate={(poId, itemId, data) => lineUpdateMutation.mutate({ poId, itemId, data })}
+                      onRefresh={() => { refetchPos(); refetchReqs(); }}
+                      onReceiveAll={(id) => receiveAllMutation.mutate(id)}
+                      onCancelLine={(poId, itemId) => cancelLineMutation.mutate({ poId, itemId })}
+                      onCleanup={() => { refetchPos(); refetchReqs(); }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           </TabsContent>
 
           {/* ── Backorders Tab ── */}
