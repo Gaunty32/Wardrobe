@@ -256,6 +256,11 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
     emailError = result.error;
     if (!result.sent) {
       console.error(`[portal/admin/invite] SMTP failed for ${email}: ${result.error}`);
+    } else {
+      await db.execute(sql`
+        UPDATE customer_portal_users SET invite_sent_at = now(), updated_at = now()
+        WHERE customer_id = ${customerId} AND email = ${email}
+      `);
     }
   }
 
@@ -351,7 +356,7 @@ router.get("/portal/admin/users/:customerId", async (req: Request, res: Response
   const customerId = parseInt(req.params.customerId, 10);
   const rows = await db.execute(sql`
     SELECT id, email, status, portal_role, show_pricing, last_login_at, created_at,
-           invite_expires_at,
+           invite_expires_at, invite_sent_at,
            CASE WHEN invite_token IS NOT NULL THEN true ELSE false END as has_pending_invite
     FROM customer_portal_users
     WHERE customer_id = ${customerId}
@@ -2935,7 +2940,7 @@ router.post("/portal/my-team/users/invite", portalAuth, async (req: Request, res
     emailError = result.error;
     if (emailSent) {
       await db.execute(sql`
-        UPDATE customer_portal_users SET status = 'invited', updated_at = now()
+        UPDATE customer_portal_users SET status = 'invited', invite_sent_at = now(), updated_at = now()
         WHERE customer_id = ${customerId} AND email = ${email}
       `);
     }
@@ -2989,6 +2994,10 @@ router.post("/portal/my-team/users/:id/send-invite", portalAuth, async (req: Req
     html,
     text,
   });
+
+  if (result.sent) {
+    await db.execute(sql`UPDATE customer_portal_users SET invite_sent_at = now(), updated_at = now() WHERE id = ${id}`);
+  }
 
   res.json({ emailSent: result.sent, emailError: result.error });
 });
@@ -3450,7 +3459,7 @@ router.post("/portal/team/users/invite", portalAuth, async (req: Request, res: R
     emailError = result.error;
     if (emailSent) {
       await db.execute(sql`
-        UPDATE customer_portal_users SET status = 'invited', updated_at = now()
+        UPDATE customer_portal_users SET status = 'invited', invite_sent_at = now(), updated_at = now()
         WHERE customer_id = ${customerId} AND email = ${email}
       `);
     }
@@ -3503,6 +3512,10 @@ router.post("/portal/team/users/:id/send-invite", portalAuth, async (req: Reques
     html,
     text,
   });
+
+  if (result.sent) {
+    await db.execute(sql`UPDATE customer_portal_users SET invite_sent_at = now(), updated_at = now() WHERE id = ${id}`);
+  }
 
   res.json({ ok: true, emailSent: result.sent, emailError: result.error, sentTo: user.email });
 });

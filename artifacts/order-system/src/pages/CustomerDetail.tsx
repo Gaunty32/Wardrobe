@@ -2727,6 +2727,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
             <TableHead>Status</TableHead>
             <TableHead>Role</TableHead>
             <TableHead className="hidden md:table-cell">See Prices</TableHead>
+            <TableHead className="hidden md:table-cell">Invite Sent</TableHead>
             <TableHead className="hidden md:table-cell">Last Login</TableHead>
             <TableHead className="w-24 text-right">Actions</TableHead>
           </TableRow></TableHeader>
@@ -2756,6 +2757,9 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                     onCheckedChange={(v) => changePricing.mutate({ userId: u.id, showPricing: v })}
                     aria-label="Can see pricing"
                   />
+                </TableCell>
+                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                  {u.invite_sent_at ? formatDate(u.invite_sent_at) : <span className="text-muted-foreground/50">—</span>}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                   {u.last_login_at ? formatDate(u.last_login_at) : <span className="text-muted-foreground/50">Never</span>}
