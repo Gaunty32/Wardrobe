@@ -89,14 +89,17 @@ function buildInviteEmail(
     { icon: "⬇️", title: "Install As An App", body: "Add it to your home screen for one-tap access." },
   ];
 
-  const benefitCards = benefits.map(b => `
+  const benefitCard = (b: { icon: string; title: string; body: string }) => `
         <td width="33.33%" valign="top" style="padding:0 8px 16px;">
           <div style="background:#f8fafc;border:1px solid #e6ebf2;border-radius:12px;padding:18px 14px;height:100%;">
             <div style="font-size:22px;line-height:1;margin-bottom:10px;">${b.icon}</div>
             <div style="color:#0f172a;font-size:13.5px;font-weight:700;margin:0 0 4px;">${b.title}</div>
             <div style="color:#64748b;font-size:12px;line-height:1.5;margin:0;">${b.body}</div>
           </div>
-        </td>`).join("");
+        </td>`;
+  const benefitRows = [benefits.slice(0, 3), benefits.slice(3, 6)]
+    .map(row => `<tr>${row.map(benefitCard).join("")}</tr>`)
+    .join("");
 
   const html = `
 <!DOCTYPE html>
@@ -138,7 +141,7 @@ function buildInviteEmail(
 
       <p style="color:#0f172a;font-size:14px;font-weight:700;margin:0 0 14px;">Everything you need, in one place</p>
       <table role="presentation" width="100%" style="border-collapse:collapse;margin-bottom:8px;">
-        <tr>${benefitCards}</tr>
+        ${benefitRows}
       </table>
 
       <div style="background:#f0f7ff;border:1px solid #dbeafe;border-radius:12px;padding:20px 22px;margin:24px 0;">

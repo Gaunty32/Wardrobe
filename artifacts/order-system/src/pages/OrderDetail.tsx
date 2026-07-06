@@ -542,6 +542,7 @@ export default function OrderDetail() {
 
   const [uploading, setUploading] = useState(false);
   const [editingItemPrice, setEditingItemPrice] = useState<{ id: number; value: string } | null>(null);
+  const [editingItemQty, setEditingItemQty] = useState<{ id: number; value: string } | null>(null);
   const [lineFilter, setLineFilter] = useState("");
   const [lineSort, setLineSort] = useState<{ col: "product" | "finish" | "recipient" | "price" | "qty" | "total"; dir: "asc" | "desc" } | null>(null);
 
@@ -592,6 +593,16 @@ export default function OrderDetail() {
       setEditingItemPrice(null);
     },
     onError: (e: Error) => toast({ title: "Failed to update price", description: e.message, variant: "destructive" }),
+  });
+
+  const updateItemQtyMutation = useMutation({
+    mutationFn: ({ itemId, quantity }: { itemId: number; quantity: number }) =>
+      apiFetch(`/orders/${orderId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify({ quantity }) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setEditingItemQty(null);
+    },
+    onError: (e: Error) => toast({ title: "Failed to update quantity", description: e.message, variant: "destructive" }),
   });
 
   const updateItemVatRateMutation = useMutation({
@@ -2188,7 +2199,57 @@ export default function OrderDetail() {
                               </button>
                             )}
                           </TableCell>
-                          <TableCell className="text-center font-semibold">{orderItem.quantity}</TableCell>
+                          <TableCell className="text-center font-semibold">
+                            {editingItemQty?.id === orderItem.id ? (
+                              <div className="flex items-center justify-center gap-1">
+                                <Input
+                                  autoFocus
+                                  type="number"
+                                  min="1"
+                                  value={editingItemQty.value}
+                                  onChange={e => setEditingItemQty({ id: orderItem.id, value: e.target.value })}
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter") {
+                                      const v = parseInt(editingItemQty.value, 10);
+                                      if (!isNaN(v) && v > 0) updateItemQtyMutation.mutate({ itemId: orderItem.id, quantity: v });
+                                    } else if (e.key === "Escape") {
+                                      setEditingItemQty(null);
+                                    }
+                                  }}
+                                  className="h-7 w-16 text-center px-1"
+                                />
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-green-600 hover:bg-green-50"
+                                  disabled={updateItemQtyMutation.isPending}
+                                  onClick={() => {
+                                    const v = parseInt(editingItemQty.value, 10);
+                                    if (!isNaN(v) && v > 0) updateItemQtyMutation.mutate({ itemId: orderItem.id, quantity: v });
+                                  }}
+                                >
+                                  {updateItemQtyMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6 text-muted-foreground hover:bg-muted"
+                                  onClick={() => setEditingItemQty(null)}
+                                >
+                                  <XCircle className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <button
+                                className="group inline-flex items-center gap-1.5 hover:text-primary transition-colors mx-auto"
+                                onClick={() => setEditingItemQty({ id: orderItem.id, value: String(orderItem.quantity) })}
+                                title="Click to edit quantity"
+                              >
+                                {orderItem.quantity}
+                                <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </button>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right font-bold text-primary tabular-nums">{formatCurrency(orderItem.lineTotal)}</TableCell>
                           <TableCell className="text-right">
                             {(() => {
