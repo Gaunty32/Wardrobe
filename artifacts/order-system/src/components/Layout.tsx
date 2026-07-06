@@ -381,7 +381,6 @@ export default function Layout({ children }: LayoutProps) {
         { name: "Customers", href: "/customers", icon: Users },
         { name: "Products", href: "/products", icon: Package },
         { name: "Bundles", href: "/bundles", icon: Package2 },
-        { name: "Image Prompt Generator", href: "/image-prompt-generator", icon: ImageIcon },
       ],
     },
     {

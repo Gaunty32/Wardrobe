@@ -33,7 +33,6 @@ import bundlesRouter from "./bundles";
 import feedbackRouter from "./feedback";
 import socialPostsRouter from "./social-posts";
 import chatRouter from "./chat";
-import imagePromptGeneratorRouter from "./image-prompt-generator";
 
 const router: IRouter = Router();
 
@@ -71,6 +70,5 @@ router.use(bundlesRouter);
 router.use(feedbackRouter);
 router.use(socialPostsRouter);
 router.use(chatRouter);
-router.use(imagePromptGeneratorRouter);
 
 export default router;

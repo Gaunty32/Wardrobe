@@ -58,7 +58,6 @@ import Customers from "@/pages/Customers";
 import CustomerDetail from "@/pages/CustomerDetail";
 import Products from "@/pages/Products";
 import ProductDetail from "@/pages/ProductDetail";
-import ImagePromptGenerator from "@/pages/ImagePromptGenerator";
 import Stock from "@/pages/Stock";
 import ProcessStock from "@/pages/ProcessStock";
 import Purchasing from "@/pages/Purchasing";
@@ -154,7 +153,6 @@ function Router() {
       <Route path="/customers/:id" component={CustomerDetail} />
       <Route path="/products" component={Products} />
       <Route path="/products/:id" component={ProductDetail} />
-      <Route path="/image-prompt-generator" component={ImagePromptGenerator} />
       <Route path="/stock" component={Stock} />
       <Route path="/process-stock" component={ProcessStock} />
       <Route path="/purchasing" component={Purchasing} />
