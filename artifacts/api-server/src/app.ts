@@ -31,10 +31,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.use("/api", (_req, res, next) => {
+app.use(["/api", "/"], (_req, res, next) => {
   res.setHeader("Cache-Control", "no-store");
   next();
 });
+// Mount at /api for direct access (Vite dev proxy, curl, localhost)
+// Mount at / for Replit external proxy which strips the /api prefix before forwarding
 app.use("/api", router);
+app.use("/", router);
 
 export default app;
