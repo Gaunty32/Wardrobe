@@ -2,6 +2,8 @@
 - [Bundle Feature](bundle-feature.md) — bundles/bundle_components tables, order_items bundle columns, CRUD routes, PDF rendering, Add Bundle dialog in OrderDetail
 - [Part-Dispatch Design](part-dispatch.md) — per-item dispatched_at, part_shipped status, queue/invoice/email filtering rules
 - [Social Post Feature](social-post-feature.md) — social_posts table, AI generation (claude-sonnet-4-6), Facebook auto-post, Google copy-paste, 6-month scheduler, Settings → Social Media tab
+- [Replit proxy strips /api prefix](replit-proxy-strips-api-prefix.md) — Replit external proxy strips /api before forwarding to port 8080; mount router at both /api and / in Express
+- [Facebook page token exchange](facebook-page-token.md) — stored token may be a System User token; always call GET /{page-id}?fields=access_token before posting to get a proper Page Access Token
 - [Split size/sleeve matching](split-size-sleeve-matching.md) — order_items.size can be "SIZE/SLEEVE" combined while product_variants splits size+sleeve; raw equality joins silently break for these products
 - [Portal JWT secret fallback](portal-jwt-secret-fallback.md) — multiple portal route files each hardcode their own PORTAL_JWT_SECRET fallback string; keep them identical or tokens silently fail cross-file verification
 - [Zod optional string fields](zod-optional-blank-fields.md) — frontend forms send "" for unset optional fields (email, text); z.string().email().optional() rejects "" and causes generic save failures

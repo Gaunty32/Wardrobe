@@ -27,11 +27,6 @@ router.get("/settings/raw", async (req, res): Promise<void> => {
 });
 
 router.patch("/settings", async (req, res): Promise<void> => {
-  const bodyKeys = Object.keys(req.body ?? {});
-  const bodyPreview: Record<string, string> = {};
-  for (const k of bodyKeys) bodyPreview[k] = typeof req.body[k] === "string" ? `[string len=${req.body[k].length}]` : String(req.body[k]);
-  console.log("[PATCH /settings] body keys:", bodyKeys, "preview:", JSON.stringify(bodyPreview));
-
   const parsed = z.record(z.string(), z.string().nullable()).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
