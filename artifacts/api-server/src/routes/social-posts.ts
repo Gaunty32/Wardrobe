@@ -239,7 +239,9 @@ router.post("/social-posts/test", async (req, res): Promise<void> => {
   if (!fbSettings) {
     results.facebook = { ok: false, skipped: true, error: "Not configured — add Page ID and Access Token in Settings" };
   } else {
+    console.log("[test-post] FB pageId:", fbSettings.facebook_page_id, "token len:", fbSettings.facebook_page_access_token?.length);
     results.facebook = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, testMessage, null);
+    console.log("[test-post] FB result:", JSON.stringify(results.facebook));
   }
 
   // Google Business Profile
