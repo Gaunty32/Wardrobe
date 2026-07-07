@@ -180,30 +180,103 @@ async function fetchFbInsights(postId: string, token: string): Promise<{
   };
 }
 
-/** Pick a random date within [0, withinDays) that has no scheduled post yet. Max 30 attempts. */
-async function pickAvailableDate(withinDays: number): Promise<Date> {
+/** Check if a candidate date (its day window) conflicts with existing scheduled posts.
+ *  Rules:
+ *   - No post on the same calendar day
+ *   - No post on the immediately preceding or following calendar day (no consecutive days)
+ *   - No post with the same product category as the nearest scheduled post before or after
+ */
+async function isDateConflict(dayStart: Date, dayEnd: Date, productCategory: string | null): Promise<boolean> {
+  // Check ±1 day window for any post (covers same-day AND consecutive-day rules)
+  const windowStart = new Date(dayStart.getTime() - 86_400_000);
+  const windowEnd   = new Date(dayEnd.getTime()   + 86_400_000);
+  const nearbyRes = await db.execute(sql`
+    SELECT sp.id FROM social_posts sp
+    WHERE sp.status IN ('scheduled', 'publishing')
+      AND sp.scheduled_at BETWEEN ${windowStart.toISOString()} AND ${windowEnd.toISOString()}
+    LIMIT 1
+  `);
+  if ((nearbyRes.rows ?? nearbyRes as any[]).length > 0) return true;  // consecutive or same day
+
+  // Category check: nearest post before this day
+  if (productCategory) {
+    const beforeRes = await db.execute(sql`
+      SELECT p.category FROM social_posts sp
+      LEFT JOIN products p ON p.id = sp.product_id
+      WHERE sp.status IN ('scheduled', 'publishing')
+        AND sp.scheduled_at < ${dayStart.toISOString()}
+      ORDER BY sp.scheduled_at DESC LIMIT 1
+    `);
+    const before = ((beforeRes.rows ?? beforeRes) as any[])[0];
+    if (before?.category && before.category === productCategory) return true;
+
+    const afterRes = await db.execute(sql`
+      SELECT p.category FROM social_posts sp
+      LEFT JOIN products p ON p.id = sp.product_id
+      WHERE sp.status IN ('scheduled', 'publishing')
+        AND sp.scheduled_at > ${dayEnd.toISOString()}
+      ORDER BY sp.scheduled_at ASC LIMIT 1
+    `);
+    const after = ((afterRes.rows ?? afterRes) as any[])[0];
+    if (after?.category && after.category === productCategory) return true;
+  }
+
+  return false;
+}
+
+/** Pick a random date within [startOffsetDays, startOffsetDays + withinDays) that satisfies:
+ *  no same/consecutive days, no same category as nearest neighbours.
+ *  Falls back to same-day-only guard if constraints can't be satisfied in 60 attempts. */
+async function pickAvailableDate(withinDays: number, productId?: number, startOffsetDays = 0): Promise<Date> {
+  let productCategory: string | null = null;
+  if (productId) {
+    const [prod] = (await db.execute(sql`SELECT category FROM products WHERE id = ${productId}`)).rows as any[];
+    productCategory = prod?.category ?? null;
+  }
+
+  const origin = Date.now() + startOffsetDays * 86_400_000;
+
+  // Phase 1: apply all constraints (60 attempts)
+  for (let attempt = 0; attempt < 60; attempt++) {
+    const daysAhead = 1 + Math.random() * Math.max(withinDays - 2, 1);
+    const candidate = new Date(origin + daysAhead * 86_400_000);
+    const dayStart  = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd    = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+    if (!(await isDateConflict(dayStart, dayEnd, productCategory))) return candidate;
+  }
+
+  // Phase 2: relax category constraint — just no same/consecutive day
   for (let attempt = 0; attempt < 30; attempt++) {
-    const daysAhead = Math.random() * withinDays;
-    const candidate = new Date(Date.now() + daysAhead * 86_400_000);
-    const dayStart = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
-    const existing = await db.execute(sql`
+    const daysAhead = 1 + Math.random() * Math.max(withinDays - 2, 1);
+    const candidate = new Date(origin + daysAhead * 86_400_000);
+    const dayStart  = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd    = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+    if (!(await isDateConflict(dayStart, dayEnd, null))) return candidate;
+  }
+
+  // Phase 3: last resort — just avoid same day
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const daysAhead = 1 + Math.random() * withinDays;
+    const candidate = new Date(origin + daysAhead * 86_400_000);
+    const dayStart  = new Date(candidate); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd    = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+    const existing  = await db.execute(sql`
       SELECT id FROM social_posts
-      WHERE status IN ('scheduled','publishing')
+      WHERE status IN ('scheduled', 'publishing')
         AND scheduled_at BETWEEN ${dayStart.toISOString()} AND ${dayEnd.toISOString()}
       LIMIT 1
     `);
     if (!(existing.rows ?? existing as any[]).length) return candidate;
   }
-  // All days taken — add 1 day buffer at the end
-  return new Date(Date.now() + (withinDays + 1) * 86_400_000);
+
+  return new Date(origin + (withinDays + 2) * 86_400_000);
 }
 
-/** Pick a random date ~6 months (5.5–6.5 months) from now. */
-function rescheduleDate(): Date {
-  const minMs = 5.5 * 30.44 * 86_400_000;
-  const maxMs = 6.5 * 30.44 * 86_400_000;
-  return new Date(Date.now() + minMs + Math.random() * (maxMs - minMs));
+/** Pick a smart reschedule date ~6 months (±3 weeks) from now applying the same scheduling rules. */
+async function pickRescheduleDate(productId?: number): Promise<Date> {
+  const targetDays = Math.round(5.5 * 30.44 + Math.random() * (30.44));  // 5.5–6.5 months in days
+  // Search in a ±21-day window centred on the target, starting 3 weeks before it
+  return pickAvailableDate(42, productId, targetDays - 21);
 }
 
 // ── Google Business Profile OAuth routes ──────────────────────────────────────
@@ -617,9 +690,9 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   ];
   await db.execute(sql.raw(`UPDATE social_posts SET ${updateParts.join(", ")} WHERE id = ${id}`));
 
-  // Auto-reschedule ~6 months from now
+  // Auto-reschedule ~6 months from now with smart date picking
   if (!anyFailed && post.auto_reschedule) {
-    const nextDate = rescheduleDate();
+    const nextDate = await pickRescheduleDate(post.product_id);
     const pArr = platforms.map((p: string) => `'${p}'`).join(",");
     await db.execute(sql.raw(`
       INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
@@ -642,9 +715,13 @@ router.post("/social-posts/:id/schedule", async (req, res): Promise<void> => {
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
+  // Fetch post so we know product_id for category-aware scheduling
+  const postRows = await db.execute(sql`SELECT product_id FROM social_posts WHERE id = ${id}`);
+  const productId: number | undefined = ((postRows.rows ?? postRows) as any[])[0]?.product_id;
+
   const scheduledAt = parsed.data.scheduledAt
     ? new Date(parsed.data.scheduledAt)
-    : await pickAvailableDate(30);   // within 30 days, 1-per-day guard
+    : await pickAvailableDate(30, productId);  // no consecutive days, no same-category neighbours
 
   await db.execute(sql.raw(`
     UPDATE social_posts
@@ -725,7 +802,7 @@ export function startSocialPostScheduler(): void {
         `));
 
         if (!failed && post.auto_reschedule) {
-          const nextDate = rescheduleDate();
+          const nextDate = await pickRescheduleDate(post.product_id);
           const pArr = platforms.map((p: string) => `'${p}'`).join(",");
           await db.execute(sql.raw(`
             INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
