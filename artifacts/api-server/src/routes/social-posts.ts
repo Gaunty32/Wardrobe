@@ -781,10 +781,21 @@ router.post("/social-posts/:id/seen", async (req, res): Promise<void> => {
 export function startSocialPostScheduler(): void {
   const publish = async () => {
     try {
+      // Rate-limit: never publish if something was already published in the last 48 hours.
+      // This enforces the every-other-day cadence at the actual publish moment.
+      const recentRes = await db.execute(sql`
+        SELECT id FROM social_posts
+        WHERE status = 'published' AND published_at >= NOW() - INTERVAL '48 hours'
+        LIMIT 1
+      `);
+      if ((recentRes.rows ?? recentRes as any[]).length > 0) return;
+
+      // Pick just one due post — the earliest scheduled
       const due = await db.execute(sql`
         SELECT * FROM social_posts
         WHERE status = 'scheduled' AND scheduled_at <= NOW()
-        LIMIT 10
+        ORDER BY scheduled_at ASC
+        LIMIT 1
       `);
       for (const post of (due.rows ?? due) as any[]) {
         await db.execute(sql.raw(`UPDATE social_posts SET status = 'publishing', updated_at = NOW() WHERE id = ${post.id} AND status = 'scheduled'`));
