@@ -844,17 +844,7 @@ Do not make the scene cinematic or dramatic.
 Keep it realistic, subtle and catalogue-safe.`;
   }
 
-  // Generate the actual image via OpenAI gpt-image-1
-  const { generateImageBuffer } = await import("@workspace/integrations-openai-ai-server/image");
-  const sizeMap: Record<string, "1024x1024" | "1536x1024" | "1024x1536"> = {
-    "1000px x 1000px": "1024x1024",
-    "1200px x 1200px": "1024x1024",
-    "800px x 800px": "1024x1024",
-  };
-  const gpSize = sizeMap[imageSize] ?? "1024x1024";
-  const imageBuffer = await generateImageBuffer(generatedPrompt, gpSize);
-
-  res.json({ prompt: generatedPrompt, animationPrompt, image: imageBuffer.toString("base64") });
+  res.json({ prompt: generatedPrompt, animationPrompt });
 });
 
 export default router;

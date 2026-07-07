@@ -870,15 +870,14 @@ export default function ProductDetail() {
     onSuccess: (data: any) => {
       const stillPrompt = data.prompt || "";
       const animPrompt = data.animationPrompt ?? null;
-      const imgData = data.image ? `data:image/png;base64,${data.image}` : null;
       setImgGenPrompt(stillPrompt);
       setImgGenAnimPrompt(animPrompt);
-      setImgGenImage(imgData);
-      const entry = { ts: Date.now(), productName: imgGen.productName, stillPrompt, animationPrompt: animPrompt, image: imgData };
+      setImgGenImage(null);
+      const entry = { ts: Date.now(), productName: imgGen.productName, stillPrompt, animationPrompt: animPrompt, image: null };
       const updated = [entry, ...imgGenHistory].slice(0, 10);
       setImgGenHistory(updated);
       try { localStorage.setItem(`imggen_history_${productId}`, JSON.stringify(updated)); } catch {}
-      toast({ title: imgData ? "Image generated!" : "Prompt generated" });
+      toast({ title: "Prompt ready — copy and paste into ChatGPT" });
     },
     onError: (err: any) => toast({ title: err.message || "Failed to generate image", variant: "destructive" }),
   });
@@ -2933,47 +2932,39 @@ export default function ProductDetail() {
                 {generateImgPromptMut.isPending && (
                   <div className="bg-card border border-violet-200 rounded-lg p-8 shadow-sm flex flex-col items-center gap-3 text-violet-700">
                     <Loader2 className="w-8 h-8 animate-spin" />
-                    <p className="text-sm font-medium">Generating your catalogue image and prompts…</p>
-                    <p className="text-xs text-muted-foreground">This usually takes 20–40 seconds</p>
+                    <p className="text-sm font-medium">Building your catalogue prompt…</p>
+                    <p className="text-xs text-muted-foreground">Usually takes 5–10 seconds</p>
                   </div>
                 )}
 
-                {/* Output — image + prompts */}
-                {!generateImgPromptMut.isPending && (imgGenImage || imgGenPrompt) && (
+                {/* Output — prompts only, user pastes into ChatGPT for best quality */}
+                {!generateImgPromptMut.isPending && imgGenPrompt && (
                   <div className="space-y-4">
-                    {/* Generated image */}
-                    {imgGenImage && (
-                      <div className="bg-card border border-violet-200 rounded-lg p-5 shadow-sm space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-semibold flex items-center gap-2 text-violet-700"><ImageIcon className="w-4 h-4" /> Generated Image</h4>
-                          <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
-                            onClick={() => { const a = document.createElement("a"); a.href = imgGenImage!; a.download = `${imgGen.productName.replace(/\s+/g, "-")}-hero.png`; a.click(); }}>
-                            ⬇ Download PNG
-                          </Button>
-                        </div>
-                        <img src={imgGenImage} alt="Generated catalogue hero" className="w-full rounded-lg border border-violet-100 shadow-sm" />
-                      </div>
-                    )}
-
                     {/* Still image prompt */}
-                    {imgGenPrompt && (
-                      <div className="bg-card border border-violet-200 rounded-lg p-5 shadow-sm space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-semibold flex items-center gap-2 text-violet-700"><ImageIcon className="w-4 h-4" /> Still Image Prompt</h4>
-                          <Button size="sm" className="gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 text-white"
-                            onClick={() => { navigator.clipboard.writeText(imgGenPrompt); toast({ title: "Still prompt copied!" }); }}>
+                    <div className="bg-card border border-violet-200 rounded-lg p-5 shadow-sm space-y-3">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <h4 className="font-semibold flex items-center gap-2 text-violet-700"><ImageIcon className="w-4 h-4" /> Still Image Prompt</h4>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
+                            onClick={() => { navigator.clipboard.writeText(imgGenPrompt); toast({ title: "Prompt copied!" }); }}>
                             <Copy className="w-3.5 h-3.5" /> Copy Prompt
                           </Button>
+                          <Button size="sm" className="gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 text-white"
+                            onClick={() => { navigator.clipboard.writeText(imgGenPrompt); window.open("https://chatgpt.com/", "_blank"); toast({ title: "Prompt copied — paste it into ChatGPT" }); }}>
+                            <Wand2 className="w-3.5 h-3.5" /> Copy &amp; Open ChatGPT
+                          </Button>
                         </div>
-                        <Textarea rows={8} value={imgGenPrompt} onChange={e => setImgGenPrompt(e.target.value)} className="font-mono text-xs leading-relaxed bg-muted/30 resize-y" />
-                        <p className="text-xs text-muted-foreground">Paste this into <strong>ChatGPT → Create image</strong>, DALL-E, or Midjourney.</p>
                       </div>
-                    )}
+                      <Textarea rows={9} value={imgGenPrompt} onChange={e => setImgGenPrompt(e.target.value)} className="font-mono text-xs leading-relaxed bg-muted/30 resize-y" />
+                      <p className="text-xs text-muted-foreground">
+                        Click <strong>Copy &amp; Open ChatGPT</strong>, then in ChatGPT choose <strong>Create image</strong> and paste the prompt for best quality results.
+                      </p>
+                    </div>
 
                     {/* Animation prompt */}
-                    {imgGen.generateAnimation && imgGenAnimPrompt && (
+                    {imgGenAnimPrompt && (
                       <div className="bg-card border border-blue-200 rounded-lg p-5 shadow-sm space-y-3">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
                           <h4 className="font-semibold flex items-center gap-2 text-blue-700"><Sparkles className="w-4 h-4" /> Animation Prompt</h4>
                           <Button size="sm" className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white"
                             onClick={() => { navigator.clipboard.writeText(imgGenAnimPrompt); toast({ title: "Animation prompt copied!" }); }}>
@@ -2981,7 +2972,9 @@ export default function ProductDetail() {
                           </Button>
                         </div>
                         <Textarea rows={10} value={imgGenAnimPrompt} onChange={e => setImgGenAnimPrompt(e.target.value)} className="font-mono text-xs leading-relaxed bg-muted/30 resize-y" />
-                        <p className="text-xs text-muted-foreground">Paste this into <strong>Runway, Kling, or Pika</strong> with the generated still image as the reference frame.</p>
+                        <p className="text-xs text-muted-foreground">
+                          Paste into <strong>Runway Gen-3, Kling, or Pika</strong> using your generated still image as the start frame.
+                        </p>
                       </div>
                     )}
                   </div>
