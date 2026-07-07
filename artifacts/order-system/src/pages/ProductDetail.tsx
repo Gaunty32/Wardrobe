@@ -822,8 +822,9 @@ export default function ProductDetail() {
     },
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["social-posts", productId] });
-      if (data.ok) toast({ title: "Published!" });
-      else toast({ title: "Published with notes", description: "Check post history for details", variant: "destructive" });
+      if (data.queued) toast({ title: "Queued!", description: `Will publish ${new Date(data.scheduledAt).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` });
+      else if (data.ok) toast({ title: "Published!" });
+      else toast({ title: "Error", description: "Check post history for details", variant: "destructive" });
     },
     onError: (e: any) => toast({ title: "Publish failed", description: e?.message, variant: "destructive" }),
   });
@@ -832,7 +833,8 @@ export default function ProductDetail() {
     mutationFn: (id: number) => apiFetch<any>(`/social-posts/${id}/publish`, { method: "POST" }),
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["social-posts", productId] });
-      if (data.ok) toast({ title: "Published!" });
+      if (data.queued) toast({ title: "Queued!", description: `Will publish ${new Date(data.scheduledAt).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}` });
+      else if (data.ok) toast({ title: "Published!" });
       else toast({ title: "Published with notes", variant: "destructive" });
     },
     onError: (e: any) => toast({ title: "Publish failed", description: e?.message, variant: "destructive" }),

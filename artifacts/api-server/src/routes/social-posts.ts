@@ -182,12 +182,11 @@ async function fetchFbInsights(postId: string, token: string): Promise<{
 
 /** Check if a candidate date (its day window) conflicts with existing scheduled posts.
  *  Rules:
- *   - No post on the same calendar day
- *   - No post on the immediately preceding or following calendar day (no consecutive days)
- *   - No post with the same product category as the nearest scheduled post before or after
+ *   - No post on the same calendar day or immediately adjacent day (every-other-day cadence)
+ *   - No post with the same product category within 7 days either side
  */
 async function isDateConflict(dayStart: Date, dayEnd: Date, productCategory: string | null): Promise<boolean> {
-  // Check ±1 day window for any post (covers same-day AND consecutive-day rules)
+  // Check ±1 day for any post (enforces every-other-day minimum cadence)
   const windowStart = new Date(dayStart.getTime() - 86_400_000);
   const windowEnd   = new Date(dayEnd.getTime()   + 86_400_000);
   const nearbyRes = await db.execute(sql`
@@ -196,32 +195,41 @@ async function isDateConflict(dayStart: Date, dayEnd: Date, productCategory: str
       AND sp.scheduled_at BETWEEN ${windowStart.toISOString()} AND ${windowEnd.toISOString()}
     LIMIT 1
   `);
-  if ((nearbyRes.rows ?? nearbyRes as any[]).length > 0) return true;  // consecutive or same day
+  if ((nearbyRes.rows ?? nearbyRes as any[]).length > 0) return true;
 
-  // Category check: nearest post before this day
+  // No same category within 7 days either side (no two hi-vis posts in the same week, etc.)
   if (productCategory) {
-    const beforeRes = await db.execute(sql`
-      SELECT p.category FROM social_posts sp
+    const weekStart = new Date(dayStart.getTime() - 7 * 86_400_000);
+    const weekEnd   = new Date(dayEnd.getTime()   + 7 * 86_400_000);
+    const catRes = await db.execute(sql`
+      SELECT sp.id FROM social_posts sp
       LEFT JOIN products p ON p.id = sp.product_id
       WHERE sp.status IN ('scheduled', 'publishing')
-        AND sp.scheduled_at < ${dayStart.toISOString()}
-      ORDER BY sp.scheduled_at DESC LIMIT 1
+        AND sp.scheduled_at BETWEEN ${weekStart.toISOString()} AND ${weekEnd.toISOString()}
+        AND p.category = ${productCategory}
+      LIMIT 1
     `);
-    const before = ((beforeRes.rows ?? beforeRes) as any[])[0];
-    if (before?.category && before.category === productCategory) return true;
-
-    const afterRes = await db.execute(sql`
-      SELECT p.category FROM social_posts sp
-      LEFT JOIN products p ON p.id = sp.product_id
-      WHERE sp.status IN ('scheduled', 'publishing')
-        AND sp.scheduled_at > ${dayEnd.toISOString()}
-      ORDER BY sp.scheduled_at ASC LIMIT 1
-    `);
-    const after = ((afterRes.rows ?? afterRes) as any[])[0];
-    if (after?.category && after.category === productCategory) return true;
+    if ((catRes.rows ?? catRes as any[]).length > 0) return true;
   }
 
   return false;
+}
+
+/** Find the earliest available publish slot starting from tomorrow.
+ *  Respects every-other-day cadence and no same-category within 7 days. */
+async function pickNextPublishSlot(productId: number): Promise<Date> {
+  const [prod] = (await db.execute(sql`SELECT category FROM products WHERE id = ${productId}`)).rows as any[];
+  const productCategory: string | null = prod?.category ?? null;
+
+  for (let daysAhead = 1; daysAhead <= 60; daysAhead++) {
+    const candidate = new Date(Date.now() + daysAhead * 86_400_000);
+    const dayStart = new Date(candidate); dayStart.setHours(9, 0, 0, 0);  // post at 9am
+    const dayEnd   = new Date(candidate); dayEnd.setHours(23, 59, 59, 999);
+    if (!(await isDateConflict(dayStart, dayEnd, productCategory))) return dayStart;
+  }
+  // Fallback
+  const fb = new Date(Date.now() + 2 * 86_400_000); fb.setHours(9, 0, 0, 0);
+  return fb;
 }
 
 /** Pick a random date within [startOffsetDays, startOffsetDays + withinDays) that satisfies:
@@ -717,79 +725,17 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   const post = (rows.rows[0] ?? rows) as any;
   if (!post) { res.status(404).json({ error: "Post not found" }); return; }
 
-  const fbSettings = await getFbSettings();
-  const gbpStatus = await getGbpStatus();
-  const platforms: string[] = post.platforms ?? ["facebook", "google"];
-  const imageUrl: string | null = post.product_image_url ?? null;
-  const websiteUrl: string | null = post.website_url ?? null;
+  // Queue the post for the next available slot (every-other-day cadence, no same-category
+  // within 7 days). The scheduler handles the actual publish when the time comes.
+  const slotDate = await pickNextPublishSlot(post.product_id);
+  await db.execute(sql`
+    UPDATE social_posts
+    SET status = 'scheduled', scheduled_at = ${slotDate.toISOString()},
+        new_activity = FALSE, updated_at = NOW()
+    WHERE id = ${id}
+  `);
 
-  const results: Record<string, any> = {};
-  let anyFailed = false;
-  let fbPostId: string | null = null;
-  let gbpPostName: string | null = null;
-
-  let message = post.facebook_content;
-  if (post.hashtags) message += `\n\n${post.hashtags.split(",").map((h: string) => `#${h.trim()}`).join(" ")}`;
-
-  // ── Facebook
-  if (platforms.includes("facebook")) {
-    if (!fbSettings) {
-      results.facebook = { ok: false, error: "Facebook not configured — add Page ID and Access Token in Settings → Social Media" };
-      anyFailed = true;
-    } else {
-      const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl, websiteUrl);
-      results.facebook = fbResult;
-      if (fbResult.ok) fbPostId = fbResult.postId ?? null;
-      else anyFailed = true;
-    }
-  }
-
-  // ── Google Business Profile
-  if (platforms.includes("google")) {
-    const token = await getGbpAccessToken();
-    const locationName = gbpStatus.locationName;
-    if (!token || !locationName) {
-      results.google = { ok: false, note: "Google Business Profile not connected — configure it in Settings → Social Media. Copy the Google post content manually for now." };
-    } else {
-      const googleMessage = post.google_content || message;
-      const gbpResult = await publishGbpPost(locationName, token, googleMessage, imageUrl);
-      results.google = gbpResult;
-      if (gbpResult.ok) gbpPostName = gbpResult.postName ?? null;
-      else { results.google.note = "GBP post failed — you can still copy the content manually"; }
-    }
-  }
-
-  const newStatus = anyFailed ? "failed" : "published";
-  const errMsg = anyFailed ? Object.values(results).filter((r: any) => !r.ok && r.error).map((r: any) => r.error).join("; ") : null;
-
-  const updateParts = [
-    `status = '${newStatus}'`,
-    `published_at = ${anyFailed ? "NULL" : `'${new Date().toISOString()}'`}`,
-    `error_message = ${errMsg ? `'${errMsg.replace(/'/g, "''")}'` : "NULL"}`,
-    `fb_post_id = ${fbPostId ? `'${fbPostId}'` : "NULL"}`,
-    `gbp_post_name = ${gbpPostName ? `'${gbpPostName}'` : "NULL"}`,
-    "new_activity = FALSE",
-    "updated_at = NOW()",
-  ];
-  await db.execute(sql.raw(`UPDATE social_posts SET ${updateParts.join(", ")} WHERE id = ${id}`));
-
-  // Auto-reschedule ~4 months out with fresh AI content for whatever season that date lands in.
-  if (!anyFailed && post.auto_reschedule) {
-    const nextDate = await pickRescheduleDate(post.product_id); // standard ~4-month cadence
-    const nextSeason = seasonFromDate(nextDate);
-    const pArr = platforms.map((p: string) => `'${p}'`).join(",");
-    // Generate content relevant to the season the new post will land in
-    const fresh = await generatePostsForProduct(post.product_id, nextSeason);
-    const fbContent = (fresh?.facebookContent || post.facebook_content).replace(/'/g, "''");
-    const ggContent = (fresh?.googleContent || post.google_content).replace(/'/g, "''");
-    const htContent = (fresh?.hashtags || post.hashtags).replace(/'/g, "''");
-    await db.execute(sql.raw(`
-      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
-      VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${nextSeason}')
-    `));
-  }
-
-  res.json({ ok: !anyFailed, results });
+  res.json({ ok: true, queued: true, scheduledAt: slotDate.toISOString() });
 });
 
 // ── Schedule a post (random within 30 days) ───────────────────────────────────
