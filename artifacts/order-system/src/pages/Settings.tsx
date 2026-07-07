@@ -1464,8 +1464,8 @@ export default function Settings() {
   }, [rawSettings, fbFormLoaded]);
 
   async function saveFacebookSettings(overridePageId?: string, overrideToken?: string) {
-    const pageId = overridePageId ?? fbPageId;
-    const token = overrideToken ?? fbAccessToken;
+    const pageId = (typeof overridePageId === "string" ? overridePageId : undefined) ?? fbPageId;
+    const token = (typeof overrideToken === "string" ? overrideToken : undefined) ?? fbAccessToken;
     if (!pageId || !token) {
       toast({ title: "Missing fields", description: "Both Page Access Token and Facebook Page ID are required.", variant: "destructive" });
       return;
