@@ -2532,23 +2532,31 @@ export default function Settings() {
                               ? `⚠️ Skipped — ${testPostResults.facebook.error}`
                               : (() => {
                                   const err = testPostResults.facebook.error ?? "";
-                                  const isExpired = err.includes("Session has expired") || err.includes("Error validating access token") || err.includes("OAuthException");
+                                  const isMissingPermission = err.includes("pages_manage_posts") || err.includes("pages_read_engagement") || (err.includes('"code":200') || err.includes('"code": 200'));
+                                  const isExpired = !isMissingPermission && (err.includes("Session has expired") || err.includes("Error validating access token") || err.includes('"code":190') || err.includes('"code": 190'));
                                   const isWrongPage = err.includes("error_subcode\":33") || err.includes('"subcode":33') || (err.includes("does not exist") && err.includes("missing permissions"));
                                   const isWrongToken = err.includes("error_subcode\":460") || err.includes("password was changed") || err.includes("must be logged in");
-                                  return isExpired ? (
-                                    <span>❌ <strong>Access token expired or invalid</strong> — Facebook rejected the token. Generate a new long-lived page access token from the{" "}
-                                      <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Meta Graph API Explorer</a>, paste it into the Page Access Token field above, and click Save Facebook Settings.<br/>
-                                      <span className="text-xs opacity-70 mt-1 block">Raw error: {err}</span>
+                                  return isMissingPermission ? (
+                                    <span>❌ <strong>Missing permissions</strong> — The token needs <code>pages_manage_posts</code> and <code>pages_read_engagement</code> to post to your page. In Meta Business Manager:<br/>
+                                      1. Go to <strong>Business Settings → System Users → Sbsautoposter</strong><br/>
+                                      2. Click <strong>Add Assets → Pages → Select Uniforms</strong><br/>
+                                      3. Set task to <strong>Manage page</strong> (Full control)<br/>
+                                      4. Regenerate the System User token with <code>pages_manage_posts</code> and <code>pages_read_engagement</code> scopes selected<br/>
+                                      5. Paste the new token above and click Save Facebook Settings<br/>
+                                      <span className="text-xs opacity-70 mt-1 block">Raw: {err}</span>
+                                    </span>
+                                  ) : isExpired ? (
+                                    <span>❌ <strong>Access token expired</strong> — Generate a new long-lived page access token from the{" "}
+                                      <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Meta Graph API Explorer</a>, paste it above, and click Save Facebook Settings.<br/>
+                                      <span className="text-xs opacity-70 mt-1 block">Raw: {err}</span>
                                     </span>
                                   ) : isWrongPage ? (
-                                    <span>❌ <strong>Wrong Page ID or token type</strong> — The token must be a <em>Page Access Token</em> (not a User token) for the exact page whose ID you entered. In the{" "}
-                                      <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Graph API Explorer</a>: select your app → select your page under "User or Page" → click "Generate Access Token" → exchange it for a long-lived token. Then double-check the Page ID matches.<br/>
-                                      <span className="text-xs opacity-70 mt-1 block">Raw error: {err}</span>
+                                    <span>❌ <strong>Wrong Page ID or token type</strong> — The token must be a Page Access Token for the exact page ID entered.<br/>
+                                      <span className="text-xs opacity-70 mt-1 block">Raw: {err}</span>
                                     </span>
                                   ) : isWrongToken ? (
-                                    <span>❌ <strong>Token is a User token, not a Page token</strong> — In the{" "}
-                                      <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noreferrer" className="underline font-medium">Graph API Explorer</a>, choose your <em>page</em> (not your personal profile) from the "User or Page" dropdown before generating the token.<br/>
-                                      <span className="text-xs opacity-70 mt-1 block">Raw error: {err}</span>
+                                    <span>❌ <strong>Token is a User token, not a Page token</strong> — Choose your page (not personal profile) from the "User or Page" dropdown in Graph API Explorer before generating the token.<br/>
+                                      <span className="text-xs opacity-70 mt-1 block">Raw: {err}</span>
                                     </span>
                                   ) : <span>❌ Failed — {err}</span>;
                                 })()}
