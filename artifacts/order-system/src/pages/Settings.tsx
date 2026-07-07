@@ -1476,7 +1476,7 @@ export default function Settings() {
         throw new Error(text || `Save failed (HTTP ${res.status})`);
       }
       toast({ title: "Facebook settings saved" });
-      qc.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["settings"] });
     } catch (e: any) {
       toast({ title: "Failed to save Facebook settings", description: e?.message ?? "Unknown error", variant: "destructive" });
     } finally {
@@ -2297,7 +2297,7 @@ export default function Settings() {
                   <p className="text-xs text-muted-foreground">Auto-filled when you select a page above, or enter manually.</p>
                 </div>
 
-                <Button onClick={saveFacebookSettings} disabled={savingFb || !fbPageId || !fbAccessToken} className="gap-2">
+                <Button type="button" onClick={saveFacebookSettings} disabled={savingFb || !fbPageId || !fbAccessToken} className="gap-2">
                   {savingFb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
                   Save Facebook Settings
                 </Button>
