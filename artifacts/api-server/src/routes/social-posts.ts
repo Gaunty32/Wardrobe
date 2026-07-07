@@ -471,36 +471,38 @@ router.get("/products/:productId/social-images", async (req, res): Promise<void>
 
 // ── AI generate post content ──────────────────────────────────────────────────
 
-router.post("/products/:productId/social-posts/generate", async (req, res): Promise<void> => {
-  const pid = parseInt(req.params.productId, 10);
-  if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
+const SEASON_LABELS: Record<SeasonName, string> = {
+  spring: "Spring (March–May)",
+  summer: "Summer (June–August)",
+  autumn: "Autumn (September–November)",
+  winter: "Winter (December–February)",
+};
 
+/**
+ * Core AI generation helper. Returns generated post content for a product,
+ * optionally angled for a specific season. Falls back to null on AI failure.
+ */
+async function generatePostsForProduct(
+  productId: number,
+  season?: SeasonName | null,
+): Promise<{ facebookContent: string; googleContent: string; hashtags: string } | null> {
   const [product] = (await db.execute(sql`
     SELECT p.name, p.sku, p.description, p.unit_price, p.category, p.image_url, p.permalink,
            p.guidance_best_for, p.guidance_not_ideal_for, p.guidance_staff_quotes,
-           p.guidance_badges, p.guidance_tags, p.guidance_value_rating,
-           p.guidance_durability_rating, p.guidance_smart_rating,
-           s.name AS supplier_name
-    FROM products p
-    LEFT JOIN suppliers s ON s.id = p.supplier_id
-    WHERE p.id = ${pid}
+           p.guidance_badges, p.guidance_tags
+    FROM products p WHERE p.id = ${productId}
   `)).rows as any[];
-
-  // Fetch variant colour images for image picker
-  const variantImgRows = (await db.execute(sql`
-    SELECT DISTINCT ON (colour) colour, image_url
-    FROM product_variants
-    WHERE product_id = ${pid} AND image_url IS NOT NULL AND image_url != ''
-    ORDER BY colour, id
-  `)).rows as any[];
-
-  if (!product) { res.status(404).json({ error: "Product not found" }); return; }
+  if (!product) return null;
 
   const bestFor = product.guidance_best_for || null;
   const notIdeal = product.guidance_not_ideal_for || null;
   const badges = Array.isArray(product.guidance_badges) ? product.guidance_badges : (typeof product.guidance_badges === "string" ? JSON.parse(product.guidance_badges || "[]") : []);
   const tags = Array.isArray(product.guidance_tags) ? product.guidance_tags : (typeof product.guidance_tags === "string" ? JSON.parse(product.guidance_tags || "[]") : []);
   const staffQuotes = Array.isArray(product.guidance_staff_quotes) ? product.guidance_staff_quotes : (typeof product.guidance_staff_quotes === "string" ? JSON.parse(product.guidance_staff_quotes || "[]") : []);
+
+  const seasonLine = season
+    ? `\nSEASON CONTEXT: This post will go out in ${SEASON_LABELS[season]}. Angle the content to reflect seasonal relevance — e.g. summer workwear considerations, winter warmth and layering, spring uniform refreshes, or autumn team kit updates. Keep it educational and avoid sounding promotional.`
+    : "";
 
   const prompt = `You are a content strategist for Select Branding Solutions (SBS), a UK-based branded promotional garments and merchandise company. Your goal is to build a helpful knowledgebase — posts that genuinely answer the questions people search for on Google, Facebook, and ChatGPT.
 
@@ -510,7 +512,7 @@ GUIDING PRINCIPLES:
 - Write like an expert sharing knowledge, not a brand promoting itself.
 - Think: "What would someone type into Google or ChatGPT about this product type?"
 - Examples of the RIGHT angle: "What to look for when choosing branded workwear", "How long does embroidery last on polo shirts", "What's the difference between screen print and embroidery for logos"
-- The content should be so useful that people save it, share it, or come back to it.
+- The content should be so useful that people save it, share it, or come back to it.${seasonLine}
 
 PRODUCT DETAILS:
 Name: ${product.name}
@@ -538,25 +540,49 @@ Respond ONLY with valid JSON in this exact format:
   "hashtags": "..."
 }`;
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 8192,
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  const text = message.content[0].type === "text" ? message.content[0].text : "";
-  const cleaned = text.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
-  let parsed: any;
-  try { parsed = JSON.parse(cleaned); } catch {
-    res.status(500).json({ error: "AI returned invalid JSON", raw: text }); return;
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-sonnet-4-6",
+      max_tokens: 8192,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const text = message.content[0].type === "text" ? message.content[0].text : "";
+    const cleaned = text.replace(/^```(?:json)?\n?/m, "").replace(/\n?```$/m, "").trim();
+    const result = JSON.parse(cleaned);
+    return {
+      facebookContent: result.facebook || "",
+      googleContent: result.google || "",
+      hashtags: result.hashtags || "",
+    };
+  } catch (err) {
+    console.error("[social] generatePostsForProduct failed:", err);
+    return null;
   }
+}
+
+router.post("/products/:productId/social-posts/generate", async (req, res): Promise<void> => {
+  const pid = parseInt(req.params.productId, 10);
+  if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
+
+  // Fetch variant colour images for image picker
+  const variantImgRows = (await db.execute(sql`
+    SELECT DISTINCT ON (colour) colour, image_url
+    FROM product_variants
+    WHERE product_id = ${pid} AND image_url IS NOT NULL AND image_url != ''
+    ORDER BY colour, id
+  `)).rows as any[];
+
+  const [prodMeta] = (await db.execute(sql`SELECT image_url, permalink FROM products WHERE id = ${pid}`)).rows as any[];
+
+  const generated = await generatePostsForProduct(pid);
+  if (!generated) { res.status(404).json({ error: "Product not found or AI generation failed" }); return; }
 
   res.json({
-    facebookContent: parsed.facebook || "",
-    googleContent: parsed.google || "",
-    hashtags: parsed.hashtags || "",
-    productImageUrl: product.image_url || null,
-    websiteUrl: product.permalink || null,
+    facebookContent: generated.facebookContent,
+    googleContent: generated.googleContent,
+    hashtags: generated.hashtags,
+    productImageUrl: prodMeta?.image_url || null,
+    websiteUrl: prodMeta?.permalink || null,
     variantImages: variantImgRows.map((r: any) => ({ colour: r.colour, imageUrl: r.image_url })),
   });
 });
@@ -747,18 +773,21 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   ];
   await db.execute(sql.raw(`UPDATE social_posts SET ${updateParts.join(", ")} WHERE id = ${id}`));
 
-  // Auto-reschedule with smart date picking.
-  // Season is auto-detected from when this post was published so the next reschedule
-  // lands in the same season (e.g. a summer post always comes back in summer).
+  // Auto-reschedule with fresh AI-generated content for the same season.
   if (!anyFailed && post.auto_reschedule) {
     const inferredSeason: SeasonName = (post.season && post.season in SEASON_MONTHS)
       ? post.season as SeasonName
       : seasonFromDate(new Date());
     const nextDate = await pickRescheduleDate(post.product_id, inferredSeason);
     const pArr = platforms.map((p: string) => `'${p}'`).join(",");
+    // Generate fresh content for the upcoming season; fall back to old content if AI fails
+    const fresh = await generatePostsForProduct(post.product_id, inferredSeason);
+    const fbContent = (fresh?.facebookContent || post.facebook_content).replace(/'/g, "''");
+    const ggContent = (fresh?.googleContent || post.google_content).replace(/'/g, "''");
+    const htContent = (fresh?.hashtags || post.hashtags).replace(/'/g, "''");
     await db.execute(sql.raw(`
       INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
-      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
+      VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
     `));
   }
 
@@ -869,9 +898,14 @@ export function startSocialPostScheduler(): void {
             : seasonFromDate(new Date());
           const nextDate = await pickRescheduleDate(post.product_id, inferredSeason);
           const pArr = platforms.map((p: string) => `'${p}'`).join(",");
+          // Generate fresh seasonal content; fall back to old content if AI fails
+          const fresh = await generatePostsForProduct(post.product_id, inferredSeason);
+          const fbContent = (fresh?.facebookContent || post.facebook_content).replace(/'/g, "''");
+          const ggContent = (fresh?.googleContent || post.google_content).replace(/'/g, "''");
+          const htContent = (fresh?.hashtags || post.hashtags).replace(/'/g, "''");
           await db.execute(sql.raw(`
             INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
-            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
+            VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
           `));
         }
         console.log(`[social] Post ${post.id} → ${newStatus}`);
