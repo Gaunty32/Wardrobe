@@ -10,6 +10,7 @@ import {
 } from "../services/google-business.js";
 import { db as _db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { sendEmail } from "../services/email.js";
 
 const router: IRouter = Router();
 
@@ -28,6 +29,31 @@ async function getSetting(key: string): Promise<string | null> {
 async function setSetting(key: string, value: string | null): Promise<void> {
   await db.insert(settingsTable).values({ key, value })
     .onConflictDoUpdate({ target: settingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
+async function notifySocialPostFailure(postId: number, productName: string, platform: string, error: string): Promise<void> {
+  try {
+    const toEmail = await getSetting("smtp_user");
+    if (!toEmail) return;
+    const subject = `⚠️ Social post failed — ${productName} (${platform})`;
+    const html = `
+      <div style="font-family:sans-serif;max-width:520px">
+        <h2 style="color:#dc2626">Social post failed</h2>
+        <p><strong>Product:</strong> ${productName}</p>
+        <p><strong>Platform:</strong> ${platform}</p>
+        <p><strong>Post ID:</strong> ${postId}</p>
+        <p><strong>Error:</strong></p>
+        <pre style="background:#f3f4f6;padding:12px;border-radius:6px;font-size:12px;white-space:pre-wrap">${error}</pre>
+        <p style="margin-top:16px">
+          <a href="https://ordersystem.replit.app/social-posts" style="color:#7c3aed">View social posts →</a>
+        </p>
+        <p style="color:#6b7280;font-size:12px">The post has been marked as failed. You can retry it from the social posts page.</p>
+      </div>`;
+    const text = `Social post failed\n\nProduct: ${productName}\nPlatform: ${platform}\nPost ID: ${postId}\nError: ${error}\n\nView social posts: https://ordersystem.replit.app/social-posts`;
+    await sendEmail({ to: toEmail, subject, html, text });
+  } catch (err) {
+    console.warn("[social] Failed to send failure notification:", err);
+  }
 }
 
 async function getFbSettings() {
@@ -616,12 +642,19 @@ export function startSocialPostScheduler(): void {
         let failed = false; let errMsg = "";
         let fbPostId: string | null = null; let gbpPostName: string | null = null;
 
+        // Look up product name for notifications
+        const [productRow] = (await db.execute(sql`SELECT name FROM products WHERE id = ${post.product_id}`)).rows as any[];
+        const productName = productRow?.name ?? `Product #${post.product_id}`;
+
         if (platforms.includes("facebook") && fbSettings) {
           let message = post.facebook_content;
           if (post.hashtags) message += `\n\n${post.hashtags.split(",").map((h: string) => `#${h.trim()}`).join(" ")}`;
           const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl);
           if (fbResult.ok) fbPostId = fbResult.postId ?? null;
-          else { failed = true; errMsg = fbResult.error ?? "Facebook error"; }
+          else {
+            failed = true; errMsg = fbResult.error ?? "Facebook error";
+            await notifySocialPostFailure(post.id, productName, "Facebook", errMsg);
+          }
         }
 
         if (platforms.includes("google") && gbpStatus.locationName) {
@@ -630,7 +663,10 @@ export function startSocialPostScheduler(): void {
             const googleMessage = post.google_content || post.facebook_content;
             const gbpResult = await publishGbpPost(gbpStatus.locationName, token, googleMessage, imageUrl);
             if (gbpResult.ok) gbpPostName = gbpResult.postName ?? null;
-            else console.warn(`[social] GBP post ${post.id} failed: ${gbpResult.error}`);
+            else {
+              console.warn(`[social] GBP post ${post.id} failed: ${gbpResult.error}`);
+              await notifySocialPostFailure(post.id, productName, "Google Business", gbpResult.error ?? "GBP error");
+            }
           }
         }
 
