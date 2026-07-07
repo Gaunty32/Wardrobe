@@ -2306,7 +2306,7 @@ export default function Settings() {
                   <p className="text-xs text-muted-foreground">Auto-filled when you select a page above, or enter manually.</p>
                 </div>
 
-                <Button type="button" onClick={saveFacebookSettings} disabled={savingFb || !fbPageId || !fbAccessToken} className="gap-2">
+                <Button type="button" onClick={() => saveFacebookSettings()} disabled={savingFb || !fbPageId || !fbAccessToken} className="gap-2">
                   {savingFb ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
                   Save Facebook Settings
                 </Button>
