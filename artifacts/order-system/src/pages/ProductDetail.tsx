@@ -749,6 +749,20 @@ export default function ProductDetail() {
     onError: (e: any) => toast({ title: "AI generation failed", description: e?.message, variant: "destructive" }),
   });
 
+  const pullWooMediaMut = useMutation({
+    mutationFn: () => apiFetch<{ imageUrl: string | null; permalink: string | null }>(`/products/${productId}/pull-woo-media`),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ["social-images", productId] });
+      setSocialDraft(p => ({
+        ...p,
+        productImageUrl: data.imageUrl ?? p.productImageUrl,
+        websiteUrl: data.permalink || p.websiteUrl,
+      }));
+      toast({ title: "Pulled from WooCommerce", description: [data.imageUrl && "image", data.permalink && "page URL"].filter(Boolean).join(" & ") + " updated" });
+    },
+    onError: (e: any) => toast({ title: "WooCommerce pull failed", description: e?.message, variant: "destructive" }),
+  });
+
   const saveSocialMut = useMutation({
     mutationFn: () => {
       const body = JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null });
@@ -2579,6 +2593,23 @@ export default function ProductDetail() {
                       <Label>Hashtags <span className="text-muted-foreground font-normal text-xs">(comma separated, no # symbol needed)</span></Label>
                       <Input value={socialDraft.hashtags} onChange={e => setSocialDraft(p => ({ ...p, hashtags: e.target.value }))} placeholder="brandedmerch, corporategifts, ukbusiness…" />
                     </div>
+
+                    {/* Pull from WooCommerce */}
+                    {product?.wooCommerceId && (
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs h-7"
+                          disabled={pullWooMediaMut.isPending}
+                          onClick={() => pullWooMediaMut.mutate()}
+                        >
+                          <RefreshCw className={`w-3 h-3 ${pullWooMediaMut.isPending ? "animate-spin" : ""}`} />
+                          {pullWooMediaMut.isPending ? "Pulling…" : "Pull image & URL from WooCommerce"}
+                        </Button>
+                      </div>
+                    )}
 
                     {/* Image picker */}
                     {(socialImagesQuery.data?.productImageUrl || socialVariantImages.length > 0) && (

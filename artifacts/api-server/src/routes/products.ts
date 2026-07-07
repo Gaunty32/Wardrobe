@@ -619,6 +619,46 @@ router.get("/products/:id/woo-refresh", async (req, res): Promise<void> => {
   res.json({ ok: true, status: wooProduct.status, regularPrice: wooProduct.regular_price || wooProduct.price, wooId: wooProduct.id });
 });
 
+// ── Pull image + permalink from WooCommerce for social post composer ─────────
+router.get("/products/:id/pull-woo-media", async (req, res): Promise<void> => {
+  const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { id } = parsed.data;
+
+  const [product] = await db.execute(sql`SELECT woo_commerce_id FROM products WHERE id = ${id}`).then(r => (r.rows ?? r) as any[]);
+  if (!product?.woo_commerce_id) { res.status(400).json({ error: "No WooCommerce ID linked to this product." }); return; }
+
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
+
+  const wooBase = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+  const url = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
+  url.searchParams.set("consumer_key", settings.ck);
+  url.searchParams.set("consumer_secret", settings.cs);
+
+  const r = await fetch(url.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  if (!r?.ok) {
+    const txt = await r?.text().catch(() => "") ?? "";
+    res.status(502).json({ error: `WooCommerce returned ${r?.status ?? "error"}: ${txt.slice(0, 200)}` });
+    return;
+  }
+
+  const woo = await r.json() as { images?: Array<{ src: string }>; permalink?: string };
+  const imageUrl: string | null = woo.images?.[0]?.src ?? null;
+  const permalink: string | null = woo.permalink ?? null;
+
+  // Save back to local DB so future social posts and product page pick them up
+  await db.execute(sql`
+    UPDATE products SET
+      image_url = COALESCE(${imageUrl}, image_url),
+      permalink = COALESCE(${permalink}, permalink),
+      updated_at = NOW()
+    WHERE id = ${id}
+  `);
+
+  res.json({ imageUrl, permalink });
+});
+
 // ── Push WooCommerce publish status (draft ↔ publish) ──────────────────────
 router.post("/products/:id/push-woo-status", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);
