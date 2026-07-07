@@ -52,12 +52,10 @@ router.post("/facebook/check-token", async (req, res): Promise<void> => {
       res.status(400).json({ error: msg, isExpired, isUserToken: false });
       return;
     }
-    const pages: { id: string; name: string; category: string; pageToken: string }[] = (fbData.data ?? []).map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      category: p.category ?? "",
-      pageToken: p.access_token ?? "",
-    }));
+    const pages: { id: string; name: string; category: string; pageToken: string }[] = (fbData.data ?? []).map((p: any) => {
+      console.log(`[check-token] page ${p.id} (${p.name}): access_token present=${!!p.access_token}, len=${p.access_token?.length ?? 0}`);
+      return { id: p.id, name: p.name, category: p.category ?? "", pageToken: p.access_token ?? "" };
+    });
     if (pages.length === 0) {
       // Token is valid but it's a User token with no managed pages, or a Page token
       // Try fetching /me to confirm it's a page token
@@ -77,13 +75,32 @@ router.post("/facebook/check-token", async (req, res): Promise<void> => {
   }
 });
 
+/** Try to exchange a user/system-user token for a proper page access token. */
+async function getFreshPageToken(pageId: string, token: string): Promise<string> {
+  try {
+    const url = `https://graph.facebook.com/v20.0/${pageId}?fields=access_token&access_token=${encodeURIComponent(token)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) return token;
+    const data: any = await res.json();
+    if (data.access_token && typeof data.access_token === "string") {
+      console.log(`[fb] exchanged token for page ${pageId}: fresh len=${data.access_token.length}`);
+      return data.access_token;
+    }
+  } catch { /* fall through */ }
+  return token;
+}
+
 /** Post with image via /{page}/photos (shows image prominently). Falls back to /feed if no image. */
 async function publishToFacebook(
   pageId: string, token: string, message: string, imageUrl?: string | null
 ): Promise<{ ok: boolean; postId?: string; error?: string }> {
+  // Always get a fresh page access token in case the stored one is a user/system-user token
+  const pageToken = await getFreshPageToken(pageId, token);
+  console.log(`[fb] publishing to page ${pageId}, stored len=${token.length}, using len=${pageToken.length}`);
+
   if (imageUrl) {
     // Use photos endpoint — creates a photo post with caption
-    const body = new URLSearchParams({ url: imageUrl, caption: message, access_token: token });
+    const body = new URLSearchParams({ url: imageUrl, caption: message, access_token: pageToken });
     const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/photos`, {
       method: "POST",
       body,
@@ -97,11 +114,11 @@ async function publishToFacebook(
     return { ok: true, postId: data.post_id ?? data.id };
   }
 
-  // Plain text post via /feed
+  // Plain text post via /feed — use form-encoded body (more reliable than JSON for FB API)
+  const feedBody = new URLSearchParams({ message, access_token: pageToken });
   const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/feed`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, access_token: token }),
+    body: feedBody,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => res.status.toString());
