@@ -773,21 +773,19 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   ];
   await db.execute(sql.raw(`UPDATE social_posts SET ${updateParts.join(", ")} WHERE id = ${id}`));
 
-  // Auto-reschedule with fresh AI-generated content for the same season.
+  // Auto-reschedule ~4 months out with fresh AI content for whatever season that date lands in.
   if (!anyFailed && post.auto_reschedule) {
-    const inferredSeason: SeasonName = (post.season && post.season in SEASON_MONTHS)
-      ? post.season as SeasonName
-      : seasonFromDate(new Date());
-    const nextDate = await pickRescheduleDate(post.product_id, inferredSeason);
+    const nextDate = await pickRescheduleDate(post.product_id); // standard ~4-month cadence
+    const nextSeason = seasonFromDate(nextDate);
     const pArr = platforms.map((p: string) => `'${p}'`).join(",");
-    // Generate fresh content for the upcoming season; fall back to old content if AI fails
-    const fresh = await generatePostsForProduct(post.product_id, inferredSeason);
+    // Generate content relevant to the season the new post will land in
+    const fresh = await generatePostsForProduct(post.product_id, nextSeason);
     const fbContent = (fresh?.facebookContent || post.facebook_content).replace(/'/g, "''");
     const ggContent = (fresh?.googleContent || post.google_content).replace(/'/g, "''");
     const htContent = (fresh?.hashtags || post.hashtags).replace(/'/g, "''");
     await db.execute(sql.raw(`
       INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
-      VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
+      VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${nextSeason}')
     `));
   }
 
@@ -893,19 +891,17 @@ export function startSocialPostScheduler(): void {
         `));
 
         if (!failed && post.auto_reschedule) {
-          const inferredSeason: SeasonName = (post.season && post.season in SEASON_MONTHS)
-            ? post.season as SeasonName
-            : seasonFromDate(new Date());
-          const nextDate = await pickRescheduleDate(post.product_id, inferredSeason);
+          const nextDate = await pickRescheduleDate(post.product_id); // standard ~4-month cadence
+          const nextSeason = seasonFromDate(nextDate);
           const pArr = platforms.map((p: string) => `'${p}'`).join(",");
-          // Generate fresh seasonal content; fall back to old content if AI fails
-          const fresh = await generatePostsForProduct(post.product_id, inferredSeason);
+          // Generate content relevant to the season the new post will land in
+          const fresh = await generatePostsForProduct(post.product_id, nextSeason);
           const fbContent = (fresh?.facebookContent || post.facebook_content).replace(/'/g, "''");
           const ggContent = (fresh?.googleContent || post.google_content).replace(/'/g, "''");
           const htContent = (fresh?.hashtags || post.hashtags).replace(/'/g, "''");
           await db.execute(sql.raw(`
             INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
-            VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
+            VALUES (${post.product_id}, '${fbContent}', '${ggContent}', '${htContent}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${nextSeason}')
           `));
         }
         console.log(`[social] Post ${post.id} → ${newStatus}`);
