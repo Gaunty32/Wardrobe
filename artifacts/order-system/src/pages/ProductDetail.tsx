@@ -720,10 +720,30 @@ export default function ProductDetail() {
     enabled: !!productId,
   });
 
+  const socialImagesQuery = useQuery<any>({
+    queryKey: ["social-images", productId],
+    queryFn: () => apiFetch(`/products/${productId}/social-images`),
+    enabled: !!productId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (socialImagesQuery.data) {
+      const d = socialImagesQuery.data as any;
+      setSocialVariantImages(d.variantImages ?? []);
+      setSocialDraft(p => ({
+        ...p,
+        productImageUrl: p.productImageUrl ?? d.productImageUrl ?? null,
+        websiteUrl: p.websiteUrl || d.websiteUrl || "",
+      }));
+    }
+  }, [socialImagesQuery.data]);
+
   const generateSocialMut = useMutation({
     mutationFn: () => apiFetch<any>(`/products/${productId}/social-posts/generate`, { method: "POST" }),
     onSuccess: (data: any) => {
-      setSocialDraft(p => ({ ...p, facebookContent: data.facebookContent || "", googleContent: data.googleContent || "", hashtags: data.hashtags || "", productImageUrl: data.productImageUrl ?? p.productImageUrl, editingId: null }));
+      if (data.variantImages?.length) setSocialVariantImages(data.variantImages);
+      setSocialDraft(p => ({ ...p, facebookContent: data.facebookContent || "", googleContent: data.googleContent || "", hashtags: data.hashtags || "", productImageUrl: data.productImageUrl ?? p.productImageUrl, websiteUrl: p.websiteUrl || data.websiteUrl || "", editingId: null }));
       toast({ title: "Post generated — review and save or schedule" });
     },
     onError: (e: any) => toast({ title: "AI generation failed", description: e?.message, variant: "destructive" }),
@@ -731,7 +751,7 @@ export default function ProductDetail() {
 
   const saveSocialMut = useMutation({
     mutationFn: () => {
-      const body = JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl });
+      const body = JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null });
       return socialDraft.editingId
         ? apiFetch<any>(`/social-posts/${socialDraft.editingId}`, { method: "PATCH", body })
         : apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body });
@@ -748,7 +768,7 @@ export default function ProductDetail() {
     mutationFn: async () => {
       let id = socialDraft.editingId;
       if (!id) {
-        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl }) });
+        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null }) });
         id = saved.id;
         setSocialDraft(p => ({ ...p, editingId: id ?? p.editingId }));
       }
@@ -766,7 +786,7 @@ export default function ProductDetail() {
     mutationFn: async () => {
       let id = socialDraft.editingId;
       if (!id) {
-        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl }) });
+        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null }) });
         id = saved.id;
         setSocialDraft(p => ({ ...p, editingId: id ?? p.editingId }));
       }
@@ -960,8 +980,9 @@ export default function ProductDetail() {
   const [socialDraft, setSocialDraft] = useState<{
     facebookContent: string; googleContent: string; hashtags: string;
     platforms: string[]; autoReschedule: boolean; editingId: number | null;
-    productImageUrl: string | null;
-  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: false, editingId: null, productImageUrl: null });
+    productImageUrl: string | null; websiteUrl: string;
+  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: false, editingId: null, productImageUrl: null, websiteUrl: "" });
+  const [socialVariantImages, setSocialVariantImages] = useState<{ colour: string; imageUrl: string }[]>([]);
   const [socialShowPreview, setSocialShowPreview] = useState(false);
 
   const [quoteDialogOpen, setQuoteDialogOpen] = useState(false);
@@ -2469,7 +2490,7 @@ export default function ProductDetail() {
                     </div>
                     <div className="flex items-center gap-2">
                       {socialDraft.editingId && (
-                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null, productImageUrl: null })}>
+                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft(p => ({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null, productImageUrl: p.productImageUrl, websiteUrl: p.websiteUrl }))}>
                           <X className="w-3 h-3" /> New draft
                         </Button>
                       )}
@@ -2557,6 +2578,66 @@ export default function ProductDetail() {
                     <div className="grid gap-2">
                       <Label>Hashtags <span className="text-muted-foreground font-normal text-xs">(comma separated, no # symbol needed)</span></Label>
                       <Input value={socialDraft.hashtags} onChange={e => setSocialDraft(p => ({ ...p, hashtags: e.target.value }))} placeholder="brandedmerch, corporategifts, ukbusiness…" />
+                    </div>
+
+                    {/* Image picker */}
+                    {(socialImagesQuery.data?.productImageUrl || socialVariantImages.length > 0) && (
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-1.5">
+                          <span>Product Image</span>
+                          <span className="text-muted-foreground font-normal text-xs">(select which image to post with)</span>
+                        </Label>
+                        <div className="flex flex-wrap gap-2">
+                          {/* No image option */}
+                          <button
+                            type="button"
+                            onClick={() => setSocialDraft(p => ({ ...p, productImageUrl: null }))}
+                            className={`w-14 h-14 rounded border-2 flex items-center justify-center text-xs text-muted-foreground transition-all ${!socialDraft.productImageUrl ? "border-blue-500 bg-blue-50" : "border-border/50 bg-muted/30 hover:border-border"}`}
+                          >
+                            None
+                          </button>
+                          {/* Main product image */}
+                          {socialImagesQuery.data?.productImageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setSocialDraft(p => ({ ...p, productImageUrl: socialImagesQuery.data.productImageUrl }))}
+                              className={`relative w-14 h-14 rounded border-2 overflow-hidden transition-all ${socialDraft.productImageUrl === socialImagesQuery.data.productImageUrl ? "border-blue-500" : "border-border/50 hover:border-border"}`}
+                              title="Main product image"
+                            >
+                              <img src={socialImagesQuery.data.productImageUrl} alt="Main" className="w-full h-full object-cover" />
+                            </button>
+                          )}
+                          {/* Variant colour images */}
+                          {socialVariantImages.map(v => (
+                            <button
+                              key={v.colour}
+                              type="button"
+                              onClick={() => setSocialDraft(p => ({ ...p, productImageUrl: v.imageUrl }))}
+                              className={`relative w-14 h-14 rounded border-2 overflow-hidden transition-all ${socialDraft.productImageUrl === v.imageUrl ? "border-blue-500" : "border-border/50 hover:border-border"}`}
+                              title={v.colour}
+                            >
+                              <img src={v.imageUrl} alt={v.colour} className="w-full h-full object-cover" />
+                              <span className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[9px] px-0.5 truncate text-center leading-4">{v.colour}</span>
+                            </button>
+                          ))}
+                        </div>
+                        {socialDraft.productImageUrl && (
+                          <p className="text-xs text-muted-foreground">Selected image will be posted to Facebook. The product URL below will appear as a link in the caption.</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Website URL */}
+                    <div className="grid gap-2">
+                      <Label className="flex items-center gap-1.5">
+                        <span>Product Page URL</span>
+                        <span className="text-muted-foreground font-normal text-xs">(appended to the post so people can shop)</span>
+                      </Label>
+                      <Input
+                        value={socialDraft.websiteUrl}
+                        onChange={e => setSocialDraft(p => ({ ...p, websiteUrl: e.target.value }))}
+                        placeholder="https://selectuniforms.co.uk/product/…"
+                      />
                     </div>
 
                     {/* Platform toggles */}
@@ -2721,6 +2802,7 @@ export default function ProductDetail() {
                                 autoReschedule: post.auto_reschedule || false,
                                 editingId: post.id,
                                 productImageUrl: post.product_image_url || null,
+                                websiteUrl: post.website_url || "",
                               })}>
                                 <Edit2 className="w-3 h-3" /> Edit
                               </Button>

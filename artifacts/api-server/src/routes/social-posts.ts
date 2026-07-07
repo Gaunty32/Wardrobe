@@ -116,17 +116,21 @@ async function getFreshPageToken(pageId: string, token: string): Promise<string>
   return token;
 }
 
-/** Post with image via /{page}/photos (shows image prominently). Falls back to /feed if no image. */
+/** Post with image via /{page}/photos (shows image prominently). Falls back to /feed if no image.
+ *  websiteUrl is appended to the caption/message so Facebook renders it as a clickable link. */
 async function publishToFacebook(
-  pageId: string, token: string, message: string, imageUrl?: string | null
+  pageId: string, token: string, message: string, imageUrl?: string | null, websiteUrl?: string | null
 ): Promise<{ ok: boolean; postId?: string; error?: string }> {
   // Always get a fresh page access token in case the stored one is a user/system-user token
   const pageToken = await getFreshPageToken(pageId, token);
   console.log(`[fb] publishing to page ${pageId}, stored len=${token.length}, using len=${pageToken.length}`);
 
+  // Append website URL to the message text so Facebook renders it as a tappable link
+  const fullMessage = websiteUrl ? `${message}\n\n${websiteUrl}` : message;
+
   if (imageUrl) {
-    // Use photos endpoint — creates a photo post with caption
-    const body = new URLSearchParams({ url: imageUrl, caption: message, access_token: pageToken });
+    // Use photos endpoint — creates a photo post with caption (including the URL)
+    const body = new URLSearchParams({ url: imageUrl, caption: fullMessage, access_token: pageToken });
     const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/photos`, {
       method: "POST",
       body,
@@ -140,8 +144,8 @@ async function publishToFacebook(
     return { ok: true, postId: data.post_id ?? data.id };
   }
 
-  // Plain text post via /feed — use form-encoded body (more reliable than JSON for FB API)
-  const feedBody = new URLSearchParams({ message, access_token: pageToken });
+  // Plain text / link post via /feed
+  const feedBody = new URLSearchParams({ message: fullMessage, access_token: pageToken });
   const res = await fetch(`https://graph.facebook.com/v20.0/${pageId}/feed`, {
     method: "POST",
     body: feedBody,
@@ -317,6 +321,27 @@ router.get("/products/:productId/social-posts", async (req, res): Promise<void> 
   res.json((rows.rows ?? rows) as any[]);
 });
 
+// ── Product image data for social post composer ───────────────────────────────
+
+router.get("/products/:productId/social-images", async (req, res): Promise<void> => {
+  const pid = parseInt(req.params.productId, 10);
+  if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
+
+  const [prod] = (await db.execute(sql`SELECT image_url, permalink FROM products WHERE id = ${pid}`)).rows as any[];
+  const variantRows = (await db.execute(sql`
+    SELECT DISTINCT ON (colour) colour, image_url
+    FROM product_variants
+    WHERE product_id = ${pid} AND image_url IS NOT NULL AND image_url != ''
+    ORDER BY colour, id
+  `)).rows as any[];
+
+  res.json({
+    productImageUrl: prod?.image_url ?? null,
+    websiteUrl: prod?.permalink ?? null,
+    variantImages: variantRows.map((r: any) => ({ colour: r.colour, imageUrl: r.image_url })),
+  });
+});
+
 // ── AI generate post content ──────────────────────────────────────────────────
 
 router.post("/products/:productId/social-posts/generate", async (req, res): Promise<void> => {
@@ -324,7 +349,7 @@ router.post("/products/:productId/social-posts/generate", async (req, res): Prom
   if (!pid) { res.status(400).json({ error: "Invalid productId" }); return; }
 
   const [product] = (await db.execute(sql`
-    SELECT p.name, p.sku, p.description, p.unit_price, p.category, p.image_url,
+    SELECT p.name, p.sku, p.description, p.unit_price, p.category, p.image_url, p.permalink,
            p.guidance_best_for, p.guidance_not_ideal_for, p.guidance_staff_quotes,
            p.guidance_badges, p.guidance_tags, p.guidance_value_rating,
            p.guidance_durability_rating, p.guidance_smart_rating,
@@ -332,6 +357,14 @@ router.post("/products/:productId/social-posts/generate", async (req, res): Prom
     FROM products p
     LEFT JOIN suppliers s ON s.id = p.supplier_id
     WHERE p.id = ${pid}
+  `)).rows as any[];
+
+  // Fetch variant colour images for image picker
+  const variantImgRows = (await db.execute(sql`
+    SELECT DISTINCT ON (colour) colour, image_url
+    FROM product_variants
+    WHERE product_id = ${pid} AND image_url IS NOT NULL AND image_url != ''
+    ORDER BY colour, id
   `)).rows as any[];
 
   if (!product) { res.status(404).json({ error: "Product not found" }); return; }
@@ -396,6 +429,8 @@ Respond ONLY with valid JSON in this exact format:
     googleContent: parsed.google || "",
     hashtags: parsed.hashtags || "",
     productImageUrl: product.image_url || null,
+    websiteUrl: product.permalink || null,
+    variantImages: variantImgRows.map((r: any) => ({ colour: r.colour, imageUrl: r.image_url })),
   });
 });
 
@@ -413,24 +448,27 @@ router.post("/products/:productId/social-posts", async (req, res): Promise<void>
     autoReschedule: z.boolean().default(true),
     scheduledAt: z.string().datetime().optional().nullable(),
     productImageUrl: z.string().url().optional().nullable(),
+    websiteUrl: z.string().url().optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { facebookContent, googleContent, hashtags, platforms, autoReschedule, scheduledAt, productImageUrl } = parsed.data;
+  const { facebookContent, googleContent, hashtags, platforms, autoReschedule, scheduledAt, productImageUrl, websiteUrl } = parsed.data;
 
   // If no image provided, fetch from product
   let imageUrl = productImageUrl;
-  if (!imageUrl) {
-    const [prod] = (await db.execute(sql`SELECT image_url FROM products WHERE id = ${pid}`)).rows as any[];
-    imageUrl = prod?.image_url ?? null;
+  let siteUrl = websiteUrl;
+  if (!imageUrl || !siteUrl) {
+    const [prod] = (await db.execute(sql`SELECT image_url, permalink FROM products WHERE id = ${pid}`)).rows as any[];
+    if (!imageUrl) imageUrl = prod?.image_url ?? null;
+    if (!siteUrl) siteUrl = prod?.permalink ?? null;
   }
 
   const status = scheduledAt ? "scheduled" : "draft";
   const platformsSql = sql.raw(`ARRAY[${platforms.map(p => `'${p.replace(/'/g, "")}'`).join(",")}]::text[]`);
 
   const result = await db.execute(sql`
-    INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url)
-    VALUES (${pid}, ${facebookContent}, ${googleContent}, ${hashtags}, ${platformsSql}, ${status}, ${scheduledAt ?? null}, ${autoReschedule}, ${imageUrl ?? null})
+    INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
+    VALUES (${pid}, ${facebookContent}, ${googleContent}, ${hashtags}, ${platformsSql}, ${status}, ${scheduledAt ?? null}, ${autoReschedule}, ${imageUrl ?? null}, ${siteUrl ?? null})
     RETURNING *
   `);
   res.status(201).json((result.rows[0] ?? result) as any);
@@ -452,6 +490,7 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
     scheduledAt: z.string().datetime().optional().nullable(),
     newActivity: z.boolean().optional(),
     productImageUrl: z.string().url().optional().nullable(),
+    websiteUrl: z.string().url().optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -466,6 +505,7 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
   if (d.scheduledAt !== undefined) sets.push(`scheduled_at = ${d.scheduledAt ? `'${d.scheduledAt}'` : "NULL"}`);
   if (d.newActivity !== undefined) sets.push(`new_activity = ${d.newActivity}`);
   if (d.productImageUrl !== undefined) sets.push(`product_image_url = ${d.productImageUrl ? `'${d.productImageUrl.replace(/'/g, "''")}'` : "NULL"}`);
+  if (d.websiteUrl !== undefined) sets.push(`website_url = ${d.websiteUrl ? `'${d.websiteUrl.replace(/'/g, "''")}'` : "NULL"}`);
 
   await db.execute(sql.raw(`UPDATE social_posts SET ${sets.join(", ")} WHERE id = ${id}`));
   const rows = await db.execute(sql`SELECT * FROM social_posts WHERE id = ${id}`);
@@ -525,6 +565,7 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   const gbpStatus = await getGbpStatus();
   const platforms: string[] = post.platforms ?? ["facebook", "google"];
   const imageUrl: string | null = post.product_image_url ?? null;
+  const websiteUrl: string | null = post.website_url ?? null;
 
   const results: Record<string, any> = {};
   let anyFailed = false;
@@ -540,7 +581,7 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
       results.facebook = { ok: false, error: "Facebook not configured — add Page ID and Access Token in Settings → Social Media" };
       anyFailed = true;
     } else {
-      const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl);
+      const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl, websiteUrl);
       results.facebook = fbResult;
       if (fbResult.ok) fbPostId = fbResult.postId ?? null;
       else anyFailed = true;
@@ -581,8 +622,8 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
     const nextDate = rescheduleDate();
     const pArr = platforms.map((p: string) => `'${p}'`).join(",");
     await db.execute(sql.raw(`
-      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url)
-      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"})
+      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
+      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"})
     `));
   }
 
@@ -639,6 +680,7 @@ export function startSocialPostScheduler(): void {
         const gbpStatus = await getGbpStatus();
         const platforms: string[] = post.platforms ?? ["facebook", "google"];
         const imageUrl: string | null = post.product_image_url ?? null;
+        const postWebsiteUrl: string | null = post.website_url ?? null;
         let failed = false; let errMsg = "";
         let fbPostId: string | null = null; let gbpPostName: string | null = null;
 
@@ -649,7 +691,7 @@ export function startSocialPostScheduler(): void {
         if (platforms.includes("facebook") && fbSettings) {
           let message = post.facebook_content;
           if (post.hashtags) message += `\n\n${post.hashtags.split(",").map((h: string) => `#${h.trim()}`).join(" ")}`;
-          const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl);
+          const fbResult = await publishToFacebook(fbSettings.facebook_page_id, fbSettings.facebook_page_access_token, message, imageUrl, postWebsiteUrl);
           if (fbResult.ok) fbPostId = fbResult.postId ?? null;
           else {
             failed = true; errMsg = fbResult.error ?? "Facebook error";
@@ -686,8 +728,8 @@ export function startSocialPostScheduler(): void {
           const nextDate = rescheduleDate();
           const pArr = platforms.map((p: string) => `'${p}'`).join(",");
           await db.execute(sql.raw(`
-            INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url)
-            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"})
+            INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
+            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"})
           `));
         }
         console.log(`[social] Post ${post.id} → ${newStatus}`);
