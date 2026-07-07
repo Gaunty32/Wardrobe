@@ -272,10 +272,55 @@ async function pickAvailableDate(withinDays: number, productId?: number, startOf
   return new Date(origin + (withinDays + 2) * 86_400_000);
 }
 
-/** Pick a smart reschedule date ~4 months (±3 weeks) from now applying the same scheduling rules. */
-async function pickRescheduleDate(productId?: number): Promise<Date> {
-  const targetDays = Math.round(3.5 * 30.44 + Math.random() * (30.44));  // 3.5–4.5 months in days
-  // Search in a ±21-day window centred on the target, starting 3 weeks before it
+type SeasonName = "spring" | "summer" | "autumn" | "winter";
+const SEASON_MONTHS: Record<SeasonName, number[]> = {
+  spring: [3, 4, 5],
+  summer: [6, 7, 8],
+  autumn: [9, 10, 11],
+  winter: [12, 1, 2],
+};
+
+/**
+ * Finds the next calendar window for the given season that starts at least 30 days from now.
+ * Returns startOffsetDays (days from now to window start) and withinDays (length of window).
+ */
+function nextSeasonWindow(season: SeasonName): { startOffsetDays: number; withinDays: number } {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const minDate = new Date(today.getTime() + 30 * 86_400_000); // at least 30 days from now
+  const months = SEASON_MONTHS[season];
+
+  // Scan forward month by month (up to 25 months ahead) to find the first season month >= minDate
+  for (let m = 0; m < 25; m++) {
+    const probe = new Date(minDate.getFullYear(), minDate.getMonth() + m, 1);
+    if (!months.includes(probe.getMonth() + 1)) continue;
+
+    // Found the first season month — now extend to the full contiguous season block
+    const seasonStart = probe < minDate ? new Date(minDate) : new Date(probe);
+    let seasonEnd = new Date(probe.getFullYear(), probe.getMonth() + 1, 0); // last day of this month
+    let next = new Date(probe.getFullYear(), probe.getMonth() + 1, 1);
+    while (months.includes(next.getMonth() + 1)) {
+      seasonEnd = new Date(next.getFullYear(), next.getMonth() + 1, 0);
+      next = new Date(next.getFullYear(), next.getMonth() + 1, 1);
+    }
+
+    const startOffsetDays = Math.ceil((seasonStart.getTime() - today.getTime()) / 86_400_000);
+    const withinDays = Math.max(Math.ceil((seasonEnd.getTime() - seasonStart.getTime()) / 86_400_000), 14);
+    return { startOffsetDays, withinDays };
+  }
+
+  // Fallback: ~4 months with 42-day window
+  return { startOffsetDays: Math.round(3.5 * 30.44) - 21, withinDays: 42 };
+}
+
+/** Pick a smart reschedule date applying scheduling rules.
+ *  If a season is provided the date is confined to the next occurrence of that season;
+ *  otherwise it targets ~4 months (±3 weeks) from now. */
+async function pickRescheduleDate(productId?: number, season?: string | null): Promise<Date> {
+  if (season && season in SEASON_MONTHS) {
+    const { startOffsetDays, withinDays } = nextSeasonWindow(season as SeasonName);
+    return pickAvailableDate(withinDays, productId, startOffsetDays);
+  }
+  const targetDays = Math.round(3.5 * 30.44 + Math.random() * 30.44); // 3.5–4.5 months
   return pickAvailableDate(42, productId, targetDays - 21);
 }
 
@@ -522,10 +567,11 @@ router.post("/products/:productId/social-posts", async (req, res): Promise<void>
     scheduledAt: z.string().datetime().optional().nullable(),
     productImageUrl: z.string().url().optional().nullable(),
     websiteUrl: z.string().url().optional().nullable(),
+    season: z.enum(["spring", "summer", "autumn", "winter"]).optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { facebookContent, googleContent, hashtags, platforms, autoReschedule, scheduledAt, productImageUrl, websiteUrl } = parsed.data;
+  const { facebookContent, googleContent, hashtags, platforms, autoReschedule, scheduledAt, productImageUrl, websiteUrl, season } = parsed.data;
 
   // If no image provided, fetch from product
   let imageUrl = productImageUrl;
@@ -540,8 +586,8 @@ router.post("/products/:productId/social-posts", async (req, res): Promise<void>
   const platformsSql = sql.raw(`ARRAY[${platforms.map(p => `'${p.replace(/'/g, "")}'`).join(",")}]::text[]`);
 
   const result = await db.execute(sql`
-    INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
-    VALUES (${pid}, ${facebookContent}, ${googleContent}, ${hashtags}, ${platformsSql}, ${status}, ${scheduledAt ?? null}, ${autoReschedule}, ${imageUrl ?? null}, ${siteUrl ?? null})
+    INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
+    VALUES (${pid}, ${facebookContent}, ${googleContent}, ${hashtags}, ${platformsSql}, ${status}, ${scheduledAt ?? null}, ${autoReschedule}, ${imageUrl ?? null}, ${siteUrl ?? null}, ${season ?? null})
     RETURNING *
   `);
   res.status(201).json((result.rows[0] ?? result) as any);
@@ -564,6 +610,7 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
     newActivity: z.boolean().optional(),
     productImageUrl: z.string().url().optional().nullable(),
     websiteUrl: z.string().url().optional().nullable(),
+    season: z.enum(["spring", "summer", "autumn", "winter"]).optional().nullable(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -579,6 +626,7 @@ router.patch("/social-posts/:id", async (req, res): Promise<void> => {
   if (d.newActivity !== undefined) sets.push(`new_activity = ${d.newActivity}`);
   if (d.productImageUrl !== undefined) sets.push(`product_image_url = ${d.productImageUrl ? `'${d.productImageUrl.replace(/'/g, "''")}'` : "NULL"}`);
   if (d.websiteUrl !== undefined) sets.push(`website_url = ${d.websiteUrl ? `'${d.websiteUrl.replace(/'/g, "''")}'` : "NULL"}`);
+  if ("season" in d) sets.push(`season = ${d.season ? `'${d.season}'` : "NULL"}`);
 
   await db.execute(sql.raw(`UPDATE social_posts SET ${sets.join(", ")} WHERE id = ${id}`));
   const rows = await db.execute(sql`SELECT * FROM social_posts WHERE id = ${id}`);
@@ -690,13 +738,14 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   ];
   await db.execute(sql.raw(`UPDATE social_posts SET ${updateParts.join(", ")} WHERE id = ${id}`));
 
-  // Auto-reschedule ~6 months from now with smart date picking
+  // Auto-reschedule with smart date picking, respecting season if set
   if (!anyFailed && post.auto_reschedule) {
-    const nextDate = await pickRescheduleDate(post.product_id);
+    const nextDate = await pickRescheduleDate(post.product_id, post.season);
     const pArr = platforms.map((p: string) => `'${p}'`).join(",");
+    const seasonVal = post.season ? `'${post.season}'` : "NULL";
     await db.execute(sql.raw(`
-      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
-      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"})
+      INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
+      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, ${seasonVal})
     `));
   }
 
@@ -802,11 +851,12 @@ export function startSocialPostScheduler(): void {
         `));
 
         if (!failed && post.auto_reschedule) {
-          const nextDate = await pickRescheduleDate(post.product_id);
+          const nextDate = await pickRescheduleDate(post.product_id, post.season);
           const pArr = platforms.map((p: string) => `'${p}'`).join(",");
+          const seasonVal = post.season ? `'${post.season}'` : "NULL";
           await db.execute(sql.raw(`
-            INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url)
-            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"})
+            INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
+            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, ${seasonVal})
           `));
         }
         console.log(`[social] Post ${post.id} → ${newStatus}`);

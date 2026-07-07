@@ -779,7 +779,7 @@ export default function ProductDetail() {
 
   const saveSocialMut = useMutation({
     mutationFn: () => {
-      const body = JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null });
+      const body = JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null, season: socialDraft.season || null });
       return socialDraft.editingId
         ? apiFetch<any>(`/social-posts/${socialDraft.editingId}`, { method: "PATCH", body })
         : apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body });
@@ -796,7 +796,7 @@ export default function ProductDetail() {
     mutationFn: async () => {
       let id = socialDraft.editingId;
       if (!id) {
-        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null }) });
+        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null, season: socialDraft.season || null }) });
         id = saved.id;
         setSocialDraft(p => ({ ...p, editingId: id ?? p.editingId }));
       }
@@ -814,7 +814,7 @@ export default function ProductDetail() {
     mutationFn: async () => {
       let id = socialDraft.editingId;
       if (!id) {
-        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null }) });
+        const saved = await apiFetch<any>(`/products/${productId}/social-posts`, { method: "POST", body: JSON.stringify({ facebookContent: socialDraft.facebookContent, googleContent: socialDraft.googleContent, hashtags: socialDraft.hashtags, platforms: socialDraft.platforms, autoReschedule: socialDraft.autoReschedule, productImageUrl: socialDraft.productImageUrl, websiteUrl: socialDraft.websiteUrl || null, season: socialDraft.season || null }) });
         id = saved.id;
         setSocialDraft(p => ({ ...p, editingId: id ?? p.editingId }));
       }
@@ -1008,8 +1008,8 @@ export default function ProductDetail() {
   const [socialDraft, setSocialDraft] = useState<{
     facebookContent: string; googleContent: string; hashtags: string;
     platforms: string[]; autoReschedule: boolean; editingId: number | null;
-    productImageUrl: string | null; websiteUrl: string;
-  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: true, editingId: null, productImageUrl: null, websiteUrl: "" });
+    productImageUrl: string | null; websiteUrl: string; season: string | null;
+  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: true, editingId: null, productImageUrl: null, websiteUrl: "", season: null });
   const [socialVariantImages, setSocialVariantImages] = useState<{ colour: string; imageUrl: string }[]>([]);
   const [socialShowPreview, setSocialShowPreview] = useState(false);
 
@@ -2518,7 +2518,7 @@ export default function ProductDetail() {
                     </div>
                     <div className="flex items-center gap-2">
                       {socialDraft.editingId && (
-                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft(p => ({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null, productImageUrl: p.productImageUrl, websiteUrl: p.websiteUrl }))}>
+                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft(p => ({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null, productImageUrl: p.productImageUrl, websiteUrl: p.websiteUrl, season: null }))}>
                           <X className="w-3 h-3" /> New draft
                         </Button>
                       )}
@@ -2703,6 +2703,34 @@ export default function ProductDetail() {
                       <span>Auto-reschedule every ~4 months after publishing</span>
                     </label>
 
+                    {/* Season restriction */}
+                    {socialDraft.autoReschedule && (
+                      <div className="grid gap-2">
+                        <Label className="flex items-center gap-1.5 text-sm">
+                          <span>Reschedule season</span>
+                          <span className="text-muted-foreground font-normal text-xs">(only reschedule within this season)</span>
+                        </Label>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            { value: null, label: "All year" },
+                            { value: "spring", label: "🌱 Spring (Mar–May)" },
+                            { value: "summer", label: "☀️ Summer (Jun–Aug)" },
+                            { value: "autumn", label: "🍂 Autumn (Sep–Nov)" },
+                            { value: "winter", label: "❄️ Winter (Dec–Feb)" },
+                          ].map(opt => (
+                            <button
+                              key={String(opt.value)}
+                              type="button"
+                              onClick={() => setSocialDraft(p => ({ ...p, season: opt.value }))}
+                              className={`px-3 py-1 rounded-full text-xs border transition-all ${socialDraft.season === opt.value ? "bg-blue-600 text-white border-blue-600" : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"}`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Action buttons */}
                     <div className="flex items-center gap-3 pt-2 border-t border-border/50">
                       <Button variant="outline" onClick={() => saveSocialMut.mutate()} disabled={saveSocialMut.isPending || !socialDraft.facebookContent} className="gap-2">
@@ -2848,6 +2876,7 @@ export default function ProductDetail() {
                                 editingId: post.id,
                                 productImageUrl: post.product_image_url || null,
                                 websiteUrl: post.website_url || "",
+                                season: post.season || null,
                               })}>
                                 <Edit2 className="w-3 h-3" /> Edit
                               </Button>
