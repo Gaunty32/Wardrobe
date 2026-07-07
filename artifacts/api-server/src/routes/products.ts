@@ -15,6 +15,43 @@ import {
 const BESPOKE_TIES_CATEGORY = "Bespoke Ties";
 
 /**
+ * Fire-and-forget helper: push one or more fields to WooCommerce for a product
+ * that is already published. Silently no-ops if WooCommerce is not configured or the
+ * product has no woo_commerce_id. Errors are logged to stderr only — the caller's HTTP
+ * response is never blocked or failed by this call.
+ */
+async function pushFieldsToWoo(productId: number, fields: Record<string, unknown>): Promise<void> {
+  try {
+    const [product] = await db.execute(sql`
+      SELECT woo_commerce_id, woo_status FROM products WHERE id = ${productId}
+    `).then(r => (r.rows ?? r) as any[]);
+    if (!product?.woo_commerce_id || product.woo_status !== "publish") return;
+
+    const settings = await getWooSettings();
+    if (!settings) return;
+
+    const wooBase = settings.baseUrl.replace(/\/$/, "").replace(/^http:\/\//i, "https://");
+    const url = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}`);
+    url.searchParams.set("consumer_key", settings.ck);
+    url.searchParams.set("consumer_secret", settings.cs);
+
+    const res = await fetch(url.toString(), {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(fields),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.status.toString());
+      console.error(`[woo] pushFieldsToWoo product ${productId} error ${res.status}: ${text}`);
+    } else {
+      console.log(`[woo] pushed ${Object.keys(fields).join(", ")} for product ${productId}`);
+    }
+  } catch (err) {
+    console.error(`[woo] pushFieldsToWoo product ${productId}:`, err);
+  }
+}
+
+/**
  * Fire-and-forget helper: push an updated unit price to WooCommerce for a product
  * that is already published. Silently no-ops if WooCommerce is not configured or the
  * product has no woo_commerce_id. Errors are logged to stderr only — the caller's HTTP
@@ -860,10 +897,12 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
     `);
   }
 
-  // If the unit price changed, push the update to WooCommerce in the background.
-  // This is fire-and-forget — response is never delayed or blocked by WooCommerce latency.
+  // Push changes to WooCommerce in the background (fire-and-forget).
   if (parsed.data.unitPrice !== undefined) {
     void pushPriceToWoo(product.id, parseFloat(String(product.unitPrice ?? "0")).toFixed(2));
+  }
+  if (parsed.data.name !== undefined && parsed.data.name) {
+    void pushFieldsToWoo(product.id, { name: parsed.data.name });
   }
 
   res.json(fmtProduct(product));
