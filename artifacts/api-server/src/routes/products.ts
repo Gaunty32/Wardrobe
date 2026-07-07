@@ -647,7 +647,7 @@ router.get("/products/:id/pull-woo-media", async (req, res): Promise<void> => {
   const imageUrl: string | null = woo.images?.[0]?.src ?? null;
   const permalink: string | null = woo.permalink ?? null;
 
-  // Save back to local DB so future social posts and product page pick them up
+  // Save main image + permalink back to local DB
   await db.execute(sql`
     UPDATE products SET
       image_url = COALESCE(${imageUrl}, image_url),
@@ -656,7 +656,39 @@ router.get("/products/:id/pull-woo-media", async (req, res): Promise<void> => {
     WHERE id = ${id}
   `);
 
-  res.json({ imageUrl, permalink });
+  // Also pull variation images from WooCommerce and save to product_variants
+  const varUrl = new URL(`${wooBase}/wp-json/wc/v3/products/${product.woo_commerce_id}/variations`);
+  varUrl.searchParams.set("consumer_key", settings.ck);
+  varUrl.searchParams.set("consumer_secret", settings.cs);
+  varUrl.searchParams.set("per_page", "100");
+  const varR = await fetch(varUrl.toString(), { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+  const variantImages: Array<{ colour: string; imageUrl: string }> = [];
+  if (varR?.ok) {
+    const variations = await varR.json() as Array<{
+      attributes?: Array<{ name: string; option: string }>;
+      image?: { src?: string };
+    }>;
+    for (const v of variations) {
+      const imgSrc = v.image?.src;
+      if (!imgSrc) continue;
+      const colourAttr = v.attributes?.find(a =>
+        ["colour", "color", "pa_colour", "pa_color"].includes(a.name.toLowerCase())
+      );
+      const colour = colourAttr?.option;
+      if (!colour) continue;
+      // Update matching variants in our DB (match by product_id + colour, case-insensitive)
+      await db.execute(sql`
+        UPDATE product_variants
+        SET image_url = ${imgSrc}
+        WHERE product_id = ${id}
+          AND LOWER(colour) = LOWER(${colour})
+          AND (image_url IS NULL OR image_url = '' OR image_url != ${imgSrc})
+      `);
+      variantImages.push({ colour, imageUrl: imgSrc });
+    }
+  }
+
+  res.json({ imageUrl, permalink, variantImages });
 });
 
 // ── Push WooCommerce publish status (draft ↔ publish) ──────────────────────

@@ -750,15 +750,29 @@ export default function ProductDetail() {
   });
 
   const pullWooMediaMut = useMutation({
-    mutationFn: () => apiFetch<{ imageUrl: string | null; permalink: string | null }>(`/products/${productId}/pull-woo-media`),
+    mutationFn: () => apiFetch<{ imageUrl: string | null; permalink: string | null; variantImages?: { colour: string; imageUrl: string }[] }>(`/products/${productId}/pull-woo-media`),
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["social-images", productId] });
+      // Update variant images in state so they don't disappear after the query refetch
+      if (data.variantImages?.length) {
+        setSocialVariantImages(prev => {
+          const merged = [...prev];
+          for (const v of data.variantImages!) {
+            const idx = merged.findIndex(m => m.colour.toLowerCase() === v.colour.toLowerCase());
+            if (idx >= 0) merged[idx] = v;
+            else merged.push(v);
+          }
+          return merged;
+        });
+      }
       setSocialDraft(p => ({
         ...p,
         productImageUrl: data.imageUrl ?? p.productImageUrl,
         websiteUrl: data.permalink || p.websiteUrl,
       }));
-      toast({ title: "Pulled from WooCommerce", description: [data.imageUrl && "image", data.permalink && "page URL"].filter(Boolean).join(" & ") + " updated" });
+      // Invalidate after state is updated so the refetch confirms what we've applied
+      qc.invalidateQueries({ queryKey: ["social-images", productId] });
+      const parts = [data.imageUrl && "image", data.permalink && "page URL", data.variantImages?.length && `${data.variantImages.length} variant image(s)`].filter(Boolean);
+      toast({ title: "Pulled from WooCommerce", description: parts.join(", ") + " updated" });
     },
     onError: (e: any) => toast({ title: "WooCommerce pull failed", description: e?.message, variant: "destructive" }),
   });
