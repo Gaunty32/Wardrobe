@@ -750,76 +750,64 @@ router.post("/products/:productId/generate-image-prompt", async (req, res): Prom
     productName: z.string().min(1),
     garmentType: z.string().min(1),
     genderFit: z.enum(["Male", "Female", "Unisex"]),
-    category: z.enum(["Trade", "Corporate", "Hospitality", "Outerwear"]),
+    category: z.enum(["Trade", "Corporate", "Hospitality", "Hi-Vis", "Healthcare", "Outerwear"]),
     heroColourway: z.string().min(1),
     availableColourways: z.array(z.string()).min(1),
+    numThumbnails: z.number().int().min(8).max(10).default(9),
+    logoText: z.string().default("YOUR LOGO HERE"),
     imageSize: z.string().default("1000px x 1000px"),
     notes: z.string().optional(),
+    generateAnimation: z.boolean().default(false),
   }).safeParse(req.body);
 
   if (!bodyParse.success) { res.status(400).json({ error: bodyParse.error.message }); return; }
-  const { productName, garmentType, genderFit, category, heroColourway, availableColourways, imageSize, notes } = bodyParse.data;
+  const { productName, garmentType, genderFit, category, heroColourway, availableColourways, numThumbnails, logoText, imageSize, notes, generateAnimation } = bodyParse.data;
 
   const categoryEnvs: Record<string, string> = {
-    Trade: "commercial vans, workshops, warehouses, construction sites, landscaping yards, delivery depots",
-    Corporate: "modern offices, hotel reception desks, conference rooms, golf days, business meetings",
-    Hospitality: "hotel lobbies, café counters, restaurant floors, event venues, customer-facing hospitality settings",
-    Outerwear: "outdoor construction sites, delivery routes, facilities management sites, spring and autumn site visits",
+    Trade: "vans, workshops, warehouses, construction, landscaping, delivery, engineering, plumbing, electrical and site environments",
+    Corporate: "offices, hotel reception, meetings, conferences, golf days, networking, front of house and business environments",
+    Hospitality: "cafés, restaurants, hotels, bars, catering, reception and events",
+    "Hi-Vis": "roads, rail, utilities, construction, civil engineering, traffic management and site work",
+    Healthcare: "care homes, clinics, reception, cleaning, support work and healthcare environments",
+    Outerwear: "spring, autumn, outdoor work, site visits, logistics, deliveries and facilities management",
   };
 
-  const genderRules: Record<string, string> = {
-    Male: "ALL models must be male. No female models. Varied ages (20s–50s), ethnicities, body types and hairstyles.",
-    Female: "ALL models must be female. No male models. Varied ages (20s–50s), ethnicities, body types and hairstyles.",
-    Unisex: "Mix of male and female models. Varied ages (20s–50s), ethnicities, body types and hairstyles.",
+  const categoryAnimBg: Record<string, string> = {
+    Trade: "a vehicle in the background moves slightly, tools rest nearby",
+    Corporate: "people in background pass through a lobby or corridor",
+    Hospitality: "coffee steam rises, background guests move gently",
+    "Hi-Vis": "an amber beacon may flash softly in the background",
+    Healthcare: "a door opens gently in the background",
+    Outerwear: "leaves drift slightly in a breeze in the background",
   };
 
-  // Thumbnail colourways excluding the hero (used in centre panel)
+  const hiVisNote = category === "Hi-Vis"
+    ? "\n- IMPORTANT: railway workers must wear orange hi-vis only, never yellow. Hero image may include both orange and yellow unless the whole scene is railway-based."
+    : "";
+
+  const genderDesc: Record<string, string> = {
+    Male: "all male",
+    Female: "all female",
+    Unisex: "mixed male and female",
+  };
+
   const thumbColours = availableColourways.filter(c => c.toLowerCase() !== heroColourway.toLowerCase());
+  const thumbColourList = thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ");
 
-  const metaPrompt = `You are a commercial catalogue photography art director for Select Uniforms, a UK branded workwear company. Your task is to write a single precise image generation prompt (for Midjourney or DALL-E) that will produce a composite catalogue hero image for the product described below.
+  const stillTemplate = `Commercial UK workwear catalogue composite layout, 1000px x 1000px square format, clean white gutters between all panels, rounded corners throughout, professional product catalogue photography.
 
-PRODUCT:
-- Name: ${productName}
-- Garment type: ${garmentType}
-- Gender fit: ${genderFit}
-- Category: ${category}
-- Hero (centre) colourway: ${heroColourway}
-- All available colourways: ${availableColourways.join(", ")}
-- Thumbnail colourways (exclude hero): ${thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ")}
-- Logo: a distinctive small circular multi-coloured logo emblem with the text "YOUR LOGO HERE" in bold clean sans-serif lettering directly beneath/beside it, embroidered/printed on LEFT CHEST of every garment
-- Output size: ${imageSize}
-${notes ? `- Special instructions: ${notes}` : ""}
+Centre hero panel occupying around 60% of image area: 4–6 ${genderDesc[genderFit]} workers, varied ages (20s, 30s, 40s, 50s), ethnicities, body types, hairstyles and facial features, all unique individuals with no duplicated faces, all wearing ${heroColourway} ${productName} (${garmentType}), each garment displaying "${logoText}" embroidered placeholder text on the left chest. Realistic ${category} environment — ${categoryEnvs[category]} — natural light, relaxed confident poses, product clearly visible.${hiVisNote}
 
-LAYOUT YOU MUST DESCRIBE:
-The image is a single ${imageSize} PHOTO COLLAGE composite, styled like a modern editorial mood-board — NOT a uniform grid. Panels vary in size and orientation (mix of portrait and landscape rectangles plus some squares), arranged tightly together collage-style with a large hero panel positioned centrally among the smaller panels.
+Surrounding the centre panel: ${numThumbnails} smaller thumbnail panels arranged around the outside edge, each with rounded corners, one individual per panel, different role and work activity in every panel, using only these available colourways: ${thumbColourList}. Each garment must show "${logoText}" embroidery on the left chest. No text overlays, no colour labels, no fake logos, no invented colours, no duplicated people, no clothing layers covering the product.
 
-1. LARGE HERO PANEL (~50–60% of image area, positioned centrally, larger than every other panel):
-   - ${genderRules[genderFit]}
-   - 4–6 people wearing the ${heroColourway} ${garmentType}, standing together as a group
-   - No cloned or duplicated faces — every person is unique in face, hair, and build
-   - Realistic ${category} workplace environment: ${categoryEnvs[category]}
-   - Logo emblem + "YOUR LOGO HERE" text clearly visible on LEFT CHEST of each garment
-   - Commercial catalogue photography: natural lighting, professional poses, product clearly visible
-   - People are standing or lightly interacting, not obscuring each other's garments
+Style: ultra-realistic commercial catalogue photography, UK workplace feel, clean product-focused compositions, premium workwear brochure quality. Not Midjourney-style or fashion editorial. No random badges, circular logos, crests or fake brand marks. No cloned faces. No stock-photo collage feel.${notes ? `\n\nAdditional instructions: ${notes}` : ""}`;
 
-2. SURROUNDING THUMBNAIL PANELS (8–10 panels of varying sizes and portrait/landscape orientations, tightly collaged around the hero panel):
-   - One person per thumbnail, one unique colourway per thumbnail from: ${thumbColours.length > 0 ? thumbColours.join(", ") : availableColourways.join(", ")}
-   - Do NOT invent any colour not in the above list
-   - Each thumbnail shows a different realistic candid moment or activity within the ${category} environment (e.g. greeting someone, on the phone, at a laptop, writing notes, holding a coffee, in conversation) — natural, documentary-style candid framing, not static posed headshots
-   - No text labels, no colour names overlaid on images
-   - Same commercial photography style, lighting and colour grading as hero
-   - Logo emblem + "YOUR LOGO HERE" text on LEFT CHEST visible in each thumbnail
+  const metaPrompt = `You are a commercial catalogue photography art director for Select Uniforms, a UK branded workwear company. Your task is to refine and enhance the following image generation prompt for a composite catalogue hero image. Keep strictly to the template structure and rules — do not add cinematic, fantasy or fashion-editorial language. Improve the scene specifics, environment details and model variety descriptions only.
 
-3. TECHNICAL REQUIREMENTS:
-   - ${imageSize} total output
-   - Rounded corners on every panel
-   - Clean white gutters/spacing between all panels (like a professional garment catalogue collage page)
-   - Panels are NOT uniform in size — deliberate variety of portrait, landscape and square panels collaged together
-   - No cloned faces anywhere in the image
-   - Only use the colourways listed — no invented extras
-   - Ultra-realistic commercial catalogue photography quality throughout, consistent warm natural colour grading across every panel
+BASE PROMPT TO REFINE:
+${stillTemplate}
 
-Write ONLY the image generation prompt text — no preamble, no explanation, no headings. Just the prompt, ready to paste directly into gpt-image-1 / ChatGPT image generation.`;
+Write ONLY the refined prompt text — no preamble, no explanation, no headings. Just the prompt, ready to paste directly into gpt-image-1 / ChatGPT image generation.`;
 
   const message = await anthropic.messages.create({
     model: "claude-opus-4-5",
@@ -828,11 +816,36 @@ Write ONLY the image generation prompt text — no preamble, no explanation, no 
   });
 
   const content = message.content[0];
-  const generatedPrompt = content.type === "text" ? content.text.trim() : "";
+  const generatedPrompt = content.type === "text" ? content.text.trim() : stillTemplate;
+
+  // Animation prompt — built from template, no extra AI call needed
+  let animationPrompt: string | null = null;
+  if (generateAnimation) {
+    animationPrompt = `Create a subtle 8–12 second seamless looping hero video from the centre hero panel only of this catalogue image for the ${heroColourway} ${productName}.
+
+The surrounding thumbnail panels remain completely static.
+
+Animate only the centre hero scene:
+- Workers naturally chatting among themselves
+- Small natural head turns and glances
+- Natural blinking
+- One person gestures lightly while speaking
+- Someone smiles or laughs briefly
+- Gentle breeze on clothing fabric
+- Subtle background movement: ${categoryAnimBg[category] ?? "background elements shift slightly"}
+- Camera remains mostly static with very slight natural movement
+
+Do not change the clothing or colourway.
+Do not change colours.
+Do not change the "${logoText}" logo text.
+Do not add new people.
+Do not distort faces.
+Do not make the scene cinematic or dramatic.
+Keep it realistic, subtle and catalogue-safe.`;
+  }
 
   // Generate the actual image via OpenAI gpt-image-1
   const { generateImageBuffer } = await import("@workspace/integrations-openai-ai-server/image");
-  // Map requested size to nearest gpt-image-1 supported size
   const sizeMap: Record<string, "1024x1024" | "1536x1024" | "1024x1536"> = {
     "1000px x 1000px": "1024x1024",
     "1200px x 1200px": "1024x1024",
@@ -841,7 +854,7 @@ Write ONLY the image generation prompt text — no preamble, no explanation, no 
   const gpSize = sizeMap[imageSize] ?? "1024x1024";
   const imageBuffer = await generateImageBuffer(generatedPrompt, gpSize);
 
-  res.json({ prompt: generatedPrompt, image: imageBuffer.toString("base64") });
+  res.json({ prompt: generatedPrompt, animationPrompt, image: imageBuffer.toString("base64") });
 });
 
 export default router;

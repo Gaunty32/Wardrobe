@@ -1,0 +1,134 @@
+Build a Select Uniforms AI Product Image Generator.
+
+The app must generate two outputs:
+
+1. A still catalogue image prompt
+2. An optional animated hero video prompt
+
+The purpose is to create consistent product images for a UK workwear supplier.
+
+Core layout:
+- Final still image must be 1000px x 1000px
+- Square catalogue composite
+- Clean white gutters between panels
+- Rounded corners on every panel
+- One large centre hero image
+- 8–10 smaller thumbnail images around the outside
+- No text overlays
+- No colour labels
+- No fake logos
+- Garment embroidery must read exactly: YOUR LOGO HERE
+
+Form fields:
+- Product name
+- Garment type
+- Gender fit: Male / Female / Unisex
+- Product category: Trade / Corporate / Hospitality / Hi-Vis / Healthcare / Outerwear
+- Hero colourway
+- Available colourways
+- Number of thumbnails
+- Logo text, default: YOUR LOGO HERE
+- Special notes
+- Generate animation prompt: Yes / No
+
+Gender logic:
+- Male = all male models
+- Female = all female models
+- Unisex = mixed male and female
+
+Hero image rules:
+- Centre hero image occupies around 60% of canvas
+- 4–6 people
+- All wearing the same hero colourway
+- Mixed ages: 20s, 30s, 40s, 50s
+- Varied ethnicities, body types, hairstyles and faces
+- No duplicated faces
+- No cloned-looking people
+- Product clearly visible
+- Logo visible on left chest
+- Looks like a genuine UK workforce
+
+Thumbnail rules:
+- One person per thumbnail
+- Different person in each image
+- Different role/activity in each image
+- Use only supplied colourways
+- Do not invent colours
+- Product must not be covered by jackets, hi-vis vests, aprons, bodywarmers or PPE
+- Accessories are allowed only if they do not cover the garment or logo
+
+Category logic:
+Trade:
+Use vans, workshops, warehouses, construction, landscaping, delivery, engineering, plumbing, electrical and site environments.
+
+Corporate:
+Use offices, hotel reception, meetings, conferences, golf days, networking, front of house and business environments.
+
+Hospitality:
+Use cafés, restaurants, hotels, bars, catering, reception and events.
+
+Hi-Vis:
+Use roads, rail, utilities, construction, civil engineering, traffic management and site work.
+Important: railway workers must wear orange hi-vis only, never yellow.
+Hero image may include both orange and yellow unless the whole scene is railway-based.
+
+Healthcare:
+Use care homes, clinics, reception, cleaning, support work and healthcare environments.
+
+Outerwear:
+Use spring, autumn, outdoor work, site visits, logistics, deliveries and facilities management.
+
+Strict negative rules:
+- Do not create Midjourney-style images
+- Do not create fantasy, cinematic, poster-style or fashion editorial images
+- Do not use random badges, circular logos, crests or fake brand marks
+- Do not create unreadable text
+- Do not add labels
+- Do not make all panels equal size
+- Do not move the hero image to the edge
+- Do not make the hero team wear mixed colourways unless category is Hi-Vis
+- Do not invent colourways
+- Do not repeat faces
+- Do not cover the featured garment
+- Do not make the image look like a stock photo collage
+
+Still image prompt template:
+
+Commercial UK workwear catalogue composite layout, 1000px x 1000px square format, clean white gutters between all panels, rounded corners throughout, professional product catalogue photography.
+
+Centre hero panel occupying around 60% of image area: [number] [gender fit] workers, varied ages, ethnicities, body types, hairstyles and facial features, all unique individuals with no duplicated faces, all wearing [hero colourway] [product name], each garment displaying "YOUR LOGO HERE" embroidered placeholder text on the left chest. Realistic [category] environment, natural light, relaxed confident poses, product clearly visible.
+
+Surrounding the centre panel: [number] smaller thumbnail panels arranged around the outside edge, each with rounded corners, one individual per panel, different role and work activity in every panel, using only these available colourways: [available colourways]. Each garment must show "YOUR LOGO HERE" embroidery on the left chest. No text overlays, no colour labels, no fake logos, no invented colours, no duplicated people, no clothing layers covering the product.
+
+Style: ultra-realistic commercial catalogue photography, UK workplace feel, clean product-focused compositions, premium workwear brochure quality.
+
+Animation prompt template:
+
+Create a subtle 8–12 second seamless looping hero video from the centre hero panel only.
+
+The surrounding thumbnail panels remain static.
+
+Animate only the centre hero scene:
+- Workers naturally chatting
+- Small head turns
+- Natural blinking
+- One person gestures lightly
+- Someone smiles or laughs
+- Gentle breeze on clothing
+- Subtle background movement
+- If on site, amber beacon may flash softly
+- Camera remains mostly static with very slight natural movement
+
+Do not change the clothing.
+Do not change colours.
+Do not change logos.
+Do not add new people.
+Do not distort faces.
+Do not make the scene cinematic or dramatic.
+Keep it realistic, subtle and catalogue-safe.
+
+Output:
+- A generated still image prompt
+- A generated animation prompt if selected
+- Copy Prompt buttons for both
+- Save product prompt history locally

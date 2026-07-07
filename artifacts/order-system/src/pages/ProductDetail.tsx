@@ -814,16 +814,24 @@ export default function ProductDetail() {
     productName: "",
     garmentType: "",
     genderFit: "Unisex" as "Male" | "Female" | "Unisex",
-    category: "Corporate" as "Trade" | "Corporate" | "Hospitality" | "Outerwear",
+    category: "Corporate" as "Trade" | "Corporate" | "Hospitality" | "Hi-Vis" | "Healthcare" | "Outerwear",
     heroColourway: "",
     availableColourways: [] as string[],
+    numThumbnails: 9,
+    logoText: "YOUR LOGO HERE",
     imageSize: "1000px x 1000px",
     notes: "",
+    generateAnimation: false,
   });
   const [imgGenPrompt, setImgGenPrompt] = useState("");
+  const [imgGenAnimPrompt, setImgGenAnimPrompt] = useState<string | null>(null);
   const [imgGenImage, setImgGenImage] = useState<string | null>(null);
   const [imgGenPopulated, setImgGenPopulated] = useState(false);
   const [imgGenNewColour, setImgGenNewColour] = useState("");
+  const [imgGenHistory, setImgGenHistory] = useState<Array<{ ts: number; productName: string; stillPrompt: string; animationPrompt: string | null; image: string | null }>>(() => {
+    try { return JSON.parse(localStorage.getItem(`imggen_history_${productId}`) ?? "[]"); } catch { return []; }
+  });
+  const [imgGenHistoryOpen, setImgGenHistoryOpen] = useState(false);
 
   // Auto-refresh WooCommerce status from WooCommerce when it's unknown
   const wooRefreshMut = useMutation({
@@ -860,9 +868,17 @@ export default function ProductDetail() {
       body: JSON.stringify(imgGen),
     }),
     onSuccess: (data: any) => {
-      setImgGenPrompt(data.prompt || "");
-      setImgGenImage(data.image ? `data:image/png;base64,${data.image}` : null);
-      toast({ title: data.image ? "Image generated!" : "Prompt generated" });
+      const stillPrompt = data.prompt || "";
+      const animPrompt = data.animationPrompt ?? null;
+      const imgData = data.image ? `data:image/png;base64,${data.image}` : null;
+      setImgGenPrompt(stillPrompt);
+      setImgGenAnimPrompt(animPrompt);
+      setImgGenImage(imgData);
+      const entry = { ts: Date.now(), productName: imgGen.productName, stillPrompt, animationPrompt: animPrompt, image: imgData };
+      const updated = [entry, ...imgGenHistory].slice(0, 10);
+      setImgGenHistory(updated);
+      try { localStorage.setItem(`imggen_history_${productId}`, JSON.stringify(updated)); } catch {}
+      toast({ title: imgData ? "Image generated!" : "Prompt generated" });
     },
     onError: (err: any) => toast({ title: err.message || "Failed to generate image", variant: "destructive" }),
   });
@@ -2740,18 +2756,25 @@ export default function ProductDetail() {
                   <div className="flex items-center justify-between mb-5">
                     <div>
                       <h3 className="font-semibold flex items-center gap-2">
-                        <ImageIcon className="w-4 h-4 text-violet-500" /> Hero Image Generator
+                        <ImageIcon className="w-4 h-4 text-violet-500" /> AI Product Image Generator
                       </h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">Generate a catalogue hero image using AI — takes ~30 seconds</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Generate a catalogue composite image prompt + optional animation prompt</p>
                     </div>
-                    <Button
-                      onClick={() => generateImgPromptMut.mutate()}
-                      disabled={generateImgPromptMut.isPending || !imgGen.productName || !imgGen.garmentType || !imgGen.heroColourway || imgGen.availableColourways.length === 0}
-                      className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
-                    >
-                      {generateImgPromptMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-                      {generateImgPromptMut.isPending ? "Generating image…" : "Generate Image"}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {imgGenHistory.length > 0 && (
+                        <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => setImgGenHistoryOpen(h => !h)}>
+                          <Clock className="w-3.5 h-3.5" /> History ({imgGenHistory.length})
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => generateImgPromptMut.mutate()}
+                        disabled={generateImgPromptMut.isPending || !imgGen.productName || !imgGen.garmentType || !imgGen.heroColourway || imgGen.availableColourways.length === 0}
+                        className="gap-2 bg-violet-600 hover:bg-violet-700 text-white"
+                      >
+                        {generateImgPromptMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+                        {generateImgPromptMut.isPending ? "Generating…" : "Generate"}
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -2772,17 +2795,9 @@ export default function ProductDetail() {
                       <Label className="text-sm font-medium">Gender Fit</Label>
                       <div className="flex gap-2">
                         {(["Male", "Female", "Unisex"] as const).map(g => (
-                          <button
-                            key={g}
-                            type="button"
-                            onClick={() => setImgGen(p => ({ ...p, genderFit: g }))}
-                            className={cn(
-                              "flex-1 py-2 text-sm font-medium rounded-md border transition-colors",
-                              imgGen.genderFit === g
-                                ? "bg-violet-600 text-white border-violet-600"
-                                : "bg-background text-foreground border-border hover:bg-muted"
-                            )}
-                          >
+                          <button key={g} type="button" onClick={() => setImgGen(p => ({ ...p, genderFit: g }))}
+                            className={cn("flex-1 py-2 text-sm font-medium rounded-md border transition-colors",
+                              imgGen.genderFit === g ? "bg-violet-600 text-white border-violet-600" : "bg-background text-foreground border-border hover:bg-muted")}>
                             {g === "Male" ? "👨 Male" : g === "Female" ? "👩 Female" : "👥 Unisex"}
                           </button>
                         ))}
@@ -2792,20 +2807,19 @@ export default function ProductDetail() {
                     {/* Category */}
                     <div className="grid gap-2">
                       <Label className="text-sm font-medium">Product Category</Label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {(["Trade", "Corporate", "Hospitality", "Outerwear"] as const).map(cat => (
-                          <button
-                            key={cat}
-                            type="button"
-                            onClick={() => setImgGen(p => ({ ...p, category: cat }))}
-                            className={cn(
-                              "py-2 text-sm font-medium rounded-md border transition-colors text-left px-3",
-                              imgGen.category === cat
-                                ? "bg-violet-600 text-white border-violet-600"
-                                : "bg-background text-foreground border-border hover:bg-muted"
-                            )}
-                          >
-                            {cat === "Trade" ? "🔧 Trade" : cat === "Corporate" ? "💼 Corporate" : cat === "Hospitality" ? "🏨 Hospitality" : "🧥 Outerwear"}
+                      <div className="grid grid-cols-3 gap-2">
+                        {([
+                          { id: "Trade", label: "🔧 Trade" },
+                          { id: "Corporate", label: "💼 Corporate" },
+                          { id: "Hospitality", label: "🏨 Hospitality" },
+                          { id: "Hi-Vis", label: "🦺 Hi-Vis" },
+                          { id: "Healthcare", label: "🏥 Healthcare" },
+                          { id: "Outerwear", label: "🧥 Outerwear" },
+                        ] as const).map(({ id, label }) => (
+                          <button key={id} type="button" onClick={() => setImgGen(p => ({ ...p, category: id }))}
+                            className={cn("py-2 text-xs font-medium rounded-md border transition-colors px-2",
+                              imgGen.category === id ? "bg-violet-600 text-white border-violet-600" : "bg-background text-foreground border-border hover:bg-muted")}>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -2840,11 +2854,9 @@ export default function ProductDetail() {
                       )}
                     </div>
 
-                    {/* Available Colourways — auto-populated from WooCommerce variants */}
+                    {/* Available Colourways */}
                     <div className="grid gap-2">
-                      <Label className="text-sm font-medium">Available Colourways *
-                        <span className="text-muted-foreground font-normal ml-1">(from WooCommerce variants)</span>
-                      </Label>
+                      <Label className="text-sm font-medium">Available Colourways *</Label>
                       <div className="flex flex-wrap gap-1.5 min-h-[36px] rounded-md border border-border bg-muted/30 px-3 py-2">
                         {imgGen.availableColourways.length === 0 && (
                           <span className="text-xs text-muted-foreground italic">No colours found — check product has WooCommerce variants</span>
@@ -2860,47 +2872,60 @@ export default function ProductDetail() {
                       </div>
                     </div>
 
-                    {/* Logo — always the SBS "Your Logo Here" placeholder on left chest */}
+                    {/* Number of thumbnails */}
                     <div className="grid gap-2">
-                      <Label className="text-sm font-medium">Logo <span className="text-muted-foreground font-normal">(left chest — embroidered)</span></Label>
-                      <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
-                        <img src="/your-logo-here.png" alt="Your Logo Here" className="h-10 w-auto object-contain" />
-                        <span className="text-xs text-muted-foreground">Standard "Your Logo Here" placeholder · Left chest position</span>
-                      </div>
-                    </div>
-
-                    {/* Image Size */}
-                    <div className="grid gap-2">
-                      <Label className="text-sm font-medium">Image Size</Label>
+                      <Label className="text-sm font-medium">Number of Thumbnails <span className="text-muted-foreground font-normal">(surrounding panels)</span></Label>
                       <div className="flex gap-2">
-                        {["1000px x 1000px", "1200px x 1200px", "800px x 800px"].map(sz => (
-                          <button key={sz} type="button" onClick={() => setImgGen(p => ({ ...p, imageSize: sz }))}
-                            className={cn("flex-1 py-2 text-xs font-medium rounded-md border transition-colors",
-                              imgGen.imageSize === sz ? "bg-violet-600 text-white border-violet-600" : "bg-background text-foreground border-border hover:bg-muted")}>
-                            {sz}
+                        {[8, 9, 10].map(n => (
+                          <button key={n} type="button" onClick={() => setImgGen(p => ({ ...p, numThumbnails: n }))}
+                            className={cn("flex-1 py-2 text-sm font-medium rounded-md border transition-colors",
+                              imgGen.numThumbnails === n ? "bg-violet-600 text-white border-violet-600" : "bg-background text-foreground border-border hover:bg-muted")}>
+                            {n}
                           </button>
                         ))}
                       </div>
                     </div>
 
+                    {/* Logo text */}
+                    <div className="grid gap-2">
+                      <Label className="text-sm font-medium">Logo Text <span className="text-muted-foreground font-normal">(embroidered left chest)</span></Label>
+                      <Input value={imgGen.logoText} onChange={e => setImgGen(p => ({ ...p, logoText: e.target.value }))} placeholder="YOUR LOGO HERE" />
+                    </div>
+
                     {/* Notes */}
                     <div className="grid gap-2 md:col-span-2">
-                      <Label className="text-sm font-medium">Notes / Special Instructions</Label>
-                      <Textarea rows={2} value={imgGen.notes} onChange={e => setImgGen(p => ({ ...p, notes: e.target.value }))} placeholder="e.g. include a dog, outdoor summer setting, avoid construction helmets…" />
+                      <Label className="text-sm font-medium">Special Notes</Label>
+                      <Textarea rows={2} value={imgGen.notes} onChange={e => setImgGen(p => ({ ...p, notes: e.target.value }))} placeholder="e.g. outdoor summer setting, avoid construction helmets, include high-visibility elements…" />
+                    </div>
+
+                    {/* Animation toggle */}
+                    <div className="md:col-span-2 flex items-center justify-between rounded-md border border-border bg-muted/30 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">Generate animation prompt</p>
+                        <p className="text-xs text-muted-foreground">Produces an 8–12 second looping video prompt for the centre hero panel</p>
+                      </div>
+                      <button type="button" onClick={() => setImgGen(p => ({ ...p, generateAnimation: !p.generateAnimation }))}
+                        className={cn("relative inline-flex h-6 w-11 items-center rounded-full transition-colors border-2",
+                          imgGen.generateAnimation ? "bg-violet-600 border-violet-600" : "bg-muted border-border")}>
+                        <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                          imgGen.generateAnimation ? "translate-x-5" : "translate-x-1")} />
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Category environment preview */}
+                {/* Category environment hint */}
                 <div className="bg-muted/40 border border-border/40 rounded-lg px-4 py-3">
                   <p className="text-xs text-muted-foreground">
                     <span className="font-semibold text-foreground">
-                      {imgGen.category === "Trade" ? "🔧 Trade" : imgGen.category === "Corporate" ? "💼 Corporate" : imgGen.category === "Hospitality" ? "🏨 Hospitality" : "🧥 Outerwear"} environment:
+                      {({ Trade: "🔧 Trade", Corporate: "💼 Corporate", Hospitality: "🏨 Hospitality", "Hi-Vis": "🦺 Hi-Vis", Healthcare: "🏥 Healthcare", Outerwear: "🧥 Outerwear" })[imgGen.category]} environment:
                     </span>{" "}
-                    {imgGen.category === "Trade" && "Commercial vans, workshops, warehouses, construction sites, landscaping yards, delivery depots"}
-                    {imgGen.category === "Corporate" && "Modern offices, hotel reception desks, conference rooms, golf days, business meetings"}
-                    {imgGen.category === "Hospitality" && "Hotel lobbies, café counters, restaurant floors, event venues, customer-facing hospitality roles"}
-                    {imgGen.category === "Outerwear" && "Outdoor construction sites, delivery routes, facilities management, spring and autumn site visits"}
+                    {imgGen.category === "Trade" && "Vans, workshops, warehouses, construction, landscaping, delivery, engineering and site environments"}
+                    {imgGen.category === "Corporate" && "Offices, hotel reception, meetings, conferences, golf days, networking and business environments"}
+                    {imgGen.category === "Hospitality" && "Cafés, restaurants, hotels, bars, catering, reception and events"}
+                    {imgGen.category === "Hi-Vis" && "Roads, rail, utilities, construction, civil engineering, traffic management and site work — railway workers wear orange only"}
+                    {imgGen.category === "Healthcare" && "Care homes, clinics, reception, cleaning, support work and healthcare environments"}
+                    {imgGen.category === "Outerwear" && "Spring, autumn, outdoor work, site visits, logistics, deliveries and facilities management"}
                   </p>
                 </div>
 
@@ -2908,45 +2933,82 @@ export default function ProductDetail() {
                 {generateImgPromptMut.isPending && (
                   <div className="bg-card border border-violet-200 rounded-lg p-8 shadow-sm flex flex-col items-center gap-3 text-violet-700">
                     <Loader2 className="w-8 h-8 animate-spin" />
-                    <p className="text-sm font-medium">Generating your catalogue image…</p>
+                    <p className="text-sm font-medium">Generating your catalogue image and prompts…</p>
                     <p className="text-xs text-muted-foreground">This usually takes 20–40 seconds</p>
                   </div>
                 )}
 
-                {/* Generated image output */}
-                {imgGenImage && !generateImgPromptMut.isPending && (
-                  <div className="bg-card border border-violet-200 rounded-lg p-6 shadow-sm space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-semibold flex items-center gap-2 text-violet-700">
-                        <Wand2 className="w-4 h-4" /> Generated Image
-                      </h4>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
-                          onClick={() => {
-                            const a = document.createElement("a");
-                            a.href = imgGenImage;
-                            a.download = `${imgGen.productName.replace(/\s+/g, "-")}-hero.png`;
-                            a.click();
-                          }}>
-                          ⬇ Download
-                        </Button>
-                      </div>
-                    </div>
-                    <img src={imgGenImage} alt="Generated catalogue hero" className="w-full rounded-lg border border-violet-100 shadow-sm" />
-                    {imgGenPrompt && (
-                      <details className="group">
-                        <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground select-none list-none flex items-center gap-1">
-                          <span className="group-open:hidden">▶</span><span className="hidden group-open:inline">▼</span> View / copy prompt (for Midjourney or DALL-E)
-                        </summary>
-                        <div className="mt-2 space-y-2">
-                          <Textarea rows={8} value={imgGenPrompt} onChange={e => setImgGenPrompt(e.target.value)} className="font-mono text-xs leading-relaxed bg-muted/30 resize-y" />
+                {/* Output — image + prompts */}
+                {!generateImgPromptMut.isPending && (imgGenImage || imgGenPrompt) && (
+                  <div className="space-y-4">
+                    {/* Generated image */}
+                    {imgGenImage && (
+                      <div className="bg-card border border-violet-200 rounded-lg p-5 shadow-sm space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold flex items-center gap-2 text-violet-700"><ImageIcon className="w-4 h-4" /> Generated Image</h4>
                           <Button size="sm" variant="outline" className="gap-1.5 text-xs border-violet-300 text-violet-700 hover:bg-violet-50"
-                            onClick={() => { navigator.clipboard.writeText(imgGenPrompt); toast({ title: "Copied to clipboard" }); }}>
-                            <Copy className="w-3.5 h-3.5" /> Copy prompt
+                            onClick={() => { const a = document.createElement("a"); a.href = imgGenImage!; a.download = `${imgGen.productName.replace(/\s+/g, "-")}-hero.png`; a.click(); }}>
+                            ⬇ Download PNG
                           </Button>
                         </div>
-                      </details>
+                        <img src={imgGenImage} alt="Generated catalogue hero" className="w-full rounded-lg border border-violet-100 shadow-sm" />
+                      </div>
                     )}
+
+                    {/* Still image prompt */}
+                    {imgGenPrompt && (
+                      <div className="bg-card border border-violet-200 rounded-lg p-5 shadow-sm space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold flex items-center gap-2 text-violet-700"><ImageIcon className="w-4 h-4" /> Still Image Prompt</h4>
+                          <Button size="sm" className="gap-1.5 text-xs bg-violet-600 hover:bg-violet-700 text-white"
+                            onClick={() => { navigator.clipboard.writeText(imgGenPrompt); toast({ title: "Still prompt copied!" }); }}>
+                            <Copy className="w-3.5 h-3.5" /> Copy Prompt
+                          </Button>
+                        </div>
+                        <Textarea rows={8} value={imgGenPrompt} onChange={e => setImgGenPrompt(e.target.value)} className="font-mono text-xs leading-relaxed bg-muted/30 resize-y" />
+                        <p className="text-xs text-muted-foreground">Paste this into <strong>ChatGPT → Create image</strong>, DALL-E, or Midjourney.</p>
+                      </div>
+                    )}
+
+                    {/* Animation prompt */}
+                    {imgGen.generateAnimation && imgGenAnimPrompt && (
+                      <div className="bg-card border border-blue-200 rounded-lg p-5 shadow-sm space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-semibold flex items-center gap-2 text-blue-700"><Sparkles className="w-4 h-4" /> Animation Prompt</h4>
+                          <Button size="sm" className="gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                            onClick={() => { navigator.clipboard.writeText(imgGenAnimPrompt); toast({ title: "Animation prompt copied!" }); }}>
+                            <Copy className="w-3.5 h-3.5" /> Copy Prompt
+                          </Button>
+                        </div>
+                        <Textarea rows={10} value={imgGenAnimPrompt} onChange={e => setImgGenAnimPrompt(e.target.value)} className="font-mono text-xs leading-relaxed bg-muted/30 resize-y" />
+                        <p className="text-xs text-muted-foreground">Paste this into <strong>Runway, Kling, or Pika</strong> with the generated still image as the reference frame.</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Prompt history */}
+                {imgGenHistoryOpen && imgGenHistory.length > 0 && (
+                  <div className="bg-card border border-border/50 rounded-lg p-5 shadow-sm space-y-3">
+                    <h4 className="font-semibold text-sm flex items-center gap-2"><Clock className="w-4 h-4 text-muted-foreground" /> Prompt History <span className="text-xs text-muted-foreground font-normal">(last {imgGenHistory.length}, stored locally)</span></h4>
+                    <div className="space-y-3">
+                      {imgGenHistory.map((h, i) => (
+                        <div key={h.ts} className="rounded-md border border-border bg-muted/30 p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-medium">{h.productName} <span className="text-muted-foreground font-normal">· {new Date(h.ts).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span></p>
+                            <Button size="sm" variant="ghost" className="h-6 text-xs gap-1 text-violet-600 hover:text-violet-700"
+                              onClick={() => { setImgGenPrompt(h.stillPrompt); setImgGenAnimPrompt(h.animationPrompt); setImgGenImage(h.image); setImgGenHistoryOpen(false); }}>
+                              Restore
+                            </Button>
+                          </div>
+                          <p className="text-xs text-muted-foreground line-clamp-2 font-mono">{h.stillPrompt}</p>
+                          <Button size="sm" variant="outline" className="gap-1 text-xs h-6"
+                            onClick={() => { navigator.clipboard.writeText(h.stillPrompt); toast({ title: "Copied from history" }); }}>
+                            <Copy className="w-3 h-3" /> Copy
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
