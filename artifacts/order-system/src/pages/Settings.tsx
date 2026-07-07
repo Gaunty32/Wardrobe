@@ -1463,19 +1463,25 @@ export default function Settings() {
     }
   }, [rawSettings, fbFormLoaded]);
 
-  async function saveFacebookSettings() {
+  async function saveFacebookSettings(overridePageId?: string, overrideToken?: string) {
+    const pageId = overridePageId ?? fbPageId;
+    const token = overrideToken ?? fbAccessToken;
+    if (!pageId || !token) {
+      toast({ title: "Missing fields", description: "Both Page Access Token and Facebook Page ID are required.", variant: "destructive" });
+      return;
+    }
     setSavingFb(true);
     try {
       const res = await fetch(`${API_BASE}/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ facebook_page_id: fbPageId || null, facebook_page_access_token: fbAccessToken || null }),
+        body: JSON.stringify({ facebook_page_id: pageId, facebook_page_access_token: token }),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(text || `Save failed (HTTP ${res.status})`);
       }
-      toast({ title: "Facebook settings saved" });
+      toast({ title: "Facebook settings saved", description: `Page ID ${pageId} saved successfully.` });
       queryClient.invalidateQueries({ queryKey: ["settings"] });
     } catch (e: any) {
       toast({ title: "Failed to save Facebook settings", description: e?.message ?? "Unknown error", variant: "destructive" });
@@ -2275,18 +2281,21 @@ export default function Settings() {
                           <p className="text-xs text-muted-foreground">ID: {page.id} · {page.category}</p>
                         </div>
                         <Button
+                          type="button"
                           size="sm"
                           variant={fbPageId === page.id ? "default" : "outline"}
                           onClick={() => {
+                            const chosenToken = page.pageToken || fbAccessToken;
                             setFbPageId(page.id);
                             if (page.pageToken) setFbAccessToken(page.pageToken);
+                            saveFacebookSettings(page.id, chosenToken);
                           }}
                         >
                           {fbPageId === page.id ? "Selected ✓" : "Use this page"}
                         </Button>
                       </div>
                     ))}
-                    <p className="text-xs text-muted-foreground">Clicking "Use this page" also switches the token to that page's own long-lived Page Access Token.</p>
+                    <p className="text-xs text-muted-foreground">Clicking "Use this page" selects the page and saves immediately.</p>
                   </div>
                 )}
 
