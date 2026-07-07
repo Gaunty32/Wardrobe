@@ -981,7 +981,7 @@ export default function ProductDetail() {
     facebookContent: string; googleContent: string; hashtags: string;
     platforms: string[]; autoReschedule: boolean; editingId: number | null;
     productImageUrl: string | null; websiteUrl: string;
-  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: false, editingId: null, productImageUrl: null, websiteUrl: "" });
+  }>({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook", "google"], autoReschedule: true, editingId: null, productImageUrl: null, websiteUrl: "" });
   const [socialVariantImages, setSocialVariantImages] = useState<{ colour: string; imageUrl: string }[]>([]);
   const [socialShowPreview, setSocialShowPreview] = useState(false);
 
@@ -2655,7 +2655,7 @@ export default function ProductDetail() {
                     <label className="flex items-center gap-2 text-sm cursor-pointer">
                       <input type="checkbox" checked={socialDraft.autoReschedule} onChange={e => setSocialDraft(p => ({ ...p, autoReschedule: e.target.checked }))} className="rounded" />
                       <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span>Auto-reschedule every ~6 months after publishing</span>
+                      <span>Auto-reschedule every ~4 months after publishing</span>
                     </label>
 
                     {/* Action buttons */}

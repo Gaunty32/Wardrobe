@@ -272,9 +272,9 @@ async function pickAvailableDate(withinDays: number, productId?: number, startOf
   return new Date(origin + (withinDays + 2) * 86_400_000);
 }
 
-/** Pick a smart reschedule date ~6 months (±3 weeks) from now applying the same scheduling rules. */
+/** Pick a smart reschedule date ~4 months (±3 weeks) from now applying the same scheduling rules. */
 async function pickRescheduleDate(productId?: number): Promise<Date> {
-  const targetDays = Math.round(5.5 * 30.44 + Math.random() * (30.44));  // 5.5–6.5 months in days
+  const targetDays = Math.round(3.5 * 30.44 + Math.random() * (30.44));  // 3.5–4.5 months in days
   // Search in a ±21-day window centred on the target, starting 3 weeks before it
   return pickAvailableDate(42, productId, targetDays - 21);
 }
