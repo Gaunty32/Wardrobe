@@ -312,6 +312,15 @@ function nextSeasonWindow(season: SeasonName): { startOffsetDays: number; within
   return { startOffsetDays: Math.round(3.5 * 30.44) - 21, withinDays: 42 };
 }
 
+/** Returns the season for a given date (UK convention). */
+function seasonFromDate(date: Date): SeasonName {
+  const m = date.getMonth() + 1; // 1–12
+  if (m >= 3 && m <= 5) return "spring";
+  if (m >= 6 && m <= 8) return "summer";
+  if (m >= 9 && m <= 11) return "autumn";
+  return "winter";
+}
+
 /** Pick a smart reschedule date applying scheduling rules.
  *  If a season is provided the date is confined to the next occurrence of that season;
  *  otherwise it targets ~4 months (±3 weeks) from now. */
@@ -738,14 +747,18 @@ router.post("/social-posts/:id/publish", async (req, res): Promise<void> => {
   ];
   await db.execute(sql.raw(`UPDATE social_posts SET ${updateParts.join(", ")} WHERE id = ${id}`));
 
-  // Auto-reschedule with smart date picking, respecting season if set
+  // Auto-reschedule with smart date picking.
+  // Season is auto-detected from when this post was published so the next reschedule
+  // lands in the same season (e.g. a summer post always comes back in summer).
   if (!anyFailed && post.auto_reschedule) {
-    const nextDate = await pickRescheduleDate(post.product_id, post.season);
+    const inferredSeason: SeasonName = (post.season && post.season in SEASON_MONTHS)
+      ? post.season as SeasonName
+      : seasonFromDate(new Date());
+    const nextDate = await pickRescheduleDate(post.product_id, inferredSeason);
     const pArr = platforms.map((p: string) => `'${p}'`).join(",");
-    const seasonVal = post.season ? `'${post.season}'` : "NULL";
     await db.execute(sql.raw(`
       INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
-      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, ${seasonVal})
+      VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
     `));
   }
 
@@ -851,12 +864,14 @@ export function startSocialPostScheduler(): void {
         `));
 
         if (!failed && post.auto_reschedule) {
-          const nextDate = await pickRescheduleDate(post.product_id, post.season);
+          const inferredSeason: SeasonName = (post.season && post.season in SEASON_MONTHS)
+            ? post.season as SeasonName
+            : seasonFromDate(new Date());
+          const nextDate = await pickRescheduleDate(post.product_id, inferredSeason);
           const pArr = platforms.map((p: string) => `'${p}'`).join(",");
-          const seasonVal = post.season ? `'${post.season}'` : "NULL";
           await db.execute(sql.raw(`
             INSERT INTO social_posts (product_id, facebook_content, google_content, hashtags, platforms, status, scheduled_at, auto_reschedule, product_image_url, website_url, season)
-            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, ${seasonVal})
+            VALUES (${post.product_id}, '${post.facebook_content.replace(/'/g, "''")}', '${post.google_content.replace(/'/g, "''")}', '${post.hashtags.replace(/'/g, "''")}', ARRAY[${pArr}]::text[], 'scheduled', '${nextDate.toISOString()}', true, ${post.product_image_url ? `'${post.product_image_url}'` : "NULL"}, ${post.website_url ? `'${post.website_url.replace(/'/g, "''")}'` : "NULL"}, '${inferredSeason}')
           `));
         }
         console.log(`[social] Post ${post.id} → ${newStatus}`);

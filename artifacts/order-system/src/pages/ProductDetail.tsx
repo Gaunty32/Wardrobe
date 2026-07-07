@@ -2703,34 +2703,6 @@ export default function ProductDetail() {
                       <span>Auto-reschedule every ~4 months after publishing</span>
                     </label>
 
-                    {/* Season restriction */}
-                    {socialDraft.autoReschedule && (
-                      <div className="grid gap-2">
-                        <Label className="flex items-center gap-1.5 text-sm">
-                          <span>Reschedule season</span>
-                          <span className="text-muted-foreground font-normal text-xs">(only reschedule within this season)</span>
-                        </Label>
-                        <div className="flex flex-wrap gap-2">
-                          {[
-                            { value: null, label: "All year" },
-                            { value: "spring", label: "🌱 Spring (Mar–May)" },
-                            { value: "summer", label: "☀️ Summer (Jun–Aug)" },
-                            { value: "autumn", label: "🍂 Autumn (Sep–Nov)" },
-                            { value: "winter", label: "❄️ Winter (Dec–Feb)" },
-                          ].map(opt => (
-                            <button
-                              key={String(opt.value)}
-                              type="button"
-                              onClick={() => setSocialDraft(p => ({ ...p, season: opt.value }))}
-                              className={`px-3 py-1 rounded-full text-xs border transition-all ${socialDraft.season === opt.value ? "bg-blue-600 text-white border-blue-600" : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"}`}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {/* Action buttons */}
                     <div className="flex items-center gap-3 pt-2 border-t border-border/50">
                       <Button variant="outline" onClick={() => saveSocialMut.mutate()} disabled={saveSocialMut.isPending || !socialDraft.facebookContent} className="gap-2">
