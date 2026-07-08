@@ -23,6 +23,7 @@ interface StaffAccount {
   email: string;
   is_superuser?: boolean;
   allowed_nav?: string[] | null; // null = all access, array = restricted
+  avatar_url?: string | null;
 }
 
 async function getStaffAccounts(): Promise<StaffAccount[]> {
@@ -90,8 +91,30 @@ router.patch("/auth/staff/accounts/:email", async (req, res): Promise<void> => {
   if (typeof body.email === "string" && body.email.includes("@")) accounts[idx].email = body.email.trim().toLowerCase();
   if (typeof body.is_superuser === "boolean") accounts[idx].is_superuser = body.is_superuser;
   if ("allowed_nav" in body) accounts[idx].allowed_nav = Array.isArray(body.allowed_nav) ? body.allowed_nav : null;
+  if ("avatar_url" in body) accounts[idx].avatar_url = typeof body.avatar_url === "string" && body.avatar_url ? body.avatar_url : null;
   await saveStaffAccounts(accounts);
   res.json({ ok: true, account: accounts[idx] });
+});
+
+// Self-service: the logged-in staff member updates their own profile photo.
+// (Distinct from the admin PATCH above, which requires superuser access.)
+router.patch("/auth/staff/me/avatar", async (req, res): Promise<void> => {
+  const payload = decodeStaffJwt(req);
+  if (!payload) { res.status(401).json({ error: "Not authenticated" }); return; }
+  if (!payload.email) { res.status(400).json({ error: "Generic password logins don't have an individual profile" }); return; }
+
+  const { avatar_url } = req.body ?? {};
+  if (avatar_url !== null && typeof avatar_url !== "string") {
+    res.status(400).json({ error: "avatar_url must be a string or null" }); return;
+  }
+
+  const accounts = await getStaffAccounts();
+  const idx = accounts.findIndex(a => a.email === (payload.email as string));
+  if (idx === -1) { res.status(404).json({ error: "Account not found" }); return; }
+
+  accounts[idx].avatar_url = avatar_url || null;
+  await saveStaffAccounts(accounts);
+  res.json({ ok: true, avatar_url: accounts[idx].avatar_url });
 });
 
 router.delete("/auth/staff/accounts/:email", async (req, res): Promise<void> => {
@@ -107,14 +130,14 @@ router.get("/auth/staff/me", async (req, res): Promise<void> => {
   if (!payload) { res.status(401).json({ error: "Not authenticated" }); return; }
   // Password login — no specific identity, full access
   if (!payload.email) {
-    res.json({ name: null, email: null, is_superuser: true, allowed_nav: null });
+    res.json({ name: null, email: null, is_superuser: true, allowed_nav: null, avatar_url: null });
     return;
   }
   const accounts = await getStaffAccounts();
   const account = accounts.find(a => a.email === (payload.email as string));
   if (!account) {
     // Account deleted since login — still valid JWT, give read-only access
-    res.json({ name: payload.name ?? null, email: payload.email, is_superuser: false, allowed_nav: [] });
+    res.json({ name: payload.name ?? null, email: payload.email, is_superuser: false, allowed_nav: [], avatar_url: null });
     return;
   }
   res.json({
@@ -122,6 +145,7 @@ router.get("/auth/staff/me", async (req, res): Promise<void> => {
     email: account.email,
     is_superuser: !!account.is_superuser,
     allowed_nav: account.allowed_nav ?? null,
+    avatar_url: account.avatar_url ?? null,
   });
 });
 

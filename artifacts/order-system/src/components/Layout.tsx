@@ -1,9 +1,9 @@
 import { ReactNode, useEffect, useState, useRef } from "react";
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle, Hash, Mail, ImageIcon } from "lucide-react";
+import { LayoutDashboard, ShoppingCart, Users, Package, Truck, LogOut, Boxes, ShoppingBag, ClipboardList, Settings2, Send, CheckSquare, FileText, Warehouse, BarChart2, MonitorPlay, Bell, MessageSquare, X, Gift, ShoppingBasket, Package2, AlertTriangle, AlertCircle, Lightbulb, MessageCircle, Hash, Mail, ImageIcon, Camera, Loader2, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isStaffAuthenticated, clearStaffToken, staffAuthHeader, getStaffJwtPayload } from "@/lib/staff-auth";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -308,6 +308,182 @@ function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+// ─── Profile photo (reuses the same object-storage upload flow as Customer Portal's Team page) ───
+
+const AVATAR_COLORS = [
+  "bg-blue-100 text-blue-700",
+  "bg-violet-100 text-violet-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-orange-100 text-orange-700",
+  "bg-rose-100 text-rose-700",
+  "bg-teal-100 text-teal-700",
+  "bg-indigo-100 text-indigo-700",
+  "bg-amber-100 text-amber-700",
+];
+function getAvatarColor(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+function initialsOf(name: string) {
+  return name.trim().split(/\s+/).map(p => p[0]).join("").toUpperCase().slice(0, 2);
+}
+
+function AvatarCircle({ name, avatarUrl, size = "w-9 h-9", textSize = "text-xs" }: { name: string; avatarUrl?: string | null; size?: string; textSize?: string }) {
+  if (avatarUrl) {
+    return (
+      <img
+        src={`${API_BASE}/storage${avatarUrl}`}
+        alt=""
+        className={`${size} rounded-full object-cover shrink-0 ring-1 ring-white/20`}
+      />
+    );
+  }
+  return (
+    <div className={`${size} rounded-full flex items-center justify-center ${textSize} font-bold shrink-0 ${getAvatarColor(name || "?")}`}>
+      {initialsOf(name || "?")}
+    </div>
+  );
+}
+
+async function uploadAvatarFile(file: File): Promise<string> {
+  const meta = await apiFetch<{ uploadURL: string; objectPath: string }>("/storage/uploads/request-url", {
+    method: "POST",
+    body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type || "application/octet-stream" }),
+  });
+  await fetch(meta.uploadURL, {
+    method: "PUT",
+    body: file,
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+  return meta.objectPath;
+}
+
+interface StaffMe {
+  name: string | null;
+  email: string | null;
+  is_superuser: boolean;
+  allowed_nav: string[] | null;
+  avatar_url: string | null;
+}
+
+// Top-right account widget: shows the current user's photo/initials + name so it's always
+// clear whose account is logged in, with a dropdown to upload a photo or sign out.
+function UserMenu({ staffMe, onSignOut, dark = false }: { staffMe: StaffMe | undefined; onSignOut: () => void; dark?: boolean }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const jwtPayload = getStaffJwtPayload();
+  const displayName = staffMe?.name || jwtPayload?.name || "Staff";
+  const email = staffMe?.email;
+  const canHavePhoto = !!email; // password-only (no email) logins have no individual profile
+
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, []);
+
+  const avatarMutation = useMutation({
+    mutationFn: (avatar_url: string | null) =>
+      apiFetch("/auth/staff/me/avatar", {
+        method: "PATCH",
+        headers: staffAuthHeader() as Record<string, string>,
+        body: JSON.stringify({ avatar_url }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-me"] });
+      toast({ title: "Profile photo updated" });
+    },
+    onError: () => toast({ title: "Could not update photo", variant: "destructive" }),
+  });
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Please choose an image file", variant: "destructive" });
+      return;
+    }
+    setUploading(true);
+    try {
+      const objectPath = await uploadAvatarFile(file);
+      avatarMutation.mutate(objectPath);
+    } catch {
+      toast({ title: "Photo upload failed", description: "Please try again.", variant: "destructive" });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={cn(
+          "flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-full transition-colors",
+          dark ? "hover:bg-white/10" : "hover:bg-black/5"
+        )}
+      >
+        <AvatarCircle name={displayName} avatarUrl={staffMe?.avatar_url} size="w-8 h-8" />
+        <span className={cn("hidden sm:block text-sm font-medium max-w-[140px] truncate", dark ? "text-white/90" : "text-foreground")}>{displayName}</span>
+        <ChevronDown className={cn("w-3.5 h-3.5", dark ? "text-white/50" : "text-muted-foreground")} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 w-64 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-border">
+            <label className={cn("relative shrink-0", canHavePhoto && "cursor-pointer group/avatar")}>
+              <AvatarCircle name={displayName} avatarUrl={staffMe?.avatar_url} size="w-11 h-11" textSize="text-sm" />
+              {canHavePhoto && (
+                <>
+                  <span className="absolute -bottom-1 -right-1 flex items-center justify-center w-5 h-5 rounded-full bg-primary text-primary-foreground shadow ring-2 ring-card group-hover/avatar:scale-110 transition-transform">
+                    {uploading || avatarMutation.isPending ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Camera className="w-2.5 h-2.5" />}
+                  </span>
+                  <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={uploading || avatarMutation.isPending} />
+                </>
+              )}
+            </label>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">{displayName}</p>
+              {email && <p className="text-xs text-muted-foreground truncate">{email}</p>}
+            </div>
+          </div>
+          {canHavePhoto ? (
+            <div className="px-4 py-2.5 border-b border-border">
+              <p className="text-xs text-muted-foreground">Click your photo above to change it{staffMe?.avatar_url ? "." : " — you're currently using initials."}</p>
+              {staffMe?.avatar_url && (
+                <button
+                  type="button"
+                  className="text-xs text-destructive hover:underline mt-1"
+                  onClick={() => avatarMutation.mutate(null)}
+                >
+                  Remove photo
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="px-4 py-2.5 border-b border-border">
+              <p className="text-xs text-muted-foreground">Signed in with the shared staff password — no individual profile photo.</p>
+            </div>
+          )}
+          <button
+            onClick={onSignOut}
+            className="flex items-center w-full gap-2 px-4 py-2.5 text-sm font-medium text-destructive hover:bg-destructive/5 transition-colors"
+          >
+            <LogOut className="w-4 h-4" /> Sign Out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface LayoutProps {
   children: ReactNode;
 }
@@ -346,12 +522,7 @@ export default function Layout({ children }: LayoutProps) {
   // the page is open) — putting a conditional `return null` before this hook
   // previously caused "Rendered fewer hooks than expected" (React error #300).
   const jwtPayload = getStaffJwtPayload();
-  const { data: staffMe } = useQuery<{
-    name: string | null;
-    email: string | null;
-    is_superuser: boolean;
-    allowed_nav: string[] | null;
-  }>({
+  const { data: staffMe } = useQuery<StaffMe>({
     queryKey: ["staff-me"],
     queryFn: () =>
       apiFetch("/auth/staff/me", {
@@ -531,12 +702,18 @@ export default function Layout({ children }: LayoutProps) {
       {/* Main Content */}
       <main className="flex-1 md:ml-64 relative min-w-0">
         {/* Mobile Header */}
-        <header className="md:hidden h-16 flex items-center px-4 border-b border-border/60 sticky top-0 z-20" style={{ backgroundColor: "hsl(var(--sidebar))" }}>
+        <header className="md:hidden h-16 flex items-center justify-between px-4 border-b border-border/60 sticky top-0 z-20" style={{ backgroundColor: "hsl(var(--sidebar))" }}>
           <img
             src={`${import.meta.env.BASE_URL}images/sbs-logo.png`}
             alt="Select Branding Solutions"
             className="h-9 w-auto object-contain"
           />
+          <UserMenu staffMe={staffMe} onSignOut={handleSignOut} dark />
+        </header>
+
+        {/* Desktop Top Bar — account widget in the top-right so it's always clear who's logged in */}
+        <header className="hidden md:flex h-14 items-center justify-end px-6 border-b border-border/60 sticky top-0 z-20 bg-background/80 backdrop-blur">
+          <UserMenu staffMe={staffMe} onSignOut={handleSignOut} />
         </header>
 
         <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
