@@ -794,6 +794,7 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
     if (b === "Plain (No Finish)") return -1;
     return a.localeCompare(b);
   });
+  const printTotalQty = ws.items.reduce((s, i) => s + (i.quantity ?? 1), 0);
 
   return (
     <div className="print-only bg-white text-black font-sans text-sm" style={{ width: "210mm", padding: "12mm 15mm", boxSizing: "border-box" }}>
@@ -807,7 +808,7 @@ function PrintWorksheet({ ws }: { ws: Worksheet }) {
         <div style={{ textAlign: "right", fontSize: "11px", color: "#555" }}>
           <div style={{ fontWeight: "bold", fontSize: "13px" }}>Select Branding Solutions</div>
           <div>Printed: {dateStr}</div>
-          <div style={{ marginTop: "1mm" }}>{ws.items.length} item{ws.items.length !== 1 ? "s" : ""} · {sortedFinishes.length} finish{sortedFinishes.length !== 1 ? "es" : ""}</div>
+          <div style={{ marginTop: "1mm" }}>{printTotalQty} item{printTotalQty !== 1 ? "s" : ""} · {sortedFinishes.length} finish{sortedFinishes.length !== 1 ? "es" : ""}</div>
         </div>
       </div>
 
@@ -1110,6 +1111,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
   const cfg = STATUS_CONFIG[ws.status];
   const StatusIcon = cfg.icon;
   const canEdit = ws.status === "pre_wip" || ws.status === "wip";
+  const wsTotalQty = ws.items.reduce((s, i) => s + (i.quantity ?? 1), 0);
 
   const handlePrint = () => printWorksheetFromData(ws);
 
@@ -1165,7 +1167,7 @@ function WorksheetCard({ ws, onStatusChange, onDelete, onReturnToPicking }: {
             <div className="text-sm text-muted-foreground mt-0.5">
               {ws.orderNumber && <span>Order {ws.orderNumber} · </span>}
               {ws.customerName && <span>{ws.customerName} · </span>}
-              <span>{ws.items.length} item{ws.items.length !== 1 ? "s" : ""}</span>
+              <span>{wsTotalQty} item{wsTotalQty !== 1 ? "s" : ""}</span>
               <span className="ml-2 text-xs">{formatDate(ws.createdAt)}</span>
             </div>
             {ws.requiredDate && (
