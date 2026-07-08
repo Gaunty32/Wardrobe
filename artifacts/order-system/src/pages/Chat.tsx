@@ -37,7 +37,7 @@ async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<
 
 interface Conversation {
   id: number;
-  type: "general" | "order" | "customer" | "custom";
+  type: "general" | "order" | "customer" | "custom" | "direct";
   order_id: number | null;
   customer_id: number | null;
   subject: string | null;
@@ -50,6 +50,20 @@ interface Conversation {
   order_number: string | null;
   customer_name: string | null;
   participants: string[];
+}
+
+interface StaffAccount {
+  name: string;
+  email: string;
+  avatar_url?: string | null;
+}
+
+function useStaffDirectory() {
+  return useQuery<StaffAccount[]>({
+    queryKey: ["staff-accounts-directory"],
+    queryFn: () => apiFetch<{ accounts: StaffAccount[] }>("/auth/staff/accounts").then(r => r.accounts ?? []),
+    staleTime: 5 * 60_000,
+  });
 }
 
 interface ChatMessage {
@@ -73,10 +87,15 @@ interface Participant {
   added_at: string;
 }
 
-function convLabel(c: Conversation): string {
+function convLabel(c: Conversation, currentActor?: string): string {
   if (c.type === "general") return "General";
   if (c.type === "order") return c.order_number ? `Order ${c.order_number}` : `Order #${c.order_id}`;
   if (c.type === "customer") return c.customer_name || `Customer #${c.customer_id}`;
+  if (c.type === "direct") {
+    const others = (c.participants ?? []).filter(n => n !== currentActor);
+    if (others.length === 0) return "Just you";
+    return others.join(", ");
+  }
   return c.subject || "Custom chat";
 }
 
@@ -84,6 +103,7 @@ function convIcon(type: Conversation["type"]) {
   if (type === "general") return <Hash className="w-4 h-4" />;
   if (type === "order") return <ShoppingCart className="w-4 h-4" />;
   if (type === "customer") return <User className="w-4 h-4" />;
+  if (type === "direct") return <Users className="w-4 h-4" />;
   return <MessageSquare className="w-4 h-4" />;
 }
 
@@ -110,7 +130,17 @@ function stringToColor(str: string): string {
   return `hsl(${hue}, 55%, 42%)`;
 }
 
-function Avatar({ name, size = 7 }: { name: string; size?: number }) {
+function Avatar({ name, size = 7, avatarUrl }: { name: string; size?: number; avatarUrl?: string | null }) {
+  if (avatarUrl) {
+    return (
+      <img
+        src={`${API_BASE}/storage${avatarUrl}`}
+        alt={name}
+        title={name}
+        className={`w-${size} h-${size} rounded-full object-cover shrink-0 ring-1 ring-border`}
+      />
+    );
+  }
   return (
     <div
       className={`w-${size} h-${size} rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0`}
@@ -197,6 +227,8 @@ function MembersPanel({ convId, onClose }: { convId: number; onClose: () => void
   const qc = useQueryClient();
   const [addName, setAddName] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const { data: staffDirectory = [] } = useStaffDirectory();
+  const avatarFor = (name: string) => staffDirectory.find(s => s.name === name)?.avatar_url ?? null;
 
   const { data: participants = [], isLoading } = useQuery<Participant[]>({
     queryKey: ["chat-participants", convId],
@@ -260,7 +292,7 @@ function MembersPanel({ convId, onClose }: { convId: number; onClose: () => void
         <div className="flex flex-wrap gap-2">
           {participants.map(p => (
             <div key={p.user_name} className="flex items-center gap-1.5 bg-background border rounded-full pl-1 pr-2 py-0.5">
-              <Avatar name={p.user_name} size={5} />
+              <Avatar name={p.user_name} size={5} avatarUrl={avatarFor(p.user_name)} />
               <span className="text-xs font-medium">{p.user_name}</span>
               <button
                 className="text-muted-foreground hover:text-destructive ml-0.5"
@@ -301,7 +333,7 @@ function MembersPanel({ convId, onClose }: { convId: number; onClose: () => void
                 className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
                 onMouseDown={() => handleAdd(name)}
               >
-                <Avatar name={name} size={5} />
+                <Avatar name={name} size={5} avatarUrl={avatarFor(name)} />
                 {name}
               </button>
             ))}
@@ -322,7 +354,7 @@ function MembersPanel({ convId, onClose }: { convId: number; onClose: () => void
 }
 
 // ─── Message bubble ───────────────────────────────────────────────────────────
-function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessage }) {
+function MessageBubble({ msg, prevMsg, avatarUrl }: { msg: ChatMessage; prevMsg?: ChatMessage; avatarUrl?: string | null }) {
   const actor = getActor();
   const me = msg.sender_name === actor && actor !== "";
   const showName = !prevMsg || prevMsg.sender_name !== msg.sender_name;
@@ -340,7 +372,7 @@ function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessa
       <div className={cn("flex gap-2.5 px-4", me ? "flex-row-reverse" : "flex-row", showName ? "mt-3" : "mt-0.5")}>
         {!me && (
           <div className={cn("shrink-0 mt-0.5", showName ? "opacity-100" : "opacity-0")}>
-            <Avatar name={msg.sender_name} size={7} />
+            <Avatar name={msg.sender_name} size={7} avatarUrl={avatarUrl} />
           </div>
         )}
         <div className={cn("max-w-[70%]", me ? "items-end" : "items-start", "flex flex-col gap-0.5")}>
@@ -359,7 +391,7 @@ function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessa
         </div>
         {me && (
           <div className={cn("shrink-0 mt-0.5", showName ? "opacity-100" : "opacity-0")}>
-            <Avatar name={msg.sender_name} size={7} />
+            <Avatar name={msg.sender_name} size={7} avatarUrl={avatarUrl} />
           </div>
         )}
       </div>
@@ -368,10 +400,10 @@ function MessageBubble({ msg, prevMsg }: { msg: ChatMessage; prevMsg?: ChatMessa
 }
 
 // ─── Conversation sidebar item ────────────────────────────────────────────────
-function ConvItem({ conv, active, onClick }: { conv: Conversation; active: boolean; onClick: () => void }) {
-  const label = convLabel(conv);
+function ConvItem({ conv, active, onClick, currentActor, avatarFor }: { conv: Conversation; active: boolean; onClick: () => void; currentActor?: string; avatarFor: (name: string) => string | null }) {
+  const label = convLabel(conv, currentActor);
   const count = parseInt(conv.message_count || "0", 10);
-  const participants = conv.participants ?? [];
+  const participants = (conv.participants ?? []).filter(n => conv.type !== "direct" || n !== currentActor);
 
   return (
     <button
@@ -399,11 +431,16 @@ function ConvItem({ conv, active, onClick }: { conv: Conversation; active: boole
       <div className="flex items-center gap-1 shrink-0">
         {participants.length > 0 && (
           <div className="flex -space-x-1.5">
-            {participants.slice(0, 3).map(name => (
-              <div key={name} className="w-4 h-4 rounded-full border border-background text-[8px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: stringToColor(name) }}>
-                {name.charAt(0).toUpperCase()}
-              </div>
-            ))}
+            {participants.slice(0, 3).map(name => {
+              const url = avatarFor(name);
+              return url ? (
+                <img key={name} src={`${API_BASE}/storage${url}`} alt={name} title={name} className="w-4 h-4 rounded-full border border-background object-cover" />
+              ) : (
+                <div key={name} className="w-4 h-4 rounded-full border border-background text-[8px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: stringToColor(name) }}>
+                  {name.charAt(0).toUpperCase()}
+                </div>
+              );
+            })}
             {participants.length > 3 && (
               <div className="w-4 h-4 rounded-full border border-background bg-muted text-[8px] font-bold text-muted-foreground flex items-center justify-center">
                 +{participants.length - 3}
@@ -420,10 +457,14 @@ function ConvItem({ conv, active, onClick }: { conv: Conversation; active: boole
 // ─── New conversation dialog ──────────────────────────────────────────────────
 function NewConvDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (id: number) => void }) {
   const { toast } = useToast();
-  const [type, setType] = useState<"custom" | "order" | "customer">("custom");
+  const [type, setType] = useState<"custom" | "order" | "customer" | "direct">("custom");
   const [subject, setSubject] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
   const [customerName, setCustomerName] = useState("");
+  const [selectedNames, setSelectedNames] = useState<string[]>([]);
+  const actor = getActor();
+  const { data: staffDirectory = [] } = useStaffDirectory();
+  const pickableStaff = staffDirectory.filter(s => s.name !== actor);
 
   const { data: orders = [] } = useQuery<any[]>({
     queryKey: ["orders-search", orderNumber],
@@ -448,21 +489,27 @@ function NewConvDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
         subject: type === "custom" ? subject : null,
         order_id: type === "order" ? selectedOrderId : null,
         customer_id: type === "customer" ? selectedCustomerId : null,
+        participant_names: type === "direct" ? selectedNames : undefined,
       }),
     }),
     onSuccess: (data) => {
-      toast({ title: "Chat created" });
+      toast({ title: type === "direct" ? "Direct message started" : "Chat created" });
       onCreated(data.id);
       onClose();
-      setSubject(""); setOrderNumber(""); setCustomerName("");
+      setSubject(""); setOrderNumber(""); setCustomerName(""); setSelectedNames([]);
       setSelectedOrderId(null); setSelectedCustomerId(null);
     },
     onError: () => toast({ title: "Could not create chat", variant: "destructive" }),
   });
 
+  function toggleName(name: string) {
+    setSelectedNames(prev => prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]);
+  }
+
   const canCreate = type === "custom" ? subject.trim().length > 0
     : type === "order" ? !!selectedOrderId
-    : !!selectedCustomerId;
+    : type === "customer" ? !!selectedCustomerId
+    : selectedNames.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
@@ -473,7 +520,7 @@ function NewConvDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
         <div className="space-y-4 py-2">
           {/* Type selector */}
           <div className="flex gap-2">
-            {(["custom", "order", "customer"] as const).map(t => (
+            {(["direct", "custom", "order", "customer"] as const).map(t => (
               <button
                 key={t}
                 onClick={() => { setType(t); setSelectedOrderId(null); setSelectedCustomerId(null); }}
@@ -482,10 +529,50 @@ function NewConvDialog({ open, onClose, onCreated }: { open: boolean; onClose: (
                   type === t ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:bg-muted"
                 )}
               >
-                {t === "custom" ? "Custom topic" : t === "order" ? "Order" : "Customer"}
+                {t === "direct" ? "Direct message" : t === "custom" ? "Custom topic" : t === "order" ? "Order" : "Customer"}
               </button>
             ))}
           </div>
+
+          {type === "direct" && (
+            <div>
+              <Label className="text-sm mb-1.5 block">Send to</Label>
+              <div className="grid grid-cols-4 gap-3 max-h-64 overflow-y-auto py-1">
+                {pickableStaff.map(s => {
+                  const selected = selectedNames.includes(s.name);
+                  return (
+                    <button
+                      key={s.name}
+                      type="button"
+                      onClick={() => toggleName(s.name)}
+                      className="flex flex-col items-center gap-1 group"
+                    >
+                      <div className={cn(
+                        "relative rounded-full p-0.5 transition-all",
+                        selected ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "ring-1 ring-transparent group-hover:ring-border"
+                      )}>
+                        <Avatar name={s.name} size={12} avatarUrl={s.avatar_url} />
+                        {selected && (
+                          <div className="absolute -bottom-0.5 -right-0.5 bg-primary text-primary-foreground rounded-full w-4 h-4 flex items-center justify-center">
+                            <Check className="w-2.5 h-2.5" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-center leading-tight truncate w-full">{s.name}</span>
+                    </button>
+                  );
+                })}
+                {pickableStaff.length === 0 && (
+                  <p className="text-xs text-muted-foreground col-span-4">No other staff accounts found</p>
+                )}
+              </div>
+              {selectedNames.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {selectedNames.length === 1 ? `Messaging ${selectedNames[0]}` : `Group message with ${selectedNames.join(", ")}`}
+                </p>
+              )}
+            </div>
+          )}
 
           {type === "custom" && (
             <div>
@@ -550,6 +637,9 @@ function MessageArea({ conv }: { conv: Conversation }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState("");
   const [panel, setPanel] = useState<"none" | "notif" | "members">("none");
+  const actor = getActor();
+  const { data: staffDirectory = [] } = useStaffDirectory();
+  const avatarFor = (name: string) => staffDirectory.find(s => s.name === name)?.avatar_url ?? null;
 
   const { data: messages = [], isLoading } = useQuery<ChatMessage[]>({
     queryKey: ["chat-messages", conv.id],
@@ -589,15 +679,16 @@ function MessageArea({ conv }: { conv: Conversation }) {
     }
   }
 
-  const label = convLabel(conv);
+  const label = convLabel(conv, actor);
   const creator = conv.created_by && conv.created_by !== "Unknown" ? conv.created_by : null;
-  const participants: string[] = conv.participants ?? [];
+  const participants: string[] = (conv.participants ?? []).filter(n => conv.type !== "direct" || n !== actor);
 
   function subtitle() {
     const parts: string[] = [];
     if (conv.type === "order") parts.push("Order chat");
     else if (conv.type === "customer" && conv.customer_name) parts.push(`Customer: ${conv.customer_name}`);
     else if (conv.type === "general") parts.push("General channel");
+    else if (conv.type === "direct") parts.push(participants.length > 1 ? "Group message" : "Direct message");
     if (creator) parts.push(`created by ${creator}`);
     return parts.join(" · ");
   }
@@ -619,11 +710,16 @@ function MessageArea({ conv }: { conv: Conversation }) {
             title={`Members: ${participants.join(", ")}`}
             onClick={() => setPanel(p => p === "members" ? "none" : "members")}
           >
-            {participants.slice(0, 4).map(name => (
-              <div key={name} className="w-6 h-6 rounded-full border-2 border-background text-[9px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: stringToColor(name) }}>
-                {name.charAt(0).toUpperCase()}
-              </div>
-            ))}
+            {participants.slice(0, 4).map(name => {
+              const url = avatarFor(name);
+              return url ? (
+                <img key={name} src={`${API_BASE}/storage${url}`} alt={name} className="w-6 h-6 rounded-full border-2 border-background object-cover" />
+              ) : (
+                <div key={name} className="w-6 h-6 rounded-full border-2 border-background text-[9px] font-bold text-white flex items-center justify-center" style={{ backgroundColor: stringToColor(name) }}>
+                  {name.charAt(0).toUpperCase()}
+                </div>
+              );
+            })}
             {participants.length > 4 && (
               <div className="w-6 h-6 rounded-full border-2 border-background bg-muted text-[9px] font-bold text-muted-foreground flex items-center justify-center">
                 +{participants.length - 4}
@@ -671,7 +767,7 @@ function MessageArea({ conv }: { conv: Conversation }) {
           </div>
         ) : (
           messages.map((msg, i) => (
-            <MessageBubble key={msg.id} msg={msg} prevMsg={messages[i - 1]} />
+            <MessageBubble key={msg.id} msg={msg} prevMsg={messages[i - 1]} avatarUrl={avatarFor(msg.sender_name)} />
           ))
         )}
         <div ref={bottomRef} />
@@ -729,7 +825,12 @@ export default function Chat() {
 
   const activeConv = conversations.find(c => c.id === activeId) ?? null;
 
+  const actor = getActor();
+  const { data: staffDirectory = [] } = useStaffDirectory();
+  const avatarFor = (name: string) => staffDirectory.find(s => s.name === name)?.avatar_url ?? null;
+
   const grouped = {
+    direct: conversations.filter(c => c.type === "direct"),
     general: conversations.filter(c => c.type === "general"),
     order: conversations.filter(c => c.type === "order"),
     customer: conversations.filter(c => c.type === "customer"),
@@ -755,28 +856,34 @@ export default function Chat() {
               </div>
             ) : (
               <>
+                {grouped.direct.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1">Direct messages</p>
+                    {grouped.direct.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} currentActor={actor} avatarFor={avatarFor} />)}
+                  </div>
+                )}
                 {grouped.general.length > 0 && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1">General</p>
-                    {grouped.general.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} />)}
+                    {grouped.general.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} currentActor={actor} avatarFor={avatarFor} />)}
                   </div>
                 )}
                 {grouped.order.length > 0 && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1">Orders</p>
-                    {grouped.order.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} />)}
+                    {grouped.order.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} currentActor={actor} avatarFor={avatarFor} />)}
                   </div>
                 )}
                 {grouped.customer.length > 0 && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1">Customers</p>
-                    {grouped.customer.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} />)}
+                    {grouped.customer.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} currentActor={actor} avatarFor={avatarFor} />)}
                   </div>
                 )}
                 {grouped.custom.length > 0 && (
                   <div>
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-2 mb-1">Topics</p>
-                    {grouped.custom.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} />)}
+                    {grouped.custom.map(c => <ConvItem key={c.id} conv={c} active={activeId === c.id} onClick={() => setActiveId(c.id)} currentActor={actor} avatarFor={avatarFor} />)}
                   </div>
                 )}
               </>

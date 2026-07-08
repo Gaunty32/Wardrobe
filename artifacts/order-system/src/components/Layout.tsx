@@ -228,6 +228,43 @@ function ChatBell() {
   );
 }
 
+// ─── Top-right flashing unread chat indicator ────────────────────────────────
+function TopRightChatIndicator({ dark = false }: { dark?: boolean }) {
+  const [, navigate] = useLocation();
+  const actor = getStoredActor();
+
+  const { data } = useQuery<{ count: number }>({
+    queryKey: ["chat-unread-count", actor],
+    queryFn: () => apiFetch(`/chat/unread-count`),
+    enabled: isStaffAuthenticated() && !!actor,
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+
+  const count = data?.count ?? 0;
+
+  return (
+    <button
+      onClick={() => navigate("/chat")}
+      className={cn(
+        "relative flex items-center justify-center w-9 h-9 rounded-full transition-colors shrink-0",
+        dark ? "text-white/70 hover:bg-white/10 hover:text-white" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      )}
+      title={count > 0 ? `${count} unread chat message${count !== 1 ? "s" : ""}` : "Chat"}
+    >
+      <Mail className="w-5 h-5" />
+      {count > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 flex h-3.5 w-3.5">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+          <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-500 text-white text-[8px] font-bold items-center justify-center">
+            {count > 9 ? "9+" : count}
+          </span>
+        </span>
+      )}
+    </button>
+  );
+}
+
 function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast();
   const [type, setType] = useState<"critical" | "minor" | "feature">("minor");
@@ -708,11 +745,15 @@ export default function Layout({ children }: LayoutProps) {
             alt="Select Branding Solutions"
             className="h-9 w-auto object-contain"
           />
-          <UserMenu staffMe={staffMe} onSignOut={handleSignOut} dark />
+          <div className="flex items-center gap-1.5">
+            <TopRightChatIndicator dark />
+            <UserMenu staffMe={staffMe} onSignOut={handleSignOut} dark />
+          </div>
         </header>
 
         {/* Desktop Top Bar — account widget in the top-right so it's always clear who's logged in */}
-        <header className="hidden md:flex h-14 items-center justify-end px-6 border-b border-border/60 sticky top-0 z-20 bg-background/80 backdrop-blur">
+        <header className="hidden md:flex h-14 items-center justify-end gap-2 px-6 border-b border-border/60 sticky top-0 z-20 bg-background/80 backdrop-blur">
+          <TopRightChatIndicator />
           <UserMenu staffMe={staffMe} onSignOut={handleSignOut} />
         </header>
 

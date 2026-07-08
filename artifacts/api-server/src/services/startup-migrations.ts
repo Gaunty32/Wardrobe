@@ -2330,6 +2330,13 @@ export async function refreshProductIssues(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_message_reads_user_idx ON chat_message_reads(user_name)`);
   console.log("[startup] chat_message_reads table ensured");
 
+  // Direct-message support: a stable, sorted, pipe-joined key of every participant's
+  // name (including the creator) so that re-opening a DM with the same person/group
+  // reuses the existing conversation instead of spawning a duplicate every time.
+  await db.execute(sql`ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS participants_key TEXT`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_conversations_participants_key_idx ON chat_conversations(type, participants_key)`);
+  console.log("[startup] chat_conversations.participants_key ensured (direct messages)");
+
   // Safety Net G: credit process_stock.stock_quantity for delivered PO lines where the
   // per-item receive path was used (which previously skipped the process stock credit).
   // For each process_stock item, compute the expected credit = SUM(quantity_delivered)

@@ -42,10 +42,11 @@ router.get("/chat/conversations", async (_req: Request, res: Response): Promise<
 // ─── POST /chat/conversations ────────────────────────────────────────────────
 router.post("/chat/conversations", async (req: Request, res: Response): Promise<void> => {
   const parsed = z.object({
-    type: z.enum(["general", "order", "customer", "custom"]),
+    type: z.enum(["general", "order", "customer", "custom", "direct"]),
     order_id: z.number().int().optional().nullable(),
     customer_id: z.number().int().optional().nullable(),
     subject: z.string().max(200).optional().nullable(),
+    participant_names: z.array(z.string().min(1).max(100)).optional(),
   }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -59,6 +60,36 @@ router.post("/chat/conversations", async (req: Request, res: Response): Promise<
   if (d.type === "customer" && d.customer_id) {
     const existing = await db.execute(sql`SELECT id FROM chat_conversations WHERE type='customer' AND customer_id=${d.customer_id} LIMIT 1`);
     if (existing.rows.length) { res.json(existing.rows[0]); return; }
+  }
+
+  if (d.type === "direct") {
+    const names = (d.participant_names ?? []).map(n => n.trim()).filter(Boolean);
+    if (names.length === 0) { res.status(400).json({ error: "At least one recipient is required" }); return; }
+    const allParticipants = Array.from(new Set([actor, ...names])).sort((a, b) => a.localeCompare(b));
+    const participantsKey = allParticipants.join("||");
+
+    const existing = await db.execute(sql`
+      SELECT id FROM chat_conversations WHERE type = 'direct' AND participants_key = ${participantsKey} LIMIT 1
+    `);
+    if (existing.rows.length) { res.json(existing.rows[0]); return; }
+
+    const result = await db.execute(sql`
+      INSERT INTO chat_conversations (type, subject, created_by, participants_key)
+      VALUES ('direct', ${d.subject ?? null}, ${actor}, ${participantsKey})
+      RETURNING *
+    `);
+    const conv = result.rows[0] as any;
+
+    for (const name of allParticipants) {
+      await db.execute(sql`
+        INSERT INTO chat_participants (conversation_id, user_name, added_by)
+        VALUES (${conv.id}, ${name}, ${actor})
+        ON CONFLICT DO NOTHING
+      `);
+    }
+
+    res.status(201).json(conv);
+    return;
   }
 
   const result = await db.execute(sql`
