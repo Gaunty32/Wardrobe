@@ -2150,64 +2150,20 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   console.log("[startup] Safety Net D: allocated items on fully-delivered PO lines");
 
-  // Safety Net F: plain 'complete' items that were ORIGINALLY queued for purchasing
-  // (purchasing_queued_at IS NOT NULL) but now have no PO coverage and no product stock.
-  //
-  // How this happens:
-  //   1. Item confirmed → stock_quantity = 0 → purchase_required = true, purchasing_queued_at set.
-  //   2. A PO is created (sometimes only loosely linked by name+colour+size, no direct ID).
-  //   3. The "Retroactively cleared broken-link PO items" migration fires on restart, finds the
-  //      fuzzy-matched PO line as delivered, and clears purchase_required + sets stock_status='complete'.
-  //   4. The PO (or its line) is later deleted — leaving the item incorrectly 'complete' with
-  //      no real stock and no PO record.
-  //   5. The existing 'allocated' phantom check never fires because stock_status is 'complete'.
-  //
-  // Guard: only fires when:
-  //   - Item is a plain item (no finish) that has not been dispatched
-  //   - Item was originally queued for purchasing (purchasing_queued_at IS NOT NULL)
-  //   - No delivered PO covers it (by direct ID or source_order_item_ids)
-  //   - No active PO covers it
-  //   - Product stock is insufficient (stock_quantity < item quantity)
-  //   - Order is still in an active status
-  //
-  // Safe to re-run: once a real PO is delivered and linked, the NOT EXISTS checks exclude the item.
-  await db.execute(sql`
-    UPDATE order_items oi
-    SET purchase_required  = true,
-        purchase_quantity  = oi.quantity,
-        stock_status       = NULL,
-        stock_allocated_at = NULL
-    FROM orders o
-    WHERE oi.order_id = o.id
-      AND oi.stock_status = 'complete'
-      AND oi.finish_id IS NULL
-      AND oi.dispatched_at IS NULL
-      AND oi.purchasing_queued_at IS NOT NULL
-      AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
-      AND EXISTS (
-        SELECT 1 FROM products p
-        WHERE p.id = oi.product_id
-          AND COALESCE(p.is_service, false) = false
-          AND COALESCE(p.stock_quantity, 0) < oi.quantity
-      )
-      AND NOT EXISTS (
-        -- No delivered PO line covers this item
-        SELECT 1 FROM purchase_order_items poi
-        JOIN purchase_orders po2 ON po2.id = poi.po_id
-        WHERE (po2.status = 'delivered' OR (poi.quantity_delivered >= poi.quantity_ordered AND poi.quantity_ordered > 0))
-          AND (poi.order_item_id = oi.id
-               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
-      )
-      AND NOT EXISTS (
-        -- No active PO line covers this item
-        SELECT 1 FROM purchase_order_items poi
-        JOIN purchase_orders po2 ON po2.id = poi.po_id
-        WHERE po2.status NOT IN ('cancelled')
-          AND (poi.order_item_id = oi.id
-               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
-      )
-  `);
-  console.log("[startup] Safety Net F: re-queued phantom-complete plain items with no PO and no stock");
+  // Safety Net F — DISABLED (2026-07-08): this used to re-queue plain 'complete' items
+  // for purchasing whenever current product stock was less than the item's quantity and
+  // no PO covered it. That heuristic is unsound: a *legitimate* stock allocation that
+  // fully consumes the last of a variant's stock leaves stock_quantity < item quantity
+  // too (often exactly 0) — indistinguishable from the rare "phantom complete" case this
+  // was meant to catch (a fuzzy-linked PO that was later deleted). Because this ran on
+  // every server restart/deploy, it was silently reverting correctly stock-fulfilled
+  // order items back into the purchasing queue every time the app redeployed (e.g. O207 /
+  // order_item 910 — Travel Mug, plain item, allocated from stock, restart flipped it back
+  // to purchase_required=true). Unlike /purchasing/rescan, this migration has no "credit
+  // back this item's own allocation before judging available stock" logic, so it can never
+  // safely distinguish the two cases from stock_quantity alone. Left disabled until a
+  // reliable signal for genuine PO-deletion phantoms exists (e.g. an allocation ledger).
+  console.log("[startup] Safety Net F: disabled (unsound heuristic — see comment)");
 
   // Safety Net E: purchase orders where every line is fully delivered but the PO status
   // is still 'ordered'. Mark them 'delivered' so the UI shows them correctly.
