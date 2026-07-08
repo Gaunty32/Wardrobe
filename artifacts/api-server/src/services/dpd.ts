@@ -95,6 +95,20 @@ export interface BookConsignmentParams {
   totalWeightKg: number;
   collectionDate?: Date;
   networkCode?: string;
+  customsValue?: number;
+  parcelDescription?: string;
+}
+
+/**
+ * The Channel Islands (Jersey, Guernsey, Alderney, Sark, Herm) use UK-style
+ * postcodes (JE/GY) but sit outside the UK customs/VAT territory. DPD requires
+ * a customs value and goods description on shipments there even though the
+ * postcode looks domestic — omitting them causes "missing mandatory field"
+ * errors that never occur for genuinely domestic UK addresses.
+ */
+export function isChannelIslandsPostcode(postcode: string | null | undefined): boolean {
+  if (!postcode) return false;
+  return /^\s*(JE|GY)\d/i.test(postcode.trim());
 }
 
 export interface ConsignmentResult {
@@ -168,9 +182,9 @@ export async function bookDpdConsignment(params: BookConsignmentParams): Promise
         shippingRef1: params.orderNumber.slice(0, 25),
         shippingRef2: "",
         shippingRef3: "",
-        customsValue: null,
+        customsValue: params.customsValue ?? null,
         deliveryInstructions: "",
-        parcelDescription: "",
+        parcelDescription: params.parcelDescription ?? "",
         liabilityValue: null,
         liability: false,
       },

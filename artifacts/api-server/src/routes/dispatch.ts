@@ -6,12 +6,42 @@ import {
   customerEmployeesTable, customerDeliveryAddressesTable, customersTable, productsTable,
   purchaseOrdersTable, purchaseOrderItemsTable,
 } from "@workspace/db";
-import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured } from "../services/dpd.js";
+import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured, isChannelIslandsPostcode } from "../services/dpd.js";
 import { logOrderAction, getActor } from "../services/orderLog";
 import { notifyAllPortalUsers } from "../services/notifications.js";
 import { getWooSettings, wooUpdateOrderStatus } from "./woo.js";
 
 const router: IRouter = Router();
+
+/**
+ * Builds the customs value + goods description DPD requires for Channel
+ * Islands deliveries (Jersey/Guernsey) — see isChannelIslandsPostcode. Not
+ * needed (and left undefined) for mainland UK addresses.
+ */
+async function getCustomsInfoIfNeeded(
+  orderId: number,
+  orderTotal: string | number | null,
+  postcode: string | null | undefined
+): Promise<{ customsValue?: number; parcelDescription?: string }> {
+  if (!isChannelIslandsPostcode(postcode)) return {};
+
+  const items = await db.select({
+    productName: orderItemsTable.productName,
+    lineTotal: orderItemsTable.lineTotal,
+  }).from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
+
+  // Customs declarations require a genuine non-zero value — fall back to a
+  // nominal £1 if the order (or every line) is priced at £0 (e.g. internal
+  // transfers, samples), since DPD rejects a zero/blank customs value.
+  const totalFromOrder = parseFloat(String(orderTotal ?? "0")) || 0;
+  const totalFromItems = items.reduce((sum, i) => sum + (parseFloat(String(i.lineTotal ?? "0")) || 0), 0);
+  const customsValue = Math.max(totalFromOrder, totalFromItems, 1);
+
+  const description = [...new Set(items.map(i => i.productName).filter(Boolean))].join(", ").slice(0, 100)
+    || "Branded clothing / merchandise";
+
+  return { customsValue, parcelDescription: description };
+}
 
 router.get("/dispatch/orders", async (req, res): Promise<void> => {
   const excludedStatuses = ["draft", "cancelled", "shipped", "delivered"];
@@ -477,6 +507,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
             countryCode: "GB",
           };
       try {
+        const customsInfo = await getCustomsInfoIfNeeded(order.id, order.totalAmount, resolvedAddress.postcode);
         dpdResult = await bookDpdConsignment({
           orderNumber: order.orderNumber,
           delivery: {
@@ -487,6 +518,7 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
           numberOfParcels,
           totalWeightKg,
           networkCode,
+          ...customsInfo,
         });
       } catch (err: unknown) {
         dpdError = err instanceof Error ? err.message : "DPD booking failed";
@@ -868,6 +900,7 @@ router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> =>
         postcode: accountAddress!.postcode,
         countryCode: "GB",
       };
+  const customsInfo = await getCustomsInfoIfNeeded(order.id, order.totalAmount, resolvedAddress.postcode);
   const dpdResult = await bookDpdConsignment({
     orderNumber: order.orderNumber,
     delivery: {
@@ -877,6 +910,7 @@ router.post("/dispatch/orders/:id/retry-dpd", async (req, res): Promise<void> =>
     },
     numberOfParcels,
     totalWeightKg,
+    ...customsInfo,
   });
 
   await db.update(ordersTable).set({
