@@ -2162,7 +2162,7 @@ export default function ProductDetail() {
                               );
                               if (groupVariants.length === 0) continue;
 
-                              if (showGroups) {
+                              if (showGroups && groupVariants.length > 1) {
                                 const draft: ComboDraft = comboDrafts[g.key] ?? { supplierId: g.sharedSupplierId, code: g.sharedCode, price: g.sharedPrice };
                                 const isDirty = draft.supplierId !== g.sharedSupplierId || draft.code !== g.sharedCode || draft.price !== g.sharedPrice;
                                 const setDraft = (field: keyof ComboDraft, val: string) =>
