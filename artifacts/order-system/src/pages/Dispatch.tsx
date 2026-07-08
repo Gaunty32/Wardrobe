@@ -43,7 +43,12 @@ interface DispatchItem {
   stockStatus: string | null; purchaseRequired: boolean | null;
   dispatchedAt: string | null;
   blockedByPo?: boolean;
+  isService?: boolean;
   employee: Employee | null;
+}
+
+function isItemReady(i: Pick<DispatchItem, "stockStatus" | "isService">): boolean {
+  return i.isService === true || i.stockStatus === "complete" || i.stockStatus === "allocated";
 }
 interface Worksheet {
   id: number; worksheetNumber: string; status: string;
@@ -351,7 +356,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
           </div>
           <div className="flex gap-2 flex-shrink-0 ml-3">
             {(() => {
-              const readyIds = order.items.filter(i => i.stockStatus === "complete" || i.stockStatus === "allocated").map(i => i.id);
+              const readyIds = order.items.filter(i => isItemReady(i)).map(i => i.id);
               if (readyIds.length === 0) return null;
               const hasNamed = order.items.filter(i => readyIds.includes(i.id)).some(i => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
               return (
@@ -374,8 +379,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
         </div>
       )}
       {!order.productionComplete && order.status !== "part_shipped" && !dueToday && !overdue && (() => {
-        const readyLines = order.items.filter(i => i.stockStatus === "complete" || i.stockStatus === "allocated");
-        const outstandingLines = order.items.filter(i => i.stockStatus !== "complete" && i.stockStatus !== "allocated");
+        const readyLines = order.items.filter(i => isItemReady(i));
+        const outstandingLines = order.items.filter(i => !isItemReady(i));
         if (readyLines.length === 0) return null;
         const readyIds = readyLines.map(i => i.id);
         const hasNamed = readyLines.some(i => i.recipientType === "person" && (i.recipientName || i.recipientEmployeeId));
@@ -427,8 +432,8 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Items</h4>
             {(() => {
               const dispItems = order.items.filter(i => i.dispatchedAt);
-              const readyItems = order.items.filter(i => !i.dispatchedAt && (i.stockStatus === "complete" || i.stockStatus === "allocated"));
-              const pendItems = order.items.filter(i => !i.dispatchedAt && i.stockStatus !== "complete" && i.stockStatus !== "allocated");
+              const readyItems = order.items.filter(i => !i.dispatchedAt && isItemReady(i));
+              const pendItems = order.items.filter(i => !i.dispatchedAt && !isItemReady(i));
               const showGroups = readyItems.length > 0 && pendItems.length > 0;
 
               const renderItem = (item: typeof order.items[0], tone: "ready" | "pending" | "done") => {
@@ -660,7 +665,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
 
             {(() => {
               const notReady = order.items.filter(
-                i => !i.dispatchedAt && i.stockStatus !== "complete" && i.stockStatus !== "allocated"
+                i => !i.dispatchedAt && !isItemReady(i)
               );
               if (notReady.length === 0) return null;
               return (
