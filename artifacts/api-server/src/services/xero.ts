@@ -1,5 +1,5 @@
 import { db, settingsTable, customersTable, suppliersTable, ordersTable, orderItemsTable, customerFinishesTable } from "@workspace/db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 
 // ─── Xero OAuth endpoints ────────────────────────────────────────────────────
 const XERO_AUTH_URL = "https://login.xero.com/identity/connect/authorize";
@@ -559,6 +559,51 @@ export async function getOverdueBalance(xeroContactId: string, daysThreshold = 3
     oldestDueDate: oldestDueDate ? oldestDueDate.toISOString().slice(0, 10) : null,
     invoiceCount,
   };
+}
+
+/**
+ * Refreshes locally-stored xero_invoice_status / paid_at for a set of orders by
+ * pulling the current status directly from Xero. Local status is only ever
+ * written when we post an invoice (or auto-allocate a credit at post time) —
+ * if a customer later pays the invoice in Xero directly (bank feed, manual
+ * reconciliation, etc.) our DB never hears about it, so "balance due" figures
+ * computed from stored status can drift stale from the real Xero balance.
+ * Call this before computing any balance-due figure for outstanding invoices.
+ */
+export async function refreshInvoiceStatusesFromXero(orderIds: number[]): Promise<void> {
+  if (orderIds.length === 0) return;
+
+  const orders = await db.select({ id: ordersTable.id, xeroInvoiceId: ordersTable.xeroInvoiceId })
+    .from(ordersTable)
+    .where(and(inArray(ordersTable.id, orderIds), sql`${ordersTable.xeroInvoiceId} IS NOT NULL`));
+
+  const withXeroId = orders.filter((o): o is { id: number; xeroInvoiceId: string } => !!o.xeroInvoiceId);
+  if (withXeroId.length === 0) return;
+
+  try {
+    // Xero batches multiple InvoiceIDs into one call via a comma-separated IDs= param
+    const ids = withXeroId.map(o => o.xeroInvoiceId).join(",");
+    const res = await xeroFetch(`/Invoices?IDs=${encodeURIComponent(ids)}`);
+    if (!res.ok) return; // best-effort — never block balance display on a Xero hiccup
+
+    const data = await res.json() as { Invoices?: Array<{ InvoiceID: string; Status: string; AmountDue?: number; FullyPaidOnDate?: string }> };
+    const byId = new Map((data.Invoices ?? []).map(inv => [inv.InvoiceID, inv]));
+
+    for (const o of withXeroId) {
+      const live = byId.get(o.xeroInvoiceId);
+      if (!live) continue;
+
+      const isPaid = live.Status === "PAID" || (live.AmountDue ?? 0) <= 0.005;
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
+      if (live.Status) updates.xeroInvoiceStatus = isPaid ? "PAID" : live.Status;
+      if (isPaid) updates.paidAt = parseXeroDate(live.FullyPaidOnDate) ?? new Date();
+
+      await db.update(ordersTable).set(updates).where(eq(ordersTable.id, o.id));
+    }
+  } catch (err) {
+    // Best-effort sync — never block balance display on a Xero API failure
+    console.warn("[xero] refreshInvoiceStatusesFromXero failed (non-fatal):", err);
+  }
 }
 
 // ─── Invoice posting ──────────────────────────────────────────────────────────

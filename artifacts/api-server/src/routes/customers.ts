@@ -3,7 +3,7 @@ import { eq, ilike, or, isNotNull, and, ne, sql } from "drizzle-orm";
 import { db, customersTable, ordersTable, customerEmployeesTable } from "@workspace/db";
 import { z } from "zod";
 import { randomBytes } from "crypto";
-import { pushCustomerToXero } from "../services/xero.js";
+import { pushCustomerToXero, refreshInvoiceStatusesFromXero } from "../services/xero.js";
 import { syncCustomerToPhoneDirectory } from "../services/contacts-sync.js";
 import {
   CreateCustomerBody,
@@ -255,6 +255,24 @@ router.delete("/customers/:id", async (req, res): Promise<void> => {
 router.get("/customers/:id/invoice-summary", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid customer ID" }); return; }
+
+  // Balance due is computed from locally-stored xero_invoice_status, which is only
+  // ever written when we post an invoice. If the customer later pays it directly in
+  // Xero (bank feed, manual reconciliation, etc.) our copy goes stale. Refresh any
+  // not-yet-PAID invoices against Xero first so the figures below match reality.
+  const candidates = await db
+    .select({ id: ordersTable.id })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.customerId, id),
+      isNotNull(ordersTable.xeroInvoiceId),
+      sql`${ordersTable.xeroInvoiceStatus} IS DISTINCT FROM 'PAID'`,
+      sql`${ordersTable.xeroInvoiceStatus} IS DISTINCT FROM 'VOIDED'`,
+      sql`${ordersTable.xeroInvoiceStatus} IS DISTINCT FROM 'DELETED'`,
+    ));
+  if (candidates.length > 0) {
+    await refreshInvoiceStatusesFromXero(candidates.map((c) => c.id)).catch(() => {});
+  }
 
   // Compute gross (inc-VAT) total per order by joining order_items.
   // Mirrors the exact formula used in the invoice email:
