@@ -1792,7 +1792,7 @@ export async function refreshProductIssues(): Promise<void> {
   {
     const { rowCount: promoted } = await db.execute(sql`
       UPDATE order_items oi
-      SET stock_status       = 'allocated',
+      SET stock_status       = CASE WHEN oi.finish_id IS NULL THEN 'complete' ELSE 'allocated' END,
           stock_allocated_at = NOW()
       FROM orders o
       WHERE oi.order_id = o.id
@@ -1815,6 +1815,25 @@ export async function refreshProductIssues(): Promise<void> {
     `);
     if ((promoted ?? 0) > 0) {
       console.log(`[startup] Safety-net promoted ${promoted} item(s) to picking list (purchase_required=false, stock_status=null, no outstanding PO)`);
+    }
+  }
+
+  // Corrective fix: an earlier version of the safety-net above unconditionally set
+  // stock_status='allocated' without checking finish_id, so plain (undecorated) items
+  // got stuck there permanently — invisible to Purchasing (purchase_required=false) but
+  // never reaching Despatch, since only decorated items pass through the picking-list
+  // workflow to become 'complete'. Reclassify any such stuck plain items now.
+  // Safe to re-run: only touches finish_id IS NULL rows still at 'allocated'.
+  {
+    const { rowCount: reclassified } = await db.execute(sql`
+      UPDATE order_items
+      SET stock_status = 'complete'
+      WHERE finish_id IS NULL
+        AND stock_status = 'allocated'
+        AND dispatched_at IS NULL
+    `);
+    if ((reclassified ?? 0) > 0) {
+      console.log(`[startup] Reclassified ${reclassified} stuck plain item(s) from 'allocated' to 'complete' so they can reach Despatch`);
     }
   }
 
