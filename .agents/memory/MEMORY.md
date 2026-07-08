@@ -15,3 +15,4 @@
 - [React error #300 from time-based auth early-return](react-error-300-conditional-hook.md) — early return gated on live JWT-expiry check placed before a later hook; use a scratch eslint-plugin-react-hooks run to find these fast
 - [Staff accounts JSON store](staff-accounts-json-store.md) — order-system staff accounts live in settings.staff_accounts JSON blob, not a table; password-only logins have no email so can't have per-user profile data
 - [Testing OTP/email login flows without inbox access](e2e-otp-login-without-email.md) — seed the OTP hash directly in DB, or better, get a valid JWT via API and inject into localStorage for runTest, since email inboxes aren't reachable from the agent
+- [Unsound safety-net startup migrations](safety-net-heuristic-migrations.md) — heuristics like "current stock < needed" can't distinguish the rare broken case from valid states, so they silently re-corrupt data on every restart
