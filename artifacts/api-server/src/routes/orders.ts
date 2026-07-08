@@ -804,6 +804,21 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
           { supplierId: r.supplierId!, supplierName: r.supplierName, supplierEmail: r.supplierEmail },
         ])
       );
+      // Some products don't split stock/supplier by size at all — they have a single
+      // variant per colour with size/sleeve left blank (e.g. "Charcoal" covering all sizes).
+      // Order items for those products still record a real size ("Large", "Medium", ...),
+      // so the exact-key lookup above never matches and the variant supplier was silently
+      // ignored in favour of the product-level default. Add a colour-only fallback keyed off
+      // those blank-size variants (only when the colour has no other size-specific variant
+      // rows, so this stays unambiguous) for the size-specific lookup to fall back to.
+      const variantSupplierColourMap = new Map(
+        variantSupplierRows
+          .filter(r => !r.size && !r.sleeve)
+          .map(r => [
+            `${r.productId}|${(r.colour ?? "").toLowerCase()}`,
+            { supplierId: r.supplierId!, supplierName: r.supplierName, supplierEmail: r.supplierEmail },
+          ])
+      );
       const plainStockRows = await db.execute(sql`
         SELECT p.id AS product_id, NULL::text AS colour, NULL::text AS size, p.stock_quantity
         FROM products p
@@ -856,9 +871,12 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
         remainingStock.set(activeKey, available - allocatedQty);
 
-        // Prefer colour+size-specific variant supplier; fall back to product-level supplier
+        // Prefer colour+size-specific variant supplier; fall back to a colour-only variant
+        // supplier (products with a single blank-size variant per colour), then finally to
+        // the product-level supplier.
         const varSupKey = `${item.productId}|${(item.colour ?? "").toLowerCase()}|${(item.size ?? "").toLowerCase()}`;
-        const varSup = variantSupplierMap.get(varSupKey);
+        const varSupColourKey = `${item.productId}|${(item.colour ?? "").toLowerCase()}`;
+        const varSup = variantSupplierMap.get(varSupKey) ?? variantSupplierColourMap.get(varSupColourKey);
         const resolvedSupplierId = varSup?.supplierId ?? sup?.supplierId ?? null;
         const resolvedSupplierName = varSup?.supplierName ?? sup?.supplierName ?? null;
         const resolvedSupplierEmail = varSup?.supplierEmail ?? sup?.supplierEmail ?? null;
@@ -2316,6 +2334,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
              AND (
                   (pv.size IS NOT DISTINCT FROM ${size})
                   OR (${size}::text LIKE '%/%' AND pv.size = split_part(${size}, '/', 1) AND pv.sleeve = split_part(${size}, '/', 2))
+                  OR (pv.size IS NULL AND pv.sleeve IS NULL)
              )
            ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
            LIMIT 1),
@@ -2334,6 +2353,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
              AND (
                   (pv.size IS NOT DISTINCT FROM ${size})
                   OR (${size}::text LIKE '%/%' AND pv.size = split_part(${size}, '/', 1) AND pv.sleeve = split_part(${size}, '/', 2))
+                  OR (pv.size IS NULL AND pv.sleeve IS NULL)
              )
            ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
            LIMIT 1),
@@ -2348,6 +2368,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
              AND (
                   (pv.size IS NOT DISTINCT FROM ${size})
                   OR (${size}::text LIKE '%/%' AND pv.size = split_part(${size}, '/', 1) AND pv.sleeve = split_part(${size}, '/', 2))
+                  OR (pv.size IS NULL AND pv.sleeve IS NULL)
              )
            ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
            LIMIT 1),

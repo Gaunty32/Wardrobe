@@ -47,6 +47,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
                 AND (
                   (pv.size IS NOT DISTINCT FROM oi.size)
                   OR (oi.size LIKE '%/%' AND pv.size = split_part(oi.size, '/', 1) AND pv.sleeve = split_part(oi.size, '/', 2))
+                  OR (pv.size IS NULL AND pv.sleeve IS NULL)
                 )
               ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
               LIMIT 1),
@@ -66,6 +67,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
                 AND (
                   (pv2.size IS NOT DISTINCT FROM oi.size)
                   OR (oi.size LIKE '%/%' AND pv2.size = split_part(oi.size, '/', 1) AND pv2.sleeve = split_part(oi.size, '/', 2))
+                  OR (pv2.size IS NULL AND pv2.sleeve IS NULL)
                 )
                 AND pv2.primary_supplier_id IS NOT NULL
               ORDER BY CASE WHEN pv2.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
@@ -81,6 +83,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
                 AND (
                   (pv2.size IS NOT DISTINCT FROM oi.size)
                   OR (oi.size LIKE '%/%' AND pv2.size = split_part(oi.size, '/', 1) AND pv2.sleeve = split_part(oi.size, '/', 2))
+                  OR (pv2.size IS NULL AND pv2.sleeve IS NULL)
                 )
                 AND pv2.primary_supplier_id IS NOT NULL
               ORDER BY CASE WHEN pv2.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
@@ -96,6 +99,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
                 AND (
                   (pv2.size IS NOT DISTINCT FROM oi.size)
                   OR (oi.size LIKE '%/%' AND pv2.size = split_part(oi.size, '/', 1) AND pv2.sleeve = split_part(oi.size, '/', 2))
+                  OR (pv2.size IS NULL AND pv2.sleeve IS NULL)
                 )
                 AND pv2.primary_supplier_id IS NOT NULL
               ORDER BY CASE WHEN pv2.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
@@ -260,15 +264,19 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
   const productSupplier = alias(suppliersTable, "product_supplier");
 
   // Correlated subquery helpers: match the variant by colour + size, where "size" handles
-  // two stored formats:
+  // three cases:
   //   1. Direct: pv.size = oi.size (most products)
   //   2. Split: order item stores "size/sleeve" (e.g. "17.0/Short Sleeve") but the variant
   //      has size = "17.0" and sleeve = "Short Sleeve" as separate columns (shirts).
-  // A direct match is always preferred over a split match. We deliberately do NOT fall back
-  // to "any variant of this colour" when no size match is found — that produced
-  // non-deterministic results (LIMIT 1 with no stable ordering) and could silently override
-  // an already-correct supplier stored on the order item itself. Callers should COALESCE
-  // these with the order item's own stored supplier fields as the next fallback.
+  //   3. Blank-size variant: the product doesn't track per-size stock/supplier at all — a
+  //      single variant per colour with size/sleeve left blank covers every size (e.g. a
+  //      "Charcoal" row with no size breakdown). The order item still records a real size
+  //      ("Large"), so it must still match that colour's variant rather than falling through
+  //      to the product-level default.
+  // A direct match is always preferred, then a split match, then the blank-size fallback —
+  // enforced by the ORDER BY below with LIMIT 1, so this stays deterministic. We do NOT fall
+  // back to "any variant of this colour" beyond that (e.g. picking an arbitrary sized variant
+  // when several exist and none match) — only a genuinely size-agnostic (blank) variant.
   const variantSizeMatch = (pvAlias = "pv") => sql`(
     (${sql.raw(pvAlias)}.size IS NOT DISTINCT FROM ${orderItemsTable.size})
     OR (
@@ -276,6 +284,7 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       AND ${sql.raw(pvAlias)}.size = split_part(${orderItemsTable.size}, '/', 1)
       AND ${sql.raw(pvAlias)}.sleeve = split_part(${orderItemsTable.size}, '/', 2)
     )
+    OR (${sql.raw(pvAlias)}.size IS NULL AND ${sql.raw(pvAlias)}.sleeve IS NULL)
   )`;
 
   const variantSupplierIdSql = sql<number | null>`
@@ -652,6 +661,7 @@ router.post("/purchasing/recheck-stock", async (req, res): Promise<void> => {
              AND (
                (pv.size IS NOT DISTINCT FROM oi.size)
                OR (oi.size LIKE '%/%' AND pv.size = split_part(oi.size, '/', 1) AND pv.sleeve = split_part(oi.size, '/', 2))
+               OR (pv.size IS NULL AND pv.sleeve IS NULL)
              )
            ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
            LIMIT 1),
