@@ -9,8 +9,13 @@ Rule: whenever purchase_required flips to false and stock_status needs setting, 
 **Why:** Despatch only promotes `'allocated'` items to `'complete'` via the decoration picking-list
 workflow. Plain (undecorated) items have no picking list, so if something sets `stock_status='allocated'`
 on a plain item, it's invisible to Purchasing (purchase_required=false) but can never reach Despatch —
-a silent limbo state. This exact bug existed in one startup safety-net in
-`artifacts/api-server/src/services/startup-migrations.ts` that set `'allocated'` unconditionally.
+a silent limbo state. This bug has recurred in multiple places that each independently promote
+stock-covered items: a startup safety-net in `artifacts/api-server/src/services/startup-migrations.ts`,
+and separately the `/purchasing/rescan` endpoint in `purchasing.ts` (triggered automatically whenever
+the Purchasing page mounts) — both had hardcoded `'allocated'` instead of the finish_id CASE. A
+self-healing guard was added to rescan so it can re-promote already-mis-set plain `'allocated'` items
+to `'complete'`, not just ones with `stock_status IS NULL` — worth mirroring in any other promotion
+site since a one-off DB patch can't reach production (read-only) and stuck items must self-correct.
 
 **How to apply:** When adding/editing any migration or route logic in api-server that resolves
 purchase requirements or promotes stock coverage, grep for other `stock_status.*'allocated'` sites

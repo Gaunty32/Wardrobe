@@ -32,7 +32,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
 
   const candidateRows = await db.execute(sql`
     SELECT oi.id, oi.product_id, oi.quantity, oi.purchase_required,
-           oi.purchase_quantity, oi.colour, oi.size, oi.stock_status,
+           oi.purchase_quantity, oi.colour, oi.size, oi.stock_status, oi.finish_id,
            -- Variant-level stock when a matching variant exists;
            -- product-level stock only for plain products with no variants at all.
            -- Size matching handles two stored formats: direct (pv.size = oi.size) and
@@ -135,6 +135,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     id: number; product_id: number; quantity: number;
     purchase_required: boolean; purchase_quantity: number | null;
     colour: string | null; size: string | null; stock_status: string | null;
+    finish_id: number | null;
     available_stock: number | null;
     supplier_id: number | null; supplier_name: string | null; supplier_email: string | null;
   }>;
@@ -196,11 +197,17 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     const newPurchaseRequired = shortfall > 0;
     const newPurchaseQuantity = shortfall > 0 ? shortfall : null;
 
-    // When fully covered by stock: mark as allocated so it appears in the picking list.
-    // Only promote to 'allocated' — never demote an item already in production or complete.
+    // When fully covered by stock: plain items (no finish) need no further production
+    // step, so they go straight to 'complete' (ready for dispatch); decorated items go
+    // to 'allocated' (appear in the picking list for production).
+    // Only promote — never demote an item already in production or complete. Also
+    // self-heals plain items that were previously mis-set to 'allocated' (a past bug
+    // in this endpoint set 'allocated' for every stock-covered item regardless of
+    // finish) by re-promoting them to 'complete' so they aren't stuck out of Dispatch.
     const alreadyProgressed = ["in_production", "complete"].includes(row.stock_status ?? "");
-    const newStockStatus = (!newPurchaseRequired && !alreadyProgressed && !row.stock_status)
-      ? "allocated"
+    const isMisSetPlainAllocated = row.stock_status === "allocated" && row.finish_id == null;
+    const newStockStatus = (!newPurchaseRequired && !alreadyProgressed && (!row.stock_status || isMisSetPlainAllocated))
+      ? (row.finish_id == null ? "complete" : "allocated")
       : undefined;
 
     const unchanged =
