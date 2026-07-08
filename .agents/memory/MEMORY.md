@@ -11,3 +11,4 @@
 - [Dispatch DPD job ID overflow](dispatch-dpd-bigint.md) — dpd_job_id was integer but DPD shipmentId values exceed int32 range, crashing dispatch after a successful courier booking with no note produced
 - [E2E testing across path-routed artifacts](e2e-multi-artifact-paths.md) — always prefix in-app navigation with the artifact's previewPath (e.g. /customer-portal/...) in runTest plans; bare paths silently 404 or hit the wrong artifact
 - [Whole-pound pricing enforcement](whole-pound-pricing.md) — usePriceConfirm hook + step="1" on all customer-facing Unit Price fields; supplier/cost prices excluded
+- [React error #300 from time-based auth early-return](react-error-300-conditional-hook.md) — early return gated on live JWT-expiry check placed before a later hook; use a scratch eslint-plugin-react-hooks run to find these fast

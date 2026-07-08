@@ -338,14 +338,13 @@ export default function Layout({ children }: LayoutProps) {
     }
   }, [location]);
 
-  if (!isStaffAuthenticated()) return null;
-
-  function handleSignOut() {
-    clearStaffToken();
-    setLocation("/");
-  }
-
   // ── Current user permissions ──────────────────────────────────────────────
+  // NOTE: this hook must be called unconditionally, before any early return,
+  // to satisfy React's Rules of Hooks. isStaffAuthenticated() is time-based
+  // (checks JWT expiry against Date.now()), so it can flip from true to false
+  // between renders of the same mounted component (e.g. session expires while
+  // the page is open) — putting a conditional `return null` before this hook
+  // previously caused "Rendered fewer hooks than expected" (React error #300).
   const jwtPayload = getStaffJwtPayload();
   const { data: staffMe } = useQuery<{
     name: string | null;
@@ -361,6 +360,13 @@ export default function Layout({ children }: LayoutProps) {
     staleTime: 60_000,
     enabled: isStaffAuthenticated(),
   });
+
+  if (!isStaffAuthenticated()) return null;
+
+  function handleSignOut() {
+    clearStaffToken();
+    setLocation("/");
+  }
 
   // null = all access (default before data loads or for password login)
   const allowedNav: string[] | null = staffMe?.allowed_nav ?? null;
