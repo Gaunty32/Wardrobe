@@ -1153,17 +1153,17 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     }
     // ──────────────────────────────────────────────────────────────────────────
 
-    // ── Service-only order: skip purchasing & production, go straight to invoicing
+    // ── Service-only order: skip purchasing & production, go straight to dispatch
     // If every item with a product link is a service product (no purchasing, no
-    // worksheet), auto-promote the order status to 'shipped' so it appears on
-    // the invoicing screen immediately.
+    // worksheet), leave the order at 'confirmed' — service items are always
+    // "ready" (see dispatch.ts readiness logic), so it will immediately appear
+    // in the Dispatch queue where a delivery note can be produced before the
+    // order is marked shipped. (Previously this auto-promoted straight to
+    // 'shipped', which skipped the dispatch screen and its delivery note.)
     const linkedItemCount = items.filter(i => i.productId != null).length;
     if (linkedItemCount > 0 && serviceItemCount === linkedItemCount && purchaseLines === 0) {
-      await db.update(ordersTable)
-        .set({ status: "shipped", updatedAt: new Date() })
-        .where(eq(ordersTable.id, params.data.id));
-      await logOrderAction(params.data.id, "Auto-promoted to invoicing", getActor(req),
-        "All items are service products — skipped purchasing and production");
+      await logOrderAction(params.data.id, "Ready for dispatch", getActor(req),
+        "All items are service products — skipped purchasing and production, sent straight to dispatch");
     }
     // ──────────────────────────────────────────────────────────────────────────
 
