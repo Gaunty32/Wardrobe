@@ -872,6 +872,35 @@ export default function OrderDetail() {
     win.print();
   };
 
+  const printOrderNotes = () => {
+    const win = window.open("", "_blank", "width=600,height=800");
+    if (!win) return;
+    const notesText = (order.notes ?? "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    win.document.write(`<!DOCTYPE html><html><head>
+      <meta charset="UTF-8"><title>Notes — Order ${order?.orderNumber ?? ""}</title>
+      <style>
+        @page { margin: 0.6in; }
+        body { margin: 0; font-family: Arial, sans-serif; color: #1a1a1a; }
+        * { box-sizing: border-box; }
+      </style>
+    </head><body>
+      <div style="border-bottom:2px solid #1e3a5f;padding-bottom:10px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end">
+        <div>
+          <div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#1e3a5f;font-weight:bold">Select Branding Solutions</div>
+          <div style="font-size:20px;font-weight:900;color:#1e3a5f;margin-top:4px">Order Notes</div>
+        </div>
+        <div style="text-align:right;font-size:12px;color:#555">
+          <div><strong>Order:</strong> ${order?.orderNumber ?? ""}${(order as any)?.poNumber ? ` &bull; PO: ${(order as any).poNumber}` : ""}</div>
+          <div>${order?.customerName ?? ""}</div>
+        </div>
+      </div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;padding:14px;background:#f8f8f8;border:1px solid #e0e0e0;border-radius:6px;min-height:100px">${notesText || '<em style="color:#999">No notes for this order.</em>'}</div>
+    </body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+  };
+
   const [sendAckOpen, setSendAckOpen] = useState(false);
 
   const sendToProductionMutation = useMutation({
@@ -2811,12 +2840,17 @@ export default function OrderDetail() {
                     <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> Notes
                   </CardTitle>
                   {!editingNotes && (
-                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
-                      setNotesValue(order.notes ?? "");
-                      setEditingNotes(true);
-                    }}>
-                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={printOrderNotes} title="Print notes">
+                        <Printer className="w-3.5 h-3.5 text-muted-foreground" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => {
+                        setNotesValue(order.notes ?? "");
+                        setEditingNotes(true);
+                      }} title="Edit notes">
+                        <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
                   )}
                 </div>
               </CardHeader>
