@@ -169,16 +169,19 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
   const [packageType, setPackageType] = useState<"parcel" | "bag">("parcel");
   const [editItemId, setEditItemId] = useState<number | null>(null);
   const [editItemQty, setEditItemQty] = useState<string>("");
+  const [bypassDpd, setBypassDpd] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const DPD_METHODS = new Set(["dpd", "dpd_next_day", "courier"]);
   const isDpdShipping = !!order.shippingMethod && DPD_METHODS.has(order.shippingMethod);
+  const willBookDpd = isDpdShipping && !bypassDpd;
   const deliveryMethodLabel = shippingLabel(order.shippingMethod);
 
   function openDispatchModal() {
     setNumberOfParcels(1);
     setTotalWeightKg("");
+    setBypassDpd(false);
     setDispatchOpen(true);
   }
 
@@ -214,7 +217,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
       body: JSON.stringify({
         numberOfParcels,
         totalWeightKg: totalWeightKg === "" ? undefined : totalWeightKg,
-        bookDpd: isDpdShipping,
+        bookDpd: willBookDpd,
         networkCode: packageType === "bag" ? "2^32" : "2^12",
       }),
     }),
@@ -578,19 +581,40 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
 
           <div className="space-y-4 py-2">
             <div className={`flex items-center gap-3 rounded-lg border px-4 py-3 ${
-              isDpdShipping ? "border-blue-200 bg-blue-50" : "border-border bg-muted/30"
+              willBookDpd ? "border-blue-200 bg-blue-50" : "border-border bg-muted/30"
             }`}>
-              <Truck className={`w-5 h-5 flex-shrink-0 ${isDpdShipping ? "text-blue-600" : "text-muted-foreground"}`} />
+              <Truck className={`w-5 h-5 flex-shrink-0 ${willBookDpd ? "text-blue-600" : "text-muted-foreground"}`} />
               <div>
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Delivery method</p>
                 <p className="font-semibold text-sm mt-0.5">{deliveryMethodLabel}</p>
               </div>
-              {isDpdShipping && (
+              {willBookDpd ? (
                 <span className="ml-auto text-xs font-medium text-blue-700 bg-blue-100 border border-blue-200 rounded-full px-2.5 py-0.5">
                   Auto-booked via DPD API
                 </span>
+              ) : isDpdShipping && (
+                <span className="ml-auto text-xs font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded-full px-2.5 py-0.5">
+                  DPD booking skipped
+                </span>
               )}
             </div>
+
+            {isDpdShipping && (
+              <label className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/30 px-4 py-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-border"
+                  checked={bypassDpd}
+                  onChange={(e) => setBypassDpd(e.target.checked)}
+                />
+                <span>
+                  <span className="block text-sm font-medium">Bypass DPD booking</span>
+                  <span className="block text-xs text-muted-foreground mt-0.5">
+                    Dispatch without booking a courier automatically — use this if you're booking DPD manually or shipping another way.
+                  </span>
+                </span>
+              </label>
+            )}
 
             {order.deliveryAddress && (
               <div className="rounded-lg bg-muted/40 border border-border px-4 py-3 text-sm">
@@ -603,13 +627,13 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               </div>
             )}
 
-            {!order.deliveryAddress && isDpdShipping && (
+            {!order.deliveryAddress && willBookDpd && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                 ⚠ No delivery address is set on this order — DPD booking will be skipped.
               </p>
             )}
 
-            {isDpdShipping && (
+            {willBookDpd && (
               <div className="space-y-1.5">
                 <Label>Package type</Label>
                 <div className="grid grid-cols-2 gap-2">
@@ -635,7 +659,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
               </div>
             )}
 
-            <div className={`grid gap-3 ${isDpdShipping ? "grid-cols-2" : "grid-cols-1"}`}>
+            <div className={`grid gap-3 ${willBookDpd ? "grid-cols-2" : "grid-cols-1"}`}>
               <div className="space-y-1.5">
                 <Label htmlFor="parcels">{packageType === "bag" ? "Number of bags" : "Number of boxes"}</Label>
                 <Input
@@ -647,7 +671,7 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
                   onChange={(e) => setNumberOfParcels(Math.max(1, parseInt(e.target.value) || 1))}
                 />
               </div>
-              {isDpdShipping && (
+              {willBookDpd && (
                 <div className="space-y-1.5">
                   <Label htmlFor="weight">Total weight (kg)</Label>
                   <Input
@@ -696,10 +720,11 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             <div className="rounded-lg bg-muted/20 border border-border px-4 py-3 text-xs text-muted-foreground space-y-1">
               <p className="font-semibold text-foreground text-xs uppercase tracking-wide mb-1.5">What happens when you confirm</p>
               <p>✓ Delivery note opened for printing</p>
-              {isDpdShipping && <p>✓ DPD booking created automatically — tracking number assigned</p>}
-              {isDpdShipping && <p>✓ DPD shipping label printed (select your label printer)</p>}
-              {namedCount > 0 && isDpdShipping && <p>✓ Wearer labels printed with tracking number (delivery label first)</p>}
-              {namedCount > 0 && !isDpdShipping && <p>✓ Wearer labels available to print (delivery label first)</p>}
+              {willBookDpd && <p>✓ DPD booking created automatically — tracking number assigned</p>}
+              {willBookDpd && <p>✓ DPD shipping label printed (select your label printer)</p>}
+              {isDpdShipping && !willBookDpd && <p>✓ DPD booking skipped — no tracking number assigned</p>}
+              {namedCount > 0 && willBookDpd && <p>✓ Wearer labels printed with tracking number (delivery label first)</p>}
+              {namedCount > 0 && !willBookDpd && <p>✓ Wearer labels available to print (delivery label first)</p>}
               <p>✓ Order marked as dispatched</p>
               <p>✓ Portal customers notified automatically if applicable</p>
             </div>
@@ -710,11 +735,11 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
             <Button
               className="bg-green-600 hover:bg-green-700 text-white gap-2"
               onClick={() => dispatchMutation.mutate()}
-              disabled={dispatchMutation.isPending || (isDpdShipping && totalWeightKg === "")}
+              disabled={dispatchMutation.isPending || (willBookDpd && totalWeightKg === "")}
             >
               <Send className="w-4 h-4" />
               {dispatchMutation.isPending
-                ? (isDpdShipping ? "Booking DPD…" : "Dispatching…")
+                ? (willBookDpd ? "Booking DPD…" : "Dispatching…")
                 : "Confirm Dispatch"}
             </Button>
           </DialogFooter>
