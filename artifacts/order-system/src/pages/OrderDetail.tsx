@@ -884,14 +884,14 @@ export default function OrderDetail() {
         * { box-sizing: border-box; }
       </style>
     </head><body>
-      <div style="border-bottom:2px solid #1e3a5f;padding-bottom:10px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:flex-end">
-        <div>
-          <div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#1e3a5f;font-weight:bold">Select Branding Solutions</div>
-          <div style="font-size:20px;font-weight:900;color:#1e3a5f;margin-top:4px">Order Notes</div>
-        </div>
-        <div style="text-align:right;font-size:12px;color:#555">
-          <div><strong>Order:</strong> ${order?.orderNumber ?? ""}${(order as any)?.poNumber ? ` &bull; PO: ${(order as any).poNumber}` : ""}</div>
-          <div>${order?.customerName ?? ""}</div>
+      <div style="border-bottom:2px solid #1e3a5f;padding-bottom:12px;margin-bottom:16px">
+        <div style="font-size:11px;letter-spacing:1px;text-transform:uppercase;color:#1e3a5f;font-weight:bold">Select Branding Solutions</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-top:6px">
+          <div>
+            <div style="font-size:22px;font-weight:900;color:#1e3a5f;line-height:1.15">${order?.customerName ?? ""}</div>
+            <div style="font-size:13px;color:#555;margin-top:2px"><strong>Order:</strong> ${order?.orderNumber ?? ""}${(order as any)?.poNumber ? ` &bull; PO: ${(order as any).poNumber}` : ""}</div>
+          </div>
+          <div style="font-size:16px;font-weight:bold;color:#1e3a5f">Order Notes</div>
         </div>
       </div>
       <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;padding:14px;background:#f8f8f8;border:1px solid #e0e0e0;border-radius:6px;min-height:100px">${notesText || '<em style="color:#999">No notes for this order.</em>'}</div>
