@@ -173,6 +173,14 @@ export async function allocatePODelivery(poId: number): Promise<AllocationResult
             .where(eq(worksheetItemsTable.id, wsItem.id));
           worksheetsUpdated++;
         }
+        // Items already on the picking list ('allocated') were pre-allocated by
+        // the safety-net before the PO was formally booked in.  Count them so
+        // the book-in still triggers picking-slip printing.
+        // 'in_production' and 'complete' are past picking — don't re-print.
+        if (item.stockStatus === "allocated") {
+          wsPickCount++;
+          pickingItems++;
+        }
         continue;
       }
       // Plain items (no decoration) skip the picking list and go straight to complete;
