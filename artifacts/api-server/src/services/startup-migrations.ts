@@ -2367,4 +2367,42 @@ export async function refreshProductIssues(): Promise<void> {
     WHERE ps.id = sub.ps_id
   `);
   console.log("[startup] Safety Net G: topped up process_stock quantities from delivered PO lines");
+
+  // ── One-time fix: O240 FCC2333 Charcoal M/L/XL phantom stock allocation ────
+  // These three items were stuck with stock_status='allocated' / purchase_required=false
+  // despite the Charcoal variant having 0 stock.  The Charcoal colour is supplied by
+  // Ralawise (not Uneek, the product-level default), so we also correct the variant's
+  // primary_supplier_id and the order-item supplier assignment so they surface in the
+  // Ralawise purchasing requirements section.
+  {
+    const fixFlag = await db.execute(sql`
+      SELECT 1 FROM _migration_flags WHERE name = 'fix_o240_charcoal_phantom_allocation_v1'
+    `);
+    if (fixFlag.rows.length === 0) {
+      // Clear phantom allocation and route to Ralawise purchasing
+      await db.execute(sql`
+        UPDATE order_items
+        SET stock_status        = NULL,
+            stock_allocated_at  = NULL,
+            purchase_required   = true,
+            purchase_quantity   = quantity,
+            supplier_id         = 25,
+            supplier_name       = 'Ralawise Ltd'
+        WHERE id IN (1053, 1054, 1055)
+          AND stock_status = 'allocated'
+          AND purchase_required = false
+      `);
+      // Set Charcoal variant supplier so future orders route correctly
+      await db.execute(sql`
+        UPDATE product_variants
+        SET primary_supplier_id = 25
+        WHERE id = 144808
+          AND primary_supplier_id IS NULL
+      `);
+      await db.execute(sql`
+        INSERT INTO _migration_flags (name) VALUES ('fix_o240_charcoal_phantom_allocation_v1')
+      `);
+      console.log("[startup] O240 Charcoal items unblocked and routed to Ralawise");
+    }
+  }
 }
