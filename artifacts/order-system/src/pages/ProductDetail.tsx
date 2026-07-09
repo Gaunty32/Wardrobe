@@ -743,7 +743,7 @@ export default function ProductDetail() {
     mutationFn: () => apiFetch<any>(`/products/${productId}/social-posts/generate`, { method: "POST" }),
     onSuccess: (data: any) => {
       if (data.variantImages?.length) setSocialVariantImages(data.variantImages);
-      setSocialDraft(p => ({ ...p, facebookContent: data.facebookContent || "", googleContent: data.googleContent || "", hashtags: data.hashtags || "", productImageUrl: data.productImageUrl ?? p.productImageUrl, websiteUrl: p.websiteUrl || data.websiteUrl || "", editingId: null }));
+      setSocialDraft(p => ({ ...p, facebookContent: data.facebookContent || "", googleContent: data.googleContent || "", hashtags: data.hashtags || "", productImageUrl: data.productImageUrl ?? null, websiteUrl: p.websiteUrl || data.websiteUrl || "", editingId: null }));
       toast({ title: "Post generated — review and save or schedule" });
     },
     onError: (e: any) => toast({ title: "AI generation failed", description: e?.message, variant: "destructive" }),
@@ -2524,7 +2524,7 @@ export default function ProductDetail() {
                     </div>
                     <div className="flex items-center gap-2">
                       {socialDraft.editingId && (
-                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft(p => ({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null, productImageUrl: p.productImageUrl, websiteUrl: p.websiteUrl, season: null }))}>
+                        <Button size="sm" variant="ghost" className="text-xs gap-1" onClick={() => setSocialDraft(p => ({ facebookContent: "", googleContent: "", hashtags: "", platforms: ["facebook","google"], autoReschedule: false, editingId: null, productImageUrl: socialImagesQuery.data?.productImageUrl ?? null, websiteUrl: p.websiteUrl, season: null }))}>
                           <X className="w-3 h-3" /> New draft
                         </Button>
                       )}
