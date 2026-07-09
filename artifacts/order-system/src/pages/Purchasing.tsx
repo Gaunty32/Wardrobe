@@ -3106,16 +3106,21 @@ export default function Purchasing() {
     mutationFn: ({ poId, itemId, data }: { poId: number; itemId: number; data: Record<string, unknown> }) =>
       apiFetch<any>(`/purchasing/purchase-orders/${poId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: (response: any) => {
-      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
-      queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
-      // If the save caused a server-side auto-complete, print picking slip + worksheets
-      if (response?.autoCompleted && response?.allocation) {
-        const affectedOrderIds: number[] = (response.allocation.summary ?? [])
-          .filter((s: any) => s.pickingCount > 0 || s.worksheetCount > 0)
-          .map((s: any) => s.orderId);
-        if (affectedOrderIds.length > 0) printBookInSlip(affectedOrderIds);
+      if (response?.autoCompleted) {
+        // PO transitioned ordered → delivered: full refetch needed so it moves to Completed tab
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+        queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+        queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
+        if (response?.allocation) {
+          const affectedOrderIds: number[] = (response.allocation.summary ?? [])
+            .filter((s: any) => s.pickingCount > 0 || s.worksheetCount > 0)
+            .map((s: any) => s.orderId);
+          if (affectedOrderIds.length > 0) printBookInSlip(affectedOrderIds);
+        }
       }
+      // For routine debounced cell saves the user already sees what they typed —
+      // no refetch needed.  Skipping ["purchase-orders"] invalidation prevents
+      // draft PO cards from unnecessarily re-rendering mid-entry.
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -3147,8 +3152,15 @@ export default function Purchasing() {
       apiFetch(`/purchasing/purchase-orders/${poId}/items/${itemId}/receive`, { method: "POST", body: JSON.stringify({ quantity }) }),
     onSuccess: (data: any, { itemId, quantity, remaining }) => {
       setBackorderDrafts(prev => { const next = { ...prev }; delete next[itemId]; return next; });
+      // Always refresh the backorders list since quantities have changed
       queryClient.invalidateQueries({ queryKey: ["purchasing-backorders"] });
-      queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+      if (data?.autoCompleted) {
+        // PO transitioned to delivered: full refetch so it moves to Completed tab
+        queryClient.invalidateQueries({ queryKey: ["purchase-orders"] });
+        queryClient.invalidateQueries({ queryKey: ["purchasing-requirements"] });
+      }
+      // Otherwise skip ["purchase-orders"] invalidation — backorders live on delivered
+      // POs and draft PO cards don't need to re-render for every backorder book-in.
       const isComplete = quantity >= remaining;
       toast({
         title: isComplete ? "Backorder cleared" : "Delivery booked",
