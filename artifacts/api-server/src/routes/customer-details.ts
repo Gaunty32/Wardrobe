@@ -826,7 +826,8 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
       // Fetch finish items for the chosen finish
       const finishRows = await db.execute(sql`
         SELECT cfi.id, cfi.name, cfi.product_id, p.name AS product_name, cfi.colour,
-               cfi.unit_price, cfi.special_price, cf.name AS finish_name, cf.id AS finish_id
+               cfi.unit_price, cfi.special_price, p.unit_price AS product_unit_price,
+               cf.name AS finish_name, cf.id AS finish_id
         FROM customer_finished_items cfi
         LEFT JOIN products p ON p.id = cfi.product_id
         JOIN customer_finishes cf ON cf.id = cfi.finish_id
@@ -870,6 +871,7 @@ router.post("/customers/:customerId/employees/import", async (req, res): Promise
             const unitPrice = variantPrice
               ? parseFloat(variantPrice)
               : fi.special_price ? parseFloat(fi.special_price)
+              : fi.product_unit_price ? parseFloat(fi.product_unit_price)
               : fi.unit_price ? parseFloat(fi.unit_price)
               : 0;
 
@@ -1032,6 +1034,7 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
     productId: customerFinishedItemsTable.productId,
     productName: productsTable.name,
     productSku: productsTable.sku,
+    productUnitPrice: productsTable.unitPrice,
     finishId: customerFinishedItemsTable.finishId,
     colour: customerFinishedItemsTable.colour,
     sleeve: customerFinishedItemsTable.sleeve,
@@ -1060,6 +1063,7 @@ router.get("/customers/:customerId/finished-items", async (req, res): Promise<vo
   res.json(rows.map(r => ({
     ...r,
     unitPrice: r.unitPrice != null ? parseFloat(r.unitPrice) : 0,
+    productUnitPrice: r.productUnitPrice != null ? parseFloat(r.productUnitPrice) : null,
     specialPrice: r.specialPrice != null ? parseFloat(r.specialPrice) : null,
     stockQuantity: r.stockQuantity ?? 0,
     finishName: r.finishId ? (finishMap.get(r.finishId) ?? null) : null,
@@ -1085,6 +1089,7 @@ router.get("/customers/:customerId/wardrobe-data", async (req, res): Promise<voi
       p.sku         AS product_sku,
       p.image_url   AS product_image_url,
       p.price_breaks,
+      p.unit_price  AS product_unit_price,
       cfi.colour,
       cfi.unit_price,
       cfi.special_price,

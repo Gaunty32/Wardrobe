@@ -2264,6 +2264,7 @@ interface WardrobeGroup {
   colour: string | null;
   sleeve: string | null;
   unitPrice: number;
+  productUnitPrice: number | null;
   specialPrice: number | null;
   totalStock: number;
   sizes: (string | null)[];
@@ -2284,6 +2285,7 @@ interface FinishedItem {
   sleeve: string | null;
   size: string | null;
   unitPrice: number;
+  productUnitPrice: number | null;
   specialPrice: number | null;
   stockQuantity: number;
   notes: string | null;
@@ -3273,7 +3275,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     for (const item of filteredItems) {
       const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? "", item.colour ?? ""].join("|");
       if (!map.has(key)) {
-        map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, sleeve: item.sleeve ?? null, unitPrice: item.unitPrice, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
+        map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, sleeve: item.sleeve ?? null, unitPrice: item.unitPrice, productUnitPrice: item.productUnitPrice ?? null, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
       }
       const g = map.get(key)!;
       if (g.sleeve !== (item.sleeve ?? null)) g.sleeve = null;
@@ -3323,7 +3325,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
         {[item.colour, item.sleeve, item.size].filter(Boolean).join(" / ") || "—"}
       </TableCell>
-      <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(item.unitPrice)}</TableCell>
+      <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(item.productUnitPrice ?? item.unitPrice)}</TableCell>
       <TableCell className="text-right tabular-nums">
         {item.specialPrice != null
           ? <span className="font-semibold text-emerald-600">{formatCurrency(item.specialPrice)}</span>
@@ -3392,7 +3394,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               [group.colour, group.sleeve, group.items[0].size].filter(Boolean).join(" / ") || "—"
             )}
           </TableCell>
-          <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(group.unitPrice)}</TableCell>
+          <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(group.productUnitPrice ?? group.unitPrice)}</TableCell>
           <TableCell className="text-right tabular-nums">
             {group.specialPrice != null
               ? <span className="font-semibold text-emerald-600">{formatCurrency(group.specialPrice)}</span>
