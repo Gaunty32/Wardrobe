@@ -1236,7 +1236,11 @@ export default function ProductDetail() {
         method: "PATCH",
         body: JSON.stringify({
           ids,
-          ...(supplierId !== "none" ? { primarySupplierId: Number(supplierId) } : { primarySupplierId: null }),
+          // Only send primarySupplierId when the user has explicitly selected a supplier.
+          // Sending null when "none" is selected would silently wipe any variant-specific
+          // supplier assignments that were set individually — which was the source of the
+          // recurring "items back under default supplier" bug.
+          ...(supplierId !== "none" ? { primarySupplierId: Number(supplierId) } : {}),
           ...(price !== "" ? { supplierPrice: parseFloat(price) } : {}),
           ...(code !== "" ? { supplierCode: code } : {}),
         }),

@@ -1718,9 +1718,12 @@ export async function runStartupMigrations(): Promise<void> {
   // ── Cascade product-level supplier prices to variants ──────────────────────
   // Only copies a product price DOWN to its variants when:
   //   a) the product actually has a price (not NULL), AND
-  //   b) the variant price differs from the product price
-  // This ensures variants with an explicit per-variant price are never overwritten
-  // by a NULL product price on server restart.
+  //   b) the variant price differs from the product price, AND
+  //   c) the variant is using the product's default supplier (no variant-specific supplier set,
+  //      or the variant supplier is the same as the product supplier).
+  // Guard (c) prevents overwriting a colour-specific supplier's price with the default
+  // product-level price — that was the second reason purchasing re-grouped items under the
+  // wrong supplier after a server restart.
   await db.execute(sql`
     UPDATE product_variants pv
     SET supplier_price = p.supplier_price,
@@ -1729,6 +1732,7 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE pv.product_id = p.id
       AND p.supplier_price IS NOT NULL
       AND pv.supplier_price IS DISTINCT FROM p.supplier_price
+      AND (pv.primary_supplier_id IS NULL OR pv.primary_supplier_id = p.supplier_id)
   `);
   console.log("[startup] Variant supplier prices synced to product level");
 }
