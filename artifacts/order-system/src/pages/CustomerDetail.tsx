@@ -2761,7 +2761,14 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                   />
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                  {u.invite_sent_at ? formatDate(u.invite_sent_at) : <span className="text-muted-foreground/50">—</span>}
+                  {u.invite_sent_at ? (
+                    <span className="flex flex-col leading-tight">
+                      <span>{formatDate(u.invite_sent_at)}</span>
+                      <span className="text-xs text-muted-foreground/60">
+                        {new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(u.invite_sent_at))}
+                      </span>
+                    </span>
+                  ) : <span className="text-muted-foreground/50">—</span>}
                 </TableCell>
                 <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                   {u.last_login_at ? formatDate(u.last_login_at) : <span className="text-muted-foreground/50">Never</span>}
