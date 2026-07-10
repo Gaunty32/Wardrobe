@@ -2283,6 +2283,28 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   console.log("[startup] O144 item 561 dispatch corrected");
 
+  // O211 item 917 (Hi-Vis T-Shirt Yellow Small ×50): PO delivered 50/50 but item
+  // was left in in_production with no dispatched_at — correct to match siblings.
+  await db.execute(sql`
+    UPDATE order_items
+    SET stock_status = 'complete',
+        dispatched_at = '2026-07-10 07:25:49.925+00'
+    WHERE id = 917
+      AND stock_status = 'in_production'
+      AND dispatched_at IS NULL
+  `);
+  await db.execute(sql`
+    UPDATE orders
+    SET status = 'shipped'
+    WHERE id = 201
+      AND status = 'part_shipped'
+      AND NOT EXISTS (
+        SELECT 1 FROM order_items
+        WHERE order_id = 201 AND dispatched_at IS NULL
+      )
+  `);
+  console.log("[startup] O211 item 917 dispatch corrected");
+
   // Social posts table
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS social_posts (
