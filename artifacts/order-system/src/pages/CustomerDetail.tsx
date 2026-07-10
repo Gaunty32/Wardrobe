@@ -4633,7 +4633,7 @@ export default function CustomerDetail() {
     retry: false,
   });
 
-  const [overdueCollapsed, setOverdueCollapsed] = useState(false);
+  const [overdueCollapsed, setOverdueCollapsed] = useState(true);
 
   const { data: invoiceSummary } = useQuery<{
     balanceDue: string;
