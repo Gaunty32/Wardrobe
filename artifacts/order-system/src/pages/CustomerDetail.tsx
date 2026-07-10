@@ -4633,6 +4633,8 @@ export default function CustomerDetail() {
     retry: false,
   });
 
+  const [overdueCollapsed, setOverdueCollapsed] = useState(false);
+
   const { data: invoiceSummary } = useQuery<{
     balanceDue: string;
     overdueTotal: string;
@@ -5012,33 +5014,39 @@ export default function CustomerDetail() {
             {/* Overdue invoices list */}
             {invoiceSummary && invoiceSummary.overdueInvoices.length > 0 && (
               <div className="rounded-lg border border-red-200 bg-red-50/50 overflow-hidden">
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-red-200 bg-red-50">
-                  <AlertCircle className="w-4 h-4 text-red-600" />
-                  <span className="text-sm font-semibold text-red-700">Overdue Invoices</span>
-                </div>
-                <div className="divide-y divide-red-100">
-                  {invoiceSummary.overdueInvoices.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="flex items-center justify-between px-4 py-2.5 hover:bg-red-50 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/orders/${inv.id}`)}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-sm font-medium text-foreground">{inv.orderNumber}</span>
-                        <span className="text-xs text-red-600 font-medium">
-                          {inv.daysOverdue} day{inv.daysOverdue !== 1 ? "s" : ""} overdue
-                        </span>
-                        {inv.xeroInvoiceStatus && (
-                          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{inv.xeroInvoiceStatus}</span>
-                        )}
+                <button
+                  className="w-full flex items-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100/70 transition-colors text-left"
+                  onClick={() => setOverdueCollapsed(c => !c)}
+                >
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span className="text-sm font-semibold text-red-700 flex-1">Overdue Invoices</span>
+                  <ChevronDown className={cn("w-4 h-4 text-red-500 transition-transform duration-200", overdueCollapsed && "-rotate-90")} />
+                </button>
+                {!overdueCollapsed && (
+                  <div className="divide-y divide-red-100 border-t border-red-200">
+                    {invoiceSummary.overdueInvoices.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="flex items-center justify-between px-4 py-2.5 hover:bg-red-50 cursor-pointer transition-colors"
+                        onClick={() => navigate(`/orders/${inv.id}`)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="font-mono text-sm font-medium text-foreground">{inv.orderNumber}</span>
+                          <span className="text-xs text-red-600 font-medium">
+                            {inv.daysOverdue} day{inv.daysOverdue !== 1 ? "s" : ""} overdue
+                          </span>
+                          {inv.xeroInvoiceStatus && (
+                            <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">{inv.xeroInvoiceStatus}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-semibold text-red-700">{formatCurrency(parseFloat(inv.amount))}</span>
+                          <span className="text-xs text-muted-foreground">{formatDate(inv.invoicedAt)}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-sm font-semibold text-red-700">{formatCurrency(parseFloat(inv.amount))}</span>
-                        <span className="text-xs text-muted-foreground">{formatDate(inv.invoicedAt)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
