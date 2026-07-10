@@ -46,6 +46,7 @@ interface PurchaseRequirement {
   purchaseQuantity: number | null; supplierId: number | null; supplierName: string; supplierEmail: string | null;
   supplierCode: string | null; secondarySupplierCode: string | null; productSku: string | null; canonicalProductName: string | null;
   supplierPrice: number | null;
+  unitPrice: number | null;
   orderCreatedAt: string | null;
   queuedAt: string | null;
   isManual?: boolean;
@@ -3303,27 +3304,31 @@ export default function Purchasing() {
       if (!b) return a;
       return a < b ? a : b;
     };
-    const map = new Map<string, { name: string; reqLines: number; psLines: number; poCount: number; supplierId: number | null; totalValue: number | null; earliestCreatedAt: string | null }>();
+    const map = new Map<string, { name: string; reqLines: number; psLines: number; poCount: number; supplierId: number | null; totalValue: number | null; totalRevenue: number | null; earliestCreatedAt: string | null }>();
     for (const g of groups) {
       const key = g.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, earliestCreatedAt: null });
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, totalRevenue: null, earliestCreatedAt: null });
       const tile = map.get(key)!;
       tile.reqLines += g.items.reduce((s, item) => s + (item.purchaseQuantity ?? 1), 0);
       for (const item of g.items) {
+        const qty = item.purchaseQuantity ?? 1;
         if (item.supplierPrice != null && item.purchaseQuantity != null) {
-          tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * item.purchaseQuantity;
+          tile.totalValue = (tile.totalValue ?? 0) + item.supplierPrice * qty;
+        }
+        if (item.unitPrice != null) {
+          tile.totalRevenue = (tile.totalRevenue ?? 0) + parseFloat(String(item.unitPrice)) * qty;
         }
         tile.earliestCreatedAt = pickEarlier(tile.earliestCreatedAt, item.queuedAt ?? item.orderCreatedAt);
       }
     }
     for (const g of processReqsBySupplier) {
       const key = g.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, earliestCreatedAt: null });
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: g.supplierId, totalValue: null, totalRevenue: null, earliestCreatedAt: null });
       map.get(key)!.psLines += g.items.reduce((s, item) => s + (item.shortfall ?? 1), 0);
     }
     for (const po of draftPos) {
       const key = po.supplierName;
-      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: po.supplierId, totalValue: null, earliestCreatedAt: null });
+      if (!map.has(key)) map.set(key, { name: key, reqLines: 0, psLines: 0, poCount: 0, supplierId: po.supplierId, totalValue: null, totalRevenue: null, earliestCreatedAt: null });
       const tile = map.get(key)!;
       tile.poCount += 1;
       tile.earliestCreatedAt = pickEarlier(tile.earliestCreatedAt, po.createdAt);
@@ -3445,6 +3450,19 @@ export default function Purchasing() {
                           {tile.totalValue != null && (
                             <p className="text-xs text-muted-foreground font-medium">£{tile.totalValue.toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           )}
+                          {tile.totalRevenue != null && tile.totalValue != null && tile.totalRevenue > 0 && (() => {
+                            const gp = ((tile.totalRevenue - tile.totalValue) / tile.totalRevenue) * 100;
+                            const gpCls = gp >= 65
+                              ? "bg-green-100 text-green-800 border-green-200"
+                              : gp >= 50
+                              ? "bg-amber-100 text-amber-800 border-amber-200"
+                              : "bg-red-100 text-red-800 border-red-200";
+                            return (
+                              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${gpCls}`}>
+                                <TrendingUp className="w-3 h-3" />{gp.toFixed(1)}% GP
+                              </span>
+                            );
+                          })()}
                           {tile.earliestCreatedAt != null && (() => {
                             const days = Math.floor((Date.now() - new Date(tile.earliestCreatedAt).getTime()) / 86400000);
                             const bg = days >= 7
