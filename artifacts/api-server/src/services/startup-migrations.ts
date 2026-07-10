@@ -1326,46 +1326,48 @@ export async function runStartupMigrations(): Promise<void> {
   // White stock = 0). Using products.stock_quantity (all colours summed) would incorrectly
   // conclude "stock is available" for a White order even when White stock = 0, causing items
   // to stay stuck as 'allocated' and never re-enter the purchasing queue.
-  await db.execute(sql`
-    UPDATE order_items
-    SET purchase_required  = true,
-        purchase_quantity  = quantity,
-        stock_status       = NULL,
-        stock_allocated_at = NULL,
-        purchasing_queued_at = COALESCE(purchasing_queued_at, now())
-    FROM orders o
-    WHERE order_items.order_id = o.id
-      AND order_items.purchase_required = false
-      AND order_items.stock_status = 'allocated'
-      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
-      AND EXISTS (
-        SELECT 1 FROM products p
-        WHERE p.id = order_items.product_id
-          AND COALESCE(p.is_service, false) = false
-      )
-      AND COALESCE(
-        -- For products with variants: sum stock only for the matching colour
-        (SELECT SUM(COALESCE(pv.stock_quantity, 0))
-         FROM product_variants pv
-         WHERE pv.product_id = order_items.product_id
-           AND pv.colour IS NOT DISTINCT FROM order_items.colour),
-        -- Fallback to product-level stock for plain (no-variant) products
-        (SELECT COALESCE(p2.stock_quantity, 0)
-         FROM products p2
-         WHERE p2.id = order_items.product_id)
-      , 0) < order_items.quantity
-      AND NOT EXISTS (
-        SELECT 1 FROM purchase_order_items poi
-        JOIN purchase_orders po2 ON po2.id = poi.po_id
-        WHERE po2.status NOT IN ('cancelled')
-          AND (poi.order_item_id = order_items.id
-               OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(order_items.id))
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = order_items.id
-      )
-  `);
-  console.log("[startup] Re-queued stock-phantom items for purchasing");
+  {
+    const { rowCount: phantomCount } = await db.execute(sql`
+      UPDATE order_items
+      SET purchase_required  = true,
+          purchase_quantity  = quantity,
+          stock_status       = NULL,
+          stock_allocated_at = NULL,
+          purchasing_queued_at = COALESCE(purchasing_queued_at, now())
+      FROM orders o
+      WHERE order_items.order_id = o.id
+        AND order_items.purchase_required = false
+        AND order_items.stock_status = 'allocated'
+        AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived', 'draft', 'portal_draft', 'portal_pending')
+        AND EXISTS (
+          SELECT 1 FROM products p
+          WHERE p.id = order_items.product_id
+            AND COALESCE(p.is_service, false) = false
+        )
+        AND COALESCE(
+          -- For products with variants: sum stock only for the matching colour
+          (SELECT SUM(COALESCE(pv.stock_quantity, 0))
+           FROM product_variants pv
+           WHERE pv.product_id = order_items.product_id
+             AND pv.colour IS NOT DISTINCT FROM order_items.colour),
+          -- Fallback to product-level stock for plain (no-variant) products
+          (SELECT COALESCE(p2.stock_quantity, 0)
+           FROM products p2
+           WHERE p2.id = order_items.product_id)
+        , 0) < order_items.quantity
+        AND NOT EXISTS (
+          SELECT 1 FROM purchase_order_items poi
+          JOIN purchase_orders po2 ON po2.id = poi.po_id
+          WHERE po2.status NOT IN ('cancelled')
+            AND (poi.order_item_id = order_items.id
+                 OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(order_items.id))
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = order_items.id
+        )
+    `);
+    console.log(`[startup] Re-queued ${phantomCount ?? 0} stock-phantom item(s) for purchasing`);
+  }
 
   // Re-queue order items that are marked as allocated (stockStatus='allocated') but
   // are still covered by an OUTSTANDING purchase order line (quantity_delivered <
@@ -2419,6 +2421,61 @@ export async function refreshProductIssues(): Promise<void> {
         INSERT INTO _migration_flags (name) VALUES ('fix_o240_charcoal_phantom_allocation_v1')
       `);
       console.log("[startup] O240 Charcoal items unblocked and routed to Ralawise");
+    }
+  }
+
+  // One-time fix: O247 White Pilot Shirt items (FCC1002) were phantom-allocated
+  // (purchase_required=false, stock_status='allocated') even though White variant
+  // stock is 0. The general re-queue step above uses a colour-aware stock check
+  // but a prior deployment ran without it, so these items were never re-queued.
+  // This flag-gated fix ensures they surface in the purchasing queue exactly once.
+  {
+    const fixFlag = await db.execute(sql`
+      SELECT 1 FROM _migration_flags WHERE name = 'fix_o247_white_pilot_phantom_allocation_v1'
+    `);
+    if (fixFlag.rows.length === 0) {
+      const { rowCount: fixed } = await db.execute(sql`
+        UPDATE order_items
+        SET stock_status       = NULL,
+            stock_allocated_at = NULL,
+            purchase_required  = true,
+            purchase_quantity  = quantity,
+            purchasing_queued_at = COALESCE(purchasing_queued_at, now())
+        FROM orders o
+        WHERE order_items.order_id = o.id
+          AND order_items.purchase_required = false
+          AND order_items.stock_status = 'allocated'
+          AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
+          AND NOT EXISTS (
+            SELECT 1 FROM worksheet_items wi WHERE wi.order_item_id = order_items.id
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM purchase_order_items poi
+            JOIN purchase_orders po2 ON po2.id = poi.po_id
+            WHERE po2.status NOT IN ('cancelled')
+              AND (poi.order_item_id = order_items.id
+                   OR COALESCE(poi.source_order_item_ids,'[]'::jsonb) @> to_jsonb(order_items.id))
+          )
+          AND EXISTS (
+            SELECT 1 FROM products p
+            WHERE p.id = order_items.product_id
+              AND COALESCE(p.is_service, false) = false
+          )
+          AND COALESCE(
+            (SELECT SUM(COALESCE(pv.stock_quantity, 0))
+             FROM product_variants pv
+             WHERE pv.product_id = order_items.product_id
+               AND pv.colour IS NOT DISTINCT FROM order_items.colour),
+            (SELECT COALESCE(p2.stock_quantity, 0)
+             FROM products p2 WHERE p2.id = order_items.product_id)
+          , 0) < order_items.quantity
+      `);
+      await db.execute(sql`
+        INSERT INTO _migration_flags (name) VALUES ('fix_o247_white_pilot_phantom_allocation_v1')
+      `);
+      if ((fixed ?? 0) > 0) {
+        console.log(`[startup] Fixed ${fixed} phantom-allocated item(s) with zero colour-variant stock`);
+      }
     }
   }
 }
