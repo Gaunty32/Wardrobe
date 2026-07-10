@@ -568,6 +568,14 @@ router.get("/orders/:id", async (req, res): Promise<void> => {
           if (addr) addressGroups.push({ address: addr, itemIds });
         }
       }
+    } else if (effectiveAddrMap.size === 1) {
+      // Single effective address — if it's an employee address, override the order-level one
+      const [singleEffId] = [...effectiveAddrMap.keys()];
+      if (singleEffId > 0 && singleEffId !== (order.deliveryAddressId ?? -1)) {
+        const [empAddr] = await db.select().from(customerDeliveryAddressesTable)
+          .where(eq(customerDeliveryAddressesTable.id, singleEffId));
+        if (empAddr) deliveryAddress = empAddr as Record<string, unknown>;
+      }
     }
   }
 
@@ -1473,6 +1481,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     bundleRef: string | null; isBundleHeader: boolean;
   };
   let ackDeliveryGroups: Array<{ addressLabel: string; addressText: string; items: AckItem[] }> | undefined;
+  let empSingleDeliveryAddressText: string | null = null;
   const getEffAddrId = (item: typeof items[0]) =>
     item.empDeliveryAddressId ?? (order.deliveryAddressId ? order.deliveryAddressId : null);
   const uniqueAddrIds = [...new Set(items.map(i => getEffAddrId(i)))];
@@ -1503,6 +1512,11 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
           items: gItems,
         });
       }
+    } else {
+      // Single effective address from employee — will override order-level address in PDF
+      const singleId = uniqueAddrIds[0];
+      const addr = singleId !== null ? addrMap.get(singleId) : null;
+      if (addr) empSingleDeliveryAddressText = [addr.line1, addr.line2, addr.city, addr.postcode].filter(Boolean).join(", ");
     }
   }
 
@@ -1630,7 +1644,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       customerAddress,
       customerCity,
       customerPostcode,
-      deliveryAddress: ackDeliveryGroups ? null : deliveryAddressText,
+      deliveryAddress: ackDeliveryGroups ? null : (empSingleDeliveryAddressText ?? deliveryAddressText),
       shippingMethod: order.shippingMethod ?? null,
       customerLogoBuffer,
       totalAmount: numericToFloat(order.totalAmount),
@@ -1775,6 +1789,19 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
     const [da] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     if (da) deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
   }
+  // Employee delivery address takes priority — override if all items share one employee address
+  {
+    const empAddrRows = (await db.execute(sql`
+      SELECT DISTINCT e.delivery_address_id
+      FROM order_items oi
+      JOIN customer_employees e ON e.id = oi.recipient_employee_id
+      WHERE oi.order_id = ${order.id} AND e.delivery_address_id IS NOT NULL
+    `)).rows as Array<{ delivery_address_id: number }>;
+    if (empAddrRows.length === 1) {
+      const [empAddr] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, empAddrRows[0].delivery_address_id));
+      if (empAddr) deliveryAddressText = [empAddr.line1, empAddr.line2, empAddr.city, empAddr.postcode].filter(Boolean).join(", ");
+    }
+  }
 
   try {
     const pdf = await generateOrderAcknowledgementPdf({
@@ -1882,6 +1909,19 @@ router.get("/orders/:id/acknowledgement.eml", async (req, res): Promise<void> =>
   if (order.deliveryAddressId) {
     const [da] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     if (da) deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
+  }
+  // Employee delivery address takes priority — override if all items share one employee address
+  {
+    const empAddrRows = (await db.execute(sql`
+      SELECT DISTINCT e.delivery_address_id
+      FROM order_items oi
+      JOIN customer_employees e ON e.id = oi.recipient_employee_id
+      WHERE oi.order_id = ${order.id} AND e.delivery_address_id IS NOT NULL
+    `)).rows as Array<{ delivery_address_id: number }>;
+    if (empAddrRows.length === 1) {
+      const [empAddr] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, empAddrRows[0].delivery_address_id));
+      if (empAddr) deliveryAddressText = [empAddr.line1, empAddr.line2, empAddr.city, empAddr.postcode].filter(Boolean).join(", ");
+    }
   }
 
   const mappedItems = items.map(i => ({
@@ -2069,6 +2109,19 @@ router.get("/orders/:id/acknowledgement.vbs", async (req, res): Promise<void> =>
   if (order.deliveryAddressId) {
     const [da] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
     if (da) deliveryAddressText = [da.line1, da.line2, da.city, da.postcode].filter(Boolean).join(", ");
+  }
+  // Employee delivery address takes priority — override if all items share one employee address
+  {
+    const empAddrRows = (await db.execute(sql`
+      SELECT DISTINCT e.delivery_address_id
+      FROM order_items oi
+      JOIN customer_employees e ON e.id = oi.recipient_employee_id
+      WHERE oi.order_id = ${order.id} AND e.delivery_address_id IS NOT NULL
+    `)).rows as Array<{ delivery_address_id: number }>;
+    if (empAddrRows.length === 1) {
+      const [empAddr] = await db.select().from(customerDeliveryAddressesTable).where(eq(customerDeliveryAddressesTable.id, empAddrRows[0].delivery_address_id));
+      if (empAddr) deliveryAddressText = [empAddr.line1, empAddr.line2, empAddr.city, empAddr.postcode].filter(Boolean).join(", ");
+    }
   }
 
   const mappedItems = items.map(i => ({
@@ -3139,12 +3192,16 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     : `<span></span>`;
 
   // Build sheet(s): one per address group (single sheet for single-address orders)
+  // For single-address: use the effective address id from the map (may be an employee address)
+  const singleEffAddrId: number | null = !isMultiAddr
+    ? (([...addrGroupMap.keys()][0] as number | null | undefined) ?? null)
+    : null;
   const sheetsHtml = isMultiAddr
     ? [...addrGroupMap.entries()].map(([effId, { dispItems, pendItems }]) =>
         `<div style="background:white;width:210mm;box-shadow:0 4px 24px rgba(0,0,0,.15);">${buildSheetHtml(effId as number | null, dispItems, pendItems)}</div>`
       ).join("")
     : `<div id="sheet">${buildSheetHtml(
-        deliveryAddress && order.deliveryAddressId ? order.deliveryAddressId : null,
+        singleEffAddrId !== null && singleEffAddrId > 0 ? singleEffAddrId : null,
         dispatchedItems, pendingItems
       )}</div>`;
 
