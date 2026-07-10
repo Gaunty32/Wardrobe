@@ -14,7 +14,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -35,7 +35,7 @@ import { sortSizesWithOrder, sortSizes, abbreviateSizeLabel } from "@/lib/sizeUt
 import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { useToast } from "@/hooks/use-toast";
 import { usePriceConfirm } from "@/components/PriceConfirmDialog";
-import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench, Package2, GitMerge } from "lucide-react";
+import { ArrowLeft, Plus, Minus, Trash2, FileText, PackageX, Loader2, Check, ChevronsUpDown, ChevronLeft, Palette, Ruler, Sparkles, User, Archive, Link as LinkIcon, ShoppingBag, Package, ClipboardList, PackageCheck, Printer, CheckCircle2, Clock, TriangleAlert, Calendar, Pencil, BookOpen, ExternalLink, MapPin, Wand2, Truck, Globe, XCircle, X, Mail, Lock, LockOpen, Download, MessageSquare, Paperclip, Search, RotateCcw, Lightbulb, BadgePercent, Wrench, Package2, GitMerge, TrendingUp } from "lucide-react";
 import { OrderMessages } from "@/components/OrderMessages";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 import { Link } from "wouter";
@@ -2940,6 +2940,147 @@ export default function OrderDetail() {
 
           </div>
         </div>
+
+        {/* ── GP Summary — internal only ─────────────────────────────────── */}
+        {order.items && order.items.length > 0 && (() => {
+          type GpGroup = {
+            productName: string;
+            productSku: string | null;
+            totalQty: number;
+            totalRevenue: number;
+            totalCost: number | null;
+            hasMissingCost: boolean;
+          };
+          const groupMap = new Map<string, GpGroup>();
+          for (const item of order.items) {
+            const key = (item.productName ?? "Unknown") + "|||" + ((item as any).productSku ?? "");
+            if (!groupMap.has(key)) {
+              groupMap.set(key, {
+                productName: item.productName ?? "Unknown",
+                productSku: (item as any).productSku ?? null,
+                totalQty: 0,
+                totalRevenue: 0,
+                totalCost: 0,
+                hasMissingCost: false,
+              });
+            }
+            const g = groupMap.get(key)!;
+            g.totalQty += Number(item.quantity ?? 0);
+            g.totalRevenue += parseFloat(String(item.lineTotal)) || 0;
+            const garmentCost: number | null = (item as any).garmentCost ?? null;
+            const processCost: number = (item as any).processCost ?? 0;
+            if (garmentCost != null) {
+              g.totalCost = (g.totalCost ?? 0) + garmentCost + processCost;
+            } else {
+              g.hasMissingCost = true;
+              g.totalCost = null;
+            }
+          }
+          const rows = Array.from(groupMap.values());
+          const grandRevenue = rows.reduce((s, r) => s + r.totalRevenue, 0);
+          const grandCost = rows.some(r => r.hasMissingCost || r.totalCost == null)
+            ? null
+            : rows.reduce((s, r) => s + (r.totalCost ?? 0), 0);
+          const grandGP = grandCost != null ? grandRevenue - grandCost : null;
+          const grandGpPct = grandRevenue > 0 && grandGP != null ? (grandGP / grandRevenue) * 100 : null;
+          const gpColor = (pct: number | null) =>
+            pct == null ? "text-muted-foreground" :
+            pct >= 65 ? "text-green-700" :
+            pct >= 50 ? "text-amber-700" :
+            "text-red-700";
+          return (
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                <CardTitle className="font-display text-lg flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-muted-foreground" />
+                  GP Summary
+                  <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full border border-border/50">Internal only</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right w-16">Qty</TableHead>
+                      <TableHead className="text-right w-28">Unit Sell</TableHead>
+                      <TableHead className="text-right w-28">Unit Cost</TableHead>
+                      <TableHead className="text-right w-28">Revenue</TableHead>
+                      <TableHead className="text-right w-28">Cost</TableHead>
+                      <TableHead className="text-right w-28">GP £</TableHead>
+                      <TableHead className="text-right w-24">GP %</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((row) => {
+                      const gp = row.totalCost != null ? row.totalRevenue - row.totalCost : null;
+                      const gpPct = row.totalRevenue > 0 && gp != null ? (gp / row.totalRevenue) * 100 : null;
+                      const unitSell = row.totalQty > 0 ? row.totalRevenue / row.totalQty : null;
+                      const unitCost = row.totalCost != null && row.totalQty > 0 ? row.totalCost / row.totalQty : null;
+                      return (
+                        <TableRow key={row.productName + row.productSku}>
+                          <TableCell>
+                            <p className="font-medium text-sm text-foreground">{row.productName}</p>
+                            {row.productSku && (
+                              <p className="text-xs text-muted-foreground font-mono mt-0.5">{row.productSku}</p>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">{row.totalQty}</TableCell>
+                          <TableCell className="text-right tabular-nums text-sm">
+                            {unitSell != null ? formatCurrency(unitSell) : "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm text-muted-foreground">
+                            {unitCost != null ? formatCurrency(unitCost) : <span className="text-muted-foreground/40">—</span>}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm font-medium">
+                            {formatCurrency(row.totalRevenue)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-sm text-muted-foreground">
+                            {row.totalCost != null ? formatCurrency(row.totalCost) : <span className="text-muted-foreground/40">—</span>}
+                          </TableCell>
+                          <TableCell className={`text-right tabular-nums text-sm font-medium ${gp != null && gp < 0 ? "text-red-700" : ""}`}>
+                            {gp != null ? formatCurrency(gp) : <span className="text-muted-foreground/40">—</span>}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {gpPct != null ? (
+                              <span className={`text-sm font-bold tabular-nums ${gpColor(gpPct)}`}>
+                                {gpPct.toFixed(1)}%
+                              </span>
+                            ) : <span className="text-muted-foreground/40 text-sm">—</span>}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                  <TableFooter>
+                    <TableRow>
+                      <TableCell className="font-semibold text-foreground">Order Total</TableCell>
+                      <TableCell className="text-right tabular-nums font-semibold">
+                        {rows.reduce((s, r) => s + r.totalQty, 0)}
+                      </TableCell>
+                      <TableCell />
+                      <TableCell />
+                      <TableCell className="text-right tabular-nums font-semibold">{formatCurrency(grandRevenue)}</TableCell>
+                      <TableCell className="text-right tabular-nums font-semibold text-muted-foreground">
+                        {grandCost != null ? formatCurrency(grandCost) : "—"}
+                      </TableCell>
+                      <TableCell className={`text-right tabular-nums font-semibold ${grandGP != null && grandGP < 0 ? "text-red-700" : ""}`}>
+                        {grandGP != null ? formatCurrency(grandGP) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {grandGpPct != null ? (
+                          <span className={`text-base font-bold tabular-nums ${gpColor(grandGpPct)}`}>
+                            {grandGpPct.toFixed(1)}%
+                          </span>
+                        ) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  </TableFooter>
+                </Table>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         {/* ── Internal Messages ─────────────────────────────────────────────── */}
         <Card className="shadow-sm border-border/50">
