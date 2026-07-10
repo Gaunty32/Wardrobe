@@ -145,8 +145,8 @@ router.get("/orders", async (req, res): Promise<void> => {
   if (query.success) {
     const conditions = [baseCondition];
     if (query.data.status === "active") {
-      // Hide orders that are fully done: shipped + invoiced + posted to Xero
-      conditions.push(sql`NOT (${ordersTable.status} = 'shipped' AND ${ordersTable.xeroInvoiceId} IS NOT NULL)`);
+      // Hide orders that are fully done: shipped + (invoiced to Xero OR zero-value — £0 orders can never get a Xero invoice)
+      conditions.push(sql`NOT (${ordersTable.status} = 'shipped' AND (${ordersTable.xeroInvoiceId} IS NOT NULL OR COALESCE(${ordersTable.totalAmount}::numeric, 0) = 0))`);
     } else if (query.data.status) {
       conditions.push(eq(ordersTable.status, query.data.status));
     }
