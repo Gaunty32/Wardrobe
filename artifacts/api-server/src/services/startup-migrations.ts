@@ -1320,6 +1320,12 @@ export async function runStartupMigrations(): Promise<void> {
   // This can happen when: (a) stock existed at confirmation but was later consumed,
   // (b) an item was deleted from a PO but the restore logic didn't fire correctly.
   // Safe to re-run: condition becomes a no-op once purchase_required is restored.
+  //
+  // IMPORTANT: use colour-aware variant stock when variants exist, NOT the product-level
+  // aggregate. Products like shirts have many colour variants (e.g. Sky Blue stock = 200,
+  // White stock = 0). Using products.stock_quantity (all colours summed) would incorrectly
+  // conclude "stock is available" for a White order even when White stock = 0, causing items
+  // to stay stuck as 'allocated' and never re-enter the purchasing queue.
   await db.execute(sql`
     UPDATE order_items
     SET purchase_required  = true,
@@ -1336,8 +1342,18 @@ export async function runStartupMigrations(): Promise<void> {
         SELECT 1 FROM products p
         WHERE p.id = order_items.product_id
           AND COALESCE(p.is_service, false) = false
-          AND COALESCE(p.stock_quantity, 0) < order_items.quantity
       )
+      AND COALESCE(
+        -- For products with variants: sum stock only for the matching colour
+        (SELECT SUM(COALESCE(pv.stock_quantity, 0))
+         FROM product_variants pv
+         WHERE pv.product_id = order_items.product_id
+           AND pv.colour IS NOT DISTINCT FROM order_items.colour),
+        -- Fallback to product-level stock for plain (no-variant) products
+        (SELECT COALESCE(p2.stock_quantity, 0)
+         FROM products p2
+         WHERE p2.id = order_items.product_id)
+      , 0) < order_items.quantity
       AND NOT EXISTS (
         SELECT 1 FROM purchase_order_items poi
         JOIN purchase_orders po2 ON po2.id = poi.po_id
