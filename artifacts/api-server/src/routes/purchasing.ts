@@ -113,6 +113,7 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     WHERE oi.product_id IS NOT NULL
       AND p.is_service IS NOT TRUE
       AND COALESCE(o.status, '') NOT IN ('cancelled', 'archived', 'completed', 'delivered', 'shipped', 'invoiced', 'draft', 'portal_draft', 'portal_pending')
+      AND COALESCE(oi.stock_status, '') NOT IN ('allocated', 'in_production', 'complete')
       AND NOT EXISTS (
         SELECT 1
         FROM purchase_order_items poi
