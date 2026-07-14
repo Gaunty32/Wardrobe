@@ -32,11 +32,22 @@ const _logoStorageService = new ObjectStorageService();
 async function customerLogoToDataUrl(logoUrl: string | null | undefined): Promise<string | null> {
   if (!logoUrl) return null;
   try {
-    if (logoUrl.startsWith("/api/storage/objects/")) {
-      const objectPath = logoUrl.replace("/api/storage", "");
+    // Normalise full GCS URLs (https://storage.googleapis.com/...) back to /objects/... paths
+    const normalized = _logoStorageService.normalizeObjectEntityPath(logoUrl);
+
+    // Resolve internal object-storage paths (both /api/storage/objects/... and /objects/...)
+    const objectPath = normalized.startsWith("/api/storage/objects/")
+      ? normalized.replace("/api/storage", "")
+      : normalized.startsWith("/objects/")
+        ? normalized
+        : null;
+
+    if (objectPath) {
       const file = await _logoStorageService.getObjectEntityFile(objectPath);
       const [metadata] = await file.getMetadata();
-      const contentType = (metadata.contentType as string | undefined)?.trim() || "image/png";
+      // Strip content-type params (e.g. "image/png; charset=utf-8" → "image/png")
+      const rawCt = (metadata.contentType as string | undefined)?.trim() || "image/png";
+      const mimeType = rawCt.split(";")[0].trim() || "image/png";
       const chunks: Buffer[] = [];
       await new Promise<void>((resolve, reject) => {
         file.createReadStream()
@@ -44,13 +55,16 @@ async function customerLogoToDataUrl(logoUrl: string | null | undefined): Promis
           .on("end", resolve)
           .on("error", reject);
       });
-      return `data:${contentType};base64,${Buffer.concat(chunks).toString("base64")}`;
+      return `data:${mimeType};base64,${Buffer.concat(chunks).toString("base64")}`;
     }
+
+    // External URL fallback
     const resp = await fetch(logoUrl, { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
-    const ct = resp.headers.get("content-type") ?? "image/png";
+    const rawCt = resp.headers.get("content-type") ?? "image/png";
+    const mimeType = rawCt.split(";")[0].trim() || "image/png";
     const buf = Buffer.from(await resp.arrayBuffer());
-    return `data:${ct};base64,${buf.toString("base64")}`;
+    return `data:${mimeType};base64,${buf.toString("base64")}`;
   } catch { return null; }
 }
 
@@ -112,7 +126,7 @@ function buildInviteEmail(
   <div style="max-width:600px;margin:0 auto;">
 
     <!-- Header banner -->
-    <div style="background:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);border-radius:16px 16px 0 0;padding:36px 40px 32px;text-align:center;">
+    <div style="background-color:#1e3a8a;background-image:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);border-radius:16px 16px 0 0;padding:36px 40px 32px;text-align:center;">
       <table role="presentation" align="center" style="margin:0 auto 20px;border-collapse:collapse;">
         <tr>
           <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
