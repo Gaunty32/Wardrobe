@@ -1609,7 +1609,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="woocommerce">
-          <TabsList>
+          <TabsList className="flex-wrap h-auto gap-y-1">
             <TabsTrigger value="woocommerce" className="gap-2">
               <ShoppingCart className="w-4 h-4" /> WooCommerce Sync
             </TabsTrigger>
