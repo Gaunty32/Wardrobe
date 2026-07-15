@@ -760,6 +760,20 @@ router.get("/production/daily-plan", async (req, res): Promise<void> => {
       "Unknown";
     const totalQty = rows.reduce((sum: number, r: any) => sum + Number(r.quantity), 0);
 
+    // Per-finish breakdown (for display as pills)
+    const byFinish = new Map<string, any[]>();
+    for (const row of rows) {
+      const fk = (row.finish_name as string) ?? "Plain";
+      if (!byFinish.has(fk)) byFinish.set(fk, []);
+      byFinish.get(fk)!.push(row);
+    }
+    const finishes = Array.from(byFinish.entries()).map(([fn, fRows]) => ({
+      finishName: fn,
+      qty: fRows.reduce((s: number, r: any) => s + Number(r.quantity), 0),
+      worksheetNumber: (fRows.find((r: any) => r.worksheet_number != null)?.worksheet_number as string | null) ?? null,
+      type: fRows[0].work_type === "picking" ? "picking" : ((fRows[0].ws_status as string) ?? "pre_wip"),
+    }));
+
     // Earliest required date across every item in this finish group
     const dates = rows
       .map((r: any) => (r.required_date ? new Date(r.required_date) : null))
@@ -802,6 +816,7 @@ router.get("/production/daily-plan", async (req, res): Promise<void> => {
       const first = taskRows[0];
       return {
         type:            first.work_type === "picking" ? "picking" : (first.ws_status as string),
+        finishName:      (first.finish_name as string | null) ?? null,
         worksheetId:     first.worksheet_id    as number | null,
         worksheetNumber: first.worksheet_number as string | null,
         orderId:         first.order_id         as number | null,
@@ -832,6 +847,8 @@ router.get("/production/daily-plan", async (req, res): Promise<void> => {
 
     return {
       finishName,
+      customerName: finishName,
+      finishes,
       totalQty,
       orderCount: new Set(rows.map((r: any) => r.order_id).filter(Boolean)).size,
       overallStatus,

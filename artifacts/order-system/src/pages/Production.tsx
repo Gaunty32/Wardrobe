@@ -227,8 +227,17 @@ interface PlanTask {
   items: PlanTaskItem[];
 }
 
+interface PlanFinish {
+  finishName: string;
+  qty: number;
+  worksheetNumber: string | null;
+  type: string;
+}
+
 interface PlanTaskGroup {
   finishName: string;
+  customerName: string;
+  finishes: PlanFinish[];
   totalQty: number;
   orderCount: number;
   overallStatus: "in_progress" | "ready" | "pick_first" | "mixed";
@@ -2977,26 +2986,16 @@ function TaskGroupCard({
     group.overallStatus === "in_progress" ? "wip" :
     "pre_wip";
 
-  const batchNote = group.orderCount > 1
-    ? `${group.totalQty} items across ${group.orderCount} orders — batch together for maximum efficiency`
-    : `${group.totalQty} item${group.totalQty !== 1 ? "s" : ""} for 1 order`;
-
   return (
     <div className={`rounded-xl border ${urg.border} ${urg.bg} shadow-sm overflow-hidden`}>
-      {/* Header */}
-      <div className="flex items-start gap-3 px-5 py-4">
-        <div className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${urg.dot}`} />
+      {/* Customer name header */}
+      <div className="flex items-center gap-3 px-5 py-3.5">
+        <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${urg.dot}`} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-semibold text-base">{group.finishName}</span>
+            <span className="font-semibold text-base">{group.customerName || group.finishName}</span>
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${stat.color}`}>
               {stat.label}
-            </span>
-          </div>
-          <div className="flex items-center gap-3 mt-1 flex-wrap">
-            <span className="text-sm text-muted-foreground flex items-center gap-1">
-              <Layers className="w-3.5 h-3.5" />
-              {batchNote}
             </span>
             <span className={`text-sm font-medium ${urg.text}`}>
               {daysLabel(group.daysUntilDue)}
@@ -3027,37 +3026,32 @@ function TaskGroupCard({
         </div>
       </div>
 
-      {/* Task rows */}
-      <div className={`border-t ${urg.border} divide-y divide-${urg.border}`}>
-        {group.tasks.map((task, i) => {
-          const tLabel = TASK_TYPE_LABELS[task.type] ?? TASK_TYPE_LABELS.picking;
+      {/* Finish rows */}
+      <div className={`border-t ${urg.border} divide-y`} style={{ borderColor: "inherit" }}>
+        {(group.finishes ?? group.tasks).map((finish, i) => {
+          const isFinish = "finishName" in finish && !("items" in finish);
+          const label = isFinish ? (finish as PlanFinish).finishName : ((finish as typeof group.tasks[0]).finishName ?? (finish as typeof group.tasks[0]).worksheetNumber ?? "—");
+          const wsNum = isFinish ? (finish as PlanFinish).worksheetNumber : (finish as typeof group.tasks[0]).worksheetNumber;
+          const qty = finish.qty;
+          const type = finish.type;
+          const tLabel = TASK_TYPE_LABELS[type] ?? TASK_TYPE_LABELS.picking;
+          const taskItems = !isFinish && expanded ? (finish as typeof group.tasks[0]).items : [];
+
           return (
-            <div key={i} className="px-5 py-3 flex items-start gap-3">
-              <div className="w-2.5 flex-shrink-0" />
+            <div key={i} className="px-5 py-2.5 flex items-start gap-3">
+              <div className="w-2.5 flex-shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap text-sm">
-                  {task.worksheetNumber && (
-                    <span className="font-mono font-bold text-foreground">{task.worksheetNumber}</span>
+                  {wsNum && (
+                    <span className="font-mono text-xs text-muted-foreground">{wsNum}</span>
                   )}
-                  {task.orderNumber && (
-                    <span className={`font-mono ${task.worksheetNumber ? "text-muted-foreground" : "font-bold text-foreground"}`}>
-                      {task.orderNumber}
-                    </span>
-                  )}
-                  {task.customerName && (
-                    <span className="text-muted-foreground">— {task.customerName}</span>
-                  )}
+                  <span className="font-medium text-foreground truncate">{label}</span>
                   <span className={`text-xs font-medium ${tLabel.color}`}>{tLabel.label}</span>
-                  <span className="ml-auto font-semibold text-foreground">{task.qty} item{task.qty !== 1 ? "s" : ""}</span>
+                  <span className="ml-auto font-semibold text-foreground flex-shrink-0">{qty} item{qty !== 1 ? "s" : ""}</span>
                 </div>
-                {task.requiredDate && (
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    Due {formatDate(task.requiredDate)}
-                  </div>
-                )}
-                {expanded && task.items.length > 0 && (
+                {expanded && taskItems.length > 0 && (
                   <div className="mt-2 space-y-1">
-                    {task.items.map((item, j) => (
+                    {taskItems.map((item, j) => (
                       <div key={j} className="flex items-center gap-2 text-xs text-muted-foreground pl-2 border-l-2 border-muted">
                         <span className="font-medium text-foreground">{item.productName}</span>
                         {item.colour && <span>{item.colour}</span>}

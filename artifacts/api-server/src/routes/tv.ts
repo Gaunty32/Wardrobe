@@ -157,6 +157,20 @@ router.get("/tv/daily-plan", async (req, res): Promise<void> => {
     else if (hasPicking && !hasWip && !hasPreWip) overallStatus = "pick_first";
     else                                          overallStatus = "mixed";
 
+    // Per-finish breakdown (for display as pills)
+    const byFinish = new Map<string, any[]>();
+    for (const row of rows) {
+      const fk = (row.finish_name as string) ?? "Plain";
+      if (!byFinish.has(fk)) byFinish.set(fk, []);
+      byFinish.get(fk)!.push(row);
+    }
+    const finishes = Array.from(byFinish.entries()).map(([fn, fRows]) => ({
+      finishName: fn,
+      qty: fRows.reduce((s: number, r: any) => s + Number(r.quantity), 0),
+      worksheetNumber: (fRows.find((r: any) => r.worksheet_number != null)?.worksheet_number as string | null) ?? null,
+      type: fRows[0].work_type === "picking" ? "picking" : ((fRows[0].ws_status as string) ?? "pre_wip"),
+    }));
+
     const byTask = new Map<string, any[]>();
     for (const row of rows) {
       const key = `${row.order_id ?? "none"}:${row.ws_status ?? "picking"}:${row.worksheet_id ?? ""}`;
@@ -168,6 +182,7 @@ router.get("/tv/daily-plan", async (req, res): Promise<void> => {
       const first = taskRows[0];
       return {
         type:            first.work_type === "picking" ? "picking" : (first.ws_status as string),
+        finishName:      (first.finish_name as string | null) ?? null,
         worksheetId:     first.worksheet_id    as number | null,
         worksheetNumber: first.worksheet_number as string | null,
         orderId:         first.order_id         as number | null,
@@ -189,6 +204,8 @@ router.get("/tv/daily-plan", async (req, res): Promise<void> => {
 
     return {
       finishName,
+      customerName: finishName,
+      finishes,
       totalQty,
       orderCount: orderIds.size,
       overallStatus,
