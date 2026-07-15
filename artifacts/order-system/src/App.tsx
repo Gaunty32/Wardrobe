@@ -87,6 +87,7 @@ import DemoSection from "@/pages/DemoSection";
 import PortalGuide from "@/pages/PortalGuide";
 import Landing from "@/pages/Landing";
 import StaffLogin from "@/pages/StaffLogin";
+import TvDisplay from "@/pages/TvDisplay";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -127,6 +128,7 @@ function Router() {
       <Route path="/" component={Landing} />
       <Route path="/login" component={StaffLogin} />
       <Route path="/portal-guide" component={PortalGuide} />
+      <Route path="/tv-display" component={TvDisplay} />
 
       {/* Demo routes — no auth required */}
       <Route path="/demo" component={DemoGate} />

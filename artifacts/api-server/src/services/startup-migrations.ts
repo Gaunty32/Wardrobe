@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import { allocatePODelivery } from "./allocation.js";
+import { randomBytes } from "crypto";
 
 /**
  * Idempotent schema migrations that run on every server start.
@@ -2498,6 +2499,22 @@ export async function refreshProductIssues(): Promise<void> {
       if ((fixed ?? 0) > 0) {
         console.log(`[startup] Fixed ${fixed} phantom-allocated item(s) with zero colour-variant stock`);
       }
+    }
+  }
+
+  // Ensure the TV display token exists — generated once and stored in settings.
+  {
+    const existing = await db.execute(sql`
+      SELECT value FROM settings WHERE key = 'tv_display_token' LIMIT 1
+    `);
+    if (existing.rows.length === 0) {
+      const token = randomBytes(48).toString("hex");
+      await db.execute(sql`
+        INSERT INTO settings (key, value, updated_at)
+        VALUES ('tv_display_token', ${token}, now())
+        ON CONFLICT (key) DO NOTHING
+      `);
+      console.log("[startup] TV display token generated");
     }
   }
 }
