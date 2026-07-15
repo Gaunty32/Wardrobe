@@ -1608,7 +1608,19 @@ export default function Settings() {
           <p className="text-muted-foreground mt-1">Configure integrations and sync preferences.</p>
         </div>
 
-        <Tabs defaultValue="woocommerce">
+        <Tabs defaultValue="woocommerce" onValueChange={async (tab) => {
+          if (tab === "reengagement") {
+            try {
+              const [s, c] = await Promise.all([
+                apiFetch("/reengagement/settings") as Promise<{ enabled: boolean; lastRun: string | null }>,
+                apiFetch("/reengagement/eligible-count") as Promise<{ count: number }>,
+              ]);
+              setCheckinEnabled(s.enabled);
+              setCheckinLastRun(s.lastRun);
+              setCheckinEligibleCount(c.count);
+            } catch {}
+          }
+        }}>
           <TabsList className="flex-wrap h-auto gap-y-1">
             <TabsTrigger value="woocommerce" className="gap-2">
               <ShoppingCart className="w-4 h-4" /> WooCommerce Sync
@@ -1640,17 +1652,7 @@ export default function Settings() {
             <TabsTrigger value="social" className="gap-2">
               <Share2 className="w-4 h-4" /> Social Media
             </TabsTrigger>
-            <TabsTrigger value="reengagement" className="gap-2" onClick={async () => {
-              try {
-                const [s, c] = await Promise.all([
-                  apiFetch<{ enabled: boolean; lastRun: string | null }>("/reengagement/settings"),
-                  apiFetch<{ count: number }>("/reengagement/eligible-count"),
-                ]);
-                setCheckinEnabled(s.enabled);
-                setCheckinLastRun(s.lastRun);
-                setCheckinEligibleCount(c.count);
-              } catch {}
-            }}>
+            <TabsTrigger value="reengagement" className="gap-2">
               <Mail className="w-4 h-4" /> Re-engagement
             </TabsTrigger>
             <TabsTrigger value="users" className="gap-2">
