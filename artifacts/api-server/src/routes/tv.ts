@@ -108,14 +108,24 @@ router.get("/tv/daily-plan", async (req, res): Promise<void> => {
 
   const allRows = [...(pickingRows.rows as any[]), ...(wsRows.rows as any[])];
 
-  const finishGroups = new Map<string, any[]>();
+  // Group by order; worksheets with no linked order fall back to worksheet number
+  const orderGroups = new Map<string, any[]>();
   for (const row of allRows) {
-    const key = (row.finish_name as string) ?? "Plain";
-    if (!finishGroups.has(key)) finishGroups.set(key, []);
-    finishGroups.get(key)!.push(row);
+    const key = row.order_id != null
+      ? `order:${row.order_id}`
+      : `ws:${row.worksheet_id ?? row.finish_name ?? "unknown"}`;
+    if (!orderGroups.has(key)) orderGroups.set(key, []);
+    orderGroups.get(key)!.push(row);
   }
 
-  const taskGroups = Array.from(finishGroups.entries()).map(([finishName, rows]) => {
+  const taskGroups = Array.from(orderGroups.values()).map((rows) => {
+    const first = rows[0];
+    const finishName: string =
+      (first.customer_name as string | null) ??
+      (first.order_number  as string | null) ??
+      (first.worksheet_number as string | null) ??
+      (first.finish_name   as string | null) ??
+      "Unknown";
     const totalQty = rows.reduce((sum: number, r: any) => sum + Number(r.quantity), 0);
 
     const dates = rows
