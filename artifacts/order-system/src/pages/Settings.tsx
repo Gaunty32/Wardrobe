@@ -1310,6 +1310,14 @@ export default function Settings() {
   const [testingPost, setTestingPost] = useState(false);
   const [testPostResults, setTestPostResults] = useState<Record<string, { ok: boolean; skipped?: boolean; error?: string; postId?: string; postName?: string }> | null>(null);
 
+  // Re-engagement email settings
+  const [checkinEnabled, setCheckinEnabled] = useState(false);
+  const [checkinLastRun, setCheckinLastRun] = useState<string | null>(null);
+  const [savingCheckin, setSavingCheckin] = useState(false);
+  const [runningCheckin, setRunningCheckin] = useState(false);
+  const [checkinRunResult, setCheckinRunResult] = useState<{ sent: number; errors: number } | null>(null);
+  const [checkinEligibleCount, setCheckinEligibleCount] = useState<number | null>(null);
+
   // Email / SMTP fields
   const [smtpHost, setSmtpHost] = useState("");
   const [smtpPort, setSmtpPort] = useState("587");
@@ -1631,6 +1639,19 @@ export default function Settings() {
             </TabsTrigger>
             <TabsTrigger value="social" className="gap-2">
               <Share2 className="w-4 h-4" /> Social Media
+            </TabsTrigger>
+            <TabsTrigger value="reengagement" className="gap-2" onClick={async () => {
+              try {
+                const [s, c] = await Promise.all([
+                  apiFetch<{ enabled: boolean; lastRun: string | null }>("/reengagement/settings"),
+                  apiFetch<{ count: number }>("/reengagement/eligible-count"),
+                ]);
+                setCheckinEnabled(s.enabled);
+                setCheckinLastRun(s.lastRun);
+                setCheckinEligibleCount(c.count);
+              } catch {}
+            }}>
+              <Mail className="w-4 h-4" /> Re-engagement
             </TabsTrigger>
             <TabsTrigger value="users" className="gap-2">
               <Users className="w-4 h-4" /> Users
@@ -2577,6 +2598,138 @@ export default function Settings() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </TabsContent>
+
+          {/* ─── Re-engagement Emails Tab ─────────────────────────── */}
+          <TabsContent value="reengagement" className="mt-6">
+            <div className="space-y-6 max-w-xl">
+
+              {/* What it does */}
+              <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm space-y-4">
+                <div>
+                  <h2 className="font-semibold text-base flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-blue-600" /> Automated Re-engagement Emails
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Sends a friendly "just checking in" email to customers who haven't placed an order in over 4 months — a gentle nudge about seasonal wardrobe refreshes and keeping their brand looking smart.
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-900 space-y-1">
+                  <p className="font-medium">How it works</p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-blue-800">
+                    <li>Runs automatically every Monday morning</li>
+                    <li>Only emails customers with a recorded email address</li>
+                    <li>Won't re-email the same customer within 4 months</li>
+                    <li>Personalised with the contact's first name and company logo</li>
+                  </ul>
+                </div>
+
+                {checkinEligibleCount !== null && (
+                  <p className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">{checkinEligibleCount}</span> customer{checkinEligibleCount === 1 ? "" : "s"} would receive an email if sent right now.
+                  </p>
+                )}
+              </div>
+
+              {/* Enable / disable */}
+              <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-sm">Enable automatic emails</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Turn the weekly Monday morning job on or off.</p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={checkinEnabled ? "default" : "outline"}
+                    disabled={savingCheckin}
+                    onClick={async () => {
+                      setSavingCheckin(true);
+                      try {
+                        const next = !checkinEnabled;
+                        await apiFetch("/reengagement/settings", {
+                          method: "POST",
+                          body: JSON.stringify({ enabled: next }),
+                          headers: { "Content-Type": "application/json" },
+                        });
+                        setCheckinEnabled(next);
+                      } catch (e: any) {
+                        toast({ title: "Failed to save", description: e.message ?? "Unknown error", variant: "destructive" });
+                      } finally {
+                        setSavingCheckin(false);
+                      }
+                    }}
+                    className="min-w-[80px]"
+                  >
+                    {savingCheckin ? <Loader2 className="w-4 h-4 animate-spin" /> : checkinEnabled ? "Enabled" : "Disabled"}
+                  </Button>
+                </div>
+
+                {checkinLastRun && (
+                  <p className="text-xs text-muted-foreground">Last run: {new Date(checkinLastRun).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</p>
+                )}
+              </div>
+
+              {/* Preview + manual send */}
+              <div className="bg-card border border-border/50 rounded-lg p-6 shadow-sm space-y-4">
+                <div>
+                  <h2 className="font-semibold text-base flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-slate-600" /> Preview &amp; Test
+                  </h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Open a preview of the email template, or trigger a manual send to eligible customers right now.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => window.open(`${API_BASE}/reengagement/preview`, "_blank")}
+                  >
+                    <Eye className="w-4 h-4" /> Preview email template
+                  </Button>
+
+                  <Button
+                    disabled={runningCheckin}
+                    className="gap-2"
+                    onClick={async () => {
+                      setRunningCheckin(true);
+                      setCheckinRunResult(null);
+                      try {
+                        const data = await apiFetch<{ ok: boolean; sent: number; errors: number; error?: string }>("/reengagement/send-now", { method: "POST" });
+                        if (data.ok) {
+                          setCheckinRunResult({ sent: data.sent, errors: data.errors });
+                          setCheckinLastRun(new Date().toISOString());
+                          const eligible = await apiFetch<{ count: number }>("/reengagement/eligible-count");
+                          setCheckinEligibleCount(eligible.count);
+                        } else {
+                          toast({ title: "Send failed", description: data.error ?? "Unknown error", variant: "destructive" });
+                        }
+                      } catch (e: any) {
+                        toast({ title: "Send failed", description: e.message ?? "Unknown error", variant: "destructive" });
+                      } finally {
+                        setRunningCheckin(false);
+                      }
+                    }}
+                  >
+                    {runningCheckin ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    {runningCheckin ? "Sending…" : "Send now"}
+                  </Button>
+                </div>
+
+                {checkinRunResult && (
+                  <div className={`flex items-start gap-2 rounded-md px-3 py-2 text-sm ${checkinRunResult.errors === 0 ? "bg-green-50 border border-green-200 text-green-800" : "bg-amber-50 border border-amber-200 text-amber-800"}`}>
+                    <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>
+                      Sent <strong>{checkinRunResult.sent}</strong> email{checkinRunResult.sent === 1 ? "" : "s"}
+                      {checkinRunResult.errors > 0 ? `, ${checkinRunResult.errors} failed` : " successfully"}.
+                    </span>
                   </div>
                 )}
               </div>

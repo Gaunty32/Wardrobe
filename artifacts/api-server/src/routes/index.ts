@@ -34,6 +34,7 @@ import feedbackRouter from "./feedback";
 import socialPostsRouter from "./social-posts";
 import chatRouter from "./chat";
 import tvRouter from "./tv";
+import reEngagementRouter from "./re-engagement";
 
 const router: IRouter = Router();
 
@@ -72,5 +73,6 @@ router.use(feedbackRouter);
 router.use(socialPostsRouter);
 router.use(chatRouter);
 router.use(tvRouter);
+router.use(reEngagementRouter);
 
 export default router;

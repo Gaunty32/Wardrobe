@@ -2,7 +2,7 @@ import nodemailer from "nodemailer";
 import PDFDocument from "pdfkit";
 import { db, settingsTable, ordersTable, orderItemsTable, customersTable, customerEmployeesTable, customerDeliveryAddressesTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
-import { SBS_LOGO_DATA_URL } from "../assets/logo-data";
+import { SBS_LOGO_DATA_URL, SBS_LOGO_COLOUR_DATA_URL } from "../assets/logo-data";
 import { getResendClient } from "./resend-client.js";
 import { ObjectStorageService } from "../lib/objectStorage.js";
 import { getUncachableStripeClient } from "./stripeClient.js";
@@ -2910,4 +2910,105 @@ export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string
     .where(eq(ordersTable.id, orderId));
 
   return { sentTo: customerEmail };
+}
+
+// ─── Customer re-engagement ("checking in") email ─────────────────────────────
+
+export function buildCheckInEmail(opts: {
+  customerName: string;
+  firstName: string;
+  portalUrl?: string | null;
+  customerLogoDataUrl?: string | null;
+}): { html: string; text: string } {
+  const { customerName, firstName, portalUrl, customerLogoDataUrl } = opts;
+
+  const ctaUrl = portalUrl ?? "mailto:info@selectbranding.co.uk";
+  const ctaLabel = portalUrl ? "Browse Your Wardrobe" : "Get in Touch";
+
+  const promptCards: Array<{ icon: string; title: string; body: string }> = [
+    { icon: "🌦️", title: "Seasonal refresh", body: "As the weather changes, it's worth checking your team has the right layers and outerwear to stay comfortable and on-brand." },
+    { icon: "👕", title: "Replace tired items", body: "Worn garments can let your brand down. Swapping them out is a quick win for keeping your team looking sharp." },
+    { icon: "✨", title: "Something new?", body: "New team members, new roles, new products — we can add anything to your wardrobe quickly and easily." },
+  ];
+
+  const cardHtml = promptCards.map(c => `
+        <td width="33.33%" valign="top" style="padding:0 8px 16px;">
+          <div style="background:#f8fafc;border:1px solid #e6ebf2;border-radius:12px;padding:18px 14px;height:100%;">
+            <div style="font-size:22px;line-height:1;margin-bottom:10px;">${c.icon}</div>
+            <div style="color:#0f172a;font-size:13.5px;font-weight:700;margin:0 0 4px;">${c.title}</div>
+            <div style="color:#64748b;font-size:12px;line-height:1.5;margin:0;">${c.body}</div>
+          </div>
+        </td>`).join("");
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+</head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#eef2f8;padding:32px 12px;margin:0;">
+  <div style="max-width:600px;margin:0 auto;">
+
+    <!-- Header banner -->
+    <div style="background-color:#1e3a8a;background-image:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);border-radius:16px 16px 0 0;padding:36px 40px 32px;text-align:center;">
+      <table role="presentation" align="center" style="margin:0 auto 20px;border-collapse:collapse;">
+        <tr>
+          <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+            <img src="${SBS_LOGO_COLOUR_DATA_URL}" alt="Select Branding Solutions" style="height:36px;display:block;" />
+          </td>
+          ${customerLogoDataUrl ? `
+          <td style="padding:0 14px;color:#94a3b8;font-size:20px;vertical-align:middle;">&times;</td>
+          <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+            <img src="${customerLogoDataUrl}" alt="${customerName}" style="height:36px;max-width:140px;display:block;object-fit:contain;" />
+          </td>` : ""}
+        </tr>
+      </table>
+      <p style="color:#93c5fd;font-size:12.5px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 10px;">From Select Branding Solutions</p>
+      <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0;line-height:1.3;">Just checking in — is your wardrobe still working for you?</h1>
+    </div>
+
+    <!-- Body -->
+    <div style="background:#ffffff;padding:36px 40px;border-left:1px solid #e6ebf2;border-right:1px solid #e6ebf2;">
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 16px;">
+        Hi ${firstName},
+      </p>
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 16px;">
+        We just wanted to check in and make sure all is ok. It's been a little while since your last order, so we thought it was worth a quick note.
+      </p>
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 28px;">
+        As the seasons change, it's always a good time to see if there are any extra items you'd like to add to your wardrobe — or if any pieces are looking a little tired and could do with replacing. Keeping your team's look fresh is one of the simplest ways to keep your brand looking smart.
+      </p>
+
+      <table role="presentation" width="100%" style="border-collapse:collapse;margin-bottom:8px;">
+        <tr>${cardHtml}</tr>
+      </table>
+
+      <div style="text-align:center;margin:28px 0 32px;">
+        <a href="${ctaUrl}" style="display:inline-block;background:#1e3a8a;color:#ffffff;text-decoration:none;padding:16px 44px;border-radius:10px;font-size:16px;font-weight:700;box-shadow:0 4px 14px rgba(30,58,138,0.35);">${ctaLabel}</a>
+      </div>
+
+      <div style="background:#f0f7ff;border:1px solid #dbeafe;border-radius:12px;padding:20px 22px;margin:0 0 24px;">
+        <p style="color:#1e3a8a;font-size:13.5px;font-weight:700;margin:0 0 6px;">Not sure what you need?</p>
+        <p style="color:#475569;font-size:13.5px;line-height:1.6;margin:0;">Just give us a call or drop us an email — we're always happy to help you refresh your range, check sizing, or explore new products that might suit your team.</p>
+      </div>
+
+      <div style="border-top:1px dashed #e2e8f0;padding-top:18px;text-align:center;">
+        <p style="color:#94a3b8;font-size:12.5px;margin:0;">If you've already been in touch with your account manager recently, please ignore this message.</p>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#0f172a;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center;">
+      <p style="color:#93c5fd;font-size:13px;font-weight:700;margin:0 0 4px;">Your uniform. Your people. Your brand.</p>
+      <p style="color:#64748b;font-size:11.5px;margin:8px 0 0;">Select Branding Solutions &bull; info@selectbranding.co.uk &bull; 0113 255 2694</p>
+    </div>
+
+  </div>
+</body>
+</html>`;
+
+  const text = `Hi ${firstName},\n\nWe just wanted to check in and make sure all is ok. It's been a little while since your last order with us, so we thought it was worth a quick note.\n\nAs the seasons change, it's always a good time to see if there are any extra items you'd like to add to your wardrobe — or if any pieces are looking a little tired and could do with replacing. Keeping your team's look fresh is one of the simplest ways to keep your brand looking smart.\n\n${portalUrl ? `Browse your wardrobe here:\n${portalUrl}\n\n` : ""}Not sure what you need? Just give us a call or drop us an email — we're always happy to help you refresh your range, check sizing, or explore new products.\n\ninfo@selectbranding.co.uk | 0113 255 2694\n\nSelect Branding Solutions`;
+
+  return { html, text };
 }

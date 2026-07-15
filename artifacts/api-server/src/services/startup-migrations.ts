@@ -2517,4 +2517,9 @@ export async function refreshProductIssues(): Promise<void> {
       console.log("[startup] TV display token generated");
     }
   }
+
+  // checkin_email_sent_at — tracks when a re-engagement email was last sent to a customer
+  await db.execute(sql`
+    ALTER TABLE customers ADD COLUMN IF NOT EXISTS checkin_email_sent_at timestamptz
+  `);
 }

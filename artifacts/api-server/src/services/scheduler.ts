@@ -2,7 +2,7 @@ import { schedule, type ScheduledTask } from "node-cron";
 import { db, settingsTable, customersTable, ordersTable, tasksTable } from "@workspace/db";
 import { eq, sql, and, or, isNull, lt, lte, isNotNull } from "drizzle-orm";
 import { runWooSync } from "./woo-sync";
-import { sendInvoiceEmail } from "./email.js";
+import { sendInvoiceEmail, buildCheckInEmail, sendEmail, isEmailConfigured, fetchLogoDataUrl } from "./email.js";
 import { postInvoiceToXero } from "./xero.js";
 
 let currentTask: ScheduledTask | null = null;
@@ -169,6 +169,118 @@ schedule("0 9 * * *", async () => {
     await createCheckInReminders();
   } catch (err) {
     console.error("[reminders] Check-in reminder job failed:", err);
+  }
+});
+
+// ─── Customer re-engagement emails ────────────────────────────────────────────
+
+/**
+ * Sends a friendly "checking in" email to customers who haven't placed an order
+ * in the last 4 months (120 days) and haven't received a check-in email in the
+ * last 120 days either. Controlled by the `checkin_email_enabled` setting.
+ */
+export async function sendCheckInEmails(): Promise<{ sent: number; skipped: number; errors: number }> {
+  // Check if feature is enabled
+  const [enabledRow] = await db.select().from(settingsTable).where(eq(settingsTable.key, "checkin_email_enabled"));
+  if (enabledRow?.value !== "true") {
+    console.log("[checkin-email] Feature disabled — skipping");
+    return { sent: 0, skipped: 0, errors: 0 };
+  }
+
+  if (!isEmailConfigured) {
+    console.log("[checkin-email] No email provider configured — skipping");
+    return { sent: 0, skipped: 0, errors: 0 };
+  }
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 120);
+
+  // Find customers with email, no order in 120 days, and no check-in email in 120 days
+  const eligible = await db.execute<{
+    id: number;
+    name: string;
+    email: string;
+    contact_first_name: string | null;
+    contact_last_name: string | null;
+    logo_url: string | null;
+    last_order: Date | null;
+    checkin_email_sent_at: Date | null;
+  }>(sql`
+    SELECT
+      c.id,
+      c.name,
+      c.email,
+      c.contact_first_name,
+      c.contact_last_name,
+      c.logo_url,
+      c.checkin_email_sent_at,
+      MAX(o.order_date) AS last_order
+    FROM customers c
+    LEFT JOIN orders o ON o.customer_id = c.id
+    WHERE c.email IS NOT NULL AND c.email <> ''
+    GROUP BY c.id, c.name, c.email, c.contact_first_name, c.contact_last_name, c.logo_url, c.checkin_email_sent_at
+    HAVING
+      (MAX(o.order_date) < ${cutoff} OR MAX(o.order_date) IS NULL)
+      AND (c.checkin_email_sent_at IS NULL OR c.checkin_email_sent_at < ${cutoff})
+  `);
+
+  let sent = 0;
+  let skipped = 0;
+  let errors = 0;
+
+  for (const customer of eligible.rows) {
+    try {
+      const firstName = customer.contact_first_name?.trim() || customer.name;
+      const logoDataUrl = await fetchLogoDataUrl(customer.logo_url).catch(() => null);
+
+      const { html, text } = buildCheckInEmail({
+        customerName: customer.name,
+        firstName,
+        portalUrl: null,
+        customerLogoDataUrl: logoDataUrl,
+      });
+
+      const result = await sendEmail({
+        to: customer.email,
+        subject: `Just checking in — ${customer.name}`,
+        html,
+        text,
+      });
+
+      if (result.sent) {
+        await db.execute(sql`
+          UPDATE customers SET checkin_email_sent_at = now() WHERE id = ${customer.id}
+        `);
+        console.log(`[checkin-email] Sent to ${customer.email} (${customer.name})`);
+        sent++;
+      } else {
+        console.error(`[checkin-email] Failed for ${customer.email}: ${result.error}`);
+        errors++;
+      }
+    } catch (err: any) {
+      console.error(`[checkin-email] Error for customer ${customer.id}:`, err?.message ?? err);
+      errors++;
+    }
+  }
+
+  // Record last run time
+  await db.execute(sql`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES ('checkin_email_last_run', ${new Date().toISOString()}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `).catch(() => {});
+
+  console.log(`[checkin-email] Done — sent: ${sent}, skipped: ${skipped}, errors: ${errors}`);
+  return { sent, skipped, errors };
+}
+
+// Run re-engagement emails every Monday at 10am
+schedule("0 10 * * 1", async () => {
+  console.log("[checkin-email] Running weekly re-engagement email check");
+  try {
+    await sendCheckInEmails();
+  } catch (err) {
+    console.error("[checkin-email] Re-engagement email job failed:", err);
   }
 });
 
