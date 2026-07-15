@@ -37,42 +37,45 @@ interface DailyPlan {
   };
 }
 
-const VARIANT_STYLES = {
+const STYLES = {
   overdue: {
-    card:   "border-red-800/70 bg-red-950/40",
-    header: "border-b border-red-800/40",
-    dot:    "bg-red-500",
-    text:   "text-red-400",
-    badge:  "bg-red-900/60 text-red-300 border border-red-700",
-    pill:   "bg-red-900/50 border border-red-700/60 text-red-100",
-    count:  "text-red-300 font-bold",
+    card:    "border-red-700/80 bg-red-950/50",
+    header:  "border-b border-red-700/50 bg-red-900/30",
+    dot:     "bg-red-500",
+    text:    "text-red-400",
+    badge:   "bg-red-900/80 text-red-200 border border-red-600",
+    pill:    "bg-red-900/60 border border-red-700/60 text-red-100",
+    count:   "text-red-300 font-black",
+    label:   "text-red-500",
   },
   today: {
-    card:   "border-orange-800/70 bg-orange-950/40",
-    header: "border-b border-orange-800/40",
-    dot:    "bg-orange-500",
-    text:   "text-orange-400",
-    badge:  "bg-orange-900/60 text-orange-300 border border-orange-700",
-    pill:   "bg-orange-900/50 border border-orange-700/60 text-orange-100",
-    count:  "text-orange-300 font-bold",
+    card:    "border-orange-700/80 bg-orange-950/50",
+    header:  "border-b border-orange-700/50 bg-orange-900/30",
+    dot:     "bg-orange-500",
+    text:    "text-orange-400",
+    badge:   "bg-orange-900/80 text-orange-200 border border-orange-600",
+    pill:    "bg-orange-900/60 border border-orange-700/60 text-orange-100",
+    count:   "text-orange-300 font-black",
+    label:   "text-orange-500",
   },
   soon: {
-    card:   "border-amber-700/60 bg-amber-950/30",
-    header: "border-b border-amber-700/40",
-    dot:    "bg-amber-400",
-    text:   "text-amber-400",
-    badge:  "bg-amber-900/60 text-amber-300 border border-amber-700",
-    pill:   "bg-amber-900/50 border border-amber-700/60 text-amber-100",
-    count:  "text-amber-300 font-bold",
+    card:    "border-amber-700/70 bg-amber-950/40",
+    header:  "border-b border-amber-700/50 bg-amber-900/20",
+    dot:     "bg-amber-400",
+    text:    "text-amber-400",
+    badge:   "bg-amber-900/80 text-amber-200 border border-amber-600",
+    pill:    "bg-amber-900/60 border border-amber-700/60 text-amber-100",
+    count:   "text-amber-300 font-black",
+    label:   "text-amber-500",
   },
-};
+} as const;
 
 function daysLabel(days: number | null): string {
   if (days === null) return "No due date";
-  if (days < 0)  return `${Math.abs(days)} day${Math.abs(days) !== 1 ? "s" : ""} overdue`;
+  if (days < 0)  return `${Math.abs(days)}d overdue`;
   if (days === 0) return "Due today";
-  if (days === 1) return "Due tomorrow";
-  return `Due in ${days} days`;
+  if (days === 1) return "Tomorrow";
+  return `${days} days`;
 }
 
 function formatTime(d: Date): string {
@@ -83,30 +86,37 @@ function formatDateLong(d: Date): string {
   return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
-function OrderCard({ group, variant }: { group: PlanTaskGroup; variant: keyof typeof VARIANT_STYLES }) {
-  const s = VARIANT_STYLES[variant];
+function OrderCard({ group, variant }: { group: PlanTaskGroup; variant: keyof typeof STYLES }) {
+  const s = STYLES[variant];
   return (
-    <div className={`rounded-xl border ${s.card} overflow-hidden`}>
+    <div className={`rounded-2xl border-2 ${s.card} overflow-hidden flex flex-col`}>
       {/* Customer name header */}
-      <div className={`flex items-center justify-between px-4 py-2.5 ${s.header}`}>
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${s.dot}`} />
-          <span className={`font-bold text-white text-base truncate`}>{group.customerName}</span>
-          <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap flex-shrink-0 ${s.badge}`}>
-            {daysLabel(group.daysUntilDue)}
+      <div className={`flex items-center justify-between px-5 py-4 ${s.header} gap-3`}>
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <span className={`w-3 h-3 rounded-full flex-shrink-0 ${s.dot}`} />
+          <span className="font-black text-white leading-tight truncate" style={{ fontSize: "clamp(1rem, 1.8vw, 2.2rem)" }}>
+            {group.customerName}
           </span>
         </div>
-        <span className={`text-xl font-black tabular-nums ml-3 flex-shrink-0 ${s.text}`}>{group.totalQty}</span>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <span className={`px-3 py-1 rounded-full font-bold whitespace-nowrap ${s.badge}`} style={{ fontSize: "clamp(0.75rem, 1.1vw, 1.3rem)" }}>
+            {daysLabel(group.daysUntilDue)}
+          </span>
+          <span className={`font-black tabular-nums ${s.text}`} style={{ fontSize: "clamp(1.5rem, 3vw, 3.5rem)" }}>
+            {group.totalQty}
+          </span>
+        </div>
       </div>
       {/* Finish pills */}
-      <div className="px-4 py-2.5 flex flex-wrap gap-1.5">
+      <div className="px-5 py-4 flex flex-wrap gap-2 flex-1 content-start">
         {(group.finishes ?? []).map((f, i) => (
           <span
             key={i}
-            className={`inline-flex items-center gap-2 rounded-md px-2.5 py-1 text-sm leading-none ${s.pill}`}
+            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 ${s.pill}`}
+            style={{ fontSize: "clamp(0.8rem, 1.3vw, 1.5rem)" }}
           >
-            <span className="truncate max-w-[22ch]">{f.finishName}</span>
-            <span className={`text-xs tabular-nums ${s.count}`}>{f.qty}</span>
+            <span className="truncate" style={{ maxWidth: "20ch" }}>{f.finishName}</span>
+            <span className={`tabular-nums font-black ${s.count}`}>{f.qty}</span>
           </span>
         ))}
       </div>
@@ -114,28 +124,28 @@ function OrderCard({ group, variant }: { group: PlanTaskGroup; variant: keyof ty
   );
 }
 
-interface SectionProps {
+function Section({ heading, groups, variant, dotColor, headingColor }: {
   heading: string;
   groups: PlanTaskGroup[];
-  variant: keyof typeof VARIANT_STYLES;
+  variant: keyof typeof STYLES;
   dotColor: string;
   headingColor: string;
-}
-
-function Section({ heading, groups, variant, dotColor, headingColor }: SectionProps) {
+}) {
   if (groups.length === 0) return null;
   return (
-    <div className="space-y-2">
-      <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-3 ${headingColor}`}>
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
+    <div className="space-y-4">
+      <div className={`flex items-center gap-3 font-black uppercase tracking-widest ${headingColor}`} style={{ fontSize: "clamp(0.9rem, 1.4vw, 1.7rem)" }}>
+        <span className={`w-3 h-3 rounded-full flex-shrink-0 ${dotColor}`} />
         {heading}
-        <span className="font-normal opacity-50 normal-case tracking-normal ml-1">
+        <span className="font-normal opacity-50 normal-case tracking-normal">
           — {groups.length} order{groups.length !== 1 ? "s" : ""}
         </span>
       </div>
-      {groups.map((g) => (
-        <OrderCard key={g.customerName + g.daysUntilDue} group={g} variant={variant} />
-      ))}
+      <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 30vw), 1fr))" }}>
+        {groups.map((g) => (
+          <OrderCard key={g.customerName + g.daysUntilDue} group={g} variant={variant} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -176,73 +186,93 @@ export default function TvDisplay() {
 
   return (
     <div
-      className="min-h-screen flex flex-col text-white select-none"
-      style={{ background: "#0f172a", fontFamily: "'Segoe UI', Arial, sans-serif" }}
+      className="min-h-screen flex flex-col text-white select-none overflow-hidden"
+      style={{ background: "#0a0f1e", fontFamily: "'Segoe UI', Arial, sans-serif" }}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-8 py-4 border-b border-white/10 flex-shrink-0">
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between border-b border-white/10 flex-shrink-0"
+           style={{ padding: "clamp(0.75rem, 1.5vw, 2rem) clamp(1.5rem, 3vw, 4rem)" }}>
         <div>
-          <div className="text-[10px] font-bold tracking-[0.2em] uppercase text-slate-500 mb-0.5">
+          <div className="font-bold tracking-[0.25em] uppercase text-slate-500"
+               style={{ fontSize: "clamp(0.6rem, 0.9vw, 1rem)" }}>
             Select Branding Solutions
           </div>
-          <div className="text-xl font-black tracking-tight text-white">
+          <div className="font-black tracking-tight text-white"
+               style={{ fontSize: "clamp(1.2rem, 2.5vw, 3rem)" }}>
             ⚡ Production — Today's Plan
           </div>
         </div>
         <div className="text-right">
-          <div className="text-4xl font-black tabular-nums tracking-tight">{formatTime(now)}</div>
-          <div className="text-sm text-slate-400">{formatDateLong(now)}</div>
+          <div className="font-black tabular-nums tracking-tight"
+               style={{ fontSize: "clamp(2rem, 7vw, 8rem)", lineHeight: 1 }}>
+            {formatTime(now)}
+          </div>
+          <div className="text-slate-400"
+               style={{ fontSize: "clamp(0.75rem, 1.4vw, 1.6rem)" }}>
+            {formatDateLong(now)}
+          </div>
         </div>
       </div>
 
-      {/* Summary strip */}
+      {/* ── Summary strip ──────────────────────────────────────────────────── */}
       {plan && (
-        <div className={`flex items-center gap-5 px-8 py-2 border-b border-white/10 flex-shrink-0 flex-wrap
-          ${urgentTotal > 0 ? "bg-red-950/30" : "bg-green-950/20"}`}>
-          <span className={`text-sm font-bold ${urgentTotal > 0 ? "text-red-400" : "text-green-400"}`}>
+        <div className={`flex items-center flex-wrap gap-x-6 gap-y-1 border-b border-white/10 flex-shrink-0
+          ${urgentTotal > 0 ? "bg-red-950/30" : "bg-green-950/20"}`}
+             style={{ padding: "clamp(0.5rem, 1vw, 1.2rem) clamp(1.5rem, 3vw, 4rem)" }}>
+          <span className={`font-black ${urgentTotal > 0 ? "text-red-400" : "text-green-400"}`}
+                style={{ fontSize: "clamp(0.9rem, 1.5vw, 1.8rem)" }}>
             {urgentTotal > 0
               ? `${urgentTotal} order${urgentTotal !== 1 ? "s" : ""} need attention`
               : "✓ All urgent work under control"}
           </span>
-          <div className="flex items-center gap-4 ml-auto text-xs flex-wrap">
-            {plan.summary.overdue  > 0 && <span className="text-red-400 font-semibold">● {plan.summary.overdue} overdue</span>}
-            {plan.summary.today    > 0 && <span className="text-orange-400 font-semibold">● {plan.summary.today} today</span>}
-            {plan.summary.soon     > 0 && <span className="text-amber-400 font-semibold">● {plan.summary.soon} tomorrow</span>}
-            {plan.summary.thisWeek > 0 && <span className="text-blue-400">● {plan.summary.thisWeek} this week</span>}
-            {plan.summary.upcoming > 0 && <span className="text-slate-500">● {plan.summary.upcoming} upcoming</span>}
+          <div className="flex items-center gap-6 ml-auto flex-wrap">
+            {plan.summary.overdue  > 0 && <span className="text-red-400 font-bold" style={{ fontSize: "clamp(0.8rem, 1.2vw, 1.4rem)" }}>● {plan.summary.overdue} overdue</span>}
+            {plan.summary.today    > 0 && <span className="text-orange-400 font-bold" style={{ fontSize: "clamp(0.8rem, 1.2vw, 1.4rem)" }}>● {plan.summary.today} today</span>}
+            {plan.summary.soon     > 0 && <span className="text-amber-400 font-bold" style={{ fontSize: "clamp(0.8rem, 1.2vw, 1.4rem)" }}>● {plan.summary.soon} tomorrow</span>}
+            {plan.summary.thisWeek > 0 && <span className="text-blue-400" style={{ fontSize: "clamp(0.8rem, 1.2vw, 1.4rem)" }}>● {plan.summary.thisWeek} this week</span>}
+            {plan.summary.upcoming > 0 && <span className="text-slate-500" style={{ fontSize: "clamp(0.8rem, 1.2vw, 1.4rem)" }}>● {plan.summary.upcoming} upcoming</span>}
           </div>
           {lastRefreshed && (
-            <span className="text-[10px] text-slate-600 ml-2">Updated {formatTime(lastRefreshed)}</span>
+            <span className="text-slate-600" style={{ fontSize: "clamp(0.6rem, 0.85vw, 1rem)" }}>
+              Updated {formatTime(lastRefreshed)}
+            </span>
           )}
         </div>
       )}
 
-      {/* Main content */}
-      <div className="flex-1 px-8 py-5 space-y-8 overflow-y-auto">
+      {/* ── Main content ───────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto space-y-8"
+           style={{ padding: "clamp(1rem, 2vw, 3rem) clamp(1.5rem, 3vw, 4rem)" }}>
+
         {error && (
-          <div className="rounded-lg bg-red-950/60 border border-red-700 text-red-300 px-5 py-4 text-sm font-medium text-center">
+          <div className="rounded-2xl bg-red-950/60 border-2 border-red-700 text-red-300 font-bold text-center"
+               style={{ padding: "clamp(1rem, 2vw, 2.5rem)", fontSize: "clamp(1rem, 1.8vw, 2rem)" }}>
             {error}
           </div>
         )}
 
         {!plan && !error && (
-          <div className="flex items-center justify-center h-40 text-slate-500">Loading…</div>
+          <div className="flex items-center justify-center" style={{ height: "30vh", fontSize: "clamp(1.2rem, 2vw, 2.5rem)", color: "#475569" }}>
+            Loading…
+          </div>
         )}
 
         {plan && urgentTotal === 0 && (
-          <div className="flex flex-col items-center justify-center h-56 gap-3">
-            <div className="text-5xl">✅</div>
-            <div className="text-xl font-bold text-green-400">All urgent work is complete</div>
+          <div className="flex flex-col items-center justify-center gap-6" style={{ height: "50vh" }}>
+            <div style={{ fontSize: "clamp(4rem, 10vw, 12rem)" }}>✅</div>
+            <div className="font-black text-green-400" style={{ fontSize: "clamp(1.5rem, 3vw, 4rem)" }}>
+              All urgent work is complete
+            </div>
             {(plan.summary.thisWeek + plan.summary.upcoming) > 0 && (
-              <div className="text-slate-400 text-sm">
-                {plan.summary.thisWeek + plan.summary.upcoming} further order{(plan.summary.thisWeek + plan.summary.upcoming) !== 1 ? "s" : ""} later this week or upcoming
+              <div className="text-slate-400" style={{ fontSize: "clamp(1rem, 1.8vw, 2.2rem)" }}>
+                {plan.summary.thisWeek + plan.summary.upcoming} further order{(plan.summary.thisWeek + plan.summary.upcoming) !== 1 ? "s" : ""} later this week
               </div>
             )}
           </div>
         )}
 
         {plan && urgentTotal > 0 && (
-          <div className="space-y-8 max-w-5xl">
+          <div className="space-y-10">
             <Section
               heading="Overdue — Complete Immediately"
               groups={overdue}
