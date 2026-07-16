@@ -94,6 +94,7 @@ interface ConfirmOrderDialogProps {
     orderNumber: string;
     customerId?: number | null;
     customerName: string | null;
+    customerEmail?: string | null;
     status: string;
     totalAmount?: number | null;
     requiredDate?: string | null;
@@ -110,7 +111,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
   const [result, setResult] = useState<AllocationResult | null>(null);
   const [poActions, setPoActions] = useState<Record<string, PoAction>>({});
   const [poResults, setPoResults] = useState<string[]>([]);
-  const [emailTo, setEmailTo] = useState("");
+  const [emailTo, setEmailTo] = useState(order.customerEmail ?? "");
   const [emailSent, setEmailSent] = useState(false);
   const [emailText, setEmailText] = useState("");
   const [emailSubject, setEmailSubject] = useState("");

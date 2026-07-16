@@ -4196,6 +4196,7 @@ export default function OrderDetail() {
           orderNumber: order.orderNumber,
           customerId: order.customerId ?? null,
           customerName: order.customerName ?? null,
+          customerEmail: (order as any).customerEmail ?? null,
           status: order.status,
           totalAmount: order.totalAmount,
           requiredDate: (order as any).requiredDate ?? null,
