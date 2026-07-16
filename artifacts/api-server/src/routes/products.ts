@@ -1071,6 +1071,12 @@ router.post("/products/:id/push-woo-guidance", async (req, res): Promise<void> =
     "Most Popular":      { icon: "🏆", bg: "linear-gradient(135deg,#1e3a5f,#2d5491)", color: "#ffffff", shadow: "rgba(30,58,95,0.4)"  },
     "Best Value":        { icon: "💰", bg: "linear-gradient(135deg,#15803d,#16a34a)", color: "#ffffff", shadow: "rgba(21,128,61,0.4)"  },
     "Premium Choice":    { icon: "💎", bg: "linear-gradient(135deg,#6d28d9,#7c3aed)", color: "#ffffff", shadow: "rgba(109,40,217,0.4)" },
+    "New Arrival":       { icon: "🆕", bg: "linear-gradient(135deg,#0369a1,#0ea5e9)", color: "#ffffff", shadow: "rgba(3,105,161,0.4)"  },
+    "Best Seller":       { icon: "⭐", bg: "linear-gradient(135deg,#b45309,#d97706)", color: "#ffffff", shadow: "rgba(180,83,9,0.4)"   },
+    "Eco Friendly":      { icon: "🌿", bg: "linear-gradient(135deg,#166534,#22c55e)", color: "#ffffff", shadow: "rgba(22,101,52,0.4)"  },
+    "Award Winner":      { icon: "🏅", bg: "linear-gradient(135deg,#92400e,#f59e0b)", color: "#ffffff", shadow: "rgba(146,64,14,0.4)"  },
+    "Exclusive":         { icon: "✨", bg: "linear-gradient(135deg,#831843,#db2777)", color: "#ffffff", shadow: "rgba(131,24,67,0.4)"  },
+    "Sale":              { icon: "🏷️", bg: "linear-gradient(135deg,#991b1b,#ef4444)", color: "#ffffff", shadow: "rgba(153,27,27,0.4)"  },
     "Staff Pick":        { icon: "⭐", bg: "linear-gradient(135deg,#92400e,#b45309)", color: "#ffffff", shadow: "rgba(146,64,14,0.4)"  },
     "Bulk Buy Discount": { icon: "📦", bg: "linear-gradient(135deg,#075985,#0369a1)", color: "#ffffff", shadow: "rgba(7,89,133,0.4)"   },
   };

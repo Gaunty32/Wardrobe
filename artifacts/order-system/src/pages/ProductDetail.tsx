@@ -2323,7 +2323,7 @@ export default function ProductDetail() {
                   <div className="grid gap-2">
                     <Label>Badges <span className="text-muted-foreground font-normal">(select any that apply)</span></Label>
                     <div className="flex flex-wrap gap-2">
-                      {(["Most Popular", "Best Value", "Premium Choice", "Staff Pick", "Bulk Buy Discount"] as string[]).map((b) => {
+                      {(["Most Popular", "Best Value", "Premium Choice", "Staff Pick", "Bulk Buy Discount", "New Arrival", "Best Seller", "Eco Friendly", "Award Winner", "Exclusive", "Sale"] as string[]).map((b) => {
                         const active = guidance.badges.includes(b);
                         return (
                           <button
@@ -2353,7 +2353,7 @@ export default function ProductDetail() {
                   <div className="grid gap-2">
                     <Label>Guidance Tags</Label>
                     <div className="flex flex-wrap gap-2">
-                      {(["Everyday Workwear", "Smart Uniform", "Heavy Duty", "Budget Friendly", "Premium"] as string[]).map((tag) => {
+                      {(["Everyday Workwear", "Smart Uniform", "Heavy Duty", "Budget Friendly", "Premium", "Corporate", "Hospitality", "Healthcare", "Construction", "Hi-Vis", "Food Service", "Security", "Retail", "Schools", "Sports & Active", "Outdoor", "Waterproof", "Quick Turnaround"] as string[]).map((tag) => {
                         const active = guidance.tags.includes(tag);
                         return (
                           <button
