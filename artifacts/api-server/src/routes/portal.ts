@@ -1977,6 +1977,84 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   res.json(rows.rows);
 });
 
+// ─── portal: manager — edit items on a pending_review order ──────────────────
+
+router.patch("/portal/manager/orders/:id/items", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const orderId = parseInt(req.params.id, 10);
+
+  const parsed = z.object({
+    items: z.array(z.object({
+      id: z.number().int().positive(),
+      quantity: z.number().int().min(1),
+    })).min(1, "Order must have at least one item"),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  const { items } = parsed.data;
+
+  // Verify order belongs to this customer and is still pending_review
+  const orderCheck = await db.execute(sql`
+    SELECT id FROM orders
+    WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+  `);
+  if (!orderCheck.rows.length) {
+    res.status(404).json({ error: "Order not found or not editable" });
+    return;
+  }
+
+  // Verify all supplied item ids belong to this order
+  const keepIds = items.map(i => i.id);
+  const existingItems = await db.execute(sql`
+    SELECT id, unit_price FROM order_items WHERE order_id = ${orderId}
+  `);
+  const existingIds = new Set((existingItems.rows as any[]).map(r => r.id));
+  for (const id of keepIds) {
+    if (!existingIds.has(id)) {
+      res.status(400).json({ error: `Item ${id} does not belong to this order` });
+      return;
+    }
+  }
+
+  // Delete items that were removed
+  const keepIdsForDelete = keepIds.length > 0 ? keepIds : [-1];
+  await db.execute(sql`
+    DELETE FROM order_items
+    WHERE order_id = ${orderId} AND id NOT IN (${sql.raw(keepIdsForDelete.join(","))})
+  `);
+
+  // Update quantities and recalculate line totals
+  for (const item of items) {
+    const existing = (existingItems.rows as any[]).find(r => r.id === item.id);
+    if (!existing) continue;
+    const unitPrice = parseFloat(existing.unit_price ?? "0");
+    const lineTotal = (unitPrice * item.quantity).toFixed(2);
+    await db.execute(sql`
+      UPDATE order_items
+      SET quantity = ${item.quantity}, line_total = ${lineTotal}, updated_at = now()
+      WHERE id = ${item.id} AND order_id = ${orderId}
+    `);
+  }
+
+  // Recalculate order total from remaining items
+  const totalRows = await db.execute(sql`
+    SELECT COALESCE(SUM(line_total::numeric), 0) AS subtotal FROM order_items WHERE order_id = ${orderId}
+  `);
+  const subtotal = parseFloat((totalRows.rows[0] as any)?.subtotal ?? "0");
+  const carriageRows = await db.execute(sql`SELECT carriage_amount FROM orders WHERE id = ${orderId}`);
+  const carriage = parseFloat((carriageRows.rows[0] as any)?.carriage_amount ?? "0");
+  const newTotal = (subtotal + carriage).toFixed(2);
+
+  await db.execute(sql`
+    UPDATE orders SET total_amount = ${newTotal}, updated_at = now() WHERE id = ${orderId}
+  `);
+
+  res.json({ ok: true, newTotal });
+});
+
 // ─── portal: manager — submit a pending order to SBS ─────────────────────────
 
 router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request, res: Response) => {

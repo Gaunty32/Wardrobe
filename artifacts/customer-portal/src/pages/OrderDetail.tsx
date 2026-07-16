@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, AlertCircle, Hash, Pencil, Check, X, Search } from "lucide-react";
+import { ArrowLeft, Loader2, Clock, CheckCircle2, XCircle, AlertCircle, Hash, Pencil, Check, X, Search, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -29,7 +29,7 @@ function PortalStatusBadge({ status, portalStatus }: { status: string; portalSta
 }
 
 export default function OrderDetailPage() {
-  const { canSeePricing } = useAuth();
+  const { canSeePricing, isManager } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
@@ -38,6 +38,11 @@ export default function OrderDetailPage() {
   const [editingPo, setEditingPo] = useState(false);
   const [poInput, setPoInput] = useState("");
   const [lineFilter, setLineFilter] = useState("");
+
+  // Edit mode state
+  const [editing, setEditing] = useState(false);
+  // editDraft: { [itemId]: quantity } — undefined means deleted
+  const [editDraft, setEditDraft] = useState<Record<number, number>>({});
 
   const { data: order, isLoading, error } = useQuery<any>({
     queryKey: ["portal-order", id],
@@ -56,6 +61,48 @@ export default function OrderDetailPage() {
     },
     onError: () => toast({ title: "Failed to save PO number", variant: "destructive" }),
   });
+
+  const saveItemsMutation = useMutation({
+    mutationFn: (items: { id: number; quantity: number }[]) =>
+      apiFetch(`/portal/manager/orders/${id}/items`, {
+        method: "PATCH",
+        body: JSON.stringify({ items }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-order", id] });
+      qc.invalidateQueries({ queryKey: ["portal-orders"] });
+      qc.invalidateQueries({ queryKey: ["portal-manager-pending"] });
+      setEditing(false);
+      toast({ title: "Order updated" });
+    },
+    onError: (err: any) => toast({ title: err?.message ?? "Failed to save changes", variant: "destructive" }),
+  });
+
+  const enterEditMode = () => {
+    const draft: Record<number, number> = {};
+    for (const item of (order?.items ?? [])) {
+      draft[item.id] = item.quantity;
+    }
+    setEditDraft(draft);
+    setEditing(true);
+    setLineFilter("");
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setEditDraft({});
+  };
+
+  const saveEdit = () => {
+    const items = Object.entries(editDraft)
+      .filter(([, qty]) => qty > 0)
+      .map(([id, quantity]) => ({ id: Number(id), quantity }));
+    if (items.length === 0) {
+      toast({ title: "Cannot remove all items from an order", variant: "destructive" });
+      return;
+    }
+    saveItemsMutation.mutate(items);
+  };
 
   if (isLoading) {
     return (
@@ -77,29 +124,43 @@ export default function OrderDetailPage() {
     );
   }
 
-  const items: any[] = order.items ?? [];
-  const q = lineFilter.toLowerCase().trim();
-  const filteredItems: any[] = !q ? items : items.filter((item: any) =>
+  const isPendingReview = order.portal_status === "pending_review";
+  const canEdit = isManager && isPendingReview;
+
+  const allItems: any[] = order.items ?? [];
+
+  // In edit mode ignore the text filter — always show all items so nothing is hidden when deleting
+  const q = editing ? "" : lineFilter.toLowerCase().trim();
+  const displayItems: any[] = !q ? allItems : allItems.filter((item: any) =>
     item.product_name?.toLowerCase().includes(q) ||
     item.recipient_name?.toLowerCase().includes(q) ||
     item.colour?.toLowerCase().includes(q) ||
     item.size?.toLowerCase().includes(q)
   );
-  const itemsSubtotal = items.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0);
-  const filteredSubtotal = filteredItems.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0);
+
+  // For totals: use editDraft when editing, otherwise actual items
+  const effectiveItems = editing
+    ? allItems
+        .filter(i => (editDraft[i.id] ?? 0) > 0)
+        .map(i => ({ ...i, quantity: editDraft[i.id], line_total: (parseFloat(i.unit_price ?? "0") * editDraft[i.id]).toFixed(2) }))
+    : allItems;
+
+  const itemsSubtotal = effectiveItems.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0);
   const carriageAmount = parseFloat(order.carriage_amount ?? "0");
   const vatAmount = (itemsSubtotal + carriageAmount) * 0.2;
   const grandTotal = itemsSubtotal + carriageAmount + vatAmount;
 
+  const deletedCount = editing ? allItems.filter(i => (editDraft[i.id] ?? 0) === 0).length : 0;
+
   return (
     <PortalLayout>
       <div className="mb-5">
-        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={() => setLocation("/orders")}>
+        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={() => { cancelEdit(); setLocation("/orders"); }}>
           <ArrowLeft className="w-4 h-4 mr-1" /> All orders
         </Button>
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-primary">{order.order_number}</h1>
           <p className="text-muted-foreground text-sm mt-0.5">Placed {formatDate(order.order_date)}</p>
@@ -141,15 +202,58 @@ export default function OrderDetailPage() {
             )}
           </div>
         </div>
-        <PortalStatusBadge status={order.status} portalStatus={order.portal_status} />
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <PortalStatusBadge status={order.status} portalStatus={order.portal_status} />
+          {canEdit && !editing && (
+            <Button size="sm" variant="outline" onClick={enterEditMode} className="gap-1.5">
+              <Pencil className="w-3.5 h-3.5" /> Edit order
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Status message */}
-      {(order.portal_status === "pending" || order.status === "portal_pending") && (
+      {/* Edit mode banner */}
+      {editing && (
+        <Card className="mb-5 border-blue-200 bg-blue-50/50">
+          <CardContent className="py-3 px-5 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-900">Editing order items</p>
+              <p className="text-xs text-blue-700 mt-0.5">
+                Adjust quantities or remove lines. Changes are saved when you click <strong>Save changes</strong>.
+                {deletedCount > 0 && (
+                  <span className="ml-1 text-red-700 font-medium">{deletedCount} line{deletedCount !== 1 ? "s" : ""} marked for removal.</span>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <Button size="sm" variant="outline" onClick={cancelEdit} disabled={saveItemsMutation.isPending}
+                className="border-blue-300 text-blue-800 hover:bg-blue-100">
+                Cancel
+              </Button>
+              <Button size="sm" onClick={saveEdit} disabled={saveItemsMutation.isPending} className="gap-1.5">
+                {saveItemsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Save changes
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Status messages (only when not editing) */}
+      {!editing && isPendingReview && !isManager && (
         <Card className="mb-5 border-amber-200 bg-amber-50/50">
           <CardContent className="py-3 px-5 flex items-start gap-2.5">
             <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
             <p className="text-sm text-amber-800">Your order has been submitted and is awaiting review by our team. We'll be in touch shortly.</p>
+          </CardContent>
+        </Card>
+      )}
+      {!editing && isPendingReview && isManager && (
+        <Card className="mb-5 border-amber-200 bg-amber-50/50">
+          <CardContent className="py-3 px-5 flex items-start gap-2.5">
+            <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+            <p className="text-sm text-amber-800">This order is awaiting your approval. Review the items below, then approve it from the dashboard — or use <strong>Edit order</strong> to make changes first.</p>
           </CardContent>
         </Card>
       )}
@@ -182,13 +286,14 @@ export default function OrderDetailPage() {
             <CardContent className="py-4 px-5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total (inc. VAT)</p>
               <p className="font-semibold text-lg">{formatCurrency(grandTotal)}</p>
+              {editing && <p className="text-xs text-blue-600 mt-0.5">Live estimate</p>}
             </CardContent>
           </Card>
         )}
       </div>
 
       {/* Audit trail */}
-      {(order.portal_submitted_by_name || order.portal_approved_by_name) && (
+      {!editing && (order.portal_submitted_by_name || order.portal_approved_by_name) && (
         <Card className="mb-5">
           <CardContent className="py-4 px-5 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Order history</p>
@@ -220,7 +325,7 @@ export default function OrderDetailPage() {
         </Card>
       )}
 
-      {order.portal_notes && (
+      {order.portal_notes && !editing && (
         <Card className="mb-5">
           <CardContent className="py-4 px-5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5">Your notes</p>
@@ -234,20 +339,25 @@ export default function OrderDetailPage() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <CardTitle className="text-base">
               Order items
-              {lineFilter.trim() && filteredItems.length !== items.length && (
-                <span className="ml-2 text-sm font-normal text-muted-foreground">({filteredItems.length} of {items.length})</span>
+              {!editing && lineFilter.trim() && displayItems.length !== allItems.length && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">({displayItems.length} of {allItems.length})</span>
+              )}
+              {editing && deletedCount > 0 && (
+                <span className="ml-2 text-sm font-normal text-red-600">({allItems.length - deletedCount} of {allItems.length} kept)</span>
               )}
             </CardTitle>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Filter by name or product…"
-                value={lineFilter}
-                onChange={e => setLineFilter(e.target.value)}
-                className="pl-8 pr-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring w-52"
-              />
-            </div>
+            {!editing && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Filter by name or product…"
+                  value={lineFilter}
+                  onChange={e => setLineFilter(e.target.value)}
+                  className="pl-8 pr-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring w-52"
+                />
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -262,24 +372,81 @@ export default function OrderDetailPage() {
                   <TableHead className="text-right">Qty</TableHead>
                   {canSeePricing && <TableHead className="text-right">Unit price</TableHead>}
                   {canSeePricing && <TableHead className="text-right">Total</TableHead>}
+                  {editing && <TableHead className="w-10" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredItems.map((item: any, i: number) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-medium">{item.product_name}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{item.finish_name || "—"}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {item.recipient_name || (item.recipient_type === "stock" ? "Stock" : "—")}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{item.quantity}</TableCell>
-                    {canSeePricing && <TableCell className="text-right tabular-nums">{formatCurrency(item.unit_price)}</TableCell>}
-                    {canSeePricing && <TableCell className="text-right tabular-nums font-medium">{formatCurrency(item.line_total)}</TableCell>}
-                  </TableRow>
-                ))}
+                {displayItems.map((item: any) => {
+                  const isDeleted = editing && editDraft[item.id] === 0;
+                  const qty = editing ? (editDraft[item.id] ?? item.quantity) : item.quantity;
+                  const lineTotal = editing
+                    ? parseFloat(item.unit_price ?? "0") * qty
+                    : parseFloat(item.line_total ?? "0");
+
+                  return (
+                    <TableRow
+                      key={item.id}
+                      className={isDeleted ? "opacity-40 line-through bg-red-50/40" : undefined}
+                    >
+                      <TableCell className="font-medium">{item.product_name}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{item.finish_name || "—"}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {item.recipient_name || (item.recipient_type === "stock" ? "Stock" : "—")}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {editing && !isDeleted ? (
+                          <input
+                            type="number"
+                            min={1}
+                            max={999}
+                            value={qty}
+                            onChange={e => {
+                              const v = Math.max(1, parseInt(e.target.value, 10) || 1);
+                              setEditDraft(d => ({ ...d, [item.id]: v }));
+                            }}
+                            className="w-16 text-right border border-input rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring tabular-nums"
+                          />
+                        ) : (
+                          qty
+                        )}
+                      </TableCell>
+                      {canSeePricing && (
+                        <TableCell className="text-right tabular-nums">
+                          {formatCurrency(item.unit_price)}
+                        </TableCell>
+                      )}
+                      {canSeePricing && (
+                        <TableCell className="text-right tabular-nums font-medium">
+                          {isDeleted ? "—" : formatCurrency(lineTotal)}
+                        </TableCell>
+                      )}
+                      {editing && (
+                        <TableCell className="text-right">
+                          {isDeleted ? (
+                            <button
+                              title="Restore this line"
+                              onClick={() => setEditDraft(d => ({ ...d, [item.id]: item.quantity }))}
+                              className="text-blue-600 hover:text-blue-800 p-1 rounded"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              title="Remove this line"
+                              onClick={() => setEditDraft(d => ({ ...d, [item.id]: 0 }))}
+                              className="text-muted-foreground hover:text-red-600 p-1 rounded transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -287,10 +454,10 @@ export default function OrderDetailPage() {
             <div className="border-t">
               <div className="px-5 py-2 flex justify-end">
                 <div className="text-right space-y-1 min-w-[220px]">
-                  {lineFilter.trim() && filteredItems.length !== items.length && (
+                  {!editing && lineFilter.trim() && displayItems.length !== allItems.length && (
                     <div className="flex justify-between gap-8 text-sm font-medium">
                       <span>Filtered subtotal</span>
-                      <span>{formatCurrency(filteredSubtotal)}</span>
+                      <span>{formatCurrency(displayItems.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0))}</span>
                     </div>
                   )}
                   <div className="flex justify-between gap-8 text-sm text-muted-foreground">
@@ -313,6 +480,19 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Save / cancel sticky bar at the bottom when editing */}
+          {editing && (
+            <div className="border-t bg-muted/30 px-5 py-3 flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={cancelEdit} disabled={saveItemsMutation.isPending}>
+                Cancel
+              </Button>
+              <Button size="sm" onClick={saveEdit} disabled={saveItemsMutation.isPending} className="gap-1.5">
+                {saveItemsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                Save changes
+              </Button>
             </div>
           )}
         </CardContent>
