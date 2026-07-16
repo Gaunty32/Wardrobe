@@ -1378,9 +1378,10 @@ export default function Settings() {
     refetchInterval: 60_000,
   });
 
+  const [gbpLocationsForceRefresh, setGbpLocationsForceRefresh] = useState(false);
   const { data: gbpLocations, error: gbpLocationsError, refetch: refetchGbpLocations, isFetching: gbpLocationsFetching } = useQuery<{ name: string; title: string }[]>({
-    queryKey: ["gbp-locations"],
-    queryFn: () => apiFetch("/gbp/locations"),
+    queryKey: ["gbp-locations", gbpLocationsForceRefresh],
+    queryFn: () => apiFetch(gbpLocationsForceRefresh ? "/gbp/locations?refresh=1" : "/gbp/locations"),
     enabled: !!gbpStatus?.connected,
     retry: false,
     refetchOnWindowFocus: false,
@@ -2390,7 +2391,7 @@ export default function Settings() {
                           <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
                           <div className="flex-1 space-y-2">
                             {content}
-                            <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100 gap-1.5" onClick={() => refetchGbpLocations()} disabled={gbpLocationsFetching}>
+                            <Button size="sm" variant="outline" className="h-7 text-xs border-red-300 text-red-700 hover:bg-red-100 gap-1.5" onClick={() => { setGbpLocationsForceRefresh(true); }} disabled={gbpLocationsFetching}>
                               {gbpLocationsFetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                               Retry
                             </Button>

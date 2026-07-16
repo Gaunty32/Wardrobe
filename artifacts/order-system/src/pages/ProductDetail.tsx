@@ -1007,6 +1007,7 @@ export default function ProductDetail() {
     tags: string[];
   } | null>(null);
   const [guidanceDirty, setGuidanceDirty] = useState(false);
+  const [customTagInput, setCustomTagInput] = useState("");
   const [socialDraft, setSocialDraft] = useState<{
     facebookContent: string; googleContent: string; hashtags: string;
     platforms: string[]; autoReschedule: boolean; editingId: number | null;
@@ -2376,7 +2377,54 @@ export default function ProductDetail() {
                           </button>
                         );
                       })}
+                      {/* Custom tags added by the user */}
+                      {guidance.tags
+                        .filter(t => !["Everyday Workwear", "Smart Uniform", "Heavy Duty", "Budget Friendly", "Premium", "Corporate", "Hospitality", "Healthcare", "Construction", "Hi-Vis", "Food Service", "Security", "Retail", "Schools", "Sports & Active", "Outdoor", "Waterproof", "Quick Turnaround"].includes(t))
+                        .map(tag => (
+                          <span
+                            key={tag}
+                            className="px-3 py-1.5 rounded-md text-xs font-medium border flex items-center gap-1 bg-primary/10 text-primary border-primary/40"
+                          >
+                            <Check className="w-3 h-3" />
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => handleGuidanceChange("tags", guidance.tags.filter(t => t !== tag))}
+                              className="ml-0.5 hover:text-destructive transition-colors"
+                              title="Remove tag"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))}
                     </div>
+                    {/* Add a custom tag */}
+                    <form
+                      className="flex gap-2 mt-1"
+                      onSubmit={e => {
+                        e.preventDefault();
+                        const val = customTagInput.trim();
+                        if (!val || guidance.tags.includes(val)) { setCustomTagInput(""); return; }
+                        handleGuidanceChange("tags", [...guidance.tags, val]);
+                        setCustomTagInput("");
+                      }}
+                    >
+                      <input
+                        type="text"
+                        value={customTagInput}
+                        onChange={e => setCustomTagInput(e.target.value)}
+                        placeholder="Suggest a tag…"
+                        maxLength={50}
+                        className="flex-1 h-8 rounded-md border border-input bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!customTagInput.trim()}
+                        className="h-8 px-3 rounded-md border border-input bg-background text-xs font-medium flex items-center gap-1 hover:bg-muted disabled:opacity-40 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add
+                      </button>
+                    </form>
                   </div>
 
                   {/* Text fields */}

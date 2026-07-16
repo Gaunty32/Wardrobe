@@ -382,11 +382,23 @@ router.get("/gbp/callback", async (req, res): Promise<void> => {
   }
 });
 
-router.get("/gbp/locations", async (_req, res): Promise<void> => {
+// Cache locations for 10 minutes to avoid burning Google's low quota for new projects
+let gbpLocationsCache: { locations: { name: string; title: string }[]; fetchedAt: number } | null = null;
+const GBP_LOCATIONS_TTL_MS = 10 * 60 * 1000;
+
+router.get("/gbp/locations", async (req, res): Promise<void> => {
+  const forceRefresh = req.query.refresh === "1";
+  const now = Date.now();
+  if (!forceRefresh && gbpLocationsCache && (now - gbpLocationsCache.fetchedAt) < GBP_LOCATIONS_TTL_MS) {
+    res.json(gbpLocationsCache.locations);
+    return;
+  }
   try {
     const token = await getGbpAccessToken();
     if (!token) { res.status(401).json({ error: "Not connected to Google Business Profile" }); return; }
-    res.json(await listGbpLocations(token));
+    const locations = await listGbpLocations(token);
+    gbpLocationsCache = { locations, fetchedAt: Date.now() };
+    res.json(locations);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[GBP] /gbp/locations error:", msg);
