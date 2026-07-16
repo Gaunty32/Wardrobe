@@ -4,7 +4,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { useVersionCheck } from "@/hooks/use-version-check";
-import { Loader2, RefreshCw } from "lucide-react";
+import { Loader2, RefreshCw, AlertTriangle } from "lucide-react";
+import React from "react";
 
 import Login from "@/pages/Login";
 import AcceptInvite from "@/pages/AcceptInvite";
@@ -26,6 +27,54 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 0, refetchOnWindowFocus: true } },
 });
 
+// ── Error Boundary ────────────────────────────────────────────────────────────
+interface EBState { error: Error | null }
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, EBState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): EBState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[Portal ErrorBoundary]", error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+          <div className="w-full max-w-md text-center space-y-4">
+            <div className="flex justify-center">
+              <div className="bg-red-50 rounded-full p-4 border border-red-100">
+                <AlertTriangle className="w-10 h-10 text-red-500" />
+              </div>
+            </div>
+            <h1 className="text-lg font-bold text-foreground">Something went wrong</h1>
+            <p className="text-sm text-muted-foreground">
+              The page encountered an error. Please try refreshing — if the problem continues, contact Select Branding Solutions.
+            </p>
+            <p className="text-xs font-mono bg-slate-100 rounded p-2 text-left text-slate-600 break-all">
+              {this.state.error.message}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              <RefreshCw className="w-4 h-4" /> Refresh page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ── Version banner ────────────────────────────────────────────────────────────
 function UpdateBanner() {
   const updateAvailable = useVersionCheck();
   if (!updateAvailable) return null;
@@ -42,6 +91,7 @@ function UpdateBanner() {
   );
 }
 
+// ── Protected route ───────────────────────────────────────────────────────────
 function ProtectedRoute({ component: Component }: { component: React.ComponentType }) {
   const { user, loading } = useAuth();
   if (loading) {
@@ -55,6 +105,7 @@ function ProtectedRoute({ component: Component }: { component: React.ComponentTy
   return <Component />;
 }
 
+// ── Router ────────────────────────────────────────────────────────────────────
 function Router() {
   return (
     <Switch>
@@ -63,8 +114,6 @@ function Router() {
       <Route path="/select-business" component={SelectBusiness} />
       <Route path="/preview-login" component={PreviewLogin} />
       <Route path="/orders/new" component={() => {
-        // Quote preview links carry a ?quote=TOKEN — the token IS the credential,
-        // so allow unauthenticated access when it is present.
         const hasQuote = new URLSearchParams(window.location.search).has("quote");
         return hasQuote ? <NewOrder /> : <ProtectedRoute component={NewOrder} />;
       }} />
@@ -88,19 +137,22 @@ function Router() {
   );
 }
 
+// ── App ───────────────────────────────────────────────────────────────────────
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AuthProvider>
-            <UpdateBanner />
-            <Router />
-          </AuthProvider>
-        </WouterRouter>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AuthProvider>
+              <UpdateBanner />
+              <Router />
+            </AuthProvider>
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 

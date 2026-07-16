@@ -986,19 +986,55 @@ router.put("/portal/basket", portalAuth, async (req: Request, res: Response) => 
   const custRows = await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId}`);
   const customerName = (custRows.rows[0] as any)?.name ?? null;
   const userRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${userId}`);
-  const userEmail = (userRows.rows[0] as any)?.email ?? null;
+  const userEmail = (userRows.rows[0] as any)?.email || null;
 
-  await db.execute(sql`
-    INSERT INTO portal_baskets (portal_user_id, customer_id, customer_name, user_email, items, item_count, estimated_total, mode, step)
-    VALUES (${userId}, ${customerId}, ${customerName}, ${userEmail}, ${JSON.stringify(items)}::jsonb, ${itemCount}, ${estimatedTotal.toFixed(2)}, ${mode ?? null}, ${step ?? 1})
-    ON CONFLICT (portal_user_id) DO UPDATE
-      SET items = ${JSON.stringify(items)}::jsonb,
-          item_count = ${itemCount},
-          estimated_total = ${estimatedTotal.toFixed(2)},
-          mode = ${mode ?? null},
-          step = ${step ?? 1},
-          updated_at = now()
-  `);
+  const itemsJson = JSON.stringify(items);
+
+  try {
+    await db.execute(sql`
+      INSERT INTO portal_baskets (portal_user_id, customer_id, customer_name, user_email, items, item_count, estimated_total, mode, step)
+      VALUES (${userId}, ${customerId}, ${customerName}, ${userEmail}, ${itemsJson}::jsonb, ${itemCount}, ${estimatedTotal.toFixed(2)}, ${mode ?? null}, ${step ?? 1})
+      ON CONFLICT (portal_user_id) DO UPDATE
+        SET items = ${itemsJson}::jsonb,
+            item_count = ${itemCount},
+            estimated_total = ${estimatedTotal.toFixed(2)},
+            mode = ${mode ?? null},
+            step = ${step ?? 1},
+            updated_at = now()
+    `);
+  } catch (err: any) {
+    // Log the real PostgreSQL error so it's visible in deployment logs
+    const pgCode = err?.cause?.code ?? err?.code ?? "unknown";
+    const pgMsg  = err?.cause?.message ?? err?.message ?? String(err);
+    console.error(`[basket PUT] DB error userId=${userId} pgCode=${pgCode}: ${pgMsg}`);
+
+    // Concurrent requests racing an INSERT ON CONFLICT can cause a serialization
+    // failure (23505 unique violation, 40001 serialization_failure, or 40P01
+    // deadlock). Fall back to a plain UPDATE which is safe to run serially.
+    const isRaceError = ["23505", "40001", "40P01"].includes(pgCode);
+    if (isRaceError) {
+      try {
+        await db.execute(sql`
+          UPDATE portal_baskets
+          SET items = ${itemsJson}::jsonb,
+              item_count = ${itemCount},
+              estimated_total = ${estimatedTotal.toFixed(2)},
+              mode = ${mode ?? null},
+              step = ${step ?? 1},
+              updated_at = now()
+          WHERE portal_user_id = ${userId}
+        `);
+      } catch (retryErr: any) {
+        console.error(`[basket PUT] retry UPDATE also failed userId=${userId}:`, retryErr?.message);
+        res.status(500).json({ error: "Failed to save basket" });
+        return;
+      }
+    } else {
+      res.status(500).json({ error: "Failed to save basket" });
+      return;
+    }
+  }
+
   res.json({ ok: true });
 });
 
