@@ -932,7 +932,7 @@ router.patch("/portal/orders/:id/po", portalAuth, async (req: Request, res: Resp
 router.patch("/portal/manager/bulk-po", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager") {
+  if (portalRole !== "manager" && portalRole !== "dept_manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
@@ -1931,7 +1931,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
   const portalIsPreview = (req as any).portalIsPreview;
   const linkedEmployeeId = (req as any).portalLinkedEmployeeId;
 
-  if (portalRole !== "manager") {
+  if (portalRole !== "manager" && portalRole !== "dept_manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
@@ -1982,7 +1982,7 @@ router.get("/portal/manager/pending-orders", portalAuth, async (req: Request, re
 router.patch("/portal/manager/orders/:id/items", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+  if (portalRole !== "manager" && portalRole !== "dept_manager") { res.status(403).json({ error: "Manager access required" }); return; }
 
   const orderId = parseInt(req.params.id, 10);
 
@@ -2060,7 +2060,7 @@ router.patch("/portal/manager/orders/:id/items", portalAuth, async (req: Request
 router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager") {
+  if (portalRole !== "manager" && portalRole !== "dept_manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }
@@ -2119,7 +2119,7 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
 router.post("/portal/manager/orders/:id/reject", portalAuth, async (req: Request, res: Response) => {
   const customerId = (req as any).portalCustomerId;
   const portalRole = (req as any).portalRole;
-  if (portalRole !== "manager") {
+  if (portalRole !== "manager" && portalRole !== "dept_manager") {
     res.status(403).json({ error: "Manager access required" });
     return;
   }

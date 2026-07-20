@@ -29,7 +29,7 @@ function PortalStatusBadge({ status, portalStatus }: { status: string; portalSta
 }
 
 export default function OrderDetailPage() {
-  const { canSeePricing, isManager } = useAuth();
+  const { canSeePricing, isManager, isDeptManager } = useAuth();
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
   const qc = useQueryClient();
@@ -125,7 +125,7 @@ export default function OrderDetailPage() {
   }
 
   const isPendingReview = order.portal_status === "pending_review";
-  const canEdit = isManager && isPendingReview;
+  const canEdit = (isManager || isDeptManager) && isPendingReview;
 
   const allItems: any[] = order.items ?? [];
 
@@ -241,7 +241,7 @@ export default function OrderDetailPage() {
       )}
 
       {/* Status messages (only when not editing) */}
-      {!editing && isPendingReview && !isManager && (
+      {!editing && isPendingReview && !isManager && !isDeptManager && (
         <Card className="mb-5 border-amber-200 bg-amber-50/50">
           <CardContent className="py-3 px-5 flex items-start gap-2.5">
             <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
@@ -249,7 +249,7 @@ export default function OrderDetailPage() {
           </CardContent>
         </Card>
       )}
-      {!editing && isPendingReview && isManager && (
+      {!editing && isPendingReview && (isManager || isDeptManager) && (
         <Card className="mb-5 border-amber-200 bg-amber-50/50">
           <CardContent className="py-3 px-5 flex items-start gap-2.5">
             <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
