@@ -10,8 +10,8 @@ function getParam(key: string, fallback: number) {
   return isNaN(n) ? fallback : n;
 }
 
-const CARDS_PER_PAGE  = getParam("perPage",  9);   // cards per slide
-const SLIDE_SECS      = getParam("secs",     12);  // seconds per slide
+const PILLS_PER_PAGE = getParam("perPage", 8);   // pills per slide
+const SLIDE_SECS     = getParam("secs",    12);  // seconds per slide
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PlanFinish {
@@ -48,37 +48,61 @@ interface DailyPlan {
   };
 }
 
+// ── Flatten task groups into individual pill items ────────────────────────────
+interface PillItem {
+  customerName: string;
+  finishName: string;
+  qty: number;
+  worksheetNumber: string | null;
+  urgency: "overdue" | "today" | "soon" | "this_week" | "upcoming";
+  daysUntilDue: number | null;
+}
+
+function flattenPills(groups: PlanTaskGroup[]): PillItem[] {
+  const pills: PillItem[] = [];
+  for (const g of groups) {
+    for (const f of g.finishes ?? []) {
+      pills.push({
+        customerName: g.customerName,
+        finishName: f.finishName,
+        qty: f.qty,
+        worksheetNumber: f.worksheetNumber,
+        urgency: g.urgency,
+        daysUntilDue: g.daysUntilDue,
+      });
+    }
+  }
+  return pills;
+}
+
 // ── Styles ────────────────────────────────────────────────────────────────────
 const STYLES = {
   overdue: {
-    card:   "border-red-700/80 bg-red-950/50",
-    header: "border-b border-red-700/50 bg-red-900/30",
+    card:   "border-red-600 bg-red-950/70",
     dot:    "bg-red-500",
-    text:   "text-red-400",
     badge:  "bg-red-900/80 text-red-200 border border-red-600",
-    pill:   "bg-red-900/60 border border-red-700/60 text-red-100",
-    count:  "text-red-300 font-black",
+    label:  "text-red-400",
+    qty:    "text-red-300",
     tag:    "text-red-500",
+    ws:     "text-red-400/70",
   },
   today: {
-    card:   "border-orange-700/80 bg-orange-950/50",
-    header: "border-b border-orange-700/50 bg-orange-900/30",
+    card:   "border-orange-600 bg-orange-950/70",
     dot:    "bg-orange-500",
-    text:   "text-orange-400",
     badge:  "bg-orange-900/80 text-orange-200 border border-orange-600",
-    pill:   "bg-orange-900/60 border border-orange-700/60 text-orange-100",
-    count:  "text-orange-300 font-black",
+    label:  "text-orange-400",
+    qty:    "text-orange-300",
     tag:    "text-orange-500",
+    ws:     "text-orange-400/70",
   },
   soon: {
-    card:   "border-amber-700/70 bg-amber-950/40",
-    header: "border-b border-amber-700/50 bg-amber-900/20",
+    card:   "border-amber-600/80 bg-amber-950/50",
     dot:    "bg-amber-400",
-    text:   "text-amber-400",
     badge:  "bg-amber-900/80 text-amber-200 border border-amber-600",
-    pill:   "bg-amber-900/60 border border-amber-700/60 text-amber-100",
-    count:  "text-amber-300 font-black",
+    label:  "text-amber-400",
+    qty:    "text-amber-300",
     tag:    "text-amber-500",
+    ws:     "text-amber-400/70",
   },
 } as const;
 
@@ -90,16 +114,11 @@ function urgencyVariant(u: string): Variant {
   return "soon";
 }
 
-function daysLabel(days: number | null): string {
-  if (days === null) return "No due date";
-  if (days < 0)  return `${Math.abs(days)}d overdue`;
-  if (days === 0) return "Due today";
-  if (days === 1) return "Tomorrow";
-  return `${days} days`;
-}
-
-function formatDateLong(d: Date): string {
-  return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+function urgencyLabel(u: string, days: number | null): string {
+  if (u === "overdue") return days !== null ? `${Math.abs(days)}d OVERDUE` : "OVERDUE";
+  if (u === "today")   return "DUE TODAY";
+  if (u === "soon")    return "TOMORROW";
+  return "UPCOMING";
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -108,43 +127,59 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
-// ── Card ──────────────────────────────────────────────────────────────────────
-function OrderCard({ group }: { group: PlanTaskGroup }) {
-  const v = urgencyVariant(group.urgency);
+function formatDateLong(d: Date): string {
+  return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+// ── Big Pill Card ─────────────────────────────────────────────────────────────
+function PillCard({ pill }: { pill: PillItem }) {
+  const v = urgencyVariant(pill.urgency);
   const s = STYLES[v];
-  const urgencyText =
-    group.urgency === "overdue" ? "⚠ OVERDUE" :
-    group.urgency === "today"   ? "DUE TODAY" :
-                                  "TOMORROW";
   return (
-    <div className={`rounded-2xl border-2 ${s.card} overflow-hidden flex flex-col h-full`}>
-      <div className={`flex items-center justify-between px-5 py-3 ${s.header} gap-3`}>
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <span className={`w-3 h-3 rounded-full flex-shrink-0 ${s.dot}`} />
-          <span className="font-black text-white leading-tight truncate" style={{ fontSize: "clamp(1rem, 1.6vw, 2rem)" }}>
-            {group.customerName}
-          </span>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <span className={`font-black uppercase tracking-wider ${s.tag}`} style={{ fontSize: "clamp(0.65rem, 0.9vw, 1rem)" }}>
-            {urgencyText}
-          </span>
-          <span className={`font-black tabular-nums ${s.text}`} style={{ fontSize: "clamp(1.4rem, 2.5vw, 3rem)" }}>
-            {group.totalQty}
-          </span>
-        </div>
-      </div>
-      <div className="px-5 py-3 flex flex-wrap gap-2 flex-1 content-start">
-        {(group.finishes ?? []).map((f, i) => (
+    <div
+      className={`rounded-3xl border-4 ${s.card} flex flex-col justify-between overflow-hidden h-full`}
+      style={{ padding: "clamp(1rem, 2vw, 2.5rem)" }}
+    >
+      {/* Top row: urgency tag */}
+      <div className="flex items-center justify-between gap-3">
+        <span
+          className={`font-black uppercase tracking-widest ${s.tag}`}
+          style={{ fontSize: "clamp(0.65rem, 1vw, 1.15rem)" }}
+        >
+          {urgencyLabel(pill.urgency, pill.daysUntilDue)}
+        </span>
+        {pill.worksheetNumber && (
           <span
-            key={i}
-            className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 ${s.pill}`}
-            style={{ fontSize: "clamp(0.8rem, 1.2vw, 1.4rem)" }}
+            className={`font-mono font-semibold ${s.ws}`}
+            style={{ fontSize: "clamp(0.65rem, 0.95vw, 1.05rem)" }}
           >
-            <span className="truncate" style={{ maxWidth: "18ch" }}>{f.finishName}</span>
-            <span className={`tabular-nums font-black ${s.count}`}>{f.qty}</span>
+            {pill.worksheetNumber}
           </span>
-        ))}
+        )}
+      </div>
+
+      {/* Centre: finish name — the star of the show */}
+      <div
+        className="font-black text-white leading-tight break-words"
+        style={{ fontSize: "clamp(1.4rem, 2.8vw, 3.8rem)" }}
+      >
+        {pill.finishName}
+      </div>
+
+      {/* Bottom row: customer + qty */}
+      <div className="flex items-end justify-between gap-3">
+        <span
+          className={`font-semibold truncate ${s.label}`}
+          style={{ fontSize: "clamp(0.85rem, 1.5vw, 2rem)", maxWidth: "65%" }}
+        >
+          {pill.customerName}
+        </span>
+        <span
+          className={`font-black tabular-nums leading-none ${s.qty}`}
+          style={{ fontSize: "clamp(2rem, 4.5vw, 6rem)" }}
+        >
+          {pill.qty}
+        </span>
       </div>
     </div>
   );
@@ -167,7 +202,7 @@ function ProgressBar({ durationMs, running }: { durationMs: number; running: boo
   }, [running, durationMs]);
 
   return (
-    <div className="w-full h-1 bg-white/10 flex-shrink-0">
+    <div className="w-full h-1.5 bg-white/10 flex-shrink-0">
       <div
         className="h-full bg-blue-500/60 transition-none"
         style={{ width: `${pct}%` }}
@@ -207,13 +242,14 @@ export default function TvDisplay() {
     return () => { clearInterval(dataTimer); clearInterval(clockTimer); };
   }, [fetchPlan]);
 
-  // ── Pagination ──────────────────────────────────────────────────────────────
+  // ── Build pill list ──────────────────────────────────────────────────────────
   const urgentGroups = [
     ...(plan?.taskGroups.filter((g) => g.urgency === "overdue") ?? []),
     ...(plan?.taskGroups.filter((g) => g.urgency === "today")   ?? []),
     ...(plan?.taskGroups.filter((g) => g.urgency === "soon")    ?? []),
   ];
-  const pages      = urgentGroups.length > 0 ? chunk(urgentGroups, CARDS_PER_PAGE) : [];
+  const allPills   = flattenPills(urgentGroups);
+  const pages      = allPills.length > 0 ? chunk(allPills, PILLS_PER_PAGE) : [];
   const totalPages = pages.length;
 
   // Auto-advance slides
@@ -232,9 +268,12 @@ export default function TvDisplay() {
     setProgressKey((k) => k + 1);
   }, [plan]);
 
-  const currentPage   = pages[pageIndex] ?? [];
-  const urgentTotal   = urgentGroups.length;
-  const summary       = plan?.summary;
+  const currentPage = pages[pageIndex] ?? [];
+  const urgentTotal = urgentGroups.length;
+  const summary     = plan?.summary;
+
+  // Grid: 4 cols × 2 rows = 8 pills per page
+  const COLS = 4;
 
   return (
     <div
@@ -297,7 +336,7 @@ export default function TvDisplay() {
         </div>
       )}
 
-      {/* ── Cards grid ─────────────────────────────────────────────────────── */}
+      {/* ── Pills grid ─────────────────────────────────────────────────────── */}
       <div
         className="flex-1 overflow-hidden"
         style={{ padding: "clamp(0.75rem, 1.5vw, 2rem) clamp(1.5rem, 3vw, 4rem)" }}
@@ -336,19 +375,19 @@ export default function TvDisplay() {
             className="h-full"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, 1fr)",
+              gridTemplateColumns: `repeat(${COLS}, 1fr)`,
               gridAutoRows: "1fr",
-              gap: "clamp(0.5rem, 1vw, 1.5rem)",
+              gap: "clamp(0.6rem, 1.2vw, 1.8rem)",
             }}
           >
-            {currentPage.map((g) => (
-              <OrderCard key={g.customerName + g.daysUntilDue + g.urgency} group={g} />
+            {currentPage.map((pill, i) => (
+              <PillCard key={`${pill.customerName}-${pill.finishName}-${i}`} pill={pill} />
             ))}
           </div>
         )}
       </div>
 
-      {/* ── Progress bar (advances when multiple pages) ─────────────────────── */}
+      {/* ── Progress bar ────────────────────────────────────────────────────── */}
       <ProgressBar
         key={progressKey}
         durationMs={SLIDE_SECS * 1000}
