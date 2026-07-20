@@ -2091,11 +2091,12 @@ export async function refreshProductIssues(): Promise<void> {
   }
 
   // Reverse wrong allocations: un-allocate order items that ended up as 'allocated' but every
-  // non-cancelled linked PO line has quantity_delivered = 0 (PO was marked delivered before stock
-  // arrived, or a "Correct Book-in" zeroed the qty after allocation ran).
-  // Resets to purchase_required=true so the items re-enter purchasing requirements.
-  // Only fires when there is at least one non-cancelled PO line for the item, preventing this
-  // from accidentally touching items allocated from pre-existing stock (no PO coverage).
+  // active (draft/ordered) linked PO line has quantity_delivered = 0.
+  // IMPORTANT: delivered POs are excluded — a delivered PO means the stock was intentionally
+  // closed out regardless of whether quantity_delivered was explicitly recorded on each line.
+  // Only fires when there is at least one active (draft/ordered) PO line for the item,
+  // preventing this from touching items allocated from pre-existing stock (no PO coverage)
+  // or items whose PO has already been delivered.
   {
     const { rowCount: reverseCount } = await db.execute(sql`
       UPDATE order_items oi
@@ -2111,19 +2112,19 @@ export async function refreshProductIssues(): Promise<void> {
           WHERE o.id = oi.order_id
             AND o.status NOT IN ('shipped','completed','delivered','invoiced','cancelled','archived','draft','portal_draft','portal_pending')
         )
-        -- Item must have at least one non-cancelled linked PO line (not an existing-stock allocation)
+        -- Item must have at least one active (draft/ordered, NOT delivered) linked PO line
         AND EXISTS (
           SELECT 1 FROM purchase_order_items poi
           JOIN purchase_orders po ON po.id = poi.po_id
-          WHERE po.status != 'cancelled'
+          WHERE po.status NOT IN ('cancelled', 'delivered')
             AND (poi.order_item_id = oi.id
                  OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
         )
-        -- But none of those non-cancelled lines has delivered anything
+        -- But none of those active lines has delivered anything
         AND NOT EXISTS (
           SELECT 1 FROM purchase_order_items poi
           JOIN purchase_orders po ON po.id = poi.po_id
-          WHERE po.status != 'cancelled'
+          WHERE po.status NOT IN ('cancelled', 'delivered')
             AND (poi.order_item_id = oi.id
                  OR COALESCE(poi.source_order_item_ids, '[]'::jsonb) @> to_jsonb(oi.id))
             AND poi.quantity_delivered > 0

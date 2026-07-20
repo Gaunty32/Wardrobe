@@ -1160,6 +1160,18 @@ router.patch("/purchasing/purchase-orders/:id", async (req, res): Promise<void> 
       }
     }
 
+    // Auto-fill quantity_delivered = quantity_ordered for any line still at 0.
+    // Prevents the startup-migration "reverse wrong allocations" step from re-queuing
+    // these items on next server restart (it keys on quantity_delivered > 0 to detect
+    // genuine deliveries, so lines left at 0 on a delivered PO were falsely re-queued).
+    await db.execute(sql`
+      UPDATE purchase_order_items
+      SET quantity_delivered = quantity_ordered, updated_at = now()
+      WHERE po_id = ${po.id}
+        AND (quantity_delivered IS NULL OR quantity_delivered = 0)
+        AND quantity_ordered > 0
+    `);
+
     const poItems = await db.select().from(purchaseOrderItemsTable).where(eq(purchaseOrderItemsTable.poId, po.id));
     // Collect order item IDs from both the legacy orderItemId column and the
     // consolidated sourceOrderItemIds array — whichever the PO line uses.
