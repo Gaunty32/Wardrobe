@@ -14,8 +14,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
 function PortalStatusBadge({ status, portalStatus }: { status: string; portalStatus?: string }) {
+  if (portalStatus === "pending_review") {
+    return <Badge variant="outline" className="border-orange-300 text-orange-700 bg-orange-50 gap-1.5 text-sm px-3 py-1"><AlertCircle className="w-3.5 h-3.5" />Awaiting approval</Badge>;
+  }
   if (portalStatus === "pending" || status === "portal_pending") {
     return <Badge variant="outline" className="border-amber-300 text-amber-700 bg-amber-50 gap-1.5 text-sm px-3 py-1"><Clock className="w-3.5 h-3.5" />Pending review</Badge>;
+  }
+  if (portalStatus === "submitted") {
+    return <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 gap-1.5 text-sm px-3 py-1"><Clock className="w-3.5 h-3.5" />Submitted to SBS</Badge>;
   }
   if (portalStatus === "confirmed") {
     return <Badge variant="outline" className="border-blue-300 text-blue-700 bg-blue-50 gap-1.5 text-sm px-3 py-1"><CheckCircle2 className="w-3.5 h-3.5" />Confirmed</Badge>;
