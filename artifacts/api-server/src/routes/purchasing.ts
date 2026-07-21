@@ -390,6 +390,10 @@ router.get("/purchasing/requirements", async (req, res): Promise<void> => {
       sql`${productsTable.isService} IS NOT TRUE`,
       // Exclude items belonging to orders that are no longer active
       sql`COALESCE(${ordersTable.status}, '') NOT IN ('cancelled', 'archived', 'shipped', 'completed', 'delivered', 'invoiced', 'draft', 'portal_draft', 'portal_pending')`,
+      // Exclude items that have already progressed past the purchasing stage
+      // (in_production/complete = actively being made or done; allocated = on picking list with stock reserved)
+      // This guards against stale purchase_required=true flags left when worksheets are created.
+      sql`COALESCE(${orderItemsTable.stockStatus}, '') NOT IN ('in_production', 'complete', 'allocated')`,
       sql`${orderItemsTable.id} NOT IN (
         SELECT poi.order_item_id
         FROM purchase_order_items poi

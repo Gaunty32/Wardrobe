@@ -331,7 +331,7 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
         if (existing) {
           await db
             .update(orderItemsTable)
-            .set({ stockStatus: "in_production" })
+            .set({ stockStatus: "in_production", purchaseRequired: false, purchaseQuantity: null })
             .where(eq(orderItemsTable.id, item.id));
           continue;
         }
@@ -375,7 +375,7 @@ router.post("/picking-list/pick", async (req, res): Promise<void> => {
 
         await db
           .update(orderItemsTable)
-          .set({ stockStatus: "in_production" })
+          .set({ stockStatus: "in_production", purchaseRequired: false, purchaseQuantity: null })
           .where(eq(orderItemsTable.id, item.id));
       }
     }
@@ -1119,10 +1119,10 @@ router.post("/worksheets", async (req, res): Promise<void> => {
     })
   );
 
-  // Move decorated items to in_production
+  // Move decorated items to in_production and clear any stale purchase_required flag
   await db
     .update(orderItemsTable)
-    .set({ stockStatus: "in_production" })
+    .set({ stockStatus: "in_production", purchaseRequired: false, purchaseQuantity: null })
     .where(inArray(orderItemsTable.id, decoratedItems.map(i => i.id)));
 
   if (ws.orderId) {
