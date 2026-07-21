@@ -88,7 +88,7 @@ function buildMagicLinkEmail(_email: string, magicUrl: string): { html: string; 
   return { html, text };
 }
 
-function buildInviteEmail(
+export function buildInviteEmail(
   email: string,
   inviteUrl: string,
   customerName: string,

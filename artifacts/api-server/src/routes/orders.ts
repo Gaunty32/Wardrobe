@@ -11,6 +11,7 @@ import {
   productVariantsTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
+import { buildInviteEmail } from "./portal.js";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data.js";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { logOrderAction, getActor } from "../services/orderLog";
@@ -1679,6 +1680,58 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
       success: result.sent,
       error: result.sent ? null : (result.error ?? "not configured"),
     }).catch((err) => console.error("[orderEmailLog] Failed to log:", err));
+  }
+
+  // ── Portal promo email ─────────────────────────────────────────────────────
+  // After a non-portal ack, if the customer has no portal users set up,
+  // send a one-off intro email (max once every 120 days).
+  if (!previewOnly && result.sent && order.customerId) {
+    (async () => {
+      try {
+        // Is this a portal order?
+        const sourceRow = await db.execute(sql`SELECT source FROM orders WHERE id = ${order.id} LIMIT 1`);
+        const orderSource = (sourceRow.rows[0] as any)?.source ?? null;
+        if (orderSource === "portal") return;
+
+        // Does this customer already have any portal users?
+        const portalUserRows = await db.execute(sql`
+          SELECT id FROM customer_portal_users WHERE customer_id = ${order.customerId} LIMIT 1
+        `);
+        if (portalUserRows.rows.length > 0) return;
+
+        // 120-day throttle — stored per customer in settings table
+        const throttleKey = `portal_promo_sent_${order.customerId}`;
+        const throttleRow = await db.execute(sql`
+          SELECT value FROM settings WHERE key = ${throttleKey} LIMIT 1
+        `);
+        const lastSentStr = (throttleRow.rows[0] as any)?.value ?? null;
+        const daysSinceLast = lastSentStr
+          ? (Date.now() - new Date(lastSentStr).getTime()) / 86_400_000
+          : Infinity;
+        if (daysSinceLast < 120) return;
+
+        // Build and send the promo email using the invite template
+        const promoCtaUrl = `mailto:info@selectbranding.co.uk?subject=${encodeURIComponent(`Portal Access Enquiry — ${order.customerName ?? ""}`)}`;
+        const { html: promoHtml, text: promoText } = buildInviteEmail(
+          toEmail!,
+          promoCtaUrl,
+          order.customerName ?? "your business",
+          customerLogoDataUrl,
+        );
+        const promoSubject = `${order.customerName ?? "Your business"} — manage your workwear online with the SBS portal`;
+        const promoResult = await sendEmail({ to: toEmail!, subject: promoSubject, html: promoHtml, text: promoText });
+        if (promoResult.sent) {
+          await db.execute(sql`
+            INSERT INTO settings (key, value)
+            VALUES (${throttleKey}, ${new Date().toISOString()})
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+          `);
+          console.log(`[portal-promo] Sent to customer ${order.customerId} (${toEmail})`);
+        }
+      } catch (err) {
+        console.error("[portal-promo] Non-fatal error:", err);
+      }
+    })();
   }
 
   res.json({
