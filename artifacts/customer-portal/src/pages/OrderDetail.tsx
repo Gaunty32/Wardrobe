@@ -45,10 +45,12 @@ export default function OrderDetailPage() {
   const [poInput, setPoInput] = useState("");
   const [lineFilter, setLineFilter] = useState("");
 
-  // Edit mode state
-  const [editing, setEditing] = useState(false);
-  // editDraft: { [itemId]: quantity } — undefined means deleted
+  // Per-item qty overrides: { [itemId]: quantity }; 0 = marked for deletion
   const [editDraft, setEditDraft] = useState<Record<number, number>>({});
+
+  // Reject panel
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const { data: order, isLoading, error } = useQuery<any>({
     queryKey: ["portal-order", id],
@@ -68,47 +70,51 @@ export default function OrderDetailPage() {
     onError: () => toast({ title: "Failed to save PO number", variant: "destructive" }),
   });
 
-  const saveItemsMutation = useMutation({
-    mutationFn: (items: { id: number; quantity: number }[]) =>
-      apiFetch(`/portal/manager/orders/${id}/items`, {
-        method: "PATCH",
-        body: JSON.stringify({ items }),
-      }),
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      const allItemsList: any[] = order?.items ?? [];
+      const keptItems = allItemsList
+        .filter(i => (editDraft[i.id] ?? i.quantity) > 0)
+        .map(i => ({ id: i.id, quantity: editDraft[i.id] ?? i.quantity }));
+      if (keptItems.length === 0) throw new Error("Cannot remove all items from an order");
+      const hasChanges = allItemsList.some(i => {
+        const d = editDraft[i.id];
+        return d !== undefined && d !== i.quantity;
+      });
+      if (hasChanges) {
+        await apiFetch(`/portal/manager/orders/${id}/items`, {
+          method: "PATCH",
+          body: JSON.stringify({ items: keptItems }),
+        });
+      }
+      await apiFetch(`/portal/manager/orders/${id}/submit`, {
+        method: "POST",
+        body: JSON.stringify({ poNumber: order?.po_number ?? null }),
+      });
+    },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["portal-order", id] });
       qc.invalidateQueries({ queryKey: ["portal-orders"] });
       qc.invalidateQueries({ queryKey: ["portal-manager-pending"] });
-      setEditing(false);
-      toast({ title: "Order updated" });
+      toast({ title: "Order approved and submitted to SBS" });
+      setLocation("/");
     },
-    onError: (err: any) => toast({ title: err?.message ?? "Failed to save changes", variant: "destructive" }),
+    onError: (err: any) => toast({ title: err?.message ?? "Failed to approve order", variant: "destructive" }),
   });
 
-  const enterEditMode = () => {
-    const draft: Record<number, number> = {};
-    for (const item of (order?.items ?? [])) {
-      draft[item.id] = item.quantity;
-    }
-    setEditDraft(draft);
-    setEditing(true);
-    setLineFilter("");
-  };
-
-  const cancelEdit = () => {
-    setEditing(false);
-    setEditDraft({});
-  };
-
-  const saveEdit = () => {
-    const items = Object.entries(editDraft)
-      .filter(([, qty]) => qty > 0)
-      .map(([id, quantity]) => ({ id: Number(id), quantity }));
-    if (items.length === 0) {
-      toast({ title: "Cannot remove all items from an order", variant: "destructive" });
-      return;
-    }
-    saveItemsMutation.mutate(items);
-  };
+  const rejectMutation = useMutation({
+    mutationFn: (reason: string) =>
+      apiFetch(`/portal/manager/orders/${id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason || null }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-orders"] });
+      qc.invalidateQueries({ queryKey: ["portal-manager-pending"] });
+      toast({ title: "Order rejected" });
+      setLocation("/");
+    },
+    onError: (err: any) => toast({ title: err?.message ?? "Failed to reject order", variant: "destructive" }),
+  });
 
   if (isLoading) {
     return (
@@ -135,8 +141,14 @@ export default function OrderDetailPage() {
 
   const allItems: any[] = order.items ?? [];
 
-  // In edit mode ignore the text filter — always show all items so nothing is hidden when deleting
-  const q = editing ? "" : lineFilter.toLowerCase().trim();
+  const hasChanges = allItems.some(i => {
+    const d = editDraft[i.id];
+    return d !== undefined && d !== i.quantity;
+  });
+  const deletedCount = allItems.filter(i => editDraft[i.id] === 0).length;
+
+  // When manager is reviewing, suppress the filter so no lines are hidden
+  const q = canEdit ? "" : lineFilter.toLowerCase().trim();
   const displayItems: any[] = !q ? allItems : allItems.filter((item: any) =>
     item.product_name?.toLowerCase().includes(q) ||
     item.recipient_name?.toLowerCase().includes(q) ||
@@ -144,11 +156,13 @@ export default function OrderDetailPage() {
     item.size?.toLowerCase().includes(q)
   );
 
-  // For totals: use editDraft when editing, otherwise actual items
-  const effectiveItems = editing
+  const effectiveItems = canEdit
     ? allItems
-        .filter(i => (editDraft[i.id] ?? 0) > 0)
-        .map(i => ({ ...i, quantity: editDraft[i.id], line_total: (parseFloat(i.unit_price ?? "0") * editDraft[i.id]).toFixed(2) }))
+        .filter(i => (editDraft[i.id] ?? i.quantity) > 0)
+        .map(i => {
+          const qty = editDraft[i.id] ?? i.quantity;
+          return { ...i, quantity: qty, line_total: (parseFloat(i.unit_price ?? "0") * qty).toFixed(2) };
+        })
     : allItems;
 
   const itemsSubtotal = effectiveItems.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0);
@@ -156,12 +170,10 @@ export default function OrderDetailPage() {
   const vatAmount = (itemsSubtotal + carriageAmount) * 0.2;
   const grandTotal = itemsSubtotal + carriageAmount + vatAmount;
 
-  const deletedCount = editing ? allItems.filter(i => (editDraft[i.id] ?? 0) === 0).length : 0;
-
   return (
     <PortalLayout>
       <div className="mb-5">
-        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={() => { cancelEdit(); setLocation("/orders"); }}>
+        <Button variant="ghost" size="sm" className="-ml-2 text-muted-foreground" onClick={() => setLocation("/orders")}>
           <ArrowLeft className="w-4 h-4 mr-1" /> All orders
         </Button>
       </div>
@@ -211,58 +223,95 @@ export default function OrderDetailPage() {
 
         <div className="flex items-center gap-2 flex-wrap">
           <PortalStatusBadge status={order.status} portalStatus={order.portal_status} />
-          {canEdit && !editing && (
-            <Button size="sm" variant="outline" onClick={enterEditMode} className="gap-1.5">
-              <Pencil className="w-3.5 h-3.5" /> Edit order
-            </Button>
-          )}
         </div>
       </div>
 
-      {/* Edit mode banner */}
-      {editing && (
-        <Card className="mb-5 border-blue-200 bg-blue-50/50">
-          <CardContent className="py-3 px-5 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-blue-900">Editing order items</p>
-              <p className="text-xs text-blue-700 mt-0.5">
-                Adjust quantities or remove lines. Changes are saved when you click <strong>Save changes</strong>.
-                {deletedCount > 0 && (
-                  <span className="ml-1 text-red-700 font-medium">{deletedCount} line{deletedCount !== 1 ? "s" : ""} marked for removal.</span>
-                )}
-              </p>
+      {/* ── Manager approval action panel ─────────────────────────────── */}
+      {canEdit && (
+        <Card className="mb-5 border-orange-200 bg-orange-50/40">
+          <CardContent className="py-4 px-5">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-orange-900">Awaiting your approval</p>
+                <p className="text-xs text-orange-700 mt-0.5">
+                  Adjust quantities or remove lines below, then approve to forward to SBS.
+                  {deletedCount > 0 && (
+                    <span className="ml-1 font-medium text-red-700">
+                      {deletedCount} line{deletedCount !== 1 ? "s" : ""} marked for removal.
+                    </span>
+                  )}
+                  {hasChanges && !deletedCount && (
+                    <span className="ml-1">Changes will be saved on approval.</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-red-300 text-red-700 hover:bg-red-50 gap-1.5"
+                  onClick={() => { setRejectOpen(o => !o); setRejectReason(""); }}
+                  disabled={approveMutation.isPending || rejectMutation.isPending}
+                >
+                  <XCircle className="w-3.5 h-3.5" /> Reject
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5 bg-green-700 hover:bg-green-800 text-white"
+                  onClick={() => approveMutation.mutate()}
+                  disabled={approveMutation.isPending || rejectMutation.isPending || deletedCount === allItems.length}
+                >
+                  {approveMutation.isPending
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Check className="w-3.5 h-3.5" />}
+                  Approve &amp; submit to SBS
+                </Button>
+              </div>
             </div>
-            <div className="flex gap-2 shrink-0">
-              <Button size="sm" variant="outline" onClick={cancelEdit} disabled={saveItemsMutation.isPending}
-                className="border-blue-300 text-blue-800 hover:bg-blue-100">
-                Cancel
-              </Button>
-              <Button size="sm" onClick={saveEdit} disabled={saveItemsMutation.isPending} className="gap-1.5">
-                {saveItemsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                Save changes
-              </Button>
-            </div>
+
+            {/* Inline reject panel */}
+            {rejectOpen && (
+              <div className="mt-3 pt-3 border-t border-orange-200">
+                <p className="text-sm font-medium text-red-700 mb-2">Reason for rejection <span className="text-muted-foreground font-normal">(optional)</span></p>
+                <div className="flex gap-2 flex-wrap">
+                  <Input
+                    autoFocus
+                    value={rejectReason}
+                    onChange={e => setRejectReason(e.target.value)}
+                    placeholder="Optional reason for the team member…"
+                    className="text-sm h-8 flex-1 min-w-[200px]"
+                    onKeyDown={e => { if (e.key === "Escape") setRejectOpen(false); }}
+                  />
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="gap-1"
+                    onClick={() => rejectMutation.mutate(rejectReason)}
+                    disabled={rejectMutation.isPending}
+                  >
+                    {rejectMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    Confirm reject
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setRejectOpen(false)} disabled={rejectMutation.isPending}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
-      {/* Status messages (only when not editing) */}
-      {!editing && isPendingReview && !isManager && !isDeptManager && (
+      {/* Status banner for team members (non-manager) */}
+      {!canEdit && isPendingReview && (
         <Card className="mb-5 border-amber-200 bg-amber-50/50">
           <CardContent className="py-3 px-5 flex items-start gap-2.5">
             <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-            <p className="text-sm text-amber-800">Your order has been submitted and is awaiting review by our team. We'll be in touch shortly.</p>
+            <p className="text-sm text-amber-800">Your order has been submitted and is awaiting review by your manager.</p>
           </CardContent>
         </Card>
       )}
-      {!editing && isPendingReview && (isManager || isDeptManager) && (
-        <Card className="mb-5 border-amber-200 bg-amber-50/50">
-          <CardContent className="py-3 px-5 flex items-start gap-2.5">
-            <Clock className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-            <p className="text-sm text-amber-800">This order is awaiting your approval. Review the items below, then approve it from the dashboard — or use <strong>Edit order</strong> to make changes first.</p>
-          </CardContent>
-        </Card>
-      )}
+
       {order.portal_status === "rejected" && (
         <Card className="mb-5 border-red-200 bg-red-50/50">
           <CardContent className="py-3 px-5 flex items-start gap-2.5">
@@ -292,14 +341,14 @@ export default function OrderDetailPage() {
             <CardContent className="py-4 px-5">
               <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total (inc. VAT)</p>
               <p className="font-semibold text-lg">{formatCurrency(grandTotal)}</p>
-              {editing && <p className="text-xs text-blue-600 mt-0.5">Live estimate</p>}
+              {canEdit && (hasChanges || deletedCount > 0) && <p className="text-xs text-orange-600 mt-0.5">Live estimate</p>}
             </CardContent>
           </Card>
         )}
       </div>
 
       {/* Audit trail */}
-      {!editing && (order.portal_submitted_by_name || order.portal_approved_by_name) && (
+      {(order.portal_submitted_by_name || order.portal_approved_by_name) && (
         <Card className="mb-5">
           <CardContent className="py-4 px-5 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Order history</p>
@@ -331,7 +380,7 @@ export default function OrderDetailPage() {
         </Card>
       )}
 
-      {order.portal_notes && !editing && (
+      {order.portal_notes && (
         <Card className="mb-5">
           <CardContent className="py-4 px-5">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5">Your notes</p>
@@ -345,14 +394,14 @@ export default function OrderDetailPage() {
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <CardTitle className="text-base">
               Order items
-              {!editing && lineFilter.trim() && displayItems.length !== allItems.length && (
+              {!canEdit && lineFilter.trim() && displayItems.length !== allItems.length && (
                 <span className="ml-2 text-sm font-normal text-muted-foreground">({displayItems.length} of {allItems.length})</span>
               )}
-              {editing && deletedCount > 0 && (
+              {canEdit && deletedCount > 0 && (
                 <span className="ml-2 text-sm font-normal text-red-600">({allItems.length - deletedCount} of {allItems.length} kept)</span>
               )}
             </CardTitle>
-            {!editing && (
+            {!canEdit && (
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                 <input
@@ -378,23 +427,23 @@ export default function OrderDetailPage() {
                   <TableHead className="text-right">Qty</TableHead>
                   {canSeePricing && <TableHead className="text-right">Unit price</TableHead>}
                   {canSeePricing && <TableHead className="text-right">Total</TableHead>}
-                  {editing && <TableHead className="w-10" />}
+                  {canEdit && <TableHead className="w-10" />}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {displayItems.map((item: any) => {
-                  const isDeleted = editing && editDraft[item.id] === 0;
-                  const qty = editing ? (editDraft[item.id] ?? item.quantity) : item.quantity;
-                  const lineTotal = editing
-                    ? parseFloat(item.unit_price ?? "0") * qty
+                  const isDeleted = editDraft[item.id] === 0;
+                  const qty = editDraft[item.id] ?? item.quantity;
+                  const lineTotal = canEdit
+                    ? parseFloat(item.unit_price ?? "0") * (isDeleted ? 0 : qty)
                     : parseFloat(item.line_total ?? "0");
 
                   return (
                     <TableRow
                       key={item.id}
-                      className={isDeleted ? "opacity-40 line-through bg-red-50/40" : undefined}
+                      className={isDeleted ? "opacity-40 bg-red-50/40" : undefined}
                     >
-                      <TableCell className="font-medium">{item.product_name}</TableCell>
+                      <TableCell className={`font-medium${isDeleted ? " line-through" : ""}`}>{item.product_name}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {[item.colour, item.size].filter(Boolean).join(" / ") || "—"}
                       </TableCell>
@@ -403,7 +452,7 @@ export default function OrderDetailPage() {
                         {item.recipient_name || (item.recipient_type === "stock" ? "Stock" : "—")}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {editing && !isDeleted ? (
+                        {canEdit && !isDeleted ? (
                           <input
                             type="number"
                             min={1}
@@ -429,12 +478,12 @@ export default function OrderDetailPage() {
                           {isDeleted ? "—" : formatCurrency(lineTotal)}
                         </TableCell>
                       )}
-                      {editing && (
+                      {canEdit && (
                         <TableCell className="text-right">
                           {isDeleted ? (
                             <button
                               title="Restore this line"
-                              onClick={() => setEditDraft(d => ({ ...d, [item.id]: item.quantity }))}
+                              onClick={() => setEditDraft(d => { const n = { ...d }; delete n[item.id]; return n; })}
                               className="text-blue-600 hover:text-blue-800 p-1 rounded"
                             >
                               <X className="w-3.5 h-3.5" />
@@ -460,7 +509,7 @@ export default function OrderDetailPage() {
             <div className="border-t">
               <div className="px-5 py-2 flex justify-end">
                 <div className="text-right space-y-1 min-w-[220px]">
-                  {!editing && lineFilter.trim() && displayItems.length !== allItems.length && (
+                  {!canEdit && lineFilter.trim() && displayItems.length !== allItems.length && (
                     <div className="flex justify-between gap-8 text-sm font-medium">
                       <span>Filtered subtotal</span>
                       <span>{formatCurrency(displayItems.reduce((s: number, i: any) => s + parseFloat(i.line_total ?? "0"), 0))}</span>
@@ -486,19 +535,6 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-
-          {/* Save / cancel sticky bar at the bottom when editing */}
-          {editing && (
-            <div className="border-t bg-muted/30 px-5 py-3 flex justify-end gap-2">
-              <Button size="sm" variant="outline" onClick={cancelEdit} disabled={saveItemsMutation.isPending}>
-                Cancel
-              </Button>
-              <Button size="sm" onClick={saveEdit} disabled={saveItemsMutation.isPending} className="gap-1.5">
-                {saveItemsMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                Save changes
-              </Button>
             </div>
           )}
         </CardContent>
