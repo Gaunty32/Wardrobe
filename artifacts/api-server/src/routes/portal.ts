@@ -2728,7 +2728,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
         customerCity,
         customerPostcode,
         deliveryAddress: deliveryAddressText,
-        totalAmount: parseFloat(ord.total_amount ?? "0"),
+        totalAmount: pdfItems.reduce((s: number, i: any) => s + i.lineTotal, 0),
         shippingAmount: parseFloat(ord.carriage_amount ?? "0") || undefined,
         zeroVat: portalAckZeroVat,
         items: pdfItems,

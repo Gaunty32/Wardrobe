@@ -1869,7 +1869,7 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
       deliveryAddress: deliveryAddressText,
       shippingMethod: order.shippingMethod ?? null,
       customerLogoBuffer,
-      totalAmount: numericToFloat(order.totalAmount),
+      totalAmount: items.reduce((s, i) => s + i.lineTotal, 0),
       shippingAmount: numericToFloat(order.carriageAmount),
       zeroVat: customerZeroVat,
       items,

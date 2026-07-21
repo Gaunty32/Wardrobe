@@ -787,7 +787,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
     }
 
     // ── Totals ────────────────────────────────────────────────────────────────
-    const pdfSubtotal = order.totalAmount ?? order.items.reduce((s, i) => s + i.lineTotal, 0);
+    const pdfSubtotal = order.items.reduce((s, i) => s + i.lineTotal, 0);
     const pdfShipping = order.shippingAmount ?? 0;
     // Zero-rated customers: suppress all VAT (Channel Islands etc.)
     const effectiveZeroVat = order.zeroVat || order.items.every(i => (i.vatRate ?? 0.20) === 0);
