@@ -2034,7 +2034,7 @@ router.patch("/portal/manager/orders/:id/items", portalAuth, async (req: Request
     const lineTotal = (unitPrice * item.quantity).toFixed(2);
     await db.execute(sql`
       UPDATE order_items
-      SET quantity = ${item.quantity}, line_total = ${lineTotal}, updated_at = now()
+      SET quantity = ${item.quantity}, line_total = ${lineTotal}
       WHERE id = ${item.id} AND order_id = ${orderId}
     `);
   }
