@@ -8,6 +8,7 @@ import {
   fetchLogoDataUrl, sendEmail,
   buildLocalDeliveryNotificationEmail,
 } from "../services/email";
+import { getTemplate, applyVars } from "../services/template-engine";
 import { postInvoiceToXero } from "../services/xero";
 import { logOrderAction, getActor } from "../services/orderLog";
 import { getUncachableStripeClient } from "../services/stripeClient";
@@ -395,6 +396,18 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
         const actor = getActor(req);
         const actorName = actor !== "System" ? actor : null;
 
+        // Resolve delivery templates from DB (with hardcoded fallbacks)
+        const firstName = (deliveryOrder.customerName ?? "there").split(/\s/)[0];
+        const tplVars = {
+          firstName,
+          orderNumber: deliveryOrder.orderNumber,
+          customerName: deliveryOrder.customerName ?? "",
+        };
+        const [emailTpl, waTpl] = await Promise.all([
+          getTemplate("delivery_notification_email"),
+          getTemplate("delivery_notification_whatsapp"),
+        ]);
+
         // 1. Send out-for-delivery notification email
         if (deliveryOrder.customerEmail) {
           try {
@@ -406,12 +419,10 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
               orderNumber: deliveryOrder.orderNumber,
               customerLogoDataUrl: logoDataUrl,
             });
-            await sendEmail({
-              to: deliveryOrder.customerEmail,
-              subject: `Your ${deliveryOrder.orderNumber} order is out for delivery today 🚚`,
-              html,
-              text,
-            });
+            const subject = emailTpl?.subject
+              ? applyVars(emailTpl.subject, tplVars)
+              : `Your ${deliveryOrder.orderNumber} order is out for delivery today 🚚`;
+            await sendEmail({ to: deliveryOrder.customerEmail, subject, html, text });
           } catch (e) {
             console.error("[local-delivery] Notification email failed:", e);
           }
@@ -423,6 +434,7 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
           .from(settingsTable)
           .where(eq(settingsTable.key, "local_delivery_ghl_webhook_url"));
         if (webhookRow?.value && deliveryOrder.highLevelContactId) {
+          const messageText = waTpl?.body ? applyVars(waTpl.body, tplVars) : undefined;
           fetch(webhookRow.value, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -431,6 +443,7 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
               contactId: deliveryOrder.highLevelContactId,
               orderNumber: deliveryOrder.orderNumber,
               customerName: deliveryOrder.customerName,
+              ...(messageText ? { messageText } : {}),
             }),
           }).catch((e) => console.error("[local-delivery] GHL webhook failed:", e));
         }

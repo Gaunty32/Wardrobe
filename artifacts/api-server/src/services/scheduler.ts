@@ -3,6 +3,7 @@ import { db, settingsTable, customersTable, ordersTable, tasksTable } from "@wor
 import { eq, sql, and, or, isNull, lt, lte, isNotNull } from "drizzle-orm";
 import { runWooSync } from "./woo-sync";
 import { sendInvoiceEmail, buildCheckInEmail, sendEmail, isEmailConfigured, fetchLogoDataUrl, buildDeliveryFollowupEmail } from "./email.js";
+import { getTemplate, applyVars } from "./template-engine.js";
 import { postInvoiceToXero } from "./xero.js";
 
 let currentTask: ScheduledTask | null = null;
@@ -367,6 +368,21 @@ schedule("* * * * *", async () => {
         const sm: Record<string, string> = {};
         for (const s of settingsRows.rows as any[]) sm[s.key] = s.value;
 
+        // Resolve follow-up templates from DB
+        const firstName = (row.customer_name ?? "there").split(/\s/)[0];
+        const tplVars = {
+          firstName,
+          orderNumber: row.order_number,
+          customerName: row.customer_name ?? "",
+          actorName: row.local_delivery_actor_name ?? "",
+          googleReviewUrl: sm["google_review_url"] ?? "",
+          facebookReviewUrl: sm["facebook_review_url"] ?? "",
+        };
+        const [emailTpl, waTpl] = await Promise.all([
+          getTemplate("delivery_followup_email"),
+          getTemplate("delivery_followup_whatsapp"),
+        ]);
+
         // Send follow-up email
         if (row.email) {
           const logoDataUrl = row.logo_url ? await fetchLogoDataUrl(row.logo_url) : null;
@@ -378,16 +394,15 @@ schedule("* * * * *", async () => {
             facebookReviewUrl: sm["facebook_review_url"] ?? null,
             customerLogoDataUrl: logoDataUrl,
           });
-          await sendEmail({
-            to: row.email,
-            subject: `How did your ${row.order_number} order arrive?`,
-            html,
-            text,
-          });
+          const subject = emailTpl?.subject
+            ? applyVars(emailTpl.subject, tplVars)
+            : `How did your ${row.order_number} order arrive?`;
+          await sendEmail({ to: row.email, subject, html, text });
         }
 
         // Fire GHL follow-up webhook (WhatsApp)
         if (sm["local_delivery_ghl_webhook_url"] && row.high_level_contact_id) {
+          const messageText = waTpl?.body ? applyVars(waTpl.body, tplVars) : undefined;
           fetch(sm["local_delivery_ghl_webhook_url"], {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -397,6 +412,7 @@ schedule("* * * * *", async () => {
               orderNumber: row.order_number,
               customerName: row.customer_name,
               actorName: row.local_delivery_actor_name ?? null,
+              ...(messageText ? { messageText } : {}),
             }),
           }).catch((e) => console.error("[delivery-followup] GHL webhook failed:", e));
         }

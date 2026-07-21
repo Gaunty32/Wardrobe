@@ -619,6 +619,12 @@ export default function Layout({ children }: LayoutProps) {
         { name: "Chat", href: "/chat", icon: Hash },
       ],
     },
+    {
+      label: "Comms",
+      items: [
+        { name: "Templates", href: "/templates", icon: Mail },
+      ],
+    },
   ];
 
   // Filter nav items based on user's allowed_nav

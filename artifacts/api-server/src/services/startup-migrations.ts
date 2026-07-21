@@ -2529,4 +2529,161 @@ export async function refreshProductIssues(): Promise<void> {
   await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS local_delivery_followup_sent_at timestamptz`);
   await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS local_delivery_actor_name text`);
   console.log("[startup] Local delivery follow-up columns ensured");
+
+  // ── Message templates library ───────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS message_templates (
+      id         serial PRIMARY KEY,
+      key        text NOT NULL UNIQUE,
+      name       text NOT NULL,
+      channel    text NOT NULL DEFAULT 'email',
+      subject    text,
+      body       text NOT NULL DEFAULT '',
+      variables  jsonb,
+      notes      text,
+      updated_at timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
+  // Seed default templates — ON CONFLICT DO NOTHING preserves any manual edits
+  const seeds: Array<{
+    key: string; name: string; channel: string;
+    subject: string | null; body: string;
+    variables: string; notes: string;
+  }> = [
+    {
+      key: "delivery_notification_email",
+      name: "Delivery Notification (Email)",
+      channel: "email",
+      subject: "Your {{orderNumber}} order is out for delivery today 🚚",
+      body: "Hi {{firstName}},\n\nGreat news — your order {{orderNumber}} from Select Branding Solutions is on its way to you today!\n\nTim, our local delivery driver, has your parcel and will be with you between 8:30am and 4pm.\n\nIf you have any questions, please don't hesitate to get in touch.",
+      variables: JSON.stringify([
+        { name: "firstName",    description: "Customer's first name" },
+        { name: "orderNumber",  description: "e.g. SBS-1234" },
+        { name: "customerName", description: "Full customer / company name" },
+      ]),
+      notes: "Sent automatically when Send Invoice is clicked on a Local Delivery order.",
+    },
+    {
+      key: "delivery_notification_whatsapp",
+      name: "Delivery Notification (WhatsApp)",
+      channel: "whatsapp",
+      subject: null,
+      body: "Hi {{firstName}}, your {{orderNumber}} order from Select Branding Solutions is out for delivery today! 🚚\n\nTim, our local delivery driver, has your parcel and will be with you between 8:30am and 4pm.\n\nAny questions? Call us on 0113 255 2694.",
+      variables: JSON.stringify([
+        { name: "firstName",    description: "Customer's first name" },
+        { name: "orderNumber",  description: "e.g. SBS-1234" },
+        { name: "customerName", description: "Full customer / company name" },
+      ]),
+      notes: "Sent via GHL automation when a Local Delivery invoice is sent. Included in the webhook payload as messageText.",
+    },
+    {
+      key: "delivery_followup_email",
+      name: "Delivery Follow-up / Review Request (Email)",
+      channel: "email",
+      subject: "How did your {{orderNumber}} order arrive?",
+      body: "Hi {{firstName}},\n\nWe just wanted to check in and make sure your order {{orderNumber}} arrived safely and everything is just as you expected. We hope you and your team are delighted!\n\nIf there's anything that wasn't quite right, please let us know straight away — we'll always put it right.\n\nIf {{actorName}} went above and beyond for you, please do mention them by name in your review — it means the world to the team and really makes a difference to a small business like ours.",
+      variables: JSON.stringify([
+        { name: "firstName",        description: "Customer's first name" },
+        { name: "orderNumber",      description: "e.g. SBS-1234" },
+        { name: "customerName",     description: "Full customer / company name" },
+        { name: "actorName",        description: "Staff member who sent the invoice" },
+        { name: "googleReviewUrl",  description: "Google Business Profile review link" },
+        { name: "facebookReviewUrl",description: "Facebook reviews page link" },
+      ]),
+      notes: "Sent automatically 48 hours after a Local Delivery invoice is sent.",
+    },
+    {
+      key: "delivery_followup_whatsapp",
+      name: "Delivery Follow-up / Review Request (WhatsApp)",
+      channel: "whatsapp",
+      subject: null,
+      body: "Hi {{firstName}}, just checking in on your {{orderNumber}} order from Select Branding Solutions 😊\n\nWe hope everything arrived perfectly! If you have a moment, we'd love a review on Google or Facebook — it makes such a difference to a small business like ours.\n\nIf {{actorName}} helped make your experience great, please mention them by name in your review — it means so much to the team!\n\n⭐ Google: {{googleReviewUrl}}\n👍 Facebook: {{facebookReviewUrl}}",
+      variables: JSON.stringify([
+        { name: "firstName",        description: "Customer's first name" },
+        { name: "orderNumber",      description: "e.g. SBS-1234" },
+        { name: "customerName",     description: "Full customer / company name" },
+        { name: "actorName",        description: "Staff member who sent the invoice" },
+        { name: "googleReviewUrl",  description: "Google Business Profile review link" },
+        { name: "facebookReviewUrl",description: "Facebook reviews page link" },
+      ]),
+      notes: "Sent via GHL automation 48 hours after a Local Delivery invoice. Included in the webhook payload as messageText.",
+    },
+    {
+      key: "invoice_email",
+      name: "Invoice Email",
+      channel: "email",
+      subject: "Your invoice for order {{orderNumber}} — Select Branding Solutions",
+      body: "Hi {{firstName}},\n\nPlease find your invoice for order {{orderNumber}} attached to this email.\n\nIf you have any questions about your order or invoice, please don't hesitate to get in touch — we're always happy to help.",
+      variables: JSON.stringify([
+        { name: "firstName",    description: "Customer's first name" },
+        { name: "orderNumber",  description: "e.g. SBS-1234" },
+        { name: "customerName", description: "Full customer / company name" },
+        { name: "totalIncVat",  description: "Total amount including VAT, e.g. £300.00" },
+      ]),
+      notes: "Sent when Send Invoice is clicked for any order.",
+    },
+    {
+      key: "order_acknowledgement_email",
+      name: "Order Acknowledgement Email",
+      channel: "email",
+      subject: "Order {{orderNumber}} confirmed — Select Branding Solutions",
+      body: "Hi {{firstName}},\n\nThank you for your order! We've received your order {{orderNumber}} and our team is on it. We'll be in touch to confirm delivery details and timeline.\n\nIf you have any questions in the meantime, please don't hesitate to get in touch.",
+      variables: JSON.stringify([
+        { name: "firstName",    description: "Customer's first name" },
+        { name: "orderNumber",  description: "e.g. SBS-1234" },
+        { name: "customerName", description: "Full customer / company name" },
+      ]),
+      notes: "Sent to the customer when an order is acknowledged by the team.",
+    },
+    {
+      key: "portal_invite_email",
+      name: "Customer Portal Invite Email",
+      channel: "email",
+      subject: "Your {{customerName}} wardrobe portal is ready",
+      body: "Hi {{firstName}},\n\nWe've set up a personal wardrobe portal for {{customerName}} — a private space where your team can browse, reorder, and check the status of your branded clothing, all in one place.\n\nClick the button below to set your password and get started. The link is unique to you, so please don't share it.",
+      variables: JSON.stringify([
+        { name: "firstName",    description: "Contact's first name" },
+        { name: "customerName", description: "Company name" },
+        { name: "portalUrl",    description: "Unique portal invite link" },
+      ]),
+      notes: "Sent when a portal invite is issued from the Customer page.",
+    },
+    {
+      key: "quote_email",
+      name: "Quote Email",
+      channel: "email",
+      subject: "Your quote from Select Branding Solutions — {{orderNumber}}",
+      body: "Hi {{firstName}},\n\nThank you for your enquiry! Please find your personalised quote attached. This quote is valid for 30 days.\n\nIf you have any questions, would like to make any changes, or are ready to go ahead, please don't hesitate to get in touch — we'd love to help.",
+      variables: JSON.stringify([
+        { name: "firstName",    description: "Customer's first name" },
+        { name: "orderNumber",  description: "Quote reference, e.g. SBS-1234" },
+        { name: "customerName", description: "Full customer / company name" },
+        { name: "totalExVat",   description: "Quote total ex. VAT" },
+      ]),
+      notes: "Sent when a quote is emailed to the customer.",
+    },
+    {
+      key: "checkin_email",
+      name: "Customer Re-engagement (Check-in) Email",
+      channel: "email",
+      subject: "Checking in — how's your wardrobe holding up?",
+      body: "Hi {{firstName}},\n\nWe just wanted to check in and make sure all is ok. It's been a little while since your last order with us, so we thought it was worth a quick note.\n\nAs the seasons change, it's always a good time to see if there are any extra items you'd like to add to your wardrobe — or if any pieces are looking a little tired and could do with replacing. Keeping your team's look fresh is one of the simplest ways to keep your brand looking smart.",
+      variables: JSON.stringify([
+        { name: "firstName",    description: "Contact's first name" },
+        { name: "customerName", description: "Company name" },
+        { name: "portalUrl",    description: "Portal URL (if set up)" },
+      ]),
+      notes: "Sent automatically to re-engage customers who haven't ordered recently.",
+    },
+  ];
+
+  for (const t of seeds) {
+    await db.execute(sql`
+      INSERT INTO message_templates (key, name, channel, subject, body, variables, notes)
+      VALUES (${t.key}, ${t.name}, ${t.channel}, ${t.subject}, ${t.body}, ${t.variables}::jsonb, ${t.notes})
+      ON CONFLICT (key) DO NOTHING
+    `);
+  }
+  console.log("[startup] message_templates table ensured");
 }

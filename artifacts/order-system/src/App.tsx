@@ -75,6 +75,7 @@ import WooOrders from "@/pages/WooOrders";
 import Bundles from "@/pages/Bundles";
 import Feedback from "@/pages/Feedback";
 import Chat from "@/pages/Chat";
+import Templates from "@/pages/Templates";
 import NotFound from "@/pages/not-found";
 import DemoGate from "@/pages/DemoGate";
 import DemoDashboard from "@/pages/DemoDashboard";
@@ -172,6 +173,7 @@ function Router() {
       <Route path="/bundles" component={Bundles} />
       <Route path="/feedback" component={Feedback} />
       <Route path="/chat" component={Chat} />
+      <Route path="/templates" component={Templates} />
       <Route component={NotFound} />
     </Switch>
   );
