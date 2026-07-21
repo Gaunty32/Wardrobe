@@ -382,26 +382,56 @@ router.get("/gbp/callback", async (req, res): Promise<void> => {
   }
 });
 
-// Cache locations for 10 minutes to avoid burning Google's low quota for new projects
+// In-memory cache: survives within a process lifetime; DB cache survives restarts
 let gbpLocationsCache: { locations: { name: string; title: string }[]; fetchedAt: number } | null = null;
-const GBP_LOCATIONS_TTL_MS = 10 * 60 * 1000;
+const GBP_LOCATIONS_TTL_MS = 60 * 60 * 1000; // 1 hour in-memory TTL
+
+async function getDbCachedLocations(): Promise<{ name: string; title: string }[] | null> {
+  try {
+    const [row] = await db.select().from(settingsTable).where(eq(settingsTable.key, "gbp_locations_cache"));
+    if (!row?.value) return null;
+    return JSON.parse(row.value) as { name: string; title: string }[];
+  } catch { return null; }
+}
+
+async function setDbCachedLocations(locations: { name: string; title: string }[]): Promise<void> {
+  try {
+    await db.insert(settingsTable).values({ key: "gbp_locations_cache", value: JSON.stringify(locations) })
+      .onConflictDoUpdate({ target: settingsTable.key, set: { value: JSON.stringify(locations), updatedAt: new Date() } });
+  } catch { /* non-fatal */ }
+}
 
 router.get("/gbp/locations", async (req, res): Promise<void> => {
   const forceRefresh = req.query.refresh === "1";
   const now = Date.now();
+
+  // Serve in-memory cache if fresh and not forcing refresh
   if (!forceRefresh && gbpLocationsCache && (now - gbpLocationsCache.fetchedAt) < GBP_LOCATIONS_TTL_MS) {
     res.json(gbpLocationsCache.locations);
     return;
   }
+
   try {
     const token = await getGbpAccessToken();
     if (!token) { res.status(401).json({ error: "Not connected to Google Business Profile" }); return; }
     const locations = await listGbpLocations(token);
-    gbpLocationsCache = { locations, fetchedAt: Date.now() };
+    // Persist to memory + DB so cache survives restarts
+    gbpLocationsCache = { locations, fetchedAt: now };
+    await setDbCachedLocations(locations);
     res.json(locations);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[GBP] /gbp/locations error:", msg);
+
+    // On quota/rate-limit errors, fall back to DB-persisted cache rather than erroring
+    if (msg.includes("Quota exceeded") || msg.includes("RATE_LIMIT") || msg.includes("429")) {
+      const cached = gbpLocationsCache?.locations ?? await getDbCachedLocations();
+      if (cached && cached.length > 0) {
+        console.log("[GBP] Serving DB-cached locations due to quota limit");
+        res.json(cached);
+        return;
+      }
+    }
     res.status(500).json({ error: msg });
   }
 });

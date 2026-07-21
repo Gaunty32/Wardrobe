@@ -1439,14 +1439,16 @@ export default function Settings() {
   });
 
   const [gbpLocationsForceRefresh, setGbpLocationsForceRefresh] = useState(false);
-  const { data: gbpLocations, error: gbpLocationsError, refetch: refetchGbpLocations, isFetching: gbpLocationsFetching } = useQuery<{ name: string; title: string }[]>({
+  const [gbpShowLocationSelector, setGbpShowLocationSelector] = useState(false);
+  const { data: gbpLocations, error: gbpLocationsError, isFetching: gbpLocationsFetching } = useQuery<{ name: string; title: string }[]>({
     queryKey: ["gbp-locations", gbpLocationsForceRefresh],
     queryFn: () => apiFetch(gbpLocationsForceRefresh ? "/gbp/locations?refresh=1" : "/gbp/locations"),
-    enabled: !!gbpStatus?.connected,
+    // Only fetch locations when: no location saved yet, or user explicitly asked to change/refresh
+    enabled: !!gbpStatus?.connected && (!gbpStatus.locationName || gbpShowLocationSelector || gbpLocationsForceRefresh),
     retry: false,
     refetchOnWindowFocus: false,
-    refetchOnMount: true,
-    staleTime: 5 * 60_000,
+    refetchOnMount: false,
+    staleTime: 60 * 60_000,
   });
 
   // Editable redirect URI — pre-fill once the auto-detected value arrives
@@ -2417,12 +2419,22 @@ export default function Settings() {
                     {!gbpStatus.locationName && (
                       <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        <span><strong>No location selected.</strong> Choose your business location from the dropdown below and click Save Location — posts won't work until this is set.</span>
+                        <span><strong>No location selected.</strong> Click "Load Locations" to choose your business — posts won't work until this is set.</span>
                       </div>
                     )}
+                    {!gbpStatus.locationName && !gbpShowLocationSelector && (
+                      <Button size="sm" variant="outline" className="w-fit gap-2" onClick={() => setGbpShowLocationSelector(true)}>
+                        <Globe className="w-4 h-4" /> Load Locations
+                      </Button>
+                    )}
+                    {gbpStatus.locationName && !gbpShowLocationSelector && (
+                      <Button size="sm" variant="ghost" className="w-fit text-xs text-muted-foreground" onClick={() => setGbpShowLocationSelector(true)}>
+                        Change Location
+                      </Button>
+                    )}
 
-                    {/* Location fetch error */}
-                    {gbpLocationsError && (() => {
+                    {/* Location fetch error — only relevant when selector is open */}
+                    {gbpShowLocationSelector && gbpLocationsError && (() => {
                       const msg = (gbpLocationsError as any)?.message ?? String(gbpLocationsError);
                       let content: React.ReactNode;
                       if (msg.startsWith("SERVICE_DISABLED:")) {
@@ -2460,8 +2472,8 @@ export default function Settings() {
                       );
                     })()}
 
-                    {/* Location selector */}
-                    {gbpLocations && gbpLocations.length > 0 && (
+                    {/* Location selector — shown when user explicitly opens it */}
+                    {gbpShowLocationSelector && gbpLocations && gbpLocations.length > 0 && (
                       <div className="grid gap-2">
                         <Label>Business Location</Label>
                         <select
@@ -2487,6 +2499,7 @@ export default function Settings() {
                             try {
                               await apiFetch("/gbp/location", { method: "POST", body: JSON.stringify({ name: gbpSelectedLocation.name, title: gbpSelectedLocation.title }) });
                               toast({ title: "Location saved", description: gbpSelectedLocation.title });
+                              setGbpShowLocationSelector(false);
                               queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
                             } catch { toast({ title: "Failed to save location", variant: "destructive" }); }
                             finally { setSavingGbp(false); }
