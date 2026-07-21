@@ -2,7 +2,7 @@ import { schedule, type ScheduledTask } from "node-cron";
 import { db, settingsTable, customersTable, ordersTable, tasksTable } from "@workspace/db";
 import { eq, sql, and, or, isNull, lt, lte, isNotNull } from "drizzle-orm";
 import { runWooSync } from "./woo-sync";
-import { sendInvoiceEmail, buildCheckInEmail, sendEmail, isEmailConfigured, fetchLogoDataUrl } from "./email.js";
+import { sendInvoiceEmail, buildCheckInEmail, sendEmail, isEmailConfigured, fetchLogoDataUrl, buildDeliveryFollowupEmail } from "./email.js";
 import { postInvoiceToXero } from "./xero.js";
 
 let currentTask: ScheduledTask | null = null;
@@ -331,5 +331,87 @@ schedule("* * * * *", async () => {
     }
   } catch (err) {
     console.error("[invoice-scheduler] Scheduled invoice job failed:", err);
+  }
+});
+
+// ─── Local delivery 48-hour follow-up sends ───────────────────────────────────
+// Every minute: find orders whose follow-up window has elapsed and fire the
+// review-request email + GHL WhatsApp webhook, then mark as sent.
+schedule("* * * * *", async () => {
+  try {
+    const due = await db.execute(sql`
+      SELECT o.id, o.order_number, o.customer_name, o.local_delivery_actor_name,
+             c.email, c.logo_url, c.high_level_contact_id
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.local_delivery_followup_due_at <= now()
+        AND o.local_delivery_followup_due_at IS NOT NULL
+        AND o.local_delivery_followup_sent_at IS NULL
+    `);
+
+    for (const row of due.rows as any[]) {
+      // Atomically claim — prevents double-fire if two server instances run
+      const claimed = await db.execute(sql`
+        UPDATE orders
+        SET local_delivery_followup_sent_at = now(), updated_at = now()
+        WHERE id = ${row.id} AND local_delivery_followup_sent_at IS NULL
+        RETURNING id
+      `);
+      if (claimed.rows.length === 0) continue;
+
+      try {
+        const settingsRows = await db.execute(sql`
+          SELECT key, value FROM settings
+          WHERE key IN ('google_review_url', 'facebook_review_url', 'local_delivery_ghl_webhook_url')
+        `);
+        const sm: Record<string, string> = {};
+        for (const s of settingsRows.rows as any[]) sm[s.key] = s.value;
+
+        // Send follow-up email
+        if (row.email) {
+          const logoDataUrl = row.logo_url ? await fetchLogoDataUrl(row.logo_url) : null;
+          const { html, text } = buildDeliveryFollowupEmail({
+            customerName: row.customer_name ?? "there",
+            orderNumber: row.order_number,
+            actorName: row.local_delivery_actor_name ?? null,
+            googleReviewUrl: sm["google_review_url"] ?? null,
+            facebookReviewUrl: sm["facebook_review_url"] ?? null,
+            customerLogoDataUrl: logoDataUrl,
+          });
+          await sendEmail({
+            to: row.email,
+            subject: `How did your ${row.order_number} order arrive?`,
+            html,
+            text,
+          });
+        }
+
+        // Fire GHL follow-up webhook (WhatsApp)
+        if (sm["local_delivery_ghl_webhook_url"] && row.high_level_contact_id) {
+          fetch(sm["local_delivery_ghl_webhook_url"], {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eventType: "delivery_followup",
+              contactId: row.high_level_contact_id,
+              orderNumber: row.order_number,
+              customerName: row.customer_name,
+              actorName: row.local_delivery_actor_name ?? null,
+            }),
+          }).catch((e) => console.error("[delivery-followup] GHL webhook failed:", e));
+        }
+
+        console.log(`[delivery-followup] Sent for ${row.order_number}`);
+      } catch (err) {
+        console.error(`[delivery-followup] Failed for ${row.order_number}:`, err);
+        // Restore so the next tick retries
+        await db.execute(sql`
+          UPDATE orders SET local_delivery_followup_sent_at = NULL, updated_at = now()
+          WHERE id = ${row.id}
+        `).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error("[delivery-followup] Job failed:", err);
   }
 });

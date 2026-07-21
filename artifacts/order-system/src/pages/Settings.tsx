@@ -474,6 +474,9 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
   const [webhookUrl, setWebhookUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [locationId, setLocationId] = useState("");
+  const [deliveryWebhookUrl, setDeliveryWebhookUrl] = useState("");
+  const [googleReviewUrl, setGoogleReviewUrl] = useState("");
+  const [facebookReviewUrl, setFacebookReviewUrl] = useState("");
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -481,6 +484,9 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
       setWebhookUrl(rawSettings["high_level_webhook_url"] ?? "");
       setApiKey(rawSettings["high_level_api_key"] ?? "");
       setLocationId(rawSettings["high_level_location_id"] ?? "");
+      setDeliveryWebhookUrl(rawSettings["local_delivery_ghl_webhook_url"] ?? "");
+      setGoogleReviewUrl(rawSettings["google_review_url"] ?? "");
+      setFacebookReviewUrl(rawSettings["facebook_review_url"] ?? "");
       setLoaded(true);
     }
   }, [rawSettings, loaded]);
@@ -494,6 +500,9 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
           high_level_webhook_url: webhookUrl || null,
           high_level_api_key: apiKey || null,
           high_level_location_id: locationId || null,
+          local_delivery_ghl_webhook_url: deliveryWebhookUrl || null,
+          google_review_url: googleReviewUrl || null,
+          facebook_review_url: facebookReviewUrl || null,
         }),
       }).then((r) => { if (!r.ok) throw new Error("Save failed"); return r.json(); }),
     onSuccess: () => {
@@ -597,6 +606,57 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
         </div>
         <Button size="sm" className="gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
           {saveMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><CheckCircle className="w-4 h-4" />Save Webhook URL</>}
+        </Button>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-amber-500" />
+          <h2 className="font-semibold text-base">Local Delivery Notifications</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          When a <strong>Send Invoice</strong> is triggered for a <strong>local delivery</strong> order, SBS automatically sends the customer an out-for-delivery email and fires your GHL automation (for WhatsApp). 48 hours later a follow-up review-request email and WhatsApp are sent automatically.
+        </p>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="deliveryWebhookUrl">Local Delivery GHL Webhook URL</Label>
+            <Input
+              id="deliveryWebhookUrl"
+              placeholder="https://services.leadconnectorhq.com/hooks/..."
+              value={deliveryWebhookUrl}
+              onChange={(e) => setDeliveryWebhookUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              GHL automation webhook for local delivery events. The payload includes <code>eventType</code> (<code>out_for_delivery</code> or <code>delivery_followup</code>), <code>contactId</code>, <code>orderNumber</code>, <code>customerName</code>, and <code>actorName</code>.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="googleReviewUrl">Google Review Link</Label>
+            <Input
+              id="googleReviewUrl"
+              placeholder="https://g.page/r/..."
+              value={googleReviewUrl}
+              onChange={(e) => setGoogleReviewUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Your Google Business Profile review link — shown as a button in the 48h follow-up email.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="facebookReviewUrl">Facebook Review Link</Label>
+            <Input
+              id="facebookReviewUrl"
+              placeholder="https://www.facebook.com/..."
+              value={facebookReviewUrl}
+              onChange={(e) => setFacebookReviewUrl(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Your Facebook page reviews URL — shown as a button in the 48h follow-up email.
+            </p>
+          </div>
+        </div>
+        <Button size="sm" className="gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
+          {saveMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><CheckCircle className="w-4 h-4" />Save</>}
         </Button>
       </div>
 

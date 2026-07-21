@@ -6,6 +6,7 @@ import {
   sendInvoiceEmail, getSmtpConfig, testSmtpConnection,
   buildInvoiceEmail, generateInvoicePDF, buildInvoiceDataForOrder,
   fetchLogoDataUrl, sendEmail,
+  buildLocalDeliveryNotificationEmail,
 } from "../services/email";
 import { postInvoiceToXero } from "../services/xero";
 import { logOrderAction, getActor } from "../services/orderLog";
@@ -373,6 +374,79 @@ router.post("/invoices/:orderId/send-email", async (req, res): Promise<void> => 
     const result = await sendInvoiceEmail(idParse.data, toEmailOverride);
 
     await logOrderAction(idParse.data, "Invoice sent", getActor(req), `Invoice emailed to ${result.sentTo}`);
+
+    // ── Local delivery: out-for-delivery notification + 48h follow-up schedule ─
+    {
+      const [deliveryOrder] = await db
+        .select({
+          shippingMethod: ordersTable.shippingMethod,
+          customerName: ordersTable.customerName,
+          orderNumber: ordersTable.orderNumber,
+          customerId: ordersTable.customerId,
+          highLevelContactId: customersTable.highLevelContactId,
+          customerEmail: customersTable.email,
+          customerLogoUrl: customersTable.logoUrl,
+        })
+        .from(ordersTable)
+        .leftJoin(customersTable, eq(ordersTable.customerId, customersTable.id))
+        .where(eq(ordersTable.id, idParse.data));
+
+      if (deliveryOrder?.shippingMethod === "local_delivery") {
+        const actor = getActor(req);
+        const actorName = actor !== "System" ? actor : null;
+
+        // 1. Send out-for-delivery notification email
+        if (deliveryOrder.customerEmail) {
+          try {
+            const logoDataUrl = deliveryOrder.customerLogoUrl
+              ? await fetchLogoDataUrl(deliveryOrder.customerLogoUrl)
+              : null;
+            const { html, text } = buildLocalDeliveryNotificationEmail({
+              customerName: deliveryOrder.customerName ?? "there",
+              orderNumber: deliveryOrder.orderNumber,
+              customerLogoDataUrl: logoDataUrl,
+            });
+            await sendEmail({
+              to: deliveryOrder.customerEmail,
+              subject: `Your ${deliveryOrder.orderNumber} order is out for delivery today 🚚`,
+              html,
+              text,
+            });
+          } catch (e) {
+            console.error("[local-delivery] Notification email failed:", e);
+          }
+        }
+
+        // 2. Fire GHL webhook for WhatsApp notification (non-blocking)
+        const [webhookRow] = await db
+          .select({ value: settingsTable.value })
+          .from(settingsTable)
+          .where(eq(settingsTable.key, "local_delivery_ghl_webhook_url"));
+        if (webhookRow?.value && deliveryOrder.highLevelContactId) {
+          fetch(webhookRow.value, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eventType: "out_for_delivery",
+              contactId: deliveryOrder.highLevelContactId,
+              orderNumber: deliveryOrder.orderNumber,
+              customerName: deliveryOrder.customerName,
+            }),
+          }).catch((e) => console.error("[local-delivery] GHL webhook failed:", e));
+        }
+
+        // 3. Schedule 48-hour follow-up
+        await db.execute(sql`
+          UPDATE orders
+          SET local_delivery_followup_due_at = now() + interval '48 hours',
+              local_delivery_actor_name = ${actorName},
+              updated_at = now()
+          WHERE id = ${idParse.data}
+        `);
+        await logOrderAction(idParse.data, "Local delivery notification sent", actor,
+          "Out-for-delivery email sent; 48h follow-up scheduled");
+      }
+    }
 
     // Auto-post to Xero if connected (non-blocking — best effort)
     let xeroResult: { xeroInvoiceId?: string; xeroInvoiceStatus?: string } = {};

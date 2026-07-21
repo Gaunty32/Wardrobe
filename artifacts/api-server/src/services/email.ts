@@ -3012,3 +3012,147 @@ export function buildCheckInEmail(opts: {
 
   return { html, text };
 }
+
+// ─── Local delivery out-for-delivery notification email ───────────────────────
+export function buildLocalDeliveryNotificationEmail(opts: {
+  customerName: string;
+  orderNumber: string;
+  customerLogoDataUrl?: string | null;
+}): { html: string; text: string } {
+  const { customerName, orderNumber, customerLogoDataUrl } = opts;
+  const firstName = customerName.split(/\s/)[0] || "there";
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#eef2f8;padding:32px 12px;margin:0;">
+  <div style="max-width:600px;margin:0 auto;">
+    <div style="background-color:#1e3a8a;background-image:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);border-radius:16px 16px 0 0;padding:36px 40px 32px;text-align:center;">
+      <table role="presentation" align="center" style="margin:0 auto 20px;border-collapse:collapse;"><tr>
+        <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+          <img src="${SBS_LOGO_COLOUR_DATA_URL}" alt="Select Branding Solutions" style="height:36px;display:block;" />
+        </td>
+        ${customerLogoDataUrl ? `<td style="padding:0 14px;color:#94a3b8;font-size:20px;vertical-align:middle;">&times;</td>
+        <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+          <img src="${customerLogoDataUrl}" alt="${customerName}" style="height:36px;max-width:140px;display:block;object-fit:contain;" />
+        </td>` : ""}
+      </tr></table>
+      <div style="font-size:48px;margin:0 0 12px;">🚚</div>
+      <h1 style="color:#ffffff;font-size:26px;font-weight:800;margin:0;line-height:1.3;">Your order is out for delivery today!</h1>
+    </div>
+    <div style="background:#ffffff;padding:36px 40px;border-left:1px solid #e6ebf2;border-right:1px solid #e6ebf2;">
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 20px;">Hi ${firstName},</p>
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 20px;">
+        Great news — your order <strong>${orderNumber}</strong> from Select Branding Solutions is on its way to you today!
+      </p>
+      <div style="background:#f0f7ff;border:1px solid #dbeafe;border-radius:12px;padding:20px 24px;margin:0 0 24px;">
+        <div style="display:flex;align-items:flex-start;gap:14px;">
+          <span style="font-size:32px;flex-shrink:0;">🧑‍✈️</span>
+          <div>
+            <p style="color:#1e3a8a;font-size:14.5px;font-weight:700;margin:0 0 6px;">Tim — Your Local Delivery Driver</p>
+            <p style="color:#475569;font-size:14px;line-height:1.6;margin:0;">Tim has your parcel and will be delivering it to you <strong>today between 8:30am and 4pm</strong>.</p>
+          </div>
+        </div>
+      </div>
+      <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 24px;">
+        If you have any questions or there's anything you need, please don't hesitate to get in touch — we're always happy to help.
+      </p>
+      <div style="text-align:center;margin:0 0 8px;">
+        <a href="mailto:info@selectbranding.co.uk" style="display:inline-block;background:#1e3a8a;color:#ffffff;text-decoration:none;padding:14px 36px;border-radius:10px;font-size:15px;font-weight:700;box-shadow:0 4px 14px rgba(30,58,138,0.35);">Get in Touch</a>
+      </div>
+    </div>
+    <div style="background:#0f172a;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center;">
+      <p style="color:#93c5fd;font-size:13px;font-weight:700;margin:0 0 4px;">Your uniform. Your people. Your brand.</p>
+      <p style="color:#64748b;font-size:11.5px;margin:8px 0 0;">Select Branding Solutions &bull; info@selectbranding.co.uk &bull; 0113 255 2694</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const text = `Hi ${firstName},\n\nYour order ${orderNumber} from Select Branding Solutions is out for delivery today!\n\nTim, our local delivery driver, has your parcel and will be with you between 8:30am and 4pm.\n\nAny questions: info@selectbranding.co.uk | 0113 255 2694\n\nSelect Branding Solutions`;
+  return { html, text };
+}
+
+// ─── 48-hour delivery follow-up / review request email ────────────────────────
+export function buildDeliveryFollowupEmail(opts: {
+  customerName: string;
+  orderNumber: string;
+  actorName?: string | null;
+  googleReviewUrl?: string | null;
+  facebookReviewUrl?: string | null;
+  customerLogoDataUrl?: string | null;
+}): { html: string; text: string } {
+  const { customerName, orderNumber, actorName, googleReviewUrl, facebookReviewUrl, customerLogoDataUrl } = opts;
+  const firstName = customerName.split(/\s/)[0] || "there";
+  const hasReview = googleReviewUrl || facebookReviewUrl;
+
+  const reviewButtons = hasReview ? `
+      <div style="text-align:center;margin:20px 0;">
+        ${googleReviewUrl ? `<a href="${googleReviewUrl}" style="display:inline-block;background:#4285F4;color:#ffffff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:14px;font-weight:700;margin:4px;box-shadow:0 3px 10px rgba(66,133,244,0.35);">⭐ Review on Google</a>` : ""}
+        ${facebookReviewUrl ? `<a href="${facebookReviewUrl}" style="display:inline-block;background:#1877F2;color:#ffffff;text-decoration:none;padding:13px 26px;border-radius:10px;font-size:14px;font-weight:700;margin:4px;box-shadow:0 3px 10px rgba(24,119,242,0.35);">👍 Review on Facebook</a>` : ""}
+      </div>` : "";
+
+  const actorBlock = `
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:18px 22px;margin:0 0 24px;">
+        <p style="color:#15803d;font-size:13.5px;font-weight:700;margin:0 0 6px;">⭐ Mention your team member by name</p>
+        <p style="color:#374151;font-size:13.5px;line-height:1.6;margin:0;">${
+          actorName
+            ? `If <strong>${actorName}</strong> went above and beyond for you, please do mention them by name in your review — it means the world to the team and really makes a difference to a small business like ours.`
+            : `If anyone in our team went above and beyond for you, please do mention them by name in your review — it means the world to the team and really makes a difference.`
+        }</p>
+      </div>`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /></head>
+<body style="font-family:'Segoe UI',Arial,sans-serif;background:#eef2f8;padding:32px 12px;margin:0;">
+  <div style="max-width:600px;margin:0 auto;">
+    <div style="background-color:#1e3a8a;background-image:linear-gradient(135deg,#0f172a 0%,#1e3a8a 100%);border-radius:16px 16px 0 0;padding:36px 40px 32px;text-align:center;">
+      <table role="presentation" align="center" style="margin:0 auto 20px;border-collapse:collapse;"><tr>
+        <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+          <img src="${SBS_LOGO_COLOUR_DATA_URL}" alt="Select Branding Solutions" style="height:36px;display:block;" />
+        </td>
+        ${customerLogoDataUrl ? `<td style="padding:0 14px;color:#94a3b8;font-size:20px;vertical-align:middle;">&times;</td>
+        <td style="padding:10px 18px;background:#ffffff;border-radius:10px;vertical-align:middle;">
+          <img src="${customerLogoDataUrl}" alt="${customerName}" style="height:36px;max-width:140px;display:block;object-fit:contain;" />
+        </td>` : ""}
+      </tr></table>
+      <div style="font-size:48px;margin:0 0 12px;">📦</div>
+      <h1 style="color:#ffffff;font-size:26px;font-weight:800;margin:0;line-height:1.3;">How did your order arrive?</h1>
+    </div>
+    <div style="background:#ffffff;padding:36px 40px;border-left:1px solid #e6ebf2;border-right:1px solid #e6ebf2;">
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 20px;">Hi ${firstName},</p>
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 20px;">
+        We just wanted to check in and make sure your order <strong>${orderNumber}</strong> arrived safely and everything is just as you expected. We hope you and your team are delighted with it!
+      </p>
+      <p style="color:#334155;font-size:15.5px;line-height:1.7;margin:0 0 24px;">
+        If anything wasn't quite right, please let us know straight away — we'll always put it right.
+      </p>
+      ${hasReview ? `
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:20px 22px;margin:0 0 16px;">
+        <p style="color:#92400e;font-size:14px;font-weight:700;margin:0 0 8px;">💛 Happy with your order? We'd love a review!</p>
+        <p style="color:#374151;font-size:13.5px;line-height:1.6;margin:0;">Reviews make a huge difference to a small business like ours. If you have a spare moment, a few words on Google or Facebook would mean so much.</p>
+      </div>
+      ${reviewButtons}` : ""}
+      ${actorBlock}
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;">
+        <p style="color:#374151;font-size:13.5px;font-weight:600;margin:0 0 4px;">Any questions or issues?</p>
+        <p style="color:#64748b;font-size:13px;margin:0 0 6px;">Get in touch — we're always happy to help.</p>
+        <p style="color:#1e3a8a;font-size:13.5px;font-weight:700;margin:0;">📧 info@selectbranding.co.uk &nbsp;&nbsp; 📞 0113 255 2694</p>
+      </div>
+    </div>
+    <div style="background:#0f172a;border-radius:0 0 16px 16px;padding:24px 40px;text-align:center;">
+      <p style="color:#93c5fd;font-size:13px;font-weight:700;margin:0 0 4px;">Your uniform. Your people. Your brand.</p>
+      <p style="color:#64748b;font-size:11.5px;margin:8px 0 0;">Select Branding Solutions &bull; info@selectbranding.co.uk &bull; 0113 255 2694</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const reviewText = hasReview
+    ? `\nWe'd love it if you could leave us a review:\n${googleReviewUrl ? `Google: ${googleReviewUrl}\n` : ""}${facebookReviewUrl ? `Facebook: ${facebookReviewUrl}\n` : ""}${actorName ? `\nIf ${actorName} went above and beyond, please mention them by name — it means so much to the team.\n` : "\nIf anyone in our team went above and beyond, please mention them by name.\n"}`
+    : "";
+
+  const text = `Hi ${firstName},\n\nWe just wanted to check in and make sure your order ${orderNumber} arrived safely and everything is as expected. We hope you and your team are delighted!\n\nIf there's anything that wasn't quite right, please let us know — we'll always put it right.\n${reviewText}\nAny questions: info@selectbranding.co.uk | 0113 255 2694\n\nSelect Branding Solutions`;
+  return { html, text };
+}

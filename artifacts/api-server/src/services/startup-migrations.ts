@@ -2523,4 +2523,10 @@ export async function refreshProductIssues(): Promise<void> {
   await db.execute(sql`
     ALTER TABLE customers ADD COLUMN IF NOT EXISTS checkin_email_sent_at timestamptz
   `);
+
+  // ── Local delivery follow-up columns ──────────────────────────────────────
+  await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS local_delivery_followup_due_at timestamptz`);
+  await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS local_delivery_followup_sent_at timestamptz`);
+  await db.execute(sql`ALTER TABLE orders ADD COLUMN IF NOT EXISTS local_delivery_actor_name text`);
+  console.log("[startup] Local delivery follow-up columns ensured");
 }
