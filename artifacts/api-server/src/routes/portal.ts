@@ -2070,7 +2070,7 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
   const parsed = z.object({
     poNumber: z.string().max(100).optional().nullable(),
   }).safeParse(req.body);
-  const poNumber: string | null = parsed.success ? (parsed.data.poNumber ?? null) : null;
+  const poNumber: string | null = parsed.success ? (parsed.data.poNumber || null) : null;
 
   // Resolve manager email and name
   const mgrUserRows = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${managerUserId} LIMIT 1`);
@@ -2192,18 +2192,30 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
   const finalPortalStatus = allFromStock ? 'confirmed' : 'submitted';
   const finalOrderStatus  = allFromStock ? 'confirmed'  : 'portal_pending';
 
-  const approveResult = await db.execute(sql`
-    UPDATE orders SET portal_status = ${finalPortalStatus}, status = ${finalOrderStatus}, updated_at = now(),
-      portal_approved_by_email = ${mgrEmail},
-      portal_approved_by_name = ${mgrName},
-      portal_approved_at = now(),
-      po_number = COALESCE(${poNumber}, po_number),
-      notes = CASE WHEN ${stockNote} IS NOT NULL
-                   THEN COALESCE(notes || E'\n', '') || ${stockNote ?? ''}
-                   ELSE notes END
-    WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
-    RETURNING order_number, portal_submitted_by_email, portal_submitted_by_name
-  `);
+  let approveResult: any;
+  try {
+    approveResult = await db.execute(sql`
+      UPDATE orders SET portal_status = ${finalPortalStatus}, status = ${finalOrderStatus}, updated_at = now(),
+        portal_approved_by_email = ${mgrEmail},
+        portal_approved_by_name = ${mgrName},
+        portal_approved_at = now(),
+        po_number = COALESCE(${poNumber}, po_number),
+        notes = CASE WHEN ${stockNote} IS NOT NULL
+                     THEN COALESCE(notes || E'\n', '') || ${stockNote ?? ''}
+                     ELSE notes END
+      WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+      RETURNING order_number, portal_submitted_by_email, portal_submitted_by_name
+    `);
+  } catch (err: any) {
+    console.error('[portal submit] UPDATE orders failed. orderId=%d customerId=%d finalPortalStatus=%s finalOrderStatus=%s poNumber=%s stockNote=%s',
+      orderId, customerId, finalPortalStatus, finalOrderStatus, poNumber, stockNote);
+    console.error('[portal submit] PG error message:', err?.message);
+    console.error('[portal submit] PG error cause:', err?.cause?.message ?? err?.cause ?? '(no cause)');
+    console.error('[portal submit] PG error detail:', err?.detail ?? err?.cause?.detail ?? '(no detail)');
+    console.error('[portal submit] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+    res.status(500).json({ error: 'Failed to approve order' });
+    return;
+  }
   const approvedOrder = approveResult.rows[0] as any;
 
   // Notify the person who originally submitted the order
