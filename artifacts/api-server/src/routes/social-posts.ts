@@ -385,6 +385,12 @@ router.get("/gbp/callback", async (req, res): Promise<void> => {
 // In-memory cache: survives within a process lifetime; DB cache survives restarts
 let gbpLocationsCache: { locations: { name: string; title: string }[]; fetchedAt: number } | null = null;
 const GBP_LOCATIONS_TTL_MS = 60 * 60 * 1000; // 1 hour in-memory TTL
+const GBP_RATE_LIMIT_COOLDOWN_MS = 65_000; // 65 seconds between retries after a rate limit hit
+let gbpRateLimitHitAt: number | null = null;
+
+function isGbpRateLimit(msg: string): boolean {
+  return msg.includes("Quota exceeded") || msg.includes("RATE_LIMIT") || msg.includes("429") || msg.includes("rateLimitExceeded");
+}
 
 async function getDbCachedLocations(): Promise<{ name: string; title: string }[] | null> {
   try {
@@ -405,6 +411,23 @@ router.get("/gbp/locations", async (req, res): Promise<void> => {
   const forceRefresh = req.query.refresh === "1";
   const now = Date.now();
 
+  // Always check cache first — even on forceRefresh if we're in a rate-limit cooldown
+  const inCooldown = gbpRateLimitHitAt !== null && (now - gbpRateLimitHitAt) < GBP_RATE_LIMIT_COOLDOWN_MS;
+  const retryAfterSec = inCooldown ? Math.ceil((GBP_RATE_LIMIT_COOLDOWN_MS - (now - gbpRateLimitHitAt!)) / 1000) : 0;
+
+  if (inCooldown) {
+    // Serve whatever cache we have; if none, return a cooldown error with retryAfter
+    const cached = gbpLocationsCache?.locations ?? await getDbCachedLocations();
+    if (cached && cached.length > 0) {
+      console.log(`[GBP] In rate-limit cooldown (${retryAfterSec}s left) — serving cached locations`);
+      res.json(cached);
+      return;
+    }
+    console.log(`[GBP] In rate-limit cooldown (${retryAfterSec}s left) — no cache available`);
+    res.status(429).json({ error: "RATE_LIMIT_EXCEEDED: Google API rate limit hit. Please wait before retrying.", retryAfter: retryAfterSec });
+    return;
+  }
+
   // Serve in-memory cache if fresh and not forcing refresh
   if (!forceRefresh && gbpLocationsCache && (now - gbpLocationsCache.fetchedAt) < GBP_LOCATIONS_TTL_MS) {
     res.json(gbpLocationsCache.locations);
@@ -415,7 +438,8 @@ router.get("/gbp/locations", async (req, res): Promise<void> => {
     const token = await getGbpAccessToken();
     if (!token) { res.status(401).json({ error: "Not connected to Google Business Profile" }); return; }
     const locations = await listGbpLocations(token);
-    // Persist to memory + DB so cache survives restarts
+    // Success — clear any rate limit tracker, persist to memory + DB
+    gbpRateLimitHitAt = null;
     gbpLocationsCache = { locations, fetchedAt: now };
     await setDbCachedLocations(locations);
     res.json(locations);
@@ -423,14 +447,18 @@ router.get("/gbp/locations", async (req, res): Promise<void> => {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("[GBP] /gbp/locations error:", msg);
 
-    // On quota/rate-limit errors, fall back to DB-persisted cache rather than erroring
-    if (msg.includes("Quota exceeded") || msg.includes("RATE_LIMIT") || msg.includes("429")) {
+    if (isGbpRateLimit(msg)) {
+      gbpRateLimitHitAt = now;
+      // Fall back to DB-persisted cache rather than erroring if we have one
       const cached = gbpLocationsCache?.locations ?? await getDbCachedLocations();
       if (cached && cached.length > 0) {
         console.log("[GBP] Serving DB-cached locations due to quota limit");
         res.json(cached);
         return;
       }
+      // No cache — return rate limit error with retryAfter so the UI can count down
+      res.status(429).json({ error: `RATE_LIMIT_EXCEEDED: ${msg}`, retryAfter: Math.ceil(GBP_RATE_LIMIT_COOLDOWN_MS / 1000) });
+      return;
     }
     res.status(500).json({ error: msg });
   }
