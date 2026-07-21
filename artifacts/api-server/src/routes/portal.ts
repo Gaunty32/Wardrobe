@@ -2090,28 +2090,138 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
     }
   }
 
+  // ── Stock check: allocate from customer stores before forwarding to SBS ────
+  const orderItemsRows = await db.execute(sql`
+    SELECT id, product_id, product_name, colour, size, quantity, unit_price, recipient_name
+    FROM order_items WHERE order_id = ${orderId}
+  `);
+  const orderItems = orderItemsRows.rows as any[];
+
+  type PickingLine = { stockItemId: number; itemName: string; colour: string | null; size: string | null; quantity: number; recipientName: string | null; location: string | null };
+  const pickingNoteLines: PickingLine[] = [];
+  const itemUpdates: { id: number; newQty: number }[] = [];
+  let allFromStock = orderItems.length > 0;
+
+  for (const item of orderItems) {
+    let allocatedFromStock = 0;
+    if (item.product_id) {
+      const stockRows = await db.execute(sql`
+        SELECT id, stock_quantity, location
+        FROM customer_finished_items
+        WHERE customer_id = ${customerId}
+          AND product_id = ${item.product_id}
+          AND stock_quantity > 0
+          AND (size IS NULL OR lower(size) = lower(${item.size ?? ""}))
+          AND (colour IS NULL OR lower(colour) = lower(${item.colour ?? ""}))
+        ORDER BY stock_quantity DESC
+        LIMIT 1
+      `);
+      if (stockRows.rows.length > 0) {
+        const si = stockRows.rows[0] as any;
+        allocatedFromStock = Math.min(Number(si.stock_quantity), Number(item.quantity));
+        if (allocatedFromStock > 0) {
+          await db.execute(sql`
+            UPDATE customer_finished_items
+            SET stock_quantity = stock_quantity - ${allocatedFromStock}, updated_at = now()
+            WHERE id = ${si.id}
+          `);
+          pickingNoteLines.push({
+            stockItemId: si.id,
+            itemName: item.product_name,
+            colour: item.colour ?? null,
+            size: item.size ?? null,
+            quantity: allocatedFromStock,
+            recipientName: item.recipient_name ?? null,
+            location: si.location ?? null,
+          });
+        }
+      }
+    }
+    const remainingQty = Number(item.quantity) - allocatedFromStock;
+    if (remainingQty > 0) {
+      allFromStock = false;
+    }
+    itemUpdates.push({ id: item.id, newQty: remainingQty });
+  }
+
+  // Record stock movements and build picking note reference
+  let pickingNoteRef: string | null = null;
+  if (pickingNoteLines.length > 0) {
+    pickingNoteRef = `PN-${Date.now()}`;
+    for (const pl of pickingNoteLines) {
+      await db.execute(sql`
+        INSERT INTO customer_stock_movements
+          (customer_id, stock_item_id, movement_type, quantity, reference, recipient_name, notes, created_by_name, created_at)
+        VALUES
+          (${customerId}, ${pl.stockItemId}, 'issue', ${-pl.quantity}, ${pickingNoteRef}, ${pl.recipientName},
+           'Issued via portal order approval', ${mgrName}, now())
+      `);
+    }
+  }
+
+  // Apply item quantity changes: delete fully-covered lines, reduce partial ones
+  for (const upd of itemUpdates) {
+    if (upd.newQty === 0) {
+      await db.execute(sql`DELETE FROM order_items WHERE id = ${upd.id}`);
+    } else if (upd.newQty !== Number(orderItems.find(i => i.id === upd.id)?.quantity)) {
+      await db.execute(sql`
+        UPDATE order_items
+        SET quantity = ${upd.newQty},
+            line_total = (unit_price * ${upd.newQty})::numeric(10,2)
+        WHERE id = ${upd.id}
+      `);
+    }
+  }
+
+  // Recalculate order total if any lines changed
+  if (itemUpdates.some(u => u.newQty !== Number(orderItems.find(i => i.id === u.id)?.quantity))) {
+    await db.execute(sql`
+      UPDATE orders
+      SET total_amount = COALESCE((SELECT SUM(line_total) FROM order_items WHERE order_id = ${orderId}), 0)
+      WHERE id = ${orderId}
+    `);
+  }
+
+  // ── Decide final status ────────────────────────────────────────────────────
+  const stockNote = pickingNoteRef
+    ? (allFromStock
+        ? `All items fulfilled from store stock (${pickingNoteRef}).`
+        : `${pickingNoteLines.length} line(s) fulfilled from store stock (${pickingNoteRef}); remainder forwarded to SBS.`)
+    : null;
+
+  const finalPortalStatus = allFromStock ? 'confirmed' : 'submitted';
+  const finalOrderStatus  = allFromStock ? 'confirmed'  : 'portal_pending';
+
   const approveResult = await db.execute(sql`
-    UPDATE orders SET portal_status = 'submitted', status = 'portal_pending', updated_at = now(),
+    UPDATE orders SET portal_status = ${finalPortalStatus}, status = ${finalOrderStatus}, updated_at = now(),
       portal_approved_by_email = ${mgrEmail},
       portal_approved_by_name = ${mgrName},
       portal_approved_at = now(),
-      po_number = COALESCE(${poNumber}, po_number)
+      po_number = COALESCE(${poNumber}, po_number),
+      notes = CASE WHEN ${stockNote} IS NOT NULL
+                   THEN COALESCE(notes || E'\n', '') || ${stockNote ?? ''}
+                   ELSE notes END
     WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
     RETURNING order_number, portal_submitted_by_email, portal_submitted_by_name
   `);
   const approvedOrder = approveResult.rows[0] as any;
+
   // Notify the person who originally submitted the order
   if (approvedOrder?.portal_submitted_by_email) {
+    const notifBody = allFromStock
+      ? `Your order has been approved by ${mgrName} and will be fulfilled from store stock.`
+      : `Your order has been approved by ${mgrName} and submitted to Select Branding Solutions.`;
     notifyPortalUserByEmail({
       customerId,
       email: approvedOrder.portal_submitted_by_email,
       title: `Order ${approvedOrder.order_number} has been approved`,
-      body: `Your order has been approved by ${mgrName} and submitted to Select Branding Solutions.`,
+      body: notifBody,
       link: "/orders",
       type: "approved",
     }).catch(() => {});
   }
-  res.json({ ok: true });
+
+  res.json({ ok: true, allFromStock, pickingNote: pickingNoteRef });
 });
 
 // ─── portal: manager — reject a pending order ─────────────────────────────────
