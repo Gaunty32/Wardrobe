@@ -2443,7 +2443,12 @@ export default function Settings() {
                     {!gbpStatus.locationName && (
                       <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                        <span><strong>No location selected.</strong> Click "Load Locations" to choose your business — posts won't work until this is set.</span>
+                        <span>
+                          <strong>No location selected.</strong>{" "}
+                          {gbpShowLocationSelector
+                            ? "Choose your business location from the dropdown below and click Save Location — posts won't work until this is set."
+                            : "Click \"Load Locations\" to choose your business — posts won't work until this is set."}
+                        </span>
                       </div>
                     )}
                     {!gbpStatus.locationName && !gbpShowLocationSelector && (
