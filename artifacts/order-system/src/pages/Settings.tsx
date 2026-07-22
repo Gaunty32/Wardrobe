@@ -1365,6 +1365,9 @@ export default function Settings() {
   const [gbpClientSecret, setGbpClientSecret] = useState("");
   const [savingGbp, setSavingGbp] = useState(false);
   const [gbpSelectedLocation, setGbpSelectedLocation] = useState<{ name: string; title: string } | null>(null);
+  const [gbpManualEntry, setGbpManualEntry] = useState(false);
+  const [gbpManualName, setGbpManualName] = useState("");
+  const [gbpManualTitle, setGbpManualTitle] = useState("");
 
   // Social test post
   const [testingPost, setTestingPost] = useState(false);
@@ -2510,10 +2513,73 @@ export default function Settings() {
                                 Retry
                               </Button>
                             )}
+                            {isRateLimit && !gbpManualEntry && (
+                              <button className="text-xs underline text-red-600 hover:text-red-800" onClick={() => setGbpManualEntry(true)}>
+                                Still failing? Enter location manually →
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
                     })()}
+
+                    {/* Manual location entry — fallback when API is rate-limited */}
+                    {gbpManualEntry && (
+                      <div className="border border-amber-300 bg-amber-50 rounded-md p-3 space-y-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-amber-800">Enter location manually</p>
+                          <p className="text-xs text-amber-700">
+                            Find your location name:{" "}
+                            <a href="https://business.google.com" target="_blank" rel="noopener noreferrer" className="underline font-medium">open business.google.com</a>
+                            {" "}→ click your business → copy the URL. It will contain a long number — paste the full URL or just the number below and we'll do the rest.
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <div>
+                            <Label className="text-xs text-amber-800">Business name (display name)</Label>
+                            <input
+                              className="mt-1 w-full border border-amber-300 rounded px-2 py-1.5 text-sm bg-white"
+                              placeholder="e.g. Select Branding Solutions"
+                              value={gbpManualTitle}
+                              onChange={e => setGbpManualTitle(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-amber-800">Location resource name</Label>
+                            <input
+                              className="mt-1 w-full border border-amber-300 rounded px-2 py-1.5 text-sm bg-white font-mono text-xs"
+                              placeholder="accounts/123456789/locations/987654321"
+                              value={gbpManualName}
+                              onChange={e => setGbpManualName(e.target.value)}
+                            />
+                            <p className="text-xs text-amber-600 mt-0.5">Format: accounts/…/locations/… (from your GBP URL or API Explorer)</p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="gap-1.5 border-amber-400 text-amber-800 hover:bg-amber-100"
+                              disabled={savingGbp || !gbpManualName.trim() || !gbpManualTitle.trim()}
+                              onClick={async () => {
+                                setSavingGbp(true);
+                                try {
+                                  await apiFetch("/gbp/location", { method: "POST", body: JSON.stringify({ name: gbpManualName.trim(), title: gbpManualTitle.trim() }) });
+                                  toast({ title: "Location saved", description: gbpManualTitle.trim() });
+                                  setGbpManualEntry(false);
+                                  setGbpShowLocationSelector(false);
+                                  queryClient.invalidateQueries({ queryKey: ["gbp-status"] });
+                                } catch { toast({ title: "Failed to save location", variant: "destructive" }); }
+                                finally { setSavingGbp(false); }
+                              }}
+                            >
+                              {savingGbp ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                              Save Location
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-xs text-amber-700" onClick={() => setGbpManualEntry(false)}>Cancel</Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Location selector — shown when user explicitly opens it */}
                     {gbpShowLocationSelector && gbpLocations && gbpLocations.length > 0 && (
