@@ -6,6 +6,7 @@ import { SBS_LOGO_DATA_URL, SBS_LOGO_COLOUR_DATA_URL } from "../assets/logo-data
 import { getResendClient } from "./resend-client.js";
 import { ObjectStorageService } from "../lib/objectStorage.js";
 import { getUncachableStripeClient } from "./stripeClient.js";
+import { getTemplate, applyVars } from "./template-engine.js";
 
 // ── SBS logo buffer for PDFKit (extracted from data URL) ─────────────────────
 const SBS_LOGO_BUFFER: Buffer | null = (() => {
@@ -1900,6 +1901,8 @@ export function buildInvoiceEmail(params: {
   poNumber?: string | null;
   carriageAmount?: number | null;
   zeroVat?: boolean;
+  subjectOverride?: string | null;
+  introLines?: string[] | null;
   items: Array<{
     productName: string;
     colour?: string | null;
@@ -1911,7 +1914,7 @@ export function buildInvoiceEmail(params: {
     vatRate?: number;
   }>;
 }): { subject: string; html: string; text: string } {
-  const subject = `Invoice ${params.orderNumber} — Select Branding Solutions`;
+  const subject = params.subjectOverride || `Invoice ${params.orderNumber} — Select Branding Solutions`;
   const firstName = toFirstName(params.contactFirstName ?? params.customerName);
   const isPaid = !!params.paidAt;
   const isCollection = params.shippingMethod
@@ -2050,8 +2053,15 @@ export function buildInvoiceEmail(params: {
         ${orderRefSubBar}
 
         <tr><td style="background:#1e3a5f;padding:24px 32px;">
-          <p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Hi ${firstName},</p>
-          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">Please find your invoice attached for order <strong style="color:#ffffff;">${params.orderNumber}</strong>.</p>
+          ${params.introLines && params.introLines.length > 0
+            ? params.introLines.map((line, i) =>
+                i === 0
+                  ? `<p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">${line}</p>`
+                  : `<p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">${line}</p>`
+              ).join("\n          ")
+            : `<p style="margin:0;font-size:20px;font-weight:700;color:#ffffff;line-height:1.3;">Hi ${firstName},</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#93c5fd;line-height:1.5;">Please find your invoice attached for order <strong style="color:#ffffff;">${params.orderNumber}</strong>.</p>`
+          }
         </td></tr>
 
         <tr><td style="padding:20px 32px 0;">
@@ -2132,8 +2142,10 @@ export function buildInvoiceEmail(params: {
 
   const text = [
     subject, ``,
-    `Hi ${firstName},`, ``,
-    `Please find your invoice attached for order ${params.orderNumber}.`, ``,
+    ...(params.introLines && params.introLines.length > 0
+      ? params.introLines.flatMap((line, i) => i === 0 ? [line, ``] : [line, ``])
+      : [`Hi ${firstName},`, ``, `Please find your invoice attached for order ${params.orderNumber}.`, ``]
+    ),
     `Invoice Date: ${invoiceDateStr}`,
     isPaid
       ? `Status: PAID — This invoice is for your records.`
@@ -2886,6 +2898,30 @@ export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string
     vatRate: parseFloat(i.vatRate as string),
   }));
 
+  // Pull subject + intro copy from the editable invoice_email message template.
+  // Falls back gracefully to the hardcoded defaults if the template is missing.
+  let subjectOverride: string | undefined;
+  let introLines: string[] | undefined;
+  try {
+    const tpl = await getTemplate("invoice_email");
+    if (tpl) {
+      const carriageAmt = parseFloat(String(order.carriageAmount ?? 0));
+      const subtotal = mappedItems.reduce((s, i) => s + i.lineTotal, 0);
+      const vatAmt = zeroVat ? 0 : mappedItems.reduce((s, i) => s + i.lineTotal * (i.vatRate ?? 0.2), 0) + carriageAmt * (zeroVat ? 0 : 0.2);
+      const totalIncVat = subtotal + carriageAmt + vatAmt;
+      const tplVars = {
+        firstName: contactFirstName ?? toFirstName(order.customerName) ?? "there",
+        orderNumber: order.orderNumber,
+        customerName: order.customerName ?? "",
+        totalIncVat: `£${totalIncVat.toFixed(2)}`,
+      };
+      if (tpl.subject) subjectOverride = applyVars(tpl.subject, tplVars);
+      if (tpl.body) introLines = applyVars(tpl.body, tplVars).split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+    }
+  } catch {
+    // Non-fatal — fall back to defaults
+  }
+
   const { subject, html, text } = buildInvoiceEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName,
@@ -2903,6 +2939,8 @@ export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string
     poNumber: order.poNumber,
     carriageAmount: parseFloat(String(order.carriageAmount ?? 0)),
     zeroVat,
+    subjectOverride,
+    introLines,
     items: mappedItems,
   });
 
