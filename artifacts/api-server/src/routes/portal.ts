@@ -2464,6 +2464,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
 
   await db.execute(sql`
     UPDATE orders SET portal_status = 'confirmed', status = 'confirmed', updated_at = now(),
+      order_date = now(),
       delivery_address_id = COALESCE(${deliveryAddressId}, delivery_address_id),
       attention_of = COALESCE(attention_of, ${attentionOf})
     WHERE id = ${orderId} AND source = 'portal'
