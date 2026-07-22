@@ -604,16 +604,36 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
       .where(eq(ordersTable.id, parsed.data.id))
       .returning();
   } catch (err) {
-    console.error("Dispatch order update failed, retrying without DPD fields:", err);
+    console.error("Dispatch order update failed, retrying without dpdJobId:", err);
     if (dpdResult) {
-      dpdError = `DPD booked (consignment ${dpdResult.consignmentNumber}) but saving the result failed — record the tracking number manually. ${err instanceof Error ? err.message : ""}`;
+      // Most likely cause: dpdJobId exceeds the integer column range in production.
+      // Try a middle fallback: save everything except dpdJobId so tracking is still stored.
+      try {
+        const { dpdJobId: _j, ...fieldsWithoutJobId } = updateFields;
+        [updated] = await db
+          .update(ordersTable)
+          .set(fieldsWithoutJobId)
+          .where(eq(ordersTable.id, parsed.data.id))
+          .returning();
+        console.warn(`[DPD] dpdJobId could not be stored (integer overflow likely) but tracking number saved for consignment ${dpdResult.consignmentNumber}`);
+      } catch (err2) {
+        console.error("Dispatch order update failed even without dpdJobId:", err2);
+        dpdError = `DPD booked (consignment ${dpdResult.consignmentNumber}) but saving the result failed — record the tracking number manually. ${err2 instanceof Error ? err2.message : ""}`;
+        const { trackingNumber: _t, dpdConsignmentId: _c, dpdJobId: _j, ...safeFields } = updateFields;
+        [updated] = await db
+          .update(ordersTable)
+          .set(safeFields)
+          .where(eq(ordersTable.id, parsed.data.id))
+          .returning();
+      }
+    } else {
+      const { trackingNumber: _t, dpdConsignmentId: _c, dpdJobId: _j, ...safeFields } = updateFields;
+      [updated] = await db
+        .update(ordersTable)
+        .set(safeFields)
+        .where(eq(ordersTable.id, parsed.data.id))
+        .returning();
     }
-    const { trackingNumber: _t, dpdConsignmentId: _c, dpdJobId: _j, ...safeFields } = updateFields;
-    [updated] = await db
-      .update(ordersTable)
-      .set(safeFields)
-      .where(eq(ordersTable.id, parsed.data.id))
-      .returning();
   }
 
   await logOrderAction(parsed.data.id,
