@@ -23,6 +23,7 @@ export const customersTable = pgTable("customers", {
   requiresPrepayment: boolean("requires_prepayment").notNull().default(false),
   zeroVat: boolean("zero_vat").notNull().default(false),
   poNumberRequired: boolean("po_number_required").notNull().default(false),
+  hasReviewed: boolean("has_reviewed").notNull().default(false),
   /** Centralised invoicing — official company/group name shown on invoices */
   invoiceName: text("invoice_name"),
   /** Centralised invoicing — address line 1 */

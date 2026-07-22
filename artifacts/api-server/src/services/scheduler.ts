@@ -348,6 +348,7 @@ schedule("* * * * *", async () => {
       WHERE o.local_delivery_followup_due_at <= now()
         AND o.local_delivery_followup_due_at IS NOT NULL
         AND o.local_delivery_followup_sent_at IS NULL
+        AND (c.has_reviewed IS NULL OR c.has_reviewed = false)
     `);
 
     for (const row of due.rows as any[]) {
@@ -429,5 +430,103 @@ schedule("* * * * *", async () => {
     }
   } catch (err) {
     console.error("[delivery-followup] Job failed:", err);
+  }
+});
+
+// ─── Invoice 48-hour follow-up sends (all non-local-delivery orders) ───────────
+// Every minute: find orders whose invoice follow-up window has elapsed, fire the
+// review-request email + GHL WhatsApp webhook, then mark as sent.
+// Skips customers who have already left a review (has_reviewed = true).
+schedule("* * * * *", async () => {
+  try {
+    const due = await db.execute(sql`
+      SELECT o.id, o.order_number, o.customer_name,
+             c.email, c.logo_url, c.high_level_contact_id
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.invoice_followup_due_at <= now()
+        AND o.invoice_followup_due_at IS NOT NULL
+        AND o.invoice_followup_sent_at IS NULL
+        AND (c.has_reviewed IS NULL OR c.has_reviewed = false)
+    `);
+
+    for (const row of due.rows as any[]) {
+      // Atomically claim — prevents double-fire if two server instances run
+      const claimed = await db.execute(sql`
+        UPDATE orders
+        SET invoice_followup_sent_at = now(), updated_at = now()
+        WHERE id = ${row.id} AND invoice_followup_sent_at IS NULL
+        RETURNING id
+      `);
+      if (claimed.rows.length === 0) continue;
+
+      try {
+        const settingsRows = await db.execute(sql`
+          SELECT key, value FROM settings
+          WHERE key IN ('google_review_url', 'facebook_review_url', 'local_delivery_ghl_webhook_url')
+        `);
+        const sm: Record<string, string> = {};
+        for (const s of settingsRows.rows as any[]) sm[s.key] = s.value;
+
+        const firstName = (row.customer_name ?? "there").split(/\s/)[0];
+        const tplVars = {
+          firstName,
+          orderNumber: row.order_number,
+          customerName: row.customer_name ?? "",
+          actorName: "",
+          googleReviewUrl: sm["google_review_url"] ?? "",
+          facebookReviewUrl: sm["facebook_review_url"] ?? "",
+        };
+        const [emailTpl, waTpl] = await Promise.all([
+          getTemplate("invoice_followup_email"),
+          getTemplate("invoice_followup_whatsapp"),
+        ]);
+
+        // Send follow-up email (falls back to delivery_followup_email template if not configured)
+        if (row.email) {
+          const logoDataUrl = row.logo_url ? await fetchLogoDataUrl(row.logo_url) : null;
+          const fallbackTpl = emailTpl ?? await getTemplate("delivery_followup_email");
+          const { html, text } = buildDeliveryFollowupEmail({
+            customerName: row.customer_name ?? "there",
+            orderNumber: row.order_number,
+            actorName: null,
+            googleReviewUrl: sm["google_review_url"] ?? null,
+            facebookReviewUrl: sm["facebook_review_url"] ?? null,
+            customerLogoDataUrl: logoDataUrl,
+          });
+          const subject = fallbackTpl?.subject
+            ? applyVars(fallbackTpl.subject, tplVars)
+            : `How was your ${row.order_number} order?`;
+          await sendEmail({ to: row.email, subject, html, text });
+        }
+
+        // Fire GHL webhook (WhatsApp)
+        if (sm["local_delivery_ghl_webhook_url"] && row.high_level_contact_id) {
+          const messageText = waTpl?.body ? applyVars(waTpl.body, tplVars) : undefined;
+          fetch(sm["local_delivery_ghl_webhook_url"], {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              eventType: "invoice_followup",
+              contactId: row.high_level_contact_id,
+              orderNumber: row.order_number,
+              customerName: row.customer_name,
+              ...(messageText ? { messageText } : {}),
+            }),
+          }).catch((e) => console.error("[invoice-followup] GHL webhook failed:", e));
+        }
+
+        console.log(`[invoice-followup] Sent for ${row.order_number}`);
+      } catch (err) {
+        console.error(`[invoice-followup] Failed for ${row.order_number}:`, err);
+        // Restore so the next tick retries
+        await db.execute(sql`
+          UPDATE orders SET invoice_followup_sent_at = NULL, updated_at = now()
+          WHERE id = ${row.id}
+        `).catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.error("[invoice-followup] Job failed:", err);
   }
 });

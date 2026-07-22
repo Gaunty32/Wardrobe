@@ -2987,8 +2987,17 @@ export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string
 
   if (!result.sent) throw new Error(result.error ?? "Failed to send invoice email");
 
+  const now = new Date();
+  const isLocalDelivery = ["free_local", "local_delivery"].includes(order.shippingMethod ?? "");
   await db.update(ordersTable)
-    .set({ invoiceEmailSentAt: new Date(), invoiceEmailSentTo: customerEmail, updatedAt: new Date() })
+    .set({
+      invoiceEmailSentAt: now,
+      invoiceEmailSentTo: customerEmail,
+      updatedAt: now,
+      // Schedule 48-hour review follow-up for all non-local-delivery orders.
+      // Local delivery orders use the separate local_delivery_followup_due_at system.
+      ...(!isLocalDelivery ? { invoiceFollowupDueAt: new Date(now.getTime() + 48 * 60 * 60 * 1000) } : {}),
+    })
     .where(eq(ordersTable.id, orderId));
 
   return { sentTo: customerEmail };

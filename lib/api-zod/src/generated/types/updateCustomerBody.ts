@@ -33,4 +33,5 @@ export interface UpdateCustomerBody {
   requiresPrepayment?: boolean;
   zeroVat?: boolean;
   poNumberRequired?: boolean;
+  hasReviewed?: boolean;
 }

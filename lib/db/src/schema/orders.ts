@@ -50,6 +50,10 @@ export const ordersTable = pgTable("orders", {
   numberOfBoxes: integer("number_of_boxes").notNull().default(1),
   /** WooCommerce internal order ID (used for API calls back to WC) */
   wooOrderId: integer("woo_order_id"),
+  /** Timestamp when the invoice follow-up email/WhatsApp should fire (48h after invoice email sent, non-local-delivery orders) */
+  invoiceFollowupDueAt: timestamp("invoice_followup_due_at", { withTimezone: true }),
+  /** Timestamp when the invoice follow-up was actually sent */
+  invoiceFollowupSentAt: timestamp("invoice_followup_sent_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

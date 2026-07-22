@@ -4788,6 +4788,23 @@ export default function CustomerDetail() {
     }
   };
 
+  const [hasReviewedToggling, setHasReviewedToggling] = useState(false);
+  const toggleHasReviewed = async (checked: boolean) => {
+    setHasReviewedToggling(true);
+    try {
+      await apiFetch(`/customers/${customerId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ hasReviewed: checked }),
+      });
+      queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+      toast({ title: checked ? "Marked as reviewed" : "Review mark removed", description: checked ? "Review follow-up emails will no longer be sent to this customer." : "This customer will receive review follow-up emails again." });
+    } catch {
+      toast({ title: "Failed to update review status", variant: "destructive" });
+    } finally {
+      setHasReviewedToggling(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <Layout>
@@ -4889,6 +4906,21 @@ export default function CustomerDetail() {
                   </Label>
                   {(customer as any).poNumberRequired && (
                     <Badge variant="outline" className="text-xs border-orange-300 text-orange-700 bg-orange-50">PO required</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="has-reviewed"
+                    checked={(customer as any).hasReviewed ?? false}
+                    onCheckedChange={toggleHasReviewed}
+                    disabled={hasReviewedToggling}
+                    className="scale-90"
+                  />
+                  <Label htmlFor="has-reviewed" className="text-xs text-muted-foreground cursor-pointer select-none">
+                    Has left a review
+                  </Label>
+                  {(customer as any).hasReviewed && (
+                    <Badge variant="outline" className="text-xs border-green-300 text-green-700 bg-green-50">Reviewed ✓</Badge>
                   )}
                 </div>
               </div>

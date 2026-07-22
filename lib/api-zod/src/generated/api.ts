@@ -106,6 +106,7 @@ export const UpdateCustomerBody = zod.object({
   highLevelContactId: zod.string().nullish(),
   zeroVat: zod.boolean().optional(),
   poNumberRequired: zod.boolean().optional(),
+  hasReviewed: zod.boolean().optional(),
 });
 
 export const UpdateCustomerResponse = zod.object({
