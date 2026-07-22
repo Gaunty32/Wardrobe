@@ -189,7 +189,7 @@ function PortalPendingOrders() {
 
   const confirm = useMutation({
     mutationFn: (id: number) => apiFetch(`/portal/admin/orders/${id}/confirm`, { method: "POST" }),
-    onSuccess: () => { invalidate(); toast({ title: "Order confirmed", description: "Moved to draft orders." }); },
+    onSuccess: () => { invalidate(); toast({ title: "Order confirmed", description: "Order moved to the main orders list." }); },
   });
 
   const reject = useMutation({
