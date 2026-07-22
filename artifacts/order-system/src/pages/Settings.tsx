@@ -478,6 +478,9 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
   const [googleReviewUrl, setGoogleReviewUrl] = useState("");
   const [facebookReviewUrl, setFacebookReviewUrl] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [testFollowupEmail, setTestFollowupEmail] = useState("");
+  const [testFollowupSending, setTestFollowupSending] = useState(false);
+  const [testFollowupResult, setTestFollowupResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   useEffect(() => {
     if (rawSettings && !loaded) {
@@ -658,6 +661,63 @@ function HighLevelTab({ rawSettings }: { rawSettings: Record<string, string> | u
         <Button size="sm" className="gap-1.5" onClick={() => saveMutation.mutate()} disabled={saveMutation.isPending}>
           {saveMutation.isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : <><CheckCircle className="w-4 h-4" />Save</>}
         </Button>
+      </div>
+
+      {/* ── Test review follow-up email ─────────────────────────────── */}
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div>
+          <h2 className="font-semibold text-base flex items-center gap-2">
+            <Mail className="w-4 h-4 text-green-600" /> Test Review Follow-up Email
+          </h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Send yourself a preview of the 48-hour review request email that customers receive after their order is dispatched. Uses the Google &amp; Facebook review links saved above.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            type="email"
+            placeholder="your@email.com"
+            value={testFollowupEmail}
+            onChange={e => { setTestFollowupEmail(e.target.value); setTestFollowupResult(null); }}
+            className="flex-1"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            disabled={!testFollowupEmail || testFollowupSending}
+            onClick={async () => {
+              setTestFollowupSending(true);
+              setTestFollowupResult(null);
+              try {
+                const res = await fetch("/api/invoices/test-followup-email", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ toEmail: testFollowupEmail }),
+                });
+                const data = await res.json();
+                if (data.ok) {
+                  setTestFollowupResult({ ok: true, msg: `Sent to ${testFollowupEmail}` });
+                } else {
+                  setTestFollowupResult({ ok: false, msg: data.error ?? "Send failed" });
+                }
+              } catch {
+                setTestFollowupResult({ ok: false, msg: "Request failed" });
+              } finally {
+                setTestFollowupSending(false);
+              }
+            }}
+          >
+            {testFollowupSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Send test
+          </Button>
+        </div>
+        {testFollowupResult && (
+          <div className={`flex items-center gap-2 text-sm rounded-md px-3 py-2 ${testFollowupResult.ok ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
+            {testFollowupResult.ok ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+            {testFollowupResult.msg}
+          </div>
+        )}
       </div>
 
       <div className="rounded-xl border border-border bg-card p-5 space-y-2">

@@ -7,6 +7,7 @@ import {
   buildInvoiceEmail, generateInvoicePDF, buildInvoiceDataForOrder,
   fetchLogoDataUrl, sendEmail,
   buildLocalDeliveryNotificationEmail,
+  buildDeliveryFollowupEmail,
 } from "../services/email";
 import { getTemplate, applyVars } from "../services/template-engine";
 import { postInvoiceToXero } from "../services/xero";
@@ -878,6 +879,46 @@ router.post("/settings/email/test", async (req, res): Promise<void> => {
     res.json({ ok: true, provider: result.provider, messageId: result.messageId });
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : "Test failed" });
+  }
+});
+
+// ─── Test: send a review follow-up email immediately to a given address ────────
+router.post("/invoices/test-followup-email", async (req, res): Promise<void> => {
+  const { toEmail } = req.body ?? {};
+  if (!toEmail || typeof toEmail !== "string") {
+    res.status(400).json({ ok: false, error: "toEmail is required" });
+    return;
+  }
+  try {
+    // Pull review URLs from settings
+    const rows = await db.execute(sql`
+      SELECT key, value FROM settings
+      WHERE key IN ('google_review_url', 'facebook_review_url')
+    `);
+    const sm: Record<string, string> = {};
+    for (const r of rows.rows as any[]) sm[r.key] = r.value;
+
+    const { html, text } = buildDeliveryFollowupEmail({
+      customerName: "Test Customer",
+      orderNumber: "TEST-001",
+      actorName: null,
+      googleReviewUrl: sm["google_review_url"] ?? null,
+      facebookReviewUrl: sm["facebook_review_url"] ?? null,
+      customerLogoDataUrl: null,
+    });
+    const result = await sendEmail({
+      to: toEmail,
+      subject: "SBS – Test: Review follow-up email",
+      html,
+      text,
+    });
+    if (!result.sent) {
+      res.status(500).json({ ok: false, error: result.error ?? "Send failed" });
+      return;
+    }
+    res.json({ ok: true, sentTo: toEmail });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : "Unknown error" });
   }
 });
 
