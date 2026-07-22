@@ -127,31 +127,6 @@ export async function listGbpLocations(accessToken: string): Promise<{ name: str
   return locations;
 }
 
-// Legacy v4 API — separate quota bucket from the v1 split APIs above
-const GBP_V4_API = "https://mybusiness.googleapis.com/v4";
-export async function listGbpLocationsV4(accessToken: string): Promise<{ name: string; title: string }[]> {
-  const accRes = await fetch(`${GBP_V4_API}/accounts`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!accRes.ok) {
-    throw parseGbpError(accRes.status, await accRes.text(), "GBP v4 accounts API");
-  }
-  const accData: any = await accRes.json();
-  const accounts: any[] = accData.accounts ?? [];
-  const locations: { name: string; title: string }[] = [];
-  for (const acc of accounts) {
-    const locRes = await fetch(
-      `${GBP_V4_API}/${acc.name}/locations?fields=name,locationName&pageSize=100`,
-      { headers: { Authorization: `Bearer ${accessToken}` } },
-    );
-    if (!locRes.ok) {
-      throw parseGbpError(locRes.status, await locRes.text(), "GBP v4 locations API");
-    }
-    const locData: any = await locRes.json();
-    for (const loc of locData.locations ?? []) {
-      locations.push({ name: loc.name, title: loc.locationName ?? loc.name });
-    }
-  }
-  return locations;
-}
 
 export async function publishGbpPost(locationName: string, accessToken: string, text: string, imageUrl?: string | null): Promise<{ ok: boolean; postName?: string; error?: string }> {
   const body: any = { topicType: "STANDARD", summary: text };

@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   generateGbpAuthUrl, handleGbpCallback, getGbpAccessToken,
-  getGbpStatus, listGbpLocations, listGbpLocationsV4, publishGbpPost, disconnectGbp,
+  getGbpStatus, listGbpLocations, publishGbpPost, disconnectGbp,
   autoGbpRedirectUri,
 } from "../services/google-business.js";
 import { db as _db, settingsTable } from "@workspace/db";
@@ -438,19 +438,7 @@ router.get("/gbp/locations", async (req, res): Promise<void> => {
     const token = await getGbpAccessToken();
     if (!token) { res.status(401).json({ error: "Not connected to Google Business Profile" }); return; }
 
-    let locations: { name: string; title: string }[];
-    try {
-      locations = await listGbpLocations(token);
-    } catch (v1Err) {
-      const v1Msg = v1Err instanceof Error ? v1Err.message : "Unknown error";
-      if (isGbpRateLimit(v1Msg)) {
-        // v1 APIs rate-limited — try legacy v4 API which has a separate quota bucket
-        console.log("[GBP] v1 API rate-limited, trying v4 fallback");
-        locations = await listGbpLocationsV4(token);
-      } else {
-        throw v1Err;
-      }
-    }
+    const locations = await listGbpLocations(token);
 
     // Success — clear any rate limit tracker, persist to memory + DB
     gbpRateLimitHitAt = null;

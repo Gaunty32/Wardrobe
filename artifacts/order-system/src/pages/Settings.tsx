@@ -2470,6 +2470,10 @@ export default function Settings() {
                       const raw = (gbpLocationsError as any)?.message ?? String(gbpLocationsError);
                       let parsedMsg = raw;
                       try { parsedMsg = JSON.parse(raw)?.error ?? raw; } catch { /* not JSON */ }
+                      // Strip HTML — Google returns a full HTML 404 page on some errors
+                      if (parsedMsg.includes("<html") || parsedMsg.includes("<!DOCTYPE")) {
+                        parsedMsg = "Google returned an unexpected response (the API endpoint may be unavailable).";
+                      }
                       const isRateLimit = parsedMsg.includes("RATE_LIMIT_EXCEEDED") || parsedMsg.includes("429") || parsedMsg.includes("Quota exceeded") || parsedMsg.includes("rateLimitExceeded");
                       let content: React.ReactNode;
                       if (parsedMsg.startsWith("SERVICE_DISABLED:")) {
@@ -2486,11 +2490,11 @@ export default function Settings() {
                       } else if (isRateLimit) {
                         content = (
                           <div className="space-y-1">
-                            <p><strong>Rate limit hit</strong> — the Google Business API has a low default quota for new projects.</p>
+                            <p><strong>Rate limit hit</strong> — the Google Business API has a low default quota.</p>
                             {gbpRetryCountdown !== null ? (
                               <p className="text-xs text-red-500">Auto-retrying in <strong>{gbpRetryCountdown}s</strong>…</p>
                             ) : (
-                              <p className="text-xs text-red-500">If it keeps failing, the project may need quota approved by Google.</p>
+                              <p className="text-xs text-red-500">If it keeps failing, use the manual entry below.</p>
                             )}
                           </div>
                         );
@@ -2513,9 +2517,9 @@ export default function Settings() {
                                 Retry
                               </Button>
                             )}
-                            {isRateLimit && !gbpManualEntry && (
+                            {!gbpManualEntry && (
                               <button className="text-xs underline text-red-600 hover:text-red-800" onClick={() => setGbpManualEntry(true)}>
-                                Still failing? Enter location manually →
+                                Enter location manually →
                               </button>
                             )}
                           </div>
