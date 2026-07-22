@@ -159,6 +159,8 @@ interface DispatchResponse {
   dpd: { consignmentNumber: string; trackingUrl: string; labelHtml: string | null } | null;
   dpdError: string | null;
   dpdConfigured: boolean;
+  invoiceEmailSentTo: string | null;
+  invoiceEmailError: string | null;
 }
 
 function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatched: () => void }) {
@@ -232,9 +234,14 @@ function DispatchCard({ order, onDispatched }: { order: DispatchOrder; onDispatc
       const isPartShipped = data.order.status === "part_shipped";
 
       if (data.dpd) {
+        const emailNote = data.invoiceEmailSentTo
+          ? ` Invoice emailed to ${data.invoiceEmailSentTo}.`
+          : data.invoiceEmailError
+            ? ` Invoice email failed: ${data.invoiceEmailError}`
+            : "";
         toast({
           title: isPartShipped ? `${order.orderNumber} part-dispatched via DPD` : `${order.orderNumber} dispatched via DPD`,
-          description: `Consignment: ${data.dpd.consignmentNumber}${isPartShipped ? " — remaining items to follow" : ""}`,
+          description: `Consignment: ${data.dpd.consignmentNumber}${isPartShipped ? " — remaining items to follow" : ""}${emailNote}`,
         });
         if (data.dpd.labelHtml) {
           setTimeout(() => printDpdLabelHtml(data.dpd.labelHtml!), 400);

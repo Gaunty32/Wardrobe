@@ -10,6 +10,7 @@ import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured, isChannelIslands
 import { logOrderAction, getActor } from "../services/orderLog";
 import { notifyAllPortalUsers } from "../services/notifications.js";
 import { getWooSettings, wooUpdateOrderStatus } from "./woo.js";
+import { sendInvoiceEmail } from "../services/email.js";
 
 const router: IRouter = Router();
 
@@ -725,6 +726,22 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     }
   }
 
+  // ── Auto-send invoice email with tracking when DPD dispatch fully succeeds ──
+  // Only on full shipment (not partial), only when DPD booking succeeded,
+  // and only when the invoice hasn't already been sent to this order.
+  let invoiceEmailSentTo: string | null = null;
+  let invoiceEmailError: string | null = null;
+  if (dpdResult && !dpdError && !isPartialShipment && !updated.invoiceEmailSentAt) {
+    try {
+      const result = await sendInvoiceEmail(updated.id);
+      invoiceEmailSentTo = result.sentTo;
+      await logOrderAction(updated.id, "Invoice emailed (auto on DPD dispatch)", getActor(req), `Sent to ${result.sentTo} with tracking ${dpdResult.consignmentNumber}`);
+    } catch (err) {
+      invoiceEmailError = err instanceof Error ? err.message : "Invoice email failed";
+      console.error("[dispatch] Auto invoice email failed:", err);
+    }
+  }
+
   res.json({
     order: updated,
     dispatchedItemIds: itemsToDispatch.map(i => i.id),
@@ -735,6 +752,8 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
     } : null,
     dpdError,
     dpdConfigured: isDpdConfigured(),
+    invoiceEmailSentTo,
+    invoiceEmailError,
   });
 });
 
