@@ -2200,8 +2200,8 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
         portal_approved_by_name = ${mgrName},
         portal_approved_at = now(),
         po_number = COALESCE(${poNumber}, po_number),
-        notes = CASE WHEN ${stockNote} IS NOT NULL
-                     THEN COALESCE(notes || E'\n', '') || ${stockNote ?? ''}
+        notes = CASE WHEN ${stockNote}::text IS NOT NULL
+                     THEN COALESCE(notes || E'\n', '') || ${stockNote ?? ''}::text
                      ELSE notes END
       WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
       RETURNING order_number, portal_submitted_by_email, portal_submitted_by_name
