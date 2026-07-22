@@ -2543,15 +2543,16 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
         .text("This is your VAT invoice for your records. No further payment is required.", MARGIN, y, { width: W, align: "center" });
       y += 20;
     } else {
-      doc.rect(MARGIN, y, W, 52).fill(LIGHT);
-      doc.rect(MARGIN, y, W, 52).stroke(BORDER);
+      const paymentBodyText = `Payment is due within 14 days (by ${paymentDueStr}). BACS: Select Branding Solutions Ltd · Sort 04-06-05 · Account 30422879 · Reference ${data.orderNumber}`;
+      doc.font("Helvetica").fontSize(8.5);
+      const paymentBodyH = doc.heightOfString(paymentBodyText, { width: W - 20 });
+      const paymentBoxH = 24 + paymentBodyH + 12; // 24 = title area, 12 = bottom padding
+      doc.rect(MARGIN, y, W, paymentBoxH).fill(LIGHT);
+      doc.rect(MARGIN, y, W, paymentBoxH).stroke(BORDER);
       doc.fillColor(NAVY).fontSize(9).font("Helvetica-Bold").text("Payment Terms", MARGIN + 10, y + 8);
       doc.fillColor(TEXT).fontSize(8.5).font("Helvetica")
-        .text(
-          `Payment is due within 14 days (by ${paymentDueStr}). BACS: Select Branding Solutions Ltd · Sort 04-06-05 · Account 30422879 · Reference ${data.orderNumber}`,
-          MARGIN + 10, y + 24, { width: W - 20 }
-        );
-      y += 68;
+        .text(paymentBodyText, MARGIN + 10, y + 24, { width: W - 20 });
+      y += paymentBoxH + 16;
     }
 
     if (isWarehouseCollection && !isPaid) {
@@ -2694,15 +2695,22 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
     }
 
     // ── Footer ────────────────────────────────────────────────────────────────
-    doc.rect(0, PAGE_H - 36, PAGE_W, 36).fill(DARK);
+    // Two deliberate lines so the long text fits comfortably on A4 (595pt wide).
+    const FOOTER_H = 46;
+    doc.rect(0, PAGE_H - FOOTER_H, PAGE_W, FOOTER_H).fill(DARK);
     // Zero the bottom margin so PDFKit doesn't auto-insert a new page for text
     // drawn in the absolute footer zone (below the normal content boundary).
     const savedBottom = doc.page.margins.bottom;
     doc.page.margins.bottom = 0;
     doc.fillColor("#64748b").fontSize(8).font("Helvetica")
       .text(
-        "Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds, LS13 3HE  ·  accounts@selectbranding.co.uk  ·  0113 255 2694  ·  selectbranding.co.uk  ·  VAT No. 514880485",
-        0, PAGE_H - 23, { align: "center", width: PAGE_W, lineBreak: false }
+        "Select Branding Solutions Ltd  ·  Spence Mills, Mill Lane, Leeds, LS13 3HE  ·  VAT No. 514880485",
+        0, PAGE_H - FOOTER_H + 10, { align: "center", width: PAGE_W, lineBreak: false }
+      );
+    doc.fillColor("#475569").fontSize(7.5).font("Helvetica")
+      .text(
+        "accounts@selectbranding.co.uk  ·  0113 255 2694  ·  selectbranding.co.uk",
+        0, PAGE_H - FOOTER_H + 23, { align: "center", width: PAGE_W, lineBreak: false }
       );
     doc.page.margins.bottom = savedBottom;
 
