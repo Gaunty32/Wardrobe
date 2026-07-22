@@ -2283,6 +2283,10 @@ interface InvoiceData {
   toFollowItems?: InvoiceToFollowItem[];
   /** When set, a delivery address breakdown is appended after the To-Follow section */
   deliveryGroups?: Array<{ addressLabel: string; addressText: string; items: InvoiceLineItem[] }>;
+  /** Delivery address lines — printed below BILL TO only when different from billing address */
+  deliveryAddressLines?: string[] | null;
+  /** Delivery location label, e.g. "Head Office" */
+  deliveryLabel?: string | null;
 }
 
 export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
@@ -2371,6 +2375,26 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       doc.text(line, MARGIN, y + 28 + i * 12);
     });
 
+    let leftY = y + 28 + billToLines.length * 12;
+
+    // ── Deliver To (only when different from billing) ─────────────────────────
+    if (data.deliveryAddressLines?.length) {
+      leftY += 14;
+      doc.fillColor(NAVY).fontSize(8).font("Helvetica-Bold")
+        .text("DELIVER TO", MARGIN, leftY);
+      leftY += 12;
+      if (data.deliveryLabel) {
+        doc.fillColor(TEXT).fontSize(9).font("Helvetica-Bold")
+          .text(data.deliveryLabel, MARGIN, leftY);
+        leftY += 13;
+      }
+      doc.fillColor(DIM).fontSize(8.5).font("Helvetica");
+      data.deliveryAddressLines.forEach((line) => {
+        doc.text(line, MARGIN, leftY);
+        leftY += 12;
+      });
+    }
+
     // Right side: invoice metadata
     const RX = MARGIN + HALF + 16;
     const metaRows: [string, string, boolean?][] = [
@@ -2391,7 +2415,7 @@ export function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
       my += 16;
     }
 
-    y = Math.max(y + 50, my) + 20;
+    y = Math.max(leftY + 8, my) + 16;
 
     // ── Items table ──────────────────────────────────────────────────────────
     const COL_DESC_W = Math.floor(W * 0.45);
@@ -2781,13 +2805,31 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
     ? await db.select({ zeroVat: customersTable.zeroVat }).from(customersTable).where(eq(customersTable.id, order.customerId)).then(r => r[0]?.zeroVat ?? false)
     : false);
 
-  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat };
+  // Fetch delivery address — show on invoice only when it differs from billing
+  let deliveryAddressLines: string[] | null = null;
+  let deliveryLabel: string | null = null;
+  if (order.deliveryAddressId) {
+    const [delivAddr] = await db.select().from(customerDeliveryAddressesTable)
+      .where(eq(customerDeliveryAddressesTable.id, order.deliveryAddressId));
+    if (delivAddr) {
+      const delivLines = [delivAddr.line1, delivAddr.line2, delivAddr.city, delivAddr.postcode]
+        .filter((l): l is string => !!l);
+      const billLines = [customerAddress, customerCity, customerPostcode]
+        .filter((l): l is string => !!l);
+      if (delivLines.join("|").toLowerCase() !== billLines.join("|").toLowerCase()) {
+        deliveryAddressLines = delivLines;
+        deliveryLabel = delivAddr.label ?? null;
+      }
+    }
+  }
+
+  return { order, items, customerEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat, deliveryAddressLines, deliveryLabel };
 }
 
 export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string): Promise<{ sentTo: string }> {
   if (!isEmailConfigured) throw new Error("Email not configured. Go to Settings → Email to set up.");
 
-  const { order, items, customerEmail: resolvedEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat } = await buildInvoiceDataForOrder(orderId);
+  const { order, items, customerEmail: resolvedEmail, contactFirstName, customerLogoDataUrl, invoiceCustomerName, customerAddress, customerCity, customerPostcode, invoiceDeliveryGroups, zeroVat, deliveryAddressLines, deliveryLabel } = await buildInvoiceDataForOrder(orderId);
   const customerEmail = toEmailOverride?.trim() || resolvedEmail;
   if (!customerEmail) throw new Error("Customer has no email address on record.");
 
@@ -2893,6 +2935,8 @@ export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string
     totalAmount: order.totalAmount as string,
     notes: order.notes,
     deliveryGroups: invoiceDeliveryGroups,
+    deliveryAddressLines,
+    deliveryLabel,
   });
 
   const result = await sendEmail({
