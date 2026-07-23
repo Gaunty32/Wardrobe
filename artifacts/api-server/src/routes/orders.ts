@@ -2856,6 +2856,59 @@ router.get("/orders/:id/consolidation-candidates", async (req, res): Promise<voi
   res.json(candidates.rows);
 });
 
+// ── Merge a draft order into a target order ────────────────────────────────────
+// Moves all order_items from the source (draft) order into the target order,
+// records the source order number in the target's absorbed_order_numbers,
+// recalculates the target total, then deletes the now-empty source order.
+router.post("/orders/:id/merge-into/:targetId", async (req, res): Promise<void> => {
+  const parsed = z.object({
+    id: z.coerce.number().int().positive(),
+    targetId: z.coerce.number().int().positive(),
+  }).safeParse(req.params);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const { id: sourceId, targetId } = parsed.data;
+
+  if (sourceId === targetId) { res.status(400).json({ error: "Cannot merge an order into itself." }); return; }
+
+  const [sourceOrder] = await db.select({
+    id: ordersTable.id,
+    orderNumber: ordersTable.orderNumber,
+    status: ordersTable.status,
+    customerId: ordersTable.customerId,
+  }).from(ordersTable).where(eq(ordersTable.id, sourceId));
+
+  if (!sourceOrder) { res.status(404).json({ error: "Source order not found." }); return; }
+  if (sourceOrder.status !== "draft") { res.status(400).json({ error: "Only draft orders can be merged." }); return; }
+
+  const [targetOrder] = await db.select({
+    id: ordersTable.id,
+    customerId: ordersTable.customerId,
+    absorbedOrderNumbers: ordersTable.absorbedOrderNumbers,
+  }).from(ordersTable).where(eq(ordersTable.id, targetId));
+
+  if (!targetOrder) { res.status(404).json({ error: "Target order not found." }); return; }
+  if (targetOrder.customerId !== sourceOrder.customerId) {
+    res.status(400).json({ error: "Orders must belong to the same customer." }); return;
+  }
+
+  // Move all items from source → target
+  await db.update(orderItemsTable)
+    .set({ orderId: targetId })
+    .where(eq(orderItemsTable.orderId, sourceId));
+
+  // Record the absorbed order number on the target
+  const existing = targetOrder.absorbedOrderNumbers ?? [];
+  await db.update(ordersTable)
+    .set({ absorbedOrderNumbers: [...existing, sourceOrder.orderNumber], updatedAt: new Date() })
+    .where(eq(ordersTable.id, targetId));
+
+  // Recalculate target total, then delete the (now-empty) source order
+  await recalcOrderTotal(targetId);
+  await db.delete(ordersTable).where(eq(ordersTable.id, sourceId));
+
+  res.json({ targetId });
+});
+
 // ── Order backorders: PO lines linked to this order that are still pending ─────
 router.get("/orders/:id/backorders", async (req, res): Promise<void> => {
   const parsed = z.object({ id: z.coerce.number().int().positive() }).safeParse(req.params);

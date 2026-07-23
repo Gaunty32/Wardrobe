@@ -413,6 +413,16 @@ export default function OrderDetail() {
     onError: (e: Error) => toast({ title: "Could not delete order", description: e.message, variant: "destructive" }),
   });
 
+  const mergeIntoMutation = useMutation({
+    mutationFn: (targetId: number) => apiFetch<{ targetId: number }>(`/orders/${orderId}/merge-into/${targetId}`, { method: "POST" }),
+    onSuccess: ({ targetId }) => {
+      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() });
+      toast({ title: "Orders merged", description: "Items have been moved to the target order." });
+      navigate(`/orders/${targetId}`);
+    },
+    onError: (e: Error) => toast({ title: "Could not merge orders", description: e.message, variant: "destructive" }),
+  });
+
   const customerId = order?.customerId ?? null;
 
   const { data: customerFinishes } = useCustomerFinishes(customerId);
@@ -1734,16 +1744,33 @@ export default function OrderDetail() {
               </p>
               <div className="flex flex-wrap gap-2">
                 {consolidationCandidates.map(c => (
-                  <Link key={c.id} href={`/orders/${c.id}`}>
-                    <Button size="sm" variant="outline" className="h-7 gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 text-xs">
-                      <ExternalLink className="w-3 h-3" />
-                      {c.orderNumber}
-                      <span className="text-blue-500">·</span>
-                      <StatusBadge status={c.status} className="text-[10px] px-1.5 py-0" />
-                      <span className="text-blue-500">·</span>
-                      {c.itemCount} item{c.itemCount !== 1 ? "s" : ""}
+                  <div key={c.id} className="flex items-center gap-1">
+                    <Link href={`/orders/${c.id}`}>
+                      <Button size="sm" variant="outline" className="h-7 gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-100 text-xs">
+                        <ExternalLink className="w-3 h-3" />
+                        {c.orderNumber}
+                        <span className="text-blue-500">·</span>
+                        <StatusBadge status={c.status} className="text-[10px] px-1.5 py-0" />
+                        <span className="text-blue-500">·</span>
+                        {c.itemCount} item{c.itemCount !== 1 ? "s" : ""}
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm"
+                      className="h-7 gap-1 bg-blue-600 hover:bg-blue-700 text-white text-xs"
+                      disabled={mergeIntoMutation.isPending}
+                      onClick={() => {
+                        if (confirm(`Merge this order into ${c.orderNumber}? All items will be moved there and this order (${order.orderNumber}) will be deleted.`)) {
+                          mergeIntoMutation.mutate(c.id);
+                        }
+                      }}
+                    >
+                      {mergeIntoMutation.isPending && mergeIntoMutation.variables === c.id
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : <GitMerge className="w-3 h-3" />}
+                      Merge
                     </Button>
-                  </Link>
+                  </div>
                 ))}
               </div>
             </div>
