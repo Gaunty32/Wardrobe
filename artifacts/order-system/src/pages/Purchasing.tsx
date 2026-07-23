@@ -2735,6 +2735,7 @@ function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose
   const [variants, setVariants] = useState<any[]>([]);
   const [colour, setColour] = useState("");
   const [size, setSize] = useState("");
+  const [sleeve, setSleeve] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [saving, setSaving] = useState(false);
 
@@ -2751,7 +2752,7 @@ function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose
 
   const handleSelectProduct = async (product: any) => {
     setSelectedProduct(product);
-    setColour(""); setSize("");
+    setColour(""); setSize(""); setSleeve("");
     try {
       const v = await apiFetch<any[]>(`/products/${product.id}/variants`);
       setVariants(v);
@@ -2763,16 +2764,26 @@ function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose
     const filtered = variants.filter((v: any) => !colour || v.colour === colour);
     return [...new Set(filtered.map((v: any) => v.size).filter(Boolean))];
   }, [variants, colour]);
+  const sleevesForColourAndSize = useMemo(() => {
+    const filtered = variants.filter((v: any) =>
+      (!colour || v.colour === colour) && (!size || v.size === size) && v.sleeve
+    );
+    return [...new Set(filtered.map((v: any) => v.sleeve as string))];
+  }, [variants, colour, size]);
+  const hasSleeveDimension = sleevesForColourAndSize.length > 0;
 
   const handleSubmit = async () => {
     if (!selectedProduct) return;
     setSaving(true);
+    // Combine size/sleeve the same way order_items does for sleeve products
+    const combinedSize = size && sleeve ? `${size}/${sleeve}` : size || null;
     try {
       await apiFetch("/purchasing/manual-requirements", {
         method: "POST",
-        body: JSON.stringify({ productId: selectedProduct.id, productName: selectedProduct.name, productSku: selectedProduct.sku || null, colour: colour || null, size: size || null, quantity }),
+        body: JSON.stringify({ productId: selectedProduct.id, productName: selectedProduct.name, productSku: selectedProduct.sku || null, colour: colour || null, size: combinedSize, quantity }),
       });
-      toast({ title: "Requirement added", description: `${selectedProduct.name}${colour ? ` · ${colour}` : ""}${size ? ` / ${size}` : ""} × ${quantity}` });
+      const sizeLabel = size && sleeve ? `${size} / ${sleeve}` : size || "";
+      toast({ title: "Requirement added", description: `${selectedProduct.name}${colour ? ` · ${colour}` : ""}${sizeLabel ? ` / ${sizeLabel}` : ""} × ${quantity}` });
       onAdded(); handleClose();
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -2781,7 +2792,7 @@ function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose
 
   const handleClose = () => {
     setSearch(""); setDebouncedSearch(""); setSelectedProduct(null);
-    setVariants([]); setColour(""); setSize(""); setQuantity(1);
+    setVariants([]); setColour(""); setSize(""); setSleeve(""); setQuantity(1);
     onClose();
   };
 
@@ -2840,7 +2851,7 @@ function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Colour</Label>
                   {uniqueColours.length > 0 ? (
-                    <Select value={colour} onValueChange={setColour}>
+                    <Select value={colour} onValueChange={(v) => { setColour(v); setSize(""); setSleeve(""); }}>
                       <SelectTrigger><SelectValue placeholder="Select colour" /></SelectTrigger>
                       <SelectContent>{uniqueColours.map((c: string) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
                     </Select>
@@ -2851,7 +2862,7 @@ function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Size</Label>
                   {sizesForColour.length > 0 ? (
-                    <Select value={size} onValueChange={setSize}>
+                    <Select value={size} onValueChange={(v) => { setSize(v); setSleeve(""); }}>
                       <SelectTrigger><SelectValue placeholder="Select size" /></SelectTrigger>
                       <SelectContent>{sizesForColour.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                     </Select>
@@ -2860,6 +2871,15 @@ function AddManualReqDialog({ open, onClose, onAdded }: { open: boolean; onClose
                   )}
                 </div>
               </div>
+              {hasSleeveDimension && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Sleeve Length</Label>
+                  <Select value={sleeve} onValueChange={setSleeve}>
+                    <SelectTrigger><SelectValue placeholder="Select sleeve length" /></SelectTrigger>
+                    <SelectContent>{sleevesForColourAndSize.map((s: string) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">Quantity</Label>
                 <div className="flex items-center gap-2">

@@ -514,7 +514,12 @@ router.post("/purchasing/manual-requirements", async (req, res): Promise<void> =
   let supplierPrice: number | null = null;
 
   if (productId) {
-    // Try variant-level supplier (colour+size match first, then colour-only)
+    // Try variant-level supplier (colour+size match first, then colour-only).
+    // `size` may be a combined "SIZE/SLEEVE" string for shirt-style products.
+    const sizeStr = size ?? "";
+    const hasSplit = sizeStr.includes("/");
+    const sizePart = hasSplit ? sizeStr.split("/")[0] : sizeStr;
+    const sleevePart = hasSplit ? sizeStr.split("/").slice(1).join("/") : "";
     const variantRow = await db.execute(sql`
       SELECT pv.supplier_code, pv.supplier_price, pv.primary_supplier_id,
              s.name AS supplier_name, s.email AS supplier_email, s.currency AS supplier_currency
@@ -522,14 +527,27 @@ router.post("/purchasing/manual-requirements", async (req, res): Promise<void> =
       LEFT JOIN suppliers s ON s.id = pv.primary_supplier_id
       WHERE pv.product_id = ${productId}
         AND pv.primary_supplier_id IS NOT NULL
+        AND LOWER(TRIM(COALESCE(pv.colour,''))) = LOWER(TRIM(COALESCE(${colour ?? ""}, '')))
         AND (
-          (LOWER(TRIM(COALESCE(pv.colour,''))) = LOWER(TRIM(COALESCE(${colour ?? ""}, '')))
-           AND LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(COALESCE(${size ?? ""}, ''))))
+          -- exact combined "SIZE/SLEEVE" match (shirt-style products)
+          (${hasSplit} AND LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(${sizePart}))
+                       AND LOWER(TRIM(COALESCE(pv.sleeve,''))) = LOWER(TRIM(${sleevePart})))
           OR
-          LOWER(TRIM(COALESCE(pv.colour,''))) = LOWER(TRIM(COALESCE(${colour ?? ""}, '')))
+          -- plain size match (non-sleeve products)
+          (NOT ${hasSplit} AND LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(${sizeStr})))
+          OR
+          -- colour-only fallback
+          (pv.size IS NULL AND pv.sleeve IS NULL)
         )
       ORDER BY
-        CASE WHEN LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(COALESCE(${size ?? ""}, ''))) THEN 0 ELSE 1 END
+        CASE
+          WHEN ${hasSplit}
+               AND LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(${sizePart}))
+               AND LOWER(TRIM(COALESCE(pv.sleeve,''))) = LOWER(TRIM(${sleevePart})) THEN 0
+          WHEN NOT ${hasSplit}
+               AND LOWER(TRIM(COALESCE(pv.size,''))) = LOWER(TRIM(${sizeStr})) THEN 1
+          ELSE 2
+        END
       LIMIT 1
     `);
 
