@@ -1624,7 +1624,14 @@ export default function OrderDetail() {
                 <SelectItem value="draft">Draft</SelectItem>
                 <SelectItem value="quote">Quote</SelectItem>
                 <SelectItem value="confirmed">Confirmed</SelectItem>
-                <SelectItem value="shipped">Shipped</SelectItem>
+                {/* "Shipped" is intentionally omitted — orders must go through the
+                    Dispatch queue to generate a delivery note. If the order is already
+                    shipped (e.g. set externally), show it as a read-only current value. */}
+                {(order.status === "shipped" || order.status === "part_shipped") && (
+                  <SelectItem value={order.status}>
+                    {order.status === "part_shipped" ? "Part Shipped" : "Shipped"}
+                  </SelectItem>
+                )}
                 <SelectItem value="delivered">Delivered</SelectItem>
                 <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
