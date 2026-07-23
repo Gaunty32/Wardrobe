@@ -10,8 +10,11 @@ const SIZE_ORDER = [
   "4XL",  "XXXXL",
   "5XL",
   "6XL", "7XL", "8XL",
-  "4","6","8","10","12","14","16","18","20","22","24","26","28","30",
-  "32","34","36","38","40","42","44","46","48","50",
+  // Numeric clothing/shoe sizes are intentionally NOT listed here.
+  // They fall through to the numeric fallback (500 + num) so that ALL numeric
+  // sizes — even UK dress sizes (4, 6, 8…) and shoe sizes (3, 5, 6.5, 7…) —
+  // sort together in ascending numerical order rather than splitting into
+  // "listed evens first, unlisted odds last".
   "Extra Small Youth", "ExtraSmallYouth", "XS Youth", "XSY",
   "Small Youth",       "SmallYouth",      "S Youth",  "SY",
   "Medium Youth",      "MediumYouth",     "M Youth",  "MY",
