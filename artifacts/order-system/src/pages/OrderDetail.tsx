@@ -456,7 +456,7 @@ export default function OrderDetail() {
   const [wardrobeItemSizes, setWardrobeItemSizes] = useState<Record<number, string>>({});
   const [empSearch, setEmpSearch] = useState("");
   const [addRecipientOpen, setAddRecipientOpen] = useState(false);
-  const [addRecipientForm, setAddRecipientForm] = useState({ firstName: "", lastName: "", jobTitle: "" });
+  const [addRecipientForm, setAddRecipientForm] = useState({ firstName: "", lastName: "", jobTitle: "", deliveryAddressId: null as number | null });
   const [addRecipientSaving, setAddRecipientSaving] = useState(false);
   const [wardrobeItemSleeves, setWardrobeItemSleeves] = useState<Record<number, string>>({});
   const [wardrobeItemQtys, setWardrobeItemQtys] = useState<Record<number, number>>({});
@@ -3455,8 +3455,29 @@ export default function OrderDetail() {
                               />
                             )}
                           </div>
+                          {(customerDeliveryAddresses?.length ?? 0) > 0 && (
+                            <div>
+                              <label className="text-xs text-muted-foreground mb-1 block">Delivery depot</label>
+                              <Select
+                                value={addRecipientForm.deliveryAddressId != null ? String(addRecipientForm.deliveryAddressId) : "none"}
+                                onValueChange={v => setAddRecipientForm(f => ({ ...f, deliveryAddressId: v === "none" ? null : Number(v) }))}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Select depot…" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No depot</SelectItem>
+                                  {customerDeliveryAddresses!.map((a: any) => (
+                                    <SelectItem key={a.id} value={String(a.id)}>
+                                      {a.label || [a.line1, a.city].filter(Boolean).join(", ") || `Address #${a.id}`}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          )}
                           <div className="flex justify-end gap-2 pt-1">
-                            <Button size="sm" variant="ghost" className="h-7" onClick={() => { setAddRecipientOpen(false); setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "" }); }}>
+                            <Button size="sm" variant="ghost" className="h-7" onClick={() => { setAddRecipientOpen(false); setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "", deliveryAddressId: null }); }}>
                               Cancel
                             </Button>
                             <Button
@@ -3472,11 +3493,12 @@ export default function OrderDetail() {
                                       firstName: addRecipientForm.firstName.trim(),
                                       lastName: addRecipientForm.lastName.trim() || null,
                                       jobTitle: addRecipientForm.jobTitle.trim() || null,
+                                      deliveryAddressId: addRecipientForm.deliveryAddressId ?? null,
                                     }),
                                   });
                                   await queryClient.invalidateQueries({ queryKey: ["customer-employees", customerId] });
                                   setAddRecipientOpen(false);
-                                  setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "" });
+                                  setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "", deliveryAddressId: null });
                                   handleWardrobePersonSelect(newEmp);
                                 } catch {
                                   toast({ title: "Could not create recipient", variant: "destructive" });
