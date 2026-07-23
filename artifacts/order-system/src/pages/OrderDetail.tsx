@@ -3274,7 +3274,17 @@ export default function OrderDetail() {
                   <div className="py-10 text-center text-muted-foreground">
                     <ShoppingBag className="w-10 h-10 mx-auto mb-3 opacity-20" />
                     <p className="text-sm font-medium">No wardrobe items yet</p>
-                    <p className="text-xs mt-1 text-muted-foreground/70">Go to this customer's Wardrobe tab to build their wardrobe.</p>
+                    <p className="text-xs mt-1 text-muted-foreground/70 mb-4">Add items to this customer's wardrobe first.</p>
+                    {customerId && (
+                      <a
+                        href={`/customers/${customerId}?tab=wardrobe`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> Edit Wardrobe
+                      </a>
+                    )}
                   </div>
                 ) : wardrobeRecipient === null ? (
                   /* ── Step 1: Pick a person ── */
@@ -3292,6 +3302,17 @@ export default function OrderDetail() {
                           autoFocus
                         />
                       </div>
+                      {customerId && (
+                        <a
+                          href={`/customers/${customerId}?tab=wardrobe`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="shrink-0 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          title="Edit this customer's wardrobe"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" /> Edit Wardrobe
+                        </a>
+                      )}
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {!empSearch && (

@@ -4610,6 +4610,7 @@ export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
   const customerId = Number(id);
   const [, navigate] = useLocation();
+  const [activeTab, setActiveTab] = useState(() => new URLSearchParams(window.location.search).get("tab") ?? "employees");
 
   const createOrderMutation = useCreateOrder({
     mutation: {
@@ -5084,7 +5085,7 @@ export default function CustomerDetail() {
           </div>
         )}
 
-        <Tabs defaultValue="employees">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1">
             <TabsTrigger value="employees" className="flex items-center gap-1.5"><UserCheck className="w-3.5 h-3.5" /> Employees</TabsTrigger>
             <TabsTrigger value="roles" className="flex items-center gap-1.5"><Boxes className="w-3.5 h-3.5" /> Roles</TabsTrigger>
