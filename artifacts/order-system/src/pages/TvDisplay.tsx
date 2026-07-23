@@ -137,7 +137,7 @@ function PillCard({ pill }: { pill: PillItem }) {
   const s = STYLES[v];
   return (
     <div
-      className={`rounded-3xl border-4 ${s.card} flex flex-col justify-between overflow-hidden h-full`}
+      className={`rounded-3xl border-4 ${s.card} flex flex-col justify-between h-full`}
       style={{ padding: "clamp(1rem, 2vw, 2.5rem)" }}
     >
       {/* Top row: urgency tag */}
