@@ -52,7 +52,13 @@ export async function fetchLogoBuffer(url: string | null | undefined): Promise<B
   try {
     const objectPath = toObjectStoragePath(url);
     if (objectPath) return await readObjectStorageBuffer(objectPath);
-    const resp = await fetch(toAbsoluteUrl(url), { signal: AbortSignal.timeout(5000) });
+    const resp = await fetch(toAbsoluteUrl(url), {
+      signal: AbortSignal.timeout(8000),
+      headers: {
+        "Accept": "image/webp,image/jpeg,image/png,image/*,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (compatible; SelectBranding/1.0)",
+      },
+    });
     if (!resp.ok) return null;
     return Buffer.from(await resp.arrayBuffer());
   } catch { return null; }
@@ -70,7 +76,13 @@ export async function fetchLogoDataUrl(url: string | null | undefined): Promise<
       const mime = mimeMap[ext] ?? "image/png";
       return `data:${mime};base64,${buf.toString("base64")}`;
     }
-    const resp = await fetch(toAbsoluteUrl(url), { signal: AbortSignal.timeout(5000) });
+    const resp = await fetch(toAbsoluteUrl(url), {
+      signal: AbortSignal.timeout(8000),
+      headers: {
+        "Accept": "image/webp,image/jpeg,image/png,image/*,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (compatible; SelectBranding/1.0)",
+      },
+    });
     if (!resp.ok) return null;
     const ct = resp.headers.get("content-type") ?? "image/png";
     return `data:${ct};base64,${Buffer.from(await resp.arrayBuffer()).toString("base64")}`;
