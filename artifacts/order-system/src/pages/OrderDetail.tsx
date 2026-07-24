@@ -1941,7 +1941,7 @@ export default function OrderDetail() {
                     Send to Production ({order.items.filter((oi: any) => !oi.purchaseRequired && !oi.isService && oi.stock_status !== 'complete').length})
                   </Button>
                 )}
-                <Button size="sm" variant="outline" className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setAddBundleId(null); setAddBundleQty("1"); setIsAddBundleOpen(true); }}>
+                <Button size="sm" variant="outline" className="gap-1.5 border-primary/30 text-primary hover:bg-primary/5" onClick={() => { setAddBundleId(null); setAddBundleWearerName(""); setCompOverrides({}); setIsAddBundleOpen(true); }}>
                   <Package2 className="w-4 h-4" /> Add Bundle
                 </Button>
                 <Button size="sm" onClick={() => setIsAddItemOpen(true)}>
