@@ -4673,6 +4673,8 @@ export default function OrderDetail() {
                     const colours = [...new Set(comp.variants!.map(v => v.colour).filter(Boolean))].sort();
                     const selectedColour = compOverrides[comp.id]?.colour ?? "";
                     const sizesForColour = [...new Set(comp.variants!.filter(v => v.colour === selectedColour).map(v => v.size).filter(Boolean))];
+                    const allVariantSizes = [...new Set(comp.variants!.map(v => v.size).filter(Boolean))];
+                    const sizesToShow = sizesForColour.length > 0 ? sizesForColour : allVariantSizes.length > 0 ? allVariantSizes : DEFAULT_CLOTHING_SIZES;
                     const selectedSize = compOverrides[comp.id]?.size ?? "";
                     return (
                       <div key={comp.id} className="border rounded-lg p-3 bg-muted/20 space-y-2">
@@ -4697,27 +4699,18 @@ export default function OrderDetail() {
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Size</Label>
-                            {sizesForColour.length > 0 ? (
-                              <Select
-                                value={selectedSize}
-                                onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: v } }))}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="— select —" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {sizesForColour.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Input
-                                className="h-8 text-sm"
-                                placeholder={!selectedColour ? "Pick colour first" : "e.g. M, L, XL"}
-                                disabled={!selectedColour}
-                                value={selectedSize}
-                                onChange={e => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: e.target.value } }))}
-                              />
-                            )}
+                            <Select
+                              value={selectedSize}
+                              disabled={colours.length > 0 && !selectedColour}
+                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: v } }))}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder={colours.length > 0 && !selectedColour ? "Pick colour first" : "— select —"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {sizesToShow.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
                       </div>
