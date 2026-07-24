@@ -4579,18 +4579,27 @@ export default function OrderDetail() {
                           </div>
                           <div className="space-y-1">
                             <Label className="text-xs text-muted-foreground">Size</Label>
-                            <Select
-                              value={selectedSize}
-                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: v } }))}
-                              disabled={!selectedColour || sizesForColour.length === 0}
-                            >
-                              <SelectTrigger className="h-8 text-sm">
-                                <SelectValue placeholder={!selectedColour ? "Pick colour first" : "— select —"} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {sizesForColour.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
+                            {sizesForColour.length > 0 ? (
+                              <Select
+                                value={selectedSize}
+                                onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: v } }))}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="— select —" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {sizesForColour.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                className="h-8 text-sm"
+                                placeholder={!selectedColour ? "Pick colour first" : "e.g. M, L, XL"}
+                                disabled={!selectedColour}
+                                value={selectedSize}
+                                onChange={e => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: e.target.value } }))}
+                              />
+                            )}
                           </div>
                         </div>
                       </div>
