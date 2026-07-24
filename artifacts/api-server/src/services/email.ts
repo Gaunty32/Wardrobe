@@ -985,12 +985,11 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
     const ROW_H   = 58; // fixed height — fits 50px thumbnail + two text lines
 
     const imgW     = 54;
-    const colourW  = 62;
-    const sizeW    = 42;
+    const colourW  = 68;
     const qtyW     = 30;
     const priceW   = 52;
     const totalW   = 58;
-    const productW = contentW - imgW - colourW - sizeW - qtyW - priceW - totalW;
+    const productW = contentW - imgW - colourW - qtyW - priceW - totalW;
 
     const drawTableHeader = (ty: number) => {
       doc.rect(margin, ty, contentW, tblHdrH).fill("#1e293b");
@@ -998,7 +997,6 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
       let hx = margin + imgW;
       doc.text("ITEM",   hx + 3,  ty + 4, { width: productW - 3 }); hx += productW;
       doc.text("COLOUR", hx + 2,  ty + 4, { width: colourW - 2 }); hx += colourW;
-      doc.text("SIZE",   hx + 2,  ty + 4, { width: sizeW - 2, align: "center" }); hx += sizeW;
       doc.text("QTY",    hx + 2,  ty + 4, { width: qtyW - 2,  align: "center" }); hx += qtyW;
       doc.text("UNIT",   hx + 2,  ty + 4, { width: priceW - 2, align: "right" }); hx += priceW;
       doc.text("TOTAL",  hx + 2,  ty + 4, { width: totalW - 2, align: "right" });
@@ -1056,14 +1054,13 @@ export async function generateQuotePdf(data: QuotePdfData): Promise<Buffer> {
       // Colour / size / qty / price / total — vertically centred
       const midY = y + (ROW_H - 8) / 2;
       doc.fillColor("#374151").fontSize(7).font("Helvetica");
-      doc.text(item.colour ?? "—",         margin + imgW + productW + 2,                midY, { width: colourW - 4, lineBreak: false, ellipsis: true });
-      doc.text(item.size ?? "—",           margin + imgW + productW + colourW + 2,      midY, { width: sizeW - 4,   align: "center" });
+      doc.text(item.colour ?? "—",         margin + imgW + productW + 2,             midY, { width: colourW - 4, lineBreak: false, ellipsis: true });
       doc.font("Helvetica-Bold")
-        .text(String(item.quantity),       margin + imgW + productW + colourW + sizeW + 2, midY, { width: qtyW - 4, align: "center" });
+        .text(String(item.quantity),       margin + imgW + productW + colourW + 2,  midY, { width: qtyW - 4, align: "center" });
       doc.font("Helvetica")
-        .text(`£${item.unitPrice.toFixed(2)}`, margin + imgW + productW + colourW + sizeW + qtyW + 2, midY, { width: priceW - 4, align: "right" });
+        .text(`£${item.unitPrice.toFixed(2)}`, margin + imgW + productW + colourW + qtyW + 2, midY, { width: priceW - 4, align: "right" });
       doc.font("Helvetica-Bold")
-        .text(`£${lineTotal.toFixed(2)}`,  margin + imgW + productW + colourW + sizeW + qtyW + priceW + 2, midY, { width: totalW - 4, align: "right" });
+        .text(`£${lineTotal.toFixed(2)}`,  margin + imgW + productW + colourW + qtyW + priceW + 2, midY, { width: totalW - 4, align: "right" });
 
       y += ROW_H;
 
