@@ -277,13 +277,16 @@ export default function TvDisplay() {
 
   return (
     <div
-      className="h-screen w-screen flex flex-col text-white select-none overflow-hidden"
-      style={{ background: "#0a0f1e", fontFamily: "'Segoe UI', Arial, sans-serif" }}
+      className="flex flex-col text-white select-none"
+      style={{
+        position: "fixed", inset: 0, overflow: "hidden",
+        background: "#0a0f1e", fontFamily: "'Segoe UI', Arial, sans-serif",
+      }}
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div
         className="flex items-center justify-between border-b border-white/10 flex-shrink-0"
-        style={{ padding: "clamp(0.5rem, 1vw, 1.2rem) clamp(1.5rem, 3vw, 4rem)" }}
+        style={{ padding: "clamp(0.5rem, 1vw, 1.2rem) clamp(1rem, 2vw, 2.5rem)" }}
       >
         <div className="flex items-center gap-4">
           <span className="font-black text-white" style={{ fontSize: "clamp(1rem, 1.8vw, 2.2rem)" }}>
@@ -317,7 +320,7 @@ export default function TvDisplay() {
           className={`flex items-center flex-wrap gap-x-6 border-b border-white/10 flex-shrink-0 ${
             urgentTotal > 0 ? "bg-red-950/30" : "bg-green-950/20"
           }`}
-          style={{ padding: "clamp(0.4rem, 0.8vw, 1rem) clamp(1.5rem, 3vw, 4rem)" }}
+          style={{ padding: "clamp(0.4rem, 0.8vw, 1rem) clamp(1rem, 2vw, 2.5rem)" }}
         >
           <span
             className={`font-black ${urgentTotal > 0 ? "text-red-400" : "text-green-400"}`}
@@ -339,7 +342,7 @@ export default function TvDisplay() {
       {/* ── Pills grid ─────────────────────────────────────────────────────── */}
       <div
         className="flex-1 overflow-hidden"
-        style={{ padding: "clamp(0.75rem, 1.5vw, 2rem) clamp(1.5rem, 3vw, 4rem)" }}
+        style={{ padding: "clamp(0.75rem, 1.5vw, 2rem) clamp(1rem, 2vw, 2.5rem)" }}
       >
         {error && (
           <div
