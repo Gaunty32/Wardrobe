@@ -188,7 +188,8 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
   if (isNaN(bundleId) || isNaN(orderId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const body = z.object({
-    quantity: z.number().int().positive(),
+    quantity: z.number().int().positive().optional().default(1),
+    wearerName: z.string().optional().nullable(),
     componentOverrides: z.array(z.object({
       componentId: z.number().int(),
       colour: z.string().optional().nullable(),
@@ -196,7 +197,7 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
     })).optional(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const { quantity: qty, componentOverrides = [] } = body.data;
+  const { quantity: qty, wearerName = null, componentOverrides = [] } = body.data;
 
   try {
     const bundleRows = await db.execute(sql`SELECT * FROM bundles WHERE id = ${bundleId}`);
@@ -233,10 +234,10 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
     await db.execute(sql`
       INSERT INTO order_items
         (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
-         purchase_required, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type)
+         purchase_required, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type, recipient_name)
       VALUES
         (${orderId}, NULL, ${bundle.name}, ${qty}, ${unitPrice}, ${lineTotal},
-         ${zeroVat ? 0 : 0.20}, false, NULL, ${bundleRef}, true, ${bundleId}, 'stock')
+         ${zeroVat ? 0 : 0.20}, false, NULL, ${bundleRef}, true, ${bundleId}, 'stock', ${wearerName ?? null})
     `);
 
     // Component rows — price £0
@@ -255,12 +256,12 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
         INSERT INTO order_items
           (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
            purchase_required, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type,
-           finish_id, finish_name, colour, size)
+           finish_id, finish_name, colour, size, recipient_name)
         VALUES
           (${orderId}, ${comp.product_id ?? null}, ${comp.resolved_name}, ${compQty},
            0, 0, ${compVat},
            false, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
-           ${comp.finish_id ?? null}, ${comp.finish_name ?? null}, ${colour}, ${size})
+           ${comp.finish_id ?? null}, ${comp.finish_name ?? null}, ${colour}, ${size}, ${wearerName ?? null})
       `);
     }
 

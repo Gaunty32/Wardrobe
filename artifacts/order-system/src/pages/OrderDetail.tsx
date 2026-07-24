@@ -362,7 +362,7 @@ export default function OrderDetail() {
 
   // Must be declared BEFORE the bundleDetails useQuery that references addBundleId
   const [addBundleId, setAddBundleId] = useState<number | null>(null);
-  const [addBundleQty, setAddBundleQty] = useState("1");
+  const [addBundleWearerName, setAddBundleWearerName] = useState("");
   const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string }>>({});
 
   const { data: bundleDetails } = useQuery<{
@@ -383,19 +383,18 @@ export default function OrderDetail() {
   const deleteItemMutation = useDeleteOrderItem();
 
   const addBundleMutation = useMutation({
-    mutationFn: ({ bundleId, quantity, componentOverrides }: { bundleId: number; quantity: number; componentOverrides?: Array<{ componentId: number; colour?: string; size?: string }> }) =>
+    mutationFn: ({ bundleId, wearerName, componentOverrides }: { bundleId: number; wearerName?: string; componentOverrides?: Array<{ componentId: number; colour?: string; size?: string }> }) =>
       apiFetch(`/bundles/${bundleId}/add-to-order/${orderId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity, componentOverrides }),
+        body: JSON.stringify({ quantity: 1, wearerName: wearerName || null, componentOverrides }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["order", orderId] });
-      setIsAddBundleOpen(false);
-      setAddBundleId(null);
-      setAddBundleQty("1");
+      // Keep dialog open — reset wearer + overrides so the next person can be added immediately
+      setAddBundleWearerName("");
       setCompOverrides({});
-      toast({ title: "Bundle added to order" });
+      toast({ title: "Bundle added", description: addBundleWearerName ? `Added for ${addBundleWearerName}` : "Bundle added to order" });
     },
     onError: (e: Error) => toast({ title: "Could not add bundle", description: e.message, variant: "destructive" }),
   });
@@ -4511,7 +4510,7 @@ export default function OrderDetail() {
         </DialogContent>
       </Dialog>
       {/* ── Add Bundle dialog ── */}
-      <Dialog open={isAddBundleOpen} onOpenChange={open => { if (!open) { setIsAddBundleOpen(false); setCompOverrides({}); } }}>
+      <Dialog open={isAddBundleOpen} onOpenChange={open => { if (!open) { setIsAddBundleOpen(false); setAddBundleId(null); setAddBundleWearerName(""); setCompOverrides({}); } }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -4542,9 +4541,13 @@ export default function OrderDetail() {
               })()}
             </div>
             <div className="space-y-1.5">
-              <Label>Quantity</Label>
-              <Input type="number" min="1" value={addBundleQty} onChange={e => setAddBundleQty(e.target.value)} className="w-28" />
-              <p className="text-xs text-muted-foreground">How many bundles to add</p>
+              <Label>Wearer Name</Label>
+              <Input
+                placeholder="e.g. John Smith"
+                value={addBundleWearerName}
+                onChange={e => setAddBundleWearerName(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">Who this bundle is for — optional, but helps identify each set</p>
             </div>
             {/* ── Per-component colour/size pickers ── */}
             {bundleDetails?.components && bundleDetails.components.filter(c => !c.p_is_service && c.variants && c.variants.length > 0).length > 0 && (
@@ -4610,18 +4613,20 @@ export default function OrderDetail() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setIsAddBundleOpen(false); setCompOverrides({}); }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setIsAddBundleOpen(false); setAddBundleId(null); setAddBundleWearerName(""); setCompOverrides({}); }}>Done</Button>
             <Button
-              disabled={addBundleId == null || !addBundleQty || addBundleMutation.isPending}
+              disabled={addBundleId == null || addBundleMutation.isPending}
               onClick={() => addBundleId != null && addBundleMutation.mutate({
                 bundleId: addBundleId,
-                quantity: parseInt(addBundleQty) || 1,
+                wearerName: addBundleWearerName || undefined,
                 componentOverrides: Object.entries(compOverrides)
                   .filter(([, ov]) => ov.colour || ov.size)
                   .map(([id, ov]) => ({ componentId: parseInt(id), colour: ov.colour || undefined, size: ov.size || undefined })),
               })}
             >
-              {addBundleMutation.isPending ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Adding…</> : "Add to Order"}
+              {addBundleMutation.isPending
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Adding…</>
+                : addBundleWearerName ? `Add for ${addBundleWearerName}` : "Add Bundle"}
             </Button>
           </DialogFooter>
         </DialogContent>
