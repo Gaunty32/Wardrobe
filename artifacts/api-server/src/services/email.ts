@@ -726,7 +726,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
       const productRowH = hasSubLine ? rowH + 9 : rowH;
       doc.rect(margin, y, tableW, productRowH).fill(isBundleComp ? "#f5f7fa" : "#f0f4f8");
       doc.fillColor("#111827").fontSize(7).font("Helvetica-Bold");
-      const productPrefix = isBundleComp ? "  \u2514 " : "";
+      const productPrefix = isBundleComp ? "    " : "";
       const productLabel = g.sku ? `${productPrefix}${g.sku}  ${g.productName}` : `${productPrefix}${g.productName}`;
       doc.text(productLabel, margin + 3, y + 3, { width: tableW - totalW - 6 });
       if (isBundleComp) {
