@@ -33,7 +33,22 @@ type Bundle = {
   is_active: boolean;
   notes: string | null;
   component_count: number;
+  total_cost: string | number | null;
+  components_priced: number;
 };
+
+function gpColor(pct: number | null) {
+  if (pct === null) return "text-muted-foreground";
+  if (pct >= 40) return "text-emerald-600";
+  if (pct >= 25) return "text-amber-600";
+  return "text-red-600";
+}
+function gpBadgeCls(pct: number | null) {
+  if (pct === null) return "bg-muted/50 text-muted-foreground border-border";
+  if (pct >= 40) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (pct >= 25) return "bg-amber-50 text-amber-700 border-amber-200";
+  return "bg-red-50 text-red-700 border-red-200";
+}
 
 type BundleComponent = {
   id: number;
@@ -191,20 +206,53 @@ export default function Bundles() {
                     <TableHead>Name</TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead className="text-right">Bundle Price</TableHead>
+                    <TableHead className="text-right">Est. Cost</TableHead>
+                    <TableHead className="text-right">GP</TableHead>
                     <TableHead className="text-center">Items</TableHead>
                     <TableHead className="text-center">Status</TableHead>
                     <TableHead className="w-20" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {bundles.map(b => (
+                  {bundles.map(b => {
+                    const price = parseFloat(String(b.price));
+                    const cost  = b.total_cost != null ? parseFloat(String(b.total_cost)) : null;
+                    const hasAllCosts = b.component_count > 0 && b.components_priced === b.component_count;
+                    const hasPartialCosts = b.components_priced > 0 && b.components_priced < b.component_count;
+                    const gpPounds = cost != null && hasAllCosts ? price - cost : null;
+                    const gpPct    = gpPounds != null && price > 0 ? (gpPounds / price) * 100 : null;
+                    return (
                     <TableRow key={b.id} className="cursor-pointer hover:bg-muted/40" onClick={() => openEdit(b)}>
                       <TableCell>
                         <div className="font-medium">{b.name}</div>
                         {b.description && <div className="text-xs text-muted-foreground truncate max-w-[260px]">{b.description}</div>}
                       </TableCell>
                       <TableCell className="text-muted-foreground font-mono text-xs">{b.sku ?? "—"}</TableCell>
-                      <TableCell className="text-right font-semibold">£{parseFloat(String(b.price)).toFixed(2)}</TableCell>
+                      <TableCell className="text-right font-semibold">£{price.toFixed(2)}</TableCell>
+                      <TableCell className="text-right text-sm">
+                        {cost != null && b.components_priced > 0 ? (
+                          <span className={hasPartialCosts ? "text-amber-600" : "text-muted-foreground"}>
+                            £{cost.toFixed(2)}
+                            {hasPartialCosts && (
+                              <span className="block text-[10px] leading-tight">
+                                {b.components_priced}/{b.component_count} priced
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground italic text-xs">no cost data</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {gpPct !== null ? (
+                          <span className={`inline-flex flex-col items-end`}>
+                            <span className={`text-sm font-semibold ${gpColor(gpPct)}`}>{gpPct.toFixed(1)}%</span>
+                            <span className={`text-xs ${gpColor(gpPct)}`}>£{gpPounds!.toFixed(2)}</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-center">
                         <Badge variant="secondary">{b.component_count} item{b.component_count !== 1 ? "s" : ""}</Badge>
                       </TableCell>
@@ -242,7 +290,7 @@ export default function Bundles() {
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ); })}
                 </TableBody>
               </Table>
             )}

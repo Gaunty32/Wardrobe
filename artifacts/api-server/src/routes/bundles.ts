@@ -11,9 +11,12 @@ router.get("/bundles", async (_req, res): Promise<void> => {
   try {
     const rows = await db.execute(sql`
       SELECT b.id, b.name, b.sku, b.description, b.price, b.is_active, b.notes, b.created_at,
-        COUNT(bc.id)::int AS component_count
+        COUNT(bc.id)::int AS component_count,
+        SUM(bc.quantity * COALESCE(p.supplier_price, 0))::numeric(10,2) AS total_cost,
+        COUNT(CASE WHEN p.supplier_price IS NOT NULL THEN 1 END)::int AS components_priced
       FROM bundles b
       LEFT JOIN bundle_components bc ON bc.bundle_id = b.id
+      LEFT JOIN products p ON p.id = bc.product_id
       GROUP BY b.id
       ORDER BY b.name
     `);
