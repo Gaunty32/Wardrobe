@@ -1297,6 +1297,86 @@ export default function OrderDetail() {
     }
   };
 
+  // Add ALL currently configured wardrobe items in one shot (used by the bottom "Add to Order" button)
+  const handleWardrobeAddAll = async () => {
+    if (!wardrobeData || wardrobeRecipient === null) return;
+    const wiItems = (wardrobeData.items ?? []).filter((wi: any) =>
+      wardrobeRecipient === "stock" ||
+      wi.effective_role_id === null ||
+      wi.effective_role_id === (wardrobeRecipient as CustomerEmployee).roleId
+    );
+    const isPersonRecipient = wardrobeRecipient !== "stock";
+    const recipientName = isPersonRecipient
+      ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
+      : "";
+    const recipientEmployeeId = isPersonRecipient ? (wardrobeRecipient as CustomerEmployee).id : null;
+
+    type AddLine = { wi: any; size: string | null; qty: number };
+    const lines: AddLine[] = [];
+
+    for (const wi of wiItems) {
+      const id = wi.id as number;
+      const isBulk = wardrobeBulkModes[id] ?? false;
+      const sleeveOpts: string[] = (wardrobeData as any).sleevesMap?.[String(wi.product_id)] ?? [];
+      const byColour = (wardrobeData as any).sizesMap?.[String(wi.product_id)];
+      const sizeOpts: string[] = byColour ? [...new Set(Object.values(byColour).flat() as string[])] : [];
+      const oneSize = sizeOpts.length === 0;
+
+      if (isBulk) {
+        const qtys = wardrobeBulkQtys[id] ?? {};
+        const combos = sleeveOpts.length > 0
+          ? sizeOpts.flatMap(s => sleeveOpts.map(sl => `${s}/${sl}`))
+          : sizeOpts;
+        for (const combo of combos) {
+          const qty = qtys[combo] ?? 0;
+          if (qty > 0) lines.push({ wi, size: combo, qty });
+        }
+      } else {
+        const waist = wardrobeItemSizes[id] ?? "";
+        const sleeve = wardrobeItemSleeves[id] ?? "";
+        const size = oneSize ? null : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist || null;
+        if (oneSize || size) lines.push({ wi, size, qty: wardrobeItemQtys[id] ?? 1 });
+      }
+    }
+
+    if (lines.length === 0) {
+      toast({ title: "Nothing to add", description: "Select a size or enter quantities first.", variant: "destructive" });
+      return;
+    }
+
+    setIsAddingMulti(true);
+    try {
+      await Promise.all(lines.map(({ wi, size, qty }) => {
+        const effectivePrice = wi.special_price != null
+          ? parseFloat(String(wi.special_price))
+          : parseFloat(String(wi.unit_price ?? "0"));
+        return apiFetch(`/orders/${orderId}/items`, {
+          method: "POST",
+          body: JSON.stringify({
+            productId: wi.product_id,
+            productName: wi.product_name ?? wi.name,
+            colour: wi.colour ?? null,
+            size,
+            finishId: wi.finish_id ?? null,
+            finishName: wi.finish_name ?? null,
+            recipientType: isPersonRecipient ? "person" : "stock",
+            recipientName: isPersonRecipient ? recipientName : null,
+            recipientEmployeeId,
+            quantity: qty,
+            unitPrice: effectivePrice,
+          }),
+        });
+      }));
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Items Added", description: `${lines.length} line${lines.length !== 1 ? "s" : ""} added to order.` });
+      resetDialog();
+    } catch (err: any) {
+      toast({ title: "Error adding items", description: err.message, variant: "destructive" });
+    } finally {
+      setIsAddingMulti(false);
+    }
+  };
+
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
     const finishExtra = getFiFinishExtra(fi);
     // fi.unitPrice already includes extra process costs; subtract finishExtra to derive the garment-only
@@ -3651,14 +3731,11 @@ export default function OrderDetail() {
                                       </button>
                                     )}
                                     {oneSize ? (
-                                      /* One size — just qty + add */
-                                      <div className="flex items-center gap-1.5">
-                                        <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
-                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
-                                          <span className="w-7 text-center text-sm font-semibold">{currentQty}</span>
-                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
-                                        </div>
-                                        <Button size="sm" className="flex-1 h-8 text-sm" disabled={addItemMutation.isPending} onClick={() => handleWardrobeWiAdd(wi)}>Add</Button>
+                                      /* One size — just qty */
+                                      <div className="flex items-center border rounded-md h-8 overflow-hidden">
+                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                        <span className="flex-1 text-center text-sm font-semibold">{currentQty}</span>
+                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
                                       </div>
                                     ) : isBulk ? (
                                       /* Bulk entry grid */
@@ -3698,34 +3775,25 @@ export default function OrderDetail() {
                                                   </tbody>
                                                 </table>
                                               </div>
-                                              <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0 || addItemMutation.isPending} onClick={() => handleWardrobeBulkAdd(wi, bulkComboOpts)}>
-                                                Add {total > 0 ? `${total} ` : ""}to order
-                                              </Button>
                                             </div>
                                           );
                                         }
-                                        const total = sizeOpts.reduce((s, sz) => s + (qtys[sz] ?? 0), 0);
                                         return (
-                                          <div className="space-y-2">
-                                            <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(sizeOpts.length, 4)}, 1fr)` }}>
-                                              {sizeOpts.map(sz => (
-                                                <div key={sz} className="flex flex-col items-center gap-0.5">
-                                                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{abbreviateSizeLabel(sz)}</span>
-                                                  <input type="number" min={0} value={qtys[sz] || ""} placeholder="0"
-                                                    onChange={e => { const v = parseInt(e.target.value, 10); setWardrobeBulkQtys(q => ({ ...q, [id]: { ...(q[id] ?? {}), [sz]: isNaN(v) || v < 0 ? 0 : v } })); }}
-                                                    className="w-full h-8 text-center text-sm font-semibold rounded-md border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                                  />
-                                                </div>
-                                              ))}
-                                            </div>
-                                            <Button size="sm" className="w-full h-8 text-sm" disabled={total === 0 || addItemMutation.isPending} onClick={() => handleWardrobeBulkAdd(wi, sizeOpts)}>
-                                              Add {total > 0 ? `${total} ` : ""}to order
-                                            </Button>
+                                          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(sizeOpts.length, 4)}, 1fr)` }}>
+                                            {sizeOpts.map(sz => (
+                                              <div key={sz} className="flex flex-col items-center gap-0.5">
+                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{abbreviateSizeLabel(sz)}</span>
+                                                <input type="number" min={0} value={qtys[sz] || ""} placeholder="0"
+                                                  onChange={e => { const v = parseInt(e.target.value, 10); setWardrobeBulkQtys(q => ({ ...q, [id]: { ...(q[id] ?? {}), [sz]: isNaN(v) || v < 0 ? 0 : v } })); }}
+                                                  className="w-full h-8 text-center text-sm font-semibold rounded-md border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                                />
+                                              </div>
+                                            ))}
                                           </div>
                                         );
                                       })()
                                     ) : (
-                                      /* Single item — size selector + qty + add */
+                                      /* Single item — size selector + qty (no per-card Add; use bottom button) */
                                       <>
                                         <Select value={currentSize} onValueChange={v => setWardrobeItemSizes(s => ({ ...s, [id]: v }))}>
                                           <SelectTrigger className="h-8 text-sm w-full">
@@ -3745,18 +3813,10 @@ export default function OrderDetail() {
                                             </SelectContent>
                                           </Select>
                                         )}
-                                        <div className="flex items-center gap-1.5">
-                                          <div className="flex items-center border rounded-md h-8 overflow-hidden shrink-0">
-                                            <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
-                                            <span className="w-7 text-center text-sm font-semibold">{currentQty}</span>
-                                            <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
-                                          </div>
-                                          <Button
-                                            size="sm"
-                                            className="flex-1 h-8 text-sm"
-                                            disabled={(!oneSize && !currentSize.trim()) || (sleeveOpts.length > 0 && !currentSleeve.trim()) || addItemMutation.isPending}
-                                            onClick={() => handleWardrobeWiAdd(wi)}
-                                          >Add</Button>
+                                        <div className="flex items-center border rounded-md h-8 overflow-hidden">
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                          <span className="flex-1 text-center text-sm font-semibold">{currentQty}</span>
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
                                         </div>
                                       </>
                                     )}
@@ -4151,17 +4211,21 @@ export default function OrderDetail() {
             <DialogFooter className="shrink-0 border-t border-border/40 pt-4 mt-2">
               <Button variant="outline" onClick={resetDialog}>Cancel</Button>
               <Button
-                onClick={handleAddItem}
+                onClick={dialogTab === "wardrobe" ? handleWardrobeAddAll : handleAddItem}
                 disabled={
-                  addItemMutation.isPending || isAddingMulti || !item.unitPrice ||
-                  (dialogTab === "service" ? !item.productName.trim() : !item.productId) ||
-                  (colours.length > 0 && dialogTab === "custom" && !item.colour) ||
-                  (sizes.length > 0 && dialogTab === "custom" && sizeRows.some(r => !r.size))
+                  addItemMutation.isPending || isAddingMulti ||
+                  (dialogTab === "wardrobe"
+                    ? wardrobeRecipient === null
+                    : !item.unitPrice ||
+                      (dialogTab === "service" ? !item.productName.trim() : !item.productId) ||
+                      (colours.length > 0 && dialogTab === "custom" && !item.colour) ||
+                      (sizes.length > 0 && dialogTab === "custom" && sizeRows.some(r => !r.size))
+                  )
                 }
               >
                 {(addItemMutation.isPending || isAddingMulti)
                   ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Adding...</>
-                  : sizeRows.length > 1
+                  : dialogTab !== "wardrobe" && sizeRows.length > 1
                     ? `Add ${sizeRows.length} lines to Order`
                     : "Add to Order"}
               </Button>
