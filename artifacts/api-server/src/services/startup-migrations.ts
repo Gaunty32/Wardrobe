@@ -2692,4 +2692,48 @@ export async function refreshProductIssues(): Promise<void> {
     `);
   }
   console.log("[startup] message_templates table ensured");
+
+  // Re-queue bundle component items that were hardcoded to stock_status='allocated'/
+  // 'complete' (purchase_required=false) by the bundles route but have zero actual
+  // stock and have never been placed on a purchase order.  These items slipped past
+  // the stock check because the old bundles route assumed garments were always in stock.
+  await db.execute(sql`
+    UPDATE order_items oi
+    SET
+      purchase_required  = true,
+      purchase_quantity  = oi.quantity,
+      stock_status       = NULL
+    FROM orders o
+    WHERE oi.order_id = o.id
+      AND oi.bundle_ref IS NOT NULL
+      AND oi.is_bundle_header = false
+      AND oi.purchase_required = false
+      AND COALESCE(oi.stock_status, '') IN ('allocated', 'complete')
+      AND oi.finish_id IS NULL
+      AND o.status NOT IN ('shipped', 'completed', 'delivered', 'invoiced', 'cancelled', 'archived')
+      -- Only reset if the variant truly has no stock (avoids touching legitimately allocated items)
+      AND COALESCE(
+        (SELECT pv.stock_quantity FROM product_variants pv
+         WHERE pv.product_id = oi.product_id
+           AND pv.colour IS NOT DISTINCT FROM oi.colour
+           AND (pv.size IS NOT DISTINCT FROM oi.size OR (pv.size IS NULL AND pv.sleeve IS NULL))
+         ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM oi.size THEN 0 ELSE 1 END
+         LIMIT 1),
+        CASE WHEN NOT EXISTS (SELECT 1 FROM product_variants pv2 WHERE pv2.product_id = oi.product_id)
+             THEN (SELECT stock_quantity FROM products WHERE id = oi.product_id)
+             ELSE 0 END,
+        0
+      ) = 0
+      -- Do not reset items that are already covered by an active or received PO
+      AND NOT EXISTS (
+        SELECT 1 FROM purchase_order_items poi
+        JOIN purchase_orders po ON po.id = poi.po_id
+        WHERE po.status IN ('draft', 'ordered', 'partial', 'received')
+          AND (poi.order_item_id = oi.id
+               OR oi.id::text = ANY(
+                 SELECT jsonb_array_elements_text(COALESCE(poi.source_order_item_ids, '[]'::jsonb))
+               ))
+      )
+  `);
+  console.log("[startup] Re-queued zero-stock bundle component items for purchasing");
 }

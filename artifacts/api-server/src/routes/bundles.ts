@@ -241,26 +241,63 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
     `);
 
     // Component rows — price £0
-    // Physical stock items: stock_status='allocated' so they appear in the picking list
-    // Service items: stock_status=NULL — nothing to pick, no purchase needed
+    // For physical (non-service) components we check actual variant stock to decide
+    // whether the item needs purchasing (shortfall > 0) or can go straight to allocated.
+    // Service items: stock_status=NULL — nothing to pick, no purchase needed.
     for (const comp of components) {
       const compQty      = qty * (parseInt(String(comp.quantity)) || 1);
       const compVat      = zeroVat ? 0 : parseFloat(String(comp.p_vat_rate ?? 0.20));
       const isService    = comp.p_is_service === true;
-      const stockStatus  = isService ? null : "allocated";
       const recipType    = isService ? "service" : "stock";
       const override     = componentOverrides.find((o) => o.componentId === comp.id);
       const colour       = override?.colour ?? null;
       const size         = override?.size ?? null;
+
+      let purchaseRequired = false;
+      let purchaseQuantity: number | null = null;
+      let stockStatus: string | null = isService ? null : "allocated";
+
+      if (!isService && comp.product_id) {
+        // Look up available stock for the specific variant (colour + size), falling back to
+        // a size-agnostic variant and finally to product-level stock.
+        const stockRows = await db.execute(sql`
+          SELECT COALESCE(
+            (SELECT pv.stock_quantity FROM product_variants pv
+             WHERE pv.product_id = ${comp.product_id}
+               AND pv.colour IS NOT DISTINCT FROM ${colour}
+               AND (
+                 pv.size IS NOT DISTINCT FROM ${size}
+                 OR (${size} LIKE '%/%'
+                     AND pv.size = split_part(${size}, '/', 1)
+                     AND pv.sleeve = split_part(${size}, '/', 2))
+                 OR (pv.size IS NULL AND pv.sleeve IS NULL)
+               )
+             ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
+             LIMIT 1),
+            CASE WHEN NOT EXISTS (SELECT 1 FROM product_variants pv2 WHERE pv2.product_id = ${comp.product_id})
+                 THEN (SELECT stock_quantity FROM products WHERE id = ${comp.product_id})
+                 ELSE 0 END,
+            0
+          ) AS available_stock
+        `);
+        const availableStock = parseInt(String((stockRows.rows ?? stockRows)[0]?.available_stock ?? 0));
+        const shortfall = Math.max(0, compQty - availableStock);
+        if (shortfall > 0) {
+          purchaseRequired = true;
+          purchaseQuantity = shortfall;
+          stockStatus = null;
+        }
+      }
+
       await db.execute(sql`
         INSERT INTO order_items
           (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
-           purchase_required, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type,
+           purchase_required, purchase_quantity, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type,
            finish_id, finish_name, colour, size, recipient_name)
         VALUES
           (${orderId}, ${comp.product_id ?? null}, ${comp.resolved_name}, ${compQty},
            0, 0, ${compVat},
-           false, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
+           ${purchaseRequired}, ${purchaseQuantity}, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
            ${comp.finish_id ?? null}, ${comp.finish_name ?? null}, ${colour}, ${size}, ${wearerName ?? null})
       `);
     }
