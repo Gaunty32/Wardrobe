@@ -3749,7 +3749,7 @@ export default function OrderDetail() {
                                                 <table className="w-full text-xs border-collapse">
                                                   <thead>
                                                     <tr>
-                                                      <th className="text-left pr-1 text-muted-foreground font-semibold py-0.5 text-[10px]">Waist</th>
+                                                      <th className="text-left pr-1 text-muted-foreground font-semibold py-0.5 text-[10px]">Size</th>
                                                       {sleeveOpts.map(sl => (
                                                         <th key={sl} className="text-center px-0.5 text-muted-foreground font-semibold py-0.5 text-[10px] min-w-[2rem]">{sl}</th>
                                                       ))}
@@ -3797,7 +3797,7 @@ export default function OrderDetail() {
                                       <>
                                         <Select value={currentSize} onValueChange={v => setWardrobeItemSizes(s => ({ ...s, [id]: v }))}>
                                           <SelectTrigger className="h-8 text-sm w-full">
-                                            <SelectValue placeholder={sleeveOpts.length > 0 ? "Waist" : "Select size"} />
+                                            <SelectValue placeholder="Select size" />
                                           </SelectTrigger>
                                           <SelectContent>
                                             {sizeOpts.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
