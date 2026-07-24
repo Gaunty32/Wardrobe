@@ -328,6 +328,26 @@ export default function QuoteDetail() {
       .catch((e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }));
   };
 
+  // GP hooks — must be called unconditionally (before any early returns)
+  const productIds = useMemo(
+    () => {
+      const allItems = quote?.items ?? [];
+      return [...new Set(allItems.filter((i) => i.productId != null && !i.parentItemId).map((i) => i.productId!))];
+    },
+    [quote?.items],
+  );
+  const { data: gpProducts = [] } = useQuery<{ id: number; supplierPrice: number | null }[]>({
+    queryKey: ["quote-gp-products", productIds],
+    queryFn: () => Promise.all(productIds.map((pid) => apiFetch<{ id: number; supplierPrice: number | null }>(`/products/${pid}`))),
+    enabled: productIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+  const supplierPriceMap = useMemo(() => {
+    const m = new Map<number, number | null>();
+    gpProducts.forEach((p) => m.set(p.id, p.supplierPrice));
+    return m;
+  }, [gpProducts]);
+
   if (isLoading) {
     return (
       <Layout>
@@ -356,24 +376,6 @@ export default function QuoteDetail() {
   const subtotal = parentItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
   const vat = parentItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity * parseFloat(i.vatRate), 0);
   const total = subtotal + vat;
-
-  // GP calculation — fetch supplier prices for items that have a productId
-  const productIds = useMemo(
-    () => [...new Set(parentItems.filter((i) => i.productId != null).map((i) => i.productId!))],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [quote.items],
-  );
-  const { data: gpProducts = [] } = useQuery<{ id: number; supplierPrice: number | null }[]>({
-    queryKey: ["quote-gp-products", productIds],
-    queryFn: () => Promise.all(productIds.map((pid) => apiFetch<{ id: number; supplierPrice: number | null }>(`/products/${pid}`))),
-    enabled: productIds.length > 0,
-    staleTime: 5 * 60 * 1000,
-  });
-  const supplierPriceMap = useMemo(() => {
-    const m = new Map<number, number | null>();
-    gpProducts.forEach((p) => m.set(p.id, p.supplierPrice));
-    return m;
-  }, [gpProducts]);
   const gpItemsWithCost = parentItems.filter((i) => i.productId != null && (supplierPriceMap.get(i.productId!) ?? null) != null);
   const totalCost = gpItemsWithCost.reduce((s, i) => s + (supplierPriceMap.get(i.productId!)! * i.quantity), 0);
   const gpRevenue = gpItemsWithCost.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
