@@ -159,6 +159,14 @@ export default function QuoteDetail() {
   );
   const productSuggestions = productResults.slice(0, 10);
 
+  // Fetch variants for the currently-selected new item product (for colour dropdown)
+  const { data: newItemVariants = [] } = useQuery<{ colour: string | null }[]>({
+    queryKey: ["product-variants", newItem.productId],
+    queryFn: () => apiFetch(`/products/${newItem.productId}/variants`),
+    enabled: !!newItem.productId,
+  });
+  const newItemColours = [...new Set(newItemVariants.map((v) => v.colour).filter(Boolean) as string[])].sort();
+
   useEffect(() => {
     if (!quote) return;
     setCustomerName(quote.customerName);
@@ -326,9 +334,7 @@ export default function QuoteDetail() {
   const items = quote.items ?? [];
   const parentItems = items.filter((i) => !i.parentItemId);
   const childrenByParent = new Map(parentItems.map((p) => [p.id, items.filter((c) => c.parentItemId === p.id)]));
-  const hasColour = parentItems.some((i) => i.colour);
-  const hasSize = parentItems.some((i) => i.size);
-  const colSpan = 5 + (hasColour ? 1 : 0) + (hasSize ? 1 : 0) + 1;
+  const colSpan = 7; // Product | Colour | Finish | Qty | Unit Price | Line Total | Delete
   const subtotal = parentItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
   const vat = parentItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity * parseFloat(i.vatRate), 0);
   const total = subtotal + vat;
@@ -541,8 +547,7 @@ export default function QuoteDetail() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
-                  {hasColour && <TableHead className="w-28">Colour</TableHead>}
-                  {hasSize && <TableHead className="w-24">Size</TableHead>}
+                  <TableHead className="w-32">Colour</TableHead>
                   <TableHead className="w-36">Finish / Decoration</TableHead>
                   <TableHead className="w-20 text-right">Qty</TableHead>
                   <TableHead className="w-28 text-right">Unit Price</TableHead>
@@ -555,8 +560,6 @@ export default function QuoteDetail() {
                   <ItemRow
                     key={item.id}
                     item={item}
-                    showColour={hasColour}
-                    showSize={hasSize}
                     decorationItems={childrenByParent.get(item.id) ?? []}
                     onDelete={() => deleteItem.mutate(item.id)}
                     onSave={(data) => updateItem.mutate({ itemId: item.id, data })}
@@ -644,26 +647,31 @@ export default function QuoteDetail() {
                       </PopoverContent>
                     </Popover>
                   </TableCell>
-                  {hasColour && (
-                    <TableCell>
+                  <TableCell>
+                    {newItemColours.length > 0 ? (
+                      <Select
+                        value={newItem.colour || "__none__"}
+                        onValueChange={(v) => setNewItem((p) => ({ ...p, colour: v === "__none__" ? "" : v }))}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Select colour…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— Any colour —</SelectItem>
+                          {newItemColours.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
                       <Input
                         value={newItem.colour}
                         onChange={(e) => setNewItem((p) => ({ ...p, colour: e.target.value }))}
                         placeholder="Colour"
                         className="h-8 text-sm"
                       />
-                    </TableCell>
-                  )}
-                  {hasSize && (
-                    <TableCell>
-                      <Input
-                        value={newItem.size}
-                        onChange={(e) => setNewItem((p) => ({ ...p, size: e.target.value }))}
-                        placeholder="Size"
-                        className="h-8 text-sm"
-                      />
-                    </TableCell>
-                  )}
+                    )}
+                  </TableCell>
                   <TableCell>
                     <Input
                       value={newItem.finishName}
@@ -840,8 +848,6 @@ export default function QuoteDetail() {
 
 function ItemRow({
   item,
-  showColour,
-  showSize,
   decorationItems,
   onDelete,
   onSave,
@@ -850,25 +856,30 @@ function ItemRow({
   onSaveDecoration,
 }: {
   item: QuoteItem;
-  showColour: boolean;
-  showSize: boolean;
   decorationItems: QuoteItem[];
   onDelete: () => void;
-  onSave: (data: { productName?: string; colour?: string | null; size?: string | null; finishName?: string | null; quantity?: number; unitPrice?: number; notes?: string | null }) => void;
+  onSave: (data: { productName?: string; colour?: string | null; finishName?: string | null; quantity?: number; unitPrice?: number; notes?: string | null }) => void;
   onAddDecoration: () => void;
   onDeleteDecoration: (childId: number) => void;
   onSaveDecoration: (childId: number, finishName: string) => void;
 }) {
   const [productName, setProductName] = useState(item.productName);
   const [colour, setColour] = useState(item.colour ?? "");
-  const [size, setSize] = useState(item.size ?? "");
   const [finishName, setFinishName] = useState(item.finishName ?? "");
   const [quantity, setQuantity] = useState(item.quantity);
   const [unitPrice, setUnitPrice] = useState(parseFloat(item.unitPrice));
   const [notes, setNotes] = useState(item.notes ?? "");
 
+  // Fetch variants for colour dropdown
+  const { data: itemVariants = [] } = useQuery<{ colour: string | null }[]>({
+    queryKey: ["product-variants", item.productId],
+    queryFn: () => apiFetch(`/products/${item.productId}/variants`),
+    enabled: !!item.productId,
+  });
+  const itemColours = [...new Set(itemVariants.map((v) => v.colour).filter(Boolean) as string[])].sort();
+
   const save = () => {
-    onSave({ productName, colour: colour || null, size: size || null, finishName: finishName || null, quantity, unitPrice, notes: notes || null });
+    onSave({ productName, colour: colour || null, finishName: finishName || null, quantity, unitPrice, notes: notes || null });
   };
 
   return (
@@ -911,8 +922,23 @@ function ItemRow({
           </div>
         </div>
       </TableCell>
-      {showColour && (
-        <TableCell>
+      <TableCell>
+        {itemColours.length > 0 ? (
+          <Select
+            value={colour || "__none__"}
+            onValueChange={(v) => { const c = v === "__none__" ? "" : v; setColour(c); onSave({ colour: c || null }); }}
+          >
+            <SelectTrigger className="h-8 text-sm border-transparent hover:border-input focus:border-input">
+              <SelectValue placeholder="—" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— Any colour —</SelectItem>
+              {itemColours.map((c) => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
           <Input
             value={colour}
             onChange={(e) => setColour(e.target.value)}
@@ -920,19 +946,8 @@ function ItemRow({
             placeholder="—"
             className="h-8 text-sm border-transparent hover:border-input focus:border-input"
           />
-        </TableCell>
-      )}
-      {showSize && (
-        <TableCell>
-          <Input
-            value={size}
-            onChange={(e) => setSize(e.target.value)}
-            onBlur={save}
-            placeholder="—"
-            className="h-8 text-sm border-transparent hover:border-input focus:border-input"
-          />
-        </TableCell>
-      )}
+        )}
+      </TableCell>
       <TableCell>
         <div className="space-y-1 py-0.5">
           <Input
