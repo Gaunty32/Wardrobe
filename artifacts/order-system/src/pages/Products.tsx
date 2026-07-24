@@ -778,7 +778,7 @@ export default function Products() {
               <Input
                 id="name"
                 value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                onChange={(e) => setFormData((f) => ({ ...f, name: e.target.value }))}
                 placeholder={formData.isService ? "e.g. Logo Conversion to Stitches" : "e.g. Premium Polo Shirt"}
               />
             </div>
@@ -789,7 +789,7 @@ export default function Products() {
                 <div className="grid gap-2">
                   <Label htmlFor="sku">SKU</Label>
                   <div className="flex gap-2">
-                    <Input id="sku" value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g. FCC5129" className="flex-1" />
+                    <Input id="sku" value={formData.sku} onChange={(e) => setFormData((f) => ({ ...f, sku: e.target.value }))} placeholder="e.g. FCC5129" className="flex-1" />
                     {formData.customerId === "none" && (
                       <Button type="button" variant="outline" size="sm" onClick={autoFillFccSku} className="gap-1.5 text-xs whitespace-nowrap text-blue-700 border-blue-200 hover:bg-blue-50">
                         <Wand2 className="w-3.5 h-3.5" /> Suggest FCC
@@ -807,7 +807,7 @@ export default function Products() {
                   <Input
                     id="category"
                     value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    onChange={(e) => setFormData((f) => ({ ...f, category: e.target.value }))}
                     placeholder="e.g. Polo Shirts"
                     list="category-suggestions"
                   />
@@ -827,12 +827,12 @@ export default function Products() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label htmlFor="price">Unit Price (£) *</Label>
-                <Input id="price" type="number" min="0" step="1" value={formData.unitPrice || ""} onChange={(e) => setFormData({ ...formData, unitPrice: parseFloat(e.target.value) || 0 })} />
+                <Input id="price" type="number" min="0" step="1" value={formData.unitPrice || ""} onChange={(e) => setFormData((f) => ({ ...f, unitPrice: parseFloat(e.target.value) || 0 }))} />
               </div>
               {!formData.isService && !editingProduct && (
                 <div className="grid gap-2">
                   <Label htmlFor="stock">Stock Quantity</Label>
-                  <Input id="stock" type="number" value={formData.stockQuantity || ""} onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value, 10) || 0 })} />
+                  <Input id="stock" type="number" value={formData.stockQuantity || ""} onChange={(e) => setFormData((f) => ({ ...f, stockQuantity: parseInt(e.target.value, 10) || 0 }))} />
                 </div>
               )}
             </div>
@@ -840,7 +840,7 @@ export default function Products() {
             {/* ── Description ── */}
             <div className="grid gap-2">
               <Label htmlFor="description">Description</Label>
-              <Textarea id="description" className="resize-none" rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+              <Textarea id="description" className="resize-none" rows={3} value={formData.description} onChange={(e) => setFormData((f) => ({ ...f, description: e.target.value }))} />
             </div>
 
             {/* ── Product image ── */}
@@ -926,7 +926,7 @@ export default function Products() {
                           <CommandGroup>
                             <CommandItem
                               value="none"
-                              onSelect={() => { setFormData({ ...formData, customerId: "none" }); setCustomerComboOpen(false); }}
+                              onSelect={() => { setFormData((f) => ({ ...f, customerId: "none" })); setCustomerComboOpen(false); }}
                             >
                               <Check className={cn("mr-2 h-4 w-4", formData.customerId === "none" ? "opacity-100" : "opacity-0")} />
                               — Standard product (all customers) —
@@ -935,7 +935,7 @@ export default function Products() {
                               <CommandItem
                                 key={c.id}
                                 value={c.name}
-                                onSelect={() => { setFormData({ ...formData, customerId: String(c.id) }); setCustomerComboOpen(false); }}
+                                onSelect={() => { setFormData((f) => ({ ...f, customerId: String(c.id) })); setCustomerComboOpen(false); }}
                               >
                                 <Check className={cn("mr-2 h-4 w-4", formData.customerId === String(c.id) ? "opacity-100" : "opacity-0")} />
                                 {c.name}
@@ -964,7 +964,7 @@ export default function Products() {
                   <Label>Preferred Supplier</Label>
                   <Select value={formData.supplierId} onValueChange={(v) => {
                     const sup = (suppliers as any[]).find((s: any) => String(s.id) === v);
-                    setFormData({ ...formData, supplierId: v, supplierCurrency: sup?.currency ?? "GBP" });
+                    setFormData((f) => ({ ...f, supplierId: v, supplierCurrency: sup?.currency ?? "GBP" }));
                   }}>
                     <SelectTrigger><SelectValue placeholder="— None —" /></SelectTrigger>
                     <SelectContent>
@@ -978,11 +978,11 @@ export default function Products() {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Supplier Code</Label>
-                    <Input value={formData.supplierCode} onChange={(e) => setFormData({ ...formData, supplierCode: e.target.value })} placeholder="e.g. FCC2105" />
+                    <Input value={formData.supplierCode} onChange={(e) => setFormData((f) => ({ ...f, supplierCode: e.target.value }))} placeholder="e.g. FCC2105" />
                   </div>
                   <div className="grid gap-2">
                     <Label>Supplier Price ({formData.supplierCurrency === "USD" ? "$" : formData.supplierCurrency === "EUR" ? "€" : "£"})</Label>
-                    <Input type="number" min="0" step="0.01" value={formData.supplierPrice} onChange={(e) => setFormData({ ...formData, supplierPrice: e.target.value })} placeholder="0.00" />
+                    <Input type="number" min="0" step="0.01" value={formData.supplierPrice} onChange={(e) => setFormData((f) => ({ ...f, supplierPrice: e.target.value }))} placeholder="0.00" />
                   </div>
                 </div>
               </div>
