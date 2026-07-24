@@ -2587,6 +2587,33 @@ const UpdateOrderItemBodyExtended = z.object({
   notes: z.string().nullable().optional(),
 });
 
+router.patch("/orders/:id/items/bulk-price", async (req, res): Promise<void> => {
+  const orderId = parseInt(req.params.id);
+  if (isNaN(orderId)) { res.status(400).json({ error: "Invalid order id" }); return; }
+
+  const body = z.object({
+    productId: z.number().int().positive(),
+    unitPrice: z.number().positive(),
+  }).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  const { productId, unitPrice } = body.data;
+
+  const updated = await db.execute(sql`
+    UPDATE order_items
+    SET unit_price = ${String(unitPrice)},
+        line_total = (quantity::numeric * ${String(unitPrice)})::numeric
+    WHERE order_id = ${orderId}
+      AND product_id = ${productId}
+      AND is_bundle_header IS NOT TRUE
+    RETURNING id
+  `);
+
+  await recalcOrderTotal(orderId);
+
+  res.json({ updated: (updated.rows ?? updated).length });
+});
+
 router.patch("/orders/:id/items/:itemId", async (req, res): Promise<void> => {
   const params = UpdateOrderItemParams.safeParse(req.params);
   if (!params.success) {

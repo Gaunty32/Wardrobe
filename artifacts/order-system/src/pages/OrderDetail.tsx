@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { printDpdLabelHtml } from "@/utils/printDpdLabel";
 import Layout from "@/components/Layout";
 import { useRoute, useLocation } from "wouter";
@@ -382,6 +382,24 @@ export default function OrderDetail() {
   const addItemMutation = useAddOrderItem();
   const deleteItemMutation = useDeleteOrderItem();
 
+  const applyPriceBreakMutation = useMutation({
+    mutationFn: ({ productId, unitPrice }: { productId: number; unitPrice: number }) =>
+      apiFetch(`/orders/${orderId}/items/bulk-price`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, unitPrice }),
+      }),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      const prompt = priceBreakPromptRef.current;
+      if (prompt) {
+        toast({ title: "Price updated", description: `${prompt.productName} updated to £${vars.unitPrice.toFixed(2)} on all lines.` });
+      }
+      setPriceBreakPrompt(null);
+    },
+    onError: (e: Error) => toast({ title: "Could not update price", description: e.message, variant: "destructive" }),
+  });
+
   const addBundleMutation = useMutation({
     mutationFn: ({ bundleId, wearerName, componentOverrides }: { bundleId: number; wearerName?: string; componentOverrides?: Array<{ componentId: number; colour?: string; size?: string }> }) =>
       apiFetch(`/bundles/${bundleId}/add-to-order/${orderId}`, {
@@ -465,6 +483,20 @@ export default function OrderDetail() {
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
 
+  // ── Price-break prompt ────────────────────────────────────────────────────
+  const [priceBreakPrompt, setPriceBreakPrompt] = useState<{
+    productId: number;
+    productName: string;
+    lineCount: number;
+    oldPrice: number;
+    newPrice: number;
+    tierQty: number;
+    totalQty: number;
+  } | null>(null);
+  const priceBreakPromptRef = useRef(priceBreakPrompt);
+  useEffect(() => { priceBreakPromptRef.current = priceBreakPrompt; }, [priceBreakPrompt]);
+  const promptedOnLoadRef = useRef<Set<number>>(new Set());
+
   // ── Actor name (who is using the system) ──────────────────────────────────
   const [actorName, setActorName] = useState<string>(() => getStoredActor());
   const [actorEditing, setActorEditing] = useState(false);
@@ -522,6 +554,47 @@ export default function OrderDetail() {
       toast({ title: "Error saving delivery address", description: e.message, variant: "destructive" });
     },
   });
+
+  // Check on load: if any product total already qualifies for a better break price, prompt once
+  useEffect(() => {
+    if (!order?.items || !products) return;
+    const byProduct: Record<number, { items: any[]; product: any }> = {};
+    for (const oi of (order.items as any[])) {
+      if (!oi.productId || oi.isBundleHeader || oi.bundleRef) continue;
+      const prod = products.find((p: any) => p.id === oi.productId);
+      if (!prod) continue;
+      const breaks = Array.isArray((prod as any).priceBreaks) ? (prod as any).priceBreaks as { qty: number; price: number }[] : [];
+      if (!breaks.length) continue;
+      if (!byProduct[oi.productId]) byProduct[oi.productId] = { items: [], product: prod };
+      byProduct[oi.productId].items.push(oi);
+    }
+    for (const [productIdStr, { items, product }] of Object.entries(byProduct)) {
+      const productId = parseInt(productIdStr);
+      if (promptedOnLoadRef.current.has(productId)) continue;
+      const breaks = ((product as any).priceBreaks as { qty: number; price: number }[])
+        .map(b => ({ qty: Number(b.qty), price: parseFloat(String(b.price)) }))
+        .filter(b => !isNaN(b.price))
+        .sort((a, b) => a.qty - b.qty);
+      const totalQty = items.reduce((s: number, oi: any) => s + (Number(oi.quantity) || 0), 0);
+      const applicableBreakPrice = getBreakPrice(breaks, totalQty);
+      if (applicableBreakPrice === null) continue;
+      const currentPrice = parseFloat(String(items[0].unitPrice));
+      if (isNaN(currentPrice) || applicableBreakPrice >= currentPrice) continue;
+      if (Math.abs(currentPrice - applicableBreakPrice) < 0.005) continue;
+      const tier = breaks.filter(b => b.qty <= totalQty).pop()!;
+      promptedOnLoadRef.current.add(productId);
+      setPriceBreakPrompt({
+        productId,
+        productName: (product as any).name,
+        lineCount: items.length,
+        oldPrice: currentPrice,
+        newPrice: applicableBreakPrice,
+        tierQty: tier.qty,
+        totalQty,
+      });
+      break;
+    }
+  }, [order?.items, products]);
 
   // Auto-set delivery address when order has none but customer has addresses
   useEffect(() => {
@@ -1429,17 +1502,38 @@ export default function OrderDetail() {
           refetchEmployees();
           toast({ title: "Item Added", description: `${item.productName} added to order.` });
 
-          // Price-break suggestion
+          // Price-break prompt
           const prod = products?.find(p => p.id === item.productId);
           const breaks: { qty: number; price: number }[] = Array.isArray((prod as any)?.priceBreaks)
             ? (prod as any).priceBreaks : [];
-          if (breaks.length > 0) {
+          if (breaks.length > 0 && item.productId) {
             const existingQty = (order?.items ?? [])
-              .filter((oi: any) => oi.productId === item.productId)
+              .filter((oi: any) => oi.productId === item.productId && !oi.isBundleHeader && !oi.bundleRef)
               .reduce((s: number, oi: any) => s + (Number(oi.quantity) || 0), 0);
             const totalQty = existingQty + addedQty;
-            const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
-            if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+            const normalised = breaks.map(b => ({ qty: Number(b.qty), price: parseFloat(String(b.price)) })).sort((a, b) => a.qty - b.qty);
+            const justUnlocked = normalised.filter(b => b.qty <= totalQty && b.qty > existingQty);
+            if (justUnlocked.length > 0) {
+              const best = justUnlocked[justUnlocked.length - 1];
+              if (best.price < price) {
+                const existingLineCount = (order?.items ?? []).filter((oi: any) => oi.productId === item.productId && !oi.isBundleHeader && !oi.bundleRef).length;
+                setTimeout(() => setPriceBreakPrompt({
+                  productId: item.productId!,
+                  productName: item.productName,
+                  lineCount: existingLineCount + 1,
+                  oldPrice: price,
+                  newPrice: best.price,
+                  tierQty: best.qty,
+                  totalQty,
+                }), 300);
+              } else {
+                const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
+                if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+              }
+            } else {
+              const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
+              if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+            }
           }
 
           resetDialog();
@@ -1507,18 +1601,39 @@ export default function OrderDetail() {
         refetchEmployees();
         toast({ title: "Items Added", description: `${sizeRows.length} size lines added to order.` });
 
-        // Price-break suggestion for multi-size
+        // Price-break prompt for multi-size
         const prod = products?.find(p => p.id === item.productId);
         const breaks: { qty: number; price: number }[] = Array.isArray((prod as any)?.priceBreaks)
           ? (prod as any).priceBreaks : [];
-        if (breaks.length > 0) {
+        if (breaks.length > 0 && item.productId) {
           const existingQty = (order?.items ?? [])
-            .filter((oi: any) => oi.productId === item.productId)
+            .filter((oi: any) => oi.productId === item.productId && !oi.isBundleHeader && !oi.bundleRef)
             .reduce((s: number, oi: any) => s + (Number(oi.quantity) || 0), 0);
           const addedQty = sizeRows.reduce((s, r) => s + (r.qty || 0), 0);
           const totalQty = existingQty + addedQty;
-          const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
-          if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+          const normalised = breaks.map(b => ({ qty: Number(b.qty), price: parseFloat(String(b.price)) })).sort((a, b) => a.qty - b.qty);
+          const justUnlocked = normalised.filter(b => b.qty <= totalQty && b.qty > existingQty);
+          if (justUnlocked.length > 0) {
+            const best = justUnlocked[justUnlocked.length - 1];
+            if (best.price < price) {
+              const existingLineCount = (order?.items ?? []).filter((oi: any) => oi.productId === item.productId && !oi.isBundleHeader && !oi.bundleRef).length;
+              setTimeout(() => setPriceBreakPrompt({
+                productId: item.productId!,
+                productName: item.productName,
+                lineCount: existingLineCount + sizeRows.length,
+                oldPrice: price,
+                newPrice: best.price,
+                tierQty: best.qty,
+                totalQty,
+              }), 300);
+            } else {
+              const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
+              if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+            }
+          } else {
+            const suggestion = getPriceBreakSuggestion(item.productName, totalQty, existingQty, breaks, price);
+            if (suggestion) setTimeout(() => toast({ title: suggestion.title, description: suggestion.description }), 500);
+          }
         }
 
         resetDialog();
@@ -4631,6 +4746,59 @@ export default function OrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* ── Price-break apply dialog ───────────────────────────────────────── */}
+      <Dialog open={!!priceBreakPrompt} onOpenChange={open => { if (!open) setPriceBreakPrompt(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BadgePercent className="w-5 h-5 text-green-600" />
+              Special price available
+            </DialogTitle>
+          </DialogHeader>
+          {priceBreakPrompt && (
+            <div className="space-y-4 py-2">
+              <p className="text-sm text-muted-foreground">
+                You now have <span className="font-semibold text-foreground">{priceBreakPrompt.totalQty}×</span> {priceBreakPrompt.productName} on this order,
+                qualifying for the <span className="font-semibold text-foreground">{priceBreakPrompt.tierQty}+</span> price tier.
+              </p>
+              <div className="rounded-lg border bg-muted/40 p-4 flex items-center justify-between">
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Current price</p>
+                  <p className="text-lg font-semibold line-through text-muted-foreground">£{priceBreakPrompt.oldPrice.toFixed(2)}</p>
+                </div>
+                <div className="text-muted-foreground text-xl">→</div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground mb-1">Special price</p>
+                  <p className="text-2xl font-bold text-green-600">£{priceBreakPrompt.newPrice.toFixed(2)}</p>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Saves £{(priceBreakPrompt.oldPrice - priceBreakPrompt.newPrice).toFixed(2)} per item across {priceBreakPrompt.lineCount} {priceBreakPrompt.lineCount === 1 ? "line" : "lines"}
+                {" "}(£{((priceBreakPrompt.oldPrice - priceBreakPrompt.newPrice) * priceBreakPrompt.totalQty).toFixed(2)} total saving)
+              </p>
+            </div>
+          )}
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => setPriceBreakPrompt(null)} className="flex-1">
+              Keep current price
+            </Button>
+            <Button
+              className="flex-1 bg-green-600 hover:bg-green-700"
+              disabled={applyPriceBreakMutation.isPending}
+              onClick={() => priceBreakPrompt && applyPriceBreakMutation.mutate({
+                productId: priceBreakPrompt.productId,
+                unitPrice: priceBreakPrompt.newPrice,
+              })}
+            >
+              {applyPriceBreakMutation.isPending
+                ? <><Loader2 className="w-4 h-4 animate-spin mr-1.5" />Updating…</>
+                : `Apply £${priceBreakPrompt?.newPrice.toFixed(2)} to all ${priceBreakPrompt?.lineCount} ${priceBreakPrompt?.lineCount === 1 ? "line" : "lines"}`
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {priceConfirmDialog}
     </Layout>
   );
