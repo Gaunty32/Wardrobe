@@ -226,6 +226,23 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
     WHERE qi.quote_id = ${id}
     ORDER BY qi.sort_order, qi.id
   `);
+
+  // Delivery address attached to this quote
+  let deliveryAddress: any = null;
+  if (quote.delivery_address_id) {
+    const daRows = await db.execute(sql`SELECT * FROM customer_delivery_addresses WHERE id = ${quote.delivery_address_id}`);
+    if (daRows.rows[0]) deliveryAddress = rowToCamel(daRows.rows[0] as any);
+  }
+
+  // All delivery addresses for the linked customer (for the selector)
+  let customerDeliveryAddresses: any[] = [];
+  if (quote.customer_id) {
+    const daList = await db.execute(sql`
+      SELECT * FROM customer_delivery_addresses WHERE customer_id = ${quote.customer_id} ORDER BY is_default DESC, label ASC
+    `);
+    customerDeliveryAddresses = (daList.rows as any[]).map(rowToCamel);
+  }
+
   const base = quoteToCamel(quote, itemRows.rows as any[]);
   res.json({
     ...base,
@@ -233,6 +250,8 @@ router.get("/quotes/:id", async (req: Request, res: Response): Promise<void> => 
     contactLastName:  quote.contact_last_name  ?? null,
     customerPhone:    quote.customer_phone      ?? null,
     customerEmail:    quote.customer_email      ?? null,
+    deliveryAddress,
+    customerDeliveryAddresses,
   });
 });
 
@@ -245,6 +264,7 @@ const UpdateSchema = z.object({
   coverText: z.string().nullable().optional(),
   expiresAt: z.string().nullable().optional(),
   customerLogoUrl: z.string().nullable().optional(),
+  deliveryAddressId: z.number().int().positive().nullable().optional(),
 });
 
 router.patch("/quotes/:id", async (req: Request, res: Response): Promise<void> => {
@@ -259,14 +279,15 @@ router.patch("/quotes/:id", async (req: Request, res: Response): Promise<void> =
   const d = parsed.data;
   const result = await db.execute(sql`
     UPDATE quotes SET
-      customer_name      = ${d.customerName ?? existing.customer_name},
-      customer_id        = ${d.customerId !== undefined ? d.customerId : existing.customer_id},
-      status             = ${d.status ?? existing.status},
-      notes              = ${d.notes !== undefined ? d.notes : existing.notes},
-      cover_text         = ${d.coverText !== undefined ? d.coverText : existing.cover_text},
-      expires_at         = ${d.expiresAt !== undefined ? (d.expiresAt ? new Date(d.expiresAt) : null) : existing.expires_at},
-      customer_logo_url  = ${d.customerLogoUrl !== undefined ? d.customerLogoUrl : existing.customer_logo_url},
-      updated_at         = now()
+      customer_name        = ${d.customerName ?? existing.customer_name},
+      customer_id          = ${d.customerId !== undefined ? d.customerId : existing.customer_id},
+      status               = ${d.status ?? existing.status},
+      notes                = ${d.notes !== undefined ? d.notes : existing.notes},
+      cover_text           = ${d.coverText !== undefined ? d.coverText : existing.cover_text},
+      expires_at           = ${d.expiresAt !== undefined ? (d.expiresAt ? new Date(d.expiresAt) : null) : existing.expires_at},
+      customer_logo_url    = ${d.customerLogoUrl !== undefined ? d.customerLogoUrl : existing.customer_logo_url},
+      delivery_address_id  = ${d.deliveryAddressId !== undefined ? d.deliveryAddressId : existing.delivery_address_id},
+      updated_at           = now()
     WHERE id = ${id}
     RETURNING *
   `);

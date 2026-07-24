@@ -59,6 +59,18 @@ interface QuoteItem {
   sortOrder: number;
 }
 
+interface DeliveryAddress {
+  id: number;
+  customerId: number;
+  label: string | null;
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  postcode: string | null;
+  country: string | null;
+  isDefault: boolean;
+}
+
 interface Quote {
   id: number;
   quoteNumber: string;
@@ -77,6 +89,9 @@ interface Quote {
   contactLastName: string | null;
   customerPhone: string | null;
   customerEmail: string | null;
+  deliveryAddressId: number | null;
+  deliveryAddress: DeliveryAddress | null;
+  customerDeliveryAddresses: DeliveryAddress[];
 }
 
 type QuoteStatus = Quote["status"];
@@ -134,6 +149,7 @@ export default function QuoteDetail() {
   const [coverText, setCoverText] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
   const [customerLogoUrl, setCustomerLogoUrl] = useState<string | null>(null);
+  const [deliveryAddressId, setDeliveryAddressId] = useState<number | null>(null);
   const [dirty, setDirty] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
 
@@ -174,6 +190,7 @@ export default function QuoteDetail() {
     setNotes(quote.notes ?? "");
     setCoverText(quote.coverText ?? "");
     setCustomerLogoUrl(quote.customerLogoUrl ?? null);
+    setDeliveryAddressId(quote.deliveryAddressId ?? null);
     if (quote.expiresAt) {
       setExpiresAt(new Date(quote.expiresAt).toISOString().slice(0, 10));
     } else {
@@ -194,6 +211,7 @@ export default function QuoteDetail() {
         coverText: coverText || null,
         expiresAt: expiresAt || null,
         customerLogoUrl: customerLogoUrl ?? null,
+        deliveryAddressId: deliveryAddressId ?? null,
       }),
     }),
     onSuccess: () => {
@@ -529,6 +547,44 @@ export default function QuoteDetail() {
                   )}
                 </div>
               )}
+
+              {/* Delivery Address */}
+              <div className="space-y-1.5">
+                <Label>Delivery Address</Label>
+                {quote.customerDeliveryAddresses.length > 0 ? (
+                  <Select
+                    value={deliveryAddressId != null ? String(deliveryAddressId) : "none"}
+                    onValueChange={(v) => { setDeliveryAddressId(v === "none" ? null : parseInt(v)); setDirty(true); }}
+                  >
+                    <SelectTrigger><SelectValue placeholder="— None selected —" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— None selected —</SelectItem>
+                      {quote.customerDeliveryAddresses.map((a) => (
+                        <SelectItem key={a.id} value={String(a.id)}>
+                          {a.label ?? [a.line1, a.city, a.postcode].filter(Boolean).join(", ") ?? `Address ${a.id}`}
+                          {a.isDefault ? " ★" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic">
+                    {quote.customerId ? "No delivery addresses saved for this customer." : "Link a customer to select a delivery address."}
+                  </p>
+                )}
+                {/* Show the selected address details */}
+                {deliveryAddressId != null && (() => {
+                  const a = quote.customerDeliveryAddresses.find((x) => x.id === deliveryAddressId);
+                  if (!a) return null;
+                  const lines = [a.line1, a.line2, a.city, a.postcode, a.country].filter(Boolean);
+                  return (
+                    <div className="rounded-lg bg-muted/40 border px-3 py-2 text-xs text-muted-foreground space-y-0.5">
+                      {a.label && <p className="font-semibold text-foreground">{a.label}</p>}
+                      {lines.map((l, i) => <p key={i}>{l}</p>)}
+                    </div>
+                  );
+                })()}
+              </div>
 
               <div className="space-y-1.5">
                 <Label>Status</Label>
