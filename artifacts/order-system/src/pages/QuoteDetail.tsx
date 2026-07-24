@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useListProducts } from "@workspace/api-client-react";
 import { Link, useParams, useLocation } from "wouter";
@@ -339,6 +339,31 @@ export default function QuoteDetail() {
   const vat = parentItems.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity * parseFloat(i.vatRate), 0);
   const total = subtotal + vat;
 
+  // GP calculation — fetch supplier prices for items that have a productId
+  const productIds = useMemo(
+    () => [...new Set(parentItems.filter((i) => i.productId != null).map((i) => i.productId!))],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [quote.items],
+  );
+  const { data: gpProducts = [] } = useQuery<{ id: number; supplierPrice: number | null }[]>({
+    queryKey: ["quote-gp-products", productIds],
+    queryFn: () => Promise.all(productIds.map((pid) => apiFetch<{ id: number; supplierPrice: number | null }>(`/products/${pid}`))),
+    enabled: productIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+  const supplierPriceMap = useMemo(() => {
+    const m = new Map<number, number | null>();
+    gpProducts.forEach((p) => m.set(p.id, p.supplierPrice));
+    return m;
+  }, [gpProducts]);
+  const gpItemsWithCost = parentItems.filter((i) => i.productId != null && (supplierPriceMap.get(i.productId!) ?? null) != null);
+  const totalCost = gpItemsWithCost.reduce((s, i) => s + (supplierPriceMap.get(i.productId!)! * i.quantity), 0);
+  const gpRevenue = gpItemsWithCost.reduce((s, i) => s + parseFloat(i.unitPrice) * i.quantity, 0);
+  const grossProfit = gpRevenue - totalCost;
+  const gpPct = gpRevenue > 0 ? (grossProfit / gpRevenue) * 100 : null;
+  const gpColor = gpPct == null ? "text-muted-foreground" : gpPct >= 40 ? "text-emerald-600" : gpPct >= 25 ? "text-amber-600" : "text-red-600";
+  const gpBg = gpPct == null ? "bg-muted/30" : gpPct >= 40 ? "bg-emerald-50" : gpPct >= 25 ? "bg-amber-50" : "bg-red-50";
+
   const portalLink = `${window.location.origin}/customer-portal/orders/new?quote=${quote.token}`;
   const fullMessage = `${coverText}\n\nClick the link below to view your quote and place your order:\n${portalLink}`;
 
@@ -526,15 +551,54 @@ export default function QuoteDetail() {
               </div>
             </div>
           </div>
-          <div className="space-y-4 rounded-xl border bg-card p-5">
-            <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Internal Notes</h3>
-            <Textarea
-              value={notes}
-              onChange={(e) => { setNotes(e.target.value); setDirty(true); }}
-              placeholder="Notes about this enquiry — products discussed, sizes, budget, etc."
-              rows={5}
-              className="resize-none"
-            />
+          <div className="space-y-4">
+            <div className="rounded-xl border bg-card p-5 space-y-4">
+              <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Internal Notes</h3>
+              <Textarea
+                value={notes}
+                onChange={(e) => { setNotes(e.target.value); setDirty(true); }}
+                placeholder="Notes about this enquiry — products discussed, sizes, budget, etc."
+                rows={5}
+                className="resize-none"
+              />
+            </div>
+
+            {/* GP Summary Card */}
+            {parentItems.length > 0 && (
+              <div className={`rounded-xl border p-5 space-y-3 ${gpBg}`}>
+                <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Gross Profit</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Quote Revenue</span>
+                    <span className="font-medium">£{subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Est. Cost</span>
+                    <span className="font-medium">
+                      {gpItemsWithCost.length === 0 ? <span className="text-muted-foreground italic">no data</span> : `£${totalCost.toFixed(2)}`}
+                    </span>
+                  </div>
+                  <div className={`flex justify-between pt-2 border-t font-semibold text-base ${gpColor}`}>
+                    <span>GP</span>
+                    <span>
+                      {gpPct != null ? (
+                        <>£{grossProfit.toFixed(2)} <span className="text-sm font-medium ml-1">({gpPct.toFixed(1)}%)</span></>
+                      ) : (
+                        <span className="text-sm font-normal text-muted-foreground italic">—</span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                {gpItemsWithCost.length < parentItems.filter(i => i.productId != null).length && gpItemsWithCost.length > 0 && (
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Based on {gpItemsWithCost.length} of {parentItems.length} item{parentItems.length !== 1 ? "s" : ""} with known supplier price.
+                  </p>
+                )}
+                {gpItemsWithCost.length === 0 && productIds.length > 0 && (
+                  <p className="text-xs text-muted-foreground">No supplier prices set on these products.</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
