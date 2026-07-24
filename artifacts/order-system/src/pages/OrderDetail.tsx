@@ -3179,8 +3179,58 @@ export default function OrderDetail() {
             totalCost: number | null;
             hasMissingCost: boolean;
           };
-          const groupMap = new Map<string, GpGroup>();
+          // Bundle-aware GP grouping:
+          // 1. Per bundleRef: pair the header's revenue with all component costs.
+          // 2. Aggregate bundle instances sharing the same product name into one row.
+          // 3. Non-bundle items group by product name as usual.
+          type BundleInstance = {
+            name: string; sku: string | null;
+            qty: number; revenue: number;
+            cost: number | null; hasMissingCost: boolean;
+          };
+          const bundleInstances = new Map<string, BundleInstance>();
           for (const item of order.items) {
+            const bRef = (item as any).bundleRef as string | null | undefined;
+            if (!bRef) continue;
+            if (!bundleInstances.has(bRef)) {
+              bundleInstances.set(bRef, { name: "", sku: null, qty: 0, revenue: 0, cost: 0, hasMissingCost: false });
+            }
+            const inst = bundleInstances.get(bRef)!;
+            if ((item as any).isBundleHeader) {
+              inst.name = item.productName ?? "Bundle";
+              inst.sku = (item as any).productSku ?? null;
+              inst.qty += Number(item.quantity ?? 0);
+              inst.revenue += parseFloat(String(item.lineTotal)) || 0;
+            } else {
+              const garmentCost: number | null = (item as any).garmentCost ?? null;
+              const processCost: number = (item as any).processCost ?? 0;
+              if (garmentCost != null) {
+                inst.cost = (inst.cost ?? 0) + garmentCost + processCost;
+              } else {
+                inst.hasMissingCost = true;
+                inst.cost = null;
+              }
+            }
+          }
+
+          const groupMap = new Map<string, GpGroup>();
+
+          // Aggregate bundle instances by bundle product name
+          for (const inst of bundleInstances.values()) {
+            const key = `__BUNDLE__|||${inst.name}|||${inst.sku ?? ""}`;
+            if (!groupMap.has(key)) {
+              groupMap.set(key, { productName: inst.name, productSku: inst.sku, totalQty: 0, totalRevenue: 0, totalCost: 0, hasMissingCost: false });
+            }
+            const g = groupMap.get(key)!;
+            g.totalQty += inst.qty;
+            g.totalRevenue += inst.revenue;
+            if (inst.hasMissingCost) { g.hasMissingCost = true; g.totalCost = null; }
+            else if (!g.hasMissingCost) { g.totalCost = (g.totalCost ?? 0) + (inst.cost ?? 0); }
+          }
+
+          // Non-bundle items
+          for (const item of order.items) {
+            if ((item as any).isBundleHeader || (item as any).bundleRef) continue;
             const key = (item.productName ?? "Unknown") + "|||" + ((item as any).productSku ?? "");
             if (!groupMap.has(key)) {
               groupMap.set(key, {
