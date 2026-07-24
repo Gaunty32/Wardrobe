@@ -168,7 +168,9 @@ router.get("/orders", async (req, res): Promise<void> => {
         oi.order_id AS "orderId",
         COALESCE(SUM(oi.quantity * resolved.supplier_price), 0)::float AS cost,
         COUNT(*) FILTER (
-          WHERE p.is_service IS NOT TRUE
+          WHERE oi.product_id IS NOT NULL
+            AND oi.is_bundle_header IS NOT TRUE
+            AND p.is_service IS NOT TRUE
             AND (resolved.supplier_price IS NULL OR resolved.supplier_price = 0)
         )::int AS "missingCost"
       FROM order_items oi
@@ -890,11 +892,16 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
         const resolvedSupplierName = varSup?.supplierName ?? sup?.supplierName ?? null;
         const resolvedSupplierEmail = varSup?.supplierEmail ?? sup?.supplierEmail ?? null;
 
+        // Items with shortfall=0 and no finish go straight to the picking list.
+        // Items with a finish still go through the worksheet → in_production → complete
+        // production flow, so leave their stockStatus null for the worksheet to manage.
+        const itemStockStatus = shortfall > 0 ? null : (!item.finishId ? "allocated" : null);
         await db.update(orderItemsTable).set({
           purchaseRequired: shortfall > 0,
           purchaseQuantity: shortfall > 0 ? shortfall : null,
           supplierId: shortfall > 0 ? resolvedSupplierId : null,
           supplierName: shortfall > 0 ? resolvedSupplierName : null,
+          ...(itemStockStatus ? { stockStatus: itemStockStatus, stockAllocatedAt: new Date() } : {}),
         }).where(eq(orderItemsTable.id, item.id));
 
         if (shortfall > 0) {
@@ -2518,6 +2525,16 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     }
   }
 
+  // For confirmed orders where stock was fully allocated (no shortfall) and the item
+  // has no finish (no production step), mark it as allocated immediately so it appears
+  // on the picking list without needing the safety-net startup promotion.
+  // Items with a finish go through a worksheet → in_production → complete flow instead.
+  const resolvedStockStatus =
+    order.status === "confirmed" && !resolvedPurchaseRequired && !parsed.data.finishId
+      ? "allocated"
+      : null;
+  const resolvedStockAllocatedAt = resolvedStockStatus === "allocated" ? new Date() : null;
+
   const lineTotal = parsed.data.quantity * parsed.data.unitPrice;
   const [item] = await db
     .insert(orderItemsTable)
@@ -2540,6 +2557,8 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       purchaseQuantity: resolvedPurchaseQuantity,
       supplierId: resolvedSupplierId,
       supplierName: resolvedSupplierName,
+      stockStatus: resolvedStockStatus,
+      stockAllocatedAt: resolvedStockAllocatedAt,
     })
     .returning();
 
