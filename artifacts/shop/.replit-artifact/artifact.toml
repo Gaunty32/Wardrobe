@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/shop/"
+title = "SBS Shop"
+version = "1.0.0"
+id = "artifacts/shop"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/shop/" ]
+localPort = 24349
+
+[services.development]
+run = "pnpm --filter @workspace/shop run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/shop", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/shop/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24349"
+BASE_PATH = "/shop/"

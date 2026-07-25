@@ -29,11 +29,18 @@ import type {
   ListCustomersParams,
   ListOrdersParams,
   ListProductsParams,
+  ListShopProductsParams,
   ListSuppliersParams,
   Order,
   OrderDetail,
   OrderItem,
   Product,
+  ShopCategory,
+  ShopEnquiryInput,
+  ShopEnquiryResponse,
+  ShopProduct,
+  ShopProductDetail,
+  ShopSettings,
   Supplier,
   UpdateCustomerBody,
   UpdateOrderBody,
@@ -2211,3 +2218,423 @@ export function useGetDashboardStats<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Get public shop branding and contact settings
+ */
+export const getGetShopSettingsUrl = () => {
+  return `/api/shop/settings`;
+};
+
+export const getShopSettings = async (
+  options?: RequestInit,
+): Promise<ShopSettings> => {
+  return customFetch<ShopSettings>(getGetShopSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetShopSettingsQueryKey = () => {
+  return [`/api/shop/settings`] as const;
+};
+
+export const getGetShopSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getShopSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getShopSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetShopSettingsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopSettings>>> = ({
+    signal,
+  }) => getShopSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getShopSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetShopSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getShopSettings>>
+>;
+export type GetShopSettingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get public shop branding and contact settings
+ */
+
+export function useGetShopSettings<
+  TData = Awaited<ReturnType<typeof getShopSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getShopSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetShopSettingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List all product categories with product count
+ */
+export const getListShopCategoriesUrl = () => {
+  return `/api/shop/categories`;
+};
+
+export const listShopCategories = async (
+  options?: RequestInit,
+): Promise<ShopCategory[]> => {
+  return customFetch<ShopCategory[]>(getListShopCategoriesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListShopCategoriesQueryKey = () => {
+  return [`/api/shop/categories`] as const;
+};
+
+export const getListShopCategoriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listShopCategories>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listShopCategories>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListShopCategoriesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listShopCategories>>
+  > = ({ signal }) => listShopCategories({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listShopCategories>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListShopCategoriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listShopCategories>>
+>;
+export type ListShopCategoriesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all product categories with product count
+ */
+
+export function useListShopCategories<
+  TData = Awaited<ReturnType<typeof listShopCategories>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listShopCategories>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListShopCategoriesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List published shop products (public, no auth)
+ */
+export const getListShopProductsUrl = (params?: ListShopProductsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/shop/products?${stringifiedParams}`
+    : `/api/shop/products`;
+};
+
+export const listShopProducts = async (
+  params?: ListShopProductsParams,
+  options?: RequestInit,
+): Promise<ShopProduct[]> => {
+  return customFetch<ShopProduct[]>(getListShopProductsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListShopProductsQueryKey = (
+  params?: ListShopProductsParams,
+) => {
+  return [`/api/shop/products`, ...(params ? [params] : [])] as const;
+};
+
+export const getListShopProductsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listShopProducts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListShopProductsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listShopProducts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListShopProductsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listShopProducts>>
+  > = ({ signal }) => listShopProducts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listShopProducts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListShopProductsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listShopProducts>>
+>;
+export type ListShopProductsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List published shop products (public, no auth)
+ */
+
+export function useListShopProducts<
+  TData = Awaited<ReturnType<typeof listShopProducts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListShopProductsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listShopProducts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListShopProductsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a single shop product with full details
+ */
+export const getGetShopProductUrl = (id: number) => {
+  return `/api/shop/products/${id}`;
+};
+
+export const getShopProduct = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ShopProductDetail> => {
+  return customFetch<ShopProductDetail>(getGetShopProductUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetShopProductQueryKey = (id: number) => {
+  return [`/api/shop/products/${id}`] as const;
+};
+
+export const getGetShopProductQueryOptions = <
+  TData = Awaited<ReturnType<typeof getShopProduct>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getShopProduct>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetShopProductQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getShopProduct>>> = ({
+    signal,
+  }) => getShopProduct(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getShopProduct>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetShopProductQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getShopProduct>>
+>;
+export type GetShopProductQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a single shop product with full details
+ */
+
+export function useGetShopProduct<
+  TData = Awaited<ReturnType<typeof getShopProduct>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getShopProduct>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetShopProductQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Submit a quote / enquiry request
+ */
+export const getSubmitShopEnquiryUrl = () => {
+  return `/api/shop/enquiry`;
+};
+
+export const submitShopEnquiry = async (
+  shopEnquiryInput: ShopEnquiryInput,
+  options?: RequestInit,
+): Promise<ShopEnquiryResponse> => {
+  return customFetch<ShopEnquiryResponse>(getSubmitShopEnquiryUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(shopEnquiryInput),
+  });
+};
+
+export const getSubmitShopEnquiryMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitShopEnquiry>>,
+    TError,
+    { data: BodyType<ShopEnquiryInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitShopEnquiry>>,
+  TError,
+  { data: BodyType<ShopEnquiryInput> },
+  TContext
+> => {
+  const mutationKey = ["submitShopEnquiry"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitShopEnquiry>>,
+    { data: BodyType<ShopEnquiryInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return submitShopEnquiry(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitShopEnquiryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitShopEnquiry>>
+>;
+export type SubmitShopEnquiryMutationBody = BodyType<ShopEnquiryInput>;
+export type SubmitShopEnquiryMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Submit a quote / enquiry request
+ */
+export const useSubmitShopEnquiry = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitShopEnquiry>>,
+    TError,
+    { data: BodyType<ShopEnquiryInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitShopEnquiry>>,
+  TError,
+  { data: BodyType<ShopEnquiryInput> },
+  TContext
+> => {
+  return useMutation(getSubmitShopEnquiryMutationOptions(options));
+};

@@ -80,7 +80,6 @@ export interface UpdateCustomerBody {
   postcode?: string | null;
   /** @nullable */
   notes?: string | null;
-  zeroVat?: boolean;
 }
 
 export interface Product {
@@ -350,11 +349,118 @@ export interface UpdateOrderBody {
   customerId?: number | null;
   /** @nullable */
   orderDate?: string | null;
+  /** @nullable */
+  poNumber?: string | null;
 }
 
 export interface UpdateOrderItemBody {
   quantity?: number;
   unitPrice?: number;
+}
+
+export interface ShopSettings {
+  businessName: string;
+  /** @nullable */
+  tagline: string | null;
+  /** @nullable */
+  logoUrl: string | null;
+  /** @nullable */
+  contactEmail: string | null;
+  /** @nullable */
+  contactPhone: string | null;
+  /** @nullable */
+  address: string | null;
+  /** @nullable */
+  heroText: string | null;
+  /** @nullable */
+  heroSubtext: string | null;
+  /** @nullable */
+  portalUrl: string | null;
+}
+
+export interface ShopCategory {
+  name: string;
+  count: number;
+}
+
+export interface ShopProductColour {
+  colour: string;
+  /** @nullable */
+  imageUrl?: string | null;
+}
+
+export interface ShopProductVariant {
+  /** @nullable */
+  colour: string | null;
+  /** @nullable */
+  size: string | null;
+  /** @nullable */
+  price: number | null;
+}
+
+export interface ShopProduct {
+  id: number;
+  name: string;
+  /** @nullable */
+  sku: string | null;
+  /** @nullable */
+  description: string | null;
+  unitPrice: number;
+  /** @nullable */
+  category: string | null;
+  /** @nullable */
+  imageUrl: string | null;
+  imageUrls: string[];
+  colours: string[];
+  /** @nullable */
+  guidanceBestFor: string | null;
+  guidanceTags: string[];
+  guidanceBadges: string[];
+  /** @nullable */
+  permalink: string | null;
+}
+
+export interface ShopProductDetail {
+  id: number;
+  name: string;
+  /** @nullable */
+  sku: string | null;
+  /** @nullable */
+  description: string | null;
+  unitPrice: number;
+  /** @nullable */
+  category: string | null;
+  /** @nullable */
+  imageUrl: string | null;
+  imageUrls: string[];
+  colours: ShopProductColour[];
+  sizes: string[];
+  variants: ShopProductVariant[];
+  /** @nullable */
+  guidanceBestFor: string | null;
+  /** @nullable */
+  guidanceNotIdealFor: string | null;
+  guidanceTags: string[];
+  guidanceBadges: string[];
+  relatedProducts: ShopProduct[];
+  /** @nullable */
+  permalink: string | null;
+}
+
+export interface ShopEnquiryInput {
+  name: string;
+  email: string;
+  /** @nullable */
+  company?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  message: string;
+  productsOfInterest?: string[];
+}
+
+export interface ShopEnquiryResponse {
+  success: boolean;
+  referenceNumber: string;
 }
 
 export type DashboardStatsOrdersByStatus = {
@@ -389,4 +495,10 @@ export type ListSuppliersParams = {
 export type ListOrdersParams = {
   status?: string;
   customerId?: number;
+};
+
+export type ListShopProductsParams = {
+  search?: string;
+  category?: string;
+  featured?: boolean;
 };

@@ -34,7 +34,6 @@ export const ListCustomersResponseItem = zod.object({
   state: zod.string().nullable(),
   postcode: zod.string().nullable(),
   notes: zod.string().nullable(),
-  logoUrl: zod.string().nullish(),
   createdAt: zod.date(),
   updatedAt: zod.date(),
 });
@@ -54,10 +53,6 @@ export const CreateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
-  logoUrl: zod.string().nullish(),
-  defaultShippingService: zod.string().nullish(),
-  highLevelContactId: zod.string().nullish(),
-  poNumberRequired: zod.boolean().optional(),
 });
 
 /**
@@ -101,12 +96,6 @@ export const UpdateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
-  logoUrl: zod.string().nullish(),
-  defaultShippingService: zod.string().nullish(),
-  highLevelContactId: zod.string().nullish(),
-  zeroVat: zod.boolean().optional(),
-  poNumberRequired: zod.boolean().optional(),
-  hasReviewed: zod.boolean().optional(),
 });
 
 export const UpdateCustomerResponse = zod.object({
@@ -207,24 +196,6 @@ export const UpdateProductBody = zod.object({
   secondarySupplierId: zod.number().nullish(),
   supplierCode: zod.string().nullish(),
   imageUrl: zod.string().nullish(),
-  guidanceBestFor: zod.string().nullish(),
-  guidanceNotIdealFor: zod.string().nullish(),
-  guidanceStaffRecommendation: zod.string().nullish(),
-  guidanceBadge: zod.string().nullish(),
-  guidanceBadges: zod.array(zod.string()).nullish(),
-  guidanceValueRating: zod.number().int().min(1).max(5).nullish(),
-  guidanceDurabilityRating: zod.number().int().min(1).max(5).nullish(),
-  guidanceSmartRating: zod.number().int().min(1).max(5).nullish(),
-  guidanceTags: zod.array(zod.string()).nullish(),
-  guidanceStaffQuotes: zod.array(zod.object({
-    id: zod.string(),
-    staffId: zod.number(),
-    staffName: zod.string(),
-    staffRole: zod.string().nullable(),
-    staffImageUrl: zod.string().nullable(),
-    draft: zod.string(),
-    rewritten: zod.string().nullable(),
-  })).nullish(),
 });
 
 export const UpdateProductResponse = zod.object({
@@ -453,7 +424,6 @@ export const UpdateOrderBody = zod.object({
   customerId: zod.number().nullish(),
   orderDate: zod.date().nullish(),
   poNumber: zod.string().nullish(),
-  attentionOf: zod.string().nullish(),
 });
 
 export const UpdateOrderResponse = zod.object({
@@ -568,4 +538,127 @@ export const GetDashboardStatsResponse = zod.object({
       updatedAt: zod.date(),
     }),
   ),
+});
+
+/**
+ * @summary Get public shop branding and contact settings
+ */
+export const GetShopSettingsResponse = zod.object({
+  businessName: zod.string(),
+  tagline: zod.string().nullable(),
+  logoUrl: zod.string().nullable(),
+  contactEmail: zod.string().nullable(),
+  contactPhone: zod.string().nullable(),
+  address: zod.string().nullable(),
+  heroText: zod.string().nullable(),
+  heroSubtext: zod.string().nullable(),
+  portalUrl: zod.string().nullable(),
+});
+
+/**
+ * @summary List all product categories with product count
+ */
+export const ListShopCategoriesResponseItem = zod.object({
+  name: zod.string(),
+  count: zod.number(),
+});
+export const ListShopCategoriesResponse = zod.array(
+  ListShopCategoriesResponseItem,
+);
+
+/**
+ * @summary List published shop products (public, no auth)
+ */
+export const ListShopProductsQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  category: zod.coerce.string().optional(),
+  featured: zod.coerce.boolean().optional(),
+});
+
+export const ListShopProductsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  sku: zod.string().nullable(),
+  description: zod.string().nullable(),
+  unitPrice: zod.number(),
+  category: zod.string().nullable(),
+  imageUrl: zod.string().nullable(),
+  imageUrls: zod.array(zod.string()),
+  colours: zod.array(zod.string()),
+  guidanceBestFor: zod.string().nullable(),
+  guidanceTags: zod.array(zod.string()),
+  guidanceBadges: zod.array(zod.string()),
+  permalink: zod.string().nullable(),
+});
+export const ListShopProductsResponse = zod.array(ListShopProductsResponseItem);
+
+/**
+ * @summary Get a single shop product with full details
+ */
+export const GetShopProductParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetShopProductResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  sku: zod.string().nullable(),
+  description: zod.string().nullable(),
+  unitPrice: zod.number(),
+  category: zod.string().nullable(),
+  imageUrl: zod.string().nullable(),
+  imageUrls: zod.array(zod.string()),
+  colours: zod.array(
+    zod.object({
+      colour: zod.string(),
+      imageUrl: zod.string().nullish(),
+    }),
+  ),
+  sizes: zod.array(zod.string()),
+  variants: zod.array(
+    zod.object({
+      colour: zod.string().nullable(),
+      size: zod.string().nullable(),
+      price: zod.number().nullable(),
+    }),
+  ),
+  guidanceBestFor: zod.string().nullable(),
+  guidanceNotIdealFor: zod.string().nullable(),
+  guidanceTags: zod.array(zod.string()),
+  guidanceBadges: zod.array(zod.string()),
+  relatedProducts: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      sku: zod.string().nullable(),
+      description: zod.string().nullable(),
+      unitPrice: zod.number(),
+      category: zod.string().nullable(),
+      imageUrl: zod.string().nullable(),
+      imageUrls: zod.array(zod.string()),
+      colours: zod.array(zod.string()),
+      guidanceBestFor: zod.string().nullable(),
+      guidanceTags: zod.array(zod.string()),
+      guidanceBadges: zod.array(zod.string()),
+      permalink: zod.string().nullable(),
+    }),
+  ),
+  permalink: zod.string().nullable(),
+});
+
+/**
+ * @summary Submit a quote / enquiry request
+ */
+export const SubmitShopEnquiryBody = zod.object({
+  name: zod.string(),
+  email: zod.string(),
+  company: zod.string().nullish(),
+  phone: zod.string().nullish(),
+  message: zod.string(),
+  productsOfInterest: zod.array(zod.string()).optional(),
+});
+
+export const SubmitShopEnquiryResponse = zod.object({
+  success: zod.boolean(),
+  referenceNumber: zod.string(),
 });

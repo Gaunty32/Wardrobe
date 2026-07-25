@@ -17,6 +17,8 @@ tags:
     description: Supplier management
   - name: orders
     description: Order management
+  - name: shop
+    description: Public shop endpoints (no auth required)
 
 paths:
   /healthz:
@@ -614,6 +616,116 @@ paths:
               schema:
                 $ref: "#/components/schemas/DashboardStats"
 
+  # ─── Shop (public) ────────────────────────────────────────────────────────────
+  /shop/settings:
+    get:
+      operationId: getShopSettings
+      tags: [shop]
+      summary: Get public shop branding and contact settings
+      responses:
+        "200":
+          description: Shop settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopSettings"
+
+  /shop/categories:
+    get:
+      operationId: listShopCategories
+      tags: [shop]
+      summary: List all product categories with product count
+      responses:
+        "200":
+          description: List of categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShopCategory"
+
+  /shop/products:
+    get:
+      operationId: listShopProducts
+      tags: [shop]
+      summary: List published shop products (public, no auth)
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: featured
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: List of shop products
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShopProduct"
+
+  /shop/products/{id}:
+    get:
+      operationId: getShopProduct
+      tags: [shop]
+      summary: Get a single shop product with full details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Product found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopProductDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /shop/enquiry:
+    post:
+      operationId: submitShopEnquiry
+      tags: [shop]
+      summary: Submit a quote / enquiry request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShopEnquiryInput"
+      responses:
+        "200":
+          description: Enquiry submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShopEnquiryResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -1110,6 +1222,229 @@ components:
           type: integer
         unitPrice:
           type: number
+
+    # ─── Shop ──────────────────────────────────────────────────────────────────
+    ShopSettings:
+      type: object
+      properties:
+        businessName:
+          type: string
+        tagline:
+          type: ["string", "null"]
+        logoUrl:
+          type: ["string", "null"]
+        contactEmail:
+          type: ["string", "null"]
+        contactPhone:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        heroText:
+          type: ["string", "null"]
+        heroSubtext:
+          type: ["string", "null"]
+        portalUrl:
+          type: ["string", "null"]
+      required:
+        - businessName
+        - tagline
+        - logoUrl
+        - contactEmail
+        - contactPhone
+        - address
+        - heroText
+        - heroSubtext
+        - portalUrl
+
+    ShopCategory:
+      type: object
+      properties:
+        name:
+          type: string
+        count:
+          type: integer
+      required:
+        - name
+        - count
+
+    ShopProductColour:
+      type: object
+      properties:
+        colour:
+          type: string
+        imageUrl:
+          type: ["string", "null"]
+      required:
+        - colour
+
+    ShopProductVariant:
+      type: object
+      properties:
+        colour:
+          type: ["string", "null"]
+        size:
+          type: ["string", "null"]
+        price:
+          type: ["number", "null"]
+      required:
+        - colour
+        - size
+        - price
+
+    ShopProduct:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        sku:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        unitPrice:
+          type: number
+        category:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        imageUrls:
+          type: array
+          items:
+            type: string
+        colours:
+          type: array
+          items:
+            type: string
+        guidanceBestFor:
+          type: ["string", "null"]
+        guidanceTags:
+          type: array
+          items:
+            type: string
+        guidanceBadges:
+          type: array
+          items:
+            type: string
+        permalink:
+          type: ["string", "null"]
+      required:
+        - id
+        - name
+        - sku
+        - description
+        - unitPrice
+        - category
+        - imageUrl
+        - imageUrls
+        - colours
+        - guidanceBestFor
+        - guidanceTags
+        - guidanceBadges
+        - permalink
+
+    ShopProductDetail:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        sku:
+          type: ["string", "null"]
+        description:
+          type: ["string", "null"]
+        unitPrice:
+          type: number
+        category:
+          type: ["string", "null"]
+        imageUrl:
+          type: ["string", "null"]
+        imageUrls:
+          type: array
+          items:
+            type: string
+        colours:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShopProductColour"
+        sizes:
+          type: array
+          items:
+            type: string
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShopProductVariant"
+        guidanceBestFor:
+          type: ["string", "null"]
+        guidanceNotIdealFor:
+          type: ["string", "null"]
+        guidanceTags:
+          type: array
+          items:
+            type: string
+        guidanceBadges:
+          type: array
+          items:
+            type: string
+        relatedProducts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShopProduct"
+        permalink:
+          type: ["string", "null"]
+      required:
+        - id
+        - name
+        - sku
+        - description
+        - unitPrice
+        - category
+        - imageUrl
+        - imageUrls
+        - colours
+        - sizes
+        - variants
+        - guidanceBestFor
+        - guidanceNotIdealFor
+        - guidanceTags
+        - guidanceBadges
+        - relatedProducts
+        - permalink
+
+    ShopEnquiryInput:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+        company:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        message:
+          type: string
+        productsOfInterest:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - email
+        - message
+
+    ShopEnquiryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        referenceNumber:
+          type: string
+      required:
+        - success
+        - referenceNumber
 
     # ─── Dashboard ─────────────────────────────────────────────────────────────
     DashboardStats:

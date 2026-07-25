@@ -27,10 +27,6 @@ export interface Customer {
   postcode: string | null;
   /** @nullable */
   notes: string | null;
-  /** @nullable */
-  logoUrl?: string | null;
-  /** @nullable */
-  highLevelContactId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

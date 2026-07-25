@@ -36,6 +36,7 @@ import chatRouter from "./chat";
 import tvRouter from "./tv";
 import reEngagementRouter from "./re-engagement";
 import messageTemplatesRouter from "./message-templates";
+import shopRouter from "./shop";
 
 const router: IRouter = Router();
 
@@ -76,5 +77,6 @@ router.use(chatRouter);
 router.use(tvRouter);
 router.use(reEngagementRouter);
 router.use(messageTemplatesRouter);
+router.use(shopRouter);
 
 export default router;

@@ -15,4 +15,6 @@ export interface UpdateOrderBody {
   customerId?: number | null;
   /** @nullable */
   orderDate?: Date | null;
+  /** @nullable */
+  poNumber?: string | null;
 }
