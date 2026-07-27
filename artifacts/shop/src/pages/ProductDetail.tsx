@@ -6,6 +6,69 @@ import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
 import { Heart, Star } from 'lucide-react';
 
+// ── Colour → CSS map ──────────────────────────────────────────────────────────
+
+const COLOUR_CSS: Record<string, string> = {
+  'Black':           '#1a1a1a',
+  'White':           '#f8f8f8',
+  'Navy':            '#001f5b',
+  'Navy Blue':       '#001f5b',
+  'Royal':           '#4169e1',
+  'Royal Blue':      '#4169e1',
+  'Sky':             '#87ceeb',
+  'Sky Blue':        '#87ceeb',
+  'Baby Blue':       '#a8d5ea',
+  'Bottle':          '#004d2c',
+  'Bottle Green':    '#004d2c',
+  'Forest':          '#228b22',
+  'Forest Green':    '#228b22',
+  'Lime':            '#32cd32',
+  'Lime Green':      '#32cd32',
+  'Olive':           '#6b7c3e',
+  'Teal':            '#008080',
+  'Burgundy':        '#6d1a2c',
+  'Maroon':          '#6d0015',
+  'Red':             '#cc1111',
+  'Scarlet':         '#ff2400',
+  'Orange':          '#e86830',
+  'Yellow':          '#f5c800',
+  'Gold':            '#d4a017',
+  'Purple':          '#6a0dad',
+  'Violet':          '#7f00ff',
+  'Pink':            '#e8769e',
+  'Hot Pink':        '#ff69b4',
+  'Fuchsia':         '#c8175d',
+  'Charcoal':        '#36454f',
+  'Graphite':        '#474b4e',
+  'Grey':            '#7d7d7d',
+  'Gray':            '#7d7d7d',
+  'Silver':          '#a8a9ad',
+  'Light Grey':      '#c8c8c8',
+  'Light Gray':      '#c8c8c8',
+  'Stone':           '#b5a695',
+  'Sand':            '#c2b280',
+  'Khaki':           '#c3b091',
+  'Cream':           '#fffdd0',
+  'Natural':         '#f5f0e8',
+  'Ecru':            '#c2b280',
+  'Brown':           '#7b3f00',
+  'Chocolate':       '#5a2d0c',
+  'Tan':             '#d2b48c',
+  'Caramel':         '#af6f09',
+  'Copper':          '#b87333',
+  'Terracotta':      '#c66b3d',
+  'Coral':           '#ff7f50',
+};
+
+/** Detect if a hex colour is "light" so we can add a dark border */
+function isLightColour(hex: string): boolean {
+  const c = hex.replace('#', '');
+  const r = parseInt(c.slice(0, 2), 16);
+  const g = parseInt(c.slice(2, 4), 16);
+  const b = parseInt(c.slice(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 170;
+}
+
 // ── Guidance sub-components ───────────────────────────────────────────────────
 
 const BADGE_CONFIG: Record<string, { icon: string; bg: string; color: string }> = {
@@ -46,17 +109,15 @@ function StarRating({ value, max = 5 }: { value: number; max?: number }) {
 function GuidancePanel({ guidance }: { guidance: any }) {
   if (!guidance) return null;
   const { valueRating, durabilityRating, technicalRating, badges, tags, bestFor, notIdealFor } = guidance;
-  const hasRatings = valueRating > 0 || durabilityRating > 0 || technicalRating > 0;
-  const hasBadges = badges?.length > 0;
-  const hasTags = tags?.length > 0;
-  const hasBestFor = bestFor?.trim();
-  const hasNotIdealFor = notIdealFor?.trim();
-
-  if (!hasRatings && !hasBadges && !hasTags && !hasBestFor && !hasNotIdealFor) return null;
+  const hasRatings  = valueRating > 0 || durabilityRating > 0 || technicalRating > 0;
+  const hasBadges   = badges?.length > 0;
+  const hasTags     = tags?.length > 0;
+  const hasBestFor  = bestFor?.trim();
+  const hasNIF      = notIdealFor?.trim();
+  if (!hasRatings && !hasBadges && !hasTags && !hasBestFor && !hasNIF) return null;
 
   return (
     <div className="space-y-3 mb-6">
-      {/* Star ratings */}
       {hasRatings && (
         <div className="rounded p-4 flex gap-6 flex-wrap" style={{ background: 'linear-gradient(135deg,#1e3a5f,#2d5491)' }}>
           {valueRating > 0 && (
@@ -83,17 +144,13 @@ function GuidancePanel({ guidance }: { guidance: any }) {
         </div>
       )}
 
-      {/* Badge pills */}
       {hasBadges && (
         <div className="flex flex-wrap gap-2">
           {badges.map((b: string) => {
             const cfg = BADGE_CONFIG[b] ?? { icon: '✔', bg: '#1e3a5f', color: '#fff' };
             return (
-              <span
-                key={b}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
-                style={{ background: cfg.bg, color: cfg.color }}
-              >
+              <span key={b} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
+                style={{ background: cfg.bg, color: cfg.color }}>
                 {cfg.icon} {b}
               </span>
             );
@@ -101,17 +158,13 @@ function GuidancePanel({ guidance }: { guidance: any }) {
         </div>
       )}
 
-      {/* Tag pills */}
       {hasTags && (
         <div className="flex flex-wrap gap-2">
           {tags.map((t: string) => {
             const cfg = TAG_CONFIG[t] ?? { icon: '🏷', color: '#334155', border: '#94a3b8' };
             return (
-              <span
-                key={t}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 bg-white"
-                style={{ color: cfg.color, borderColor: cfg.border }}
-              >
+              <span key={t} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 bg-white"
+                style={{ color: cfg.color, borderColor: cfg.border }}>
                 {cfg.icon} {t}
               </span>
             );
@@ -119,12 +172,9 @@ function GuidancePanel({ guidance }: { guidance: any }) {
         </div>
       )}
 
-      {/* Best For */}
       {hasBestFor && (
         <div className="rounded overflow-hidden border border-green-200">
-          <div className="bg-green-700 text-white px-3 py-2 text-sm font-bold flex items-center gap-2">
-            ✅ Best For
-          </div>
+          <div className="bg-green-700 text-white px-3 py-2 text-sm font-bold flex items-center gap-2">✅ Best For</div>
           <div className="bg-white px-4 py-3">
             <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
               {bestFor.trim().split(/\r?\n/).filter(Boolean).map((line: string, i: number) => (
@@ -135,12 +185,9 @@ function GuidancePanel({ guidance }: { guidance: any }) {
         </div>
       )}
 
-      {/* Not Ideal For */}
-      {hasNotIdealFor && (
+      {hasNIF && (
         <div className="rounded overflow-hidden border border-orange-200">
-          <div className="bg-red-700 text-white px-3 py-2 text-sm font-bold flex items-center gap-2">
-            ⚠️ Not Ideal For
-          </div>
+          <div className="bg-red-700 text-white px-3 py-2 text-sm font-bold flex items-center gap-2">⚠️ Not Ideal For</div>
           <div className="bg-white px-4 py-3">
             <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
               {notIdealFor.trim().split(/\r?\n/).filter(Boolean).map((line: string, i: number) => (
@@ -152,6 +199,113 @@ function GuidancePanel({ guidance }: { guidance: any }) {
       )}
     </div>
   );
+}
+
+// ── Colour swatch ─────────────────────────────────────────────────────────────
+
+function ColourSwatch({
+  colour,
+  isSelected,
+  isAvailable = true,
+  onClick,
+}: {
+  colour: string;
+  isSelected: boolean;
+  isAvailable?: boolean;
+  onClick: () => void;
+}) {
+  const css  = COLOUR_CSS[colour];
+  const light = css ? isLightColour(css) : false;
+
+  if (!css) {
+    // Fallback: text pill for unknown colours
+    return (
+      <button
+        onClick={onClick}
+        title={colour}
+        className={`px-3 py-1.5 text-sm border-2 rounded-full transition-all font-medium ${
+          isSelected
+            ? 'border-primary bg-primary text-white'
+            : isAvailable
+              ? 'border-gray-300 text-gray-700 hover:border-primary bg-white'
+              : 'border-gray-200 text-gray-300 bg-gray-50 cursor-not-allowed'
+        }`}
+      >
+        {colour}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      title={colour}
+      aria-label={colour}
+      className={`relative w-9 h-9 rounded-full transition-all flex items-center justify-center ${
+        isSelected
+          ? 'ring-2 ring-primary ring-offset-2'
+          : 'hover:ring-2 hover:ring-gray-400 hover:ring-offset-1'
+      } ${!isAvailable ? 'opacity-40 cursor-not-allowed' : ''}`}
+      style={{
+        background: css,
+        border: light ? '1.5px solid #c8c8c8' : '1.5px solid transparent',
+      }}
+      disabled={!isAvailable}
+    >
+      {isSelected && (
+        <span
+          className="text-xs font-black leading-none"
+          style={{ color: light ? '#333' : '#fff', textShadow: light ? 'none' : '0 1px 2px rgba(0,0,0,.4)' }}
+        >
+          ✓
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ── Size pill ─────────────────────────────────────────────────────────────────
+
+function SizePill({
+  option,
+  isSelected,
+  isAvailable = true,
+  onClick,
+}: {
+  option: string;
+  isSelected: boolean;
+  isAvailable?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-1.5 text-sm border-2 rounded-full transition-all font-medium min-w-[2.75rem] text-center ${
+        isSelected
+          ? 'border-primary bg-primary text-white'
+          : isAvailable
+            ? 'border-gray-300 text-gray-700 hover:border-primary bg-white'
+            : 'border-gray-200 text-gray-300 bg-gray-50 cursor-not-allowed line-through'
+      }`}
+      disabled={!isAvailable}
+      title={!isAvailable ? 'Out of stock' : undefined}
+    >
+      {option}
+    </button>
+  );
+}
+
+// ── Attribute label ───────────────────────────────────────────────────────────
+
+/** Maps API attribute names to friendly display labels */
+function attrLabel(name: string): string {
+  const map: Record<string, string> = {
+    Colour:  'Colour',
+    Color:   'Colour',
+    Size:    'Size',
+    Sleeve:  'Sleeve',
+  };
+  return map[name] ?? name;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -166,33 +320,65 @@ export default function ProductDetail() {
   const [mainImageIdx, setMainImageIdx] = useState(0);
   const [addedMsg, setAddedMsg] = useState(false);
 
-  // Determine active variation
+  // ── Build colour → image map from variations ──────────────────────────────
+  const colourImages = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (!product?.variations) return map;
+    for (const v of product.variations) {
+      if (!v.image) continue;
+      const colourAttr = v.attributes?.find((a: any) => a.name === 'Colour' || a.name === 'Color');
+      if (colourAttr && !map[colourAttr.option]) {
+        map[colourAttr.option] = v.image;
+      }
+    }
+    return map;
+  }, [product]);
+
+  // ── Active variation ──────────────────────────────────────────────────────
   const variation = useMemo(() => {
     if (!product?.variations?.length) return null;
     return product.variations.find((v: any) =>
       v.attributes?.every((attr: any) =>
         !selectedOptions[attr.name] || selectedOptions[attr.name] === attr.option
       )
-    );
+    ) ?? null;
   }, [product, selectedOptions]);
 
-  // When variation changes, switch image to variation's image if available
-  const variationImage = variation?.image ?? null;
+  // ── Current main image ────────────────────────────────────────────────────
+  const selectedColour = selectedOptions['Colour'] || selectedOptions['Color'];
+  const colourImage = selectedColour ? colourImages[selectedColour] : null;
   const images: string[] = product?.images ?? [];
-  const currentImage = variationImage || images[mainImageIdx] || null;
+  const currentImage = colourImage || variation?.image || images[mainImageIdx] || null;
+
+  // ── Availability helpers ──────────────────────────────────────────────────
+  /** Is a given option available for the currently-selected other dimensions? */
+  const isOptionAvailable = (attrName: string, option: string) => {
+    if (!product?.variations?.length) return true;
+    const testSelection = { ...selectedOptions, [attrName]: option };
+    return product.variations.some((v: any) =>
+      v.attributes?.every((a: any) =>
+        !testSelection[a.name] || testSelection[a.name] === a.option
+      ) && v.stockStatus === 'instock'
+    );
+  };
 
   const handleOptionSelect = (name: string, option: string) => {
     setSelectedOptions(prev => ({ ...prev, [name]: option }));
+    // When colour changes, reset main image index
+    if (name === 'Colour' || name === 'Color') setMainImageIdx(0);
   };
 
   const handleAddToCart = () => {
     if (!product) return;
-    if (product.variations?.length > 0 && !variation) {
-      alert('Please select all product options before adding to cart.');
+    const attrs = product.attributes ?? [];
+    const allSelected = attrs.every((a: any) => selectedOptions[a.name]);
+    if (attrs.length > 0 && !allSelected) {
+      const missing = attrs.filter((a: any) => !selectedOptions[a.name]).map((a: any) => attrLabel(a.name)).join(', ');
+      alert(`Please select: ${missing}`);
       return;
     }
     const price = variation ? Number(variation.price) : Number(product.price);
-    const sku = variation ? variation.sku : product.sku;
+    const sku   = variation ? variation.sku : product.sku;
     addItem({
       wcProductId: product.id,
       variationId: variation?.id ?? null,
@@ -201,13 +387,14 @@ export default function ProductDetail() {
       price,
       quantity,
       image: currentImage,
-      colour: selectedOptions['Colour'] || selectedOptions['Color'] || null,
-      size: selectedOptions['Size'] || null,
+      colour: selectedColour ?? null,
+      size: selectedOptions['Size'] ?? null,
     });
     setAddedMsg(true);
     setTimeout(() => setAddedMsg(false), 2500);
   };
 
+  // ── Loading skeleton ──────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="container mx-auto px-4 py-8">
@@ -235,6 +422,9 @@ export default function ProductDetail() {
   }
 
   const currentPrice = variation ? Number(variation.price) : Number(product.price);
+  const attrs: any[] = product.attributes ?? [];
+  const colourAttr = attrs.find((a: any) => a.name === 'Colour' || a.name === 'Color');
+  const otherAttrs = attrs.filter((a: any) => a.name !== 'Colour' && a.name !== 'Color');
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -242,11 +432,11 @@ export default function ProductDetail() {
       <div className="text-sm text-gray-500 mb-6 font-medium flex items-center gap-1 flex-wrap">
         <Link href="/" className="hover:text-primary">HOME</Link>
         <span>/</span>
-        <Link href="/shop" className="hover:text-primary">SHOP</Link>
+        <Link href="/products" className="hover:text-primary">SHOP</Link>
         {product.categories?.[0] && (
           <>
             <span>/</span>
-            <Link href={`/shop/category/${product.categories[0].slug}`} className="hover:text-primary uppercase">
+            <Link href={`/category/${product.categories[0].slug}`} className="hover:text-primary uppercase">
               {product.categories[0].name}
             </Link>
           </>
@@ -258,7 +448,6 @@ export default function ProductDetail() {
       <div className="flex flex-col md:flex-row gap-12 mb-16">
         {/* ── Images column ── */}
         <div className="w-full md:w-1/2">
-          {/* Main image */}
           <div className="aspect-square bg-gray-100 mb-3 overflow-hidden relative border border-gray-200">
             {currentImage ? (
               <img src={currentImage} alt={product.name} className="w-full h-full object-contain p-2" />
@@ -272,23 +461,37 @@ export default function ProductDetail() {
             )}
           </div>
 
-          {/* Thumbnail strip */}
           {images.length > 1 && (
-            <div className="grid grid-cols-5 gap-2">
-              {images.slice(0, 10).map((img: string, idx: number) => (
-                <button
-                  key={idx}
-                  data-testid={`thumb-${idx}`}
-                  onClick={() => { setMainImageIdx(idx); setSelectedOptions({}); }}
-                  className={`aspect-square border-2 overflow-hidden transition-colors ${
-                    idx === mainImageIdx && !variationImage
-                      ? 'border-primary'
-                      : 'border-gray-200 hover:border-gray-400'
-                  }`}
-                >
-                  <img src={img} alt="" className="w-full h-full object-contain p-1" />
-                </button>
-              ))}
+            <div className="grid grid-cols-5 gap-2 mt-3">
+              {images.slice(0, 10).map((img: string, idx: number) => {
+                // Is this thumbnail the active one?
+                const matchingColour = Object.entries(colourImages).find(([, url]) => url === img)?.[0];
+                const isActive = matchingColour
+                  ? selectedColour === matchingColour
+                  : !colourImage && idx === mainImageIdx;
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setMainImageIdx(idx);
+                      if (matchingColour && colourAttr) {
+                        // Auto-select the matching colour
+                        setSelectedOptions(prev => ({ ...prev, [colourAttr.name]: matchingColour }));
+                      } else {
+                        setSelectedOptions({});
+                      }
+                    }}
+                    className={`aspect-square border-2 overflow-hidden transition-all cursor-pointer hover:opacity-90 ${
+                      isActive
+                        ? 'border-primary'
+                        : 'border-gray-200 hover:border-gray-400'
+                    }`}
+                    title={matchingColour ?? `Image ${idx + 1}`}
+                  >
+                    <img src={img} alt={matchingColour ?? ''} className="w-full h-full object-contain p-1" />
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -308,39 +511,60 @@ export default function ProductDetail() {
             </p>
           )}
 
-          {/* Guidance panel */}
           <GuidancePanel guidance={product.guidance} />
 
-          {/* Short description */}
           {product.shortDescription && (
             <p className="text-sm text-gray-600 mb-6 leading-relaxed">{product.shortDescription}</p>
           )}
 
-          {/* Variation attribute selectors */}
-          {product.attributes?.map((attr: any) => (
-            <div key={attr.name} className="mb-5">
-              <h4 className="text-sm font-bold text-gray-900 mb-2 uppercase tracking-wide">{attr.name}</h4>
+          {/* ── Colour swatches ── */}
+          {colourAttr && (
+            <div className="mb-5">
+              <h4 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wide">
+                {selectedColour
+                  ? <>Colour: <span className="font-normal normal-case text-gray-600">{selectedColour}</span></>
+                  : 'Colour'
+                }
+              </h4>
               <div className="flex flex-wrap gap-2">
-                {attr.options.map((opt: string) => {
-                  const isSelected = selectedOptions[attr.name] === opt;
-                  return (
-                    <button
-                      key={opt}
-                      data-testid={`option-${attr.name}-${opt}`}
-                      onClick={() => handleOptionSelect(attr.name, opt)}
-                      className={`px-3 py-1.5 text-sm border-2 transition-all font-medium ${
-                        isSelected
-                          ? 'border-primary bg-primary text-white'
-                          : 'border-gray-300 text-gray-700 hover:border-primary bg-white'
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  );
-                })}
+                {colourAttr.options.map((colour: string) => (
+                  <ColourSwatch
+                    key={colour}
+                    colour={colour}
+                    isSelected={selectedOptions[colourAttr.name] === colour}
+                    isAvailable={isOptionAvailable(colourAttr.name, colour)}
+                    onClick={() => handleOptionSelect(colourAttr.name, colour)}
+                  />
+                ))}
               </div>
             </div>
-          ))}
+          )}
+
+          {/* ── Size / Sleeve / other attributes ── */}
+          {otherAttrs.map((attr: any) => {
+            const sel = selectedOptions[attr.name];
+            return (
+              <div key={attr.name} className="mb-5">
+                <h4 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wide">
+                  {sel
+                    ? <>{attrLabel(attr.name)}: <span className="font-normal normal-case text-gray-600">{sel}</span></>
+                    : attrLabel(attr.name)
+                  }
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {attr.options.map((opt: string) => (
+                    <SizePill
+                      key={opt}
+                      option={opt}
+                      isSelected={selectedOptions[attr.name] === opt}
+                      isAvailable={isOptionAvailable(attr.name, opt)}
+                      onClick={() => handleOptionSelect(attr.name, opt)}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
 
           {/* Quantity + Add to cart */}
           <div className="flex items-stretch gap-3 mb-4 pt-4 border-t border-gray-200">
@@ -348,7 +572,6 @@ export default function ProductDetail() {
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
                 className="px-3 text-gray-600 hover:bg-gray-100 transition-colors font-bold text-lg"
-                data-testid="qty-decrease"
               >−</button>
               <input
                 type="number"
@@ -356,12 +579,10 @@ export default function ProductDetail() {
                 onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
                 className="w-12 text-center focus:outline-none font-bold text-sm border-x border-gray-300"
                 min="1"
-                data-testid="qty-input"
               />
               <button
                 onClick={() => setQuantity(quantity + 1)}
                 className="px-3 text-gray-600 hover:bg-gray-100 transition-colors font-bold text-lg"
-                data-testid="qty-increase"
               >+</button>
             </div>
 
@@ -369,7 +590,6 @@ export default function ProductDetail() {
               size="lg"
               className="flex-1 h-12 rounded-none font-bold tracking-wider uppercase text-sm"
               onClick={handleAddToCart}
-              data-testid="add-to-cart"
             >
               {addedMsg ? '✓ Added to Cart' : 'Add to Cart'}
             </Button>
@@ -385,7 +605,7 @@ export default function ProductDetail() {
         </div>
       </div>
 
-      {/* Description tab */}
+      {/* Description */}
       {product.description && (
         <div className="border-t border-gray-200 pt-10 mb-16">
           <div className="border-b-2 border-primary pb-1 inline-block mb-6">
