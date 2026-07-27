@@ -452,33 +452,50 @@ router.get("/shop/wc/products", async (req, res): Promise<void> => {
 
 // ── Shop: single product + variants from internal DB ─────────────────────────
 
-router.get("/shop/wc/products/:id", async (req, res): Promise<void> => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
+router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
+  const raw = req.params.identifier;
+  // Accept either a numeric ID or a WooCommerce-style slug (e.g. "olympic-polo")
+  const numericId = /^\d+$/.test(raw) ? Number(raw) : null;
+
   try {
-    const [productRows, variantRows] = await Promise.all([
-      db.execute(sql`
-        SELECT id, name, sku, category, image_url, unit_price, regular_price,
-               on_sale, description, permalink, woo_commerce_id, stock_quantity,
-               gallery_images,
-               guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
-               guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
-               guidance_staff_recommendation
-        FROM products
-        WHERE id = ${id} AND is_archived = false
-        LIMIT 1
-      `),
-      db.execute(sql`
-        SELECT id, colour, size, sleeve, price, image_url, sku,
-               stock_quantity, is_available, woo_variation_id
-        FROM product_variants
-        WHERE product_id = ${id}
-        ORDER BY colour ASC, size ASC, sleeve ASC
-      `),
-    ]);
+    // Lookup by numeric ID or by slug derived from name
+    const productRows = await db.execute(
+      numericId
+        ? sql`
+            SELECT id, name, sku, category, image_url, unit_price, regular_price,
+                   on_sale, description, permalink, woo_commerce_id, stock_quantity,
+                   gallery_images,
+                   guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
+                   guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
+                   guidance_staff_recommendation
+            FROM products
+            WHERE id = ${numericId} AND is_archived = false
+            LIMIT 1
+          `
+        : sql`
+            SELECT id, name, sku, category, image_url, unit_price, regular_price,
+                   on_sale, description, permalink, woo_commerce_id, stock_quantity,
+                   gallery_images,
+                   guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
+                   guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
+                   guidance_staff_recommendation
+            FROM products
+            WHERE LOWER(REGEXP_REPLACE(TRIM(BOTH '-' FROM REGEXP_REPLACE(name, '[^a-zA-Z0-9]+', '-', 'g')), '^-+|-+$', '', 'g')) = ${raw}
+              AND is_archived = false
+            LIMIT 1
+          `
+    );
 
     if (!productRows.rows.length) { res.status(404).json({ error: "Not found" }); return; }
-    const p = productRows.rows[0] as any;
+    const p = (productRows.rows as any[])[0];
+
+    const variantRows = await db.execute(sql`
+      SELECT id, colour, size, sleeve, price, image_url, sku,
+             stock_quantity, is_available, woo_variation_id
+      FROM product_variants
+      WHERE product_id = ${p.id}
+      ORDER BY colour ASC, size ASC, sleeve ASC
+    `);
     const variants = variantRows.rows as any[];
 
     // Derive distinct attribute options from variants

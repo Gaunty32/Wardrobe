@@ -6,7 +6,7 @@ export function ProductCard({ product }: { product: any }) {
   const image = product.images?.[0] || product.image;
   
   return (
-    <Link href={`/shop/product/${product.id}`} className="group block">
+    <Link href={`/product/${product.slug || product.id}`} className="group block">
       <Card className="rounded-none border-none shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
         <div className="relative aspect-square overflow-hidden bg-gray-100">
           {image ? (

@@ -29,7 +29,7 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/products" component={Shop} />
         <Route path="/category/:slug" component={CategoryPage} />
-        <Route path="/product/:id" component={ProductDetail} />
+        <Route path="/product/:slug" component={ProductDetail} />
         <Route path="/cart" component={Cart} />
         <Route path="/checkout" component={Checkout} />
         <Route path="/order-complete" component={OrderComplete} />

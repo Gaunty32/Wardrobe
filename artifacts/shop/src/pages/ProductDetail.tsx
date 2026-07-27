@@ -157,8 +157,8 @@ function GuidancePanel({ guidance }: { guidance: any }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function ProductDetail() {
-  const { id } = useParams();
-  const { data: product, isLoading } = useWcProduct(id);
+  const { slug } = useParams();
+  const { data: product, isLoading } = useWcProduct(slug);
   const { addItem } = useCart();
 
   const [quantity, setQuantity] = useState(1);
