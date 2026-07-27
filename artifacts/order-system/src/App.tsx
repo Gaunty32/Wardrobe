@@ -73,6 +73,7 @@ import Quotes from "@/pages/Quotes";
 import QuoteDetail from "@/pages/QuoteDetail";
 import WooOrders from "@/pages/WooOrders";
 import Bundles from "@/pages/Bundles";
+import Enquiries from "@/pages/Enquiries";
 import Feedback from "@/pages/Feedback";
 import Chat from "@/pages/Chat";
 import Templates from "@/pages/Templates";
@@ -171,6 +172,7 @@ function Router() {
       <Route path="/quotes/:id" component={QuoteDetail} />
       <Route path="/woo-orders" component={WooOrders} />
       <Route path="/bundles" component={Bundles} />
+      <Route path="/enquiries" component={Enquiries} />
       <Route path="/feedback" component={Feedback} />
       <Route path="/chat" component={Chat} />
       <Route path="/templates" component={Templates} />

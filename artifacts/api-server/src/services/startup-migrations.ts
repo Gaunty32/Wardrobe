@@ -10,6 +10,22 @@ import { randomBytes } from "crypto";
  * without requiring a manual migration step during deployment.
  */
 export async function runStartupMigrations(): Promise<void> {
+  // wc_enquiries — product enquiries submitted via the WooCommerce plugin webhook
+  // (kept early so it runs before any step that might throw)
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS wc_enquiries (
+      id            SERIAL PRIMARY KEY,
+      product_id    integer,
+      product_name  text,
+      customer_name text NOT NULL,
+      email         text NOT NULL,
+      phone         text,
+      message       text NOT NULL,
+      customer_id   integer REFERENCES customers(id) ON DELETE SET NULL,
+      created_at    timestamptz NOT NULL DEFAULT now()
+    )
+  `);
+
   // purchasing_queued_at — must be added before any re-queue updates reference it
   await db.execute(sql`
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS purchasing_queued_at timestamptz

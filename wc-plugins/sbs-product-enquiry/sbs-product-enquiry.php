@@ -58,7 +58,9 @@ class SBS_Product_Enquiry_Admin {
         register_setting('sbs_enquiry', 'sbs_enquiry_tab_label',  ['default' => 'Product Enquiry']);
         register_setting('sbs_enquiry', 'sbs_enquiry_tc_text',    ['default' => 'I Agree to your T&Cs and Consent to having my Data Stored and Collected']);
         register_setting('sbs_enquiry', 'sbs_enquiry_success_msg',['default' => 'Thank you for your enquiry! We\'ll be in touch within 1 business day.']);
-        register_setting('sbs_enquiry', 'sbs_enquiry_store_db',   ['default' => '1']);
+        register_setting('sbs_enquiry', 'sbs_enquiry_store_db',      ['default' => '1']);
+        register_setting('sbs_enquiry', 'sbs_enquiry_webhook_url',    ['default' => '']);
+        register_setting('sbs_enquiry', 'sbs_enquiry_webhook_secret', ['default' => '']);
     }
 
     public function settings_page(): void { ?>
@@ -72,6 +74,8 @@ class SBS_Product_Enquiry_Admin {
                     <tr><th>T&amp;C Checkbox Text</th><td><input type="text" name="sbs_enquiry_tc_text" value="<?=esc_attr(get_option('sbs_enquiry_tc_text','I Agree to your T&Cs and Consent to having my Data Stored and Collected'))?>" class="large-text"></td></tr>
                     <tr><th>Success Message</th><td><input type="text" name="sbs_enquiry_success_msg" value="<?=esc_attr(get_option('sbs_enquiry_success_msg','Thank you for your enquiry! We\'ll be in touch within 1 business day.'))?>" class="large-text"></td></tr>
                     <tr><th>Store in Database</th><td><label><input type="checkbox" name="sbs_enquiry_store_db" value="1" <?=checked(get_option('sbs_enquiry_store_db','1'),'1',false)?>> Save enquiries to database (for the Enquiries list)</label></td></tr>
+                    <tr><th>Order System Webhook URL</th><td><input type="url" name="sbs_enquiry_webhook_url" value="<?=esc_attr(get_option('sbs_enquiry_webhook_url',''))?>" class="large-text" placeholder="https://your-order-system.replit.app/api/wc-enquiries"><p class="description">If set, each enquiry is POSTed here so it appears in the Order System CRM.</p></td></tr>
+                    <tr><th>Webhook Secret</th><td><input type="text" name="sbs_enquiry_webhook_secret" value="<?=esc_attr(get_option('sbs_enquiry_webhook_secret',''))?>" class="regular-text" placeholder="Optional shared secret"><p class="description">Must match the <code>wc_enquiry_webhook_secret</code> value in Order System → Settings.</p></td></tr>
                 </table>
                 <?php submit_button(); ?>
             </form>
@@ -321,6 +325,29 @@ class SBS_Product_Enquiry_Form {
         wp_mail($to, $subject, $body, [
             'Reply-To: ' . $name . ' <' . $email . '>',
         ]);
+
+        // Forward to Order System CRM via webhook (fire-and-forget)
+        $webhook_url    = get_option('sbs_enquiry_webhook_url', '');
+        $webhook_secret = get_option('sbs_enquiry_webhook_secret', '');
+        if ($webhook_url) {
+            $headers = ['Content-Type' => 'application/json'];
+            if ($webhook_secret) {
+                $headers['X-SBS-Secret'] = $webhook_secret;
+            }
+            wp_remote_post($webhook_url, [
+                'timeout'     => 5,
+                'blocking'    => false,
+                'headers'     => $headers,
+                'body'        => wp_json_encode([
+                    'product_id'    => $product_id,
+                    'product_name'  => $product_nm,
+                    'customer_name' => $name,
+                    'email'         => $email,
+                    'phone'         => $phone,
+                    'message'       => $message,
+                ]),
+            ]);
+        }
 
         $success = get_option('sbs_enquiry_success_msg', "Thank you for your enquiry! We'll be in touch within 1 business day.");
         wp_send_json_success($success);
