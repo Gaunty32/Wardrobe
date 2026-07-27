@@ -14,7 +14,7 @@ export function Header() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (search.trim()) {
-      setLocation(`/shop?search=${encodeURIComponent(search.trim())}`);
+      setLocation(`/products?search=${encodeURIComponent(search.trim())}`);
     }
   };
 

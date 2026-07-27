@@ -44,7 +44,7 @@ export function CategorySidebar({ activeSlug }: { activeSlug?: string }) {
       <div key={node.id} className="w-full">
         <div className={`flex items-center justify-between py-2 border-b border-gray-100 ${depth > 0 ? 'pl-4' : ''}`}>
           <Link 
-            href={`/shop/category/${node.slug}`} 
+            href={`/category/${node.slug}`} 
             className={`text-sm flex-1 hover:text-accent transition-colors ${isActive ? 'text-primary font-bold' : 'text-gray-600'}`}
           >
             {node.name}
