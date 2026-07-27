@@ -2736,4 +2736,29 @@ export async function refreshProductIssues(): Promise<void> {
       )
   `);
   console.log("[startup] Re-queued zero-stock bundle component items for purchasing");
+
+  // Correct order totals that were inflated by the bundle double-count bug.
+  // recalcOrderTotal previously summed ALL order_items including bundle component
+  // rows, but component line_totals are already baked into the bundle header's
+  // line_total — so every bundle was counted twice.  Fix: recompute total_amount
+  // for any order whose stored value differs from the correct (header-only) sum.
+  const bundleTotalFix = await db.execute(sql`
+    UPDATE orders o
+    SET total_amount = sub.correct_total,
+        updated_at   = NOW()
+    FROM (
+      SELECT
+        order_id,
+        COALESCE(SUM(line_total), 0) AS correct_total
+      FROM order_items
+      WHERE NOT (bundle_ref IS NOT NULL AND (is_bundle_header IS NULL OR is_bundle_header = false))
+      GROUP BY order_id
+    ) sub
+    WHERE o.id = sub.order_id
+      AND o.total_amount::numeric <> sub.correct_total
+  `);
+  const fixedCount = (bundleTotalFix as any).rowCount ?? 0;
+  if (fixedCount > 0) {
+    console.log(`[startup] Corrected bundle-inflated order totals for ${fixedCount} order(s)`);
+  }
 }

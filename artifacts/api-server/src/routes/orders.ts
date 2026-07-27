@@ -125,7 +125,11 @@ function numericToFloat(val: string | null | undefined): number {
 
 async function recalcOrderTotal(orderId: number): Promise<void> {
   const items = await db.select().from(orderItemsTable).where(eq(orderItemsTable.orderId, orderId));
-  const total = items.reduce((sum, item) => sum + numericToFloat(item.lineTotal), 0);
+  // Exclude bundle component rows — their price is already included in the bundle header's line_total.
+  // A component row has bundle_ref set AND is_bundle_header = false/null.
+  const total = items
+    .filter((item) => !(item.bundleRef && !item.isBundleHeader))
+    .reduce((sum, item) => sum + numericToFloat(item.lineTotal), 0);
   await db
     .update(ordersTable)
     .set({ totalAmount: String(total), updatedAt: new Date() })

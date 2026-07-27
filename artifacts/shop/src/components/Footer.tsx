@@ -1,83 +1,32 @@
 import { Link } from 'wouter';
-import { Phone, Mail, MapPin } from 'lucide-react';
 import { useGetShopSettings } from '@workspace/api-client-react';
-import logoPath from '@assets/sbs-logo-transparent.png';
 
 export function Footer() {
   const { data: settings } = useGetShopSettings();
 
   return (
-    <footer className="border-t bg-muted/30 mt-auto">
-      <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          <div>
-            <img src={logoPath} alt={settings?.businessName || 'SBS Shop'} className="h-10 mb-4" />
-            {settings?.tagline && (
-              <p className="text-sm text-muted-foreground mb-4">{settings.tagline}</p>
-            )}
-          </div>
-
-          <div>
-            <h3 className="font-semibold mb-4">Shop</h3>
-            <ul className="space-y-2 text-sm">
-              <li>
-                <Link href="/products" className="text-muted-foreground hover:text-foreground transition-colors">
-                  All Products
-                </Link>
-              </li>
-              <li>
-                <Link href="/quote" className="text-muted-foreground hover:text-foreground transition-colors">
-                  Request Quote
-                </Link>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="font-semibold mb-4">Company</h3>
-            <ul className="space-y-2 text-sm">
-              <li>
-                <Link href="/contact" className="text-muted-foreground hover:text-foreground transition-colors">
-                  Contact Us
-                </Link>
-              </li>
-              {settings?.portalUrl && (
-                <li>
-                  <a href={settings.portalUrl} className="text-muted-foreground hover:text-foreground transition-colors">
-                    Customer Portal
-                  </a>
-                </li>
-              )}
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="font-semibold mb-4">Contact</h3>
-            <ul className="space-y-3 text-sm">
-              {settings?.contactPhone && (
-                <li className="flex items-start gap-2 text-muted-foreground">
-                  <Phone className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>{settings.contactPhone}</span>
-                </li>
-              )}
-              {settings?.contactEmail && (
-                <li className="flex items-start gap-2 text-muted-foreground">
-                  <Mail className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>{settings.contactEmail}</span>
-                </li>
-              )}
-              {settings?.address && (
-                <li className="flex items-start gap-2 text-muted-foreground">
-                  <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                  <span>{settings.address}</span>
-                </li>
-              )}
-            </ul>
-          </div>
+    <footer className="bg-white border-t border-gray-200 py-8">
+      <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-gray-500 font-medium">
+        <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
+          <Link href="/shop/about" className="hover:text-primary transition-colors">ABOUT US</Link>
+          <Link href="/shop/contact" className="hover:text-primary transition-colors">CONTACT US</Link>
+          <Link href="/shop/terms" className="hover:text-primary transition-colors">T&CS</Link>
+          <Link href="/shop/privacy" className="hover:text-primary transition-colors">PRIVACY</Link>
+          <Link href="/shop/cookie-policy" className="hover:text-primary transition-colors">COOKIE POLICY</Link>
+          <a href={settings?.portalUrl || '#'} className="hover:text-primary transition-colors">CORPORATE PORTAL</a>
+          <a href="https://www.selectuniforms.co.uk/embroidery-portal/" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">EMBROIDERY PORTAL</a>
         </div>
-
-        <div className="mt-8 pt-8 border-t text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} {settings?.businessName || 'Select Branding Solutions'}. All rights reserved.</p>
+        
+        <div className="flex flex-col items-center md:items-end gap-2 text-xs text-gray-400">
+          <div>
+            &copy; {new Date().getFullYear()} {settings?.businessName || 'Select Branding Solutions'} : {settings?.contactPhone || '0113 255 2694'}
+          </div>
+          <div className="flex gap-2 opacity-50">
+            {/* simple placeholders for payment icons */}
+            <div className="px-2 py-1 border rounded bg-gray-50">Stripe</div>
+            <div className="px-2 py-1 border rounded bg-gray-50">Visa</div>
+            <div className="px-2 py-1 border rounded bg-gray-50">Mastercard</div>
+          </div>
         </div>
       </div>
     </footer>

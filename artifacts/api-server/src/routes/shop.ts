@@ -4,8 +4,49 @@ import { z } from "zod";
 import { db, settingsTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { sendEmail } from "../services/email.js";
+import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
 
 const router: IRouter = Router();
+
+// ── WooCommerce proxy helpers ─────────────────────────────────────────────────
+
+interface WcCreds { url: string; ck: string; cs: string; }
+let _wcCredsCache: WcCreds | null = null;
+
+async function getWcCreds(): Promise<WcCreds> {
+  if (_wcCredsCache) return _wcCredsCache;
+  const rows = await db.select().from(settingsTable);
+  const map: Record<string, string> = {};
+  for (const r of rows) if (r.value) map[r.key] = r.value;
+  _wcCredsCache = {
+    url: (map["woo_url"] ?? "").replace(/\/$/, ""),
+    ck: map["woo_consumer_key"] ?? "",
+    cs: map["woo_consumer_secret"] ?? "",
+  };
+  return _wcCredsCache;
+}
+
+async function wcFetch(path: string, params: Record<string, string> = {}): Promise<any> {
+  const { url, ck, cs } = await getWcCreds();
+  const u = new URL(`${url}/wp-json/wc/v3${path}`);
+  u.searchParams.set("consumer_key", ck);
+  u.searchParams.set("consumer_secret", cs);
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") u.searchParams.set(k, v);
+  const res = await fetch(u.toString());
+  if (!res.ok) throw new Error(`WC API ${path} returned ${res.status}`);
+  return res.json();
+}
+
+// Simple 5-minute in-memory cache for WC responses
+const wcCache = new Map<string, { data: any; expiresAt: number }>();
+async function wcFetchCached(path: string, params: Record<string, string> = {}, ttlMs = 300_000): Promise<any> {
+  const key = path + JSON.stringify(params);
+  const cached = wcCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+  const data = await wcFetch(path, params);
+  wcCache.set(key, { data, expiresAt: Date.now() + ttlMs });
+  return data;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -331,6 +372,270 @@ router.post("/shop/enquiry", async (req, res): Promise<void> => {
   }
 
   res.json({ success: true, referenceNumber: refNum });
+});
+
+// ── WooCommerce proxy: categories ─────────────────────────────────────────────
+
+router.get("/shop/wc/categories", async (_req, res): Promise<void> => {
+  try {
+    const data = await wcFetchCached("/products/categories", { per_page: "100", orderby: "menu_order", order: "asc" });
+    const cats = (data as any[]).map((c) => ({
+      id: c.id,
+      name: c.name,
+      slug: c.slug,
+      parent: c.parent,
+      count: c.count,
+      image: c.image?.src ?? null,
+      display: c.display ?? "default",
+    })).filter((c) => c.count > 0);
+    res.json(cats);
+  } catch (e: any) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// ── WooCommerce proxy: product list ───────────────────────────────────────────
+
+router.get("/shop/wc/products", async (req, res): Promise<void> => {
+  try {
+    const page = String(req.query.page ?? "1");
+    const per_page = String(req.query.per_page ?? "24");
+    const search = String(req.query.search ?? "");
+    const category = String(req.query.category ?? "");   // WC category ID
+    const slug = String(req.query.category_slug ?? "");  // alternative: resolve slug → id first
+
+    const params: Record<string, string> = { page, per_page, orderby: "popularity", order: "desc" };
+    if (search) params.search = search;
+    if (category) params.category = category;
+    if (slug && !category) {
+      // Resolve slug to WC category id
+      const cats = await wcFetchCached("/products/categories", { per_page: "100" });
+      const cat = (cats as any[]).find((c) => c.slug === slug);
+      if (cat) params.category = String(cat.id);
+    }
+
+    const data = await wcFetchCached("/products", params, 120_000);
+    const products = (data as any[]).map((p) => ({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      permalink: p.permalink,
+      price: p.price,
+      regularPrice: p.regular_price,
+      salePrice: p.sale_price,
+      onSale: p.on_sale,
+      sku: p.sku,
+      shortDescription: p.short_description?.replace(/<[^>]+>/g, " ").trim() ?? "",
+      imageUrl: p.images?.[0]?.src ?? null,
+      images: (p.images ?? []).map((img: any) => img.src),
+      categories: (p.categories ?? []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
+      type: p.type,
+    }));
+    res.json(products);
+  } catch (e: any) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// ── WooCommerce proxy: single product ─────────────────────────────────────────
+
+router.get("/shop/wc/products/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
+  try {
+    const [product, variationsRaw] = await Promise.all([
+      wcFetchCached(`/products/${id}`, {}, 120_000),
+      wcFetchCached(`/products/${id}/variations`, { per_page: "100" }, 120_000).catch(() => []),
+    ]);
+    const p = product as any;
+    res.json({
+      id: p.id,
+      name: p.name,
+      slug: p.slug,
+      permalink: p.permalink,
+      price: p.price,
+      regularPrice: p.regular_price,
+      salePrice: p.sale_price,
+      onSale: p.on_sale,
+      sku: p.sku,
+      description: p.description?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() ?? "",
+      shortDescription: p.short_description?.replace(/<[^>]+>/g, " ").trim() ?? "",
+      images: (p.images ?? []).map((img: any) => img.src),
+      imageUrl: p.images?.[0]?.src ?? null,
+      categories: (p.categories ?? []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
+      attributes: (p.attributes ?? []).map((a: any) => ({
+        id: a.id,
+        name: a.name,
+        options: a.options ?? [],
+        variation: a.variation ?? false,
+      })),
+      type: p.type,
+      stockStatus: p.stock_status,
+      stockQuantity: p.stock_quantity,
+      variations: (variationsRaw as any[]).map((v: any) => ({
+        id: v.id,
+        price: v.price,
+        regularPrice: v.regular_price,
+        salePrice: v.sale_price,
+        stockStatus: v.stock_status,
+        sku: v.sku,
+        image: v.image?.src ?? null,
+        attributes: (v.attributes ?? []).map((a: any) => ({ name: a.name, option: a.option })),
+      })),
+    });
+  } catch (e: any) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// ── Stripe: create payment intent for shop checkout ───────────────────────────
+
+router.post("/shop/stripe/payment-intent", async (req, res): Promise<void> => {
+  const { amount, currency = "gbp", cartItems } = req.body;
+  if (!amount || typeof amount !== "number" || amount <= 0) {
+    res.status(400).json({ error: "amount (positive number in £) is required" });
+    return;
+  }
+  try {
+    const stripe = await getUncachableStripeClient();
+    const amountPence = Math.round(amount * 100);
+    const description = `SBS Shop — ${Array.isArray(cartItems) ? cartItems.map((i: any) => `${i.name} ×${i.quantity}`).join(", ") : "order"}`;
+    const intent = await stripe.paymentIntents.create({
+      amount: amountPence,
+      currency,
+      description,
+      metadata: { source: "shop", items: JSON.stringify(cartItems ?? []).slice(0, 500) },
+      automatic_payment_methods: { enabled: true },
+    });
+    res.json({ clientSecret: intent.client_secret, paymentIntentId: intent.id });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Shop order creation (called after Stripe payment confirms) ────────────────
+
+const ShopOrderSchema = z.object({
+  paymentIntentId: z.string(),
+  customerName: z.string().min(1),
+  customerEmail: z.string().email(),
+  customerPhone: z.string().optional().nullable(),
+  company: z.string().optional().nullable(),
+  deliveryAddress: z.object({
+    line1: z.string(),
+    line2: z.string().optional().nullable(),
+    city: z.string(),
+    postcode: z.string(),
+    country: z.string().default("GB"),
+  }),
+  cartItems: z.array(z.object({
+    wcProductId: z.number(),
+    variationId: z.number().optional().nullable(),
+    name: z.string(),
+    sku: z.string().optional().nullable(),
+    price: z.number(),
+    quantity: z.number().int().positive(),
+    colour: z.string().optional().nullable(),
+    size: z.string().optional().nullable(),
+    image: z.string().optional().nullable(),
+  })),
+  subtotal: z.number(),
+  carriage: z.number().default(8.5),
+  total: z.number(),
+});
+
+router.post("/shop/orders", async (req, res): Promise<void> => {
+  const parsed = ShopOrderSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const d = parsed.data;
+
+  try {
+    // Verify payment intent succeeded
+    const stripe = await getUncachableStripeClient();
+    const intent = await stripe.paymentIntents.retrieve(d.paymentIntentId);
+    if (intent.status !== "succeeded") {
+      res.status(400).json({ error: `Payment not confirmed (status: ${intent.status})` });
+      return;
+    }
+
+    // Generate order number
+    const numResult = await db.execute(sql`
+      SELECT COALESCE(MAX(CAST(REGEXP_REPLACE(order_number, '[^0-9]', '', 'g') AS INTEGER)), 0) + 1 AS next_num
+      FROM orders WHERE order_number ~ '^[A-Z]+-[0-9]+-[0-9]+$'
+    `);
+    const nextNum = (numResult.rows[0] as any)?.next_num ?? 1;
+    const year = new Date().getFullYear();
+    const orderNumber = `ORD-${year}-${String(nextNum).padStart(5, "0")}`;
+
+    // Insert order
+    const orderResult = await db.execute(sql`
+      INSERT INTO orders (
+        order_number, customer_name, status, total_amount, carriage_amount,
+        source, notes, order_date, created_at, updated_at
+      ) VALUES (
+        ${orderNumber},
+        ${d.customerName},
+        'processing',
+        ${String(d.total)},
+        ${String(d.carriage)},
+        'shop',
+        ${`Online order — ${d.customerEmail}${d.company ? ` (${d.company})` : ""}. Payment: ${d.paymentIntentId}`},
+        NOW(), NOW(), NOW()
+      ) RETURNING id
+    `);
+    const orderId = (orderResult.rows[0] as any)?.id;
+
+    // Insert order items
+    for (const item of d.cartItems) {
+      await db.execute(sql`
+        INSERT INTO order_items (order_id, product_name, quantity, unit_price, line_total, colour, size, notes)
+        VALUES (
+          ${orderId},
+          ${item.name},
+          ${item.quantity},
+          ${String(item.price)},
+          ${String(item.price * item.quantity)},
+          ${item.colour ?? null},
+          ${item.size ?? null},
+          ${item.sku ? `SKU: ${item.sku}` : null}
+        )
+      `);
+    }
+
+    // Send confirmation email
+    const settings = await getAllSettings();
+    const businessName = settings["business_name"] ?? "Select Branding Solutions";
+    try {
+      await sendEmail({
+        to: d.customerEmail,
+        subject: `Order Confirmed — ${orderNumber}`,
+        text: `Hi ${d.customerName},\n\nThank you for your order! Your order reference is ${orderNumber}.\n\nWe will be in touch to confirm delivery details.\n\n${businessName}`,
+        html: `<p>Hi ${d.customerName},</p><p>Thank you for your order! Your order reference is <strong>${orderNumber}</strong>.</p><p>We will be in touch to confirm delivery details.</p><p>${businessName}</p>`,
+      });
+    } catch (e) {
+      logger.warn({ err: e }, "[shop/orders] Failed to send confirmation email");
+    }
+
+    // Notify business
+    const notifyEmail = settings["contact_email"] ?? settings["email"];
+    if (notifyEmail) {
+      try {
+        await sendEmail({
+          to: notifyEmail,
+          subject: `New Shop Order — ${orderNumber} — ${d.customerName}`,
+          text: `New order received.\n\nRef: ${orderNumber}\nCustomer: ${d.customerName} (${d.customerEmail})\n${d.company ? `Company: ${d.company}\n` : ""}Total: £${d.total.toFixed(2)}\n\nItems:\n${d.cartItems.map((i) => `  ${i.name} ×${i.quantity} = £${(i.price * i.quantity).toFixed(2)}`).join("\n")}`,
+          html: `<p><strong>Ref:</strong> ${orderNumber}</p><p><strong>Customer:</strong> ${d.customerName} (${d.customerEmail})</p>${d.company ? `<p><strong>Company:</strong> ${d.company}</p>` : ""}<p><strong>Total:</strong> £${d.total.toFixed(2)}</p><ul>${d.cartItems.map((i) => `<li>${i.name} ×${i.quantity} @ £${i.price.toFixed(2)} = £${(i.price * i.quantity).toFixed(2)}</li>`).join("")}</ul>`,
+        });
+      } catch (e) {
+        logger.warn({ err: e }, "[shop/orders] Failed to send business notification email");
+      }
+    }
+
+    res.json({ success: true, orderNumber, orderId });
+  } catch (e: any) {
+    logger.error({ err: e }, "[shop/orders] Failed to create order");
+    res.status(500).json({ error: e.message });
+  }
 });
 
 export default router;

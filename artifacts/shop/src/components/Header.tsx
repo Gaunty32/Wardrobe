@@ -1,68 +1,57 @@
-import { Link } from 'wouter';
-import { Search, ShoppingCart, Phone, Mail } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Link, useLocation } from 'wouter';
+import { Search, ShoppingBag } from 'lucide-react';
 import { useGetShopSettings } from '@workspace/api-client-react';
+import { useCart } from '@/context/CartContext';
 import logoPath from '@assets/sbs-logo-transparent.png';
+import { useState } from 'react';
 
 export function Header() {
   const { data: settings } = useGetShopSettings();
+  const { itemCount, subtotal } = useCart();
+  const [, setLocation] = useLocation();
+  const [search, setSearch] = useState('');
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (search.trim()) {
+      setLocation(`/shop?search=${encodeURIComponent(search.trim())}`);
+    }
+  };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container mx-auto px-4">
-        {/* Top bar */}
-        <div className="flex h-12 items-center justify-between border-b text-sm text-muted-foreground">
-          <div className="flex items-center gap-4">
-            {settings?.contactPhone && (
-              <div className="flex items-center gap-1.5">
-                <Phone className="h-3.5 w-3.5" />
-                <span>{settings.contactPhone}</span>
-              </div>
-            )}
-            {settings?.contactEmail && (
-              <div className="flex items-center gap-1.5">
-                <Mail className="h-3.5 w-3.5" />
-                <span>{settings.contactEmail}</span>
-              </div>
-            )}
-          </div>
-          {settings?.portalUrl && (
-            <Link href={settings.portalUrl} className="hover:text-foreground transition-colors">
-              Customer Login
-            </Link>
-          )}
+    <header className="bg-white py-6 border-b border-border">
+      <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
+        {/* Logo */}
+        <Link href="/" className="block">
+          <img src={logoPath} alt={settings?.businessName || 'SBS'} className="h-16 w-auto" />
+        </Link>
+
+        {/* Search */}
+        <div className="flex-1 max-w-xl w-full">
+          <form onSubmit={handleSearch} className="flex w-full relative">
+            <input
+              type="text"
+              placeholder="Search for products"
+              className="w-full border border-gray-300 px-4 py-2 focus:outline-none focus:border-primary"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <button type="submit" className="absolute right-0 top-0 bottom-0 px-4 bg-primary text-white hover:bg-primary/90 transition-colors">
+              <Search className="w-5 h-5" />
+            </button>
+          </form>
         </div>
 
-        {/* Main header */}
-        <div className="flex h-16 items-center justify-between gap-4">
-          <Link href="/" className="flex items-center gap-3">
-            <img src={logoPath} alt={settings?.businessName || 'SBS Shop'} className="h-10" />
-          </Link>
-
-          <nav className="hidden md:flex items-center gap-6">
-            <Link href="/" className="text-sm font-medium transition-colors hover:text-primary">
-              Home
-            </Link>
-            <Link href="/products" className="text-sm font-medium transition-colors hover:text-primary">
-              Products
-            </Link>
-            <Link href="/quote" className="text-sm font-medium transition-colors hover:text-primary">
-              Request Quote
-            </Link>
-            <Link href="/contact" className="text-sm font-medium transition-colors hover:text-primary">
-              Contact
-            </Link>
-          </nav>
-
-          <div className="flex items-center gap-2">
-            <Link href="/quote">
-              <Button size="sm" data-testid="button-quote-header">
-                Get Quote
-              </Button>
-            </Link>
+        {/* Cart */}
+        <Link href="/shop/cart" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+          <div className="text-right hidden sm:block">
+            <div className="text-sm font-semibold text-primary">£{subtotal.toFixed(2)}</div>
+            <div className="text-xs text-muted-foreground">{itemCount} items</div>
           </div>
-        </div>
+          <div className="bg-primary text-white p-3">
+            <ShoppingBag className="w-5 h-5" />
+          </div>
+        </Link>
       </div>
     </header>
   );

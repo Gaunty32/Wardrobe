@@ -1,159 +1,159 @@
 import { Link } from 'wouter';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ProductCard } from '@/components/ProductCard';
-import { Header } from '@/components/Header';
-import { Footer } from '@/components/Footer';
-import { CheckCircle, Clock, MapPin, Award } from 'lucide-react';
-import { useGetShopSettings, useListShopCategories, useListShopProducts } from '@workspace/api-client-react';
+import { Button } from '@/components/ui/button';
+import { Shirt, Handshake, TrendingUp } from 'lucide-react';
+import { useState, useEffect } from 'react';
+
+const SLIDES = [
+  {
+    image: 'https://www.selectuniforms.co.uk/wp-content/uploads/Uniforms-showroom.jpg',
+    title: 'Staff Uniforms Create That Professional Business Image',
+    subtitle: 'People do judge you by the way you dress, so make sure your team looks the part with our high-quality workwear.',
+  },
+  {
+    image: 'https://www.selectuniforms.co.uk/wp-content/uploads/Uniforms-showroom.jpg',
+    title: 'Helping You Find The Perfect Fit',
+    subtitle: 'Quality uniforms tailored to your business needs, ensuring comfort and durability all day long.',
+  },
+  {
+    image: 'https://www.selectuniforms.co.uk/wp-content/uploads/Uniforms-showroom.jpg',
+    title: 'Free Logo Application On All Garments',
+    subtitle: 'Stand out from the crowd with our professional embroidery and printing services included on all items.',
+  }
+];
 
 export default function Home() {
-  const { data: settings, isLoading: settingsLoading } = useGetShopSettings();
-  const { data: categories = [], isLoading: categoriesLoading } = useListShopCategories();
-  const { data: featuredProducts = [], isLoading: productsLoading } = useListShopProducts({ featured: true });
+  const [currentSlide, setCurrentSlide] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % SLIDES.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-
-      {/* Hero Section */}
-      <section className="relative bg-gradient-to-br from-primary/5 via-background to-accent/5 py-20 md:py-32">
-        <div className="container mx-auto px-4">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight mb-6" data-testid="text-hero-title">
-              {settings?.heroText || 'Professional Workwear & Uniform Solutions'}
-            </h1>
-            <p className="text-xl text-muted-foreground mb-8" data-testid="text-hero-subtitle">
-              {settings?.heroSubtext || 'Quality branding, fast turnaround, UK-based service'}
-            </p>
-            <div className="flex flex-wrap gap-4">
-              <Link href="/products">
-                <Button size="lg" data-testid="button-browse-products">
-                  Browse Products
-                </Button>
-              </Link>
-              <Link href="/quote">
-                <Button size="lg" variant="outline" data-testid="button-request-quote">
-                  Request a Quote
-                </Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Categories */}
-      {categories.length > 0 && (
-        <section className="py-16 bg-muted/30">
-          <div className="container mx-auto px-4">
-            <h2 className="text-2xl font-bold mb-8">Shop by Category</h2>
-            <div className="flex flex-wrap gap-3">
-              {categories.map((category, idx) => (
-                <Link key={idx} href={`/products?category=${encodeURIComponent(category.name)}`}>
-                  <Badge 
-                    variant="secondary" 
-                    className="px-4 py-2 text-sm cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
-                    data-testid={`badge-category-${idx}`}
-                  >
-                    {category.name} ({category.count})
-                  </Badge>
+    <div className="flex flex-col w-full">
+      {/* Hero Slider */}
+      <section className="relative h-[600px] w-full overflow-hidden bg-gray-900">
+        {SLIDES.map((slide, index) => (
+          <div 
+            key={index}
+            className={`absolute inset-0 transition-opacity duration-1000 ${
+              index === currentSlide ? 'opacity-100 z-10' : 'opacity-0 z-0'
+            }`}
+          >
+            <img 
+              src={slide.image} 
+              alt={slide.title} 
+              className="absolute inset-0 w-full h-full object-cover opacity-40 mix-blend-overlay"
+            />
+            <div className="container mx-auto px-4 h-full flex flex-col justify-center max-w-4xl relative z-20 pt-20">
+              <h1 className="text-4xl md:text-6xl font-extrabold text-white mb-6 leading-tight">
+                {slide.title}
+              </h1>
+              <p className="text-lg md:text-xl text-gray-200 mb-8 max-w-2xl font-light">
+                {slide.subtitle}
+              </p>
+              <div>
+                <Link href="/shop/about">
+                  <Button size="lg" className="bg-primary hover:bg-primary/90 text-white rounded-none px-8 font-semibold uppercase tracking-widest">
+                    FIND OUT HOW
+                  </Button>
                 </Link>
-              ))}
+              </div>
             </div>
           </div>
-        </section>
-      )}
+        ))}
+        {/* Slider dots */}
+        <div className="absolute bottom-6 left-0 right-0 z-20 flex justify-center gap-2">
+          {SLIDES.map((_, idx) => (
+            <button
+              key={idx}
+              onClick={() => setCurrentSlide(idx)}
+              className={`w-3 h-3 rounded-full transition-colors ${
+                idx === currentSlide ? 'bg-white' : 'bg-white/40'
+              }`}
+            />
+          ))}
+        </div>
+      </section>
 
-      {/* Featured Products */}
-      {featuredProducts.length > 0 && (
-        <section className="py-16">
-          <div className="container mx-auto px-4">
-            <div className="flex items-center justify-between mb-8">
-              <h2 className="text-2xl font-bold">Featured Products</h2>
-              <Link href="/products">
-                <Button variant="ghost" data-testid="button-view-all">
-                  View all products
-                </Button>
-              </Link>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {featuredProducts.slice(0, 8).map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* USPs */}
-      <section className="py-16 bg-primary text-primary-foreground">
+      {/* 3 USP boxes */}
+      <section className="relative -mt-16 z-30 mb-20">
         <div className="container mx-auto px-4">
-          <h2 className="text-2xl font-bold text-center mb-12">Why Choose Us</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary-foreground/10 mb-4">
-                <Award className="h-6 w-6" />
-              </div>
-              <h3 className="font-semibold mb-2">Quality Products</h3>
-              <p className="text-sm text-primary-foreground/80">
-                Premium workwear and uniforms from trusted suppliers
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary-foreground/10 mb-4">
-                <CheckCircle className="h-6 w-6" />
-              </div>
-              <h3 className="font-semibold mb-2">Expert Branding</h3>
-              <p className="text-sm text-primary-foreground/80">
-                Professional decoration services for your company identity
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary-foreground/10 mb-4">
-                <Clock className="h-6 w-6" />
-              </div>
-              <h3 className="font-semibold mb-2">Fast Turnaround</h3>
-              <p className="text-sm text-primary-foreground/80">
-                Quick delivery to keep your team equipped
-              </p>
-            </div>
-
-            <div className="text-center">
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary-foreground/10 mb-4">
-                <MapPin className="h-6 w-6" />
-              </div>
-              <h3 className="font-semibold mb-2">UK-Based</h3>
-              <p className="text-sm text-primary-foreground/80">
-                Local service and support you can count on
-              </p>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="rounded-none border-none shadow-xl bg-white text-center hover:-translate-y-1 transition-transform duration-300">
+              <CardContent className="pt-10 pb-8 px-6">
+                <Shirt className="w-12 h-12 mx-auto text-accent mb-6" />
+                <h3 className="font-bold text-gray-900 mb-4 text-lg">PROMOTE YOUR COMPANY OR BRAND</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  A branded uniform makes your team easily identifiable and promotes a cohesive, professional look that builds trust with your customers.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-none border-none shadow-xl bg-white text-center hover:-translate-y-1 transition-transform duration-300">
+              <CardContent className="pt-10 pb-8 px-6">
+                <Handshake className="w-12 h-12 mx-auto text-accent mb-6" />
+                <h3 className="font-bold text-gray-900 mb-4 text-lg">HAVE PRIDE IN WHAT YOU WEAR</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  When employees wear high-quality, comfortable workwear, it boosts morale and fosters a sense of pride and belonging within the team.
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="rounded-none border-none shadow-xl bg-white text-center hover:-translate-y-1 transition-transform duration-300">
+              <CardContent className="pt-10 pb-8 px-6">
+                <TrendingUp className="w-12 h-12 mx-auto text-accent mb-6" />
+                <h3 className="font-bold text-gray-900 mb-4 text-lg">GET FREE ADVERTISING</h3>
+                <p className="text-sm text-gray-600 leading-relaxed">
+                  Every time your staff are out and about, your branded uniform acts as a walking advertisement, increasing brand awareness at no extra cost.
+                </p>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-16">
-        <div className="container mx-auto px-4">
-          <Card className="bg-gradient-to-br from-accent/10 to-primary/10 border-none">
-            <CardContent className="p-12 text-center">
-              <h2 className="text-3xl font-bold mb-4">Ready to get started?</h2>
-              <p className="text-lg text-muted-foreground mb-6 max-w-2xl mx-auto">
-                Request a quote today and discover how we can help outfit your team with quality workwear and branding solutions.
-              </p>
-              <Link href="/quote">
-                <Button size="lg" data-testid="button-cta-quote">
-                  Request a Quote
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
+      {/* Impression section */}
+      <section className="py-12 bg-white">
+        <div className="container mx-auto px-4 text-center max-w-5xl">
+          <h2 className="text-3xl font-extrabold text-primary mb-6">Helping You Make The Right Impression</h2>
+          <p className="text-gray-600 mb-12 max-w-3xl mx-auto">
+            We are one of the UK's leading suppliers of branded workwear, uniforms, and promotional clothing. With years of experience and a commitment to quality, we ensure your team always looks their best.
+          </p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Link href="/shop/category/polos" className="group relative block h-64 overflow-hidden bg-gray-200">
+              <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Polo-shirts-category.jpg" alt="Polos" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
+              <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <h3 className="text-white text-2xl font-bold uppercase tracking-wider bg-black/50 px-6 py-3 border-2 border-white">Polos</h3>
+              </div>
+            </Link>
+            <Link href="/shop/category/sweatshirts" className="group relative block h-64 overflow-hidden bg-gray-200">
+              <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Sweatshirts-category.jpg" alt="Sweatshirts" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
+              <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <h3 className="text-white text-2xl font-bold uppercase tracking-wider bg-black/50 px-6 py-3 border-2 border-white">Sweatshirts</h3>
+              </div>
+            </Link>
+            <Link href="/shop/category/jackets" className="group relative block h-64 overflow-hidden bg-gray-200">
+              <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Jackets-category.jpg" alt="Jackets" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
+              <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <h3 className="text-white text-2xl font-bold uppercase tracking-wider bg-black/50 px-6 py-3 border-2 border-white">Jackets</h3>
+              </div>
+            </Link>
+            <Link href="/shop/category/trousers" className="group relative block h-64 overflow-hidden bg-gray-200">
+              <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Trousers-category.jpg" alt="Trousers" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
+              <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <h3 className="text-white text-2xl font-bold uppercase tracking-wider bg-black/50 px-6 py-3 border-2 border-white">Trousers</h3>
+              </div>
+            </Link>
+          </div>
         </div>
       </section>
-
-      <Footer />
     </div>
   );
 }

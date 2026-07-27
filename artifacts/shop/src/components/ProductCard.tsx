@@ -1,75 +1,41 @@
 import { Link } from 'wouter';
-import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import type { ShopProduct } from '@workspace/api-client-react';
+import { Card, CardContent } from '@/components/ui/card';
 
-interface ProductCardProps {
-  product: ShopProduct;
-}
-
-export function ProductCard({ product }: ProductCardProps) {
-  const priceDisplay = product.unitPrice > 0 
-    ? `from £${product.unitPrice.toFixed(2)}` 
-    : 'Price on request';
-
+export function ProductCard({ product }: { product: any }) {
+  // Simple card for the product grid
+  const image = product.images?.[0] || product.image;
+  
   return (
-    <Link href={`/products/${product.id}`}>
-      <Card className="overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer h-full flex flex-col" data-testid={`card-product-${product.id}`}>
-        <div className="aspect-square bg-muted relative overflow-hidden">
-          {product.imageUrl ? (
+    <Link href={`/shop/product/${product.id}`} className="group block">
+      <Card className="rounded-none border-none shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
+        <div className="relative aspect-square overflow-hidden bg-gray-100">
+          {image ? (
             <img 
-              src={product.imageUrl} 
-              alt={product.name}
-              className="w-full h-full object-cover"
+              src={image} 
+              alt={product.name} 
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-              No image
-            </div>
+            <div className="w-full h-full flex items-center justify-center text-gray-400">No image</div>
           )}
-          {product.guidanceBadges.length > 0 && (
-            <div className="absolute top-2 right-2 flex flex-col gap-1">
-              {product.guidanceBadges.slice(0, 2).map((badge, idx) => (
-                <Badge key={idx} variant="secondary" className="text-xs">
-                  {badge}
-                </Badge>
-              ))}
-            </div>
+          {product.onSale && (
+            <span className="absolute top-2 right-2 bg-accent text-white text-xs font-bold px-2 py-1 uppercase">
+              Sale
+            </span>
           )}
         </div>
-
-        <CardContent className="flex-1 p-4">
-          <h3 className="font-semibold text-base mb-1 line-clamp-2" data-testid={`text-product-name-${product.id}`}>
+        <CardContent className="p-4 flex-1 flex flex-col">
+          <h3 className="text-sm font-semibold text-gray-800 line-clamp-2 mb-2 group-hover:text-primary transition-colors">
             {product.name}
           </h3>
-          {product.category && (
-            <p className="text-xs text-muted-foreground mb-2">{product.category}</p>
-          )}
-          {product.description && (
-            <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-              {product.description}
-            </p>
-          )}
-          {product.colours.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap mt-2">
-              <span className="text-xs text-muted-foreground">Colours:</span>
-              {product.colours.slice(0, 5).map((colour, idx) => (
-                <Badge key={idx} variant="outline" className="text-xs">
-                  {colour}
-                </Badge>
-              ))}
-              {product.colours.length > 5 && (
-                <span className="text-xs text-muted-foreground">+{product.colours.length - 5}</span>
-              )}
-            </div>
-          )}
+          <div className="mt-auto">
+            {product.price ? (
+              <p className="text-primary font-bold">£{Number(product.price).toFixed(2)} <span className="text-xs text-gray-500 font-normal">Ex. VAT</span></p>
+            ) : (
+              <p className="text-gray-500 text-sm">Price unavailable</p>
+            )}
+          </div>
         </CardContent>
-
-        <CardFooter className="p-4 pt-0">
-          <p className="text-lg font-semibold text-primary" data-testid={`text-price-${product.id}`}>
-            {priceDisplay}
-          </p>
-        </CardFooter>
       </Card>
     </Link>
   );
