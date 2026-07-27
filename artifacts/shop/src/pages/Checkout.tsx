@@ -10,7 +10,7 @@ import { Elements, CardElement, useStripe, useElements } from '@stripe/react-str
 let stripePromise: Promise<any> | null = null;
 const getStripePromise = () => {
   if (!stripePromise) {
-    stripePromise = fetch(`${import.meta.env.BASE_URL}api/stripe/publishable-key`)
+    stripePromise = fetch(`/api/stripe/publishable-key`)
       .then(r => r.json())
       .then(d => loadStripe(d.publishableKey));
   }
@@ -57,7 +57,7 @@ function CheckoutForm() {
     
     try {
       // 1. Create Payment Intent
-      const piRes = await fetch(`${import.meta.env.BASE_URL}api/shop/stripe/payment-intent`, {
+      const piRes = await fetch(`/api/shop/stripe/payment-intent`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: total, cartItems: items })
@@ -93,7 +93,7 @@ function CheckoutForm() {
 
       if (paymentIntent && paymentIntent.status === 'succeeded') {
         // 3. Create Order
-        const orderRes = await fetch(`${import.meta.env.BASE_URL}api/shop/orders`, {
+        const orderRes = await fetch(`/api/shop/orders`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

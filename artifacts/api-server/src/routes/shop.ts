@@ -8,44 +8,10 @@ import { getUncachableStripeClient, getStripePublishableKey } from "../services/
 
 const router: IRouter = Router();
 
-// ── WooCommerce proxy helpers ─────────────────────────────────────────────────
+// ── Internal-DB helpers (replaces WC external proxy) ─────────────────────────
 
-interface WcCreds { url: string; ck: string; cs: string; }
-let _wcCredsCache: WcCreds | null = null;
-
-async function getWcCreds(): Promise<WcCreds> {
-  if (_wcCredsCache) return _wcCredsCache;
-  const rows = await db.select().from(settingsTable);
-  const map: Record<string, string> = {};
-  for (const r of rows) if (r.value) map[r.key] = r.value;
-  _wcCredsCache = {
-    url: (map["woo_url"] ?? "").replace(/\/$/, ""),
-    ck: map["woo_consumer_key"] ?? "",
-    cs: map["woo_consumer_secret"] ?? "",
-  };
-  return _wcCredsCache;
-}
-
-async function wcFetch(path: string, params: Record<string, string> = {}): Promise<any> {
-  const { url, ck, cs } = await getWcCreds();
-  const u = new URL(`${url}/wp-json/wc/v3${path}`);
-  u.searchParams.set("consumer_key", ck);
-  u.searchParams.set("consumer_secret", cs);
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "") u.searchParams.set(k, v);
-  const res = await fetch(u.toString());
-  if (!res.ok) throw new Error(`WC API ${path} returned ${res.status}`);
-  return res.json();
-}
-
-// Simple 5-minute in-memory cache for WC responses
-const wcCache = new Map<string, { data: any; expiresAt: number }>();
-async function wcFetchCached(path: string, params: Record<string, string> = {}, ttlMs = 300_000): Promise<any> {
-  const key = path + JSON.stringify(params);
-  const cached = wcCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.data;
-  const data = await wcFetch(path, params);
-  wcCache.set(key, { data, expiresAt: Date.now() + ttlMs });
-  return data;
+function toSlug(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -374,117 +340,204 @@ router.post("/shop/enquiry", async (req, res): Promise<void> => {
   res.json({ success: true, referenceNumber: refNum });
 });
 
-// ── WooCommerce proxy: categories ─────────────────────────────────────────────
+// ── Shop: categories from internal DB ────────────────────────────────────────
 
 router.get("/shop/wc/categories", async (_req, res): Promise<void> => {
   try {
-    const data = await wcFetchCached("/products/categories", { per_page: "100", orderby: "menu_order", order: "asc" });
-    const cats = (data as any[]).map((c) => ({
-      id: c.id,
-      name: c.name,
-      slug: c.slug,
-      parent: c.parent,
-      count: c.count,
-      image: c.image?.src ?? null,
-      display: c.display ?? "default",
-    })).filter((c) => c.count > 0);
+    // Aggregate distinct categories with count and a representative image
+    const rows = await db.execute(sql`
+      SELECT
+        category AS name,
+        COUNT(*) AS count,
+        MIN(image_url) AS image
+      FROM products
+      WHERE is_archived = false
+        AND category IS NOT NULL
+        AND category <> ''
+      GROUP BY category
+      HAVING COUNT(*) > 0
+      ORDER BY category ASC
+    `);
+
+    let id = 1;
+    const cats = (rows.rows as any[]).map((r) => ({
+      id: id++,
+      name: r.name,
+      slug: toSlug(r.name),
+      parent: 0,
+      count: Number(r.count),
+      image: r.image ?? null,
+      display: "default",
+    }));
+
     res.json(cats);
   } catch (e: any) {
-    res.status(502).json({ error: e.message });
+    logger.error({ err: e }, "[shop/wc/categories] error");
+    res.status(500).json({ error: e.message });
   }
 });
 
-// ── WooCommerce proxy: product list ───────────────────────────────────────────
+// ── Shop: product list from internal DB ──────────────────────────────────────
 
 router.get("/shop/wc/products", async (req, res): Promise<void> => {
   try {
-    const page = String(req.query.page ?? "1");
-    const per_page = String(req.query.per_page ?? "24");
-    const search = String(req.query.search ?? "");
-    const category = String(req.query.category ?? "");   // WC category ID
-    const slug = String(req.query.category_slug ?? "");  // alternative: resolve slug → id first
+    const page    = Math.max(1, Number(req.query.page ?? 1));
+    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page ?? 24)));
+    const offset  = (page - 1) * perPage;
+    const search  = String(req.query.search ?? "").trim();
+    const catSlug = String(req.query.category_slug ?? "").trim();
 
-    const params: Record<string, string> = { page, per_page, orderby: "popularity", order: "desc" };
-    if (search) params.search = search;
-    if (category) params.category = category;
-    if (slug && !category) {
-      // Resolve slug to WC category id
-      const cats = await wcFetchCached("/products/categories", { per_page: "100" });
-      const cat = (cats as any[]).find((c) => c.slug === slug);
-      if (cat) params.category = String(cat.id);
+    // Build WHERE clause
+    const conditions: string[] = ["p.is_archived = false", "p.is_service = false"];
+    const binds: any[] = [];
+    let paramIdx = 1;
+
+    if (search) {
+      conditions.push(`(p.name ILIKE $${paramIdx} OR p.sku ILIKE $${paramIdx})`);
+      binds.push(`%${search}%`);
+      paramIdx++;
+    }
+    if (catSlug) {
+      // Convert slug back to a name pattern (slug replaces spaces with hyphens)
+      // Match category by slugified version
+      conditions.push(`LOWER(REGEXP_REPLACE(p.category, '[^a-zA-Z0-9]+', '-', 'g')) = $${paramIdx}`);
+      binds.push(catSlug.toLowerCase());
+      paramIdx++;
     }
 
-    const data = await wcFetchCached("/products", params, 120_000);
-    const products = (data as any[]).map((p) => ({
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+
+    const queryText = `
+      SELECT
+        p.id, p.name, p.sku, p.category, p.image_url,
+        p.unit_price, p.regular_price, p.on_sale, p.description, p.permalink,
+        p.woo_commerce_id
+      FROM products p
+      ${where}
+      ORDER BY p.name ASC
+      LIMIT ${perPage} OFFSET ${offset}
+    `;
+
+    const result = await db.execute(sql.raw(
+      binds.length
+        ? queryText.replace(/\$(\d+)/g, (_, i) => `'${String(binds[Number(i) - 1]).replace(/'/g, "''")}'`)
+        : queryText
+    ));
+
+    const products = (result.rows as any[]).map((p) => ({
       id: p.id,
       name: p.name,
-      slug: p.slug,
-      permalink: p.permalink,
-      price: p.price,
-      regularPrice: p.regular_price,
-      salePrice: p.sale_price,
-      onSale: p.on_sale,
-      sku: p.sku,
-      shortDescription: p.short_description?.replace(/<[^>]+>/g, " ").trim() ?? "",
-      imageUrl: p.images?.[0]?.src ?? null,
-      images: (p.images ?? []).map((img: any) => img.src),
-      categories: (p.categories ?? []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
-      type: p.type,
+      slug: toSlug(p.name),
+      permalink: p.permalink ?? null,
+      price: p.unit_price ? String(p.unit_price) : "0",
+      regularPrice: p.regular_price ? String(p.regular_price) : null,
+      salePrice: p.on_sale ? String(p.unit_price) : null,
+      onSale: p.on_sale ?? false,
+      sku: p.sku ?? null,
+      shortDescription: (p.description ?? "").replace(/\s+/g, " ").trim().slice(0, 200),
+      imageUrl: p.image_url ?? null,
+      images: p.image_url ? [p.image_url] : [],
+      categories: p.category
+        ? [{ id: 0, name: p.category, slug: toSlug(p.category) }]
+        : [],
+      type: "simple",
     }));
+
     res.json(products);
   } catch (e: any) {
-    res.status(502).json({ error: e.message });
+    logger.error({ err: e }, "[shop/wc/products] error");
+    res.status(500).json({ error: e.message });
   }
 });
 
-// ── WooCommerce proxy: single product ─────────────────────────────────────────
+// ── Shop: single product + variants from internal DB ─────────────────────────
 
 router.get("/shop/wc/products/:id", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
-    const [product, variationsRaw] = await Promise.all([
-      wcFetchCached(`/products/${id}`, {}, 120_000),
-      wcFetchCached(`/products/${id}/variations`, { per_page: "100" }, 120_000).catch(() => []),
+    const [productRows, variantRows] = await Promise.all([
+      db.execute(sql`
+        SELECT id, name, sku, category, image_url, unit_price, regular_price,
+               on_sale, description, permalink, woo_commerce_id, stock_quantity
+        FROM products
+        WHERE id = ${id} AND is_archived = false
+        LIMIT 1
+      `),
+      db.execute(sql`
+        SELECT id, colour, size, sleeve, price, image_url, sku,
+               stock_quantity, is_available, woo_variation_id
+        FROM product_variants
+        WHERE product_id = ${id}
+        ORDER BY colour ASC, size ASC, sleeve ASC
+      `),
     ]);
-    const p = product as any;
+
+    if (!productRows.rows.length) { res.status(404).json({ error: "Not found" }); return; }
+    const p = productRows.rows[0] as any;
+    const variants = variantRows.rows as any[];
+
+    // Derive distinct attribute options from variants
+    const colours = [...new Set(variants.map((v) => v.colour).filter(Boolean))] as string[];
+    const sizes   = [...new Set(variants.map((v) => v.size).filter(Boolean))] as string[];
+    const sleeves = [...new Set(variants.map((v) => v.sleeve).filter(Boolean))] as string[];
+
+    const attributes: any[] = [];
+    if (colours.length) attributes.push({ id: 1, name: "Colour", options: colours, variation: true });
+    if (sizes.length)   attributes.push({ id: 2, name: "Size",   options: sizes,   variation: true });
+    if (sleeves.length) attributes.push({ id: 3, name: "Sleeve", options: sleeves, variation: true });
+
+    // All variant images (deduplicated)
+    const variantImages = [...new Set(
+      variants.map((v) => v.image_url).filter(Boolean)
+    )];
+    const allImages = p.image_url
+      ? [p.image_url, ...variantImages.filter((u) => u !== p.image_url)]
+      : variantImages;
+
+    const variations = variants.map((v) => {
+      const attrs: any[] = [];
+      if (v.colour) attrs.push({ name: "Colour", option: v.colour });
+      if (v.size)   attrs.push({ name: "Size",   option: v.size });
+      if (v.sleeve) attrs.push({ name: "Sleeve", option: v.sleeve });
+      return {
+        id: v.id,
+        price: v.price ? String(v.price) : String(p.unit_price ?? 0),
+        regularPrice: null,
+        salePrice: null,
+        stockStatus: (v.stock_quantity ?? 0) > 0 ? "instock" : "outofstock",
+        sku: v.sku ?? p.sku,
+        image: v.image_url ?? null,
+        attributes: attrs,
+      };
+    });
+
     res.json({
       id: p.id,
       name: p.name,
-      slug: p.slug,
-      permalink: p.permalink,
-      price: p.price,
-      regularPrice: p.regular_price,
-      salePrice: p.sale_price,
-      onSale: p.on_sale,
-      sku: p.sku,
-      description: p.description?.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() ?? "",
-      shortDescription: p.short_description?.replace(/<[^>]+>/g, " ").trim() ?? "",
-      images: (p.images ?? []).map((img: any) => img.src),
-      imageUrl: p.images?.[0]?.src ?? null,
-      categories: (p.categories ?? []).map((c: any) => ({ id: c.id, name: c.name, slug: c.slug })),
-      attributes: (p.attributes ?? []).map((a: any) => ({
-        id: a.id,
-        name: a.name,
-        options: a.options ?? [],
-        variation: a.variation ?? false,
-      })),
-      type: p.type,
-      stockStatus: p.stock_status,
-      stockQuantity: p.stock_quantity,
-      variations: (variationsRaw as any[]).map((v: any) => ({
-        id: v.id,
-        price: v.price,
-        regularPrice: v.regular_price,
-        salePrice: v.sale_price,
-        stockStatus: v.stock_status,
-        sku: v.sku,
-        image: v.image?.src ?? null,
-        attributes: (v.attributes ?? []).map((a: any) => ({ name: a.name, option: a.option })),
-      })),
+      slug: toSlug(p.name),
+      permalink: p.permalink ?? null,
+      price: p.unit_price ? String(p.unit_price) : "0",
+      regularPrice: p.regular_price ? String(p.regular_price) : null,
+      salePrice: p.on_sale ? String(p.unit_price) : null,
+      onSale: p.on_sale ?? false,
+      sku: p.sku ?? null,
+      description: (p.description ?? "").replace(/\s+/g, " ").trim(),
+      shortDescription: (p.description ?? "").replace(/\s+/g, " ").trim().slice(0, 200),
+      images: allImages,
+      imageUrl: allImages[0] ?? null,
+      categories: p.category
+        ? [{ id: 0, name: p.category, slug: toSlug(p.category) }]
+        : [],
+      attributes,
+      type: variants.length ? "variable" : "simple",
+      stockStatus: (p.stock_quantity ?? 0) > 0 ? "instock" : "outofstock",
+      stockQuantity: p.stock_quantity ?? 0,
+      variations,
     });
   } catch (e: any) {
-    res.status(502).json({ error: e.message });
+    logger.error({ err: e }, "[shop/wc/products/:id] error");
+    res.status(500).json({ error: e.message });
   }
 });
 
