@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "nZdkAQm_uzpN93YKx9bsG"
@@ -36,3 +35,39 @@ id = "N23FmMGi408AAPGdC4mFb"
 uri = "file://attached_assets/staff_dave.png"
 type = "image"
 title = "generated_image"
+
+[[outputs]]
+id = "xMGi8_Zxtv0B8pwqKYdP8"
+uri = "file://wc-plugins/sbs-all-plugins.zip"
+type = "unspecified"
+title = "All 5 SBS Plugins (one zip)"
+
+[[outputs]]
+id = "bMMlb4H10UyJ3M2MUAFoW"
+uri = "file://wc-plugins/sbs-product-guidance.zip"
+type = "unspecified"
+title = "SBS Product Guidance (display + admin + bulk CSV)"
+
+[[outputs]]
+id = "Md-5aw0kapHR8kcxZEHcV"
+uri = "file://wc-plugins/sbs-quantity-discount.zip"
+type = "unspecified"
+title = "SBS Quantity Discount"
+
+[[outputs]]
+id = "CJPAYppK9izORVh9Z_jpb"
+uri = "file://wc-plugins/sbs-enhanced-branding.zip"
+type = "unspecified"
+title = "SBS Enhanced Branding (Free Logo Application + Additional Logos tabs)"
+
+[[outputs]]
+id = "iyf4lQ0CJgVY3PXyNK8gd"
+uri = "file://wc-plugins/sbs-product-enquiry.zip"
+type = "unspecified"
+title = "SBS Product Enquiry (form tab + enquiries list)"
+
+[[outputs]]
+id = "yRaC1CcWFKdsC_ytdzaIz"
+uri = "file://wc-plugins/sbs-chat-widget.zip"
+type = "unspecified"
+title = "SBS Chat Widget"
