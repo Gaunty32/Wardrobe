@@ -391,4 +391,192 @@ router.get("/woo/orders/:wooId", async (req: Request, res: Response): Promise<vo
   }
 });
 
+// ─── Sync product guidance + gallery images from WooCommerce ─────────────────
+// Fetches WC meta fields (_sbs_*) and gallery images for all products that
+// have a woo_commerce_id, and updates the local DB.
+router.post("/woo/sync/products-guidance", async (req: Request, res: Response): Promise<void> => {
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
+
+  // Get products with WC IDs (paginated via query param ?limit=50&offset=0)
+  const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit  as string) || 50));
+  const offset = Math.max(0, parseInt(req.query.offset as string) || 0);
+
+  const productRows = await db.execute(sql`
+    SELECT id, woo_commerce_id FROM products
+    WHERE woo_commerce_id IS NOT NULL AND is_archived = false
+    ORDER BY id
+    LIMIT ${limit} OFFSET ${offset}
+  `);
+  const products = productRows.rows as any[];
+  if (!products.length) { res.json({ synced: 0, total: 0, message: "No products to sync at this offset." }); return; }
+
+  const totalRows = await db.execute(sql`SELECT COUNT(*) as n FROM products WHERE woo_commerce_id IS NOT NULL AND is_archived = false`);
+  const total = Number((totalRows.rows[0] as any)?.n ?? 0);
+
+  let synced = 0;
+  const errors: string[] = [];
+
+  const parseMeta = (metaData: any[], key: string): string =>
+    (metaData ?? []).find((m: any) => m.key === key)?.value ?? "";
+
+  for (const p of products) {
+    try {
+      const woo = await wooFetch<any>(settings, `/products/${p.woo_commerce_id}?_fields=id,images,meta_data`);
+      const meta: any[] = woo.meta_data ?? [];
+
+      // Extract guidance meta
+      const valueRating     = parseInt(parseMeta(meta, "_sbs_value_rating"))      || 0;
+      const durabilityRating= parseInt(parseMeta(meta, "_sbs_durability_rating")) || 0;
+      const technicalRating = parseInt(parseMeta(meta, "_sbs_technical_rating"))  || 0;
+      const bestFor         = parseMeta(meta, "_sbs_best_for");
+      const notIdealFor     = parseMeta(meta, "_sbs_not_ideal_for");
+
+      let badges: string[] = [];
+      try { badges = JSON.parse(parseMeta(meta, "_sbs_badges_json") || "[]"); } catch {}
+      let tags: string[] = [];
+      try { tags = JSON.parse(parseMeta(meta, "_sbs_tags_json") || "[]"); } catch {}
+
+      // Gallery images (all images from WC, not just main)
+      const galleryImages = (woo.images ?? []).map((img: any) => img.src).filter(Boolean);
+
+      await db.execute(sql`
+        UPDATE products SET
+          guidance_value_rating      = ${valueRating || null},
+          guidance_durability_rating = ${durabilityRating || null},
+          guidance_smart_rating      = ${technicalRating || null},
+          guidance_best_for          = ${bestFor || null},
+          guidance_not_ideal_for     = ${notIdealFor || null},
+          guidance_badges            = ${badges.length ? JSON.stringify(badges) : null}::jsonb,
+          guidance_tags              = ${tags.length ? JSON.stringify(tags) : null}::jsonb,
+          gallery_images             = ${galleryImages.length ? JSON.stringify(galleryImages) : null}::jsonb,
+          updated_at                 = now()
+        WHERE id = ${p.id}
+      `);
+      synced++;
+    } catch (err: any) {
+      errors.push(`Product ${p.id} (WC ${p.woo_commerce_id}): ${err.message}`);
+    }
+  }
+
+  res.json({ synced, total, offset, limit, errors: errors.slice(0, 10), hasMore: offset + limit < total });
+});
+
+// ─── List WooCommerce customers ───────────────────────────────────────────────
+router.get("/woo/customers", async (req: Request, res: Response): Promise<void> => {
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
+
+  const page    = parseInt(req.query.page    as string) || 1;
+  const perPage = Math.min(100, parseInt(req.query.per_page as string) || 50);
+  const search  = (req.query.search as string) || "";
+
+  try {
+    let path = `/customers?per_page=${perPage}&page=${page}&orderby=registered_date&order=desc`;
+    if (search) path += `&search=${encodeURIComponent(search)}`;
+
+    const wooCustomers = await wooFetch<any[]>(settings, path);
+
+    // Check which emails already exist in our customers table
+    const emails = (wooCustomers as any[]).map((c: any) => c.email?.toLowerCase()).filter(Boolean);
+    let existingEmails = new Set<string>();
+    if (emails.length) {
+      const existing = await db.execute(
+        sql.raw(`SELECT LOWER(email) as email FROM customers WHERE LOWER(email) IN (${emails.map(e => `'${e.replace(/'/g, "''")}'`).join(",")})`)
+      );
+      existingEmails = new Set((existing.rows as any[]).map((r: any) => r.email));
+    }
+
+    const customers = (wooCustomers as any[]).map((c: any) => ({
+      wooId:       c.id,
+      email:       c.email,
+      firstName:   c.first_name,
+      lastName:    c.last_name,
+      company:     c.billing?.company || "",
+      phone:       c.billing?.phone   || "",
+      address:     c.billing?.address_1 || "",
+      city:        c.billing?.city    || "",
+      postcode:    c.billing?.postcode || "",
+      country:     c.billing?.country || "GB",
+      registered:  c.date_created,
+      orderCount:  c.orders_count ?? 0,
+      totalSpent:  c.total_spent  ?? "0",
+      alreadyImported: existingEmails.has((c.email || "").toLowerCase()),
+    }));
+
+    res.json({ customers, page, perPage });
+  } catch (err: any) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Sync / import WooCommerce customers into internal customers table ─────────
+router.post("/woo/customers/sync", async (req: Request, res: Response): Promise<void> => {
+  const settings = await getWooSettings();
+  if (!settings) { res.status(400).json({ error: "WooCommerce not configured." }); return; }
+
+  // Can either sync a list of wooIds, or bulk-sync all (first page)
+  const { wooIds, page = 1, perPage = 100 } = req.body as { wooIds?: number[]; page?: number; perPage?: number };
+
+  let wooCustomers: any[];
+  try {
+    if (wooIds?.length) {
+      // Fetch specific customers by ID
+      wooCustomers = await Promise.all(
+        wooIds.map(id => wooFetch<any>(settings, `/customers/${id}`))
+      );
+    } else {
+      const path = `/customers?per_page=${Math.min(100, perPage)}&page=${page}&orderby=registered_date&order=desc`;
+      wooCustomers = await wooFetch<any[]>(settings, path);
+    }
+  } catch (err: any) {
+    res.status(502).json({ error: err.message }); return;
+  }
+
+  let created = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const c of wooCustomers as any[]) {
+    const email = c.email?.toLowerCase().trim();
+    const customerName = c.billing?.company?.trim() || `${c.first_name} ${c.last_name}`.trim() || c.email;
+    if (!customerName) { skipped++; continue; }
+
+    try {
+      // Check for duplicate by email
+      if (email) {
+        const existing = await db.execute(sql`SELECT id FROM customers WHERE LOWER(email) = ${email} LIMIT 1`);
+        if ((existing.rows as any[]).length > 0) { skipped++; continue; }
+      }
+
+      const contactFirstName = c.first_name?.trim() || null;
+      const contactLastName  = c.last_name?.trim()  || null;
+
+      await db.execute(sql`
+        INSERT INTO customers (
+          name, email, phone, address, city, postcode,
+          contact_first_name, contact_last_name,
+          created_at, updated_at
+        ) VALUES (
+          ${customerName},
+          ${email || null},
+          ${c.billing?.phone || null},
+          ${c.billing?.address_1 || null},
+          ${c.billing?.city || null},
+          ${c.billing?.postcode || null},
+          ${contactFirstName},
+          ${contactLastName},
+          now(), now()
+        )
+        ON CONFLICT DO NOTHING
+      `);
+      created++;
+    } catch (err: any) {
+      errors.push(`WC customer ${c.id} (${email}): ${err.message}`);
+    }
+  }
+
+  res.json({ created, skipped, errors: errors.slice(0, 10) });
+});
+
 export default router;

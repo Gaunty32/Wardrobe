@@ -459,7 +459,11 @@ router.get("/shop/wc/products/:id", async (req, res): Promise<void> => {
     const [productRows, variantRows] = await Promise.all([
       db.execute(sql`
         SELECT id, name, sku, category, image_url, unit_price, regular_price,
-               on_sale, description, permalink, woo_commerce_id, stock_quantity
+               on_sale, description, permalink, woo_commerce_id, stock_quantity,
+               gallery_images,
+               guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
+               guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
+               guidance_staff_recommendation
         FROM products
         WHERE id = ${id} AND is_archived = false
         LIMIT 1
@@ -512,6 +516,20 @@ router.get("/shop/wc/products/:id", async (req, res): Promise<void> => {
       };
     });
 
+    // Gallery images: product image + variant images (deduplicated)
+    // Also include any synced WC gallery images
+    const galleryImages: string[] = p.gallery_images
+      ? (Array.isArray(p.gallery_images) ? p.gallery_images : JSON.parse(p.gallery_images)).filter(Boolean)
+      : [];
+    const fullGallery = [...new Set([...allImages, ...galleryImages])];
+
+    // Parse guidance fields
+    const parseMaybeJson = (v: any): any[] => {
+      if (!v) return [];
+      if (Array.isArray(v)) return v;
+      try { const r = JSON.parse(String(v)); return Array.isArray(r) ? r : []; } catch { return []; }
+    };
+
     res.json({
       id: p.id,
       name: p.name,
@@ -522,10 +540,10 @@ router.get("/shop/wc/products/:id", async (req, res): Promise<void> => {
       salePrice: p.on_sale ? String(p.unit_price) : null,
       onSale: p.on_sale ?? false,
       sku: p.sku ?? null,
-      description: (p.description ?? "").replace(/\s+/g, " ").trim(),
+      description: (p.description ?? "").trim(),
       shortDescription: (p.description ?? "").replace(/\s+/g, " ").trim().slice(0, 200),
-      images: allImages,
-      imageUrl: allImages[0] ?? null,
+      images: fullGallery,
+      imageUrl: fullGallery[0] ?? null,
       categories: p.category
         ? [{ id: 0, name: p.category, slug: toSlug(p.category) }]
         : [],
@@ -534,6 +552,17 @@ router.get("/shop/wc/products/:id", async (req, res): Promise<void> => {
       stockStatus: (p.stock_quantity ?? 0) > 0 ? "instock" : "outofstock",
       stockQuantity: p.stock_quantity ?? 0,
       variations,
+      // Guidance fields
+      guidance: {
+        valueRating:      p.guidance_value_rating      ? Number(p.guidance_value_rating)      : 0,
+        durabilityRating: p.guidance_durability_rating ? Number(p.guidance_durability_rating) : 0,
+        technicalRating:  p.guidance_smart_rating      ? Number(p.guidance_smart_rating)      : 0,
+        badges:           parseMaybeJson(p.guidance_badges),
+        tags:             parseMaybeJson(p.guidance_tags),
+        bestFor:          p.guidance_best_for          ?? "",
+        notIdealFor:      p.guidance_not_ideal_for     ?? "",
+        staffRecommendation: p.guidance_staff_recommendation ?? "",
+      },
     });
   } catch (e: any) {
     logger.error({ err: e }, "[shop/wc/products/:id] error");

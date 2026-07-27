@@ -8,11 +8,11 @@ export function Footer() {
     <footer className="bg-white border-t border-gray-200 py-8">
       <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-6 text-sm text-gray-500 font-medium">
         <div className="flex flex-wrap items-center justify-center md:justify-start gap-4">
-          <Link href="/shop/about" className="hover:text-primary transition-colors">ABOUT US</Link>
-          <Link href="/shop/contact" className="hover:text-primary transition-colors">CONTACT US</Link>
-          <Link href="/shop/terms" className="hover:text-primary transition-colors">T&CS</Link>
-          <Link href="/shop/privacy" className="hover:text-primary transition-colors">PRIVACY</Link>
-          <Link href="/shop/cookie-policy" className="hover:text-primary transition-colors">COOKIE POLICY</Link>
+          <Link href="/about" className="hover:text-primary transition-colors">ABOUT US</Link>
+          <Link href="/contact" className="hover:text-primary transition-colors">CONTACT US</Link>
+          <Link href="/terms" className="hover:text-primary transition-colors">T&CS</Link>
+          <Link href="/privacy" className="hover:text-primary transition-colors">PRIVACY</Link>
+          <Link href="/cookie-policy" className="hover:text-primary transition-colors">COOKIE POLICY</Link>
           <a href={settings?.portalUrl || '#'} className="hover:text-primary transition-colors">CORPORATE PORTAL</a>
           <a href="https://www.selectuniforms.co.uk/embroidery-portal/" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">EMBROIDERY PORTAL</a>
         </div>

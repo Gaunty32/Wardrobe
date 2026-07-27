@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, AlertCircle, Play,
-  Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart,
+  Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart, Star,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
   UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy,
   Shield, ShieldCheck, UserCog, ChevronRight,
@@ -1725,14 +1725,68 @@ export default function Settings() {
   const syncMutation = useMutation({
     mutationFn: (full = false) => apiFetch(`/woo-sync/run${full ? "?full=true" : ""}`, { method: "POST" }),
     onSuccess: () => {
-      // Endpoint now returns 202 immediately — sync runs in the background.
-      // Refresh logs straight away so the new "running" row appears.
       queryClient.invalidateQueries({ queryKey: ["sync-logs"] });
       toast({ title: "Sync started", description: "Running in the background — the log below updates automatically." });
     },
     onError: (e: Error) => {
       queryClient.invalidateQueries({ queryKey: ["sync-logs"] });
       toast({ title: "Sync failed", description: parseApiError(e), variant: "destructive" });
+    },
+  });
+
+  // ── Guidance sync state ──────────────────────────────────────────────────
+  const [guidanceSyncState, setGuidanceSyncState] = useState<
+    { status: "idle" } |
+    { status: "running"; synced: number; total: number; offset: number } |
+    { status: "done"; synced: number; total: number; errors: string[] } |
+    { status: "error"; message: string }
+  >({ status: "idle" });
+
+  async function runGuidanceSync() {
+    if (!isConnected) return;
+    setGuidanceSyncState({ status: "running", synced: 0, total: 0, offset: 0 });
+    const limit = 50;
+    let offset = 0;
+    let totalSynced = 0;
+    let allErrors: string[] = [];
+    let total = 0;
+
+    try {
+      while (true) {
+        const result: any = await apiFetch(`/woo/sync/products-guidance?limit=${limit}&offset=${offset}`, { method: "POST" });
+        totalSynced += result.synced ?? 0;
+        total = result.total ?? total;
+        allErrors = [...allErrors, ...(result.errors ?? [])];
+        setGuidanceSyncState({ status: "running", synced: totalSynced, total, offset: offset + limit });
+        if (!result.hasMore) break;
+        offset += limit;
+      }
+      setGuidanceSyncState({ status: "done", synced: totalSynced, total, errors: allErrors });
+      toast({ title: "Guidance sync complete", description: `${totalSynced} products updated.` });
+    } catch (e: any) {
+      setGuidanceSyncState({ status: "error", message: parseApiError(e) });
+      toast({ title: "Guidance sync failed", description: parseApiError(e), variant: "destructive" });
+    }
+  }
+
+  // ── Customer sync state ──────────────────────────────────────────────────
+  const [customerSyncState, setCustomerSyncState] = useState<
+    { status: "idle" } |
+    { status: "running" } |
+    { status: "done"; created: number; skipped: number; errors: string[] } |
+    { status: "error"; message: string }
+  >({ status: "idle" });
+
+  const customerSyncMutation = useMutation({
+    mutationFn: () => apiFetch<any>("/woo/customers/sync", { method: "POST", body: JSON.stringify({ perPage: 100, page: 1 }) }),
+    onMutate: () => setCustomerSyncState({ status: "running" }),
+    onSuccess: (result: any) => {
+      setCustomerSyncState({ status: "done", created: result.created ?? 0, skipped: result.skipped ?? 0, errors: result.errors ?? [] });
+      toast({ title: "Customer import complete", description: `${result.created} imported, ${result.skipped} already existed.` });
+    },
+    onError: (e: Error) => {
+      setCustomerSyncState({ status: "error", message: parseApiError(e) });
+      toast({ title: "Customer import failed", description: parseApiError(e), variant: "destructive" });
     },
   });
 
@@ -2020,6 +2074,122 @@ export default function Settings() {
                   </Table>
                 )}
               </div>
+
+              {/* ── Guidance Sync ──────────────────────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-border">
+                  <h2 className="font-semibold text-sm flex items-center gap-2">
+                    <Star className="w-4 h-4 text-amber-500" /> Sync Product Guidance from WooCommerce
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Pulls star ratings, badges, Best For / Not Ideal For text, and gallery images from WooCommerce meta fields into the local database. Runs in batches of 50 products.
+                  </p>
+                </div>
+                <div className="px-5 py-4 space-y-3">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    disabled={guidanceSyncState.status === "running" || !isConnected}
+                    onClick={runGuidanceSync}
+                  >
+                    {guidanceSyncState.status === "running"
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing guidance…</>
+                      : <><RefreshCw className="w-4 h-4" />Sync Product Guidance</>}
+                  </Button>
+
+                  {guidanceSyncState.status === "running" && (
+                    <div className="space-y-1.5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-blue-800 font-medium flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Syncing product guidance…
+                        </span>
+                        {guidanceSyncState.total > 0 && (
+                          <span className="text-blue-600 text-xs font-mono">
+                            {guidanceSyncState.synced} / {guidanceSyncState.total}
+                          </span>
+                        )}
+                      </div>
+                      {guidanceSyncState.total > 0 && (
+                        <div className="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-blue-500 h-2 rounded-full transition-all duration-500"
+                            style={{ width: `${Math.round((guidanceSyncState.synced / guidanceSyncState.total) * 100)}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {guidanceSyncState.status === "done" && (
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-lg border bg-green-50 border-green-200 text-sm">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <div className="font-medium text-green-800">Guidance sync complete</div>
+                        <div className="text-muted-foreground">{guidanceSyncState.synced} of {guidanceSyncState.total} products updated</div>
+                        {guidanceSyncState.errors.length > 0 && (
+                          <div className="mt-1 text-xs text-amber-700">{guidanceSyncState.errors.length} error(s): {guidanceSyncState.errors[0]}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {guidanceSyncState.status === "error" && (
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-lg border bg-red-50 border-red-200 text-sm">
+                      <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-red-800">{guidanceSyncState.message}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Customer Import ────────────────────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-border">
+                  <h2 className="font-semibold text-sm flex items-center gap-2">
+                    <Users className="w-4 h-4 text-blue-600" /> Import Customers from WooCommerce
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Imports WooCommerce registered customers (name, email, address) into the local customers table. Skips any customer whose email already exists.
+                  </p>
+                </div>
+                <div className="px-5 py-4 space-y-3">
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    disabled={customerSyncState.status === "running" || !isConnected}
+                    onClick={() => customerSyncMutation.mutate()}
+                  >
+                    {customerSyncState.status === "running"
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Importing…</>
+                      : <><UserPlus className="w-4 h-4" />Import WooCommerce Customers</>}
+                  </Button>
+
+                  {customerSyncState.status === "done" && (
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-lg border bg-green-50 border-green-200 text-sm">
+                      <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <div className="font-medium text-green-800">Import complete</div>
+                        <div className="text-muted-foreground">
+                          {customerSyncState.created} new customer{customerSyncState.created !== 1 ? "s" : ""} added
+                          {customerSyncState.skipped > 0 && ` · ${customerSyncState.skipped} already existed`}
+                        </div>
+                        {customerSyncState.errors.length > 0 && (
+                          <div className="mt-1 text-xs text-amber-700">{customerSyncState.errors.length} error(s): {customerSyncState.errors[0]}</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {customerSyncState.status === "error" && (
+                    <div className="flex items-start gap-3 px-4 py-3 rounded-lg border bg-red-50 border-red-200 text-sm">
+                      <AlertTriangle className="w-4 h-4 text-red-600 mt-0.5 flex-shrink-0" />
+                      <div className="text-red-800">{customerSyncState.message}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
           </TabsContent>
           <TabsContent value="xero" className="mt-6">

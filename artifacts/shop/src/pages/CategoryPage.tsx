@@ -17,7 +17,7 @@ export default function CategoryPage() {
       <div className="text-sm text-gray-500 mb-8 font-medium">
         <Link href="/" className="hover:text-primary">HOME</Link>
         <span className="mx-2">/</span>
-        <Link href="/shop" className="hover:text-primary">SHOP</Link>
+        <Link href="/products" className="hover:text-primary">SHOP</Link>
         <span className="mx-2">/</span>
         <span className="text-gray-900 uppercase">{categoryName}</span>
       </div>

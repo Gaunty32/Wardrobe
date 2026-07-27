@@ -27,17 +27,17 @@ function Router() {
     <Layout>
       <Switch>
         <Route path="/" component={Home} />
-        <Route path="/shop" component={Shop} />
-        <Route path="/shop/category/:slug" component={CategoryPage} />
-        <Route path="/shop/product/:id" component={ProductDetail} />
-        <Route path="/shop/cart" component={Cart} />
-        <Route path="/shop/checkout" component={Checkout} />
-        <Route path="/shop/order-complete" component={OrderComplete} />
-        <Route path="/shop/about" component={AboutUs} />
-        <Route path="/shop/contact" component={ContactUs} />
-        <Route path="/shop/faq" component={FAQ} />
-        <Route path="/shop/bulk-buy-bundles" component={BulkBuyBundles} />
-        <Route path="/shop/reviews" component={Reviews} />
+        <Route path="/products" component={Shop} />
+        <Route path="/category/:slug" component={CategoryPage} />
+        <Route path="/product/:id" component={ProductDetail} />
+        <Route path="/cart" component={Cart} />
+        <Route path="/checkout" component={Checkout} />
+        <Route path="/order-complete" component={OrderComplete} />
+        <Route path="/about" component={AboutUs} />
+        <Route path="/contact" component={ContactUs} />
+        <Route path="/faq" component={FAQ} />
+        <Route path="/bulk-buy-bundles" component={BulkBuyBundles} />
+        <Route path="/reviews" component={Reviews} />
         <Route component={NotFound} />
       </Switch>
     </Layout>

@@ -232,7 +232,7 @@ export default function Checkout() {
 
   useEffect(() => {
     if (items.length === 0) {
-      setLocation('/shop/cart');
+      setLocation('/cart');
     }
   }, [items, setLocation]);
 

@@ -129,7 +129,7 @@ export default function Cart() {
               <Button 
                 size="lg" 
                 className="w-full rounded-none font-bold text-base h-14"
-                onClick={() => setLocation('/shop/checkout')}
+                onClick={() => setLocation('/checkout')}
               >
                 PROCEED TO CHECKOUT
               </Button>

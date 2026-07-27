@@ -56,7 +56,7 @@ export default function Home() {
                 {slide.subtitle}
               </p>
               <div>
-                <Link href="/shop/about">
+                <Link href="/about">
                   <Button size="lg" className="bg-primary hover:bg-primary/90 text-white rounded-none px-8 font-semibold uppercase tracking-widest">
                     FIND OUT HOW
                   </Button>
@@ -123,28 +123,28 @@ export default function Home() {
           </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Link href="/shop/category/polos" className="group relative block h-64 overflow-hidden bg-gray-200">
+            <Link href="/category/polos" className="group relative block h-64 overflow-hidden bg-gray-200">
               <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Polo-shirts-category.jpg" alt="Polos" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
               <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <h3 className="text-white text-2xl font-bold uppercase tracking-wider bg-black/50 px-6 py-3 border-2 border-white">Polos</h3>
               </div>
             </Link>
-            <Link href="/shop/category/sweatshirts" className="group relative block h-64 overflow-hidden bg-gray-200">
+            <Link href="/category/sweatshirts" className="group relative block h-64 overflow-hidden bg-gray-200">
               <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Sweatshirts-category.jpg" alt="Sweatshirts" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
               <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <h3 className="text-white text-2xl font-bold uppercase tracking-wider bg-black/50 px-6 py-3 border-2 border-white">Sweatshirts</h3>
               </div>
             </Link>
-            <Link href="/shop/category/jackets" className="group relative block h-64 overflow-hidden bg-gray-200">
+            <Link href="/category/jackets" className="group relative block h-64 overflow-hidden bg-gray-200">
               <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Jackets-category.jpg" alt="Jackets" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
               <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
               <div className="absolute inset-0 flex items-center justify-center">
                 <h3 className="text-white text-2xl font-bold uppercase tracking-wider bg-black/50 px-6 py-3 border-2 border-white">Jackets</h3>
               </div>
             </Link>
-            <Link href="/shop/category/trousers" className="group relative block h-64 overflow-hidden bg-gray-200">
+            <Link href="/category/trousers" className="group relative block h-64 overflow-hidden bg-gray-200">
               <img src="https://www.selectuniforms.co.uk/wp-content/uploads/Trousers-category.jpg" alt="Trousers" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 mix-blend-multiply" />
               <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
               <div className="absolute inset-0 flex items-center justify-center">
