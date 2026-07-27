@@ -5,6 +5,7 @@ import { runWooSync } from "./woo-sync";
 import { sendInvoiceEmail, buildCheckInEmail, sendEmail, isEmailConfigured, fetchLogoDataUrl, buildDeliveryFollowupEmail } from "./email.js";
 import { getTemplate, applyVars } from "./template-engine.js";
 import { postInvoiceToXero } from "./xero.js";
+import { getWooSettings } from "../routes/woo.js";
 
 let currentTask: ScheduledTask | null = null;
 
@@ -52,6 +53,113 @@ export async function initScheduler(): Promise<void> {
 export async function reschedule(): Promise<void> {
   await initScheduler();
 }
+
+// ─── Product guidance sync ─────────────────────────────────────────────────────
+
+/**
+ * Fetches _sbs_* meta fields and gallery images from WooCommerce for every
+ * product that has a woo_commerce_id, then updates the local DB.
+ * Called both by the daily cron and (via HTTP endpoint) from the Settings UI.
+ */
+export async function runGuidanceSyncJob(): Promise<{ synced: number; errors: string[] }> {
+  const settings = await getWooSettings();
+  if (!settings) {
+    console.log("[guidance-sync] WooCommerce not configured — skipping");
+    return { synced: 0, errors: [] };
+  }
+
+  const totalRows = await db.execute(sql`
+    SELECT COUNT(*) as n FROM products WHERE woo_commerce_id IS NOT NULL AND is_archived = false
+  `);
+  const total = Number((totalRows.rows[0] as any)?.n ?? 0);
+  if (total === 0) {
+    console.log("[guidance-sync] No linked products found — skipping");
+    return { synced: 0, errors: [] };
+  }
+
+  const parseMeta = (metaData: any[], key: string): string =>
+    (metaData ?? []).find((m: any) => m.key === key)?.value ?? "";
+
+  const limit = 50;
+  let offset = 0;
+  let synced = 0;
+  const errors: string[] = [];
+
+  while (offset < total) {
+    const productRows = await db.execute(sql`
+      SELECT id, woo_commerce_id FROM products
+      WHERE woo_commerce_id IS NOT NULL AND is_archived = false
+      ORDER BY id
+      LIMIT ${limit} OFFSET ${offset}
+    `);
+    const products = productRows.rows as any[];
+    if (!products.length) break;
+
+    for (const p of products) {
+      try {
+        const wcUrl = `${settings.baseUrl.replace(/\/$/, "")}/wp-json/wc/v3/products/${p.woo_commerce_id}?_fields=id,images,meta_data`;
+        const wcFullUrl = new URL(wcUrl);
+        wcFullUrl.searchParams.set("consumer_key", settings.ck);
+        wcFullUrl.searchParams.set("consumer_secret", settings.cs);
+        const res = await fetch(wcFullUrl.toString(), {
+          headers: { "Accept": "application/json" },
+          signal: AbortSignal.timeout(12_000),
+        });
+        if (!res.ok) throw new Error(`WooCommerce API error ${res.status}`);
+        const woo = await res.json() as any;
+        const meta: any[] = woo.meta_data ?? [];
+
+        const valueRating      = parseInt(parseMeta(meta, "_sbs_value_rating"))      || 0;
+        const durabilityRating = parseInt(parseMeta(meta, "_sbs_durability_rating")) || 0;
+        const technicalRating  = parseInt(parseMeta(meta, "_sbs_technical_rating"))  || 0;
+        const bestFor          = parseMeta(meta, "_sbs_best_for");
+        const notIdealFor      = parseMeta(meta, "_sbs_not_ideal_for");
+
+        let badges: string[] = [];
+        try { badges = JSON.parse(parseMeta(meta, "_sbs_badges_json") || "[]"); } catch {}
+        let tags: string[] = [];
+        try { tags = JSON.parse(parseMeta(meta, "_sbs_tags_json") || "[]"); } catch {}
+
+        const galleryImages = (woo.images ?? []).map((img: any) => img.src).filter(Boolean);
+
+        await db.execute(sql`
+          UPDATE products SET
+            guidance_value_rating      = ${valueRating || null},
+            guidance_durability_rating = ${durabilityRating || null},
+            guidance_smart_rating      = ${technicalRating || null},
+            guidance_best_for          = ${bestFor || null},
+            guidance_not_ideal_for     = ${notIdealFor || null},
+            guidance_badges            = ${badges.length ? JSON.stringify(badges) : null}::jsonb,
+            guidance_tags              = ${tags.length ? JSON.stringify(tags) : null}::jsonb,
+            gallery_images             = ${galleryImages.length ? JSON.stringify(galleryImages) : null}::jsonb,
+            updated_at                 = now()
+          WHERE id = ${p.id}
+        `);
+        synced++;
+      } catch (err: any) {
+        errors.push(`Product ${p.id} (WC ${p.woo_commerce_id}): ${err.message}`);
+      }
+    }
+
+    offset += limit;
+  }
+
+  return { synced, errors };
+}
+
+// Run guidance sync every day at 3am (one hour after the product sync at 2am)
+schedule("0 3 * * *", async () => {
+  console.log("[guidance-sync] Running daily product guidance sync");
+  try {
+    const result = await runGuidanceSyncJob();
+    console.log(`[guidance-sync] Done — synced: ${result.synced}, errors: ${result.errors.length}`);
+    if (result.errors.length > 0) {
+      console.warn("[guidance-sync] First error:", result.errors[0]);
+    }
+  } catch (err) {
+    console.error("[guidance-sync] Daily sync failed:", err);
+  }
+});
 
 // ─── Customer check-in reminders ──────────────────────────────────────────────
 
