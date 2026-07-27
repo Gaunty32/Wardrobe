@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { UploadedImage } from "@/components/UploadedImage";
@@ -19,9 +19,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail, Upload, X, Download, Building2, User, AlertTriangle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Users, Loader2, Phone, LayoutGrid, List, Mail, Upload, X, Download, Building2, User, AlertTriangle, ShoppingCart, ChevronLeft, ChevronRight, UserCheck } from "lucide-react";
 
 // ── Duplicate-detection helpers ──────────────────────────────────────────────
 const STRIP_WORDS = new Set(["ltd", "limited", "plc", "llp", "inc", "co", "company", "group", "the", "and", "uk", "solutions", "services", "trading"]);
@@ -203,6 +204,264 @@ function ImportFromHlDialog({ open, onOpenChange, onImported }: {
   );
 }
 
+// ── WooCommerce customer browser ──────────────────────────────────────────────
+interface WooCustomer {
+  wooId: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  phone: string;
+  city: string;
+  postcode: string;
+  registered: string;
+  orderCount: number;
+  totalSpent: string;
+  alreadyImported: boolean;
+}
+
+function WooCustomersDialog({ open, onOpenChange, onImported }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onImported: () => void;
+}) {
+  const { toast } = useToast();
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [customers, setCustomers] = useState<WooCustomer[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState<number | null>(null);
+  const [importingAll, setImportingAll] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Debounce search
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset page on new search
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
+
+  const fetchCustomers = useCallback(async () => {
+    if (!open) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ page: String(page), per_page: "50" });
+      if (debouncedSearch) params.set("search", debouncedSearch);
+      const res = await fetch(`/api/woo/customers?${params}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any).error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setCustomers(data.customers ?? []);
+      setHasMore((data.customers?.length ?? 0) >= 50);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [open, page, debouncedSearch]);
+
+  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+
+  // Reset when closed
+  useEffect(() => {
+    if (!open) { setPage(1); setSearch(""); setDebouncedSearch(""); setCustomers([]); setError(null); }
+  }, [open]);
+
+  const importOne = async (c: WooCustomer) => {
+    setImporting(c.wooId);
+    try {
+      const res = await fetch("/api/woo/customers/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wooIds: [c.wooId] }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+      const data = await res.json();
+      toast({
+        title: data.created > 0 ? "Customer imported" : "Already exists",
+        description: data.created > 0
+          ? `${c.company || [c.firstName, c.lastName].filter(Boolean).join(" ")} added to your customers.`
+          : "This customer already exists in your list.",
+      });
+      // Mark as imported in local list
+      setCustomers(prev => prev.map(x => x.wooId === c.wooId ? { ...x, alreadyImported: true } : x));
+      onImported();
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const importAllVisible = async () => {
+    const unimported = customers.filter(c => !c.alreadyImported);
+    if (unimported.length === 0) { toast({ title: "Nothing to import", description: "All visible customers are already in your list." }); return; }
+    setImportingAll(true);
+    try {
+      const res = await fetch("/api/woo/customers/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wooIds: unimported.map(c => c.wooId) }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
+      const data = await res.json();
+      toast({
+        title: "Import complete",
+        description: `${data.created} created · ${data.skipped} skipped.`,
+      });
+      setCustomers(prev => prev.map(x => ({ ...x, alreadyImported: true })));
+      onImported();
+    } catch (err: any) {
+      toast({ title: "Import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImportingAll(false);
+    }
+  };
+
+  const unimportedCount = customers.filter(c => !c.alreadyImported).length;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[720px] flex flex-col max-h-[85vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ShoppingCart className="w-4 h-4 text-primary" />
+            WooCommerce Customers
+          </DialogTitle>
+          <DialogDescription>
+            Browse customers registered on your WooCommerce store. Import them individually or all at once.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-2 pt-1">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, email or company…"
+              className="pl-9"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 shrink-0"
+            onClick={importAllVisible}
+            disabled={importingAll || loading || unimportedCount === 0}
+          >
+            {importingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserCheck className="w-3.5 h-3.5" />}
+            Import all ({unimportedCount})
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {loading ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-sm">Loading WooCommerce customers…</span>
+            </div>
+          ) : error ? (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-800 text-sm m-2">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              {error}
+            </div>
+          ) : customers.length === 0 ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              {debouncedSearch ? `No customers found matching "${debouncedSearch}"` : "No customers found in WooCommerce."}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead className="text-xs">Name / Company</TableHead>
+                  <TableHead className="text-xs">Email</TableHead>
+                  <TableHead className="text-xs hidden md:table-cell">Location</TableHead>
+                  <TableHead className="text-xs text-center hidden sm:table-cell">Orders</TableHead>
+                  <TableHead className="text-xs w-[110px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {customers.map(c => {
+                  const displayName = c.company || [c.firstName, c.lastName].filter(Boolean).join(" ") || c.email;
+                  const subName = c.company ? [c.firstName, c.lastName].filter(Boolean).join(" ") : null;
+                  return (
+                    <TableRow key={c.wooId} className="hover:bg-muted/20">
+                      <TableCell>
+                        <p className="text-sm font-medium">{displayName}</p>
+                        {subName && <p className="text-xs text-muted-foreground">{subName}</p>}
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{c.email}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground hidden md:table-cell">
+                        {[c.city, c.postcode].filter(Boolean).join(", ") || "—"}
+                      </TableCell>
+                      <TableCell className="text-center text-sm hidden sm:table-cell">{c.orderCount}</TableCell>
+                      <TableCell>
+                        {c.alreadyImported ? (
+                          <Badge variant="outline" className="text-xs text-green-700 border-green-300 bg-green-50 gap-1">
+                            <UserCheck className="w-3 h-3" /> Imported
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs gap-1.5"
+                            disabled={importing === c.wooId || importingAll}
+                            onClick={() => importOne(c)}
+                          >
+                            {importing === c.wooId
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Download className="w-3 h-3" />}
+                            Import
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+
+        {/* Pagination */}
+        <div className="flex items-center justify-between pt-2 border-t border-border">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
+            disabled={page <= 1 || loading}
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+          >
+            <ChevronLeft className="w-4 h-4" /> Previous
+          </Button>
+          <span className="text-xs text-muted-foreground">Page {page}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
+            disabled={!hasMore || loading}
+            onClick={() => setPage(p => p + 1)}
+          >
+            Next <ChevronRight className="w-4 h-4" />
+          </Button>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function formatUKPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 11 && digits.startsWith("07")) {
@@ -317,6 +576,7 @@ export default function Customers() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [isHlImportOpen, setIsHlImportOpen] = useState(false);
+  const [isWooImportOpen, setIsWooImportOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "tile">(() => {
     return (localStorage.getItem("customersViewMode") as "list" | "tile") ?? "tile";
   });
@@ -452,6 +712,9 @@ export default function Customers() {
             <p className="text-muted-foreground mt-1">Manage your client relationships.</p>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setIsWooImportOpen(true)} className="gap-1.5">
+              <ShoppingCart className="w-4 h-4" /> WooCommerce
+            </Button>
             <Button variant="outline" onClick={() => setIsHlImportOpen(true)} className="gap-1.5">
               <Download className="w-4 h-4" /> Import from HL
             </Button>
@@ -587,6 +850,12 @@ export default function Customers() {
             queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() });
             navigate(`/customers/${customerId}`);
           }}
+        />
+
+        <WooCustomersDialog
+          open={isWooImportOpen}
+          onOpenChange={setIsWooImportOpen}
+          onImported={() => queryClient.invalidateQueries({ queryKey: getListCustomersQueryKey() })}
         />
 
         <Dialog open={isCreateOpen || !!editingCustomer} onOpenChange={(open) => {

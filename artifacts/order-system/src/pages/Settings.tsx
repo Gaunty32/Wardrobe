@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, AlertCircle, Play,
@@ -23,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import Layout from "@/components/Layout";
 import { formatDate } from "@/lib/utils";
 import { getListProductsQueryKey } from "@workspace/api-client-react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 const API_BASE = "/api";
 
@@ -1433,6 +1433,65 @@ export default function Settings() {
   const [testingPost, setTestingPost] = useState(false);
   const [testPostResults, setTestPostResults] = useState<Record<string, { ok: boolean; skipped?: boolean; error?: string; postId?: string; postName?: string }> | null>(null);
 
+  // ── Guidance sync state ───────────────────────────────────────────────────
+  const [guidanceSyncing, setGuidanceSyncing] = useState(false);
+  const [guidanceSynced, setGuidanceSynced] = useState(0);
+  const [guidanceTotal, setGuidanceTotal] = useState(0);
+  const [guidanceErrors, setGuidanceErrors] = useState<string[]>([]);
+  const [guidanceDone, setGuidanceDone] = useState(false);
+
+  const handleGuidanceSync = useCallback(async () => {
+    setGuidanceSyncing(true);
+    setGuidanceSynced(0);
+    setGuidanceTotal(0);
+    setGuidanceErrors([]);
+    setGuidanceDone(false);
+    let offset = 0;
+    const limit = 50;
+    let totalSynced = 0;
+    const allErrors: string[] = [];
+    try {
+      while (true) {
+        const result = await apiFetch<{ synced: number; total: number; offset: number; limit: number; errors: string[]; hasMore: boolean }>(
+          `/woo/sync/products-guidance?limit=${limit}&offset=${offset}`,
+          { method: "POST" }
+        );
+        totalSynced += result.synced;
+        setGuidanceSynced(totalSynced);
+        setGuidanceTotal(result.total);
+        if (result.errors?.length) allErrors.push(...result.errors);
+        setGuidanceErrors([...allErrors]);
+        if (!result.hasMore) break;
+        offset += limit;
+      }
+      setGuidanceDone(true);
+      toast({ title: "Guidance synced", description: `${totalSynced} product${totalSynced !== 1 ? "s" : ""} updated.` });
+    } catch (err: any) {
+      toast({ title: "Guidance sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setGuidanceSyncing(false);
+    }
+  }, [toast]);
+
+  // ── Customer import state ─────────────────────────────────────────────────
+  const [customerImporting, setCustomerImporting] = useState(false);
+  type CustomerImportResult = { created: number; skipped: number; errors: string[] };
+  const [customerImportResult, setCustomerImportResult] = useState<CustomerImportResult | null>(null);
+
+  const handleCustomerImport = useCallback(async () => {
+    setCustomerImporting(true);
+    setCustomerImportResult(null);
+    try {
+      const result = await apiFetch<CustomerImportResult>("/woo/customers/sync", { method: "POST" });
+      setCustomerImportResult(result);
+      toast({ title: "Customer import complete", description: `${result.created} created, ${result.skipped} skipped.` });
+    } catch (err: any) {
+      toast({ title: "Customer import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setCustomerImporting(false);
+    }
+  }, [toast]);
+
   // Re-engagement email settings
   const [checkinEnabled, setCheckinEnabled] = useState(false);
   const [checkinLastRun, setCheckinLastRun] = useState<string | null>(null);
@@ -2031,6 +2090,118 @@ export default function Settings() {
                   </div>
                 </div>
               )}
+
+              {/* ── Sync Product Guidance ────────────────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <BookMarked className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-semibold text-base">Sync Product Guidance</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Pulls value/durability/smart ratings, best-for text, badges, tags, and gallery
+                      images from WooCommerce custom fields (<code className="text-xs bg-muted px-1 rounded">_sbs_*</code>) for every linked product.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    variant="outline"
+                    onClick={handleGuidanceSync}
+                    disabled={guidanceSyncing || !isConnected}
+                    className="gap-2"
+                  >
+                    {guidanceSyncing
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing guidance…</>
+                      : <><BookMarked className="w-4 h-4" />Sync Product Guidance</>}
+                  </Button>
+                  {guidanceSyncing && guidanceTotal > 0 && (
+                    <span className="text-sm text-muted-foreground font-mono">
+                      {guidanceSynced} / {guidanceTotal}
+                    </span>
+                  )}
+                </div>
+
+                {/* Progress bar while running */}
+                {guidanceSyncing && guidanceTotal > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-primary h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.round((guidanceSynced / guidanceTotal) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {Math.round((guidanceSynced / guidanceTotal) * 100)}% — fetching from WooCommerce in batches of 50
+                    </p>
+                  </div>
+                )}
+
+                {/* Result */}
+                {guidanceDone && !guidanceSyncing && (
+                  <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-sm ${guidanceErrors.length ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-green-50 border-green-200 text-green-800"}`}>
+                    {guidanceErrors.length
+                      ? <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      : <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                    <div>
+                      <p className="font-medium">{guidanceSynced} product{guidanceSynced !== 1 ? "s" : ""} updated</p>
+                      {guidanceErrors.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 text-xs">
+                          {guidanceErrors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                          {guidanceErrors.length > 5 && <li>…and {guidanceErrors.length - 5} more</li>}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Import WooCommerce Customers ─────────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <UserCheck2 className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-semibold text-base">Import WooCommerce Customers</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Imports the latest page of WooCommerce customers (up to 100) into your customer list.
+                      Existing customers matched by email are skipped automatically.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    variant="outline"
+                    onClick={handleCustomerImport}
+                    disabled={customerImporting || !isConnected}
+                    className="gap-2"
+                  >
+                    {customerImporting
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Importing…</>
+                      : <><UserCheck2 className="w-4 h-4" />Import WooCommerce Customers</>}
+                  </Button>
+                </div>
+
+                {/* Result */}
+                {customerImportResult && !customerImporting && (
+                  <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-sm ${customerImportResult.errors?.length ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-green-50 border-green-200 text-green-800"}`}>
+                    {customerImportResult.errors?.length
+                      ? <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      : <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                    <div>
+                      <p className="font-medium">
+                        {customerImportResult.created} created · {customerImportResult.skipped} skipped
+                      </p>
+                      {customerImportResult.errors?.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 text-xs">
+                          {customerImportResult.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                          {customerImportResult.errors.length > 5 && <li>…and {customerImportResult.errors.length - 5} more</li>}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
 
               {/* Sync history */}
               <div className="rounded-xl border border-border bg-card overflow-hidden">

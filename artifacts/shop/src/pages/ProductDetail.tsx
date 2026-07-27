@@ -242,11 +242,11 @@ export default function ProductDetail() {
       <div className="text-sm text-gray-500 mb-6 font-medium flex items-center gap-1 flex-wrap">
         <Link href="/" className="hover:text-primary">HOME</Link>
         <span>/</span>
-        <Link href="/products" className="hover:text-primary">SHOP</Link>
+        <Link href="/shop" className="hover:text-primary">SHOP</Link>
         {product.categories?.[0] && (
           <>
             <span>/</span>
-            <Link href={`/category/${product.categories[0].slug}`} className="hover:text-primary uppercase">
+            <Link href={`/shop/category/${product.categories[0].slug}`} className="hover:text-primary uppercase">
               {product.categories[0].name}
             </Link>
           </>
