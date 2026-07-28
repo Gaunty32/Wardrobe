@@ -707,8 +707,34 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
 
     // Derive distinct attribute options from deduplicated variants
     const colours = [...new Set(variants.map((v) => (v.colour ?? "").trim()).filter(Boolean))];
-    const sizes   = [...new Set(variants.map((v) => (v.size   ?? "").trim()).filter(Boolean))].sort(naturalSizeSort);
-    const sleeves = [...new Set(variants.map((v) => (v.sleeve ?? "").trim()).filter(Boolean))].sort(naturalSizeSort);
+    let sizes   = [...new Set(variants.map((v) => (v.size   ?? "").trim()).filter(Boolean))].sort(naturalSizeSort);
+    let sleeves = [...new Set(variants.map((v) => (v.sleeve ?? "").trim()).filter(Boolean))].sort(naturalSizeSort);
+
+    // Fallback: if variants carry no size/sleeve (common when WC syncs colour-only variants
+    // but sizes are stored as product attributes), read from product_attributes instead.
+    if (!sizes.length || !sleeves.length) {
+      const attrRows = await db.execute(sql`
+        SELECT type, value, COALESCE(sort_order, 999) AS sort_order
+        FROM product_attributes
+        WHERE product_id = ${p.id} AND type IN ('size', 'sleeve')
+        ORDER BY type, sort_order, value
+      `);
+      const attrList = attrRows.rows as any[];
+      if (!sizes.length) {
+        sizes = attrList
+          .filter((r) => r.type === "size")
+          .map((r) => (r.value as string).trim())
+          .filter(Boolean)
+          .sort(naturalSizeSort);
+      }
+      if (!sleeves.length) {
+        sleeves = attrList
+          .filter((r) => r.type === "sleeve")
+          .map((r) => (r.value as string).trim())
+          .filter(Boolean)
+          .sort(naturalSizeSort);
+      }
+    }
 
     const attributes: any[] = [];
     if (colours.length) attributes.push({ id: 1, name: "Colour", options: colours, variation: true });
