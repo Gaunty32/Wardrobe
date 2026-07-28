@@ -1844,15 +1844,27 @@ function EmployeesTab({ customerId }: { customerId: number }) {
   });
   const portalEmailSet = new Set((portalUsers ?? []).map((u: any) => (u.email ?? "").toLowerCase()));
 
-  const addToPortal = useMutation({
-    mutationFn: (emp: { email: string }) =>
-      apiFetch("/portal/admin/invite", {
-        method: "POST",
-        body: JSON.stringify({ customerId, email: emp.email, portalRole: "manager", skipEmail: true }),
-      }),
-    onSuccess: (_data, emp) => {
+  const [empInviteOpen, setEmpInviteOpen] = useState(false);
+  const [empInviteEmail, setEmpInviteEmail] = useState("");
+  const [empInviteRole, setEmpInviteRole] = useState<"manager" | "dept_manager" | "member">("dept_manager");
+  const [empInviteResult, setEmpInviteResult] = useState<any>(null);
+  const [empInviteCopied, setEmpInviteCopied] = useState(false);
+
+  const openEmpInvite = (email: string) => {
+    setEmpInviteEmail(email);
+    setEmpInviteResult(null);
+    setEmpInviteCopied(false);
+    setEmpInviteOpen(true);
+  };
+
+  const sendEmpInvite = useMutation({
+    mutationFn: () => apiFetch("/portal/admin/invite", {
+      method: "POST",
+      body: JSON.stringify({ customerId, email: empInviteEmail, portalRole: empInviteRole }),
+    }),
+    onSuccess: (data: any) => {
+      setEmpInviteResult(data);
       qc.invalidateQueries({ queryKey: ["portal-users", customerId] });
-      toast({ title: "Added to portal", description: `${emp.email} added as a portal manager — no invite email sent.` });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -2175,11 +2187,20 @@ function EmployeesTab({ customerId }: { customerId: number }) {
                       <Button
                         variant="ghost" size="icon"
                         className="h-7 w-7 text-indigo-600 hover:bg-indigo-50"
-                        title="Add to portal"
-                        disabled={addToPortal.isPending}
-                        onClick={() => addToPortal.mutate({ email: e.email })}
+                        title="Send portal invite"
+                        onClick={() => openEmpInvite(e.email)}
                       >
                         <Globe className="w-3 h-3" />
+                      </Button>
+                    )}
+                    {e.email && portalEmailSet.has(e.email.toLowerCase()) && (
+                      <Button
+                        variant="ghost" size="icon"
+                        className="h-7 w-7 text-primary hover:bg-primary/10"
+                        title="Send portal link"
+                        onClick={() => openEmpInvite(e.email)}
+                      >
+                        <LogIn className="w-3 h-3" />
                       </Button>
                     )}
                     {!e.isActive ? (
@@ -2347,6 +2368,86 @@ function EmployeesTab({ customerId }: { customerId: number }) {
           qc.invalidateQueries({ queryKey: ["customer", customerId, "teams"] });
         }}
       />
+
+      {/* Employee portal invite / resend dialog */}
+      <Dialog open={empInviteOpen} onOpenChange={v => { if (!v) { setEmpInviteOpen(false); setEmpInviteResult(null); } }}>
+        <DialogContent className="sm:max-w-[460px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LogIn className="w-4 h-4" />
+              {empInviteResult ? "Link Generated" : "Send Portal Invite"}
+            </DialogTitle>
+          </DialogHeader>
+          {!empInviteResult ? (
+            <div className="grid gap-4 py-2">
+              <div className="grid gap-2">
+                <Label>Email</Label>
+                <Input type="email" value={empInviteEmail} readOnly className="bg-muted/40 text-muted-foreground" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Portal Role</Label>
+                <Select value={empInviteRole} onValueChange={(v: any) => setEmpInviteRole(v)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manager">
+                      <div><div className="font-medium">Manager</div><div className="text-xs text-muted-foreground">Can submit orders and approve dept manager orders</div></div>
+                    </SelectItem>
+                    <SelectItem value="dept_manager">
+                      <div><div className="font-medium">Dept Manager</div><div className="text-xs text-muted-foreground">Can create orders for their team (pending approval)</div></div>
+                    </SelectItem>
+                    <SelectItem value="member">
+                      <div><div className="font-medium">Member</div><div className="text-xs text-muted-foreground">View-only access</div></div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 py-2">
+              {empInviteResult.emailSent ? (
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-200">
+                  <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-green-800">Email sent to {empInviteResult.email}</p>
+                    <p className="text-xs text-green-700 mt-0.5">Copy the link below as a backup in case it goes to spam.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
+                  <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">Email not sent — copy and share manually</p>
+                    <p className="text-xs text-amber-700 mt-0.5">Send this link to {empInviteResult.email} via Teams, Slack, or another channel.</p>
+                  </div>
+                </div>
+              )}
+              <div className="grid gap-2">
+                <Label>Sign-in Link</Label>
+                <div className="flex gap-2">
+                  <Input readOnly value={window.location.origin + empInviteResult.inviteUrl} className="font-mono text-xs" />
+                  <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={() => {
+                    navigator.clipboard.writeText(window.location.origin + empInviteResult.inviteUrl);
+                    setEmpInviteCopied(true);
+                    setTimeout(() => setEmpInviteCopied(false), 2000);
+                  }}>
+                    {empInviteCopied ? <><CheckCircle2 className="w-3 h-3 text-green-600" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEmpInviteOpen(false); setEmpInviteResult(null); }}>
+              {empInviteResult ? "Close" : "Cancel"}
+            </Button>
+            {!empInviteResult && (
+              <Button onClick={() => sendEmpInvite.mutate()} disabled={!empInviteEmail || sendEmpInvite.isPending}>
+                {sendEmpInvite.isPending ? "Generating…" : "Generate Sign-in Link"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
