@@ -4038,9 +4038,9 @@ export default function OrderDetail() {
                                     {oneSize ? (
                                       /* One size — just qty */
                                       <div className="flex items-center border rounded-md h-8 overflow-hidden">
-                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(0, (s[id] ?? 0) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
                                         <span className="flex-1 text-center text-sm font-semibold">{currentQty}</span>
-                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
+                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 0) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
                                       </div>
                                     ) : isBulk ? (
                                       /* Bulk entry grid */
@@ -4119,9 +4119,9 @@ export default function OrderDetail() {
                                           </Select>
                                         )}
                                         <div className="flex items-center border rounded-md h-8 overflow-hidden">
-                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(0, (s[id] ?? 0) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
                                           <span className="flex-1 text-center text-sm font-semibold">{currentQty}</span>
-                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 0) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
                                         </div>
                                       </>
                                     )}
