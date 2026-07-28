@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Calendar, ExternalLink, Newspaper } from 'lucide-react';
+import { Calendar, ExternalLink, BookOpen } from 'lucide-react';
 
 interface BlogPost {
   id: number;
@@ -22,7 +22,6 @@ function formatDate(iso: string): string {
 function BlogCard({ post }: { post: BlogPost }) {
   return (
     <article className="group flex flex-col rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow bg-white">
-      {/* Featured image */}
       <div className="aspect-video bg-gray-100 overflow-hidden relative">
         {post.featuredImageUrl ? (
           <img
@@ -33,12 +32,10 @@ function BlogCard({ post }: { post: BlogPost }) {
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <Newspaper className="w-10 h-10 text-gray-300" />
+            <BookOpen className="w-10 h-10 text-gray-300" />
           </div>
         )}
       </div>
-
-      {/* Content */}
       <div className="p-5 flex flex-col flex-1">
         <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-2">
           <Calendar className="w-3.5 h-3.5" />
@@ -79,24 +76,23 @@ function SkeletonCard() {
   );
 }
 
-export default function LatestNews() {
+export default function KnowledgeCentre() {
   const { data: posts, isLoading, error } = useQuery<BlogPost[]>({
     queryKey: ['blog-posts'],
     queryFn: () => fetch('/api/shop/blog-posts').then(r => { if (!r.ok) throw new Error('Failed'); return r.json(); }),
-    staleTime: 1000 * 60 * 15, // 15 minutes
+    staleTime: 1000 * 60 * 15,
   });
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Hero banner */}
       <div className="bg-primary text-primary-foreground py-12">
         <div className="container mx-auto px-4">
           <p className="text-sm font-semibold uppercase tracking-widest opacity-70 mb-2">
             Select Branding Solutions
           </p>
-          <h1 className="text-3xl font-bold">Latest News</h1>
+          <h1 className="text-3xl font-bold">Knowledge Centre</h1>
           <p className="mt-2 opacity-80 text-sm max-w-lg">
-            Industry insights, product updates and workwear inspiration from the SBS team.
+            Tips, guides and workwear inspiration to help you get the most from your uniform programme.
           </p>
         </div>
       </div>
@@ -104,16 +100,14 @@ export default function LatestNews() {
       <div className="container mx-auto px-4 py-10">
         {isLoading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
+            {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
           </div>
         )}
 
         {error && (
           <div className="text-center py-16 text-gray-500">
-            <Newspaper className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p className="font-medium">Could not load posts right now</p>
+            <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-20" />
+            <p className="font-medium">Could not load articles right now</p>
             <p className="text-sm mt-1">
               Visit{' '}
               <a
@@ -122,26 +116,24 @@ export default function LatestNews() {
                 rel="noreferrer"
                 className="text-primary underline"
               >
-                our blog
+                our website
               </a>{' '}
-              directly to read the latest news.
+              directly to read the latest articles.
             </p>
           </div>
         )}
 
         {posts && posts.length === 0 && (
           <div className="text-center py-16 text-gray-500">
-            <Newspaper className="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p className="font-medium">No posts found</p>
+            <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-20" />
+            <p className="font-medium">No articles found</p>
           </div>
         )}
 
         {posts && posts.length > 0 && (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {posts.map(post => (
-                <BlogCard key={post.id} post={post} />
-              ))}
+              {posts.map(post => <BlogCard key={post.id} post={post} />)}
             </div>
             <div className="text-center mt-10">
               <a
@@ -150,7 +142,7 @@ export default function LatestNews() {
                 rel="noreferrer noopener"
                 className="inline-flex items-center gap-2 rounded-lg border border-primary px-6 py-2.5 text-sm font-semibold text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
               >
-                View all posts on our website <ExternalLink className="w-4 h-4" />
+                View all articles on our website <ExternalLink className="w-4 h-4" />
               </a>
             </div>
           </>

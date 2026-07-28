@@ -63,6 +63,105 @@ async function getFbSettings() {
   return map.facebook_page_id && map.facebook_page_access_token ? map : null;
 }
 
+async function getLinkedInSettings(): Promise<{ linkedin_access_token: string; linkedin_org_urn: string } | null> {
+  const rows = await db.execute(sql`SELECT key, value FROM settings WHERE key IN ('linkedin_access_token','linkedin_org_urn')`);
+  const map: Record<string, string> = {};
+  for (const r of (rows.rows ?? rows) as any[]) map[r.key] = r.value;
+  return map.linkedin_access_token && map.linkedin_org_urn
+    ? { linkedin_access_token: map.linkedin_access_token, linkedin_org_urn: map.linkedin_org_urn }
+    : null;
+}
+
+async function publishToLinkedIn(
+  orgUrn: string,
+  accessToken: string,
+  title: string,
+  commentary: string,
+  articleUrl: string,
+  imageUrl: string | null,
+): Promise<{ ok: boolean; postUrn?: string; error?: string }> {
+  try {
+    const body = {
+      author: orgUrn,
+      lifecycleState: "PUBLISHED",
+      specificContent: {
+        "com.linkedin.ugc.ShareContent": {
+          shareCommentary: { text: commentary },
+          shareMediaCategory: "ARTICLE",
+          media: [{
+            status: "READY",
+            description: { text: title.slice(0, 256) },
+            originalUrl: articleUrl,
+            title: { text: title.slice(0, 200) },
+          }],
+        },
+      },
+      visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
+    };
+    const res = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "X-Restli-Protocol-Version": "2.0.0",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return { ok: false, error: `LinkedIn ${res.status}: ${errText}` };
+    }
+    const data: any = await res.json();
+    return { ok: true, postUrn: data.id };
+  } catch (e: any) {
+    return { ok: false, error: e?.message ?? "Unknown error" };
+  }
+}
+
+// ── LinkedIn token checker ────────────────────────────────────────────────────
+router.post("/linkedin/check-token", async (req, res): Promise<void> => {
+  const parsed = z.object({
+    accessToken: z.string().min(1),
+    orgUrn: z.string().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "accessToken required" }); return; }
+  const { accessToken, orgUrn } = parsed.data;
+  try {
+    const meRes = await fetch("https://api.linkedin.com/v2/me", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!meRes.ok) {
+      const err: any = await meRes.json().catch(() => ({}));
+      res.status(400).json({ error: err.message ?? `LinkedIn error ${meRes.status}` });
+      return;
+    }
+    const me: any = await meRes.json();
+    const memberName = [me.localizedFirstName, me.localizedLastName].filter(Boolean).join(" ") || "Unknown";
+
+    let orgName: string | null = null;
+    if (orgUrn) {
+      const orgId = orgUrn.replace("urn:li:organization:", "");
+      const orgRes = await fetch(
+        `https://api.linkedin.com/v2/organizations/${orgId}?projection=(id,name)`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}`, "X-Restli-Protocol-Version": "2.0.0" },
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (orgRes.ok) {
+        const orgData: any = await orgRes.json();
+        const localized = orgData.name?.localized ?? {};
+        orgName = localized[Object.keys(localized)[0]] ?? null;
+      }
+    }
+    res.json({ valid: true, memberName, orgName });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message ?? "Request failed" });
+  }
+});
+
 // ── Facebook token checker — returns pages the token can manage ────────────
 router.post("/facebook/check-token", async (req, res): Promise<void> => {
   const parsed = z.object({ accessToken: z.string().min(1) }).safeParse(req.body);
@@ -981,6 +1080,82 @@ export function startSocialPostScheduler(): void {
     refreshStats();
     setInterval(refreshStats, 30 * 60 * 1000);
   }, 10_000); // slight delay so it doesn't pile up at startup
+}
+
+// ── WordPress → LinkedIn scheduler ───────────────────────────────────────────
+// Polls WordPress every hour for new posts and shares unshared ones to LinkedIn.
+// Shares at most ONE new post per run to avoid spamming the feed.
+export function startWordPressLinkedInScheduler(): void {
+  const WP_POSTS_URL =
+    "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
+    "?per_page=10&_fields=id,title,excerpt,link,_embedded&_embed=wp:featuredmedia";
+
+  const run = async () => {
+    try {
+      const liSettings = await getLinkedInSettings();
+      if (!liSettings) return; // LinkedIn not configured — skip silently
+
+      const wpRes = await fetch(WP_POSTS_URL, { signal: AbortSignal.timeout(15_000) });
+      if (!wpRes.ok) {
+        console.warn(`[linkedin] WordPress fetch failed: HTTP ${wpRes.status}`);
+        return;
+      }
+      const posts: any[] = await wpRes.json();
+
+      for (const post of posts) {
+        // Skip if already shared
+        const existing = await db.execute(
+          sql`SELECT id FROM linkedin_shared_posts WHERE wp_post_id = ${post.id}`,
+        );
+        if (((existing.rows ?? existing) as any[]).length > 0) continue;
+
+        const title = (post.title?.rendered ?? "")
+          .replace(/&#8217;/g, "'").replace(/&#8211;/g, "–")
+          .replace(/&amp;/g, "&").replace(/<[^>]+>/g, "").trim();
+
+        const rawExcerpt: string = post.excerpt?.rendered ?? "";
+        const excerpt = rawExcerpt
+          .replace(/<[^>]+>/g, "")
+          .replace(/\[&hellip;\]/g, "…").replace(/&#8230;/g, "…")
+          .trim();
+
+        const articleUrl: string = post.link;
+        const imageUrl: string | null =
+          post._embedded?.["wp:featuredmedia"]?.[0]?.source_url ?? null;
+
+        // Build commentary: title + excerpt (truncated to LinkedIn's 3000-char limit)
+        const commentary = `${title}\n\n${excerpt}`.slice(0, 3000);
+
+        const result = await publishToLinkedIn(
+          liSettings.linkedin_org_urn,
+          liSettings.linkedin_access_token,
+          title,
+          commentary,
+          articleUrl,
+          imageUrl,
+        );
+
+        if (result.ok) {
+          await db.execute(sql`
+            INSERT INTO linkedin_shared_posts (wp_post_id, wp_title, linkedin_post_urn)
+            VALUES (${post.id}, ${title}, ${result.postUrn ?? null})
+            ON CONFLICT (wp_post_id) DO NOTHING
+          `);
+          console.log(`[linkedin] Shared WP post ${post.id}: "${title}"`);
+        } else {
+          console.warn(`[linkedin] Failed to share WP post ${post.id}: ${result.error}`);
+        }
+
+        // Share only one new post per run
+        break;
+      }
+    } catch (err) {
+      console.error("[linkedin] Scheduler error:", err);
+    }
+  };
+
+  run();
+  setInterval(run, 60 * 60 * 1000); // every hour
 }
 
 // ── Generate hero image prompt ────────────────────────────────────────────────

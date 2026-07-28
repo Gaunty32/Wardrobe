@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter } from 'wouter';
+import { Route, Switch, Router as WouterRouter, Redirect } from 'wouter';
 import { CartProvider } from '@/context/CartContext';
 import { Layout } from '@/components/Layout';
 import ChatWidget from '@/components/ChatWidget';
@@ -19,7 +19,7 @@ import ContactUs from '@/pages/ContactUs';
 import FAQ from '@/pages/FAQ';
 import BulkBuyBundles from '@/pages/BulkBuyBundles';
 import Reviews from '@/pages/Reviews';
-import LatestNews from '@/pages/LatestNews';
+import KnowledgeCentre from '@/pages/KnowledgeCentre';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
@@ -40,7 +40,8 @@ function Router() {
         <Route path="/faq" component={FAQ} />
         <Route path="/bulk-buy-bundles" component={BulkBuyBundles} />
         <Route path="/reviews" component={Reviews} />
-        <Route path="/latest-news" component={LatestNews} />
+        <Route path="/knowledge-centre" component={KnowledgeCentre} />
+        <Route path="/latest-news">{() => <Redirect to="/knowledge-centre" />}</Route>
         <Route component={NotFound} />
       </Switch>
     </Layout>

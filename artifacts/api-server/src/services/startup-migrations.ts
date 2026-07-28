@@ -2984,4 +2984,16 @@ export async function refreshProductIssues(): Promise<void> {
     DROP COLUMN IF EXISTS delivery_address_id
   `);
   console.log("[startup] customer_delivery_addresses.invoice_address_id ensured");
+
+  // ── linkedin_shared_posts — tracks which WordPress posts have been shared ─
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS linkedin_shared_posts (
+      id               SERIAL PRIMARY KEY,
+      wp_post_id       INTEGER NOT NULL UNIQUE,
+      wp_title         TEXT,
+      linkedin_post_urn TEXT,
+      shared_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[startup] linkedin_shared_posts table ensured");
 }

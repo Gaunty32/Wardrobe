@@ -30,8 +30,8 @@ export function MainNav() {
             </Link>
           </li>
           <li>
-            <Link href="/latest-news" className="block py-4 px-4 hover:bg-primary/90 transition-colors">
-              LATEST NEWS
+            <Link href="/knowledge-centre" className="block py-4 px-4 hover:bg-primary/90 transition-colors">
+              KNOWLEDGE CENTRE
             </Link>
           </li>
           <li>

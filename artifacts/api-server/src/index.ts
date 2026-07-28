@@ -2,7 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler, normalizeCustomerCasing } from "./services/scheduler";
 import { runStartupMigrations, refreshProductIssues } from "./services/startup-migrations";
-import { startSocialPostScheduler } from "./routes/social-posts";
+import { startSocialPostScheduler, startWordPressLinkedInScheduler } from "./routes/social-posts";
 
 const rawPort = process.env["PORT"];
 
@@ -58,5 +58,11 @@ app.listen(port, async (err) => {
     startSocialPostScheduler();
   } catch (e) {
     logger.warn({ err: e }, "Social post scheduler failed to start");
+  }
+
+  try {
+    startWordPressLinkedInScheduler();
+  } catch (e) {
+    logger.warn({ err: e }, "WordPress→LinkedIn scheduler failed to start");
   }
 });

@@ -23,6 +23,7 @@ import Stock from "@/pages/Stock";
 import PickNote from "@/pages/PickNote";
 import OrderHistory from "@/pages/OrderHistory";
 import Reports from "@/pages/Reports";
+import KnowledgeCentre from "@/pages/KnowledgeCentre";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -130,6 +131,7 @@ function Router() {
       <Route path="/stores" component={() => <ProtectedRoute component={Stock} />} />
       <Route path="/stores/pick-note/:ref" component={() => <ProtectedRoute component={PickNote} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
+      <Route path="/knowledge-centre" component={() => <ProtectedRoute component={KnowledgeCentre} />} />
       <Route path="/">
         {() => {
           const token = localStorage.getItem("portal_token");

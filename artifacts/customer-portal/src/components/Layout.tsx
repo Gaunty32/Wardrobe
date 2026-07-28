@@ -1,7 +1,7 @@
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { useLocation, Link } from "wouter";
-import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard, Bell, CheckCheck, Truck, ThumbsUp, AlertCircle, Info, Boxes, History, ArrowLeftRight, MessageCircle, AlertTriangle, Lightbulb, BarChart3 } from "lucide-react";
+import { ShoppingBag, LogOut, LayoutDashboard, Menu, X, Eye, Shirt, Package, Users, Receipt, CreditCard, Bell, CheckCheck, Truck, ThumbsUp, AlertCircle, Info, Boxes, History, ArrowLeftRight, MessageCircle, AlertTriangle, Lightbulb, BarChart3, BookOpen } from "lucide-react";
 import logo from "@/assets/logo.png";
 import { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
@@ -289,6 +289,7 @@ export default function PortalLayout({ children }: { children: React.ReactNode }
     ...(isManager ? [{ label: "Team", icon: Users, href: "/team" }] : isDeptManager ? [{ label: "My Team", icon: Users, href: "/team" }] : []),
     ...(isManager ? [{ label: "Stores", icon: Boxes, href: "/stores" }] : []),
     ...(isManager ? [{ label: "Reports", icon: BarChart3, href: "/reports" }] : []),
+    { label: "Knowledge Centre", icon: BookOpen, href: "/knowledge-centre" },
   ];
 
   return (

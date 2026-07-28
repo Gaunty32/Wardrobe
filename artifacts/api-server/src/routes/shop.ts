@@ -518,27 +518,26 @@ router.post("/shop/product-enquiry", async (req, res): Promise<void> => {
 
 router.get("/shop/wc/categories", async (_req, res): Promise<void> => {
   try {
-    // Aggregate distinct categories with count and a representative image
+    // Use the product_categories table which is synced from WooCommerce and
+    // carries the real WC category images (not a product image stand-in).
     const rows = await db.execute(sql`
       SELECT
-        category AS name,
-        COUNT(*) AS count,
-        MIN(image_url) AS image
-      FROM products
-      WHERE is_archived = false
-        AND category IS NOT NULL
-        AND category <> ''
-      GROUP BY category
-      HAVING COUNT(*) > 0
-      ORDER BY category ASC
+        woo_id   AS id,
+        name,
+        slug,
+        COALESCE(parent_woo_id, 0) AS parent,
+        product_count AS count,
+        image_url AS image
+      FROM product_categories
+      WHERE product_count > 0
+      ORDER BY product_count DESC, name ASC
     `);
 
-    let id = 1;
     const cats = (rows.rows as any[]).map((r) => ({
-      id: id++,
-      name: r.name,
-      slug: toSlug(r.name),
-      parent: 0,
+      id: Number(r.id),
+      name: r.name as string,
+      slug: r.slug as string,
+      parent: Number(r.parent),
       count: Number(r.count),
       image: r.image ?? null,
       display: "default",
@@ -1011,40 +1010,50 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
 
 // ─── GET /shop/blog-posts ─────────────────────────────────────────────────────
 // Proxies the WordPress REST API so the shop avoids CORS issues and can cache.
-// Note: _embed doesn't work on this WordPress host (returns empty _embedded).
-// Instead we do a two-step fetch: posts → media IDs → batch media lookup.
+// Strategy: _embed alone doesn't populate _embedded unless _embedded is listed
+// in _fields too. We try that first; fall back to a separate batch media fetch.
 router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
   try {
+    // Include _embedded in _fields so WordPress doesn't strip it out
     const postsUrl =
       "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
-      "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media";
-    const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(8000) });
+      "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media,_embedded&_embed=wp:featuredmedia";
+    const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(10000) });
     if (!wpRes.ok) {
       res.status(wpRes.status).json({ error: "WordPress API error" });
       return;
     }
     const posts: any[] = await wpRes.json();
 
-    // Collect non-zero featured_media IDs and batch-fetch their source_url
-    const mediaIds = posts
-      .map((p: any) => p.featured_media)
-      .filter((id: any) => id && Number(id) > 0);
-
+    // Try to pull image URLs from _embedded first
     const mediaMap: Record<number, string> = {};
-    if (mediaIds.length > 0) {
+    for (const p of posts) {
+      const src = p._embedded?.["wp:featuredmedia"]?.[0]?.source_url;
+      if (src && p.featured_media) mediaMap[p.featured_media] = src;
+    }
+
+    // If _embedded didn't work, batch-fetch media separately
+    const missingIds = posts
+      .map((p: any) => p.featured_media)
+      .filter((id: any) => id && Number(id) > 0 && !mediaMap[id]);
+
+    if (missingIds.length > 0) {
       try {
         const mediaUrl =
           "https://www.selectuniforms.co.uk/wp-json/wp/v2/media" +
-          `?include=${mediaIds.join(",")}&_fields=id,source_url&per_page=${mediaIds.length}`;
-        const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(8000) });
+          `?include=${missingIds.join(",")}&per_page=${missingIds.length}`;
+        const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(10000) });
         if (mediaRes.ok) {
           const mediaItems: any[] = await mediaRes.json();
+          logger.info({ count: mediaItems.length, missingIds }, "[shop/blog-posts] batch media response");
           for (const m of mediaItems) {
             if (m.id && m.source_url) mediaMap[m.id] = m.source_url;
           }
+        } else {
+          logger.warn({ status: mediaRes.status }, "[shop/blog-posts] batch media fetch failed");
         }
-      } catch {
-        // Non-fatal — posts still render without images
+      } catch (e: any) {
+        logger.warn({ err: e?.message }, "[shop/blog-posts] batch media fetch threw");
       }
     }
 
@@ -1072,6 +1081,12 @@ router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
         featuredImageUrl,
       };
     });
+
+    logger.info(
+      { total: cleaned.length, withImage: cleaned.filter(p => p.featuredImageUrl).length },
+      "[shop/blog-posts] response"
+    );
+
     // Cache for 15 minutes
     res.setHeader("Cache-Control", "public, max-age=900");
     res.json(cleaned);
