@@ -2440,15 +2440,21 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
     queryFn: () => apiFetch(`/portal/admin/customer-detail/${customerId}`),
   });
   const employees: any[] = customerDetail?.employees ?? [];
-  const existingEmails = new Set((portalUsers ?? []).map((u: any) => u.email));
-  const suggestedEmployees = employees.filter(e => e.email && !existingEmails.has(e.email));
+  // Use lowercase for deduplication so case differences don't create duplicates
+  const existingEmailsLower = new Set((portalUsers ?? []).map((u: any) => (u.email ?? "").toLowerCase()));
+  const suggestedEmployees = employees.filter(e => e.email && !existingEmailsLower.has(e.email.toLowerCase()));
 
-  // Combined recipient list for the invite dialog:
-  // existing portal users first (so you can resend), then employees not yet invited
+  // Build a name lookup from employees so portal users show their real name
+  const employeeByEmail = new Map<string, string>();
+  for (const e of employees) {
+    if (e.email && e.name) employeeByEmail.set(e.email.toLowerCase(), e.name);
+  }
+
+  // Combined recipient list: existing portal users first (resend), then uninvited employees
   const inviteRecipientOptions: Array<{ value: string; name: string; email: string; isPortalUser?: boolean }> = [
-    ...(portalUsers ?? []).map((u: any) => ({
+    ...(portalUsers ?? []).filter((u: any) => u.email).map((u: any) => ({
       value: `portal:${u.id}`,
-      name: u.name || u.email,
+      name: employeeByEmail.get(u.email.toLowerCase()) ?? u.email,
       email: u.email,
       isPortalUser: true,
     })),

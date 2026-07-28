@@ -371,13 +371,16 @@ export default function OrderDetail() {
   // Must be declared BEFORE the bundleDetails useQuery that references addBundleId
   const [addBundleId, setAddBundleId] = useState<number | null>(null);
   const [addBundleWearerName, setAddBundleWearerName] = useState("");
-  const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string; finishId?: number | null; finishName?: string | null }>>({});
+
+  type BundleSizeRow = { colour: string; size: string; finishId: number | null; finishName: string | null; quantity: number };
+  // compOverrides: for each component, a list of size-rows (colour + size + finish + qty)
+  const [compOverrides, setCompOverrides] = useState<Record<number, BundleSizeRow[]>>({});
 
   const { data: bundleDetails } = useQuery<{
     id: number; name: string;
     components: Array<{
       id: number; resolved_name: string; quantity: number;
-      p_is_service: boolean | null;
+      p_is_service: boolean | null; finish_id: number | null; finish_name: string | null;
       variants: Array<{ colour: string; size: string }> | null;
     }>;
   }>({
@@ -385,6 +388,18 @@ export default function OrderDetail() {
     queryFn: () => apiFetch(`/bundles/${addBundleId}`),
     enabled: addBundleId != null,
   });
+
+  // Initialise one size-row per component whenever bundle details load
+  useEffect(() => {
+    if (!bundleDetails?.components) return;
+    const init: Record<number, BundleSizeRow[]> = {};
+    for (const comp of bundleDetails.components) {
+      if (!comp.p_is_service) {
+        init[comp.id] = [{ colour: "", size: "", finishId: comp.finish_id ?? null, finishName: comp.finish_name ?? null, quantity: comp.quantity }];
+      }
+    }
+    setCompOverrides(init);
+  }, [bundleDetails?.id]);
 
   const updateOrderMutation = useUpdateOrder();
   const addItemMutation = useAddOrderItem();
@@ -409,17 +424,30 @@ export default function OrderDetail() {
   });
 
   const addBundleMutation = useMutation({
-    mutationFn: ({ bundleId, wearerName, componentOverrides }: { bundleId: number; wearerName?: string; componentOverrides?: Array<{ componentId: number; colour?: string; size?: string }> }) =>
+    mutationFn: ({ bundleId, wearerName, componentOverrides }: {
+      bundleId: number;
+      wearerName?: string;
+      componentOverrides: Array<{ componentId: number; colour?: string; size?: string; finishId?: number | null; finishName?: string | null; quantity: number }>;
+    }) =>
       apiFetch(`/bundles/${bundleId}/add-to-order/${orderId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity: 1, wearerName: wearerName || null, componentOverrides }),
+        body: JSON.stringify({ wearerName: wearerName || null, componentOverrides }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["order", orderId] });
       // Keep dialog open — reset wearer + overrides so the next person can be added immediately
       setAddBundleWearerName("");
-      setCompOverrides({});
+      // Re-init size rows from current bundle details
+      if (bundleDetails?.components) {
+        const init: Record<number, BundleSizeRow[]> = {};
+        for (const comp of bundleDetails.components) {
+          if (!comp.p_is_service) {
+            init[comp.id] = [{ colour: "", size: "", finishId: comp.finish_id ?? null, finishName: comp.finish_name ?? null, quantity: comp.quantity }];
+          }
+        }
+        setCompOverrides(init);
+      }
       toast({ title: "Bundle added", description: addBundleWearerName ? `Added for ${addBundleWearerName}` : "Bundle added to order" });
     },
     onError: (e: Error) => toast({ title: "Could not add bundle", description: e.message, variant: "destructive" }),
@@ -4826,78 +4854,86 @@ export default function OrderDetail() {
               />
               <p className="text-xs text-muted-foreground">Who this bundle is for — optional, but helps identify each set</p>
             </div>
-            {/* ── Per-component colour/size pickers ── */}
-            {bundleDetails?.components && bundleDetails.components.filter(c => !c.p_is_service && c.variants && c.variants.length > 0).length > 0 && (
+            {/* ── Per-component size rows ── */}
+            {bundleDetails?.components && bundleDetails.components.filter(c => !c.p_is_service).length > 0 && (
               <div className="space-y-2">
                 <Label>Component Variations</Label>
-                <div className="space-y-2">
-                  {bundleDetails.components.filter(c => !c.p_is_service && c.variants && c.variants.length > 0).map(comp => {
-                    const colours = [...new Set(comp.variants!.map(v => v.colour).filter(Boolean))].sort();
-                    const selectedColour = compOverrides[comp.id]?.colour ?? "";
-                    const sizesForColour = [...new Set(comp.variants!.filter(v => v.colour === selectedColour).map(v => v.size).filter(Boolean))];
-                    const allVariantSizes = [...new Set(comp.variants!.map(v => v.size).filter(Boolean))];
-                    const sizesToShow = sizesForColour.length > 0 ? sizesForColour : allVariantSizes.length > 0 ? allVariantSizes : DEFAULT_CLOTHING_SIZES;
-                    const selectedSize = compOverrides[comp.id]?.size ?? "";
+                <div className="space-y-3">
+                  {bundleDetails.components.filter(c => !c.p_is_service).map(comp => {
+                    const colours = comp.variants ? [...new Set(comp.variants.map(v => v.colour).filter(Boolean))].sort() : [];
+                    const rows: BundleSizeRow[] = compOverrides[comp.id] ?? [{ colour: "", size: "", finishId: comp.finish_id ?? null, finishName: comp.finish_name ?? null, quantity: comp.quantity }];
+                    const totalQty = rows.reduce((s, r) => s + (r.quantity || 0), 0);
+                    const updateRow = (rowIdx: number, patch: Partial<BundleSizeRow>) => {
+                      setCompOverrides(prev => {
+                        const cur = prev[comp.id] ?? [{ colour: "", size: "", finishId: comp.finish_id ?? null, finishName: comp.finish_name ?? null, quantity: comp.quantity }];
+                        const updated = cur.map((r, i) => i === rowIdx ? { ...r, ...patch } : r);
+                        return { ...prev, [comp.id]: updated };
+                      });
+                    };
+                    const addRow = () => setCompOverrides(prev => {
+                      const cur = prev[comp.id] ?? [];
+                      return { ...prev, [comp.id]: [...cur, { colour: cur[0]?.colour ?? "", size: "", finishId: comp.finish_id ?? null, finishName: comp.finish_name ?? null, quantity: 1 }] };
+                    });
+                    const removeRow = (rowIdx: number) => setCompOverrides(prev => {
+                      const cur = prev[comp.id] ?? [];
+                      if (cur.length <= 1) return prev;
+                      return { ...prev, [comp.id]: cur.filter((_, i) => i !== rowIdx) };
+                    });
                     return (
                       <div key={comp.id} className="border rounded-lg p-3 bg-muted/20 space-y-2">
-                        <p className="text-sm font-medium leading-tight">
-                          {comp.resolved_name}
-                          {comp.quantity > 1 && <span className="text-muted-foreground font-normal ml-1">(×{comp.quantity} per bundle)</span>}
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Colour</Label>
-                            <Select
-                              value={selectedColour}
-                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], colour: v, size: "" } }))}
-                            >
-                              <SelectTrigger className="h-8 text-sm">
-                                <SelectValue placeholder="— select —" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Size</Label>
-                            <Select
-                              value={selectedSize}
-                              disabled={colours.length > 0 && !selectedColour}
-                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], size: v } }))}
-                            >
-                              <SelectTrigger className="h-8 text-sm">
-                                <SelectValue placeholder={colours.length > 0 && !selectedColour ? "Pick colour first" : "— select —"} />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {sizesToShow.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium leading-tight">
+                            {comp.resolved_name}
+                            <span className="text-muted-foreground font-normal ml-1.5 text-xs">×{comp.quantity} per bundle</span>
+                          </p>
+                          <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-muted-foreground" onClick={addRow}>+ Add size row</Button>
                         </div>
-                        {customerFinishes && customerFinishes.length > 0 && (
-                          <div className="space-y-1">
-                            <Label className="text-xs text-muted-foreground">Finish</Label>
-                            <Select
-                              value={compOverrides[comp.id]?.finishId != null ? String(compOverrides[comp.id].finishId) : (comp.finish_id != null ? String(comp.finish_id) : "__none__")}
-                              onValueChange={v => {
-                                if (v === "__none__") {
-                                  setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], finishId: null, finishName: null } }));
-                                } else {
-                                  const f = customerFinishes.find((f: any) => String(f.id) === v);
-                                  setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], finishId: f?.id ?? null, finishName: f?.name ?? null } }));
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-sm">
-                                <SelectValue placeholder="— no finish —" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="__none__"><span className="text-muted-foreground">— no finish —</span></SelectItem>
-                                {customerFinishes.map((f: any) => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}
-                              </SelectContent>
-                            </Select>
-                          </div>
+                        <div className="space-y-1.5">
+                          {rows.map((row, rowIdx) => {
+                            const sizesForColour = comp.variants ? [...new Set(comp.variants.filter(v => v.colour === row.colour).map(v => v.size).filter(Boolean))] : [];
+                            const allVariantSizes = comp.variants ? [...new Set(comp.variants.map(v => v.size).filter(Boolean))] : [];
+                            const sizesToShow = sizesForColour.length > 0 ? sizesForColour : allVariantSizes.length > 0 ? allVariantSizes : DEFAULT_CLOTHING_SIZES;
+                            return (
+                              <div key={rowIdx} className="grid gap-1.5 items-center" style={{ gridTemplateColumns: colours.length > 0 ? "1fr 1fr" + (customerFinishes?.length ? " 1fr" : "") + " 56px 28px" : (customerFinishes?.length ? "1fr 56px 28px" : "56px 28px") }}>
+                                {colours.length > 0 && (
+                                  <Select value={row.colour} onValueChange={v => updateRow(rowIdx, { colour: v, size: "" })}>
+                                    <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Colour" /></SelectTrigger>
+                                    <SelectContent>{colours.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                                  </Select>
+                                )}
+                                {colours.length > 0 && (
+                                  <Select value={row.size} disabled={!row.colour} onValueChange={v => updateRow(rowIdx, { size: v })}>
+                                    <SelectTrigger className="h-7 text-xs"><SelectValue placeholder={!row.colour ? "Pick colour" : "Size"} /></SelectTrigger>
+                                    <SelectContent>{sizesToShow.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                                  </Select>
+                                )}
+                                {customerFinishes && customerFinishes.length > 0 && (
+                                  <Select
+                                    value={row.finishId != null ? String(row.finishId) : "__none__"}
+                                    onValueChange={v => {
+                                      if (v === "__none__") updateRow(rowIdx, { finishId: null, finishName: null });
+                                      else { const f = customerFinishes.find((f: any) => String(f.id) === v); updateRow(rowIdx, { finishId: f?.id ?? null, finishName: f?.name ?? null }); }
+                                    }}>
+                                    <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Finish" /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="__none__"><span className="text-muted-foreground">No finish</span></SelectItem>
+                                      {customerFinishes.map((f: any) => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                                <input
+                                  type="number" min={1} className="h-7 w-14 rounded border border-input bg-background px-2 text-xs text-center"
+                                  value={row.quantity} onChange={e => updateRow(rowIdx, { quantity: Math.max(1, parseInt(e.target.value) || 1) })}
+                                />
+                                <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground/60 hover:text-destructive" disabled={rows.length <= 1} onClick={() => removeRow(rowIdx)}>
+                                  <X className="w-3 h-3" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {totalQty !== comp.quantity && (
+                          <p className="text-xs text-amber-600 flex items-center gap-1"><TriangleAlert className="w-3 h-3" />Rows total ×{totalQty}, bundle needs ×{comp.quantity}</p>
                         )}
                       </div>
                     );
@@ -4910,13 +4946,21 @@ export default function OrderDetail() {
             <Button variant="outline" onClick={() => { setIsAddBundleOpen(false); setAddBundleId(null); setAddBundleWearerName(""); setCompOverrides({}); }}>Done</Button>
             <Button
               disabled={addBundleId == null || addBundleMutation.isPending}
-              onClick={() => addBundleId != null && addBundleMutation.mutate({
-                bundleId: addBundleId,
-                wearerName: addBundleWearerName || undefined,
-                componentOverrides: Object.entries(compOverrides)
-                  .filter(([, ov]) => ov.colour || ov.size || ov.finishId != null)
-                  .map(([id, ov]) => ({ componentId: parseInt(id), colour: ov.colour || undefined, size: ov.size || undefined, finishId: ov.finishId ?? undefined, finishName: ov.finishName ?? undefined })),
-              })}
+              onClick={() => {
+                if (addBundleId == null) return;
+                // Build one override entry per size-row
+                const overrides = Object.entries(compOverrides).flatMap(([id, rows]) =>
+                  rows.map(r => ({
+                    componentId: parseInt(id),
+                    colour: r.colour || undefined,
+                    size: r.size || undefined,
+                    finishId: r.finishId ?? undefined,
+                    finishName: r.finishName ?? undefined,
+                    quantity: r.quantity,
+                  }))
+                );
+                addBundleMutation.mutate({ bundleId: addBundleId, wearerName: addBundleWearerName || undefined, componentOverrides: overrides });
+              }}
             >
               {addBundleMutation.isPending
                 ? <><Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />Adding…</>

@@ -188,7 +188,6 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
   if (isNaN(bundleId) || isNaN(orderId)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const body = z.object({
-    quantity: z.number().int().positive().optional().default(1),
     wearerName: z.string().optional().nullable(),
     componentOverrides: z.array(z.object({
       componentId: z.number().int(),
@@ -196,10 +195,12 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
       size: z.string().optional().nullable(),
       finishId: z.number().int().optional().nullable(),
       finishName: z.string().optional().nullable(),
+      quantity: z.number().int().positive().optional(),
     })).optional(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
-  const { quantity: qty, wearerName = null, componentOverrides = [] } = body.data;
+  const { wearerName = null, componentOverrides = [] } = body.data;
+  const qty = 1; // bundles are always added one at a time
 
   try {
     const bundleRows = await db.execute(sql`SELECT * FROM bundles WHERE id = ${bundleId}`);
@@ -242,68 +243,80 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
          ${zeroVat ? 0 : 0.20}, false, NULL, ${bundleRef}, true, ${bundleId}, 'stock', ${wearerName ?? null})
     `);
 
+    // Build a map of override rows per componentId (multiple rows allowed for size splits)
+    const overrideRowsByComp = new Map<number, typeof componentOverrides>();
+    for (const ov of componentOverrides) {
+      const cid = Number(ov.componentId);
+      if (!overrideRowsByComp.has(cid)) overrideRowsByComp.set(cid, []);
+      overrideRowsByComp.get(cid)!.push(ov);
+    }
+
     // Component rows — price £0
     // For physical (non-service) components we check actual variant stock to decide
     // whether the item needs purchasing (shortfall > 0) or can go straight to allocated.
     // Service items: stock_status=NULL — nothing to pick, no purchase needed.
     for (const comp of components) {
-      const compQty      = qty * (parseInt(String(comp.quantity)) || 1);
+      const defaultQty   = qty * (parseInt(String(comp.quantity)) || 1);
       const compVat      = zeroVat ? 0 : parseFloat(String(comp.p_vat_rate ?? 0.20));
       const isService    = comp.p_is_service === true;
       const recipType    = isService ? "service" : "stock";
-      const override     = componentOverrides.find((o) => o.componentId === comp.id);
-      const colour       = override?.colour ?? null;
-      const size         = override?.size ?? null;
-      const finishId     = override?.finishId   !== undefined ? override.finishId   : (comp.finish_id   ?? null);
-      const finishName   = override?.finishName !== undefined ? override.finishName : (comp.finish_name ?? null);
 
-      let purchaseRequired = false;
-      let purchaseQuantity: number | null = null;
-      let stockStatus: string | null = isService ? null : "allocated";
+      // Each override row becomes a separate order_item; if no overrides, one default row
+      const compRows = overrideRowsByComp.get(Number(comp.id)) ?? [null];
 
-      if (!isService && comp.product_id) {
-        // Look up available stock for the specific variant (colour + size), falling back to
-        // a size-agnostic variant and finally to product-level stock.
-        const stockRows = await db.execute(sql`
-          SELECT COALESCE(
-            (SELECT pv.stock_quantity FROM product_variants pv
-             WHERE pv.product_id = ${comp.product_id}
-               AND pv.colour IS NOT DISTINCT FROM ${colour}
-               AND (
-                 pv.size IS NOT DISTINCT FROM ${size}
-                 OR (${size} LIKE '%/%'
-                     AND pv.size = split_part(${size}, '/', 1)
-                     AND pv.sleeve = split_part(${size}, '/', 2))
-                 OR (pv.size IS NULL AND pv.sleeve IS NULL)
-               )
-             ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
-             LIMIT 1),
-            CASE WHEN NOT EXISTS (SELECT 1 FROM product_variants pv2 WHERE pv2.product_id = ${comp.product_id})
-                 THEN (SELECT stock_quantity FROM products WHERE id = ${comp.product_id})
-                 ELSE 0 END,
-            0
-          ) AS available_stock
-        `);
-        const availableStock = parseInt(String((stockRows.rows ?? stockRows)[0]?.available_stock ?? 0));
-        const shortfall = Math.max(0, compQty - availableStock);
-        if (shortfall > 0) {
-          purchaseRequired = true;
-          purchaseQuantity = shortfall;
-          stockStatus = null;
+      for (const ov of compRows) {
+        const compQty    = ov?.quantity ?? defaultQty;
+        const colour     = (ov?.colour || null);
+        const size       = (ov?.size || null);
+        const finishId   = ov && ov.finishId  !== undefined ? ov.finishId  : (comp.finish_id   ?? null);
+        const finishName = ov && ov.finishName !== undefined ? ov.finishName : (comp.finish_name ?? null);
+
+        let purchaseRequired = false;
+        let purchaseQuantity: number | null = null;
+        let stockStatus: string | null = isService ? null : "allocated";
+
+        if (!isService && comp.product_id) {
+          const stockRows = await db.execute(sql`
+            SELECT COALESCE(
+              (SELECT pv.stock_quantity FROM product_variants pv
+               WHERE pv.product_id = ${comp.product_id}
+                 AND pv.colour IS NOT DISTINCT FROM ${colour}
+                 AND (
+                   pv.size IS NOT DISTINCT FROM ${size}
+                   OR (${size} LIKE '%/%'
+                       AND pv.size = split_part(${size}, '/', 1)
+                       AND pv.sleeve = split_part(${size}, '/', 2))
+                   OR (pv.size IS NULL AND pv.sleeve IS NULL)
+                 )
+               ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
+               LIMIT 1),
+              CASE WHEN NOT EXISTS (SELECT 1 FROM product_variants pv2 WHERE pv2.product_id = ${comp.product_id})
+                   THEN (SELECT stock_quantity FROM products WHERE id = ${comp.product_id})
+                   ELSE 0 END,
+              0
+            ) AS available_stock
+          `);
+          const availableStock = parseInt(String((stockRows.rows ?? stockRows)[0]?.available_stock ?? 0));
+          const shortfall = Math.max(0, compQty - availableStock);
+          if (shortfall > 0) {
+            purchaseRequired = true;
+            purchaseQuantity = shortfall;
+            stockStatus = null;
+          }
         }
-      }
 
-      await db.execute(sql`
-        INSERT INTO order_items
-          (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
-           purchase_required, purchase_quantity, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type,
-           finish_id, finish_name, colour, size, recipient_name)
-        VALUES
-          (${orderId}, ${comp.product_id ?? null}, ${comp.resolved_name}, ${compQty},
-           0, 0, ${compVat},
-           ${purchaseRequired}, ${purchaseQuantity}, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
-           ${finishId}, ${finishName}, ${colour}, ${size}, ${wearerName ?? null})
-      `);
+        await db.execute(sql`
+          INSERT INTO order_items
+            (order_id, product_id, product_name, quantity, unit_price, line_total, vat_rate,
+             purchase_required, purchase_quantity, stock_status, bundle_ref, is_bundle_header, bundle_def_id, recipient_type,
+             finish_id, finish_name, colour, size, recipient_name)
+          VALUES
+            (${orderId}, ${comp.product_id ?? null}, ${comp.resolved_name}, ${compQty},
+             0, 0, ${compVat},
+             ${purchaseRequired}, ${purchaseQuantity}, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
+             ${finishId}, ${finishName}, ${colour}, ${size}, ${wearerName ?? null})
+        `);
+      }
     }
 
     // Recalculate order total from all line items
