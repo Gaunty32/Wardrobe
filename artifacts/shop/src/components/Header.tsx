@@ -2,7 +2,7 @@ import { Link, useLocation } from 'wouter';
 import { Search, ShoppingBag } from 'lucide-react';
 import { useGetShopSettings } from '@workspace/api-client-react';
 import { useCart } from '@/context/CartContext';
-import logoPath from '@assets/sbs-logo-transparent.png';
+import logoPath from '@assets/sbs-logo-blue.png';
 import { useState, useEffect, useRef } from 'react';
 
 export function Header() {
