@@ -556,7 +556,7 @@ router.get("/shop/wc/categories", async (_req, res): Promise<void> => {
 router.get("/shop/wc/products", async (req, res): Promise<void> => {
   try {
     const page    = Math.max(1, Number(req.query.page ?? 1));
-    const perPage = Math.min(100, Math.max(1, Number(req.query.per_page ?? 24)));
+    const perPage = Math.min(1000, Math.max(1, Number(req.query.per_page ?? 24)));
     const offset  = (page - 1) * perPage;
     const search  = String(req.query.search ?? "").trim();
     const catSlug = String(req.query.category_slug ?? "").trim();
@@ -641,7 +641,7 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
                    gallery_images, size_guide_html, price_breaks,
                    guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
                    guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
-                   guidance_staff_recommendation
+                   guidance_staff_recommendation, branding_positions_override
             FROM products
             WHERE id = ${numericId} AND is_archived = false
             LIMIT 1
@@ -652,7 +652,7 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
                    gallery_images, size_guide_html, price_breaks,
                    guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
                    guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
-                   guidance_staff_recommendation
+                   guidance_staff_recommendation, branding_positions_override
             FROM products
             WHERE LOWER(REGEXP_REPLACE(TRIM(BOTH '-' FROM REGEXP_REPLACE(name, '[^a-zA-Z0-9]+', '-', 'g')), '^-+|-+$', '', 'g')) = ${raw}
               AND is_archived = false
@@ -802,6 +802,12 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
         notIdealFor:      p.guidance_not_ideal_for     ?? "",
         staffRecommendation: p.guidance_staff_recommendation ?? "",
       },
+      // Per-product branding override: null = use global defaults, [] = no branding, [...] = custom positions
+      brandingPositionsOverride: (() => {
+        const raw = p.branding_positions_override;
+        if (!raw) return null;
+        try { return Array.isArray(raw) ? raw : JSON.parse(String(raw)); } catch { return null; }
+      })(),
     });
   } catch (e: any) {
     logger.error({ err: e }, "[shop/wc/products/:id] error");
@@ -837,12 +843,13 @@ router.post("/shop/stripe/payment-intent", async (req, res): Promise<void> => {
 // ── Branding options (positions + surcharges) ────────────────────────────────
 
 const DEFAULT_BRANDING_POSITIONS = [
-  { id: "left-breast",  name: "Left Breast",   surcharge: 0,    description: "Standard position — included in base price" },
-  { id: "right-breast", name: "Right Breast",  surcharge: 2.50, description: "" },
-  { id: "back-large",   name: "Back (Large)",  surcharge: 5.00, description: "Full-width back logo" },
-  { id: "back-small",   name: "Back (Small)",  surcharge: 2.50, description: "" },
-  { id: "left-sleeve",  name: "Left Sleeve",   surcharge: 2.50, description: "" },
-  { id: "right-sleeve", name: "Right Sleeve",  surcharge: 2.50, description: "" },
+  { id: "left-chest",   name: "Left Chest",    surcharge: 0,    description: "Standard position — included in base price" },
+  { id: "right-chest",  name: "Right Chest",   surcharge: 4.00, description: "" },
+  { id: "back-large",   name: "Back Large",    surcharge: 6.00, description: "Full-width back logo" },
+  { id: "back-small",   name: "Back Small",    surcharge: 4.00, description: "" },
+  { id: "left-sleeve",  name: "Left Sleeve",   surcharge: 4.00, description: "" },
+  { id: "right-sleeve", name: "Right Sleeve",  surcharge: 4.00, description: "" },
+  { id: "other",        name: "Other",         surcharge: 0,    description: "Describe the position required — pricing confirmed separately", notes_field: true },
 ];
 
 router.get("/shop/branding-options", async (_req, res): Promise<void> => {
@@ -893,6 +900,7 @@ const ShopOrderSchema = z.object({
       id: z.string(),
       name: z.string(),
       surcharge: z.number(),
+      notes: z.string().optional().nullable(),
     })).optional().nullable(),
     wearerName: z.string().optional().nullable(),
   })),

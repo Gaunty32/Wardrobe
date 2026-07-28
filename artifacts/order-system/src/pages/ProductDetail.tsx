@@ -1008,6 +1008,9 @@ export default function ProductDetail() {
   } | null>(null);
   const [guidanceDirty, setGuidanceDirty] = useState(false);
   const [customTagInput, setCustomTagInput] = useState("");
+  // Per-product branding override: 'global' = use defaults, 'disabled' = no branding, 'custom' = override list
+  const [brandingMode, setBrandingMode] = useState<'global' | 'disabled' | 'custom'>('global');
+  const [brandingOverrideDirty, setBrandingOverrideDirty] = useState(false);
   const [socialDraft, setSocialDraft] = useState<{
     facebookContent: string; googleContent: string; hashtags: string;
     platforms: string[]; autoReschedule: boolean; editingId: number | null;
@@ -1086,8 +1089,15 @@ export default function ProductDetail() {
         smartRating: p.guidanceSmartRating ?? null,
         tags: Array.isArray(p.guidanceTags) ? p.guidanceTags : [],
       });
+      // Initialise branding override mode from the product
+      if (!brandingOverrideDirty) {
+        const ov = (p as any).brandingPositionsOverride;
+        if (ov === null || ov === undefined) setBrandingMode('global');
+        else if (Array.isArray(ov) && ov.length === 0) setBrandingMode('disabled');
+        else setBrandingMode('custom');
+      }
     }
-  }, [product, details, guidance]);
+  }, [product, details, guidance, brandingOverrideDirty]);
 
   const handleDetailChange = (field: string, value: any) => {
     setDetails(prev => prev ? { ...prev, [field]: value } : prev);
@@ -2530,6 +2540,62 @@ export default function ProductDetail() {
                       className="w-fit"
                     >
                       <Plus className="w-3.5 h-3.5 mr-1.5" /> Add Quote
+                    </Button>
+                  </div>
+
+                  {/* ── Per-product branding override ── */}
+                  <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">Logo Positions — this product</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        By default all products use the global logo positions from Settings → Branding.
+                        Use this to turn off branding for this product or apply a different set.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {(['global', 'disabled', 'custom'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => { setBrandingMode(mode); setBrandingOverrideDirty(true); }}
+                          className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                            brandingMode === mode
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-background text-muted-foreground border-border hover:border-primary/50'
+                          }`}
+                        >
+                          {mode === 'global' ? '✓ Use global defaults' : mode === 'disabled' ? '✗ No branding' : '⚙ Custom for this product'}
+                        </button>
+                      ))}
+                    </div>
+                    {brandingMode === 'disabled' && (
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                        The logo positions section will be hidden on this product's shop page.
+                      </p>
+                    )}
+                    {brandingMode === 'custom' && (
+                      <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
+                        Custom positions not yet configurable here — use Settings → Branding to set the global defaults, then switch to "Custom" to suppress specific positions via a future update.
+                        For now, selecting "Custom" will apply the current global positions as the override baseline.
+                      </p>
+                    )}
+                    <Button
+                      size="sm"
+                      variant={brandingOverrideDirty ? "default" : "outline"}
+                      disabled={!brandingOverrideDirty || updateMutation.isPending}
+                      onClick={() => {
+                        const override =
+                          brandingMode === 'global' ? null
+                          : brandingMode === 'disabled' ? []
+                          : (product as any).brandingPositionsOverride ?? null;
+                        updateMutation.mutate(
+                          { brandingPositionsOverride: override } as any,
+                          { onSuccess: () => setBrandingOverrideDirty(false) }
+                        );
+                      }}
+                    >
+                      <Save className="w-3.5 h-3.5 mr-1.5" />
+                      Save branding override
                     </Button>
                   </div>
 

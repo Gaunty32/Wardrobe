@@ -11,3 +11,4 @@ export * from "./tasks";
 export * from "./product-categories";
 export * from "./stock-bins";
 export * from "./staff-members";
+export * from "./open-pos";

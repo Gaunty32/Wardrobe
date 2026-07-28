@@ -3437,7 +3437,7 @@ function BrandingTab() {
                 <Input
                   value={pos.name}
                   onChange={e => update(idx, "name", e.target.value)}
-                  placeholder="e.g. Left Breast"
+                  placeholder="e.g. Left Chest"
                   className="h-8 text-sm"
                 />
               </div>

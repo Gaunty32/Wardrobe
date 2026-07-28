@@ -2948,4 +2948,28 @@ export async function refreshProductIssues(): Promise<void> {
     `);
     console.log("[startup] Added unique index on products.sku");
   }
+
+  // ── customer_open_pos table ───────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_open_pos (
+      id                       SERIAL PRIMARY KEY,
+      customer_id              INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      po_number                TEXT NOT NULL,
+      total_value              NUMERIC(10,2) NOT NULL,
+      remaining_value          NUMERIC(10,2) NOT NULL,
+      expiry_date              TEXT NOT NULL,
+      status                   TEXT NOT NULL DEFAULT 'active',
+      created_by_portal_user_id INTEGER,
+      created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  console.log("[startup] customer_open_pos table ensured");
+
+  // ── products.branding_positions_override column ───────────────────────────
+  await db.execute(sql`
+    ALTER TABLE products
+    ADD COLUMN IF NOT EXISTS branding_positions_override JSONB
+  `);
+  console.log("[startup] products.branding_positions_override ensured");
 }

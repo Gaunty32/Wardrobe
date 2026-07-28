@@ -750,6 +750,321 @@ router.post("/portal/admin/preview/:customerId", async (req: Request, res: Respo
   res.json({ previewUrl, token, expiresIn: "2h", role, linkedEmployeeId, portalUserId: reqPortalUserId });
 });
 
+// ─── portal: usage & spend report (manager only) ─────────────────────────────
+
+router.get("/portal/reports/usage", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+
+  if (portalRole !== "manager") {
+    res.status(403).json({ error: "Manager access required" }); return;
+  }
+
+  const fromParam = (req.query.from as string) ?? "";
+  const toParam   = (req.query.to   as string) ?? "";
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRe.test(fromParam) || !dateRe.test(toParam) || fromParam > toParam) {
+    res.status(400).json({ error: "Valid from and to (YYYY-MM-DD) params required" }); return;
+  }
+
+  // Run all queries in parallel
+  const [employeeRows, orderedRows, stockRows, orderCountRows] = await Promise.all([
+    // All active employees with their manager's name
+    db.execute(sql`
+      SELECT ce.id, ce.first_name, ce.last_name, ce.email, ce.department, ce.job_title,
+             ce.manager_id, ce.allowance,
+             m.first_name AS mgr_first, m.last_name AS mgr_last
+      FROM customer_employees ce
+      LEFT JOIN customer_employees m ON m.id = ce.manager_id
+      WHERE ce.customer_id = ${customerId}
+    `),
+    // Ordered portal items (non-cancelled, non-rejected) aggregated per employee + product
+    db.execute(sql`
+      SELECT
+        oi.recipient_employee_id,
+        oi.product_name,
+        LOWER(TRIM(COALESCE(oi.colour, '')))  AS colour,
+        LOWER(TRIM(COALESCE(oi.size,   '')))  AS size,
+        SUM(oi.quantity)::integer             AS qty,
+        SUM(oi.line_total)::numeric           AS value
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.customer_id   = ${customerId}
+        AND o.source        = 'portal'
+        AND o.status        NOT IN ('cancelled')
+        AND o.portal_status NOT IN ('rejected')
+        AND o.order_date::date >= ${fromParam}::date
+        AND o.order_date::date <= ${toParam}::date
+      GROUP BY oi.recipient_employee_id,
+               oi.product_name,
+               LOWER(TRIM(COALESCE(oi.colour, ''))),
+               LOWER(TRIM(COALESCE(oi.size,   '')))
+    `),
+    // Store-issue movements aggregated per recipient name + product
+    db.execute(sql`
+      SELECT
+        csm.recipient_name,
+        cfi.name                                                          AS product_name,
+        LOWER(TRIM(COALESCE(cfi.colour, '')))                            AS colour,
+        LOWER(TRIM(COALESCE(cfi.size,   '')))                            AS size,
+        SUM(ABS(csm.quantity))::integer                                   AS issued_qty,
+        SUM(ABS(csm.quantity) * COALESCE(cfi.special_price, cfi.unit_price))::numeric AS issued_value
+      FROM customer_stock_movements csm
+      JOIN customer_finished_items cfi ON cfi.id = csm.stock_item_id
+      WHERE csm.customer_id    = ${customerId}
+        AND csm.movement_type  = 'issue'
+        AND csm.created_at::date >= ${fromParam}::date
+        AND csm.created_at::date <= ${toParam}::date
+      GROUP BY csm.recipient_name,
+               cfi.name,
+               LOWER(TRIM(COALESCE(cfi.colour, ''))),
+               LOWER(TRIM(COALESCE(cfi.size,   '')))
+    `),
+    // Distinct order counts per employee
+    db.execute(sql`
+      SELECT
+        oi.recipient_employee_id,
+        COUNT(DISTINCT o.id)::integer AS order_count
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.customer_id   = ${customerId}
+        AND o.source        = 'portal'
+        AND o.status        NOT IN ('cancelled')
+        AND o.portal_status NOT IN ('rejected')
+        AND o.order_date::date >= ${fromParam}::date
+        AND o.order_date::date <= ${toParam}::date
+      GROUP BY oi.recipient_employee_id
+    `),
+  ]);
+
+  // ── Build employee map ──────────────────────────────────────────────────────
+  interface EmpData {
+    id: number; name: string; email: string | null; department: string | null;
+    jobTitle: string | null; managerId: number | null; managerName: string | null;
+    allowance: number | null;
+    orderedSpend: number; stockValue: number; totalSpend: number;
+    itemsOrdered: number; stockIssued: number; orderCount: number;
+  }
+
+  const empMap   = new Map<number, EmpData>();
+  const nameToId = new Map<string, number[]>(); // normalised full-name → employee ids
+
+  for (const row of employeeRows.rows as any[]) {
+    const name = [row.first_name, row.last_name].filter(Boolean).join(" ");
+    empMap.set(row.id, {
+      id: row.id, name, email: row.email ?? null,
+      department: row.department ?? null, jobTitle: row.job_title ?? null,
+      managerId: row.manager_id ?? null,
+      managerName: row.mgr_first ? [row.mgr_first, row.mgr_last].filter(Boolean).join(" ") : null,
+      allowance: row.allowance ? parseFloat(row.allowance) : null,
+      orderedSpend: 0, stockValue: 0, totalSpend: 0,
+      itemsOrdered: 0, stockIssued: 0, orderCount: 0,
+    });
+    const norm = name.toLowerCase().trim();
+    if (!nameToId.has(norm)) nameToId.set(norm, []);
+    nameToId.get(norm)!.push(row.id);
+  }
+
+  // Order count map
+  const orderCountMap = new Map<number, number>();
+  for (const row of orderCountRows.rows as any[]) {
+    if (row.recipient_employee_id) orderCountMap.set(row.recipient_employee_id, parseInt(row.order_count));
+  }
+
+  // ── Product matrix ──────────────────────────────────────────────────────────
+  type ProdKey = string;
+  const productMap = new Map<ProdKey, {
+    productName: string; colour: string | null; size: string | null;
+    orderedQty: number; issuedQty: number; orderedValue: number; issuedValue: number;
+  }>();
+
+  let totalOrderedSpend = 0;
+  let totalItemsOrdered = 0;
+  let totalOrderCount   = 0;
+
+  for (const row of orderedRows.rows as any[]) {
+    const qty   = parseInt(row.qty   ?? "0");
+    const value = parseFloat(row.value ?? "0");
+    totalItemsOrdered += qty;
+    totalOrderedSpend += value;
+
+    if (row.recipient_employee_id) {
+      const emp = empMap.get(row.recipient_employee_id);
+      if (emp) { emp.orderedSpend += value; emp.itemsOrdered += qty; }
+    }
+
+    const colour = row.colour || null;
+    const size   = row.size   || null;
+    const pk     = `${row.product_name}|${colour}|${size}`;
+    const prev   = productMap.get(pk);
+    if (prev) { prev.orderedQty += qty; prev.orderedValue += value; }
+    else productMap.set(pk, { productName: row.product_name, colour, size, orderedQty: qty, issuedQty: 0, orderedValue: value, issuedValue: 0 });
+  }
+
+  for (const cnt of orderCountMap.values()) totalOrderCount += cnt;
+
+  let totalStockValue  = 0;
+  let totalStockIssued = 0;
+
+  for (const row of stockRows.rows as any[]) {
+    const qty   = parseInt(row.issued_qty   ?? "0");
+    const value = parseFloat(row.issued_value ?? "0");
+    totalStockIssued += qty;
+    totalStockValue  += value;
+
+    // Match recipient name → employee (unique name match only)
+    if (row.recipient_name) {
+      const norm   = (row.recipient_name as string).toLowerCase().trim();
+      const empIds = nameToId.get(norm);
+      if (empIds && empIds.length === 1) {
+        const emp = empMap.get(empIds[0]);
+        if (emp) { emp.stockValue += value; emp.stockIssued += qty; }
+      }
+    }
+
+    const colour = row.colour || null;
+    const size   = row.size   || null;
+    const pk     = `${row.product_name}|${colour}|${size}`;
+    const prev   = productMap.get(pk);
+    if (prev) { prev.issuedQty += qty; prev.issuedValue += value; }
+    else productMap.set(pk, { productName: row.product_name, colour, size, orderedQty: 0, issuedQty: qty, orderedValue: 0, issuedValue: value });
+  }
+
+  // Finalise employee totals + order counts
+  for (const emp of empMap.values()) {
+    emp.orderCount  = orderCountMap.get(emp.id) ?? 0;
+    emp.totalSpend  = emp.orderedSpend + emp.stockValue;
+  }
+
+  const employees        = Array.from(empMap.values());
+  const activeEmployees  = employees.filter(e => e.totalSpend > 0).length;
+  const grandTotal       = totalOrderedSpend + totalStockValue;
+  const avgSpendPerEmployee = activeEmployees > 0 ? grandTotal / activeEmployees : 0;
+  const avgOrderValue       = totalOrderCount  > 0 ? totalOrderedSpend / totalOrderCount : 0;
+
+  // ── Supervisor groupings ────────────────────────────────────────────────────
+  const supMap = new Map<string, {
+    supervisorId: number | null; supervisorName: string | null;
+    totalSpend: number; orderedSpend: number; stockValue: number;
+    memberCount: number;
+    members: Array<{ employeeId: number; name: string; totalSpend: number }>;
+  }>();
+
+  for (const emp of employees) {
+    const key     = String(emp.managerId ?? "none");
+    const mgrName = emp.managerName;
+    const prev    = supMap.get(key);
+    if (prev) {
+      prev.totalSpend   += emp.totalSpend;
+      prev.orderedSpend += emp.orderedSpend;
+      prev.stockValue   += emp.stockValue;
+      prev.memberCount  += 1;
+      prev.members.push({ employeeId: emp.id, name: emp.name, totalSpend: emp.totalSpend });
+    } else {
+      supMap.set(key, {
+        supervisorId:   emp.managerId,
+        supervisorName: mgrName ?? (emp.managerId ? `Manager #${emp.managerId}` : null),
+        totalSpend:   emp.totalSpend,
+        orderedSpend: emp.orderedSpend,
+        stockValue:   emp.stockValue,
+        memberCount:  1,
+        members: [{ employeeId: emp.id, name: emp.name, totalSpend: emp.totalSpend }],
+      });
+    }
+  }
+
+  res.json({
+    period: { from: fromParam, to: toParam },
+    summary: {
+      totalSpend:           grandTotal,
+      orderedSpend:         totalOrderedSpend,
+      stockValue:           totalStockValue,
+      orderCount:           totalOrderCount,
+      totalItemsOrdered,
+      totalStockIssued,
+      activeEmployees,
+      avgSpendPerEmployee,
+      avgOrderValue,
+    },
+    employees,
+    products: Array.from(productMap.values()).map(p => ({
+      ...p,
+      totalQty:   p.orderedQty   + p.issuedQty,
+      totalValue: p.orderedValue + p.issuedValue,
+    })),
+    supervisors: Array.from(supMap.values()),
+  });
+});
+
+// ─── portal: active open PO for the current customer ─────────────────────────
+
+router.get("/portal/open-po", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const today = new Date().toISOString().slice(0, 10);
+  // Auto-expire overdue POs
+  await db.execute(sql`
+    UPDATE customer_open_pos SET status = 'expired', updated_at = now()
+    WHERE customer_id = ${customerId} AND status = 'active' AND expiry_date < ${today}
+  `);
+  const rows = await db.execute(sql`
+    SELECT id, po_number, total_value, remaining_value, expiry_date, status
+    FROM customer_open_pos
+    WHERE customer_id = ${customerId} AND status = 'active'
+    ORDER BY created_at DESC LIMIT 1
+  `);
+  const po = (rows.rows[0] as any) ?? null;
+  if (!po) { res.json(null); return; }
+  res.json({
+    id: po.id,
+    poNumber: po.po_number,
+    totalValue: parseFloat(po.total_value),
+    remainingValue: parseFloat(po.remaining_value),
+    usedValue: parseFloat(po.total_value) - parseFloat(po.remaining_value),
+    expiryDate: po.expiry_date,
+    status: po.status,
+  });
+});
+
+// ─── portal: customer registers a replacement open PO ────────────────────────
+
+router.post("/portal/open-po", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalUserId = (req as any).portalUserId;
+  const parsed = z.object({
+    poNumber: z.string().min(1).max(100),
+    totalValue: z.number().positive(),
+    expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.errors.map(e => e.message).join("; ") }); return;
+  }
+  const { poNumber, totalValue, expiryDate } = parsed.data;
+  const today = new Date().toISOString().slice(0, 10);
+  if (expiryDate <= today) {
+    res.status(400).json({ error: "Expiry date must be in the future." }); return;
+  }
+  // Deactivate existing active PO
+  await db.execute(sql`
+    UPDATE customer_open_pos SET status = 'exhausted', updated_at = now()
+    WHERE customer_id = ${customerId} AND status = 'active'
+  `);
+  const result = await db.execute(sql`
+    INSERT INTO customer_open_pos (customer_id, po_number, total_value, remaining_value, expiry_date, status, created_by_portal_user_id, created_at, updated_at)
+    VALUES (${customerId}, ${poNumber}, ${totalValue.toFixed(2)}, ${totalValue.toFixed(2)}, ${expiryDate}, 'active', ${portalUserId}, now(), now())
+    RETURNING id, po_number, total_value, remaining_value, expiry_date, status
+  `);
+  const po = result.rows[0] as any;
+  res.status(201).json({
+    id: po.id,
+    poNumber: po.po_number,
+    totalValue: parseFloat(po.total_value),
+    remainingValue: parseFloat(po.remaining_value),
+    usedValue: 0,
+    expiryDate: po.expiry_date,
+    status: po.status,
+  });
+});
+
 // ─── portal: customer settings (lightweight, used by all new-order flows) ────
 
 router.get("/portal/settings", portalAuth, async (req: Request, res: Response) => {
@@ -1256,6 +1571,11 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const carriageAmount = SHIPPING_CARRIAGE[body.shippingOption ?? ""] ?? (body.shippingCost ?? 0);
   const totalAmount = itemsTotal; // total_amount stores items subtotal; carriage_amount is separate
 
+  // ── Open PO state (check + deduction happens atomically inside the order transaction below) ──
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let activePo: any = null;
+  let effectivePoNumber: string | null = body.poNumber ?? null;
+
   // Get customer name and default delivery address
   const custRows = await db.execute(sql`SELECT name, address, city, postcode FROM customers WHERE id = ${customerId}`);
   const custRow = custRows.rows[0] as any;
@@ -1374,61 +1694,132 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   const portalStatus = portalRole === "manager" ? "submitted" : "pending_review";
   const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
 
-  // Insert with a unique temp order number; update to P{id} after getting auto-generated id
-  const orderResult = await db.execute(sql`
-    INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, carriage_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments, add_to_stores)
-    VALUES (
-      'P-' || gen_random_uuid()::text,
-      ${customerId},
-      ${customerName},
-      ${orderStatus},
-      'portal',
-      ${portalStatus},
-      ${body.portalNotes ?? null},
-      ${totalAmount.toFixed(2)},
-      ${carriageAmount.toFixed(2)},
-      ${body.notes ?? null},
-      now(),
-      ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null},
-      ${body.shippingOption ?? null},
-      ${body.poNumber ?? null},
-      ${defaultAddressId},
-      ${attentionOfName},
-      ${submitterEmail},
-      ${submitterName},
-      ${submitterEmployeeId},
-      now(),
-      ${body.attachments?.length ? JSON.stringify(body.attachments) : null},
-      ${body.addToStores ?? false}
-    )
-    RETURNING id
-  `);
-  const orderId = (orderResult.rows[0] as any).id as number;
-  const orderNumber = `P${orderId}`;
-  await db.execute(sql`UPDATE orders SET order_number = ${orderNumber} WHERE id = ${orderId}`);
-  const order = { id: orderId, order_number: orderNumber };
+  // ── Atomic transaction: PO lock/check/deduct + order insert + items insert ─────────────────
+  // db.transaction() pins all statements to a single pooled connection, so FOR UPDATE
+  // row-locking is honoured and any failure automatically rolls back all writes.
+  let orderId: number;
+  let orderNumber: string;
+  try {
+    const txResult = await db.transaction(async (tx) => {
+      // 1. Auto-expire overdue POs
+      await tx.execute(sql`
+        UPDATE customer_open_pos SET status = 'expired', updated_at = now()
+        WHERE customer_id = ${customerId} AND status = 'active' AND expiry_date < ${todayStr}
+      `);
 
-  for (const item of sbsItems) {
-    const lineTotal = item.quantity * item.unitPrice;
-    await db.execute(sql`
-      INSERT INTO order_items (order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, recipient_employee_id, quantity, unit_price, line_total)
-      VALUES (
-        ${order.id},
-        ${item.productId ?? null},
-        ${item.productName},
-        ${item.colour ?? null},
-        ${item.size ?? null},
-        ${item.finishId ?? null},
-        ${item.finishName ?? null},
-        ${item.recipientType},
-        ${item.recipientName ?? null},
-        ${item.recipientEmployeeId ?? null},
-        ${item.quantity},
-        ${item.unitPrice.toFixed(2)},
-        ${lineTotal.toFixed(2)}
-      )
-    `);
+      // 2. Row-lock the active PO to prevent concurrent overspend
+      const activePoRows = await tx.execute(sql`
+        SELECT id, po_number, remaining_value, total_value, expiry_date
+        FROM customer_open_pos
+        WHERE customer_id = ${customerId} AND status = 'active'
+        ORDER BY created_at DESC LIMIT 1
+        FOR UPDATE
+      `);
+      const txActivePo = (activePoRows.rows[0] as any) ?? null;
+      let txEffectivePoNumber: string | null = body.poNumber ?? null;
+
+      if (txActivePo) {
+        const orderGross = totalAmount + carriageAmount;
+        const remaining = parseFloat(txActivePo.remaining_value);
+        if (orderGross > remaining + 0.005) {
+          // Throw to abort the transaction; caught outside to return 422
+          throw Object.assign(new Error("open_po_insufficient"), {
+            code: "open_po_insufficient",
+            poNumber: txActivePo.po_number,
+            remainingValue: remaining,
+            expiryDate: txActivePo.expiry_date,
+          });
+        }
+        const newRemaining = Math.max(0, remaining - orderGross);
+        await tx.execute(sql`
+          UPDATE customer_open_pos
+          SET remaining_value = ${newRemaining.toFixed(2)},
+              status = ${newRemaining <= 0.005 ? 'exhausted' : 'active'},
+              updated_at = now()
+          WHERE id = ${txActivePo.id}
+        `);
+        txEffectivePoNumber = txActivePo.po_number;
+      }
+
+      // Surface for post-transaction use
+      activePo = txActivePo;
+      effectivePoNumber = txEffectivePoNumber;
+
+      // 3. Insert order
+      const orderResult = await tx.execute(sql`
+        INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, carriage_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments, add_to_stores)
+        VALUES (
+          'P-' || gen_random_uuid()::text,
+          ${customerId},
+          ${customerName},
+          ${orderStatus},
+          'portal',
+          ${portalStatus},
+          ${body.portalNotes ?? null},
+          ${totalAmount.toFixed(2)},
+          ${carriageAmount.toFixed(2)},
+          ${body.notes ?? null},
+          now(),
+          ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null},
+          ${body.shippingOption ?? null},
+          ${txEffectivePoNumber},
+          ${defaultAddressId},
+          ${attentionOfName},
+          ${submitterEmail},
+          ${submitterName},
+          ${submitterEmployeeId},
+          now(),
+          ${body.attachments?.length ? JSON.stringify(body.attachments) : null},
+          ${body.addToStores ?? false}
+        )
+        RETURNING id
+      `);
+      const newOrderId = (orderResult.rows[0] as any).id as number;
+      const newOrderNumber = `P${newOrderId}`;
+      await tx.execute(sql`UPDATE orders SET order_number = ${newOrderNumber} WHERE id = ${newOrderId}`);
+
+      // 4. Insert order items
+      for (const item of sbsItems) {
+        const lineTotal = item.quantity * item.unitPrice;
+        await tx.execute(sql`
+          INSERT INTO order_items (order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, recipient_employee_id, quantity, unit_price, line_total)
+          VALUES (
+            ${newOrderId},
+            ${item.productId ?? null},
+            ${item.productName},
+            ${item.colour ?? null},
+            ${item.size ?? null},
+            ${item.finishId ?? null},
+            ${item.finishName ?? null},
+            ${item.recipientType},
+            ${item.recipientName ?? null},
+            ${item.recipientEmployeeId ?? null},
+            ${item.quantity},
+            ${item.unitPrice.toFixed(2)},
+            ${lineTotal.toFixed(2)}
+          )
+        `);
+      }
+
+      return { orderId: newOrderId, orderNumber: newOrderNumber };
+    });
+
+    orderId = txResult.orderId;
+    orderNumber = txResult.orderNumber;
+  } catch (err: any) {
+    if (err?.code === "open_po_insufficient") {
+      res.status(422).json({
+        error: "open_po_insufficient",
+        code: "open_po_insufficient",
+        poNumber: err.poNumber,
+        remainingValue: err.remainingValue,
+        expiryDate: err.expiryDate,
+      });
+      return;
+    }
+    throw err;
   }
+  const order = { id: orderId!, order_number: orderNumber! };
 
   // ── Stripe charge if customer chose to pay by card ──────────────────────────
   let stripeCharge: { success: boolean; last4?: string; brand?: string; amount?: number; error?: string } | null = null;
@@ -2776,6 +3167,43 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
 router.post("/portal/admin/orders/:id/reject", async (req: Request, res: Response) => {
   const orderId = parseInt(req.params.id, 10);
   const { reason } = z.object({ reason: z.string().optional() }).parse(req.body);
+
+  // Restore open PO balance if this order drew from one.
+  // Guard: only run when the order is not already rejected — ensures idempotency
+  // if the endpoint is accidentally called twice for the same order.
+  const orderRows = await db.execute(sql`
+    SELECT customer_id, po_number, total_amount, carriage_amount, portal_status
+    FROM orders WHERE id = ${orderId} AND source = 'portal' LIMIT 1
+  `);
+  const ordForPo = orderRows.rows[0] as any;
+  if (ordForPo?.portal_status !== 'rejected' && ordForPo?.po_number && ordForPo?.customer_id) {
+    const orderGross = parseFloat(ordForPo.total_amount ?? '0') + parseFloat(ordForPo.carriage_amount ?? '0');
+    if (orderGross > 0) {
+      const poRows = await db.execute(sql`
+        SELECT id, total_value, remaining_value
+        FROM customer_open_pos
+        WHERE customer_id = ${ordForPo.customer_id}
+          AND po_number = ${ordForPo.po_number}
+          AND status IN ('active', 'exhausted')
+        ORDER BY created_at DESC LIMIT 1
+      `);
+      const po = poRows.rows[0] as any;
+      if (po) {
+        const newRemaining = Math.min(
+          parseFloat(po.total_value),
+          parseFloat(po.remaining_value) + orderGross
+        );
+        await db.execute(sql`
+          UPDATE customer_open_pos
+          SET remaining_value = ${newRemaining.toFixed(2)},
+              status = 'active',
+              updated_at = now()
+          WHERE id = ${po.id}
+        `);
+      }
+    }
+  }
+
   await db.execute(sql`
     UPDATE orders SET portal_status = 'rejected', status = 'cancelled',
       notes = COALESCE(notes || E'\n', '') || ${'Rejected: ' + (reason ?? 'No reason given')},
@@ -2967,18 +3395,41 @@ router.get("/portal/my-team/employees", portalAuth, async (req: Request, res: Re
            da.label as delivery_address_label,
            da.line1 as delivery_address_line1,
            da.city  as delivery_address_city,
-           COALESCE(spend.total, 0) AS spend_12m
+           COALESCE(spend12.total_12m, 0)  AS spend_12m,
+           COALESCE(spend12.orders_12m, 0) AS orders_12m,
+           COALESCE(spend12.stock_12m, 0)  AS stock_12m
     FROM customer_employees e
     LEFT JOIN customer_roles cr ON cr.id = e.role_id
     LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
     LEFT JOIN (
-      SELECT oi.recipient_employee_id, SUM(oi.line_total)::numeric AS total
-      FROM order_items oi
-      JOIN orders o ON o.id = oi.order_id
-      WHERE o.status NOT IN ('portal_draft', 'cancelled')
-        AND o.created_at >= NOW() - INTERVAL '12 months'
-      GROUP BY oi.recipient_employee_id
-    ) spend ON spend.recipient_employee_id = e.id
+      SELECT emp_id,
+             SUM(CASE WHEN src = 'order' THEN v ELSE 0 END)::numeric AS orders_12m,
+             SUM(CASE WHEN src = 'store' THEN v ELSE 0 END)::numeric AS stock_12m,
+             SUM(v)::numeric AS total_12m
+      FROM (
+        SELECT oi.recipient_employee_id AS emp_id, SUM(oi.line_total) AS v, 'order' AS src
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        WHERE o.customer_id = ${customerId}
+          AND o.status NOT IN ('portal_draft', 'cancelled')
+          AND o.created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY oi.recipient_employee_id
+        UNION ALL
+        SELECT ex.id AS emp_id,
+               SUM(ABS(csm.quantity) * COALESCE(cfi.special_price, cfi.unit_price)) AS v,
+               'store' AS src
+        FROM customer_stock_movements csm
+        JOIN customer_finished_items cfi ON cfi.id = csm.stock_item_id
+        JOIN customer_employees ex
+          ON ex.customer_id = ${customerId}
+         AND LOWER(TRIM(ex.first_name || ' ' || COALESCE(ex.last_name, ''))) = LOWER(TRIM(COALESCE(csm.recipient_name, '')))
+        WHERE csm.customer_id = ${customerId}
+          AND csm.movement_type = 'issue'
+          AND csm.created_at >= NOW() - INTERVAL '12 months'
+        GROUP BY ex.id
+      ) combined
+      GROUP BY emp_id
+    ) spend12 ON spend12.emp_id = e.id
     WHERE e.customer_id = ${customerId}
       AND e.manager_id = ${myEmpId}
       ${showInactive ? sql`` : sql`AND e.is_active = true`}
@@ -3337,19 +3788,42 @@ router.get("/portal/team/employees", portalAuth, async (req: Request, res: Respo
                 FROM customer_employee_sizes s WHERE s.employee_id = e.id),
                '[]'::json
              ) as sizes,
-             COALESCE(spend.total, 0) AS spend_12m
+             COALESCE(spend12.total_12m, 0)  AS spend_12m,
+             COALESCE(spend12.orders_12m, 0) AS orders_12m,
+             COALESCE(spend12.stock_12m, 0)  AS stock_12m
       FROM customer_employees e
       LEFT JOIN customer_roles cr ON cr.id = e.role_id
       LEFT JOIN customer_employees m ON m.id = e.manager_id
       LEFT JOIN customer_delivery_addresses da ON da.id = e.delivery_address_id
       LEFT JOIN (
-        SELECT oi.recipient_employee_id, SUM(oi.line_total)::numeric AS total
-        FROM order_items oi
-        JOIN orders o ON o.id = oi.order_id
-        WHERE o.status NOT IN ('portal_draft', 'cancelled')
-          AND o.created_at >= NOW() - INTERVAL '12 months'
-        GROUP BY oi.recipient_employee_id
-      ) spend ON spend.recipient_employee_id = e.id
+        SELECT emp_id,
+               SUM(CASE WHEN src = 'order' THEN v ELSE 0 END)::numeric AS orders_12m,
+               SUM(CASE WHEN src = 'store' THEN v ELSE 0 END)::numeric AS stock_12m,
+               SUM(v)::numeric AS total_12m
+        FROM (
+          SELECT oi.recipient_employee_id AS emp_id, SUM(oi.line_total) AS v, 'order' AS src
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          WHERE o.customer_id = ${customerId}
+            AND o.status NOT IN ('portal_draft', 'cancelled')
+            AND o.created_at >= NOW() - INTERVAL '12 months'
+          GROUP BY oi.recipient_employee_id
+          UNION ALL
+          SELECT ex.id AS emp_id,
+                 SUM(ABS(csm.quantity) * COALESCE(cfi.special_price, cfi.unit_price)) AS v,
+                 'store' AS src
+          FROM customer_stock_movements csm
+          JOIN customer_finished_items cfi ON cfi.id = csm.stock_item_id
+          JOIN customer_employees ex
+            ON ex.customer_id = ${customerId}
+           AND LOWER(TRIM(ex.first_name || ' ' || COALESCE(ex.last_name, ''))) = LOWER(TRIM(COALESCE(csm.recipient_name, '')))
+          WHERE csm.customer_id = ${customerId}
+            AND csm.movement_type = 'issue'
+            AND csm.created_at >= NOW() - INTERVAL '12 months'
+          GROUP BY ex.id
+        ) combined
+        GROUP BY emp_id
+      ) spend12 ON spend12.emp_id = e.id
       WHERE e.customer_id = ${customerId}
         ${showInactive ? sql`` : sql`AND e.is_active = true`}
       ORDER BY e.last_name, e.first_name

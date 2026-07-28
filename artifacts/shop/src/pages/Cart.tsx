@@ -75,6 +75,8 @@ export default function Cart() {
                             <span key={p.id} className="inline-flex items-center gap-0.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">
                               <Palette className="w-2.5 h-2.5" />
                               {p.name}{p.surcharge > 0 ? ` +£${p.surcharge.toFixed(2)}` : ''}
+                              {p.notes_field && p.notes ? `: ${p.notes}` : ''}
+                              {p.notes_field && !p.notes ? ' (TBC)' : ''}
                             </span>
                           ))}
                         </div>

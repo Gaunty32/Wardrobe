@@ -9,7 +9,7 @@ export default function Shop() {
   const searchParams = new URLSearchParams(window.location.search);
   const search = searchParams.get('search') || '';
   
-  const { data: products = [], isLoading } = useWcProducts({ search });
+  const { data: products = [], isLoading } = useWcProducts({ search, per_page: 1000 });
 
   return (
     <div className="container mx-auto px-4 py-8">

@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useSearch, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import PortalLayout from "@/components/Layout";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, ApiError } from "@/lib/api";
+import { OpenPoBanner, type OpenPo } from "@/components/OpenPoBanner";
 import { formatCurrency } from "@/lib/utils";
 import { sortSizes, sortSizesWithOrder, abbreviateSizeLabel } from "@/lib/sizeUtils";
 import { useSizeOrder } from "@/hooks/useSizeOrder";
@@ -891,10 +892,15 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                     <p className="font-semibold text-sm leading-tight">{fullName(emp)}</p>
                     {emp.role_name && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{emp.role_name}</p>}
                     {(() => {
-                      const spend = parseFloat(emp.spend_12m ?? "0");
+                      const spend      = parseFloat(emp.spend_12m  ?? "0");
+                      const ordersAmt  = parseFloat(emp.orders_12m ?? "0");
+                      const stockAmt   = parseFloat(emp.stock_12m  ?? "0");
                       const effectiveAllowance = emp.effective_allowance != null ? parseFloat(emp.effective_allowance) : null;
                       const topup = parseFloat(emp.allowance_topup ?? "0");
                       const totalBudget = effectiveAllowance != null ? effectiveAllowance + topup : null;
+                      const breakdown = stockAmt > 0
+                        ? `£${ordersAmt.toFixed(0)} ordered · £${stockAmt.toFixed(0)} stores`
+                        : null;
                       if (totalBudget != null && totalBudget > 0) {
                         const pct = Math.min(100, (spend / totalBudget) * 100);
                         const over = spend > totalBudget;
@@ -915,18 +921,19 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
                                 style={{ width: `${pct}%` }}
                               />
                             </div>
+                            {breakdown && <p className="text-[9px] text-muted-foreground/70 mt-0.5">{breakdown}</p>}
                           </div>
                         );
                       }
-                      if (spend > 0) {
-                        return (
-                          <p className="text-[10px] text-muted-foreground mt-1 flex items-center gap-0.5">
+                      return (
+                        <div className="mt-1.5 w-full">
+                          <p className="text-[10px] text-muted-foreground flex items-center gap-0.5">
                             <TrendingUp className="w-2.5 h-2.5 shrink-0" />
-                            £{spend.toFixed(0)} this year
+                            {spend > 0 ? `£${spend.toFixed(0)} / 12 months` : "No spend yet"}
                           </p>
-                        );
-                      }
-                      return null;
+                          {breakdown && <p className="text-[9px] text-muted-foreground/70 mt-0.5">{breakdown}</p>}
+                        </div>
+                      );
                     })()}
                   </button>
                 );
@@ -1246,10 +1253,18 @@ function WardrobeStep({ items, employees, lastSizes, savedSizes, sizesMap, sleev
           <p className="font-semibold text-sm">{recipientName}</p>
           {selectedEmployee?.role_name && <p className="text-[11px] text-muted-foreground">{selectedEmployee.role_name}</p>}
         </div>
-        {selectedEmployee && parseFloat(selectedEmployee.spend_12m ?? "0") > 0 && (
+        {selectedEmployee && (
           <div className="text-right shrink-0 mr-2">
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide">12-month spend</p>
-            <p className="text-sm font-semibold text-foreground">{formatCurrency(parseFloat(selectedEmployee.spend_12m))}</p>
+            <p className="text-sm font-semibold text-foreground">
+              {formatCurrency(parseFloat(selectedEmployee.spend_12m ?? "0"))}
+            </p>
+            {parseFloat(selectedEmployee.stock_12m ?? "0") > 0 && (
+              <p className="text-[9px] text-muted-foreground/70 leading-tight">
+                {formatCurrency(parseFloat(selectedEmployee.orders_12m ?? "0"))} ordered
+                {" · "}{formatCurrency(parseFloat(selectedEmployee.stock_12m))} stores
+              </p>
+            )}
           </div>
         )}
         <span className="text-xs text-muted-foreground shrink-0">Change</span>
@@ -1970,7 +1985,7 @@ const SHIPPING_OPTIONS = [
   },
 ] as const;
 
-function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false, disabled = false, defaultShippingOption }: {
+function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAddMore, sizesMap = {}, variantImagesMap = {}, fromQuote = false, disabled = false, defaultShippingOption, openPoBlocked = false, onOpenPoBlock, onOpenPoReplaced, employeeSpendMap }: {
   basket: OrderItem[];
   setBasket: React.Dispatch<React.SetStateAction<OrderItem[]>>;
   onSubmit: (data: { requiredDate: string; notes: string; shippingOption: string; shippingCost: number; poNumber: string; paymentMethodId?: string | null; attachments: Array<{ name: string; objectPath: string }>; claimSelectExtra?: boolean; addToStores?: boolean }) => void;
@@ -1982,6 +1997,12 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   fromQuote?: boolean;
   disabled?: boolean;
   defaultShippingOption?: string | null;
+  /** Set to true by the parent when the server returns open_po_insufficient */
+  openPoBlocked?: boolean;
+  onOpenPoBlock?: () => void;
+  onOpenPoReplaced?: (newPoNumber: string) => void;
+  /** Rolling 12-month spend per employee (orders + store issues) — shown above the items table */
+  employeeSpendMap?: Record<number, { name: string; spend_12m: number; orders_12m: number; stock_12m: number }>;
 }) {
   const { toast } = useToast();
   const [requiredDate, setRequiredDate] = useState(() => {
@@ -2010,6 +2031,29 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
   const giftDialogShownRef = useRef(false);
   const pendingSubmitRef = useRef<Parameters<typeof onSubmit>[0] | null>(null);
   const [addToStores, setAddToStores] = useState(true);
+
+  // ── Open PO ────────────────────────────────────────────────────────────────
+  const queryClientReview = useQueryClient();
+  const { data: openPo } = useQuery<OpenPo | null>({
+    queryKey: ["portal-open-po"],
+    queryFn: () => apiFetch("/portal/open-po"),
+    staleTime: 30_000,
+  });
+  const [localOpenPoBlocked, setLocalOpenPoBlocked] = useState(false);
+  // Sync with parent-level blocked signal (server rejection)
+  React.useEffect(() => {
+    if (openPoBlocked) setLocalOpenPoBlocked(true);
+  }, [openPoBlocked]);
+  const isBlocked = localOpenPoBlocked || openPoBlocked;
+
+  // Pre-fill poNumber from open PO (once, when data arrives)
+  const openPoInitRef = useRef(false);
+  React.useEffect(() => {
+    if (openPo && !openPoInitRef.current) {
+      openPoInitRef.current = true;
+      setPoNumber(openPo.poNumber);
+    }
+  }, [openPo]);
 
   const { data: selectExtraData } = useQuery<{
     offer: { id: number; productName: string; description: string | null; productUrl: string | null; quantity: number; minSpend: number; title: string } | null;
@@ -2148,7 +2192,42 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
           </Button>
         )}
       </div>
-      <p className="text-muted-foreground text-sm mb-6">Check everything looks right before submitting.</p>
+      <p className="text-muted-foreground text-sm mb-4">Check everything looks right before submitting.</p>
+
+      {/* Per-employee rolling 12-month spend strip */}
+      {employeeSpendMap && (() => {
+        const empIds = [...new Set(
+          basket.filter(i => i.recipientEmployeeId != null).map(i => i.recipientEmployeeId!)
+        )].filter(id => employeeSpendMap[id] != null);
+        if (empIds.length === 0) return null;
+        return (
+          <div className="flex flex-wrap gap-2 mb-5">
+            {empIds.map(empId => {
+              const emp = employeeSpendMap[empId];
+              const hasStore = emp.stock_12m > 0;
+              return (
+                <div key={empId} className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                    {emp.name.split(" ").map((n: string) => n[0]).filter(Boolean).slice(0, 2).join("").toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-xs leading-tight">{emp.name}</p>
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <TrendingUp className="w-2.5 h-2.5 shrink-0" />
+                      {formatCurrency(emp.spend_12m)} over 12 months
+                      {hasStore && (
+                        <span className="opacity-60">
+                          &nbsp;({formatCurrency(emp.orders_12m)} ordered · {formatCurrency(emp.stock_12m)} stores)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       <Card className="mb-5">
         <CardContent className="p-0">
@@ -2433,16 +2512,41 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             onChange={e => setRequiredDate(e.target.value)}
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="po-number">Purchase order number <span className="text-muted-foreground font-normal">(optional — can be added later)</span></Label>
-          <Input
-            id="po-number"
-            value={poNumber}
-            onChange={e => setPoNumber(e.target.value)}
-            placeholder="e.g. PO-2026-0042"
-            className="font-mono"
-          />
-        </div>
+        {/* PO number — shows banner when open PO active, manual input otherwise */}
+        {(openPo || isBlocked) ? (
+          <div className="sm:col-span-2">
+            <OpenPoBanner
+              openPo={openPo ?? null}
+              orderGross={itemsTotal + shippingCost}
+              blocked={isBlocked}
+              onBlock={() => { onOpenPoBlock?.(); setLocalOpenPoBlocked(true); }}
+              onReplaced={(newPoNumber) => {
+                setPoNumber(newPoNumber);
+                openPoInitRef.current = true;
+                setLocalOpenPoBlocked(false);
+                onOpenPoReplaced?.(newPoNumber);
+              }}
+              onRetrySubmit={() => {
+                if (pendingSubmitRef.current) {
+                  const data = pendingSubmitRef.current;
+                  pendingSubmitRef.current = null;
+                  onSubmit(data);
+                }
+              }}
+            />
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label htmlFor="po-number">Purchase order number <span className="text-muted-foreground font-normal">(optional — can be added later)</span></Label>
+            <Input
+              id="po-number"
+              value={poNumber}
+              onChange={e => setPoNumber(e.target.value)}
+              placeholder="e.g. PO-2026-0042"
+              className="font-mono"
+            />
+          </div>
+        )}
         <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="notes">Notes for our team (optional)</Label>
           <Textarea id="notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any special instructions, delivery notes, etc." rows={3} />
@@ -2654,6 +2758,17 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
               claimSelectExtra: qualifiesForExtra && wantsSelectExtra,
               addToStores: portalRole === "manager" && hasStockItems ? addToStores : undefined,
             };
+            // Client-side open PO balance check (server enforces authoritatively)
+            if (openPo && !isBlocked) {
+              const orderGross = itemsTotal + shippingCost;
+              const todayCheck = new Date().toISOString().slice(0, 10);
+              if (orderGross > openPo.remainingValue + 0.005 || todayCheck > openPo.expiryDate) {
+                pendingSubmitRef.current = data;
+                setLocalOpenPoBlocked(true);
+                onOpenPoBlock?.();
+                return;
+              }
+            }
             if (qualifiesForExtra && !wantsSelectExtra) {
               pendingSubmitRef.current = data;
               setGiftDialogOpen(true);
@@ -2661,7 +2776,7 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
             }
             onSubmit(data);
           }}
-          disabled={submitting || basket.length === 0 || !shippingId || disabled}
+          disabled={submitting || basket.length === 0 || !shippingId || disabled || isBlocked}
           className="w-full sm:w-auto"
         >
           {submitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
@@ -2928,6 +3043,8 @@ export default function NewOrder() {
   const [mode, setMode] = useState<"wardrobe" | "catalogue" | "quote" | null>(savedHasItems ? (saved?.mode ?? null) : modeParam ?? null);
   const [basket, setBasket] = useState<OrderItem[]>(saved?.basket ?? []);
   const [wishlist, setWishlist] = useState<EnquiryItem[]>([]);
+  const [openPoBlocked, setOpenPoBlocked] = useState(false);
+
   const [confirmedOrder, setConfirmedOrder] = useState<{
     id?: number;
     orderNumber?: string;
@@ -3106,6 +3223,10 @@ export default function NewOrder() {
       setStep(3);
     },
     onError: (err: any) => {
+      if ((err as ApiError).body?.code === "open_po_insufficient" || err?.message === "open_po_insufficient") {
+        setOpenPoBlocked(true);
+        return;
+      }
       toast({ title: "Failed to submit order", description: err?.message ?? "Please try again.", variant: "destructive" });
     },
   });
@@ -3256,6 +3377,9 @@ export default function NewOrder() {
           fromQuote={true}
           disabled={quoteMismatch}
           defaultShippingOption={defaultShippingOption}
+          openPoBlocked={openPoBlocked}
+          onOpenPoBlock={() => setOpenPoBlocked(true)}
+          onOpenPoReplaced={(newPo) => { setOpenPoBlocked(false); queryClient.invalidateQueries({ queryKey: ["portal-open-po"] }); }}
         />
       )}
 
@@ -3268,6 +3392,20 @@ export default function NewOrder() {
           portalRole={portalRole}
           onAddMore={() => setStep(1)}
           defaultShippingOption={defaultShippingOption}
+          openPoBlocked={openPoBlocked}
+          onOpenPoBlock={() => setOpenPoBlocked(true)}
+          onOpenPoReplaced={(newPo) => { setOpenPoBlocked(false); queryClient.invalidateQueries({ queryKey: ["portal-open-po"] }); }}
+          employeeSpendMap={Object.fromEntries(
+            (wardrobe?.employees ?? []).map((e: any) => [
+              e.id,
+              {
+                name: [e.first_name, e.last_name].filter(Boolean).join(" "),
+                spend_12m:  parseFloat(e.spend_12m  ?? "0"),
+                orders_12m: parseFloat(e.orders_12m ?? "0"),
+                stock_12m:  parseFloat(e.stock_12m  ?? "0"),
+              },
+            ])
+          )}
         />
       )}
 

@@ -348,4 +348,87 @@ router.get("/customers/:id/invoice-summary", async (req, res): Promise<void> => 
   });
 });
 
+// ─── Open PO routes ───────────────────────────────────────────────────────────
+
+router.get("/customers/:id/open-pos", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid customer ID" }); return; }
+  const rows = await db.execute(sql`
+    SELECT id, po_number, total_value, remaining_value, expiry_date, status, created_at
+    FROM customer_open_pos
+    WHERE customer_id = ${id}
+    ORDER BY created_at DESC
+    LIMIT 50
+  `);
+  res.json((rows.rows as any[]).map(r => ({
+    id: r.id,
+    poNumber: r.po_number,
+    totalValue: parseFloat(r.total_value),
+    remainingValue: parseFloat(r.remaining_value),
+    usedValue: parseFloat(r.total_value) - parseFloat(r.remaining_value),
+    expiryDate: r.expiry_date,
+    status: r.status,
+    createdAt: r.created_at,
+  })));
+});
+
+router.get("/customers/:id/open-pos/active", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid customer ID" }); return; }
+  const today = new Date().toISOString().slice(0, 10);
+  await db.execute(sql`
+    UPDATE customer_open_pos SET status = 'expired', updated_at = now()
+    WHERE customer_id = ${id} AND status = 'active' AND expiry_date < ${today}
+  `);
+  const rows = await db.execute(sql`
+    SELECT id, po_number, total_value, remaining_value, expiry_date, status
+    FROM customer_open_pos
+    WHERE customer_id = ${id} AND status = 'active'
+    ORDER BY created_at DESC LIMIT 1
+  `);
+  const po = (rows.rows[0] as any) ?? null;
+  if (!po) { res.json(null); return; }
+  res.json({
+    id: po.id,
+    poNumber: po.po_number,
+    totalValue: parseFloat(po.total_value),
+    remainingValue: parseFloat(po.remaining_value),
+    usedValue: parseFloat(po.total_value) - parseFloat(po.remaining_value),
+    expiryDate: po.expiry_date,
+    status: po.status,
+  });
+});
+
+router.post("/customers/:id/open-pos", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid customer ID" }); return; }
+  const parsed = z.object({
+    poNumber: z.string().min(1).max(100),
+    totalValue: z.number().positive(),
+    expiryDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors.map(e => e.message).join("; ") }); return; }
+  const { poNumber, totalValue, expiryDate } = parsed.data;
+  // Deactivate any existing active PO for this customer
+  await db.execute(sql`
+    UPDATE customer_open_pos SET status = 'exhausted', updated_at = now()
+    WHERE customer_id = ${id} AND status = 'active'
+  `);
+  const result = await db.execute(sql`
+    INSERT INTO customer_open_pos (customer_id, po_number, total_value, remaining_value, expiry_date, status, created_at, updated_at)
+    VALUES (${id}, ${poNumber}, ${totalValue.toFixed(2)}, ${totalValue.toFixed(2)}, ${expiryDate}, 'active', now(), now())
+    RETURNING id, po_number, total_value, remaining_value, expiry_date, status
+  `);
+  const po = result.rows[0] as any;
+  res.status(201).json({
+    id: po.id,
+    poNumber: po.po_number,
+    totalValue: parseFloat(po.total_value),
+    remainingValue: parseFloat(po.remaining_value),
+    usedValue: 0,
+    expiryDate: po.expiry_date,
+    status: po.status,
+  });
+});
+
 export default router;

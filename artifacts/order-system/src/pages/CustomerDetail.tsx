@@ -4862,6 +4862,32 @@ export default function CustomerDetail() {
 
   const [overdueCollapsed, setOverdueCollapsed] = useState(true);
 
+  // ── Open PO ─────────────────────────────────────────────────────────────────
+  const [openPoModalOpen, setOpenPoModalOpen] = useState(false);
+  const [newPoNumber, setNewPoNumber] = useState("");
+  const [newPoExpiry, setNewPoExpiry] = useState("");
+  const [newPoValue, setNewPoValue] = useState("");
+
+  const { data: customerOpenPos, isLoading: openPosLoading } = useQuery<any[]>({
+    queryKey: ["customer-open-pos", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/open-pos`),
+    staleTime: 30_000,
+  });
+  const activePo = customerOpenPos?.find((p: any) => p.status === "active") ?? null;
+  const pastPos = customerOpenPos?.filter((p: any) => p.status !== "active") ?? [];
+
+  const addOpenPoMutation = useMutation({
+    mutationFn: (data: { poNumber: string; totalValue: number; expiryDate: string }) =>
+      apiFetch(`/customers/${customerId}/open-pos`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customer-open-pos", customerId] });
+      toast({ title: "Open PO added" });
+      setOpenPoModalOpen(false);
+      setNewPoNumber(""); setNewPoExpiry(""); setNewPoValue("");
+    },
+    onError: (err: any) => toast({ title: "Failed to add open PO", description: err?.message, variant: "destructive" }),
+  });
+
   const { data: invoiceSummary } = useQuery<{
     balanceDue: string;
     overdueTotal: string;
@@ -5310,6 +5336,103 @@ export default function CustomerDetail() {
             )}
           </div>
         )}
+
+        {/* ── Open Purchase Order ──────────────────────────────────────────── */}
+        <div className="rounded-lg border border-border/60 bg-card shadow-sm p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <FileText className="w-3.5 h-3.5 text-muted-foreground" /> Open Purchase Order
+            </h3>
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setOpenPoModalOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> Add Open PO
+            </Button>
+          </div>
+
+          {openPosLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>
+          ) : activePo ? (
+            <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="font-mono text-sm font-semibold">{activePo.poNumber}</span>
+                <Badge variant="outline" className="text-xs border-green-300 text-green-700 bg-green-50">Active</Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div><span className="text-muted-foreground">Total</span><div className="font-medium mt-0.5">{formatCurrency(activePo.totalValue)}</div></div>
+                <div><span className="text-muted-foreground">Used</span><div className="font-medium mt-0.5">{formatCurrency(activePo.usedValue)}</div></div>
+                <div>
+                  <span className="text-muted-foreground">Remaining</span>
+                  <div className={cn("font-medium mt-0.5", activePo.remainingValue / activePo.totalValue < 0.2 ? "text-amber-600" : "text-green-600")}>
+                    {formatCurrency(activePo.remainingValue)}
+                  </div>
+                </div>
+              </div>
+              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full", activePo.remainingValue / activePo.totalValue < 0.2 ? "bg-amber-400" : "bg-green-500")}
+                  style={{ width: `${Math.min(100, (activePo.usedValue / activePo.totalValue) * 100).toFixed(1)}%` }}
+                />
+              </div>
+              <div className="text-xs text-muted-foreground">Expires {activePo.expiryDate}</div>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground py-1">No active open PO for this customer.</div>
+          )}
+
+          {pastPos.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground py-1">
+                {pastPos.length} past PO{pastPos.length !== 1 ? "s" : ""}
+              </summary>
+              <div className="mt-2 space-y-1.5">
+                {pastPos.map((po: any) => (
+                  <div key={po.id} className="flex items-center justify-between px-3 py-2 rounded border bg-muted/20">
+                    <span className="font-mono font-medium">{po.poNumber}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">{formatCurrency(po.totalValue)}</span>
+                      <Badge variant="outline" className="text-[10px] px-1.5 capitalize">{po.status}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+
+        {/* Add Open PO modal */}
+        <Dialog open={openPoModalOpen} onOpenChange={(v) => { if (!v) { setOpenPoModalOpen(false); setNewPoNumber(""); setNewPoExpiry(""); setNewPoValue(""); } }}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader><DialogTitle>Add Open Purchase Order</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">An open PO allows this customer to submit portal orders against a pre-authorised spend limit. Any existing active PO will be superseded.</p>
+            <div className="grid gap-4 py-2">
+              <div className="grid gap-2">
+                <Label>PO number</Label>
+                <Input value={newPoNumber} onChange={e => setNewPoNumber(e.target.value)} placeholder="e.g. PO-2026-0043" className="font-mono" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Authorised value (£, ex VAT)</Label>
+                <Input type="number" min={1} step={1} value={newPoValue} onChange={e => setNewPoValue(e.target.value)} placeholder="e.g. 25000" />
+              </div>
+              <div className="grid gap-2">
+                <Label>Expiry date</Label>
+                <Input type="date" value={newPoExpiry} min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} onChange={e => setNewPoExpiry(e.target.value)} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpenPoModalOpen(false)}>Cancel</Button>
+              <Button
+                disabled={!newPoNumber || !newPoExpiry || !newPoValue || addOpenPoMutation.isPending}
+                onClick={() => {
+                  const val = parseFloat(newPoValue);
+                  if (isNaN(val) || val <= 0) { toast({ title: "Invalid value", variant: "destructive" }); return; }
+                  addOpenPoMutation.mutate({ poNumber: newPoNumber, totalValue: val, expiryDate: newPoExpiry });
+                }}
+              >
+                {addOpenPoMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Add open PO
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full justify-start overflow-x-auto h-auto flex-wrap gap-1 bg-muted/50 p-1">

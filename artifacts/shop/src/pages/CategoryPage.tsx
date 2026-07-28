@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function CategoryPage() {
   const { slug } = useParams();
   const { data: categories = [] } = useWcCategories();
-  const { data: products = [], isLoading } = useWcProducts({ category_slug: slug });
+  const { data: products = [], isLoading } = useWcProducts({ category_slug: slug, per_page: 100 });
 
   const categoryName = categories.find((c: any) => c.slug === slug)?.name || slug?.replace(/-/g, ' ').toUpperCase();
 

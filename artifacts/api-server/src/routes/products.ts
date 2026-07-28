@@ -945,6 +945,13 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   if ("guidanceStaffQuotes" in req.body) {
     updateData.guidanceStaffQuotes = Array.isArray(req.body.guidanceStaffQuotes) ? req.body.guidanceStaffQuotes : null;
   }
+  if ("brandingPositionsOverride" in req.body) {
+    // null = use global defaults, [] = no branding, [...] = custom list
+    updateData.brandingPositionsOverride =
+      req.body.brandingPositionsOverride === null ? null
+      : Array.isArray(req.body.brandingPositionsOverride) ? req.body.brandingPositionsOverride
+      : null;
+  }
   const [product] = await db
     .update(productsTable)
     .set(updateData)

@@ -58,6 +58,10 @@ export const productsTable = pgTable("products", {
     staffRole: string | null; staffImageUrl: string | null;
     draft: string; rewritten: string | null;
   }[]>(),
+  /** Per-product branding override: null = use global defaults, [] = no branding, [...] = custom list */
+  brandingPositionsOverride: jsonb("branding_positions_override").$type<{
+    id: string; name: string; surcharge: number; description?: string; notes_field?: boolean;
+  }[] | null>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

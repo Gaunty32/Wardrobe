@@ -4,6 +4,9 @@ export interface BrandingPosition {
   id: string;
   name: string;
   surcharge: number;
+  description?: string;
+  notes_field?: boolean;
+  notes?: string;
 }
 
 export interface CartItem {
