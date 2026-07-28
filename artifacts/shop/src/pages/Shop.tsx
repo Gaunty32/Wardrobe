@@ -1,7 +1,7 @@
 import { useWcProducts, useWcCategories } from '@/hooks/use-wc';
 import { CategorySidebar } from '@/components/CategorySidebar';
 import { ProductCard } from '@/components/ProductCard';
-import { Link } from 'wouter';
+import { Link, useSearch } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
 
 function CategoryTile({ category }: { category: any }) {
@@ -44,8 +44,8 @@ function CategoryTileSkeleton() {
 }
 
 export default function Shop() {
-  const searchParams = new URLSearchParams(window.location.search);
-  const search = searchParams.get('search') || '';
+  const searchString = useSearch();
+  const search = new URLSearchParams(searchString).get('search') || '';
 
   const { data: products = [], isLoading: productsLoading } = useWcProducts(
     search ? { search, per_page: 1000 } : { per_page: 0 }  // skip products when showing tiles
