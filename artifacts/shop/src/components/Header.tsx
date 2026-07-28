@@ -59,7 +59,7 @@ export function Header() {
               placeholder="Search for products"
               className="w-full border border-gray-300 px-4 py-2 focus:outline-none focus:border-primary"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={handleChange}
             />
             <button type="submit" className="absolute right-0 top-0 bottom-0 px-4 bg-primary text-white hover:bg-primary/90 transition-colors">
               <Search className="w-5 h-5" />

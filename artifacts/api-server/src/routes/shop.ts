@@ -84,9 +84,9 @@ router.get("/shop/categories", async (_req, res): Promise<void> => {
     WHERE
       COALESCE(is_archived, false) = false
       AND COALESCE(is_service, false) = false
+      AND woo_commerce_id IS NOT NULL
       AND category IS NOT NULL
       AND TRIM(category) <> ''
-      AND COALESCE(woo_status, 'publish') = 'publish'
     GROUP BY TRIM(category)
     ORDER BY count DESC, name
   `);
@@ -562,7 +562,7 @@ router.get("/shop/wc/products", async (req, res): Promise<void> => {
     const catSlug = String(req.query.category_slug ?? "").trim();
 
     // Build WHERE clause
-    const conditions: string[] = ["p.is_archived = false", "p.is_service = false"];
+    const conditions: string[] = ["p.is_archived = false", "p.is_service = false", "p.woo_commerce_id IS NOT NULL"];
     const binds: any[] = [];
     let paramIdx = 1;
 
