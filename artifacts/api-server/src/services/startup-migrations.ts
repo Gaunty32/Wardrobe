@@ -2973,10 +2973,15 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   console.log("[startup] products.branding_positions_override ensured");
 
-  // ── customer_invoice_addresses.delivery_address_id column ─────────────────
+  // ── customer_delivery_addresses.invoice_address_id column ────────────────
+  await db.execute(sql`
+    ALTER TABLE customer_delivery_addresses
+    ADD COLUMN IF NOT EXISTS invoice_address_id INTEGER REFERENCES customer_invoice_addresses(id) ON DELETE SET NULL
+  `);
+  // Drop the old wrong-way column if it exists
   await db.execute(sql`
     ALTER TABLE customer_invoice_addresses
-    ADD COLUMN IF NOT EXISTS delivery_address_id INTEGER REFERENCES customer_delivery_addresses(id) ON DELETE SET NULL
+    DROP COLUMN IF EXISTS delivery_address_id
   `);
-  console.log("[startup] customer_invoice_addresses.delivery_address_id ensured");
+  console.log("[startup] customer_delivery_addresses.invoice_address_id ensured");
 }

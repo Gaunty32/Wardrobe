@@ -63,7 +63,6 @@ const invoiceAddressBody = z.object({
   city: z.string().optional().nullable(),
   postcode: z.string().optional().nullable(),
   billingEmail: z.string().optional().nullable(),
-  deliveryAddressId: z.number().int().positive().optional().nullable(),
   isDefault: z.boolean().optional().nullable(),
 });
 
@@ -71,43 +70,10 @@ router.get("/customers/:customerId/invoice-addresses", async (req, res): Promise
   const p = customerIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
-  const rows = await db.execute(sql`
-    SELECT
-      ia.*,
-      da.id          AS da_id,
-      da.label       AS da_label,
-      da.line1       AS da_line1,
-      da.line2       AS da_line2,
-      da.city        AS da_city,
-      da.postcode    AS da_postcode
-    FROM customer_invoice_addresses ia
-    LEFT JOIN customer_delivery_addresses da ON da.id = ia.delivery_address_id
-    WHERE ia.customer_id = ${p.data.customerId}
-    ORDER BY ia.created_at
-  `);
-  res.json((rows.rows as any[]).map(r => ({
-    id: r.id,
-    customerId: r.customer_id,
-    label: r.label,
-    name: r.name,
-    address: r.address,
-    line2: r.line2,
-    city: r.city,
-    postcode: r.postcode,
-    billingEmail: r.billing_email,
-    deliveryAddressId: r.delivery_address_id ?? null,
-    isDefault: r.is_default,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    deliveryAddress: r.da_id ? {
-      id: r.da_id,
-      label: r.da_label,
-      line1: r.da_line1,
-      line2: r.da_line2,
-      city: r.da_city,
-      postcode: r.da_postcode,
-    } : null,
-  })));
+  const rows = await db.select().from(customerInvoiceAddressesTable)
+    .where(eq(customerInvoiceAddressesTable.customerId, p.data.customerId))
+    .orderBy(customerInvoiceAddressesTable.createdAt);
+  res.json(rows);
 });
 
 router.post("/customers/:customerId/invoice-addresses", async (req, res): Promise<void> => {
@@ -155,16 +121,50 @@ const addressBody = z.object({
   country: z.string().optional().nullable(),
   isDefault: z.boolean().optional().nullable(),
   notes: z.string().optional().nullable(),
+  invoiceAddressId: z.number().int().positive().optional().nullable(),
 });
 
 router.get("/customers/:customerId/addresses", async (req, res): Promise<void> => {
   const p = customerIdParam.safeParse(req.params);
   if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
-  const rows = await db.select().from(customerDeliveryAddressesTable)
-    .where(eq(customerDeliveryAddressesTable.customerId, p.data.customerId))
-    .orderBy(customerDeliveryAddressesTable.createdAt);
-  res.json(rows);
+  const rows = await db.execute(sql`
+    SELECT
+      da.*,
+      ia.id        AS ia_id,
+      ia.label     AS ia_label,
+      ia.name      AS ia_name,
+      ia.address   AS ia_address,
+      ia.city      AS ia_city,
+      ia.postcode  AS ia_postcode
+    FROM customer_delivery_addresses da
+    LEFT JOIN customer_invoice_addresses ia ON ia.id = da.invoice_address_id
+    WHERE da.customer_id = ${p.data.customerId}
+    ORDER BY da.created_at
+  `);
+  res.json((rows.rows as any[]).map(r => ({
+    id: r.id,
+    customerId: r.customer_id,
+    label: r.label,
+    line1: r.line1,
+    line2: r.line2,
+    city: r.city,
+    postcode: r.postcode,
+    country: r.country,
+    isDefault: r.is_default,
+    notes: r.notes,
+    invoiceAddressId: r.invoice_address_id ?? null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    invoiceAddress: r.ia_id ? {
+      id: r.ia_id,
+      label: r.ia_label,
+      name: r.ia_name,
+      address: r.ia_address,
+      city: r.ia_city,
+      postcode: r.ia_postcode,
+    } : null,
+  })));
 });
 
 router.post("/customers/:customerId/addresses", async (req, res): Promise<void> => {
