@@ -1471,7 +1471,8 @@ export default function OrderDetail() {
         const waist = wardrobeItemSizes[id] ?? "";
         const sleeve = wardrobeItemSleeves[id] ?? "";
         const size = oneSize ? null : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist || null;
-        if (oneSize || size) lines.push({ wi, size, qty: wardrobeItemQtys[id] ?? 0 });
+        const qty = wardrobeItemQtys[id] ?? 0;
+        if ((oneSize || size) && qty > 0) lines.push({ wi, size, qty });
       }
     }
 
