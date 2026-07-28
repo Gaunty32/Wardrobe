@@ -11,6 +11,7 @@ export const customerInvoiceAddressesTable = pgTable("customer_invoice_addresses
   city: text("city"),
   postcode: text("postcode"),
   billingEmail: text("billing_email"),
+  deliveryAddressId: integer("delivery_address_id"),
   isDefault: boolean("is_default").default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

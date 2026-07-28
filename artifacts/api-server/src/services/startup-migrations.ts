@@ -2972,4 +2972,11 @@ export async function refreshProductIssues(): Promise<void> {
     ADD COLUMN IF NOT EXISTS branding_positions_override JSONB
   `);
   console.log("[startup] products.branding_positions_override ensured");
+
+  // ── customer_invoice_addresses.delivery_address_id column ─────────────────
+  await db.execute(sql`
+    ALTER TABLE customer_invoice_addresses
+    ADD COLUMN IF NOT EXISTS delivery_address_id INTEGER REFERENCES customer_delivery_addresses(id) ON DELETE SET NULL
+  `);
+  console.log("[startup] customer_invoice_addresses.delivery_address_id ensured");
 }

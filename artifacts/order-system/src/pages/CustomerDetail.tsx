@@ -198,9 +198,13 @@ function InvoiceAddressesTab({ customerId, customer }: { customerId: number; cus
     queryKey: ["customer", customerId, "invoice-addresses"],
     queryFn: () => apiFetch(`/customers/${customerId}/invoice-addresses`),
   });
+  const { data: deliveryAddresses = [] } = useQuery<any[]>({
+    queryKey: ["customer", customerId, "addresses"],
+    queryFn: () => apiFetch(`/customers/${customerId}/addresses`),
+  });
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const blank = { label: "", name: "", address: "", line2: "", city: "", postcode: "", billingEmail: "" };
+  const blank = { label: "", name: "", address: "", line2: "", city: "", postcode: "", billingEmail: "", deliveryAddressId: null as number | null };
   const [form, setForm] = useState(blank);
 
   const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "invoice-addresses"] });
@@ -219,12 +223,12 @@ function InvoiceAddressesTab({ customerId, customer }: { customerId: number; cus
   });
 
   const openAdd = () => {
-    setForm({ label: "", name: customer?.invoiceName || customer?.name || "", address: customer?.invoiceAddress || customer?.address || "", line2: "", city: customer?.invoiceCity || customer?.city || "", postcode: customer?.invoicePostcode || customer?.postcode || "", billingEmail: customer?.billingEmail || customer?.email || "" });
+    setForm({ label: "", name: customer?.invoiceName || customer?.name || "", address: customer?.invoiceAddress || customer?.address || "", line2: "", city: customer?.invoiceCity || customer?.city || "", postcode: customer?.invoicePostcode || customer?.postcode || "", billingEmail: customer?.billingEmail || customer?.email || "", deliveryAddressId: null });
     setEditing(null);
     setOpen(true);
   };
   const openEdit = (a: any) => {
-    setForm({ label: a.label || "", name: a.name || "", address: a.address || "", line2: a.line2 || "", city: a.city || "", postcode: a.postcode || "", billingEmail: a.billingEmail || "" });
+    setForm({ label: a.label || "", name: a.name || "", address: a.address || "", line2: a.line2 || "", city: a.city || "", postcode: a.postcode || "", billingEmail: a.billingEmail || "", deliveryAddressId: a.deliveryAddressId ?? null });
     setEditing(a);
     setOpen(true);
   };
@@ -241,8 +245,9 @@ function InvoiceAddressesTab({ customerId, customer }: { customerId: number; cus
             <TableHeader><TableRow className="hover:bg-transparent">
               <TableHead>Label</TableHead>
               <TableHead>Invoice Name</TableHead>
-              <TableHead>Address</TableHead>
-              <TableHead className="hidden md:table-cell">Billing Email</TableHead>
+              <TableHead>Invoice Address</TableHead>
+              <TableHead className="hidden md:table-cell">Delivery Address</TableHead>
+              <TableHead className="hidden lg:table-cell">Billing Email</TableHead>
               <TableHead className="w-20 text-right">Actions</TableHead>
             </TableRow></TableHeader>
             <TableBody>
@@ -251,7 +256,16 @@ function InvoiceAddressesTab({ customerId, customer }: { customerId: number; cus
                   <TableCell className="font-medium">{a.label || '—'}</TableCell>
                   <TableCell className="text-sm">{a.name || '—'}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{[a.address, a.city, a.postcode].filter(Boolean).join(', ') || '—'}</TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{a.billingEmail || '—'}</TableCell>
+                  <TableCell className="hidden md:table-cell text-sm">
+                    {a.deliveryAddress
+                      ? <span className="flex items-center gap-1.5">
+                          <MapPin className="w-3 h-3 text-primary shrink-0" />
+                          <span className="text-foreground font-medium">{a.deliveryAddress.label || [a.deliveryAddress.line1, a.deliveryAddress.city].filter(Boolean).join(', ')}</span>
+                          <span className="text-muted-foreground hidden xl:inline">— {[a.deliveryAddress.line1, a.deliveryAddress.city, a.deliveryAddress.postcode].filter(Boolean).join(', ')}</span>
+                        </span>
+                      : <span className="text-muted-foreground/40 italic text-xs">Not set</span>}
+                  </TableCell>
+                  <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{a.billingEmail || '—'}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(a)}><Edit2 className="w-3 h-3" /></Button>
@@ -281,6 +295,24 @@ function InvoiceAddressesTab({ customerId, customer }: { customerId: number; cus
             </div>
             <div className="grid gap-2"><Label>Billing Email</Label>
               <Input type="email" value={form.billingEmail} onChange={e => setForm({ ...form, billingEmail: e.target.value })} placeholder="accounts@company.com" /></div>
+            <div className="grid gap-2">
+              <Label>Delivery Address</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                value={form.deliveryAddressId != null ? String(form.deliveryAddressId) : ""}
+                onChange={e => setForm({ ...form, deliveryAddressId: e.target.value ? Number(e.target.value) : null })}
+              >
+                <option value="">— None —</option>
+                {(deliveryAddresses as any[]).map((da: any) => (
+                  <option key={da.id} value={da.id}>
+                    {da.label ? `${da.label} — ` : ''}{[da.line1, da.city, da.postcode].filter(Boolean).join(', ')}
+                  </option>
+                ))}
+              </select>
+              {(deliveryAddresses as any[]).length === 0 && (
+                <p className="text-xs text-muted-foreground">No delivery addresses set up yet. Add them in the Delivery Addresses tab first.</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
