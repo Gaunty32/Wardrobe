@@ -174,3 +174,7 @@ Generated React Query hooks and fetch client from the OpenAPI spec.
 ### `scripts` (`@workspace/scripts`)
 
 Utility scripts package.
+
+## User preferences
+
+- **Shop (`artifacts/shop`) — mobile-first**: all shop UI work should be designed and optimised for mobile view first. Desktop is secondary.
