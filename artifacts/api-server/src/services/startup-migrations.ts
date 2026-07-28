@@ -2385,24 +2385,37 @@ export async function refreshProductIssues(): Promise<void> {
   const promoted = (servicePromoResult as any).rowCount ?? 0;
   if (promoted > 0) console.log("[startup] Promoted " + promoted + " service-only confirmed order(s) to shipped");
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS chat_message_reads (
-      id SERIAL PRIMARY KEY,
-      message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
-      user_name TEXT NOT NULL,
-      read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(message_id, user_name)
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_message_reads_user_idx ON chat_message_reads(user_name)`);
-  console.log("[startup] chat_message_reads table ensured");
+  // chat_message_reads — only relevant if the chat_messages table exists
+  {
+    const chatExists = await db.execute(sql`
+      SELECT 1 FROM pg_tables WHERE tablename = 'chat_messages' LIMIT 1
+    `);
+    if ((chatExists.rows as any[]).length > 0) {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS chat_message_reads (
+          id SERIAL PRIMARY KEY,
+          message_id INTEGER NOT NULL REFERENCES chat_messages(id) ON DELETE CASCADE,
+          user_name TEXT NOT NULL,
+          read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE(message_id, user_name)
+        )
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_message_reads_user_idx ON chat_message_reads(user_name)`);
+      console.log("[startup] chat_message_reads table ensured");
+    }
+  }
 
-  // Direct-message support: a stable, sorted, pipe-joined key of every participant's
-  // name (including the creator) so that re-opening a DM with the same person/group
-  // reuses the existing conversation instead of spawning a duplicate every time.
-  await db.execute(sql`ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS participants_key TEXT`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_conversations_participants_key_idx ON chat_conversations(type, participants_key)`);
-  console.log("[startup] chat_conversations.participants_key ensured (direct messages)");
+  // chat_conversations.participants_key — only if table exists
+  {
+    const convExists = await db.execute(sql`
+      SELECT 1 FROM pg_tables WHERE tablename = 'chat_conversations' LIMIT 1
+    `);
+    if ((convExists.rows as any[]).length > 0) {
+      await db.execute(sql`ALTER TABLE chat_conversations ADD COLUMN IF NOT EXISTS participants_key TEXT`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS chat_conversations_participants_key_idx ON chat_conversations(type, participants_key)`);
+      console.log("[startup] chat_conversations.participants_key ensured (direct messages)");
+    }
+  }
 
   // Safety Net G: credit process_stock.stock_quantity for delivered PO lines where the
   // per-item receive path was used (which previously skipped the process stock credit).
@@ -2781,5 +2794,58 @@ export async function refreshProductIssues(): Promise<void> {
   const fixedCount = (bundleTotalFix as any).rowCount ?? 0;
   if (fixedCount > 0) {
     console.log(`[startup] Corrected bundle-inflated order totals for ${fixedCount} order(s)`);
+  }
+
+  // ── Deduplicate products by SKU then enforce uniqueness ───────────────────
+  // For each set of duplicate SKUs, keep the product with the most associated
+  // data (variants + order items). Re-point any order_items from the losers to
+  // the winner before deleting them, so no history is lost.
+  const dupSkus = await db.execute(sql`
+    SELECT sku FROM products
+    WHERE sku IS NOT NULL
+    GROUP BY sku HAVING COUNT(*) > 1
+  `);
+  for (const row of dupSkus.rows as { sku: string }[]) {
+    // Rank candidates: most variants + order items wins; on tie keep oldest (lowest id)
+    const candidates = await db.execute(sql`
+      SELECT p.id,
+             COUNT(DISTINCT pv.id)  AS variant_count,
+             COUNT(DISTINCT oi.id)  AS order_item_count
+      FROM products p
+      LEFT JOIN product_variants pv ON pv.product_id = p.id
+      LEFT JOIN order_items      oi ON oi.product_id = p.id
+      WHERE p.sku = ${row.sku}
+      GROUP BY p.id
+      ORDER BY (COUNT(DISTINCT pv.id) + COUNT(DISTINCT oi.id)) DESC, p.id ASC
+    `);
+    const [winner, ...losers] = candidates.rows as { id: number }[];
+    for (const loser of losers) {
+      // Re-point order items so nothing is orphaned
+      await db.execute(sql`
+        UPDATE order_items SET product_id = ${winner.id}
+        WHERE product_id = ${loser.id}
+      `);
+      // Re-point product variants
+      await db.execute(sql`
+        UPDATE product_variants SET product_id = ${winner.id}
+        WHERE product_id = ${loser.id}
+      `);
+      await db.execute(sql`DELETE FROM products WHERE id = ${loser.id}`);
+      console.log(`[startup] Removed duplicate product id=${loser.id} (sku=${row.sku}), kept id=${winner.id}`);
+    }
+  }
+
+  // Add unique constraint on products.sku (only non-null values)
+  const skuConstraintExists = await db.execute(sql`
+    SELECT 1 FROM pg_indexes
+    WHERE tablename = 'products' AND indexname = 'products_sku_unique'
+  `);
+  if ((skuConstraintExists.rows as any[]).length === 0) {
+    await db.execute(sql`
+      CREATE UNIQUE INDEX products_sku_unique
+      ON products (sku)
+      WHERE sku IS NOT NULL
+    `);
+    console.log("[startup] Added unique index on products.sku");
   }
 }

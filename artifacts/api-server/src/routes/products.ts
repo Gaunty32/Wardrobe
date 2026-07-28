@@ -261,6 +261,15 @@ router.post("/products", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
+  // Enforce SKU uniqueness before insert to return a clear error
+  if (parsed.data.sku) {
+    const existing = await db.execute(sql`SELECT id, name FROM products WHERE sku = ${parsed.data.sku} AND is_archived = false LIMIT 1`);
+    if ((existing.rows as any[]).length > 0) {
+      const clash = existing.rows[0] as { id: number; name: string };
+      res.status(409).json({ error: `SKU "${parsed.data.sku}" is already used by "${clash.name}" (product #${clash.id}). Please choose a different SKU.` });
+      return;
+    }
+  }
   const category = typeof req.body.category === "string" ? req.body.category.trim() || null : null;
   const customerId = req.body.customerId != null ? Number(req.body.customerId) || null : null;
   const isBespoke = customerId != null ? true : (req.body.isBespoke === true);
@@ -864,6 +873,19 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
+  }
+  // Enforce SKU uniqueness when SKU is being changed
+  if (parsed.data.sku !== undefined && parsed.data.sku !== null) {
+    const existing = await db.execute(sql`
+      SELECT id, name FROM products
+      WHERE sku = ${parsed.data.sku} AND id <> ${params.data.id} AND is_archived = false
+      LIMIT 1
+    `);
+    if ((existing.rows as any[]).length > 0) {
+      const clash = existing.rows[0] as { id: number; name: string };
+      res.status(409).json({ error: `SKU "${parsed.data.sku}" is already used by "${clash.name}" (product #${clash.id}). Please choose a different SKU.` });
+      return;
+    }
   }
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
   if (parsed.data.unitPrice !== undefined) {
