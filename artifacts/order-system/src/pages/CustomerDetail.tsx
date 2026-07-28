@@ -2340,6 +2340,22 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
   const existingEmails = new Set((portalUsers ?? []).map((u: any) => u.email));
   const suggestedEmployees = employees.filter(e => e.email && !existingEmails.has(e.email));
 
+  // Combined recipient list for the invite dialog:
+  // existing portal users first (so you can resend), then employees not yet invited
+  const inviteRecipientOptions: Array<{ value: string; name: string; email: string; isPortalUser?: boolean }> = [
+    ...(portalUsers ?? []).map((u: any) => ({
+      value: `portal:${u.id}`,
+      name: u.name || u.email,
+      email: u.email,
+      isPortalUser: true,
+    })),
+    ...suggestedEmployees.map((e: any) => ({
+      value: `emp:${e.id}`,
+      name: e.name,
+      email: e.email,
+    })),
+  ];
+
   const [defaultShipping, setDefaultShipping] = useState<string>("");
   useEffect(() => {
     setDefaultShipping(customerDetail?.defaultShippingOption ?? "");
@@ -2866,7 +2882,7 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
               </Button>
               <div className="grid gap-2">
                 <Label>Recipient *</Label>
-                {suggestedEmployees.length > 0 ? (
+                {inviteRecipientOptions.length > 0 ? (
                   <Select
                     value={inviteSelection}
                     onValueChange={val => {
@@ -2874,20 +2890,20 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                       if (val === "other") {
                         setInviteEmail("");
                       } else {
-                        const emp = suggestedEmployees.find((e: any) => String(e.id) === val);
-                        setInviteEmail(emp?.email ?? "");
+                        const opt = inviteRecipientOptions.find(o => o.value === val);
+                        setInviteEmail(opt?.email ?? "");
                       }
                     }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select an employee…" />
+                      <SelectValue placeholder="Select a recipient…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {suggestedEmployees.map((emp: any) => (
-                        <SelectItem key={emp.id} value={String(emp.id)}>
+                      {inviteRecipientOptions.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>
                           <div className="flex items-center gap-2">
-                            <span className="font-medium">{emp.name}</span>
-                            {emp.email && <span className="text-muted-foreground text-xs">{emp.email.toLowerCase()}</span>}
+                            <span className="font-medium">{opt.name}</span>
+                            {opt.email && <span className="text-muted-foreground text-xs">{opt.email.toLowerCase()}</span>}
                           </div>
                         </SelectItem>
                       ))}

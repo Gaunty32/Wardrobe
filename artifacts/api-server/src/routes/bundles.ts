@@ -194,6 +194,8 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
       componentId: z.number().int(),
       colour: z.string().optional().nullable(),
       size: z.string().optional().nullable(),
+      finishId: z.number().int().optional().nullable(),
+      finishName: z.string().optional().nullable(),
     })).optional(),
   }).safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
@@ -252,6 +254,8 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
       const override     = componentOverrides.find((o) => o.componentId === comp.id);
       const colour       = override?.colour ?? null;
       const size         = override?.size ?? null;
+      const finishId     = override?.finishId   !== undefined ? override.finishId   : (comp.finish_id   ?? null);
+      const finishName   = override?.finishName !== undefined ? override.finishName : (comp.finish_name ?? null);
 
       let purchaseRequired = false;
       let purchaseQuantity: number | null = null;
@@ -298,7 +302,7 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
           (${orderId}, ${comp.product_id ?? null}, ${comp.resolved_name}, ${compQty},
            0, 0, ${compVat},
            ${purchaseRequired}, ${purchaseQuantity}, ${stockStatus}, ${bundleRef}, false, ${bundleId}, ${recipType},
-           ${comp.finish_id ?? null}, ${comp.finish_name ?? null}, ${colour}, ${size}, ${wearerName ?? null})
+           ${finishId}, ${finishName}, ${colour}, ${size}, ${wearerName ?? null})
       `);
     }
 

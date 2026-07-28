@@ -363,7 +363,7 @@ export default function OrderDetail() {
   // Must be declared BEFORE the bundleDetails useQuery that references addBundleId
   const [addBundleId, setAddBundleId] = useState<number | null>(null);
   const [addBundleWearerName, setAddBundleWearerName] = useState("");
-  const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string }>>({});
+  const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string; finishId?: number | null; finishName?: string | null }>>({});
 
   const { data: bundleDetails } = useQuery<{
     id: number; name: string;
@@ -4737,7 +4737,7 @@ export default function OrderDetail() {
                             <Label className="text-xs text-muted-foreground">Colour</Label>
                             <Select
                               value={selectedColour}
-                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { colour: v, size: "" } }))}
+                              onValueChange={v => setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], colour: v, size: "" } }))}
                             >
                               <SelectTrigger className="h-8 text-sm">
                                 <SelectValue placeholder="— select —" />
@@ -4763,6 +4763,30 @@ export default function OrderDetail() {
                             </Select>
                           </div>
                         </div>
+                        {customerFinishes && customerFinishes.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Finish</Label>
+                            <Select
+                              value={compOverrides[comp.id]?.finishId != null ? String(compOverrides[comp.id].finishId) : (comp.finish_id != null ? String(comp.finish_id) : "__none__")}
+                              onValueChange={v => {
+                                if (v === "__none__") {
+                                  setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], finishId: null, finishName: null } }));
+                                } else {
+                                  const f = customerFinishes.find((f: any) => String(f.id) === v);
+                                  setCompOverrides(prev => ({ ...prev, [comp.id]: { ...prev[comp.id], finishId: f?.id ?? null, finishName: f?.name ?? null } }));
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-sm">
+                                <SelectValue placeholder="— no finish —" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__"><span className="text-muted-foreground">— no finish —</span></SelectItem>
+                                {customerFinishes.map((f: any) => <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -4778,8 +4802,8 @@ export default function OrderDetail() {
                 bundleId: addBundleId,
                 wearerName: addBundleWearerName || undefined,
                 componentOverrides: Object.entries(compOverrides)
-                  .filter(([, ov]) => ov.colour || ov.size)
-                  .map(([id, ov]) => ({ componentId: parseInt(id), colour: ov.colour || undefined, size: ov.size || undefined })),
+                  .filter(([, ov]) => ov.colour || ov.size || ov.finishId != null)
+                  .map(([id, ov]) => ({ componentId: parseInt(id), colour: ov.colour || undefined, size: ov.size || undefined, finishId: ov.finishId ?? undefined, finishName: ov.finishName ?? undefined })),
               })}
             >
               {addBundleMutation.isPending
