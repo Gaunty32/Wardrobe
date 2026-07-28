@@ -260,6 +260,14 @@ function useCustomerDeliveryAddresses(customerId: number | null) {
   });
 }
 
+function useCustomerInvoiceAddresses(customerId: number | null) {
+  return useQuery<Array<{ id: number; label: string | null; name: string | null; address: string | null; line2: string | null; city: string | null; postcode: string | null; billingEmail: string | null; isDefault: boolean | null }>>({
+    queryKey: ["customer-invoice-addresses", customerId],
+    queryFn: () => apiFetch(`/customers/${customerId}/invoice-addresses`),
+    enabled: customerId !== null && customerId > 0,
+  });
+}
+
 /** Returns the unit price for a given total quantity from a price-break table.
  *  Returns the price for the highest tier whose min qty is ≤ totalQty.
  *  Returns null if no tier matches (quantity below minimum). */
@@ -448,6 +456,7 @@ export default function OrderDetail() {
   const { data: customerFinishedItems } = useCustomerFinishedItems(customerId);
   const { data: wardrobeData } = useCustomerWardrobeData(customerId);
   const { data: customerDeliveryAddresses } = useCustomerDeliveryAddresses(customerId);
+  const { data: customerInvoiceAddresses } = useCustomerInvoiceAddresses(customerId);
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
   const [isAddBundleOpen, setIsAddBundleOpen] = useState(false);
@@ -527,6 +536,8 @@ export default function OrderDetail() {
 
   const [editingDeliveryAddress, setEditingDeliveryAddress] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState<string>("none");
+  const [editingInvoiceAddress, setEditingInvoiceAddress] = useState(false);
+  const [selectedInvoiceAddressId, setSelectedInvoiceAddressId] = useState<string>("none");
 
   // Initialise local dropdown value whenever the edit panel opens
   useEffect(() => {
@@ -534,6 +545,31 @@ export default function OrderDetail() {
       setSelectedAddressId((order as any)?.deliveryAddressId?.toString() ?? "none");
     }
   }, [editingDeliveryAddress]);
+
+  useEffect(() => {
+    if (editingInvoiceAddress) {
+      setSelectedInvoiceAddressId((order as any)?.invoiceAddressId?.toString() ?? "none");
+    }
+  }, [editingInvoiceAddress]);
+
+  const updateInvoiceAddressMutation = useMutation({
+    mutationFn: (addressId: number | null) =>
+      apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ invoiceAddressId: addressId }) }),
+    onMutate: (addressId) => {
+      queryClient.setQueryData(getGetOrderQueryKey(orderId), (old: any) =>
+        old ? { ...old, invoiceAddressId: addressId } : old
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Invoice address updated" });
+      setEditingInvoiceAddress(false);
+    },
+    onError: (e: Error) => {
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Error saving invoice address", description: e.message, variant: "destructive" });
+    },
+  });
 
   const updateDeliveryAddressMutation = useMutation({
     mutationFn: (addressId: number | null) =>
@@ -1231,7 +1267,7 @@ export default function OrderDetail() {
   // Add a single wardrobe item directly (without closing the dialog so staff can add more)
   const handleWardrobeItemAdd = (fi: CustomerFinishedItem) => {
     const size = wardrobeItemSizes[fi.id] ?? "";
-    const qty = wardrobeItemQtys[fi.id] ?? 1;
+    const qty = wardrobeItemQtys[fi.id] ?? 0;
     // fi.unitPrice already includes extra process costs (set via calcPriceForFinish when wardrobe was configured).
     // Do NOT add getFiFinishExtra() again — that would double-charge for multi-process finishes.
     const effectivePrice = fi.specialPrice != null ? fi.specialPrice : fi.unitPrice;
@@ -1285,7 +1321,7 @@ export default function OrderDetail() {
     const effectiveSize = sizeOpts.length === 0
       ? ""
       : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist;
-    const qty = wardrobeItemQtys[id] ?? 1;
+    const qty = wardrobeItemQtys[id] ?? 0;
     // wi.unit_price already includes extra process costs (set by calcPriceForFinish when wardrobe was configured).
     // Do NOT add getWiFinishExtra() again — that would double-charge for multi-process finishes.
     const effectivePrice = wi.special_price != null
@@ -1407,7 +1443,7 @@ export default function OrderDetail() {
         const waist = wardrobeItemSizes[id] ?? "";
         const sleeve = wardrobeItemSleeves[id] ?? "";
         const size = oneSize ? null : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist || null;
-        if (oneSize || size) lines.push({ wi, size, qty: wardrobeItemQtys[id] ?? 1 });
+        if (oneSize || size) lines.push({ wi, size, qty: wardrobeItemQtys[id] ?? 0 });
       }
     }
 
@@ -2980,6 +3016,82 @@ export default function OrderDetail() {
               </CardContent>
             </Card>
 
+            {/* ── Invoice Address ── */}
+            {(customerInvoiceAddresses?.length ?? 0) > 0 && (
+            <Card className="shadow-sm border-border/50">
+              <CardHeader className="py-4 border-b border-border/40 bg-muted/10">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="font-display text-lg flex items-center">
+                    <FileText className="w-4 h-4 mr-2 text-muted-foreground" /> Invoice Address
+                  </CardTitle>
+                  {!editingInvoiceAddress && (
+                    <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditingInvoiceAddress(true)}>
+                      <Pencil className="w-3.5 h-3.5 text-muted-foreground" />
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="py-4 space-y-3">
+                {editingInvoiceAddress ? (
+                  <div className="flex items-center gap-2">
+                    <Select value={selectedInvoiceAddressId} onValueChange={setSelectedInvoiceAddressId}>
+                      <SelectTrigger className="text-sm flex-1"><SelectValue placeholder="Select invoice address…" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Use account default</SelectItem>
+                        {customerInvoiceAddresses?.map((a: any) => (
+                          <SelectItem key={a.id} value={a.id.toString()}>
+                            {a.label ? `${a.label} — ` : ""}{[a.name, a.city, a.postcode].filter(Boolean).join(", ")}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="icon" variant="default" className="h-8 w-8 shrink-0"
+                      disabled={updateInvoiceAddressMutation.isPending}
+                      onClick={() => {
+                        const id = selectedInvoiceAddressId === "none" ? null : parseInt(selectedInvoiceAddressId, 10);
+                        updateInvoiceAddressMutation.mutate(id);
+                      }}>
+                      {updateInvoiceAddressMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setEditingInvoiceAddress(false)}>
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                ) : null}
+                {(() => {
+                  const addrId = (order as any)?.invoiceAddressId as number | null | undefined;
+                  const ia = addrId ? customerInvoiceAddresses?.find((a: any) => a.id === addrId) : null;
+                  if (ia) {
+                    return (
+                      <div className="text-sm space-y-0.5 pt-1">
+                        {ia.label && <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{ia.label}</p>}
+                        {ia.name && <p className="font-medium text-foreground">{ia.name}</p>}
+                        {ia.address && <p className="text-muted-foreground">{ia.address}</p>}
+                        {ia.line2 && <p className="text-muted-foreground">{ia.line2}</p>}
+                        <p className="text-muted-foreground">{[ia.city, ia.postcode].filter(Boolean).join(", ")}</p>
+                        {ia.billingEmail && <p className="text-muted-foreground text-xs mt-1">{ia.billingEmail}</p>}
+                      </div>
+                    );
+                  }
+                  // No specific address set — show the default if one exists
+                  const def = customerInvoiceAddresses?.find((a: any) => a.isDefault) ?? customerInvoiceAddresses?.[0];
+                  if (def) {
+                    return (
+                      <div className="text-sm space-y-0.5 pt-1">
+                        {def.name && <p className="font-medium text-foreground">{def.name}</p>}
+                        {def.address && <p className="text-muted-foreground">{def.address}</p>}
+                        <p className="text-muted-foreground">{[def.city, def.postcode].filter(Boolean).join(", ")}</p>
+                        {def.billingEmail && <p className="text-muted-foreground text-xs mt-1">{def.billingEmail}</p>}
+                        <p className="text-[11px] text-amber-600 mt-1">Using account default — click edit to override for this order</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+              </CardContent>
+            </Card>
+            )}
+
             <AttentionOfCard
               orderId={orderId}
               current={
@@ -3817,7 +3929,7 @@ export default function OrderDetail() {
                             const isBulk = wardrobeBulkModes[id] ?? false;
                             const currentSize = wardrobeItemSizes[id] ?? "";
                             const currentSleeve = wardrobeItemSleeves[id] ?? "";
-                            const currentQty = wardrobeItemQtys[id] ?? 1;
+                            const currentQty = wardrobeItemQtys[id] ?? 0;
                             const bulkComboOpts = sleeveOpts.length > 0
                               ? sizeOpts.flatMap(s => sleeveOpts.map(sl => `${s}/${sl}`))
                               : sizeOpts;

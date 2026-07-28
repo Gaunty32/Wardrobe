@@ -2774,15 +2774,37 @@ export async function buildInvoiceDataForOrder(orderId: number): Promise<{
 
   if (order.customerId) {
     const [customer] = await db.select().from(customersTable).where(eq(customersTable.id, order.customerId));
-    // billingEmail overrides the general contact email for all invoice sends
-    customerEmail = customer?.billingEmail ?? customer?.email ?? null;
     contactFirstName = customer?.contactFirstName ?? null;
-    // Centralised invoicing: use group/official name + address when set
-    invoiceCustomerName = customer?.invoiceName ?? null;
-    customerAddress = customer?.invoiceAddress ?? customer?.address ?? null;
-    customerCity = customer?.invoiceCity ?? customer?.city ?? null;
-    customerPostcode = customer?.invoicePostcode ?? customer?.postcode ?? null;
     if (customer?.logoUrl) customerLogoDataUrl = await fetchLogoDataUrl(customer.logoUrl);
+
+    // Prefer an explicit invoice address record on the order; fall back to the
+    // customer's legacy single invoice fields; then fall back to main address.
+    const invoiceAddrId = (order as any).invoiceAddressId as number | null | undefined;
+    if (invoiceAddrId) {
+      const { customerInvoiceAddressesTable } = await import("@workspace/db");
+      const [ia] = await db.select().from(customerInvoiceAddressesTable).where(eq(customerInvoiceAddressesTable.id, invoiceAddrId));
+      if (ia) {
+        invoiceCustomerName = ia.name ?? customer?.invoiceName ?? null;
+        customerAddress     = ia.address ?? customer?.invoiceAddress ?? customer?.address ?? null;
+        customerCity        = ia.city ?? customer?.invoiceCity ?? customer?.city ?? null;
+        customerPostcode    = ia.postcode ?? customer?.invoicePostcode ?? customer?.postcode ?? null;
+        customerEmail       = ia.billingEmail ?? customer?.billingEmail ?? customer?.email ?? null;
+      } else {
+        invoiceCustomerName = customer?.invoiceName ?? null;
+        customerAddress     = customer?.invoiceAddress ?? customer?.address ?? null;
+        customerCity        = customer?.invoiceCity ?? customer?.city ?? null;
+        customerPostcode    = customer?.invoicePostcode ?? customer?.postcode ?? null;
+        customerEmail       = customer?.billingEmail ?? customer?.email ?? null;
+      }
+    } else {
+      // billingEmail overrides the general contact email for all invoice sends
+      customerEmail       = customer?.billingEmail ?? customer?.email ?? null;
+      // Centralised invoicing: use group/official name + address when set
+      invoiceCustomerName = customer?.invoiceName ?? null;
+      customerAddress     = customer?.invoiceAddress ?? customer?.address ?? null;
+      customerCity        = customer?.invoiceCity ?? customer?.city ?? null;
+      customerPostcode    = customer?.invoicePostcode ?? customer?.postcode ?? null;
+    }
   }
 
   // Compute per-address delivery groups when employees have distinct delivery addresses

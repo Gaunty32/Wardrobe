@@ -2796,6 +2796,42 @@ export async function refreshProductIssues(): Promise<void> {
     console.log(`[startup] Corrected bundle-inflated order totals for ${fixedCount} order(s)`);
   }
 
+  // ── Invoice addresses table ───────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS customer_invoice_addresses (
+      id            SERIAL PRIMARY KEY,
+      customer_id   INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      label         TEXT,
+      name          TEXT,
+      address       TEXT,
+      line2         TEXT,
+      city          TEXT,
+      postcode      TEXT,
+      billing_email TEXT,
+      is_default    BOOLEAN DEFAULT false,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  // Add invoice_address_id to orders
+  await db.execute(sql`
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS invoice_address_id INTEGER
+      REFERENCES customer_invoice_addresses(id) ON DELETE SET NULL
+  `);
+  // Migrate existing single invoice fields into per-customer rows (run once)
+  await db.execute(sql`
+    INSERT INTO customer_invoice_addresses (customer_id, label, name, address, city, postcode, billing_email, is_default)
+    SELECT c.id, 'Default',
+           c.invoice_name, c.invoice_address, c.invoice_city, c.invoice_postcode, c.billing_email,
+           true
+    FROM customers c
+    WHERE (c.invoice_name IS NOT NULL OR c.invoice_address IS NOT NULL)
+      AND NOT EXISTS (
+        SELECT 1 FROM customer_invoice_addresses ia WHERE ia.customer_id = c.id
+      )
+  `);
+  console.log("[startup] customer_invoice_addresses table ensured");
+
   // ── Deduplicate products by SKU then enforce uniqueness ───────────────────
   // For each set of duplicate SKUs, keep the product with the most associated
   // data (variants + order items). Re-point any order_items from the losers to

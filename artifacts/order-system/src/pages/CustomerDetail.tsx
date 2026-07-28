@@ -189,6 +189,109 @@ function AddressesTab({ customerId, customer }: { customerId: number; customer: 
   );
 }
 
+// ─── Invoice Addresses Tab ────────────────────────────────────────────────────
+
+function InvoiceAddressesTab({ customerId, customer }: { customerId: number; customer: any }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: addresses, isLoading } = useQuery<any[]>({
+    queryKey: ["customer", customerId, "invoice-addresses"],
+    queryFn: () => apiFetch(`/customers/${customerId}/invoice-addresses`),
+  });
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const blank = { label: "", name: "", address: "", line2: "", city: "", postcode: "", billingEmail: "" };
+  const [form, setForm] = useState(blank);
+
+  const inv = () => qc.invalidateQueries({ queryKey: ["customer", customerId, "invoice-addresses"] });
+
+  const save = useMutation({
+    mutationFn: (data: any) => editing
+      ? apiFetch(`/customers/${customerId}/invoice-addresses/${editing.id}`, { method: "PATCH", body: JSON.stringify(data) })
+      : apiFetch(`/customers/${customerId}/invoice-addresses`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { inv(); toast({ title: "Saved" }); setOpen(false); setEditing(null); },
+    onError: () => toast({ title: "Error", description: "Could not save invoice address", variant: "destructive" }),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => apiFetch(`/customers/${customerId}/invoice-addresses/${id}`, { method: "DELETE" }),
+    onSuccess: () => { inv(); toast({ title: "Deleted" }); },
+  });
+
+  const openAdd = () => {
+    setForm({ label: "", name: customer?.invoiceName || customer?.name || "", address: customer?.invoiceAddress || customer?.address || "", line2: "", city: customer?.invoiceCity || customer?.city || "", postcode: customer?.invoicePostcode || customer?.postcode || "", billingEmail: customer?.billingEmail || customer?.email || "" });
+    setEditing(null);
+    setOpen(true);
+  };
+  const openEdit = (a: any) => {
+    setForm({ label: a.label || "", name: a.name || "", address: a.address || "", line2: a.line2 || "", city: a.city || "", postcode: a.postcode || "", billingEmail: a.billingEmail || "" });
+    setEditing(a);
+    setOpen(true);
+  };
+
+  return (
+    <>
+      <div className="flex justify-end mb-4">
+        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Invoice Address</Button>
+      </div>
+      {isLoading ? <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
+        : !addresses?.length
+          ? <EmptyState icon={FileText} label="invoice addresses" onAdd={openAdd} />
+          : <SubTable>
+            <TableHeader><TableRow className="hover:bg-transparent">
+              <TableHead>Label</TableHead>
+              <TableHead>Invoice Name</TableHead>
+              <TableHead>Address</TableHead>
+              <TableHead className="hidden md:table-cell">Billing Email</TableHead>
+              <TableHead className="w-20 text-right">Actions</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {addresses.map((a: any) => (
+                <TableRow key={a.id} className="group hover:bg-muted/30">
+                  <TableCell className="font-medium">{a.label || '—'}</TableCell>
+                  <TableCell className="text-sm">{a.name || '—'}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{[a.address, a.city, a.postcode].filter(Boolean).join(', ') || '—'}</TableCell>
+                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{a.billingEmail || '—'}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" onClick={() => openEdit(a)}><Edit2 className="w-3 h-3" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => confirm("Delete this invoice address?") && del.mutate(a.id)}><Trash2 className="w-3 h-3" /></Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </SubTable>}
+
+      <Dialog open={open} onOpenChange={(v) => { if (!v) { setOpen(false); setEditing(null); } }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader><DialogTitle>{editing ? "Edit Invoice Address" : "Add Invoice Address"}</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2"><Label>Label (e.g. Accounts, Group Finance)</Label>
+              <Input value={form.label} onChange={e => setForm({ ...form, label: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Invoice Account Name</Label>
+              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Name as it should appear on invoice" /></div>
+            <div className="grid gap-2"><Label>Address Line 1</Label>
+              <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></div>
+            <div className="grid gap-2"><Label>Address Line 2</Label>
+              <Input value={form.line2} onChange={e => setForm({ ...form, line2: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2"><Label>City</Label><Input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} /></div>
+              <div className="grid gap-2"><Label>Postcode</Label><Input value={form.postcode} onChange={e => setForm({ ...form, postcode: e.target.value })} /></div>
+            </div>
+            <div className="grid gap-2"><Label>Billing Email</Label>
+              <Input type="email" value={form.billingEmail} onChange={e => setForm({ ...form, billingEmail: e.target.value })} placeholder="accounts@company.com" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setOpen(false); setEditing(null); }}>Cancel</Button>
+            <Button onClick={() => save.mutate(form)} disabled={save.isPending}>{save.isPending ? "Saving..." : "Save"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 // ─── Contacts Tab ─────────────────────────────────────────────────────────────
 
 function ContactsTab({ customerId, customer }: { customerId: number; customer: any }) {
@@ -5108,6 +5211,7 @@ export default function CustomerDetail() {
             <TabsTrigger value="teams" className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Teams</TabsTrigger>
             <TabsTrigger value="wardrobe" className="flex items-center gap-1.5"><ShoppingBag className="w-3.5 h-3.5" /> Wardrobe</TabsTrigger>
             <TabsTrigger value="addresses" className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5" /> Delivery Addresses</TabsTrigger>
+            <TabsTrigger value="invoice-addresses" className="flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Invoice Addresses</TabsTrigger>
             <TabsTrigger value="contacts" className="flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Contacts</TabsTrigger>
             <TabsTrigger value="orders" className="flex items-center gap-1.5"><History className="w-3.5 h-3.5" /> Order History</TabsTrigger>
             <TabsTrigger value="processes" className="flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> Processes</TabsTrigger>
@@ -5125,6 +5229,7 @@ export default function CustomerDetail() {
             <TabsContent value="teams" className="mt-0"><TeamsTab customerId={customerId} /></TabsContent>
             <TabsContent value="wardrobe" className="mt-0"><WardrobeTab customerId={customerId} /></TabsContent>
             <TabsContent value="addresses" className="mt-0"><AddressesTab customerId={customerId} customer={customer} /></TabsContent>
+            <TabsContent value="invoice-addresses" className="mt-0"><InvoiceAddressesTab customerId={customerId} customer={customer} /></TabsContent>
             <TabsContent value="contacts" className="mt-0"><ContactsTab customerId={customerId} customer={customer} /></TabsContent>
             <TabsContent value="orders" className="mt-0"><OrderHistoryTab customerId={customerId} /></TabsContent>
             <TabsContent value="processes" className="mt-0"><ProcessesTab customerId={customerId} /></TabsContent>

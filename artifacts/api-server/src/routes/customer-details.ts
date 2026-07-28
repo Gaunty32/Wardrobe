@@ -3,6 +3,7 @@ import { eq, and, sql, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
+  customerInvoiceAddressesTable,
   customerDeliveryAddressesTable,
   customerContactsTable,
   customerProcessesTable,
@@ -51,6 +52,62 @@ async function getCustomer(id: number) {
   const [c] = await db.select().from(customersTable).where(eq(customersTable.id, id));
   return c;
 }
+
+// ─── Invoice Addresses ───────────────────────────────────────────────────────
+
+const invoiceAddressBody = z.object({
+  label: z.string().optional().nullable(),
+  name: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
+  line2: z.string().optional().nullable(),
+  city: z.string().optional().nullable(),
+  postcode: z.string().optional().nullable(),
+  billingEmail: z.string().optional().nullable(),
+  isDefault: z.boolean().optional().nullable(),
+});
+
+router.get("/customers/:customerId/invoice-addresses", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const rows = await db.select().from(customerInvoiceAddressesTable)
+    .where(eq(customerInvoiceAddressesTable.customerId, p.data.customerId))
+    .orderBy(customerInvoiceAddressesTable.createdAt);
+  res.json(rows);
+});
+
+router.post("/customers/:customerId/invoice-addresses", async (req, res): Promise<void> => {
+  const p = customerIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
+  const body = invoiceAddressBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.insert(customerInvoiceAddressesTable).values({ ...body.data, customerId: p.data.customerId }).returning();
+  res.status(201).json(row);
+});
+
+router.patch("/customers/:customerId/invoice-addresses/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const body = invoiceAddressBody.safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+  const [row] = await db.update(customerInvoiceAddressesTable)
+    .set({ ...body.data, updatedAt: new Date() })
+    .where(and(eq(customerInvoiceAddressesTable.id, p.data.id), eq(customerInvoiceAddressesTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Invoice address not found" }); return; }
+  res.json(row);
+});
+
+router.delete("/customers/:customerId/invoice-addresses/:id", async (req, res): Promise<void> => {
+  const p = subIdParam.safeParse(req.params);
+  if (!p.success) { res.status(400).json({ error: p.error.message }); return; }
+  const [row] = await db.delete(customerInvoiceAddressesTable)
+    .where(and(eq(customerInvoiceAddressesTable.id, p.data.id), eq(customerInvoiceAddressesTable.customerId, p.data.customerId)))
+    .returning();
+  if (!row) { res.status(404).json({ error: "Invoice address not found" }); return; }
+  res.sendStatus(204);
+});
 
 // ─── Delivery Addresses ──────────────────────────────────────────────────────
 

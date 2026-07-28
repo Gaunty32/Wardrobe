@@ -18,6 +18,7 @@ export const ordersTable = pgTable("orders", {
   shippingMethod: text("shipping_method"),
   carriageAmount: numeric("carriage_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   deliveryAddressId: integer("delivery_address_id"),
+  invoiceAddressId: integer("invoice_address_id"),
   dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
   xeroInvoiceId: text("xero_invoice_id"),
   xeroInvoiceNumber: text("xero_invoice_number"),

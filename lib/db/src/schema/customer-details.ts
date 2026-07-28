@@ -1,6 +1,21 @@
 import { pgTable, text, serial, timestamp, integer, boolean, numeric } from "drizzle-orm/pg-core";
 import { customersTable } from "./customers";
 
+export const customerInvoiceAddressesTable = pgTable("customer_invoice_addresses", {
+  id: serial("id").primaryKey(),
+  customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
+  label: text("label"),
+  name: text("name"),
+  address: text("address"),
+  line2: text("line2"),
+  city: text("city"),
+  postcode: text("postcode"),
+  billingEmail: text("billing_email"),
+  isDefault: boolean("is_default").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 export const customerDeliveryAddressesTable = pgTable("customer_delivery_addresses", {
   id: serial("id").primaryKey(),
   customerId: integer("customer_id").notNull().references(() => customersTable.id, { onDelete: "cascade" }),
