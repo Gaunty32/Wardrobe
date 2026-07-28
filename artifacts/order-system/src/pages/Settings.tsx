@@ -1927,6 +1927,9 @@ export default function Settings() {
             <TabsTrigger value="users" className="gap-2">
               <Users className="w-4 h-4" /> Users
             </TabsTrigger>
+            <TabsTrigger value="shop" className="gap-2">
+              <Globe className="w-4 h-4" /> Shop Page
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="woocommerce" className="mt-6">
@@ -3370,6 +3373,10 @@ export default function Settings() {
             <UsersTab />
           </TabsContent>
 
+          <TabsContent value="shop" className="mt-6">
+            <ShopTab />
+          </TabsContent>
+
         </Tabs>
       </div>
     </Layout>
@@ -3582,6 +3589,141 @@ function DpdTab() {
           <li>The DPD API credentials are incorrect — use the test above to verify</li>
           <li>The DPD API was temporarily unavailable when the order was dispatched — use the <strong>Book DPD</strong> retry button on the order</li>
         </ul>
+      </div>
+    </div>
+  );
+}
+
+// ── Shop Page tab ─────────────────────────────────────────────────────────────
+
+interface TeamMember { name: string; role: string; photoUrl: string; }
+
+function ShopTab() {
+  const { toast } = useToast();
+  const [members, setMembers] = useState<TeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/shop/team-members`)
+      .then(r => r.json())
+      .then((data: TeamMember[]) => { setMembers(Array.isArray(data) ? data : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/shop/team-members`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(members),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      toast({ title: "Team members saved" });
+    } catch (e: any) {
+      toast({ title: "Failed to save", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const addMember = () => setMembers(prev => [...prev, { name: "", role: "", photoUrl: "" }]);
+  const removeMember = (i: number) => setMembers(prev => prev.filter((_, idx) => idx !== i));
+  const updateMember = (i: number, field: keyof TeamMember, value: string) =>
+    setMembers(prev => prev.map((m, idx) => idx === i ? { ...m, [field]: value } : m));
+
+  if (loading) return <div className="text-sm text-muted-foreground py-4">Loading…</div>;
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-base">Our Team — About Us page</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              These appear in the "Our Team" section on the shop's About Us page.
+              Paste a direct image URL (e.g. from your WordPress media library) for each person's photo.
+              Leave the section empty to hide it entirely.
+            </p>
+          </div>
+          <Button size="sm" variant="outline" onClick={addMember} className="gap-1.5 shrink-0">
+            <Plus className="w-4 h-4" /> Add Member
+          </Button>
+        </div>
+
+        {members.length === 0 ? (
+          <div className="py-8 text-center text-muted-foreground border-2 border-dashed rounded-lg">
+            <Users className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No team members yet. Click <strong>Add Member</strong> to add the first one.</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {members.map((m, i) => (
+              <div key={i} className="grid gap-3 p-3 rounded-lg border bg-muted/20">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Name</Label>
+                    <Input
+                      value={m.name}
+                      onChange={e => updateMember(i, "name", e.target.value)}
+                      placeholder="e.g. Sarah Johnson"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Role / Title</Label>
+                    <Input
+                      value={m.role}
+                      onChange={e => updateMember(i, "role", e.target.value)}
+                      placeholder="e.g. Sales Director"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1 grid gap-1.5">
+                    <Label className="text-xs">Photo URL</Label>
+                    <Input
+                      value={m.photoUrl}
+                      onChange={e => updateMember(i, "photoUrl", e.target.value)}
+                      placeholder="https://www.selectuniforms.co.uk/wp-content/uploads/photo.jpg"
+                    />
+                  </div>
+                  {m.photoUrl && (
+                    <img
+                      src={m.photoUrl}
+                      alt=""
+                      className="w-10 h-10 rounded-full object-cover border shrink-0"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 text-red-500 hover:bg-red-50 shrink-0"
+                    onClick={() => removeMember(i)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-end pt-2">
+          <Button onClick={save} disabled={saving} className="gap-2">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            {saving ? "Saving…" : "Save Team"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-1">
+        <p className="font-medium">Where to find photo URLs</p>
+        <p className="text-muted-foreground text-xs">
+          In your WordPress admin, go to <strong>Media Library</strong>, click a photo, and copy the <strong>File URL</strong>.
+          The section won't appear on the About Us page until at least one team member is saved.
+        </p>
       </div>
     </div>
   );

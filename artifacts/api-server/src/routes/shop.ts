@@ -1011,19 +1011,44 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
 
 // ─── GET /shop/blog-posts ─────────────────────────────────────────────────────
 // Proxies the WordPress REST API so the shop avoids CORS issues and can cache.
+// Note: _embed doesn't work on this WordPress host (returns empty _embedded).
+// Instead we do a two-step fetch: posts → media IDs → batch media lookup.
 router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
   try {
-    const apiUrl =
+    const postsUrl =
       "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
-      "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media&_embed";
-    const wpRes = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) });
+      "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media";
+    const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(8000) });
     if (!wpRes.ok) {
       res.status(wpRes.status).json({ error: "WordPress API error" });
       return;
     }
     const posts: any[] = await wpRes.json();
+
+    // Collect non-zero featured_media IDs and batch-fetch their source_url
+    const mediaIds = posts
+      .map((p: any) => p.featured_media)
+      .filter((id: any) => id && Number(id) > 0);
+
+    const mediaMap: Record<number, string> = {};
+    if (mediaIds.length > 0) {
+      try {
+        const mediaUrl =
+          "https://www.selectuniforms.co.uk/wp-json/wp/v2/media" +
+          `?include=${mediaIds.join(",")}&_fields=id,source_url&per_page=${mediaIds.length}`;
+        const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(8000) });
+        if (mediaRes.ok) {
+          const mediaItems: any[] = await mediaRes.json();
+          for (const m of mediaItems) {
+            if (m.id && m.source_url) mediaMap[m.id] = m.source_url;
+          }
+        }
+      } catch {
+        // Non-fatal — posts still render without images
+      }
+    }
+
     const cleaned = posts.map((p: any) => {
-      // Strip HTML tags from excerpt
       const rawExcerpt: string = p.excerpt?.rendered ?? "";
       const excerpt = rawExcerpt
         .replace(/<[^>]+>/g, "")
@@ -1035,9 +1060,8 @@ router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
         .replace(/&#8211;/g, "–")
         .replace(/&amp;/g, "&")
         .trim();
-      // Try to get featured image URL from _embedded
-      const featuredUrl: string | null =
-        p._embedded?.["wp:featuredmedia"]?.[0]?.source_url ?? null;
+      const featuredImageUrl: string | null =
+        (p.featured_media && mediaMap[p.featured_media]) ? mediaMap[p.featured_media] : null;
       return {
         id: p.id,
         title,
@@ -1045,7 +1069,7 @@ router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
         date: p.date,
         link: p.link,
         slug: p.slug,
-        featuredImageUrl: featuredUrl,
+        featuredImageUrl,
       };
     });
     // Cache for 15 minutes
@@ -1054,6 +1078,38 @@ router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
   } catch (e: any) {
     logger.warn({ err: e }, "[shop/blog-posts] Failed to fetch WordPress posts");
     res.status(502).json({ error: "Could not fetch blog posts" });
+  }
+});
+
+// ─── GET /shop/team-members ───────────────────────────────────────────────────
+router.get("/shop/team-members", async (_req: Request, res: Response) => {
+  try {
+    const s = await getAllSettings();
+    const raw = s["shop_team_members"];
+    const members = raw ? JSON.parse(raw) : [];
+    res.json(members);
+  } catch {
+    res.json([]);
+  }
+});
+
+// ─── PATCH /shop/team-members ─────────────────────────────────────────────────
+router.patch("/shop/team-members", async (req: Request, res: Response) => {
+  try {
+    const members = req.body; // array of { name, role, photoUrl }
+    if (!Array.isArray(members)) {
+      res.status(400).json({ error: "Body must be an array" });
+      return;
+    }
+    const value = JSON.stringify(members);
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('shop_team_members', ${value}, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });
 

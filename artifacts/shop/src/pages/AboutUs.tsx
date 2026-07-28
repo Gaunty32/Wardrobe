@@ -1,6 +1,22 @@
 import { Link } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
+
+interface TeamMember {
+  name: string;
+  role: string;
+  photoUrl?: string | null;
+}
 
 export default function AboutUs() {
+  const { data: teamMembers = [] } = useQuery<TeamMember[]>({
+    queryKey: ['team-members'],
+    queryFn: () => fetch('/api/shop/team-members').then(r => r.json()),
+    staleTime: 1000 * 60 * 15,
+  });
+
+  // Render real members if available, otherwise show nothing in that section
+  const showTeam = teamMembers.length > 0;
+
   return (
     <div className="flex flex-col w-full">
       {/* Hero */}
@@ -53,23 +69,35 @@ export default function AboutUs() {
         </div>
       </section>
 
-      {/* Team */}
-      <section className="py-16">
-        <div className="container mx-auto px-4 max-w-5xl">
-          <h2 className="text-3xl font-bold text-center text-primary mb-12">Our Team</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="text-center group">
-                <div className="aspect-square bg-gray-200 mb-4 overflow-hidden rounded-full max-w-[200px] mx-auto border-4 border-transparent group-hover:border-primary transition-colors">
-                  <div className="w-full h-full flex items-center justify-center text-gray-400">Photo</div>
+      {/* Team — only shown once members are configured */}
+      {showTeam && (
+        <section className="py-16">
+          <div className="container mx-auto px-4 max-w-5xl">
+            <h2 className="text-3xl font-bold text-center text-primary mb-12">Our Team</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {teamMembers.map((member, i) => (
+                <div key={i} className="text-center group">
+                  <div className="aspect-square bg-gray-200 mb-4 overflow-hidden rounded-full max-w-[200px] mx-auto border-4 border-transparent group-hover:border-primary transition-colors">
+                    {member.photoUrl ? (
+                      <img
+                        src={member.photoUrl}
+                        alt={member.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                        {member.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="font-bold text-gray-900 text-lg">{member.name}</h3>
+                  <p className="text-accent text-sm font-semibold">{member.role}</p>
                 </div>
-                <h3 className="font-bold text-gray-900 text-lg">Team Member {i}</h3>
-                <p className="text-accent text-sm font-semibold">Specialist Role</p>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
