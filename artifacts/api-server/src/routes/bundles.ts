@@ -277,26 +277,51 @@ router.post("/bundles/:bundleId/add-to-order/:orderId", async (req, res): Promis
 
         if (!isService && comp.product_id) {
           const stockRows = await db.execute(sql`
-            SELECT COALESCE(
-              (SELECT pv.stock_quantity FROM product_variants pv
-               WHERE pv.product_id = ${comp.product_id}
-                 AND pv.colour IS NOT DISTINCT FROM ${colour}
-                 AND (
-                   pv.size IS NOT DISTINCT FROM ${size}
-                   OR (${size} LIKE '%/%'
-                       AND pv.size = split_part(${size}, '/', 1)
-                       AND pv.sleeve = split_part(${size}, '/', 2))
-                   OR (pv.size IS NULL AND pv.sleeve IS NULL)
-                 )
-               ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
-               LIMIT 1),
-              CASE WHEN NOT EXISTS (SELECT 1 FROM product_variants pv2 WHERE pv2.product_id = ${comp.product_id})
-                   THEN (SELECT stock_quantity FROM products WHERE id = ${comp.product_id})
-                   ELSE 0 END,
-              0
-            ) AS available_stock
+            SELECT
+              COALESCE(
+                (SELECT pv.stock_quantity FROM product_variants pv
+                 WHERE pv.product_id = ${comp.product_id}
+                   AND pv.colour IS NOT DISTINCT FROM ${colour}
+                   AND (
+                     pv.size IS NOT DISTINCT FROM ${size}
+                     OR (${size} LIKE '%/%'
+                         AND pv.size = split_part(${size}, '/', 1)
+                         AND pv.sleeve = split_part(${size}, '/', 2))
+                     OR (pv.size IS NULL AND pv.sleeve IS NULL)
+                   )
+                 ORDER BY CASE WHEN pv.size IS NOT DISTINCT FROM ${size} THEN 0 ELSE 1 END
+                 LIMIT 1),
+                CASE WHEN NOT EXISTS (SELECT 1 FROM product_variants pv2 WHERE pv2.product_id = ${comp.product_id})
+                     THEN (SELECT stock_quantity FROM products WHERE id = ${comp.product_id})
+                     ELSE 0 END,
+                0
+              ) AS available_stock,
+              COALESCE((
+                SELECT SUM(poi2.quantity_ordered - COALESCE(poi2.quantity_delivered, 0))
+                FROM purchase_order_items poi2
+                JOIN purchase_orders po2 ON poi2.po_id = po2.id
+                WHERE po2.status = 'ordered'
+                  AND poi2.quantity_ordered > COALESCE(poi2.quantity_delivered, 0)
+                  AND poi2.product_id = ${comp.product_id}
+                  AND poi2.colour IS NOT DISTINCT FROM ${colour}
+                  AND (poi2.size IS NOT DISTINCT FROM ${size}
+                       OR (${size}::text LIKE '%/%' AND poi2.size = split_part(${size}, '/', 1))
+                       OR poi2.size IS NULL)
+                  AND (poi2.order_item_id IS NULL
+                       OR NOT EXISTS (SELECT 1 FROM order_items oi_chk WHERE oi_chk.id = poi2.order_item_id))
+                  AND (jsonb_array_length(COALESCE(poi2.source_order_item_ids, '[]'::jsonb)) = 0
+                       OR NOT EXISTS (
+                         SELECT 1 FROM order_items oi3
+                         WHERE oi3.id IN (
+                           SELECT (elem.value)::integer
+                           FROM jsonb_array_elements_text(poi2.source_order_item_ids) AS elem(value)
+                         )
+                       ))
+              ), 0) AS orphaned_on_order
           `);
-          const availableStock = parseInt(String((stockRows.rows ?? stockRows)[0]?.available_stock ?? 0));
+          const stockRow0 = (stockRows.rows ?? stockRows)[0] as any;
+          const availableStock = parseInt(String(stockRow0?.available_stock ?? 0))
+                               + parseInt(String(stockRow0?.orphaned_on_order ?? 0));
           const shortfall = Math.max(0, compQty - availableStock);
           if (shortfall > 0) {
             purchaseRequired = true;

@@ -1775,6 +1775,52 @@ export async function runStartupMigrations(): Promise<void> {
       AND (pv.primary_supplier_id IS NULL OR pv.primary_supplier_id = p.supplier_id)
   `);
   console.log("[startup] Variant supplier prices synced to product level");
+
+  // ── purchase_order_items.product_id ──────────────────────────────────────────
+  // Stores the product FK directly on the PO line so orphaned-on-order quantities
+  // (lines whose linked order items were deleted) can still be identified by variant
+  // and excluded from shortfall calculations — preventing double-ordering.
+  await db.execute(sql`
+    ALTER TABLE purchase_order_items
+    ADD COLUMN IF NOT EXISTS product_id INTEGER REFERENCES products(id) ON DELETE SET NULL
+  `);
+
+  // Backfill via direct order_item_id FK (idempotent — only fills NULLs)
+  await db.execute(sql`
+    UPDATE purchase_order_items poi
+    SET product_id = oi.product_id
+    FROM order_items oi
+    WHERE oi.id = poi.order_item_id
+      AND poi.product_id IS NULL
+      AND oi.product_id IS NOT NULL
+  `);
+
+  // Backfill via source_order_item_ids JSON array using a correlated subquery
+  await db.execute(sql`
+    UPDATE purchase_order_items
+    SET product_id = (
+      SELECT oi2.product_id
+      FROM jsonb_array_elements_text(
+        COALESCE(purchase_order_items.source_order_item_ids, '[]'::jsonb)
+      ) AS elem(value)
+      JOIN order_items oi2 ON oi2.id = (elem.value)::integer
+      WHERE oi2.product_id IS NOT NULL
+      LIMIT 1
+    )
+    WHERE product_id IS NULL
+      AND jsonb_array_length(COALESCE(source_order_item_ids, '[]'::jsonb)) > 0
+  `);
+
+  // Backfill any remaining rows by matching product_name (best-effort for orphaned lines)
+  await db.execute(sql`
+    UPDATE purchase_order_items poi
+    SET product_id = p.id
+    FROM products p
+    WHERE p.name = poi.product_name
+      AND poi.product_id IS NULL
+  `);
+
+  console.log("[startup] purchase_order_items.product_id ensured and backfilled");
 }
 
 // ── Weekly product issues refresh ─────────────────────────────────────────────

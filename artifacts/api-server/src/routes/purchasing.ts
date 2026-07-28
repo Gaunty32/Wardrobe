@@ -159,6 +159,37 @@ router.post("/purchasing/rescan", async (_req, res): Promise<void> => {
     }
   }
 
+  // Add orphaned on-order quantities to the pool.
+  // These are units on ordered (awaiting-delivery) POs whose linked order items have all
+  // been deleted — they are no longer "reserved" for any specific order item but the goods
+  // are still coming in and should reduce the shortfall for new items of the same variant.
+  const orphanedOnOrderRows = await db.execute(sql`
+    SELECT poi.product_id, poi.colour, poi.size,
+           SUM(poi.quantity_ordered - COALESCE(poi.quantity_delivered, 0)) AS on_order_qty
+    FROM purchase_order_items poi
+    JOIN purchase_orders po ON poi.po_id = po.id
+    WHERE po.status = 'ordered'
+      AND poi.quantity_ordered > COALESCE(poi.quantity_delivered, 0)
+      AND poi.product_id IS NOT NULL
+      -- No live direct link
+      AND (poi.order_item_id IS NULL
+           OR NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.id = poi.order_item_id))
+      -- All source_order_item_ids are deleted (or the array is empty)
+      AND (jsonb_array_length(COALESCE(poi.source_order_item_ids, '[]'::jsonb)) = 0
+           OR NOT EXISTS (
+             SELECT 1 FROM order_items oi2
+             WHERE oi2.id IN (
+               SELECT (elem.value)::integer
+               FROM jsonb_array_elements_text(poi.source_order_item_ids) AS elem(value)
+             )
+           ))
+    GROUP BY poi.product_id, poi.colour, poi.size
+  `);
+  for (const row of (orphanedOnOrderRows.rows ?? orphanedOnOrderRows) as Array<{ product_id: number; colour: string | null; size: string | null; on_order_qty: string | number }>) {
+    const k = variantKey(row.product_id, row.colour, row.size);
+    stockPool.set(k, (stockPool.get(k) ?? 0) + (Number(row.on_order_qty) || 0));
+  }
+
   // Credit back stock previously allocated to each candidate so the pool
   // starts from the true unallocated total (makes the scan idempotent).
   for (const row of candidates) {
@@ -904,6 +935,7 @@ async function buildPoItems(orderItemIds: number[], poId: number, qtyOverrides?:
       sourceOrderItemIds: sourceIds,
       orderId: sourceIds.length === 1 ? first.item.orderId : null,
       orderNumber: orderNums.length === 1 ? orderNums[0] : orderNums.length > 1 ? orderNums.join(", ") : null,
+      productId: first.item.productId ?? null,
       productName: first.item.productName,
       colour: first.item.colour ?? null,
       size: first.item.size ?? null,
@@ -1353,6 +1385,7 @@ router.post("/purchasing/purchase-orders/:id/items", async (req, res): Promise<v
         sourceOrderItemIds: [],
         orderId: null,
         orderNumber: null,
+        productId: mr.product_id ?? null,
         productName: mr.product_name ?? null,
         colour: mr.colour ?? null,
         size: mr.size ?? null,

@@ -2462,6 +2462,30 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
                ELSE 0
           END
         ) AS available_stock,
+        -- Orphaned on-order: ordered PO lines for this variant whose linked order items
+        -- were all deleted. Goods are still incoming → treat as available supply.
+        COALESCE((
+          SELECT SUM(poi2.quantity_ordered - COALESCE(poi2.quantity_delivered, 0))
+          FROM purchase_order_items poi2
+          JOIN purchase_orders po2 ON poi2.po_id = po2.id
+          WHERE po2.status = 'ordered'
+            AND poi2.quantity_ordered > COALESCE(poi2.quantity_delivered, 0)
+            AND poi2.product_id = ${productId}
+            AND poi2.colour IS NOT DISTINCT FROM ${colour}
+            AND (poi2.size IS NOT DISTINCT FROM ${size}
+                 OR (${size}::text LIKE '%/%' AND poi2.size = split_part(${size}, '/', 1))
+                 OR poi2.size IS NULL)
+            AND (poi2.order_item_id IS NULL
+                 OR NOT EXISTS (SELECT 1 FROM order_items oi_chk WHERE oi_chk.id = poi2.order_item_id))
+            AND (jsonb_array_length(COALESCE(poi2.source_order_item_ids, '[]'::jsonb)) = 0
+                 OR NOT EXISTS (
+                   SELECT 1 FROM order_items oi3
+                   WHERE oi3.id IN (
+                     SELECT (elem.value)::integer
+                     FROM jsonb_array_elements_text(poi2.source_order_item_ids) AS elem(value)
+                   )
+                 ))
+        ), 0) AS orphaned_on_order,
         COALESCE(
           (SELECT pv.primary_supplier_id
            FROM product_variants pv
@@ -2496,7 +2520,7 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
       WHERE p.id = ${productId}
     `);
     const stockRow = stockRows.rows[0] as any;
-    const available = Number(stockRow?.available_stock ?? 0);
+    const available = Number(stockRow?.available_stock ?? 0) + Number(stockRow?.orphaned_on_order ?? 0);
     const allocatedQty = Math.min(available, qty);
     const shortfall = qty - allocatedQty;
 

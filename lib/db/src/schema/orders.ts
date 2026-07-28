@@ -112,6 +112,8 @@ export const purchaseOrderItemsTable = pgTable("purchase_order_items", {
   orderItemId: integer("order_item_id").references(() => orderItemsTable.id, { onDelete: "set null" }),
   orderId: integer("order_id").references(() => ordersTable.id, { onDelete: "set null" }),
   orderNumber: text("order_number"),
+  /** Product FK — enables orphaned on-order quantity checks even after linked order items are deleted. */
+  productId: integer("product_id").references(() => productsTable.id, { onDelete: "set null" }),
   productName: text("product_name").notNull(),
   colour: text("colour"),
   size: text("size"),
