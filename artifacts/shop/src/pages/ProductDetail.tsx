@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
-import { useWcProduct } from '@/hooks/use-wc';
+import { useState, useMemo, useEffect } from 'react';
+import { useWcProduct, useBrandingOptions } from '@/hooks/use-wc';
 import { Link, useParams } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { useCart } from '@/context/CartContext';
-import { Heart, Star } from 'lucide-react';
+import type { BrandingPosition } from '@/context/CartContext';
+import { Heart, Star, Ruler, X, Tag, Palette, MessageSquare, Loader2, CheckCircle2, Send } from 'lucide-react';
 
 // ── Colour → CSS map ──────────────────────────────────────────────────────────
 
@@ -108,13 +109,14 @@ function StarRating({ value, max = 5 }: { value: number; max?: number }) {
 
 function GuidancePanel({ guidance }: { guidance: any }) {
   if (!guidance) return null;
-  const { valueRating, durabilityRating, technicalRating, badges, tags, bestFor, notIdealFor } = guidance;
+  const { valueRating, durabilityRating, technicalRating, badges, tags, bestFor, notIdealFor, staffRecommendation } = guidance;
   const hasRatings  = valueRating > 0 || durabilityRating > 0 || technicalRating > 0;
   const hasBadges   = badges?.length > 0;
   const hasTags     = tags?.length > 0;
   const hasBestFor  = bestFor?.trim();
   const hasNIF      = notIdealFor?.trim();
-  if (!hasRatings && !hasBadges && !hasTags && !hasBestFor && !hasNIF) return null;
+  const hasStaffRec = staffRecommendation?.trim();
+  if (!hasRatings && !hasBadges && !hasTags && !hasBestFor && !hasNIF && !hasStaffRec) return null;
 
   return (
     <div className="space-y-3 mb-6">
@@ -194,6 +196,17 @@ function GuidancePanel({ guidance }: { guidance: any }) {
                 <li key={i}>{line}</li>
               ))}
             </ul>
+          </div>
+        </div>
+      )}
+
+      {hasStaffRec && (
+        <div className="rounded overflow-hidden border border-blue-200">
+          <div className="bg-primary text-white px-3 py-2 text-sm font-bold flex items-center gap-2">
+            👤 Staff Recommendation
+          </div>
+          <div className="bg-blue-50 px-4 py-3 text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+            {staffRecommendation.trim()}
           </div>
         </div>
       )}
@@ -313,12 +326,69 @@ function attrLabel(name: string): string {
 export default function ProductDetail() {
   const { slug } = useParams();
   const { data: product, isLoading } = useWcProduct(slug);
-  const { addItem } = useCart();
+  const { addItem, items, repriceProduct } = useCart();
 
   const [quantity, setQuantity] = useState(1);
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>({});
   const [mainImageIdx, setMainImageIdx] = useState(0);
   const [addedMsg, setAddedMsg] = useState(false);
+  const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
+  const [selectedPositions, setSelectedPositions] = useState<BrandingPosition[]>([]);
+  const [wearerName, setWearerName] = useState('');
+  const [enquiryOpen, setEnquiryOpen]   = useState(false);
+  const [enquiryForm, setEnquiryForm]   = useState({ name: '', email: '', phone: '', message: '' });
+  const [enquiryStatus, setEnquiryStatus] = useState<'idle'|'loading'|'success'|'error'>('idle');
+  const [enquiryRef,   setEnquiryRef]   = useState('');
+
+  // ── Branding options ───────────────────────────────────────────────────────
+  const { data: brandingOptions = [] } = useBrandingOptions();
+
+  // Pre-select free positions once options load
+  useEffect(() => {
+    if (brandingOptions.length > 0 && selectedPositions.length === 0) {
+      setSelectedPositions(brandingOptions.filter((p: BrandingPosition) => p.surcharge === 0));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [brandingOptions]);
+
+  const togglePosition = (pos: BrandingPosition) => {
+    setSelectedPositions(prev =>
+      prev.some(p => p.id === pos.id)
+        ? prev.filter(p => p.id !== pos.id)
+        : [...prev, pos]
+    );
+  };
+
+  const totalBrandingSurcharge = selectedPositions.reduce((s, p) => s + p.surcharge, 0);
+
+  // ── Pricing tiers ──────────────────────────────────────────────────────────
+  const priceBreaks: { qty: number; price: number }[] = product?.priceBreaks ?? [];
+
+  /** Total qty of this product already in the cart (all colours/sizes combined) */
+  const cartQtyForProduct = useMemo(
+    () => items.filter((i) => i.wcProductId === product?.id).reduce((s, i) => s + i.quantity, 0),
+    [items, product?.id]
+  );
+
+  /** The applicable tier for (cartQtyForProduct + quantity being added) */
+  const activeTier = useMemo(() => {
+    if (!priceBreaks.length) return null;
+    const totalQty = cartQtyForProduct + quantity;
+    // Find highest tier whose min qty is ≤ totalQty
+    return [...priceBreaks].reverse().find((t) => totalQty >= t.qty) ?? null;
+  }, [priceBreaks, cartQtyForProduct, quantity]);
+
+  /** Unit price after tier discount */
+  const tierUnitPrice = activeTier?.price ?? null;
+
+  /** When the active tier changes, reprice all existing cart lines for this product */
+  useEffect(() => {
+    if (!product) return;
+    const newPrice = tierUnitPrice ?? (variation ? Number(variation.price) : Number(product.price));
+    const cartHasItems = items.some((i) => i.wcProductId === product.id);
+    if (cartHasItems) repriceProduct(product.id, newPrice);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTier]);
 
   // ── Build colour → image map from variations ──────────────────────────────
   const colourImages = useMemo(() => {
@@ -351,14 +421,15 @@ export default function ProductDetail() {
   const currentImage = colourImage || variation?.image || images[mainImageIdx] || null;
 
   // ── Availability helpers ──────────────────────────────────────────────────
-  /** Is a given option available for the currently-selected other dimensions? */
+  /** Is a given option available for the currently-selected other dimensions?
+   *  We don't gate on stock status — this is a made-to-order shop. */
   const isOptionAvailable = (attrName: string, option: string) => {
     if (!product?.variations?.length) return true;
     const testSelection = { ...selectedOptions, [attrName]: option };
     return product.variations.some((v: any) =>
       v.attributes?.every((a: any) =>
         !testSelection[a.name] || testSelection[a.name] === a.option
-      ) && v.stockStatus === 'instock'
+      )
     );
   };
 
@@ -377,8 +448,15 @@ export default function ProductDetail() {
       alert(`Please select: ${missing}`);
       return;
     }
-    const price = variation ? Number(variation.price) : Number(product.price);
+    const basePrice = variation ? Number(variation.price) : Number(product.price);
+    // After adding this qty the new total may unlock a deeper tier — compute that
+    const newTotal = cartQtyForProduct + quantity;
+    const newTier = priceBreaks.length
+      ? [...priceBreaks].reverse().find((t) => newTotal >= t.qty) ?? null
+      : null;
+    const price = newTier?.price ?? basePrice;
     const sku   = variation ? variation.sku : product.sku;
+
     addItem({
       wcProductId: product.id,
       variationId: variation?.id ?? null,
@@ -389,7 +467,13 @@ export default function ProductDetail() {
       image: currentImage,
       colour: selectedColour ?? null,
       size: selectedOptions['Size'] ?? null,
+      brandingPositions: selectedPositions,
+      wearerName: wearerName.trim() || null,
     });
+
+    // Reprice any existing lines for this product to match the new tier
+    if (newTier) repriceProduct(product.id, price);
+
     setAddedMsg(true);
     setTimeout(() => setAddedMsg(false), 2500);
   };
@@ -421,7 +505,8 @@ export default function ProductDetail() {
     return <div className="container mx-auto px-4 py-8 text-center text-gray-500">Product not found.</div>;
   }
 
-  const currentPrice = variation ? Number(variation.price) : Number(product.price);
+  const basePrice    = variation ? Number(variation.price) : Number(product.price);
+  const currentPrice = tierUnitPrice ?? basePrice;
   const attrs: any[] = product.attributes ?? [];
   const colourAttr = attrs.find((a: any) => a.name === 'Colour' || a.name === 'Color');
   const otherAttrs = attrs.filter((a: any) => a.name !== 'Colour' && a.name !== 'Color');
@@ -500,10 +585,77 @@ export default function ProductDetail() {
         <div className="w-full md:w-1/2">
           <h1 className="text-2xl font-extrabold text-primary mb-1">{product.name}</h1>
 
-          <div className="text-2xl font-bold text-gray-900 mb-0.5">
-            £{currentPrice.toFixed(2)}
+          <div className="flex items-baseline gap-3 mb-0.5">
+            <div className="text-2xl font-bold text-gray-900">
+              £{currentPrice.toFixed(2)}
+            </div>
+            {tierUnitPrice && (
+              <span className="text-sm font-semibold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                Bulk discount applied
+              </span>
+            )}
           </div>
           <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider mb-4">Ex. VAT</p>
+
+          {/* ── Pricing tiers table ── */}
+          {priceBreaks.length > 0 && (
+            <div className="mb-5 rounded border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center gap-1.5">
+                <Tag className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Quantity Pricing</span>
+                {cartQtyForProduct > 0 && (
+                  <span className="ml-auto text-xs text-gray-500">{cartQtyForProduct} already in cart</span>
+                )}
+              </div>
+              <table className="w-full text-sm">
+                <tbody>
+                  {/* Base tier row */}
+                  {(() => {
+                    const firstBreakQty = priceBreaks[0].qty;
+                    const baseTotalQty  = cartQtyForProduct + quantity;
+                    const isBaseActive  = baseTotalQty < firstBreakQty;
+                    return (
+                      <tr className={isBaseActive ? 'bg-primary/5' : ''}>
+                        <td className="px-3 py-2 text-gray-600">
+                          1 – {firstBreakQty - 1} items
+                        </td>
+                        <td className="px-3 py-2 font-semibold text-right text-gray-900">
+                          £{basePrice.toFixed(2)} each
+                        </td>
+                        <td className="w-6 pr-3 text-right">
+                          {isBaseActive && <span className="text-primary text-xs font-bold">◀</span>}
+                        </td>
+                      </tr>
+                    );
+                  })()}
+                  {priceBreaks.map((tier, i) => {
+                    const nextTierQty   = priceBreaks[i + 1]?.qty;
+                    const label         = nextTierQty ? `${tier.qty} – ${nextTierQty - 1} items` : `${tier.qty}+ items`;
+                    const totalQty      = cartQtyForProduct + quantity;
+                    const isActive      = activeTier?.qty === tier.qty;
+                    const saving        = basePrice - tier.price;
+                    return (
+                      <tr key={tier.qty} className={isActive ? 'bg-green-50' : 'even:bg-gray-50/50'}>
+                        <td className="px-3 py-2 text-gray-600">{label}</td>
+                        <td className="px-3 py-2 font-semibold text-right text-gray-900">
+                          £{tier.price.toFixed(2)} each
+                          {saving > 0 && (
+                            <span className="ml-2 text-xs text-green-700">save £{saving.toFixed(2)}</span>
+                          )}
+                        </td>
+                        <td className="w-6 pr-3 text-right">
+                          {isActive && <span className="text-green-600 text-xs font-bold">◀</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="px-3 py-2 text-xs text-gray-400 border-t border-gray-100 bg-gray-50">
+                Mix colours &amp; sizes — the total quantity counts towards your discount.
+              </p>
+            </div>
+          )}
 
           {(variation?.sku || product.sku) && (
             <p className="text-sm text-gray-500 mb-4">
@@ -543,14 +695,26 @@ export default function ProductDetail() {
           {/* ── Size / Sleeve / other attributes ── */}
           {otherAttrs.map((attr: any) => {
             const sel = selectedOptions[attr.name];
+            const isSizeAttr = attr.name === 'Size' || attr.name === 'size';
             return (
               <div key={attr.name} className="mb-5">
-                <h4 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wide">
-                  {sel
-                    ? <>{attrLabel(attr.name)}: <span className="font-normal normal-case text-gray-600">{sel}</span></>
-                    : attrLabel(attr.name)
-                  }
-                </h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide">
+                    {sel
+                      ? <>{attrLabel(attr.name)}: <span className="font-normal normal-case text-gray-600">{sel}</span></>
+                      : attrLabel(attr.name)
+                    }
+                  </h4>
+                  {isSizeAttr && product.sizeGuideHtml && (
+                    <button
+                      onClick={() => setSizeGuideOpen(true)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                    >
+                      <Ruler className="w-3.5 h-3.5" />
+                      Size Guide
+                    </button>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {attr.options.map((opt: string) => (
                     <SizePill
@@ -566,8 +730,118 @@ export default function ProductDetail() {
             );
           })}
 
+          {/* ── Size guide modal ── */}
+          {sizeGuideOpen && product.sizeGuideHtml && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+              onClick={() => setSizeGuideOpen(false)}
+            >
+              <div
+                className="bg-white w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded shadow-xl"
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+                  <h3 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                    <Ruler className="w-4 h-4 text-primary" />
+                    Size Guide — {product.name}
+                  </h3>
+                  <button
+                    onClick={() => setSizeGuideOpen(false)}
+                    className="text-gray-400 hover:text-gray-700 transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div
+                  className="px-5 py-4 prose prose-sm max-w-none text-gray-700
+                    [&_table]:w-full [&_table]:border-collapse [&_table]:text-sm
+                    [&_th]:bg-primary [&_th]:text-white [&_th]:px-3 [&_th]:py-2 [&_th]:text-left
+                    [&_td]:border [&_td]:border-gray-200 [&_td]:px-3 [&_td]:py-1.5
+                    [&_tr:nth-child(even)_td]:bg-gray-50"
+                  dangerouslySetInnerHTML={{ __html: product.sizeGuideHtml }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Branding positions ── */}
+          {(brandingOptions as BrandingPosition[]).length > 0 && (
+            <div className="mb-5 rounded border border-gray-200 overflow-hidden">
+              <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center gap-1.5">
+                <Palette className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Logo Positions</span>
+                <span className="ml-2 text-xs text-gray-400">Select where your logo(s) will appear</span>
+              </div>
+              <div className="divide-y divide-gray-100">
+                {(brandingOptions as BrandingPosition[]).map((opt) => {
+                  const isSelected = selectedPositions.some(p => p.id === opt.id);
+                  return (
+                    <label
+                      key={opt.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer transition-colors ${isSelected ? 'bg-blue-50/50' : 'hover:bg-gray-50'}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => togglePosition(opt)}
+                        className="w-4 h-4 rounded accent-primary flex-shrink-0"
+                      />
+                      <span className="text-sm text-gray-800 flex-1">{opt.name}</span>
+                      {opt.surcharge === 0 ? (
+                        <span className="text-xs text-green-700 font-medium bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                          Included
+                        </span>
+                      ) : (
+                        <span className="text-xs font-semibold text-gray-600">
+                          +£{opt.surcharge.toFixed(2)}<span className="font-normal text-gray-400">/item</span>
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              {totalBrandingSurcharge > 0 && (
+                <div className="bg-amber-50 border-t border-amber-100 px-3 py-2.5 flex justify-between items-center">
+                  <span className="text-sm text-amber-800 font-semibold">Branding surcharge</span>
+                  <div className="text-right">
+                    <div className="text-sm font-bold text-amber-900">+£{totalBrandingSurcharge.toFixed(2)} per item</div>
+                    <div className="text-xs text-amber-700">
+                      = £{(currentPrice + totalBrandingSurcharge).toFixed(2)} total per item ex. VAT
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Wearer name */}
+          <div className="pt-4 border-t border-gray-200 mb-4">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+              Wearer name <span className="text-gray-400 normal-case font-normal tracking-normal">(optional)</span>
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={wearerName}
+                onChange={e => setWearerName(e.target.value)}
+                placeholder="Leave blank for bulk / enter a name"
+                className="flex-1 border border-gray-300 h-10 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+              {wearerName.trim() && (
+                <button
+                  onClick={() => setWearerName('')}
+                  className="px-3 h-10 border border-gray-300 text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+                >Bulk</button>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">
+              Enter the wearer's name to personalise this line — or leave blank to order as bulk stock.
+            </p>
+          </div>
+
           {/* Quantity + Add to cart */}
-          <div className="flex items-stretch gap-3 mb-4 pt-4 border-t border-gray-200">
+          <div className="flex items-stretch gap-3 mb-4">
             <div className="flex border-2 border-gray-300 h-12">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -599,11 +873,146 @@ export default function ProductDetail() {
             <p className="text-green-700 text-sm font-semibold mb-3">Item added to your cart!</p>
           )}
 
-          <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-500 transition-colors">
-            <Heart className="w-4 h-4" /> Add to Wishlist
-          </button>
+          <div className="flex items-center gap-4">
+            <button className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-500 transition-colors">
+              <Heart className="w-4 h-4" /> Add to Wishlist
+            </button>
+            <button
+              onClick={() => { setEnquiryOpen(true); setEnquiryStatus('idle'); setEnquiryRef(''); }}
+              className="flex items-center gap-2 text-sm text-primary font-semibold hover:text-accent transition-colors"
+            >
+              <MessageSquare className="w-4 h-4" /> Enquire about this product
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* ── Enquiry modal ──────────────────────────────────────────────────── */}
+      {enquiryOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          onClick={e => { if (e.target === e.currentTarget) setEnquiryOpen(false); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            {/* Header */}
+            <div className="bg-primary px-6 py-4 flex items-center justify-between">
+              <div>
+                <p className="text-white font-bold text-base">Enquire about this product</p>
+                {product && <p className="text-white/70 text-xs mt-0.5 truncate">{product.name}</p>}
+              </div>
+              <button onClick={() => setEnquiryOpen(false)} className="text-white/70 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6">
+              {enquiryStatus === 'success' ? (
+                <div className="text-center py-4 space-y-3">
+                  <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-7 h-7 text-green-600" />
+                  </div>
+                  <p className="font-bold text-gray-900 text-lg">Enquiry sent!</p>
+                  <p className="text-sm text-gray-500">We'll be in touch shortly. Check your inbox for a confirmation.</p>
+                  {enquiryRef && <p className="text-xs text-gray-400">Reference: {enquiryRef}</p>}
+                  <Button
+                    variant="outline"
+                    className="mt-2"
+                    onClick={() => setEnquiryOpen(false)}
+                  >Close</Button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={async e => {
+                    e.preventDefault();
+                    setEnquiryStatus('loading');
+                    try {
+                      const res = await fetch('/api/shop/product-enquiry', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          productId:   product?.id ?? null,
+                          productName: product?.name ?? null,
+                          productUrl:  window.location.href,
+                          name:    enquiryForm.name,
+                          email:   enquiryForm.email,
+                          phone:   enquiryForm.phone || null,
+                          message: enquiryForm.message,
+                          source:  'product_page',
+                        }),
+                      });
+                      if (!res.ok) throw new Error('Failed');
+                      const data = await res.json();
+                      setEnquiryRef(data.referenceNumber ?? '');
+                      setEnquiryStatus('success');
+                    } catch {
+                      setEnquiryStatus('error');
+                    }
+                  }}
+                  className="space-y-4"
+                >
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Your name *</label>
+                      <input
+                        required
+                        value={enquiryForm.name}
+                        onChange={e => setEnquiryForm(p => ({ ...p, name: e.target.value }))}
+                        placeholder="Jane Smith"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-1">Phone</label>
+                      <input
+                        value={enquiryForm.phone}
+                        onChange={e => setEnquiryForm(p => ({ ...p, phone: e.target.value }))}
+                        placeholder="07700 900000"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Email address *</label>
+                    <input
+                      type="email"
+                      required
+                      value={enquiryForm.email}
+                      onChange={e => setEnquiryForm(p => ({ ...p, email: e.target.value }))}
+                      placeholder="jane@company.com"
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Message *</label>
+                    <textarea
+                      required
+                      rows={4}
+                      value={enquiryForm.message}
+                      onChange={e => setEnquiryForm(p => ({ ...p, message: e.target.value }))}
+                      placeholder={`I'm interested in the ${product?.name ?? 'this product'} and would like to know…`}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
+                    />
+                  </div>
+                  {enquiryStatus === 'error' && (
+                    <p className="text-xs text-red-600">Something went wrong — please try again.</p>
+                  )}
+                  <Button
+                    type="submit"
+                    disabled={enquiryStatus === 'loading'}
+                    className="w-full gap-2"
+                  >
+                    {enquiryStatus === 'loading'
+                      ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
+                      : <><Send className="w-4 h-4" /> Send enquiry</>
+                    }
+                  </Button>
+                </form>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Description */}
       {product.description && (

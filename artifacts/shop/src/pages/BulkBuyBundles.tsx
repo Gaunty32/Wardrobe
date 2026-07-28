@@ -3,8 +3,8 @@ import { ProductCard } from '@/components/ProductCard';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BulkBuyBundles() {
-  // Try fetching from bundles category, or fallback to generic if not working
-  const { data: products = [], isLoading } = useWcProducts({ search: 'bundle' });
+  const { data: products = [], isLoading } = useWcProducts({ category_slug: 'bundles', per_page: 100 });
+
 
   return (
     <div className="flex flex-col w-full">

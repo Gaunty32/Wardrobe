@@ -20,6 +20,7 @@ import Team from "@/pages/Team";
 import Invoices from "@/pages/Invoices";
 import PaymentMethods from "@/pages/PaymentMethods";
 import Stock from "@/pages/Stock";
+import PickNote from "@/pages/PickNote";
 import OrderHistory from "@/pages/OrderHistory";
 import NotFound from "@/pages/not-found";
 
@@ -126,6 +127,7 @@ function Router() {
       <Route path="/team" component={() => <ProtectedRoute component={Team} />} />
       <Route path="/payment-methods" component={() => <ProtectedRoute component={PaymentMethods} />} />
       <Route path="/stores" component={() => <ProtectedRoute component={Stock} />} />
+      <Route path="/stores/pick-note/:ref" component={() => <ProtectedRoute component={PickNote} />} />
       <Route path="/">
         {() => {
           const token = localStorage.getItem("portal_token");

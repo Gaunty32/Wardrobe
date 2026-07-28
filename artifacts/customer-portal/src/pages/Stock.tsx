@@ -207,6 +207,7 @@ function StockCard({
   onEdit,
   onDelete,
   onReorder,
+  onSaveLimits,
 }: {
   group: CardGroup;
   processes: StockProcess[];
@@ -215,12 +216,42 @@ function StockCard({
   onEdit: (item: StockItem) => void;
   onDelete: (item: StockItem) => void;
   onReorder: (group: CardGroup) => void;
+  onSaveLimits: (item: StockItem, minQty: number, reorderQty: number) => void;
 }) {
   const groupProcesses = group.finishId != null
     ? processes.filter(p => p.finish_id === group.finishId)
     : [];
 
   const hasLow = group.items.some(i => i.min_quantity > 0 && i.stock_quantity <= i.min_quantity);
+
+  // Local state for inline min/reorder editing
+  // Key = itemId, value = { min: string; reorder: string }
+  const [localLimits, setLocalLimits] = useState<Record<number, { min: string; reorder: string }>>({});
+
+  function getLimit(item: StockItem, field: "min" | "reorder"): string {
+    if (localLimits[item.id]) return localLimits[item.id][field];
+    return field === "min" ? String(item.min_quantity) : String(item.reorder_quantity ?? 0);
+  }
+
+  function setLimit(item: StockItem, field: "min" | "reorder", value: string) {
+    setLocalLimits(prev => ({
+      ...prev,
+      [item.id]: {
+        min: prev[item.id]?.min ?? String(item.min_quantity),
+        reorder: prev[item.id]?.reorder ?? String(item.reorder_quantity ?? 0),
+        [field]: value,
+      },
+    }));
+  }
+
+  function commitLimit(item: StockItem) {
+    const local = localLimits[item.id];
+    if (!local) return;
+    const minQty = Math.max(0, parseInt(local.min) || 0);
+    const reorderQty = Math.max(0, parseInt(local.reorder) || 0);
+    const unchanged = minQty === item.min_quantity && reorderQty === (item.reorder_quantity ?? 0);
+    if (!unchanged) onSaveLimits(item, minQty, reorderQty);
+  }
 
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
@@ -238,17 +269,27 @@ function StockCard({
 
       {/* Card body */}
       <div className="p-3 flex flex-col gap-2 flex-1">
-        {/* Name + colour + SKU */}
-        <div>
-          <p className="font-semibold text-sm leading-snug line-clamp-2">{group.displayName}</p>
-          {(group.colour || group.productSku) && (
-            <p className="text-[11px] text-muted-foreground mt-0.5">
-              {[group.colour, group.productSku].filter(Boolean).join(" · ")}
-            </p>
-          )}
-          {group.finishName && (
-            <p className="text-[11px] text-muted-foreground mt-0.5 italic">{group.finishName}</p>
-          )}
+        {/* Name + colour + SKU + edit button */}
+        <div className="flex items-start gap-1">
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-sm leading-snug line-clamp-2">{group.displayName}</p>
+            {(group.colour || group.productSku) && (
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                {[group.colour, group.productSku].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            {group.finishName && (
+              <p className="text-[11px] text-muted-foreground mt-0.5 italic">{group.finishName}</p>
+            )}
+          </div>
+          {/* Edit button for name/location/notes — moved up to card header */}
+          <button
+            onClick={() => onEdit(group.items[0])}
+            className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
+            title="Edit item details"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         {/* Process badges */}
@@ -276,51 +317,74 @@ function StockCard({
           </p>
         )}
 
-        {/* Divider */}
+        {/* Column headers for size rows */}
+        <div className="grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 px-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground w-10">Size</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Stock</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Min</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Reorder</span>
+          <span className="w-14" />
+        </div>
+
         <div className="border-t" />
 
         {/* Per-size rows */}
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1">
           {group.items.map(item => {
             const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
             return (
               <div
                 key={item.id}
                 className={cn(
-                  "flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs",
-                  isLow ? "bg-amber-50 border border-amber-200" : "bg-muted/40"
+                  "grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 rounded-lg px-1.5 py-1.5",
+                  isLow ? "bg-amber-50 border border-amber-200" : "bg-muted/30"
                 )}
               >
                 {/* Size chip */}
                 <span className={cn(
-                  "rounded-md px-2 py-0.5 text-xs font-semibold shrink-0",
-                  isLow
-                    ? "bg-amber-200 text-amber-800"
-                    : "bg-background border text-foreground"
+                  "rounded-md px-1.5 py-0.5 text-[11px] font-semibold shrink-0 w-10 text-center",
+                  isLow ? "bg-amber-200 text-amber-800" : "bg-background border text-foreground"
                 )}>
                   {item.size ?? "—"}
                 </span>
 
                 {/* Quantity */}
-                <span className={cn(
-                  "font-bold text-sm tabular-nums",
-                  isLow ? "text-amber-700" : "text-foreground"
-                )}>
-                  {item.stock_quantity}
-                </span>
-                {item.min_quantity > 0 && (
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    / {item.min_quantity} min
-                    {item.reorder_quantity > 0 && ` · reorder ${item.reorder_quantity}`}
+                <div className="flex items-center gap-1">
+                  <span className={cn(
+                    "font-bold text-sm tabular-nums",
+                    isLow ? "text-amber-700" : "text-foreground"
+                  )}>
+                    {item.stock_quantity}
                   </span>
-                )}
-                {isLow && <TrendingDown className="w-3 h-3 text-amber-500 shrink-0" />}
+                  {isLow && <TrendingDown className="w-3 h-3 text-amber-500 shrink-0" />}
+                </div>
 
-                {/* Spacer */}
-                <div className="flex-1" />
+                {/* Min qty — inline editable */}
+                <input
+                  type="number"
+                  min="0"
+                  value={getLimit(item, "min")}
+                  onChange={e => setLimit(item, "min", e.target.value)}
+                  onBlur={() => commitLimit(item)}
+                  onKeyDown={e => e.key === "Enter" && (e.currentTarget.blur())}
+                  className="w-full h-7 rounded border border-transparent bg-background/60 hover:border-border focus:border-primary focus:outline-none text-center text-xs font-medium tabular-nums px-1 transition-colors"
+                  title="Minimum stock level — alert when stock reaches this"
+                />
 
-                {/* Actions */}
-                <div className="flex items-center gap-0.5">
+                {/* Reorder qty — inline editable */}
+                <input
+                  type="number"
+                  min="0"
+                  value={getLimit(item, "reorder")}
+                  onChange={e => setLimit(item, "reorder", e.target.value)}
+                  onBlur={() => commitLimit(item)}
+                  onKeyDown={e => e.key === "Enter" && (e.currentTarget.blur())}
+                  className="w-full h-7 rounded border border-transparent bg-background/60 hover:border-border focus:border-primary focus:outline-none text-center text-xs font-medium tabular-nums px-1 transition-colors"
+                  title="How many to order when restocking"
+                />
+
+                {/* Row actions */}
+                <div className="flex items-center gap-0">
                   <button
                     onClick={() => onAdjust(item)}
                     className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
@@ -336,13 +400,6 @@ function StockCard({
                     <History className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => onEdit(item)}
-                    className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
-                    title="Edit"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
                     onClick={() => onDelete(item)}
                     className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
                     title="Remove"
@@ -354,6 +411,11 @@ function StockCard({
             );
           })}
         </div>
+
+        {/* Hint text */}
+        <p className="text-[10px] text-muted-foreground/60 text-center -mt-0.5">
+          Click Min / Reorder numbers to edit · Enter to save
+        </p>
 
         {/* Reorder button */}
         {group.items.some(i => i.product_id != null) && (
@@ -422,7 +484,7 @@ export default function StockPage() {
 
   // ── Edit item dialog ────────────────────────────────────────────────────────
   const [editItem, setEditItem] = useState<StockItem | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", colour: "", size: "", minQuantity: "0", reorderQuantity: "0", location: "", notes: "" });
+  const [editForm, setEditForm] = useState({ name: "", colour: "", size: "", location: "", notes: "" });
 
   function openEdit(item: StockItem) {
     setEditItem(item);
@@ -430,8 +492,6 @@ export default function StockPage() {
       name: item.name,
       colour: item.colour ?? "",
       size: item.size ?? "",
-      minQuantity: String(item.min_quantity),
-      reorderQuantity: String(item.reorder_quantity ?? 0),
       location: item.location ?? "",
       notes: item.notes ?? "",
     });
@@ -456,11 +516,26 @@ export default function StockPage() {
         name: editForm.name.trim(),
         colour: editForm.colour.trim() || null,
         size: editForm.size.trim() || null,
-        minQuantity: parseInt(editForm.minQuantity) || 0,
-        reorderQuantity: parseInt(editForm.reorderQuantity) || 0,
         location: editForm.location.trim() || null,
         notes: editForm.notes.trim() || null,
       },
+    });
+  }
+
+  // ── Save limits (inline min/reorder editing on cards) ───────────────────────
+  const saveLimitsMutation = useMutation({
+    mutationFn: ({ id, body }: { id: number; body: object }) =>
+      apiFetch(`/portal/stock/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["portal-stock"] });
+    },
+    onError: (e: any) => toast({ title: "Could not save limits", description: e.message, variant: "destructive" }),
+  });
+
+  function handleSaveLimits(item: StockItem, minQty: number, reorderQty: number) {
+    saveLimitsMutation.mutate({
+      id: item.id,
+      body: { minQuantity: minQty, reorderQuantity: reorderQty },
     });
   }
 
@@ -715,6 +790,7 @@ export default function StockPage() {
                 onEdit={openEdit}
                 onDelete={setDeleteItem}
                 onReorder={openBulkOrder}
+                onSaveLimits={handleSaveLimits}
               />
             ))}
           </div>
@@ -800,16 +876,9 @@ export default function StockPage() {
                   <Input value={editForm.size} onChange={e => setEditForm(f => ({ ...f, size: e.target.value }))} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Min Stock Level</Label>
-                  <Input type="number" min="0" value={editForm.minQuantity} onChange={e => setEditForm(f => ({ ...f, minQuantity: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Reorder Quantity</Label>
-                  <Input type="number" min="0" value={editForm.reorderQuantity} onChange={e => setEditForm(f => ({ ...f, reorderQuantity: e.target.value }))} placeholder="0" />
-                </div>
-              </div>
+              <p className="text-[11px] text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                Min stock and reorder quantities are now edited directly on each size row on the Stores page.
+              </p>
               <div className="space-y-1.5">
                 <Label>Storage Location</Label>
                 <Input value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} />

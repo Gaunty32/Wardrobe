@@ -4,7 +4,7 @@ import {
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart, Star, BookMarked,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
   UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy,
-  Shield, ShieldCheck, UserCog, ChevronRight,
+  Shield, ShieldCheck, UserCog, ChevronRight, Plus, Palette,
 } from "lucide-react";
 import { staffAuthHeader, getStaffJwtPayload } from "@/lib/staff-auth";
 import { Button } from "@/components/ui/button";
@@ -1918,6 +1918,9 @@ export default function Settings() {
             <TabsTrigger value="reengagement" className="gap-2">
               <Mail className="w-4 h-4" /> Re-engagement
             </TabsTrigger>
+            <TabsTrigger value="branding" className="gap-2">
+              <Palette className="w-4 h-4" /> Branding
+            </TabsTrigger>
             <TabsTrigger value="users" className="gap-2">
               <Users className="w-4 h-4" /> Users
             </TabsTrigger>
@@ -2159,7 +2162,7 @@ export default function Settings() {
               {/* ── Import WooCommerce Customers ─────────────────────────────── */}
               <div className="rounded-xl border border-border bg-card p-5 space-y-4">
                 <div className="flex items-start gap-3">
-                  <UserCheck2 className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                  <UserCheck className="w-5 h-5 text-primary mt-0.5 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <h2 className="font-semibold text-base">Import WooCommerce Customers</h2>
                     <p className="text-sm text-muted-foreground mt-0.5">
@@ -2178,7 +2181,7 @@ export default function Settings() {
                   >
                     {customerImporting
                       ? <><Loader2 className="w-4 h-4 animate-spin" />Importing…</>
-                      : <><UserCheck2 className="w-4 h-4" />Import WooCommerce Customers</>}
+                      : <><UserCheck className="w-4 h-4" />Import WooCommerce Customers</>}
                   </Button>
                 </div>
 
@@ -3327,6 +3330,10 @@ export default function Settings() {
             </div>
           </TabsContent>
 
+          <TabsContent value="branding" className="mt-6">
+            <BrandingTab />
+          </TabsContent>
+
           <TabsContent value="users" className="mt-6">
             <UsersTab />
           </TabsContent>
@@ -3334,6 +3341,122 @@ export default function Settings() {
         </Tabs>
       </div>
     </Layout>
+  );
+}
+
+function BrandingTab() {
+  const { toast } = useToast();
+  const [positions, setPositions] = useState<{ id: string; name: string; surcharge: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/shop/branding-options`)
+      .then(r => r.json())
+      .then(data => { setPositions(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/shop/branding-options`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(positions),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      toast({ title: "Branding positions saved" });
+    } catch (e: any) {
+      toast({ title: "Failed to save", description: e.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const add = () =>
+    setPositions(prev => [...prev, { id: `pos-${Date.now()}`, name: "", surcharge: 0 }]);
+
+  const remove = (idx: number) =>
+    setPositions(prev => prev.filter((_, i) => i !== idx));
+
+  const update = (idx: number, field: string, value: string | number) =>
+    setPositions(prev => prev.map((p, i) => i === idx ? { ...p, [field]: value } : p));
+
+  if (loading) return <div className="text-sm text-muted-foreground py-4">Loading…</div>;
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Logo Branding Positions</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Configure the logo positions available to customers on shop product pages.
+          Each position can carry a per-item surcharge. Positions with a £0 surcharge
+          are shown as "Included" and pre-ticked by default.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-border bg-card divide-y">
+        {positions.map((pos, idx) => (
+          <div key={pos.id} className="flex items-end gap-3 px-4 py-3">
+            <div className="flex-1 grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs mb-1.5 block">Position name</Label>
+                <Input
+                  value={pos.name}
+                  onChange={e => update(idx, "name", e.target.value)}
+                  placeholder="e.g. Left Breast"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-xs mb-1.5 block">Surcharge per item (£)</Label>
+                <Input
+                  type="number"
+                  value={pos.surcharge}
+                  onChange={e => update(idx, "surcharge", parseFloat(e.target.value) || 0)}
+                  min="0"
+                  step="0.50"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+            <button
+              onClick={() => remove(idx)}
+              className="mb-0.5 text-muted-foreground hover:text-destructive transition-colors"
+              title="Remove position"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+        {positions.length === 0 && (
+          <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+            No positions configured. Add one below.
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Button variant="outline" size="sm" onClick={add} className="gap-2">
+          <Plus className="w-4 h-4" /> Add Position
+        </Button>
+        <Button size="sm" onClick={save} disabled={saving} className="gap-2">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+          Save changes
+        </Button>
+      </div>
+
+      <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-1.5">
+        <p className="font-medium">How branding positions work</p>
+        <ul className="text-muted-foreground text-xs list-disc pl-4 space-y-0.5">
+          <li>Customers select positions on each product page before adding to their basket</li>
+          <li>Surcharges are charged per garment — a £2.50 surcharge on 10 items adds £25.00</li>
+          <li>Positions with £0 surcharge show as "Included" and are pre-ticked by default</li>
+          <li>Branding selections appear in order item notes so production staff can see them</li>
+        </ul>
+      </div>
+    </div>
   );
 }
 

@@ -2878,6 +2878,20 @@ export async function refreshProductIssues(): Promise<void> {
   `);
   console.log("[startup] customer_invoice_addresses table ensured");
 
+  // ── Size guide column on products ─────────────────────────────────────────
+  await db.execute(sql`
+    ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS size_guide_html TEXT
+  `);
+  console.log("[startup] products.size_guide_html column ensured");
+
+  // ── Source column on wc_enquiries ─────────────────────────────────────────
+  await db.execute(sql`
+    ALTER TABLE wc_enquiries
+      ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'product_page'
+  `);
+  console.log("[startup] wc_enquiries.source column ensured");
+
   // ── Deduplicate products by SKU then enforce uniqueness ───────────────────
   // For each set of duplicate SKUs, keep the product with the most associated
   // data (variants + order items). Re-point any order_items from the losers to

@@ -1,10 +1,13 @@
 import { useCart } from '@/context/CartContext';
 import { Link, useLocation } from 'wouter';
-import { X } from 'lucide-react';
+import { X, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Palette } from 'lucide-react';
 
 export default function Cart() {
-  const { items, removeItem, updateQuantity, subtotal } = useCart();
+  const { items, removeItem, updateQuantity, updateWearerName, subtotal } = useCart();
+  const effectivePrice = (item: (typeof items)[number]) =>
+    item.price + (item.brandingPositions?.reduce((s, p) => s + p.surcharge, 0) ?? 0);
   const [, setLocation] = useLocation();
 
   const shipping = 8.50;
@@ -66,9 +69,35 @@ export default function Cart() {
                         {item.colour && <span>Color: {item.colour} </span>}
                         {item.size && <span>Size: {item.size}</span>}
                       </div>
+                      {item.brandingPositions && item.brandingPositions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {item.brandingPositions.map(p => (
+                            <span key={p.id} className="inline-flex items-center gap-0.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 px-1.5 py-0.5 rounded">
+                              <Palette className="w-2.5 h-2.5" />
+                              {p.name}{p.surcharge > 0 ? ` +£${p.surcharge.toFixed(2)}` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Wearer name */}
+                      <div className="flex items-center gap-1.5 mt-2">
+                        <User className="w-3 h-3 text-gray-400 shrink-0" />
+                        <input
+                          type="text"
+                          value={item.wearerName ?? ''}
+                          onChange={e => updateWearerName(idx, e.target.value)}
+                          placeholder="Bulk (no name)"
+                          className="text-xs border-b border-dashed border-gray-300 focus:border-primary focus:outline-none bg-transparent text-gray-600 placeholder-gray-400 w-40"
+                        />
+                      </div>
                     </td>
                     <td className="py-6 text-center text-gray-600">
-                      £{item.price.toFixed(2)}
+                      <div>£{item.price.toFixed(2)}</div>
+                      {(item.brandingPositions?.reduce((s, p) => s + p.surcharge, 0) ?? 0) > 0 && (
+                        <div className="text-xs text-amber-700 mt-0.5">
+                          +£{item.brandingPositions!.reduce((s, p) => s + p.surcharge, 0).toFixed(2)} branding
+                        </div>
+                      )}
                     </td>
                     <td className="py-6 text-center">
                       <div className="inline-flex h-10 border border-gray-300">
@@ -90,7 +119,7 @@ export default function Cart() {
                       </div>
                     </td>
                     <td className="py-6 text-right font-bold text-primary">
-                      £{(item.price * item.quantity).toFixed(2)}
+                      £{(effectivePrice(item) * item.quantity).toFixed(2)}
                     </td>
                   </tr>
                 ))}

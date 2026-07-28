@@ -422,7 +422,7 @@ router.post("/woo/sync/products-guidance", async (req: Request, res: Response): 
 
   for (const p of products) {
     try {
-      const woo = await wooFetch<any>(settings, `/products/${p.woo_commerce_id}?_fields=id,images,meta_data`);
+      const woo = await wooFetch<any>(settings, `/products/${p.woo_commerce_id}?_fields=id,images,meta_data,attributes`);
       const meta: any[] = woo.meta_data ?? [];
 
       // Extract guidance meta
@@ -440,6 +440,33 @@ router.post("/woo/sync/products-guidance", async (req: Request, res: Response): 
       // Gallery images (all images from WC, not just main)
       const galleryImages = (woo.images ?? []).map((img: any) => img.src).filter(Boolean);
 
+      // Size guide — try common meta keys used by various WC size-chart plugins
+      const SIZE_GUIDE_KEYS = [
+        "_sbs_size_guide",
+        "_size_guide",
+        "_size_chart",
+        "_size_guide_html",
+        "_woodmart_size_guide_id",
+        "_berocket_size_chart_shortcode",
+        "_alg_wc_sc_ids",
+        "size_guide",
+        "size_chart",
+        "_woo_size_guide",
+      ];
+      let sizeGuideHtml: string | null = null;
+      // First try known meta keys
+      for (const key of SIZE_GUIDE_KEYS) {
+        const val = parseMeta(meta, key).trim();
+        if (val) { sizeGuideHtml = val; break; }
+      }
+      // Fallback: any meta key whose name contains "size_guide" or "size_chart"
+      if (!sizeGuideHtml) {
+        const fallback = (meta).find((m: any) =>
+          /size[_-]?(guide|chart)/i.test(String(m.key ?? "")) && String(m.value ?? "").trim()
+        );
+        if (fallback) sizeGuideHtml = String(fallback.value).trim();
+      }
+
       await db.execute(sql`
         UPDATE products SET
           guidance_value_rating      = ${valueRating || null},
@@ -450,6 +477,7 @@ router.post("/woo/sync/products-guidance", async (req: Request, res: Response): 
           guidance_badges            = ${badges.length ? JSON.stringify(badges) : null}::jsonb,
           guidance_tags              = ${tags.length ? JSON.stringify(tags) : null}::jsonb,
           gallery_images             = ${galleryImages.length ? JSON.stringify(galleryImages) : null}::jsonb,
+          size_guide_html            = ${sizeGuideHtml || null},
           updated_at                 = now()
         WHERE id = ${p.id}
       `);

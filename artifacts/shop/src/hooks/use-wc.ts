@@ -19,17 +19,19 @@ export function useWcProducts({
   category_slug,
   category,
   page = 1,
+  per_page = 24,
   search = '',
 }: {
   category_slug?: string;
   category?: string;
   page?: number;
+  per_page?: number;
   search?: string;
 }) {
   return useQuery({
-    queryKey: ['wc-products', category_slug, category, page, search],
+    queryKey: ['wc-products', category_slug, category, page, per_page, search],
     queryFn: async () => {
-      let url = `${API}/shop/wc/products?page=${page}&per_page=24`;
+      let url = `${API}/shop/wc/products?page=${page}&per_page=${per_page}`;
       if (category_slug) url += `&category_slug=${encodeURIComponent(category_slug)}`;
       if (category) url += `&category=${encodeURIComponent(category)}`;
       if (search) url += `&search=${encodeURIComponent(search)}`;
@@ -49,5 +51,44 @@ export function useWcProduct(id: string | number | undefined) {
       return res.json();
     },
     enabled: !!id,
+  });
+}
+
+export interface ShopImage {
+  url: string;
+  productName: string;
+  productId: number;
+  category: string | null;
+  permalink: string | null;
+  type?: 'primary' | 'gallery';
+}
+
+export interface ShopImages {
+  byCategory: Record<string, ShopImage[]>;
+  featured: ShopImage[];
+  all: ShopImage[];
+}
+
+export function useShopImages() {
+  return useQuery<ShopImages>({
+    queryKey: ['shop-images'],
+    queryFn: async () => {
+      const res = await fetch(`${API}/shop/images`);
+      if (!res.ok) throw new Error('Failed to fetch shop images');
+      return res.json();
+    },
+    staleTime: 600_000, // 10 min — changes only when products sync
+  });
+}
+
+export function useBrandingOptions() {
+  return useQuery({
+    queryKey: ['branding-options'],
+    queryFn: async () => {
+      const res = await fetch(`${API}/shop/branding-options`);
+      if (!res.ok) throw new Error('Failed to fetch branding options');
+      return res.json() as Promise<{ id: string; name: string; surcharge: number; description?: string }[]>;
+    },
+    staleTime: 300_000,
   });
 }

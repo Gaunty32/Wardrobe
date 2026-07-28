@@ -4,6 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
 import { CartProvider } from '@/context/CartContext';
 import { Layout } from '@/components/Layout';
+import ChatWidget from '@/components/ChatWidget';
 
 // Pages (to be implemented)
 import Home from '@/pages/Home';
@@ -18,6 +19,7 @@ import ContactUs from '@/pages/ContactUs';
 import FAQ from '@/pages/FAQ';
 import BulkBuyBundles from '@/pages/BulkBuyBundles';
 import Reviews from '@/pages/Reviews';
+import LatestNews from '@/pages/LatestNews';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
@@ -38,6 +40,7 @@ function Router() {
         <Route path="/faq" component={FAQ} />
         <Route path="/bulk-buy-bundles" component={BulkBuyBundles} />
         <Route path="/reviews" component={Reviews} />
+        <Route path="/latest-news" component={LatestNews} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -51,6 +54,7 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
             <Router />
+            <ChatWidget />
           </WouterRouter>
           <Toaster />
         </TooltipProvider>

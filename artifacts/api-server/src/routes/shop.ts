@@ -340,6 +340,180 @@ router.post("/shop/enquiry", async (req, res): Promise<void> => {
   res.json({ success: true, referenceNumber: refNum });
 });
 
+// ── GET /shop/images ──────────────────────────────────────────────────────────
+// Returns all product images from the local DB, ready for use on any page.
+// Response shape:
+//   byCategory: Record<category, { url, productName, productId, permalink }[]>
+//   featured:   { url, productName, productId, category, permalink }[]
+//   all:        { url, productName, productId, category, type, permalink }[]
+
+router.get("/shop/images", async (_req, res): Promise<void> => {
+  const rows = await db.execute(sql`
+    SELECT
+      id,
+      name,
+      category,
+      image_url,
+      gallery_images,
+      permalink
+    FROM products
+    WHERE (image_url IS NOT NULL AND image_url <> '')
+      OR (gallery_images IS NOT NULL AND jsonb_array_length(gallery_images) > 0)
+    ORDER BY
+      CASE WHEN gallery_images IS NOT NULL AND jsonb_array_length(gallery_images) > 1 THEN 0 ELSE 1 END,
+      updated_at DESC NULLS LAST
+    LIMIT 500
+  `);
+
+  type ImageEntry = {
+    url: string;
+    productName: string;
+    productId: number;
+    category: string | null;
+    permalink: string | null;
+    type: "primary" | "gallery";
+  };
+
+  const all: ImageEntry[] = [];
+  const byCategory: Record<string, Omit<ImageEntry, "type">[]> = {};
+
+  for (const row of rows.rows as any[]) {
+    const cat: string = row.category ?? "Uncategorised";
+    if (!byCategory[cat]) byCategory[cat] = [];
+
+    const base = {
+      productId:   row.id as number,
+      productName: row.name as string,
+      category:    row.category as string | null,
+      permalink:   row.permalink as string | null,
+    };
+
+    // Primary image
+    if (row.image_url) {
+      all.push({ ...base, url: row.image_url, type: "primary" });
+      byCategory[cat].push({ ...base, url: row.image_url });
+    }
+
+    // Gallery images (skip if duplicate of primary)
+    const gallery: string[] = row.gallery_images
+      ? (Array.isArray(row.gallery_images) ? row.gallery_images : JSON.parse(row.gallery_images)).filter(Boolean)
+      : [];
+    for (const url of gallery) {
+      if (url !== row.image_url) {
+        all.push({ ...base, url, type: "gallery" });
+        byCategory[cat].push({ ...base, url });
+      }
+    }
+  }
+
+  // Featured: products with the most images (rich gallery content first)
+  const featured = all.filter((i) => i.type === "primary").slice(0, 50);
+
+  res.json({ byCategory, featured, all });
+});
+
+// ── POST /shop/product-enquiry ────────────────────────────────────────────────
+// Customer-facing product enquiry & chat — saves to wc_enquiries + emails staff
+
+const ProductEnquirySchema = z.object({
+  productId:   z.number().optional().nullable(),
+  productName: z.string().optional().nullable(),
+  productUrl:  z.string().optional().nullable(),
+  name:        z.string().min(1),
+  email:       z.string().email(),
+  phone:       z.string().optional().nullable(),
+  message:     z.string().min(1),
+  source:      z.enum(["product_page", "chat"]).default("product_page"),
+});
+
+router.post("/shop/product-enquiry", async (req, res): Promise<void> => {
+  const parsed = ProductEnquirySchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  const d = parsed.data;
+
+  const refNum = `ENQ-${Date.now().toString(36).toUpperCase()}`;
+
+  // Link to existing customer if email matches
+  let customerId: number | null = null;
+  try {
+    const cr = await db.execute(sql`SELECT id FROM customers WHERE LOWER(email) = LOWER(${d.email}) LIMIT 1`);
+    customerId = (cr.rows[0] as any)?.id ?? null;
+  } catch {}
+
+  // Save to wc_enquiries (visible in order-system Enquiries page)
+  try {
+    await db.execute(sql`
+      INSERT INTO wc_enquiries (product_id, product_name, customer_name, email, phone, message, customer_id, source)
+      VALUES (
+        ${d.productId ?? null},
+        ${d.productName ?? null},
+        ${d.name},
+        ${d.email},
+        ${d.phone ?? null},
+        ${d.message},
+        ${customerId},
+        ${d.source}
+      )
+    `);
+  } catch (e) {
+    // source column may not exist yet — retry without it
+    try {
+      await db.execute(sql`
+        INSERT INTO wc_enquiries (product_id, product_name, customer_name, email, phone, message, customer_id)
+        VALUES (${d.productId ?? null}, ${d.productName ?? null}, ${d.name}, ${d.email}, ${d.phone ?? null}, ${d.message}, ${customerId})
+      `);
+    } catch (e2) {
+      logger.warn({ err: e2 }, "[shop/product-enquiry] Could not insert into wc_enquiries");
+    }
+  }
+
+  const settings = await getAllSettings();
+  const notifyEmail = settings["enquiry_email"] ?? settings["contact_email"] ?? settings["email"];
+  const businessName = settings["business_name"] ?? "Select Branding Solutions";
+  const tag = d.source === "chat" ? "Chat Message" : "Product Enquiry";
+
+  // Notify staff
+  if (notifyEmail) {
+    try {
+      await sendEmail({
+        to: notifyEmail,
+        subject: `New ${tag} from ${d.name}${d.productName ? ` — ${d.productName}` : ""} — ${refNum}`,
+        text: [
+          `Reference: ${refNum}`,
+          `Source: ${tag}`,
+          d.productName ? `Product: ${d.productName}` : null,
+          d.productUrl  ? `URL: ${d.productUrl}` : null,
+          `Name: ${d.name}`,
+          `Email: ${d.email}`,
+          d.phone ? `Phone: ${d.phone}` : null,
+          `\nMessage:\n${d.message}`,
+        ].filter(Boolean).join("\n"),
+        html: `
+          <p><strong>Reference:</strong> ${refNum}</p>
+          <p><strong>Source:</strong> ${tag}</p>
+          ${d.productName ? `<p><strong>Product:</strong> ${d.productUrl ? `<a href="${d.productUrl}">${d.productName}</a>` : d.productName}</p>` : ""}
+          <p><strong>Name:</strong> ${d.name}</p>
+          <p><strong>Email:</strong> <a href="mailto:${d.email}">${d.email}</a></p>
+          ${d.phone ? `<p><strong>Phone:</strong> ${d.phone}</p>` : ""}
+          <p><strong>Message:</strong></p><p style="white-space:pre-wrap">${d.message}</p>
+        `,
+      });
+    } catch (e) { logger.warn({ err: e }, "[shop/product-enquiry] Failed to send notification email"); }
+  }
+
+  // Confirm to customer
+  try {
+    await sendEmail({
+      to: d.email,
+      subject: `Thanks for getting in touch — ${refNum}`,
+      text: `Hi ${d.name},\n\nThanks for your message — we'll get back to you shortly.\n\nYour reference number is ${refNum}.\n\n${businessName}`,
+      html: `<p>Hi ${d.name},</p><p>Thanks for your message — we'll get back to you shortly.</p><p>Your reference number is <strong>${refNum}</strong>.</p><p>${businessName}</p>`,
+    });
+  } catch (e) { logger.warn({ err: e }, "[shop/product-enquiry] Failed to send confirmation email"); }
+
+  res.json({ success: true, referenceNumber: refNum });
+});
+
 // ── Shop: categories from internal DB ────────────────────────────────────────
 
 router.get("/shop/wc/categories", async (_req, res): Promise<void> => {
@@ -464,7 +638,7 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
         ? sql`
             SELECT id, name, sku, category, image_url, unit_price, regular_price,
                    on_sale, description, permalink, woo_commerce_id, stock_quantity,
-                   gallery_images,
+                   gallery_images, size_guide_html, price_breaks,
                    guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
                    guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
                    guidance_staff_recommendation
@@ -475,7 +649,7 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
         : sql`
             SELECT id, name, sku, category, image_url, unit_price, regular_price,
                    on_sale, description, permalink, woo_commerce_id, stock_quantity,
-                   gallery_images,
+                   gallery_images, size_guide_html, price_breaks,
                    guidance_value_rating, guidance_durability_rating, guidance_smart_rating,
                    guidance_badges, guidance_tags, guidance_best_for, guidance_not_ideal_for,
                    guidance_staff_recommendation
@@ -496,12 +670,46 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
       WHERE product_id = ${p.id}
       ORDER BY colour ASC, size ASC, sleeve ASC
     `);
-    const variants = variantRows.rows as any[];
+    const allVariantRows = variantRows.rows as any[];
 
-    // Derive distinct attribute options from variants
-    const colours = [...new Set(variants.map((v) => v.colour).filter(Boolean))] as string[];
-    const sizes   = [...new Set(variants.map((v) => v.size).filter(Boolean))] as string[];
-    const sleeves = [...new Set(variants.map((v) => v.sleeve).filter(Boolean))] as string[];
+    // ── Deduplicate by (colour, size, sleeve) — keep the row with highest stock ──
+    // Some WC syncs produce multiple rows for the same attribute combination.
+    const variantMap = new Map<string, any>();
+    for (const v of allVariantRows) {
+      const key = `${(v.colour ?? "").trim()}|${(v.size ?? "").trim()}|${(v.sleeve ?? "").trim()}`;
+      const existing = variantMap.get(key);
+      if (!existing || (v.stock_quantity ?? 0) > (existing.stock_quantity ?? 0)) {
+        variantMap.set(key, v);
+      }
+    }
+    const variants = [...variantMap.values()];
+
+    // ── Natural size sort ──────────────────────────────────────────────────────
+    // Clothing sizes in display order (case-insensitive match)
+    const CLOTHING_ORDER = [
+      "xxs", "xs", "extra small", "s", "small", "s/m",
+      "m", "medium", "m/l", "l", "large",
+      "xl", "extra large", "xxl", "2xl", "xxxl", "3xl", "4xl", "5xl", "6xl",
+    ];
+    function naturalSizeSort(a: string, b: string): number {
+      const na = parseFloat(a);
+      const nb = parseFloat(b);
+      // Both purely numeric → numeric sort (handles shoe/children's sizes)
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      // Both in known clothing order → use that order
+      const ia = CLOTHING_ORDER.indexOf(a.toLowerCase());
+      const ib = CLOTHING_ORDER.indexOf(b.toLowerCase());
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return  1;
+      // Fallback: natural locale sort
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    }
+
+    // Derive distinct attribute options from deduplicated variants
+    const colours = [...new Set(variants.map((v) => (v.colour ?? "").trim()).filter(Boolean))];
+    const sizes   = [...new Set(variants.map((v) => (v.size   ?? "").trim()).filter(Boolean))].sort(naturalSizeSort);
+    const sleeves = [...new Set(variants.map((v) => (v.sleeve ?? "").trim()).filter(Boolean))].sort(naturalSizeSort);
 
     const attributes: any[] = [];
     if (colours.length) attributes.push({ id: 1, name: "Colour", options: colours, variation: true });
@@ -518,9 +726,12 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
 
     const variations = variants.map((v) => {
       const attrs: any[] = [];
-      if (v.colour) attrs.push({ name: "Colour", option: v.colour });
-      if (v.size)   attrs.push({ name: "Size",   option: v.size });
-      if (v.sleeve) attrs.push({ name: "Sleeve", option: v.sleeve });
+      const colour = (v.colour ?? "").trim();
+      const size   = (v.size   ?? "").trim();
+      const sleeve = (v.sleeve ?? "").trim();
+      if (colour) attrs.push({ name: "Colour", option: colour });
+      if (size)   attrs.push({ name: "Size",   option: size });
+      if (sleeve) attrs.push({ name: "Sleeve", option: sleeve });
       return {
         id: v.id,
         price: v.price ? String(v.price) : String(p.unit_price ?? 0),
@@ -569,6 +780,17 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
       stockStatus: (p.stock_quantity ?? 0) > 0 ? "instock" : "outofstock",
       stockQuantity: p.stock_quantity ?? 0,
       variations,
+      sizeGuideHtml: p.size_guide_html ?? null,
+      priceBreaks: (() => {
+        const raw = p.price_breaks;
+        if (!raw) return [];
+        const parsed: { qty: number; price: number }[] =
+          Array.isArray(raw) ? raw : (() => { try { return JSON.parse(String(raw)); } catch { return []; } })();
+        const unitPrice = p.unit_price ? parseFloat(String(p.unit_price)) : 0;
+        return parsed
+          .filter((t) => t.qty > 0 && t.price > 0 && t.price < unitPrice)
+          .sort((a, b) => a.qty - b.qty);
+      })(),
       // Guidance fields
       guidance: {
         valueRating:      p.guidance_value_rating      ? Number(p.guidance_value_rating)      : 0,
@@ -612,6 +834,36 @@ router.post("/shop/stripe/payment-intent", async (req, res): Promise<void> => {
   }
 });
 
+// ── Branding options (positions + surcharges) ────────────────────────────────
+
+const DEFAULT_BRANDING_POSITIONS = [
+  { id: "left-breast",  name: "Left Breast",   surcharge: 0,    description: "Standard position — included in base price" },
+  { id: "right-breast", name: "Right Breast",  surcharge: 2.50, description: "" },
+  { id: "back-large",   name: "Back (Large)",  surcharge: 5.00, description: "Full-width back logo" },
+  { id: "back-small",   name: "Back (Small)",  surcharge: 2.50, description: "" },
+  { id: "left-sleeve",  name: "Left Sleeve",   surcharge: 2.50, description: "" },
+  { id: "right-sleeve", name: "Right Sleeve",  surcharge: 2.50, description: "" },
+];
+
+router.get("/shop/branding-options", async (_req, res): Promise<void> => {
+  const settings = await getAllSettings();
+  const raw = settings["shop_branding_positions"];
+  if (raw) {
+    try { res.json(JSON.parse(raw)); return; } catch {}
+  }
+  res.json(DEFAULT_BRANDING_POSITIONS);
+});
+
+router.post("/shop/branding-options", async (req, res): Promise<void> => {
+  const positions = req.body;
+  if (!Array.isArray(positions)) { res.status(400).json({ error: "Expected array" }); return; }
+  await db.execute(sql`
+    INSERT INTO settings (key, value) VALUES ('shop_branding_positions', ${JSON.stringify(positions)})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+  `);
+  res.json({ ok: true });
+});
+
 // ── Shop order creation (called after Stripe payment confirms) ────────────────
 
 const ShopOrderSchema = z.object({
@@ -637,6 +889,12 @@ const ShopOrderSchema = z.object({
     colour: z.string().optional().nullable(),
     size: z.string().optional().nullable(),
     image: z.string().optional().nullable(),
+    brandingPositions: z.array(z.object({
+      id: z.string(),
+      name: z.string(),
+      surcharge: z.number(),
+    })).optional().nullable(),
+    wearerName: z.string().optional().nullable(),
   })),
   subtotal: z.number(),
   carriage: z.number().default(8.5),
@@ -687,7 +945,7 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
     // Insert order items
     for (const item of d.cartItems) {
       await db.execute(sql`
-        INSERT INTO order_items (order_id, product_name, quantity, unit_price, line_total, colour, size, notes)
+        INSERT INTO order_items (order_id, product_name, quantity, unit_price, line_total, colour, size, notes, recipient_name)
         VALUES (
           ${orderId},
           ${item.name},
@@ -696,7 +954,13 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
           ${String(item.price * item.quantity)},
           ${item.colour ?? null},
           ${item.size ?? null},
-          ${item.sku ? `SKU: ${item.sku}` : null}
+          ${[
+            item.sku ? `SKU: ${item.sku}` : null,
+            item.brandingPositions?.length
+              ? `Branding: ${item.brandingPositions.map((p) => p.name + (p.surcharge > 0 ? ` (+£${p.surcharge.toFixed(2)})` : '')).join(', ')}`
+              : null,
+          ].filter(Boolean).join(' | ') || null},
+          ${item.wearerName?.trim() || null}
         )
       `);
     }
@@ -734,6 +998,54 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
   } catch (e: any) {
     logger.error({ err: e }, "[shop/orders] Failed to create order");
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── GET /shop/blog-posts ─────────────────────────────────────────────────────
+// Proxies the WordPress REST API so the shop avoids CORS issues and can cache.
+router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
+  try {
+    const apiUrl =
+      "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
+      "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media&_embed";
+    const wpRes = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) });
+    if (!wpRes.ok) {
+      res.status(wpRes.status).json({ error: "WordPress API error" });
+      return;
+    }
+    const posts: any[] = await wpRes.json();
+    const cleaned = posts.map((p: any) => {
+      // Strip HTML tags from excerpt
+      const rawExcerpt: string = p.excerpt?.rendered ?? "";
+      const excerpt = rawExcerpt
+        .replace(/<[^>]+>/g, "")
+        .replace(/\[&hellip;\]/g, "…")
+        .replace(/&#8230;/g, "…")
+        .trim();
+      const title: string = (p.title?.rendered ?? "")
+        .replace(/&#8217;/g, "'")
+        .replace(/&#8211;/g, "–")
+        .replace(/&amp;/g, "&")
+        .trim();
+      // Try to get featured image URL from _embedded
+      const featuredUrl: string | null =
+        p._embedded?.["wp:featuredmedia"]?.[0]?.source_url ?? null;
+      return {
+        id: p.id,
+        title,
+        excerpt,
+        date: p.date,
+        link: p.link,
+        slug: p.slug,
+        featuredImageUrl: featuredUrl,
+      };
+    });
+    // Cache for 15 minutes
+    res.setHeader("Cache-Control", "public, max-age=900");
+    res.json(cleaned);
+  } catch (e: any) {
+    logger.warn({ err: e }, "[shop/blog-posts] Failed to fetch WordPress posts");
+    res.status(502).json({ error: "Could not fetch blog posts" });
   }
 });
 

@@ -30,9 +30,9 @@ export function MainNav() {
             </Link>
           </li>
           <li>
-            <a href="https://www.selectuniforms.co.uk/latest-news/" target="_blank" rel="noreferrer" className="block py-4 px-4 hover:bg-primary/90 transition-colors">
+            <Link href="/latest-news" className="block py-4 px-4 hover:bg-primary/90 transition-colors">
               LATEST NEWS
-            </a>
+            </Link>
           </li>
           <li>
             <Link href="/contact" className="block py-4 px-4 hover:bg-primary/90 transition-colors">

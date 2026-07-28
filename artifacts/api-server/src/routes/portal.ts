@@ -3997,6 +3997,36 @@ router.get("/portal/stock", portalAuth, async (req: Request, res: Response) => {
     }
   } catch { /* size ordering is best-effort */ }
 
+  // ── Weekly low-stock notification ────────────────────────────────────────
+  // If any items are below their minimum, fire a broadcast notification once per 7 days
+  // so managers see it in the notification bell without needing to visit the page.
+  try {
+    const lowStockCount = (rows.rows as any[]).filter(
+      (r: any) => r.min_quantity > 0 && Number(r.stock_quantity) <= Number(r.min_quantity)
+    ).length;
+    if (lowStockCount > 0 && portalRole === "manager") {
+      const recentNotif = await db.execute(sql`
+        SELECT id FROM portal_notifications
+        WHERE customer_id = ${customerId}
+          AND type = 'stores_reorder'
+          AND created_at > now() - interval '7 days'
+        LIMIT 1
+      `);
+      if (recentNotif.rows.length === 0) {
+        await db.execute(sql`
+          INSERT INTO portal_notifications
+            (customer_id, portal_user_id, title, body, link, type, is_read, created_at)
+          VALUES (
+            ${customerId}, NULL,
+            'Stores top-up due',
+            ${`${lowStockCount} item${lowStockCount !== 1 ? "s are" : " is"} below minimum stock level — it's time to place a top-up order.`},
+            '/stores', 'stores_reorder', false, now()
+          )
+        `);
+      }
+    }
+  } catch { /* notification is best-effort — never block the stock response */ }
+
   res.json({ items: rows.rows, processes: processes.rows, sizesMap });
 });
 
