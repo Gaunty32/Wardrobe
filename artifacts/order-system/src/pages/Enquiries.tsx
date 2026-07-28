@@ -11,9 +11,14 @@ import { cn } from "@/lib/utils";
 const API_BASE = "/api";
 
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+  const token = localStorage.getItem("sbs_staff_token");
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...opts?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...opts?.headers,
+    },
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();

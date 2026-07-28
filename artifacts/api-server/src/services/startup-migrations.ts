@@ -25,6 +25,10 @@ export async function runStartupMigrations(): Promise<void> {
       created_at    timestamptz NOT NULL DEFAULT now()
     )
   `);
+  // is_read — unread tracking for the staff notification badge
+  await db.execute(sql`
+    ALTER TABLE wc_enquiries ADD COLUMN IF NOT EXISTS is_read boolean NOT NULL DEFAULT false
+  `);
 
   // purchasing_queued_at — must be added before any re-queue updates reference it
   await db.execute(sql`

@@ -680,6 +680,9 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
   if (req.body.deliveryAddressId !== undefined) {
     updateData.deliveryAddressId = req.body.deliveryAddressId ?? null;
   }
+  if (req.body.invoiceAddressId !== undefined) {
+    updateData.invoiceAddressId = req.body.invoiceAddressId ?? null;
+  }
 
   const [order] = await db
     .update(ordersTable)

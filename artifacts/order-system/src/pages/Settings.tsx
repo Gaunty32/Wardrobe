@@ -1397,6 +1397,7 @@ export default function Settings() {
   const [wooKey, setWooKey] = useState("");
   const [wooSecret, setWooSecret] = useState("");
   const [syncSchedule, setSyncSchedule] = useState("none");
+  const [enquiryNotificationEmail, setEnquiryNotificationEmail] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
   const [formLoaded, setFormLoaded] = useState(false);
@@ -1668,6 +1669,7 @@ export default function Settings() {
       setWooKey(rawSettings["woo_consumer_key"] ?? "");
       setWooSecret(rawSettings["woo_consumer_secret"] ?? "");
       setSyncSchedule(rawSettings["woo_sync_schedule"] ?? "none");
+      setEnquiryNotificationEmail(rawSettings["enquiry_notification_email"] ?? "");
       setFormLoaded(true);
     }
   }, [rawSettings, formLoaded]);
@@ -1858,6 +1860,7 @@ export default function Settings() {
       woo_consumer_key: wooKey || null,
       woo_consumer_secret: wooSecret || null,
       woo_sync_schedule: syncSchedule === "none" ? null : syncSchedule,
+      enquiry_notification_email: enquiryNotificationEmail.trim() || null,
     });
   }
 
@@ -2362,6 +2365,35 @@ export default function Settings() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* ── Product Enquiry Notifications ──────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                <h2 className="font-semibold text-base flex items-center gap-2">
+                  <MessageSquarePlus className="w-4 h-4 text-primary" /> Product Enquiry Notifications
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  When a new product enquiry arrives via the WooCommerce webhook, an email alert is sent to this address. Leave blank to disable email notifications.
+                </p>
+                <div className="space-y-1.5">
+                  <Label>Notification email address</Label>
+                  <Input
+                    type="email"
+                    placeholder="staff@yourcompany.com"
+                    value={enquiryNotificationEmail}
+                    onChange={(e) => setEnquiryNotificationEmail(e.target.value)}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={handleSave}
+                  disabled={saveMutation.isPending}
+                >
+                  {saveMutation.isPending
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</>
+                    : <><CheckCircle className="w-4 h-4" />Save</>}
+                </Button>
               </div>
 
             </div>

@@ -18,11 +18,13 @@ function getStoredActor(): string {
 
 async function apiFetch<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
   const actor = getStoredActor();
+  const token = localStorage.getItem("sbs_staff_token");
   const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
     headers: {
       "Content-Type": "application/json",
       ...(actor ? { "x-actor": actor } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...opts?.headers,
     },
   });
@@ -569,6 +571,25 @@ export default function Layout({ children }: LayoutProps) {
     enabled: isStaffAuthenticated(),
   });
 
+  const qc = useQueryClient();
+  const { data: enquiryCountData } = useQuery<{ count: number }>({
+    queryKey: ["enquiries-unread-count"],
+    queryFn: () => apiFetch("/wc-enquiries/unread-count"),
+    enabled: isStaffAuthenticated(),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+  const enquiryUnreadCount = enquiryCountData?.count ?? 0;
+
+  // Mark all enquiries as read when the user is on /enquiries
+  useEffect(() => {
+    if (location === "/enquiries" && enquiryUnreadCount > 0) {
+      apiFetch("/wc-enquiries/mark-all-read", { method: "PATCH" })
+        .then(() => qc.invalidateQueries({ queryKey: ["enquiries-unread-count"] }))
+        .catch(() => {/* silent */});
+    }
+  }, [location, enquiryUnreadCount]);
+
   if (!isStaffAuthenticated()) return null;
 
   function handleSignOut() {
@@ -674,6 +695,7 @@ export default function Layout({ children }: LayoutProps) {
               <div className="space-y-0.5">
                 {section.items.map((item) => {
                   const isActive = location === item.href || (item.href !== "/dashboard" && location.startsWith(item.href));
+                  const badge = item.href === "/enquiries" && enquiryUnreadCount > 0 ? enquiryUnreadCount : null;
                   return (
                     <Link
                       key={item.name}
@@ -690,6 +712,11 @@ export default function Layout({ children }: LayoutProps) {
                         isActive ? "text-primary" : "text-white/50 group-hover:text-white/80"
                       )} />
                       {item.name}
+                      {badge !== null && (
+                        <span className="ml-auto min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">
+                          {badge > 99 ? "99+" : badge}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
