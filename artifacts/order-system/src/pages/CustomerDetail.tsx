@@ -115,15 +115,7 @@ function AddressesTab({ customerId, customer }: { customerId: number; customer: 
   });
 
   const openAdd = () => {
-    setForm({
-      label: "",
-      line1: customer?.address || "",
-      line2: "",
-      city: customer?.city || "",
-      postcode: customer?.postcode || "",
-      country: "United Kingdom",
-      notes: "",
-    });
+    setForm(blank);
     setEditing(null);
     setOpen(true);
   };
