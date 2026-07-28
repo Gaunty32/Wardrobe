@@ -62,6 +62,7 @@ router.get("/quotes", async (_req, res: Response): Promise<void> => {
 const CreateSchema = z.object({
   customerId: z.number().int().positive().nullable().optional(),
   enquiryId: z.number().int().positive().nullable().optional(),
+  wcEnquiryId: z.number().int().positive().nullable().optional(),
   customerName: z.string().min(1),
   notes: z.string().optional().nullable(),
   expiresAt: z.string().optional().nullable(),
@@ -70,7 +71,7 @@ const CreateSchema = z.object({
 router.post("/quotes", async (req: Request, res: Response): Promise<void> => {
   const parsed = CreateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const { customerId, enquiryId, customerName, notes, expiresAt } = parsed.data;
+  const { customerId, enquiryId, wcEnquiryId, customerName, notes, expiresAt } = parsed.data;
 
   // Auto-fill logo from linked customer
   let customerLogoUrl: string | null = null;
@@ -84,8 +85,8 @@ router.post("/quotes", async (req: Request, res: Response): Promise<void> => {
   const quoteNumber = `Q${String(n).padStart(3, "0")}`;
 
   const result = await db.execute(sql`
-    INSERT INTO quotes (quote_number, customer_id, enquiry_id, customer_name, notes, cover_text, expires_at, customer_logo_url)
-    VALUES (${quoteNumber}, ${customerId ?? null}, ${enquiryId ?? null}, ${customerName}, ${notes ?? null}, ${DEFAULT_COVER_TEXT}, ${expiresAt ? new Date(expiresAt) : null}, ${customerLogoUrl})
+    INSERT INTO quotes (quote_number, customer_id, enquiry_id, wc_enquiry_id, customer_name, notes, cover_text, expires_at, customer_logo_url)
+    VALUES (${quoteNumber}, ${customerId ?? null}, ${enquiryId ?? null}, ${wcEnquiryId ?? null}, ${customerName}, ${notes ?? null}, ${DEFAULT_COVER_TEXT}, ${expiresAt ? new Date(expiresAt) : null}, ${customerLogoUrl})
     RETURNING *
   `);
   res.status(201).json(quoteToCamel(result.rows[0] as any));

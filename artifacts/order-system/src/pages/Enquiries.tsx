@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import Layout from "@/components/Layout";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageSquarePlus, Search, ExternalLink, Phone, Mail, Package, User } from "lucide-react";
+import { MessageSquarePlus, Search, ExternalLink, Phone, Mail, Package, User, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const API_BASE = "/api";
@@ -43,6 +44,16 @@ function fmtDate(iso: string) {
 
 function EnquiryCard({ item }: { item: WcEnquiry }) {
   const [expanded, setExpanded] = useState(false);
+  const [, setLocation] = useLocation();
+
+  function handleCreateQuote() {
+    const params = new URLSearchParams();
+    params.set("wc_enquiry_id", String(item.id));
+    params.set("name", item.customer_name);
+    params.set("email", item.email);
+    if (item.product_name) params.set("product", item.product_name);
+    setLocation(`/quotes?${params.toString()}`);
+  }
 
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3 hover:shadow-sm transition-shadow">
@@ -89,7 +100,13 @@ function EnquiryCard({ item }: { item: WcEnquiry }) {
             </div>
           </div>
         </div>
-        <span className="text-[11px] text-muted-foreground shrink-0">{fmtDate(item.created_at)}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] text-muted-foreground">{fmtDate(item.created_at)}</span>
+          <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={handleCreateQuote}>
+            <FileText className="w-3 h-3" />
+            Create Quote
+          </Button>
+        </div>
       </div>
 
       {item.product_name && (

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import Layout from "@/components/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,6 +98,7 @@ function EnquirySourceBadge({ tag }: { tag: string }) {
 
 export default function Quotes() {
   const [, setLocation] = useLocation();
+  const searchStr = useSearch();
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -106,11 +107,33 @@ export default function Quotes() {
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerId, setNewCustomerId] = useState<number | null>(null);
   const [newEnquiryId, setNewEnquiryId] = useState<number | null>(null);
+  const [newWcEnquiryId, setNewWcEnquiryId] = useState<number | null>(null);
+  const [newWcEnquiryEmail, setNewWcEnquiryEmail] = useState<string | null>(null);
   const [newNotes, setNewNotes] = useState("");
   const [customerSearch, setCustomerSearch] = useState("");
   const [hlContacts, setHlContacts] = useState<{ id: string; name: string; company: string | null; email: string | null; phone: string | null }[]>([]);
   const [hlSearching, setHlSearching] = useState(false);
   const hlDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-open dialog when navigated from Enquiries page
+  useEffect(() => {
+    if (!searchStr) return;
+    const params = new URLSearchParams(searchStr);
+    const wcId = params.get("wc_enquiry_id");
+    if (!wcId) return;
+    const name = params.get("name") ?? "";
+    const email = params.get("email") ?? "";
+    const product = params.get("product") ?? "";
+    setNewWcEnquiryId(Number(wcId));
+    setNewCustomerName(name);
+    setCustomerSearch(name);
+    setNewWcEnquiryEmail(email || null);
+    if (product) setNewNotes(`Enquiry about: ${product}`);
+    setNewOpen(true);
+    // Clear query params from URL without re-navigating
+    window.history.replaceState(null, "", window.location.pathname);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Live HL contact search with debounce
   useEffect(() => {
@@ -159,6 +182,7 @@ export default function Quotes() {
         customerName: newCustomerName,
         customerId: newCustomerId,
         enquiryId: newEnquiryId,
+        wcEnquiryId: newWcEnquiryId,
         notes: newNotes || null,
         expiresAt: defaultExpiresAt,
       }),
@@ -169,6 +193,8 @@ export default function Quotes() {
       setNewCustomerName("");
       setNewCustomerId(null);
       setNewEnquiryId(null);
+      setNewWcEnquiryId(null);
+      setNewWcEnquiryEmail(null);
       setNewNotes("");
       setCustomerSearch("");
       setLocation(`/quotes/${q.id}`);
@@ -220,6 +246,8 @@ export default function Quotes() {
     setNewCustomerName("");
     setNewCustomerId(null);
     setNewEnquiryId(null);
+    setNewWcEnquiryId(null);
+    setNewWcEnquiryEmail(null);
     setNewNotes("");
     setCustomerSearch("");
     setHlContacts([]);
@@ -453,7 +481,15 @@ export default function Quotes() {
               {newEnquiryId && (
                 <p className="text-xs text-amber-600 font-medium">High Level enquiry selected — quote will be saved under their name</p>
               )}
-              {!newCustomerId && !newEnquiryId && customerSearch && filteredCustomers.length === 0 && filteredEnquiries.length === 0 && (
+              {newWcEnquiryId && (
+                <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 space-y-0.5">
+                  <p className="text-xs text-blue-700 font-medium">Linked to website enquiry</p>
+                  {newWcEnquiryEmail && (
+                    <p className="text-xs text-blue-600">Enquirer email: {newWcEnquiryEmail}</p>
+                  )}
+                </div>
+              )}
+              {!newCustomerId && !newEnquiryId && !newWcEnquiryId && customerSearch && filteredCustomers.length === 0 && filteredEnquiries.length === 0 && (
                 <p className="text-xs text-muted-foreground">No match — will be saved as a new name</p>
               )}
             </div>
