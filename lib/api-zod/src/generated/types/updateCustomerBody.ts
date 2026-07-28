@@ -15,6 +15,8 @@ export interface UpdateCustomerBody {
   /** @nullable */
   email?: string | null;
   /** @nullable */
+  billingEmail?: string | null;
+  /** @nullable */
   phone?: string | null;
   /** @nullable */
   address?: string | null;
@@ -26,4 +28,22 @@ export interface UpdateCustomerBody {
   postcode?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  defaultShippingService?: string | null;
+  /** @nullable */
+  highLevelContactId?: string | null;
+  poNumberRequired?: boolean;
+  requiresPrepayment?: boolean;
+  zeroVat?: boolean;
+  hasReviewed?: boolean;
+  /** @nullable */
+  invoiceName?: string | null;
+  /** @nullable */
+  invoiceAddress?: string | null;
+  /** @nullable */
+  invoiceCity?: string | null;
+  /** @nullable */
+  invoicePostcode?: string | null;
 }

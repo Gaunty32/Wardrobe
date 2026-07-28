@@ -1280,6 +1280,11 @@ export async function runStartupMigrations(): Promise<void> {
     WHERE portal_role = 'manager' AND show_pricing = false;
   `);
 
+  // invite_sent_at — tracks when invite email was last sent
+  await db.execute(sql`
+    ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS invite_sent_at timestamptz;
+  `);
+
   // One-time deletion of erroneously generated portal order P51.
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS _migration_flags (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW());
@@ -1724,7 +1729,7 @@ export async function runStartupMigrations(): Promise<void> {
     SELECT DISTINCT UPPER(bin_location), 15
     FROM product_variants
     WHERE bin_location IS NOT NULL AND bin_location <> ''
-    ON CONFLICT (bin_number) DO NOTHING
+      AND UPPER(bin_location) NOT IN (SELECT bin_number FROM stock_bins)
   `);
   console.log("[startup] stock_bins backfill complete");
 
