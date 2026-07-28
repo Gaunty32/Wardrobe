@@ -1,32 +1,32 @@
 import { useWcCategories } from '@/hooks/use-wc';
-import { Link, useLocation } from 'wouter';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { Link } from 'wouter';
+import { ChevronDown, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { useState } from 'react';
 
 export function CategorySidebar({ activeSlug }: { activeSlug?: string }) {
   const { data: categories = [], isLoading } = useWcCategories();
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const toggleExpand = (id: number) => {
     setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   if (isLoading) {
-    return <div className="animate-pulse space-y-4">
-      <div className="h-6 bg-gray-200 w-3/4"></div>
-      <div className="h-4 bg-gray-200 w-full"></div>
-      <div className="h-4 bg-gray-200 w-5/6"></div>
-      <div className="h-4 bg-gray-200 w-full"></div>
-    </div>;
+    return (
+      <div className="animate-pulse space-y-3">
+        <div className="h-5 bg-gray-200 w-3/4 rounded" />
+        <div className="h-4 bg-gray-200 w-full rounded" />
+        <div className="h-4 bg-gray-200 w-5/6 rounded" />
+        <div className="h-4 bg-gray-200 w-full rounded" />
+      </div>
+    );
   }
 
   // Build tree
+  const map = new Map<number, any>();
+  categories.forEach((c: any) => map.set(c.id, { ...c, children: [] }));
   const tree: any[] = [];
-  const map = new Map();
-  categories.forEach((c: any) => {
-    map.set(c.id, { ...c, children: [] });
-  });
-  
   categories.forEach((c: any) => {
     if (c.parent && map.has(c.parent)) {
       map.get(c.parent).children.push(map.get(c.id));
@@ -43,14 +43,15 @@ export function CategorySidebar({ activeSlug }: { activeSlug?: string }) {
     return (
       <div key={node.id} className="w-full">
         <div className={`flex items-center justify-between py-2 border-b border-gray-100 ${depth > 0 ? 'pl-4' : ''}`}>
-          <Link 
-            href={`/category/${node.slug}`} 
+          <Link
+            href={`/category/${node.slug}`}
             className={`text-sm flex-1 hover:text-accent transition-colors ${isActive ? 'text-primary font-bold' : 'text-gray-600'}`}
+            onClick={() => setMobileOpen(false)}
           >
             {node.name}
           </Link>
           {hasChildren && (
-            <button 
+            <button
               onClick={() => toggleExpand(node.id)}
               className="p-1 text-gray-400 hover:text-gray-800"
             >
@@ -69,9 +70,22 @@ export function CategorySidebar({ activeSlug }: { activeSlug?: string }) {
 
   return (
     <div className="w-full">
-      <h3 className="text-lg font-bold text-gray-900 mb-4 uppercase">SHOP BY CATEGORY</h3>
-      <div className="flex flex-col">
-        {tree.map(node => renderNode(node))}
+      {/* Mobile toggle */}
+      <button
+        className="md:hidden flex items-center gap-2 w-full py-3 px-4 bg-gray-50 border border-gray-200 text-sm font-semibold text-gray-800 uppercase tracking-wide"
+        onClick={() => setMobileOpen(o => !o)}
+      >
+        <SlidersHorizontal className="w-4 h-4" />
+        <span>Browse Categories</span>
+        <ChevronDown className={`w-4 h-4 ml-auto transition-transform ${mobileOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* List — always visible on md+, toggled on mobile */}
+      <div className={`${mobileOpen ? 'block' : 'hidden'} md:block`}>
+        <h3 className="hidden md:block text-lg font-bold text-gray-900 mb-4 uppercase">Shop by Category</h3>
+        <div className="flex flex-col">
+          {tree.map(node => renderNode(node))}
+        </div>
       </div>
     </div>
   );

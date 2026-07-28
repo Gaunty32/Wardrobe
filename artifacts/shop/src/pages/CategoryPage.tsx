@@ -12,9 +12,9 @@ export default function CategoryPage() {
   const categoryName = categories.find((c: any) => c.slug === slug)?.name || slug?.replace(/-/g, ' ').toUpperCase();
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-4 md:py-8">
       {/* Breadcrumb */}
-      <div className="text-sm text-gray-500 mb-8 font-medium">
+      <div className="text-sm text-gray-500 mb-4 md:mb-8 font-medium">
         <Link href="/" className="hover:text-primary">HOME</Link>
         <span className="mx-2">/</span>
         <Link href="/products" className="hover:text-primary">SHOP</Link>
@@ -22,18 +22,19 @@ export default function CategoryPage() {
         <span className="text-gray-900 uppercase">{categoryName}</span>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-8">
-        {/* Sidebar */}
+      <div className="flex flex-col md:flex-row gap-6 md:gap-8">
+        {/* Sidebar — collapsible on mobile */}
         <div className="w-full md:w-[260px] shrink-0">
           <CategorySidebar activeSlug={slug} />
         </div>
 
         {/* Content */}
-        <div className="flex-1">
-          <h1 className="text-3xl font-bold text-primary mb-6">{categoryName}</h1>
-          <div className="flex items-center justify-between mb-6">
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl md:text-3xl font-bold text-primary mb-4 md:mb-6">{categoryName}</h1>
+
+          <div className="flex items-center justify-between mb-4 md:mb-6">
             <p className="text-sm text-gray-600">
-              Showing {products.length > 0 ? `1–${products.length}` : '0'} results
+              {products.length > 0 ? `${products.length} product${products.length !== 1 ? 's' : ''}` : '0 products'}
             </p>
             <select className="border border-gray-300 py-2 px-3 text-sm focus:outline-none focus:border-primary">
               <option>Default sorting</option>
@@ -45,7 +46,7 @@ export default function CategoryPage() {
           </div>
 
           {isLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
               {[...Array(8)].map((_, i) => (
                 <div key={i} className="flex flex-col gap-2">
                   <Skeleton className="aspect-square w-full rounded-none" />
@@ -55,7 +56,7 @@ export default function CategoryPage() {
               ))}
             </div>
           ) : products.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-6">
               {products.map((p: any) => (
                 <ProductCard key={p.id} product={p} />
               ))}
