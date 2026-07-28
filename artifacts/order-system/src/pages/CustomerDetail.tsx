@@ -2902,9 +2902,9 @@ function PortalAccessTab({ customerId }: { customerId: number }) {
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-1">
                     <Button
-                      variant={!u.last_login_at ? "outline" : "ghost"}
+                      variant="outline"
                       size="sm"
-                      className={!u.last_login_at ? "h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10" : "h-7 text-xs gap-1 text-primary hover:bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity"}
+                      className="h-7 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10"
                       onClick={() => { setInviteEmail(u.email); setInviteRole(u.portal_role ?? "member"); setInviteResult(null); setInviteOpen(true); }}>
                       <LogIn className="w-3 h-3" />{!u.last_login_at ? "Send Invite" : "Send link"}
                     </Button>

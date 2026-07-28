@@ -236,13 +236,14 @@ router.post("/portal/admin/invite", async (req: Request, res: Response) => {
   const initialStatus = skipEmail ? 'pending' : 'invited';
   const defaultShowPricing = portalRole === 'manager';
   await db.execute(sql`
-    INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role, show_pricing)
-    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, ${initialStatus}, ${portalRole}, ${defaultShowPricing})
+    INSERT INTO customer_portal_users (customer_id, email, invite_token, invite_expires_at, status, portal_role, show_pricing, invite_sent_at)
+    VALUES (${customerId}, ${email}, ${token}, ${expires.toISOString()}, ${initialStatus}, ${portalRole}, ${defaultShowPricing}, now())
     ON CONFLICT (email, customer_id) DO UPDATE
       SET invite_token = ${token},
           invite_expires_at = ${expires.toISOString()},
           status = ${initialStatus},
           portal_role = ${portalRole},
+          invite_sent_at = now(),
           updated_at = now()
   `);
 
