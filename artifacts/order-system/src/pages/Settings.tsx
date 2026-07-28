@@ -1423,11 +1423,10 @@ export default function Settings() {
 
   // LinkedIn fields
   const [liAccessToken, setLiAccessToken] = useState("");
-  const [liOrgUrn, setLiOrgUrn] = useState("");
   const [liFormLoaded, setLiFormLoaded] = useState(false);
   const [savingLi, setSavingLi] = useState(false);
   const [checkingLiToken, setCheckingLiToken] = useState(false);
-  type LiTokenResult = { memberName?: string; orgName?: string | null; error?: string };
+  type LiTokenResult = { memberName?: string; personUrn?: string; error?: string };
   const [liTokenResult, setLiTokenResult] = useState<LiTokenResult | null>(null);
 
   // Google Business Profile fields
@@ -1694,22 +1693,23 @@ export default function Settings() {
   useEffect(() => {
     if (rawSettings && !liFormLoaded) {
       setLiAccessToken(rawSettings["linkedin_access_token"] ?? "");
-      setLiOrgUrn(rawSettings["linkedin_org_urn"] ?? "");
       setLiFormLoaded(true);
     }
   }, [rawSettings, liFormLoaded]);
 
-  async function saveLinkedInSettings() {
-    if (!liAccessToken || !liOrgUrn) {
-      toast({ title: "Missing fields", description: "Both an Access Token and Organisation URN are required.", variant: "destructive" });
+  async function saveLinkedInSettings(personUrn?: string) {
+    if (!liAccessToken) {
+      toast({ title: "Missing token", description: "Paste your LinkedIn Access Token first.", variant: "destructive" });
       return;
     }
     setSavingLi(true);
     try {
+      const body: Record<string, string> = { linkedin_access_token: liAccessToken };
+      if (personUrn) body.linkedin_person_urn = personUrn;
       const res = await fetch(`${API_BASE}/settings`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ linkedin_access_token: liAccessToken, linkedin_org_urn: liOrgUrn }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
       toast({ title: "LinkedIn settings saved" });
@@ -3274,10 +3274,10 @@ export default function Settings() {
                 <div>
                   <h2 className="font-semibold text-base flex items-center gap-2">
                     <svg className="w-4 h-4 text-[#0A66C2]" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                    LinkedIn Page
+                    LinkedIn Profile
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    When a new article is published to the Knowledge Centre blog, it will automatically be shared to your LinkedIn company page.
+                    When a new article is published to the Knowledge Centre blog, it will automatically be shared to your personal LinkedIn profile.
                   </p>
                 </div>
 
@@ -3300,9 +3300,13 @@ export default function Settings() {
                         try {
                           const data = await apiFetch<LiTokenResult>("/linkedin/check-token", {
                             method: "POST",
-                            body: JSON.stringify({ accessToken: liAccessToken, orgUrn: liOrgUrn || undefined }),
+                            body: JSON.stringify({ accessToken: liAccessToken }),
                           });
                           setLiTokenResult(data);
+                          // Auto-save both the token and the person URN together
+                          if (data.personUrn) {
+                            await saveLinkedInSettings(data.personUrn);
+                          }
                         } catch (e: any) {
                           setLiTokenResult({ error: e?.message ?? "Request failed" });
                         } finally {
@@ -3312,23 +3316,11 @@ export default function Settings() {
                       className="shrink-0 gap-1.5"
                     >
                       {checkingLiToken ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                      Check Token
+                      Check &amp; Save
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Create a token in the <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noreferrer" className="underline">LinkedIn Developer Portal</a>. Your app needs the <strong>w_organization_social</strong> and <strong>r_organization_social</strong> permissions.
-                  </p>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Organisation URN</Label>
-                  <Input
-                    value={liOrgUrn}
-                    onChange={e => { setLiOrgUrn(e.target.value); setLiTokenResult(null); }}
-                    placeholder="urn:li:organization:12345678"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Find your Organisation URN by visiting your company page on LinkedIn — it's the number in the URL (e.g. <code>linkedin.com/company/<strong>12345678</strong></code>). Prefix it with <code>urn:li:organization:</code>.
+                    Generate a token from the <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noreferrer" className="underline">LinkedIn Developer Portal</a>. Your app needs the <strong>w_member_social</strong> and <strong>openid</strong> + <strong>profile</strong> permissions. The token is linked to the profile that authorised it.
                   </p>
                 </div>
 
@@ -3342,23 +3334,23 @@ export default function Settings() {
                 {liTokenResult && !liTokenResult.error && (
                   <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
                     <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>
-                      Token valid — authenticated as <strong>{liTokenResult.memberName}</strong>
-                      {liTokenResult.orgName && <> · Page: <strong>{liTokenResult.orgName}</strong></>}
-                      {liOrgUrn && !liTokenResult.orgName && <> · Organisation URN not found — double-check the URN above</>}
-                    </span>
+                    <span>Connected as <strong>{liTokenResult.memberName}</strong> — token and profile saved.</span>
                   </div>
                 )}
 
-                <Button
-                  type="button"
-                  onClick={saveLinkedInSettings}
-                  disabled={savingLi || !liAccessToken || !liOrgUrn}
-                  className="gap-2"
-                >
-                  {savingLi ? <Loader2 className="w-4 h-4 animate-spin" /> : <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>}
-                  Save LinkedIn Settings
-                </Button>
+                {/* Manual save (e.g. after pasting a new token without re-checking) */}
+                {!liTokenResult && (
+                  <Button
+                    type="button"
+                    onClick={() => saveLinkedInSettings()}
+                    disabled={savingLi || !liAccessToken}
+                    variant="outline"
+                    className="gap-2"
+                  >
+                    {savingLi ? <Loader2 className="w-4 h-4 animate-spin" /> : <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>}
+                    Save Token
+                  </Button>
+                )}
               </div>
 
             </div>

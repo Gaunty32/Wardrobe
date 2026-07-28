@@ -63,17 +63,17 @@ async function getFbSettings() {
   return map.facebook_page_id && map.facebook_page_access_token ? map : null;
 }
 
-async function getLinkedInSettings(): Promise<{ linkedin_access_token: string; linkedin_org_urn: string } | null> {
-  const rows = await db.execute(sql`SELECT key, value FROM settings WHERE key IN ('linkedin_access_token','linkedin_org_urn')`);
+async function getLinkedInSettings(): Promise<{ linkedin_access_token: string; linkedin_person_urn: string } | null> {
+  const rows = await db.execute(sql`SELECT key, value FROM settings WHERE key IN ('linkedin_access_token','linkedin_person_urn')`);
   const map: Record<string, string> = {};
   for (const r of (rows.rows ?? rows) as any[]) map[r.key] = r.value;
-  return map.linkedin_access_token && map.linkedin_org_urn
-    ? { linkedin_access_token: map.linkedin_access_token, linkedin_org_urn: map.linkedin_org_urn }
+  return map.linkedin_access_token && map.linkedin_person_urn
+    ? { linkedin_access_token: map.linkedin_access_token, linkedin_person_urn: map.linkedin_person_urn }
     : null;
 }
 
 async function publishToLinkedIn(
-  orgUrn: string,
+  authorUrn: string,
   accessToken: string,
   title: string,
   commentary: string,
@@ -82,7 +82,7 @@ async function publishToLinkedIn(
 ): Promise<{ ok: boolean; postUrn?: string; error?: string }> {
   try {
     const body = {
-      author: orgUrn,
+      author: authorUrn,
       lifecycleState: "PUBLISHED",
       specificContent: {
         "com.linkedin.ugc.ShareContent": {
@@ -121,42 +121,37 @@ async function publishToLinkedIn(
 
 // ── LinkedIn token checker ────────────────────────────────────────────────────
 router.post("/linkedin/check-token", async (req, res): Promise<void> => {
-  const parsed = z.object({
-    accessToken: z.string().min(1),
-    orgUrn: z.string().optional(),
-  }).safeParse(req.body);
+  const parsed = z.object({ accessToken: z.string().min(1) }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "accessToken required" }); return; }
-  const { accessToken, orgUrn } = parsed.data;
+  const { accessToken } = parsed.data;
   try {
-    const meRes = await fetch("https://api.linkedin.com/v2/me", {
+    // Use the OpenID userinfo endpoint — works with both legacy and OIDC tokens
+    const meRes = await fetch("https://api.linkedin.com/v2/userinfo", {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: AbortSignal.timeout(10_000),
     });
     if (!meRes.ok) {
-      const err: any = await meRes.json().catch(() => ({}));
-      res.status(400).json({ error: err.message ?? `LinkedIn error ${meRes.status}` });
+      // Fall back to the older /v2/me endpoint
+      const meRes2 = await fetch("https://api.linkedin.com/v2/me", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!meRes2.ok) {
+        const err: any = await meRes2.json().catch(() => ({}));
+        res.status(400).json({ error: err.message ?? `LinkedIn error ${meRes2.status}` });
+        return;
+      }
+      const me: any = await meRes2.json();
+      const personUrn = `urn:li:person:${me.id}`;
+      const memberName = [me.localizedFirstName, me.localizedLastName].filter(Boolean).join(" ") || "Unknown";
+      res.json({ valid: true, memberName, personUrn });
       return;
     }
     const me: any = await meRes.json();
-    const memberName = [me.localizedFirstName, me.localizedLastName].filter(Boolean).join(" ") || "Unknown";
-
-    let orgName: string | null = null;
-    if (orgUrn) {
-      const orgId = orgUrn.replace("urn:li:organization:", "");
-      const orgRes = await fetch(
-        `https://api.linkedin.com/v2/organizations/${orgId}?projection=(id,name)`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}`, "X-Restli-Protocol-Version": "2.0.0" },
-          signal: AbortSignal.timeout(10_000),
-        },
-      );
-      if (orgRes.ok) {
-        const orgData: any = await orgRes.json();
-        const localized = orgData.name?.localized ?? {};
-        orgName = localized[Object.keys(localized)[0]] ?? null;
-      }
-    }
-    res.json({ valid: true, memberName, orgName });
+    // userinfo returns 'sub' as the person ID
+    const personUrn = `urn:li:person:${me.sub}`;
+    const memberName = [me.given_name, me.family_name].filter(Boolean).join(" ") || me.name || "Unknown";
+    res.json({ valid: true, memberName, personUrn });
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? "Request failed" });
   }
@@ -1127,7 +1122,7 @@ export function startWordPressLinkedInScheduler(): void {
         const commentary = `${title}\n\n${excerpt}`.slice(0, 3000);
 
         const result = await publishToLinkedIn(
-          liSettings.linkedin_org_urn,
+          liSettings.linkedin_person_urn,
           liSettings.linkedin_access_token,
           title,
           commentary,
