@@ -3,19 +3,44 @@ import { Search, ShoppingBag } from 'lucide-react';
 import { useGetShopSettings } from '@workspace/api-client-react';
 import { useCart } from '@/context/CartContext';
 import logoPath from '@assets/sbs-logo-transparent.png';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export function Header() {
   const { data: settings } = useGetShopSettings();
   const { itemCount, subtotal } = useCart();
-  const [, setLocation] = useLocation();
-  const [search, setSearch] = useState('');
+  const [location, setLocation] = useLocation();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Initialise input from URL so it's pre-filled when landing on a search results page
+  const urlSearch = new URLSearchParams(window.location.search).get('search') || '';
+  const [search, setSearch] = useState(urlSearch);
+
+  // Keep input in sync if URL changes externally (e.g. browser back/forward)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setSearch(params.get('search') || '');
+  }, [location]);
+
+  const navigate = (value: string) => {
+    if (value.trim()) {
+      setLocation(`/products?search=${encodeURIComponent(value.trim())}`);
+    } else {
+      // Clear search — go back to plain products listing
+      setLocation('/products');
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => navigate(value), 350);
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (search.trim()) {
-      setLocation(`/products?search=${encodeURIComponent(search.trim())}`);
-    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    navigate(search);
   };
 
   return (
