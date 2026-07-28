@@ -2899,9 +2899,9 @@ export async function sendInvoiceEmail(orderId: number, toEmailOverride?: string
       try { stripeClient = await getUncachableStripeClient(); } catch { /* not configured — skip */ }
 
       if (stripeClient) {
-        if (order.stripePaymentLinkId) {
-          try { await stripeClient.paymentLinks.update(order.stripePaymentLinkId, { active: false }); } catch { /* ignore deactivation errors */ }
-        }
+        // Do NOT deactivate the old link — it may already have been shared with the customer
+        // in an acknowledgement email and we don't want to invalidate it. The webhook handles
+        // payment regardless of which link the customer uses.
         const price = await stripeClient.prices.create({
           unit_amount: Math.round((totalAmount + carriageAmount) * 100 * 1.2),
           currency: "gbp",

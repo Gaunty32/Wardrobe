@@ -1631,6 +1631,43 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     isBundleHeader: i.isBundleHeader ?? false,
   }));
 
+  // Generate a fresh Stripe payment link for the acknowledgement so it doesn't
+  // share a link with the invoice (which would make it stale if the invoice is
+  // resent). Errors here are non-fatal — email still sends without a payment link.
+  let ackStripeLink: string | null = order.stripePaymentLinkUrl ?? null;
+  if (!order.paidAt) {
+    try {
+      const stripeForAck = await getUncachableStripeClient();
+      const totalAmt = numericToFloat(order.totalAmount);
+      const carriageAmt = numericToFloat(order.carriageAmount);
+      if (totalAmt > 0) {
+        const amountPence = Math.round((totalAmt + carriageAmt) * 100 * 1.2);
+        const ackPrice = await stripeForAck.prices.create({
+          unit_amount: amountPence,
+          currency: "gbp",
+          product_data: { name: `Order ${order.orderNumber} — Select Branding Solutions Ltd` },
+        });
+        const ackLink = await stripeForAck.paymentLinks.create({
+          line_items: [{ price: ackPrice.id, quantity: 1 }],
+          metadata: { order_id: String(order.id), order_number: order.orderNumber },
+          after_completion: {
+            type: "hosted_confirmation",
+            hosted_confirmation: {
+              custom_message: `Payment received for order ${order.orderNumber}. Thank you — Select Branding Solutions Ltd`,
+            },
+          },
+        });
+        ackStripeLink = ackLink.url;
+        // Store as the canonical link so the invoice can also see it
+        await db.update(ordersTable)
+          .set({ stripePaymentLinkUrl: ackLink.url, stripePaymentLinkId: ackLink.id })
+          .where(eq(ordersTable.id, order.id));
+      }
+    } catch {
+      // Stripe not configured or API error — continue without a payment link
+    }
+  }
+
   const { subject, html, text } = buildAcknowledgementEmail({
     orderNumber: order.orderNumber,
     customerName: order.customerName ?? null,
@@ -1644,7 +1681,7 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
     totalAmount: numericToFloat(order.totalAmount),
     carriageAmount: numericToFloat(order.carriageAmount),
     items: mappedItems,
-    stripePaymentLink: order.stripePaymentLinkUrl ?? null,
+    stripePaymentLink: ackStripeLink,
   });
 
   // Generate PDF attachment

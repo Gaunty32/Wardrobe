@@ -321,10 +321,11 @@ router.post("/invoices/:orderId/refresh-stripe-link", async (req, res): Promise<
       res.status(503).json({ error: "Stripe is not configured on this account." }); return;
     }
 
-    // Deactivate existing link
-    if (order.stripePaymentLinkId) {
-      try { await stripeClient.paymentLinks.update(order.stripePaymentLinkId, { active: false }); } catch { /* ignore */ }
-    }
+    // Do NOT deactivate the existing link — it may be in a previously-sent acknowledgement
+    // email. Deactivating would break that link for the customer. Multiple active links per
+    // order are safe: any payment triggers the webhook and marks the order as paid.
+    // (Amount-change deactivation already happens in the PATCH /orders/:id handler when
+    // carriage is explicitly updated.)
 
     // Create fresh link with correct amount (items + carriage, inc. VAT)
     const price = await stripeClient.prices.create({
