@@ -1,4 +1,5 @@
 import { Link } from 'wouter';
+import { useSEO } from '@/hooks/useSEO';
 
 const IMAGES = [
   { src: 'https://www.selectuniforms.co.uk/wp-content/uploads/measuring-1x.jpg', alt: 'Corporate clothing on site measuring' },
@@ -8,13 +9,19 @@ const IMAGES = [
 ];
 
 export default function OnSiteMeasuring() {
+  useSEO({
+    title: 'On Site Measuring',
+    description: 'Our dedicated measuring team visits your premises to measure and fit every wearer. We achieve a 95%+ fit success rate — ensuring your uniform issue is accurate first time.',
+  });
   return (
     <div className="flex flex-col w-full">
       {/* Hero */}
       <section className="relative h-64 bg-gray-900 flex items-center justify-center overflow-hidden">
         <img
           src={IMAGES[0].src}
-          alt="On Site Measuring"
+          alt="On site uniform measuring"
+          width={1200} height={400}
+          fetchPriority="high"
           className="absolute inset-0 w-full h-full object-cover opacity-40"
         />
         <h1 className="text-4xl md:text-5xl font-extrabold text-white relative z-10 tracking-wider uppercase text-center px-4">
@@ -34,7 +41,7 @@ export default function OnSiteMeasuring() {
         {/* Photo pair */}
         <div className="grid grid-cols-2 gap-4 mb-10">
           {IMAGES.slice(0, 2).map((img, i) => (
-            <img key={i} src={img.src} alt={img.alt} className="w-full object-cover aspect-video" />
+            <img key={i} src={img.src} alt={img.alt} width={662} height={372} loading="lazy" decoding="async" className="w-full object-cover aspect-video" />
           ))}
         </div>
 
@@ -56,7 +63,7 @@ export default function OnSiteMeasuring() {
         {/* Second photo pair */}
         <div className="grid grid-cols-2 gap-4 mb-10">
           {IMAGES.slice(2).map((img, i) => (
-            <img key={i} src={img.src} alt={img.alt} className="w-full object-cover aspect-video" />
+            <img key={i} src={img.src} alt={img.alt} width={662} height={372} loading="lazy" decoding="async" className="w-full object-cover aspect-video" />
           ))}
         </div>
 

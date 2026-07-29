@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useSEO } from '@/hooks/useSEO';
 import { useWcProduct, useBrandingOptions } from '@/hooks/use-wc';
 import { Link, useParams } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -326,6 +327,12 @@ function attrLabel(name: string): string {
 export default function ProductDetail() {
   const { slug } = useParams();
   const { data: product, isLoading } = useWcProduct(slug);
+  useSEO({
+    title: product?.name ?? 'Workwear & Uniforms',
+    description: product
+      ? `Buy ${product.name} from Select Branding Solutions. Free logo application and in-house embroidery available. UK delivery from £8.50.`
+      : undefined,
+  });
   const { addItem, items, repriceProduct } = useCart();
 
   const [quantity, setQuantity] = useState(1);

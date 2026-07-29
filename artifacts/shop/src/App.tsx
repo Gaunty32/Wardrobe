@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -7,56 +8,66 @@ import { ShopAuthProvider } from '@/context/ShopAuthContext';
 import { Layout } from '@/components/Layout';
 import ChatWidget from '@/components/ChatWidget';
 
-// Pages (to be implemented)
-import Home from '@/pages/Home';
-import Shop from '@/pages/Shop';
-import CategoryPage from '@/pages/CategoryPage';
-import ProductDetail from '@/pages/ProductDetail';
-import Cart from '@/pages/Cart';
-import Checkout from '@/pages/Checkout';
-import OrderComplete from '@/pages/OrderComplete';
-import AboutUs from '@/pages/AboutUs';
-import ContactUs from '@/pages/ContactUs';
-import FAQ from '@/pages/FAQ';
-import BulkBuyBundles from '@/pages/BulkBuyBundles';
-import Reviews from '@/pages/Reviews';
-import KnowledgeCentre from '@/pages/KnowledgeCentre';
-import Login from '@/pages/Login';
-import Account from '@/pages/Account';
-import Personalisation from '@/pages/Personalisation';
-import OnSiteMeasuring from '@/pages/OnSiteMeasuring';
-import UniformManagement from '@/pages/UniformManagement';
-import LogoConversions from '@/pages/LogoConversions';
-import NotFound from '@/pages/not-found';
+// Lazy-loaded pages — each becomes its own JS chunk, reducing initial bundle
+const Home             = lazy(() => import('@/pages/Home'));
+const Shop             = lazy(() => import('@/pages/Shop'));
+const CategoryPage     = lazy(() => import('@/pages/CategoryPage'));
+const ProductDetail    = lazy(() => import('@/pages/ProductDetail'));
+const Cart             = lazy(() => import('@/pages/Cart'));
+const Checkout         = lazy(() => import('@/pages/Checkout'));
+const OrderComplete    = lazy(() => import('@/pages/OrderComplete'));
+const AboutUs          = lazy(() => import('@/pages/AboutUs'));
+const ContactUs        = lazy(() => import('@/pages/ContactUs'));
+const FAQ              = lazy(() => import('@/pages/FAQ'));
+const BulkBuyBundles   = lazy(() => import('@/pages/BulkBuyBundles'));
+const Reviews          = lazy(() => import('@/pages/Reviews'));
+const KnowledgeCentre  = lazy(() => import('@/pages/KnowledgeCentre'));
+const Login            = lazy(() => import('@/pages/Login'));
+const Account          = lazy(() => import('@/pages/Account'));
+const Personalisation  = lazy(() => import('@/pages/Personalisation'));
+const OnSiteMeasuring  = lazy(() => import('@/pages/OnSiteMeasuring'));
+const UniformManagement = lazy(() => import('@/pages/UniformManagement'));
+const LogoConversions  = lazy(() => import('@/pages/LogoConversions'));
+const NotFound         = lazy(() => import('@/pages/not-found'));
 
 const queryClient = new QueryClient();
+
+function PageLoader() {
+  return (
+    <div className="min-h-[40vh] flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function Router() {
   return (
     <Layout>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/products" component={Shop} />
-        <Route path="/category/:slug" component={CategoryPage} />
-        <Route path="/product/:slug" component={ProductDetail} />
-        <Route path="/cart" component={Cart} />
-        <Route path="/checkout" component={Checkout} />
-        <Route path="/order-complete" component={OrderComplete} />
-        <Route path="/about" component={AboutUs} />
-        <Route path="/contact" component={ContactUs} />
-        <Route path="/faq" component={FAQ} />
-        <Route path="/bulk-buy-bundles" component={BulkBuyBundles} />
-        <Route path="/reviews" component={Reviews} />
-        <Route path="/knowledge-centre" component={KnowledgeCentre} />
-        <Route path="/login" component={Login} />
-        <Route path="/account" component={Account} />
-        <Route path="/personalisation" component={Personalisation} />
-        <Route path="/on-site-measuring" component={OnSiteMeasuring} />
-        <Route path="/uniform-management" component={UniformManagement} />
-        <Route path="/logo-conversions" component={LogoConversions} />
-        <Route path="/latest-news">{() => <Redirect to="/knowledge-centre" />}</Route>
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<PageLoader />}>
+        <Switch>
+          <Route path="/" component={Home} />
+          <Route path="/products" component={Shop} />
+          <Route path="/category/:slug" component={CategoryPage} />
+          <Route path="/product/:slug" component={ProductDetail} />
+          <Route path="/cart" component={Cart} />
+          <Route path="/checkout" component={Checkout} />
+          <Route path="/order-complete" component={OrderComplete} />
+          <Route path="/about" component={AboutUs} />
+          <Route path="/contact" component={ContactUs} />
+          <Route path="/faq" component={FAQ} />
+          <Route path="/bulk-buy-bundles" component={BulkBuyBundles} />
+          <Route path="/reviews" component={Reviews} />
+          <Route path="/knowledge-centre" component={KnowledgeCentre} />
+          <Route path="/login" component={Login} />
+          <Route path="/account" component={Account} />
+          <Route path="/personalisation" component={Personalisation} />
+          <Route path="/on-site-measuring" component={OnSiteMeasuring} />
+          <Route path="/uniform-management" component={UniformManagement} />
+          <Route path="/logo-conversions" component={LogoConversions} />
+          <Route path="/latest-news">{() => <Redirect to="/knowledge-centre" />}</Route>
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </Layout>
   );
 }
@@ -65,15 +76,15 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ShopAuthProvider>
-      <CartProvider>
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
-            <Router />
-            <ChatWidget />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </CartProvider>
+        <CartProvider>
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
+              <Router />
+              <ChatWidget />
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </CartProvider>
       </ShopAuthProvider>
     </QueryClientProvider>
   );

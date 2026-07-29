@@ -48,7 +48,7 @@ export function Header() {
       <div className="container mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4">
         {/* Logo */}
         <Link href="/" className="block">
-          <img src={logoPath} alt={settings?.businessName || 'SBS'} className="h-16 w-auto" />
+          <img src={logoPath} alt={settings?.businessName || 'Select Branding Solutions'} width={180} height={64} className="h-16 w-auto" fetchPriority="high" />
         </Link>
 
         {/* Search */}

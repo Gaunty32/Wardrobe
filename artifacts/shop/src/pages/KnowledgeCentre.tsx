@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useSEO } from '@/hooks/useSEO';
 import { Calendar, ExternalLink, BookOpen } from 'lucide-react';
 
 interface BlogPost {
@@ -77,6 +78,10 @@ function SkeletonCard() {
 }
 
 export default function KnowledgeCentre() {
+  useSEO({
+    title: 'Knowledge Centre — Workwear & Uniform Advice',
+    description: 'Practical advice on workwear, uniform management and corporate clothing. Written to answer the questions businesses actually ask — from fabric choice to logo application.',
+  });
   const { data: posts, isLoading, error } = useQuery<BlogPost[]>({
     queryKey: ['blog-posts'],
     queryFn: () => fetch('/api/shop/blog-posts').then(r => { if (!r.ok) throw new Error('Failed'); return r.json(); }),

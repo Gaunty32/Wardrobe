@@ -1,6 +1,11 @@
 import { Link } from 'wouter';
+import { useSEO } from '@/hooks/useSEO';
 
 export default function UniformManagement() {
+  useSEO({
+    title: 'Uniform Management System',
+    description: 'Bespoke online uniform management portals for multi-site businesses. Set annual spend limits per employee, department or site. Full wearer size history and order tracking.',
+  });
   return (
     <div className="flex flex-col w-full">
       {/* Hero */}
@@ -23,8 +28,8 @@ export default function UniformManagement() {
 
         {/* Photo pair */}
         <div className="grid grid-cols-2 gap-4 mb-10">
-          <img src="https://www.selectuniforms.co.uk/wp-content/uploads/management-1x.jpg" alt="Staff Uniform Management" className="w-full object-cover aspect-video" />
-          <img src="https://www.selectuniforms.co.uk/wp-content/uploads/management-2x.jpg" alt="Work Wear Management" className="w-full object-cover aspect-video" />
+          <img src="https://www.selectuniforms.co.uk/wp-content/uploads/management-1x.jpg" alt="Staff uniform management system" width={662} height={300} fetchPriority="high" className="w-full object-cover aspect-video" />
+          <img src="https://www.selectuniforms.co.uk/wp-content/uploads/management-2x.jpg" alt="Work wear management portal" width={662} height={300} loading="lazy" decoding="async" className="w-full object-cover aspect-video" />
         </div>
 
         <div className="space-y-6 text-lg text-gray-700 leading-relaxed mb-10">

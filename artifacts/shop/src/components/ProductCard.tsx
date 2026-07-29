@@ -1,18 +1,21 @@
 import { Link } from 'wouter';
 import { Card, CardContent } from '@/components/ui/card';
 
-export function ProductCard({ product }: { product: any }) {
-  // Simple card for the product grid
+export function ProductCard({ product, priority = false }: { product: any; priority?: boolean }) {
   const image = product.images?.[0] || product.image;
-  
+
   return (
     <Link href={`/product/${product.slug || product.id}`} className="group block">
       <Card className="rounded-none border-none shadow-sm hover:shadow-md transition-shadow h-full flex flex-col">
         <div className="relative aspect-square overflow-hidden bg-gray-100">
           {image ? (
-            <img 
-              src={image} 
-              alt={product.name} 
+            <img
+              src={image}
+              alt={product.name}
+              width={400}
+              height={400}
+              loading={priority ? 'eager' : 'lazy'}
+              decoding="async"
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
             />
           ) : (
@@ -30,7 +33,10 @@ export function ProductCard({ product }: { product: any }) {
           </h3>
           <div className="mt-auto">
             {product.price ? (
-              <p className="text-primary font-bold">£{Number(product.price).toFixed(2)} <span className="text-xs text-gray-500 font-normal">Ex. VAT</span></p>
+              <p className="text-primary font-bold">
+                £{Number(product.price).toFixed(2)}{' '}
+                <span className="text-xs text-gray-500 font-normal">Ex. VAT</span>
+              </p>
             ) : (
               <p className="text-gray-500 text-sm">Price unavailable</p>
             )}

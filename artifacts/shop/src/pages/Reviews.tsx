@@ -1,4 +1,10 @@
+import { useSEO } from '@/hooks/useSEO';
+
 export default function Reviews() {
+  useSEO({
+    title: 'Customer Reviews',
+    description: 'Read what our customers say about Select Branding Solutions. Real reviews from businesses across the UK who trust us for their workwear and branded uniform needs.',
+  });
   return (
     <div className="flex flex-col w-full min-h-[60vh]">
       <section className="relative h-48 bg-gray-900 flex items-center justify-center">

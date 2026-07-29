@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSEO } from '@/hooks/useSEO';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 const FAQ_TABS = [
@@ -38,6 +39,10 @@ const RECENT_POSTS = [
 ];
 
 export default function FAQ() {
+  useSEO({
+    title: 'Frequently Asked Questions',
+    description: 'Answers to the most common questions about ordering workwear and uniforms from Select Branding Solutions — sizing, delivery, logo application, lead times and more.',
+  });
   const [activeTab, setActiveTab] = useState('ordering');
 
   return (

@@ -1,5 +1,6 @@
 import { Link } from 'wouter';
 import { useQuery } from '@tanstack/react-query';
+import { useSEO } from '@/hooks/useSEO';
 
 interface TeamMember {
   name: string;
@@ -8,6 +9,10 @@ interface TeamMember {
 }
 
 export default function AboutUs() {
+  useSEO({
+    title: 'About Us',
+    description: 'Select Branding Solutions supply branded workwear and uniforms to businesses across the UK. In-house embroidery, on-site measuring, and bespoke uniform management systems.',
+  });
   const { data: teamMembers = [] } = useQuery<TeamMember[]>({
     queryKey: ['team-members'],
     queryFn: () => fetch('/api/shop/team-members').then(r => r.json()),
@@ -21,9 +26,11 @@ export default function AboutUs() {
     <div className="flex flex-col w-full">
       {/* Hero */}
       <section className="relative h-64 bg-gray-900 flex items-center justify-center">
-        <img 
-          src="https://www.selectuniforms.co.uk/wp-content/uploads/Uniforms-showroom.jpg" 
-          alt="About Us" 
+        <img
+          src="https://www.selectuniforms.co.uk/wp-content/uploads/Uniforms-showroom.jpg"
+          alt="Select Branding Solutions showroom"
+          width={1200} height={400}
+          fetchPriority="high"
           className="absolute inset-0 w-full h-full object-cover opacity-30 mix-blend-overlay"
         />
         <h1 className="text-4xl md:text-5xl font-extrabold text-white relative z-10 tracking-wider">

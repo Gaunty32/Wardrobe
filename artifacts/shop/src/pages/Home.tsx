@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Shirt, Handshake, TrendingUp } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useShopImages } from '@/hooks/use-wc';
+import { useSEO } from '@/hooks/useSEO';
 
 const SLIDE_COPY = [
   {
@@ -29,6 +30,10 @@ const CATEGORY_CONFIG: { slug: string; label: string; match: string; fallback: s
 ];
 
 export default function Home() {
+  useSEO({
+    title: 'Workwear & Branded Uniforms',
+    description: 'UK supplier of high-quality workwear and branded uniforms. Free logo application on all garments, in-house embroidery, on-site measuring and bespoke uniform management portals.',
+  });
   const [currentSlide, setCurrentSlide] = useState(0);
   const { data: shopImages } = useShopImages();
 

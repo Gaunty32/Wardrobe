@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSEO } from '@/hooks/useSEO';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -6,6 +7,10 @@ import { MapPin, Phone, Clock } from 'lucide-react';
 import { useSubmitShopEnquiry } from '@workspace/api-client-react';
 
 export default function ContactUs() {
+  useSEO({
+    title: 'Contact Us',
+    description: 'Get in touch with Select Branding Solutions. Call 0113 255 2694, email sales@selectuniforms.co.uk, or fill in our contact form. Based in Apperley Bridge, Bradford.',
+  });
   const submitEnquiry = useSubmitShopEnquiry();
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', message: '' });
 

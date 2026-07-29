@@ -1,4 +1,5 @@
 import { Link } from 'wouter';
+import { useSEO } from '@/hooks/useSEO';
 
 const PROCESS_STEPS = [
   {
@@ -26,6 +27,10 @@ const PROCESS_STEPS = [
 const FORMATS = ['JPEG', 'PNG', 'PDF', 'EPS', 'AI', 'SVG'];
 
 export default function LogoConversions() {
+  useSEO({
+    title: 'Logo Conversions & Digitisation',
+    description: 'We digitise your logo into an embroidery stitch file. Send us any format — JPEG, PNG, PDF, AI or EPS. One-off fee of £35 + VAT, then reused on every future order at no extra cost.',
+  });
   return (
     <div className="flex flex-col w-full">
       {/* Hero */}

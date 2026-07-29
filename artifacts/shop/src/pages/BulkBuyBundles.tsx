@@ -1,8 +1,13 @@
+import { useSEO } from '@/hooks/useSEO';
 import { useWcProducts } from '@/hooks/use-wc';
 import { ProductCard } from '@/components/ProductCard';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export default function BulkBuyBundles() {
+  useSEO({
+    title: 'Bulk Buy Workwear & Bundle Deals',
+    description: 'Save more when you order more. Browse our bulk buy workwear deals and pre-matched uniform bundles — ideal for kitting out teams quickly at the best price.',
+  });
   const { data: products = [], isLoading } = useWcProducts({ category_slug: 'bundles', per_page: 100 });
 
 
