@@ -609,6 +609,35 @@ export default function ProductDetail() {
     onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
   });
 
+  // ── Group-row bulk image upload (applies to all variants of a colour+sleeve group) ──
+  const groupImageInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingGroupKey, setUploadingGroupKey] = useState<string | null>(null);
+  const { uploadFile: uploadGroupImage, isUploading: isGroupImageUploading } = useUpload({
+    onSuccess: async (res) => {
+      if (!uploadingGroupKey) return;
+      const url = `/api/storage${res.objectPath}`;
+      const [groupColour, groupSleeve] = uploadingGroupKey.split("||");
+      const groupVariants = (variants as any[]).filter((v: any) =>
+        (v.colour ?? "") === groupColour && (v.sleeve ?? "") === groupSleeve
+      );
+      await Promise.all(
+        groupVariants.map((v: any) =>
+          apiFetch(`/products/${productId}/variants/${v.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ imageUrl: url }),
+          })
+        )
+      );
+      refetchVariants();
+      setUploadingGroupKey(null);
+      toast({ title: `Image applied to ${groupVariants.length} variant${groupVariants.length !== 1 ? "s" : ""}` });
+    },
+    onError: () => {
+      toast({ title: "Image upload failed", variant: "destructive" });
+      setUploadingGroupKey(null);
+    },
+  });
+
   const { data: attributes = [], refetch: refetchAttrs } = useQuery({
     queryKey: ["product", productId, "attributes"],
     queryFn: () => apiFetch(`/products/${productId}/attributes`),
@@ -1414,6 +1443,10 @@ export default function ProductDetail() {
             </button>
             <input ref={productImageRef} type="file" accept="image/*" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadProductImage(f); e.target.value = ""; }}
+            />
+            {/* Hidden input shared by all colour-group image buttons */}
+            <input ref={groupImageInputRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadGroupImage(f); e.target.value = ""; }}
             />
             <div className="flex-1 min-w-0 flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -2222,6 +2255,30 @@ export default function ProductDetail() {
                                             className="h-7 text-xs w-24 pl-4"
                                           />
                                         </div>
+                                        {/* Colour image — applies to all sizes in this group */}
+                                        {(() => {
+                                          const firstVariant = groupVariants[0] as any;
+                                          const groupImg = firstVariant?.imageUrl ?? null;
+                                          const isUploading = isGroupImageUploading && uploadingGroupKey === g.key;
+                                          return (
+                                            <button
+                                              type="button"
+                                              title="Upload image for all sizes in this colour"
+                                              className="group relative h-7 w-7 rounded border border-input bg-background overflow-hidden hover:border-primary/50 transition-colors flex items-center justify-center shrink-0"
+                                              onClick={() => { setUploadingGroupKey(g.key); groupImageInputRef.current?.click(); }}
+                                              disabled={isGroupImageUploading}
+                                            >
+                                              {groupImg ? (
+                                                <img src={groupImg} alt="" className="w-full h-full object-cover" />
+                                              ) : (
+                                                <Camera className="w-3 h-3 text-muted-foreground" />
+                                              )}
+                                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                {isUploading ? <Loader2 className="w-3 h-3 text-white animate-spin" /> : <Camera className="w-3 h-3 text-white" />}
+                                              </div>
+                                            </button>
+                                          );
+                                        })()}
                                         <Button
                                           size="sm"
                                           variant={isDirty ? "default" : "outline"}
