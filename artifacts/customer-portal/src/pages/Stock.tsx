@@ -333,14 +333,6 @@ function StockCard({
               <p className="text-[11px] text-muted-foreground mt-0.5 italic">{group.finishName}</p>
             )}
           </div>
-          {/* Edit button for name/location/notes — moved up to card header */}
-          <button
-            onClick={() => onEdit(group.items[0])}
-            className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground shrink-0 mt-0.5"
-            title="Edit item details"
-          >
-            <Pencil className="w-3.5 h-3.5" />
-          </button>
         </div>
 
         {/* Process badges */}
@@ -403,12 +395,11 @@ function StockCard({
         {sizeOpen && (
           <>
             {/* Column headers */}
-            <div className="grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 px-1 -mb-1">
+            <div className="grid grid-cols-[auto_1fr_52px_auto] items-center gap-1 px-1 -mb-1">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground min-w-[2.5rem]">Size</span>
               <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Stock</span>
               <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Min</span>
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Reorder</span>
-              <span className="w-14" />
+              <span className="w-8" />
             </div>
 
             <div className="border-t" />
@@ -421,7 +412,7 @@ function StockCard({
                   <div
                     key={item.id}
                     className={cn(
-                      "grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 rounded-lg px-1.5 py-1.5",
+                      "grid grid-cols-[auto_1fr_52px_auto] items-center gap-1 rounded-lg px-1.5 py-1.5",
                       isLow ? "bg-amber-50 border border-amber-200" : "bg-muted/30"
                     )}
                   >
@@ -459,42 +450,14 @@ function StockCard({
                       title="Minimum stock level — alert when stock reaches this"
                     />
 
-                    {/* Reorder qty — inline editable */}
-                    <input
-                      type="number"
-                      min="0"
-                      value={getLimit(item, "reorder")}
-                      onChange={e => setLimit(item, "reorder", e.target.value)}
-                      onBlur={() => commitLimit(item)}
-                      onKeyDown={e => e.key === "Enter" && (e.currentTarget.blur())}
-                      className="w-full h-7 rounded border border-transparent bg-background/60 hover:border-border focus:border-primary focus:outline-none text-center text-xs font-medium tabular-nums px-1 transition-colors"
-                      title="How many to order when restocking"
-                    />
-
-                    {/* Row actions */}
-                    <div className="flex items-center gap-0">
-                      <button
-                        onClick={() => onAdjust(item)}
-                        className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
-                        title="Adjust stock"
-                      >
-                        <ArrowUpCircle className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => onHistory(item)}
-                        className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
-                        title="Movement history"
-                      >
-                        <History className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => onDelete(item)}
-                        className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                        title="Remove"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {/* Adjust stock */}
+                    <button
+                      onClick={() => onAdjust(item)}
+                      className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
+                      title="Adjust stock"
+                    >
+                      <ArrowUpCircle className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 );
               })}
@@ -502,19 +465,9 @@ function StockCard({
 
             {/* Hint text */}
             <p className="text-[10px] text-muted-foreground/60 text-center -mt-0.5">
-              Click Min / Reorder numbers to edit · Enter to save
+              Click Min to edit · Enter to save
             </p>
           </>
-        )}
-
-        {/* Reorder button */}
-        {group.items.some(i => i.product_id != null) && (
-          <button
-            onClick={() => onReorder(group)}
-            className="mt-1 w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
-          >
-            <ShoppingCart className="w-3.5 h-3.5" /> Reorder
-          </button>
         )}
       </div>
     </div>
