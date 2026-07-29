@@ -469,6 +469,16 @@ function StockCard({
             </p>
           </>
         )}
+
+        {/* Reorder button */}
+        {group.items.some(i => i.product_id != null) && (
+          <button
+            onClick={() => onReorder(group)}
+            className="mt-1 w-full flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
+          >
+            <ShoppingCart className="w-3.5 h-3.5" /> Reorder
+          </button>
+        )}
       </div>
     </div>
   );
