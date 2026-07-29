@@ -307,7 +307,7 @@ function StockCard({
   return (
     <div className="rounded-xl border bg-card overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
       {/* Image area */}
-      <div className="relative aspect-square bg-white border-b">
+      <div className="relative w-full h-44 bg-white border-b">
         <ProductImage src={group.imageUrl} alt={group.displayName} />
         {hasLow && (
           <div className="absolute top-2 right-2">
