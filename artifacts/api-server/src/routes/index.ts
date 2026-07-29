@@ -39,6 +39,7 @@ import reEngagementRouter from "./re-engagement";
 import messageTemplatesRouter from "./message-templates";
 import shopRouter from "./shop";
 import shopAuthRouter from "./shop-auth";
+import reviewsRouter from "./reviews";
 
 const router: IRouter = Router();
 
@@ -82,5 +83,6 @@ router.use(reEngagementRouter);
 router.use(messageTemplatesRouter);
 router.use(shopRouter);
 router.use(shopAuthRouter);
+router.use(reviewsRouter);
 
 export default router;
