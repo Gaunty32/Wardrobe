@@ -124,6 +124,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
   const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
   const [paymentLinkCopied, setPaymentLinkCopied] = useState(false);
   const [overdueCheck, setOverdueCheck] = useState<OverdueCheckResult | null>(null);
+  const [emptyFinishes, setEmptyFinishes] = useState<string[]>([]);
 
   const initialRequiredDate = () =>
     order.requiredDate ? new Date(order.requiredDate).toISOString().slice(0, 10) : defaultRequiredDate();
@@ -147,6 +148,7 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
     setPaymentLinkError(null);
     setPaymentLinkCopied(false);
     setOverdueCheck(null);
+    setEmptyFinishes([]);
   };
 
   useEffect(() => {
@@ -155,6 +157,10 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
       const sm = initialShippingMethod();
       setShippingMethod(sm);
       setCarriageAmount(sm === "courier" ? "8.50" : "");
+      // Preflight: check for finishes with no processes
+      apiFetch<{ ok: boolean; finishesWithNoProcesses: string[] }>(`/orders/${order.id}/confirm-preflight`)
+        .then(d => setEmptyFinishes(d.finishesWithNoProcesses))
+        .catch(() => {/* non-fatal */});
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -466,13 +472,29 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
                 </div>
               </div>
 
+              {/* Finish-with-no-processes warning */}
+              {emptyFinishes.length > 0 && (
+                <div className="flex items-start gap-2.5 rounded-md border border-destructive/50 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold">Cannot confirm — finish{emptyFinishes.length > 1 ? "es" : ""} missing processes</p>
+                    <ul className="mt-1 list-disc list-inside space-y-0.5">
+                      {emptyFinishes.map(name => (
+                        <li key={name}><strong>{name}</strong> has no processes assigned</li>
+                      ))}
+                    </ul>
+                    <p className="mt-1.5 text-destructive/80">Go to the customer's <strong>Finishes</strong> tab and add processes to {emptyFinishes.length > 1 ? "these finishes" : "this finish"} before confirming.</p>
+                  </div>
+                </div>
+              )}
+
               <p className="text-sm text-muted-foreground">
                 Confirming will allocate available stock to this order and flag any shortfalls for purchasing. A production worksheet can then be created once stock is picked.
               </p>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
-              <Button onClick={handleConfirm} disabled={!requiredDate || !shippingMethod}>
+              <Button onClick={handleConfirm} disabled={!requiredDate || !shippingMethod || emptyFinishes.length > 0}>
                 <Check className="w-4 h-4 mr-1.5" /> Confirm Order
               </Button>
             </DialogFooter>

@@ -392,6 +392,24 @@ router.post("/orders", async (req, res): Promise<void> => {
   res.status(201).json({ ...updatedOrder, totalAmount: numericToFloat(updatedOrder.totalAmount) });
 });
 
+// ── Confirm preflight: check for finishes with no processes assigned ─────────
+router.get("/orders/:id/confirm-preflight", async (req, res): Promise<void> => {
+  const params = z.object({ id: z.coerce.number() }).safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid order id" }); return; }
+
+  const rows = await db.execute(sql`
+    SELECT DISTINCT cf.id, cf.name
+    FROM order_items oi
+    JOIN customer_finishes cf ON cf.id = oi.finish_id
+    WHERE oi.order_id = ${params.data.id}
+      AND NOT EXISTS (
+        SELECT 1 FROM customer_finish_processes cfp WHERE cfp.finish_id = cf.id
+      )
+  `);
+  const finishesWithNoProcesses = (rows.rows as Array<{ id: number; name: string }>).map(r => r.name);
+  res.json({ ok: finishesWithNoProcesses.length === 0, finishesWithNoProcesses });
+});
+
 router.get("/orders/:id", async (req, res): Promise<void> => {
   const params = GetOrderParams.safeParse(req.params);
   if (!params.success) {
@@ -726,6 +744,24 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
   // ── Stock allocation on confirmation ──────────────────────────────────────
   if (parsed.data.status === "confirmed") {
+    // Block confirmation if any finish on this order has no processes assigned
+    const emptyFinishRows = await db.execute(sql`
+      SELECT DISTINCT cf.name
+      FROM order_items oi
+      JOIN customer_finishes cf ON cf.id = oi.finish_id
+      WHERE oi.order_id = ${params.data.id}
+        AND NOT EXISTS (
+          SELECT 1 FROM customer_finish_processes cfp WHERE cfp.finish_id = cf.id
+        )
+    `);
+    const emptyFinishNames = (emptyFinishRows.rows as Array<{ name: string }>).map(r => r.name);
+    if (emptyFinishNames.length > 0) {
+      res.status(400).json({
+        error: `Cannot confirm: the following finish${emptyFinishNames.length > 1 ? 'es have' : ' has'} no processes assigned — ${emptyFinishNames.join(", ")}. Go to the customer's Finishes tab and add processes before confirming.`,
+      });
+      return;
+    }
+
     const items = await db
       .select({
         id: orderItemsTable.id,
