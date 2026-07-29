@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Plus, Search, Edit2, Trash2, Loader2, Boxes, AlertTriangle, Check, ChevronsUpDown, Paperclip, Download, X, Upload } from "lucide-react";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 
@@ -54,6 +55,7 @@ const BLANK_FORM = {
   unitCost: "",
   stockQuantity: "0",
   customerId: "" as string,
+  supplierId: "" as string,
   notes: "",
   fileUrl: null as string | null,
 };
@@ -173,21 +175,26 @@ export function ProcessStockTab() {
     }
   };
 
+  const raptorId = suppliers?.find(s => s.name.toLowerCase().includes("raptor"))?.id ?? null;
+
   const openCreate = async () => {
     const suggested = await fetchSuggestedSku();
-    setForm({ ...BLANK_FORM, sku: suggested });
+    setForm({ ...BLANK_FORM, sku: suggested, supplierId: raptorId ? String(raptorId) : "" });
     setPendingFile(null);
     setEditing(null);
     setOpen(true);
   };
 
   const openEdit = (item: ProcessStockItem) => {
+    // If the item has no supplier set, default to Raptor so the form surfaces the gap
+    const supplierDefault = item.supplierId ?? raptorId;
     setForm({
       name: item.name,
       sku: item.sku ?? "",
       unitCost: item.unitCost ? item.unitCost.toString() : "",
       stockQuantity: item.stockQuantity.toString(),
       customerId: item.customerId?.toString() ?? "",
+      supplierId: supplierDefault ? String(supplierDefault) : "",
       notes: [item.description, item.notes].filter(Boolean).join("\n").trim(),
       fileUrl: item.fileUrl ?? null,
     });
@@ -231,17 +238,15 @@ export function ProcessStockTab() {
       setIsUploadingFile(false);
     }
 
-    const raptorId = suppliers?.find(s => s.name.toLowerCase().includes("raptor"))?.id ?? null;
     const sku = form.sku.trim() || null;
     const parsedQty = parseInt(form.stockQuantity, 10) || 0;
+    const parsedSupplierId = form.supplierId ? parseInt(form.supplierId, 10) : null;
     const payload: Record<string, unknown> = {
       name: form.name.trim(),
       sku,
       description: null,
       unitCost: parseFloat(form.unitCost) || 0,
-      // When editing, preserve the existing supplier — the hardcoded Raptor
-      // default should only apply to newly created items.
-      supplierId: editing ? editing.supplierId : raptorId,
+      supplierId: parsedSupplierId,
       supplierCode: sku,
       customerId: form.customerId ? parseInt(form.customerId, 10) : null,
       notes: form.notes.trim() || null,
@@ -411,6 +416,27 @@ export function ProcessStockTab() {
                   />
                 </div>
               </div>
+              <div className="grid gap-2">
+                <Label>Supplier</Label>
+                <Select
+                  value={form.supplierId}
+                  onValueChange={(v) => setForm({ ...form, supplierId: v === "none" ? "" : v })}
+                >
+                  <SelectTrigger className={!form.supplierId ? "border-amber-300 text-muted-foreground" : ""}>
+                    <SelectValue placeholder="Select supplier…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— None —</SelectItem>
+                    {suppliers?.map(s => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!form.supplierId && (
+                  <p className="text-xs text-amber-600">No supplier set — it will appear under "Unknown Supplier" in Purchasing</p>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label>Customer {!editing && <span className="text-destructive">*</span>}</Label>

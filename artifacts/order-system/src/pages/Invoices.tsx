@@ -122,6 +122,32 @@ function parseApiError(e: Error): string {
   }
 }
 
+/**
+ * If a Xero error message contains a period/year lock date, returns the
+ * next available date (lock date + 1 day) as "YYYY-MM-DD". Otherwise null.
+ */
+function parseLockDate(errorMsg: string): string | null {
+  // Matches "currently set at 30-Jun-2026" (the latest lock date in the message)
+  const months: Record<string, number> = {
+    jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11,
+  };
+  const re = /currently set at (\d{1,2})-([A-Za-z]{3})-(\d{4})/g;
+  let latest: Date | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(errorMsg)) !== null) {
+    const day = parseInt(m[1], 10);
+    const mon = months[m[2].toLowerCase()];
+    const year = parseInt(m[3], 10);
+    if (mon === undefined) continue;
+    const d = new Date(year, mon, day);
+    if (!latest || d > latest) latest = d;
+  }
+  if (!latest) return null;
+  // Next available date = lock date + 1 day
+  latest.setDate(latest.getDate() + 1);
+  return latest.toISOString().slice(0, 10);
+}
+
 function DPDLink({ tracking }: { tracking: string }) {
   return (
     <a
@@ -231,6 +257,9 @@ function OrderRow({
   );
   const [scheduleEmailTo, setScheduleEmailTo] = useState(order.invoiceScheduleToEmail ?? "");
 
+  const [lockDateDialog, setLockDateDialog] = useState<{ suggestedDate: string; errorMsg: string } | null>(null);
+  const [lockDateInput, setLockDateInput] = useState("");
+
   const [editingCarriage, setEditingCarriage] = useState(false);
   const [carriageInput, setCarriageInput] = useState("");
 
@@ -321,7 +350,16 @@ function OrderRow({
         : "";
       toast({ title: "Posted to Xero", description: base + extra });
     },
-    onError: (e: Error) => toast({ title: "Xero error", description: parseApiError(e), variant: "destructive" }),
+    onError: (e: Error) => {
+      const msg = parseApiError(e);
+      const nextDate = parseLockDate(msg);
+      if (nextDate) {
+        setLockDateInput(nextDate);
+        setLockDateDialog({ suggestedDate: nextDate, errorMsg: msg });
+      } else {
+        toast({ title: "Xero error", description: msg, variant: "destructive" });
+      }
+    },
   });
 
   const refreshStripeLink = useMutation({
@@ -752,6 +790,58 @@ function OrderRow({
               {sendEmail.isPending
                 ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</>
                 : <><Mail className="w-4 h-4" />Send Now</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Xero period lock date dialog */}
+      <Dialog open={!!lockDateDialog} onOpenChange={(open) => { if (!open) setLockDateDialog(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 text-amber-500" />
+              Invoice Date Locked
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <p className="text-muted-foreground">
+              Xero rejected this invoice because the date falls within a locked period. Update the invoice date to the next available date and retry.
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold">New Invoice Date</label>
+              <input
+                type="date"
+                value={lockDateInput}
+                min={lockDateDialog?.suggestedDate}
+                onChange={(e) => setLockDateInput(e.target.value)}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground">
+                This is the day after Xero's period lock date. Change it if needed.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setLockDateDialog(null)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!lockDateInput || saveInvoiceDate.isPending || postXero.isPending}
+              onClick={() => {
+                if (!lockDateInput) return;
+                saveInvoiceDate.mutate(lockDateInput, {
+                  onSuccess: () => {
+                    setInvoiceDateEdit(lockDateInput);
+                    setLockDateDialog(null);
+                    postXero.mutate();
+                  },
+                });
+              }}
+            >
+              {(saveInvoiceDate.isPending || postXero.isPending)
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Updating…</>
+                : <><BookOpen className="w-4 h-4" /> Update & Post to Xero</>}
             </Button>
           </DialogFooter>
         </DialogContent>
