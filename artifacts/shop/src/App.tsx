@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Route, Switch, Router as WouterRouter, Redirect } from 'wouter';
 import { CartProvider } from '@/context/CartContext';
+import { ShopAuthProvider } from '@/context/ShopAuthContext';
 import { Layout } from '@/components/Layout';
 import ChatWidget from '@/components/ChatWidget';
 
@@ -20,6 +21,12 @@ import FAQ from '@/pages/FAQ';
 import BulkBuyBundles from '@/pages/BulkBuyBundles';
 import Reviews from '@/pages/Reviews';
 import KnowledgeCentre from '@/pages/KnowledgeCentre';
+import Login from '@/pages/Login';
+import Account from '@/pages/Account';
+import Personalisation from '@/pages/Personalisation';
+import OnSiteMeasuring from '@/pages/OnSiteMeasuring';
+import UniformManagement from '@/pages/UniformManagement';
+import LogoConversions from '@/pages/LogoConversions';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
@@ -41,6 +48,12 @@ function Router() {
         <Route path="/bulk-buy-bundles" component={BulkBuyBundles} />
         <Route path="/reviews" component={Reviews} />
         <Route path="/knowledge-centre" component={KnowledgeCentre} />
+        <Route path="/login" component={Login} />
+        <Route path="/account" component={Account} />
+        <Route path="/personalisation" component={Personalisation} />
+        <Route path="/on-site-measuring" component={OnSiteMeasuring} />
+        <Route path="/uniform-management" component={UniformManagement} />
+        <Route path="/logo-conversions" component={LogoConversions} />
         <Route path="/latest-news">{() => <Redirect to="/knowledge-centre" />}</Route>
         <Route component={NotFound} />
       </Switch>
@@ -51,6 +64,7 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <ShopAuthProvider>
       <CartProvider>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
@@ -60,6 +74,7 @@ function App() {
           <Toaster />
         </TooltipProvider>
       </CartProvider>
+      </ShopAuthProvider>
     </QueryClientProvider>
   );
 }

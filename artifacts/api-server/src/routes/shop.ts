@@ -896,6 +896,51 @@ router.post("/shop/branding-options", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
+// ── WordPress page content by slug ───────────────────────────────────────────
+const wpPageCache: Record<string, { data: any; ts: number }> = {};
+const WP_PAGE_TTL = 60 * 60 * 1000; // 1 hour
+
+router.get("/shop/wp-page/:slug", async (req: Request, res: Response) => {
+  const { slug } = req.params;
+  const now = Date.now();
+  const cached = wpPageCache[slug];
+  if (cached && now - cached.ts < WP_PAGE_TTL) {
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.json(cached.data);
+    return;
+  }
+  try {
+    const url = `https://www.selectuniforms.co.uk/wp-json/wp/v2/pages?slug=${encodeURIComponent(slug)}&_fields=id,slug,title,content,excerpt,featured_media,_embedded&_embed=wp:featuredmedia`;
+    const wpRes = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!wpRes.ok) { res.status(wpRes.status).json({ error: "WordPress API error" }); return; }
+    const pages: any[] = await wpRes.json();
+    if (!pages.length) { res.status(404).json({ error: "Page not found" }); return; }
+    const p = pages[0];
+    const featuredImageUrl =
+      p._embedded?.["wp:featuredmedia"]?.[0]?.source_url ??
+      (p.featured_media > 0
+        ? await fetch(`https://www.selectuniforms.co.uk/wp-json/wp/v2/media/${p.featured_media}`, { signal: AbortSignal.timeout(5000) })
+            .then(r => r.ok ? r.json() : null)
+            .then(m => m?.source_url ?? null)
+            .catch(() => null)
+        : null);
+    const result = {
+      id: p.id,
+      slug: p.slug,
+      title: p.title?.rendered ?? slug,
+      content: p.content?.rendered ?? "",
+      excerpt: p.excerpt?.rendered ?? "",
+      featuredImageUrl,
+    };
+    wpPageCache[slug] = { data: result, ts: now };
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.json(result);
+  } catch (e: any) {
+    logger.error({ err: e?.message, slug }, "[shop/wp-page] fetch error");
+    res.status(500).json({ error: "Failed to fetch page" });
+  }
+});
+
 // ── Shop order creation (called after Stripe payment confirms) ────────────────
 
 const ShopOrderSchema = z.object({
@@ -932,6 +977,7 @@ const ShopOrderSchema = z.object({
   subtotal: z.number(),
   carriage: z.number().default(8.5),
   total: z.number(),
+  shopCustomerId: z.number().int().optional().nullable(),
 });
 
 router.post("/shop/orders", async (req, res): Promise<void> => {
@@ -961,7 +1007,7 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
     const orderResult = await db.execute(sql`
       INSERT INTO orders (
         order_number, customer_name, status, total_amount, carriage_amount,
-        source, notes, order_date, created_at, updated_at
+        source, notes, order_date, shop_customer_id, created_at, updated_at
       ) VALUES (
         ${orderNumber},
         ${d.customerName},
@@ -970,7 +1016,7 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
         ${String(d.carriage)},
         'shop',
         ${`Online order — ${d.customerEmail}${d.company ? ` (${d.company})` : ""}. Payment: ${d.paymentIntentId}`},
-        NOW(), NOW(), NOW()
+        NOW(), ${d.shopCustomerId ?? null}, NOW(), NOW()
       ) RETURNING id
     `);
     const orderId = (orderResult.rows[0] as any)?.id;

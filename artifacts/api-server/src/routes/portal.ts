@@ -74,7 +74,7 @@ function buildMagicLinkEmail(_email: string, magicUrl: string): { html: string; 
 <html>
 <body style="font-family:Arial,sans-serif;background:#f8fafc;padding:32px 0;margin:0">
   <div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:40px;border:1px solid #e2e8f0">
-    <img src="${SBS_LOGO_DATA_URL}" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
+    <img src="${SBS_LOGO_COLOUR_DATA_URL}" alt="Select Branding Solutions" style="height:48px;margin-bottom:24px" />
     <h2 style="font-size:20px;color:#0f172a;margin:0 0 8px">Your sign-in link</h2>
     <p style="color:#475569;font-size:15px;margin:0 0 24px">Click the button below to sign in to your Select Branding Solutions ordering portal. This link expires in ${MAGIC_TTL_MINUTES} minutes.</p>
     <a href="${magicUrl}" style="display:inline-block;background:#1e293b;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-size:15px;font-weight:600;margin-bottom:24px">Sign in to Portal</a>

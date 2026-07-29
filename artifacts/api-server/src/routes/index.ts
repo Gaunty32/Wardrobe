@@ -38,6 +38,7 @@ import tvRouter from "./tv";
 import reEngagementRouter from "./re-engagement";
 import messageTemplatesRouter from "./message-templates";
 import shopRouter from "./shop";
+import shopAuthRouter from "./shop-auth";
 
 const router: IRouter = Router();
 
@@ -80,5 +81,6 @@ router.use(tvRouter);
 router.use(reEngagementRouter);
 router.use(messageTemplatesRouter);
 router.use(shopRouter);
+router.use(shopAuthRouter);
 
 export default router;

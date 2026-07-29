@@ -1,0 +1,75 @@
+import { Link } from 'wouter';
+
+const IMAGES = [
+  { src: 'https://www.selectuniforms.co.uk/wp-content/uploads/measuring-1x.jpg', alt: 'Corporate clothing on site measuring' },
+  { src: 'https://www.selectuniforms.co.uk/wp-content/uploads/measuring-2x.jpg', alt: 'Workwear on site measuring' },
+  { src: 'https://www.selectuniforms.co.uk/wp-content/uploads/measuring-3x.jpg', alt: 'Uniform on site measuring' },
+  { src: 'https://www.selectuniforms.co.uk/wp-content/uploads/measuring-4x.jpg', alt: 'Staff clothing on site measuring' },
+];
+
+export default function OnSiteMeasuring() {
+  return (
+    <div className="flex flex-col w-full">
+      {/* Hero */}
+      <section className="relative h-64 bg-gray-900 flex items-center justify-center overflow-hidden">
+        <img
+          src={IMAGES[0].src}
+          alt="On Site Measuring"
+          className="absolute inset-0 w-full h-full object-cover opacity-40"
+        />
+        <h1 className="text-4xl md:text-5xl font-extrabold text-white relative z-10 tracking-wider uppercase text-center px-4">
+          On Site Measuring
+        </h1>
+      </section>
+
+      {/* Content */}
+      <section className="py-16 container mx-auto px-4 max-w-4xl">
+        <p className="text-lg text-gray-700 leading-relaxed mb-8">
+          Does the job of obtaining all of your wearers' measurements daunt you? It can be a difficult and time consuming job. However, we have the simple answer to this question.
+        </p>
+        <p className="text-xl font-bold text-primary mb-6">
+          Why not leave all of that to our vastly experienced and dedicated Measuring Team who will visit you on site and undertake this very important aspect of a uniform issue for you?
+        </p>
+
+        {/* Photo pair */}
+        <div className="grid grid-cols-2 gap-4 mb-10">
+          {IMAGES.slice(0, 2).map((img, i) => (
+            <img key={i} src={img.src} alt={img.alt} className="w-full object-cover aspect-video" />
+          ))}
+        </div>
+
+        <div className="space-y-6 text-lg text-gray-700 leading-relaxed mb-10">
+          <p>
+            We offer all Customers the option of an Annual Measuring and Fitting session to ensure that your wearers' measurement details are up to date.
+          </p>
+          <p>
+            Our Measuring Team will visit your premises and allow each wearer time to be measured and will also encourage them to try all garments for best fit. Because of holidays, sickness and absenteeism, we generally manage to measure around <strong>85% of your wearers</strong> at this session. This would leave you to obtain the measurements for any remaining wearers.
+          </p>
+          <p>
+            At the Measurement session each wearer, typically, will have around 20 minutes to try the garments for comfort and fit and will be able to discuss any specific requirements or concerns with the Measuring Team.
+          </p>
+          <p>
+            Upon receipt of their personal Uniform Pack, issued to their correct measurement instructions, their uniform issue will be accurate and complete. We achieve a success rate for fit of <strong>over 95%</strong> — impressive results which bear out the success of the Measurement and Fitting Sessions!
+          </p>
+        </div>
+
+        {/* Second photo pair */}
+        <div className="grid grid-cols-2 gap-4 mb-10">
+          {IMAGES.slice(2).map((img, i) => (
+            <img key={i} src={img.src} alt={img.alt} className="w-full object-cover aspect-video" />
+          ))}
+        </div>
+
+        <div className="bg-primary/5 border-l-4 border-primary p-6 mb-10">
+          <p className="text-lg text-gray-800 leading-relaxed">
+            Without a doubt, this system is the most efficient way of ensuring that all of your wearers are kitted out with a smart and presentable uniform that fits — first time. Your investment is protected and your requirement to have your Company image projected in the most cost efficient way is assured.
+          </p>
+        </div>
+
+        <Link href="/contact" className="inline-block bg-primary text-white font-bold px-8 py-3 hover:bg-primary/90 transition-colors">
+          Book a Measuring Session
+        </Link>
+      </section>
+    </div>
+  );
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useLocation } from 'wouter';
+import { useLocation, Link } from 'wouter';
 import { useCart } from '@/context/CartContext';
+import { useShopAuth, getShopToken } from '@/context/ShopAuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { loadStripe } from '@stripe/stripe-js';
@@ -22,6 +23,7 @@ function CheckoutForm() {
   const elements = useElements();
   const [, setLocation] = useLocation();
   const { items, subtotal, clearCart } = useCart();
+  const { customer, isLoggedIn } = useShopAuth();
   const [isProcessing, setIsProcessing] = useState(false);
 
   const shipping = 8.50;
@@ -39,6 +41,24 @@ function CheckoutForm() {
     city: '',
     postcode: '',
   });
+
+  // Pre-fill from account when logged in
+  useEffect(() => {
+    if (customer) {
+      setFormData(prev => ({
+        ...prev,
+        firstName: customer.first_name  ?? prev.firstName,
+        lastName:  customer.last_name   ?? prev.lastName,
+        company:   customer.company     ?? prev.company,
+        phone:     customer.phone       ?? prev.phone,
+        address1:  customer.address_1   ?? prev.address1,
+        address2:  customer.address_2   ?? prev.address2,
+        city:      customer.city        ?? prev.city,
+        postcode:  customer.postcode    ?? prev.postcode,
+        email:     customer.email       ?? prev.email,
+      }));
+    }
+  }, [customer]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -92,23 +112,40 @@ function CheckoutForm() {
       }
 
       if (paymentIntent && paymentIntent.status === 'succeeded') {
-        // 3. Create Order
+        // 3. Create Order — send in the format the backend ShopOrderSchema expects
+        const token = getShopToken();
         const orderRes = await fetch(`/api/shop/orders`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({
-            items,
+            paymentIntentId: paymentIntent.id,
+            customerName: `${formData.firstName} ${formData.lastName}`.trim(),
+            customerEmail: formData.email,
+            customerPhone: formData.phone || null,
+            company: formData.company || null,
+            deliveryAddress: {
+              line1: formData.address1,
+              line2: formData.address2 || null,
+              city: formData.city,
+              postcode: formData.postcode,
+              country: 'GB',
+            },
+            cartItems: items,
+            subtotal,
+            carriage: shipping,
             total,
-            billingDetails: formData,
-            paymentIntentId: paymentIntent.id
+            shopCustomerId: customer?.id ?? null,
           })
         });
         if (!orderRes.ok) throw new Error('Failed to create order in database');
         const order = await orderRes.json();
 
-        // 4. Success -> redirect
+        // 4. Success → redirect
         clearCart();
-        setLocation(`/shop/order-complete?orderId=${order.id}`);
+        setLocation(`/order-complete?orderId=${order.id}`);
       }
 
     } catch (err: any) {
@@ -122,7 +159,18 @@ function CheckoutForm() {
     <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row gap-12">
       {/* Left: Billing Details */}
       <div className="w-full lg:w-3/5">
-        <h2 className="text-2xl font-bold mb-6 text-primary">BILLING DETAILS</h2>
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-2xl font-bold text-primary">BILLING DETAILS</h2>
+          {isLoggedIn ? (
+            <span className="text-sm text-green-600 font-semibold">
+              ✓ Signed in — details pre-filled
+            </span>
+          ) : (
+            <Link href="/login" className="text-sm text-primary underline hover:no-underline">
+              Sign in to pre-fill
+            </Link>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">First Name *</label>
