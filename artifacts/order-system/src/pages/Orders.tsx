@@ -565,7 +565,8 @@ export default function Orders() {
       const q = customerSearch.toLowerCase();
       return allOrders.filter(o =>
         (o.customerName ?? "").toLowerCase().includes(q) ||
-        o.orderNumber.toLowerCase().includes(q)
+        o.orderNumber.toLowerCase().includes(q) ||
+        ((o as any).poNumber ?? "").toLowerCase().includes(q)
       );
     })();
 
@@ -684,7 +685,7 @@ export default function Orders() {
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Search customer or order…"
+                placeholder="Search customer, order or PO number…"
                 value={customerSearch}
                 onChange={e => setCustomerSearch(e.target.value)}
                 className="pl-8 bg-background h-9"

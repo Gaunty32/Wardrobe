@@ -178,3 +178,4 @@ Utility scripts package.
 ## User preferences
 
 - **Shop (`artifacts/shop`) — mobile-first**: all shop UI work should be designed and optimised for mobile view first. Desktop is secondary.
+- **No follow-up task suggestions**: do not propose follow-up tasks at the end of turns.
