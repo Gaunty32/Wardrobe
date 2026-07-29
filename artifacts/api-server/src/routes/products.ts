@@ -1005,6 +1005,23 @@ router.patch("/products/:id", async (req, res): Promise<void> => {
   if (parsed.data.name !== undefined && parsed.data.name) {
     void pushFieldsToWoo(product.id, { name: parsed.data.name });
   }
+  // Push category change to WooCommerce: look up the woo_id by name and send categories array
+  if ("category" in req.body && product.category) {
+    void (async () => {
+      try {
+        const [catRow] = await db.execute(sql`
+          SELECT woo_id FROM product_categories
+          WHERE LOWER(TRIM(name)) = LOWER(TRIM(${product.category!}))
+          LIMIT 1
+        `).then(r => (r.rows ?? r) as any[]);
+        if (catRow?.woo_id) {
+          void pushFieldsToWoo(product.id, { categories: [{ id: catRow.woo_id }] });
+        }
+      } catch (err) {
+        console.error("[woo] category push lookup failed:", err);
+      }
+    })();
+  }
 
   res.json(fmtProduct(product));
 });

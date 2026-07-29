@@ -435,10 +435,12 @@ export default function ProductDetail() {
   }, [product, selectedOptions]);
 
   // ── Current main image ────────────────────────────────────────────────────
+  // Hero always shows the primary product image (gallery index).
+  // Colour-variant images are secondary — they appear as thumbnails only.
   const selectedColour = selectedOptions['Colour'] || selectedOptions['Color'];
   const colourImage = selectedColour ? colourImages[selectedColour] : null;
   const images: string[] = product?.images ?? [];
-  const currentImage = colourImage || variation?.image || images[mainImageIdx] || null;
+  const currentImage = images[mainImageIdx] || colourImage || variation?.image || null;
 
   // ── Availability helpers ──────────────────────────────────────────────────
   /** Is a given option available for the currently-selected other dimensions?

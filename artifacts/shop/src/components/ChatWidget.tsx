@@ -37,6 +37,9 @@ function BackButton({ onClick }: { onClick: () => void }) {
 
 // ── Live Chat view ─────────────────────────────────────────────────────────────
 function LiveChatView({ onBack }: { onBack: () => void }) {
+  const [stage, setStage] = useState<'pre-chat' | 'chatting'>('pre-chat');
+  const [userName, setUserName] = useState('');
+  const [userEmail, setUserEmail] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: 'assistant', content: "Hi! 👋 I'm here to help with any questions about our workwear, uniforms, or services. What can I help you with today?" },
   ]);
@@ -50,8 +53,15 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
   }, [messages, thinking]);
 
   useEffect(() => {
-    setTimeout(() => inputRef.current?.focus(), 80);
-  }, []);
+    if (stage === 'chatting') setTimeout(() => inputRef.current?.focus(), 80);
+  }, [stage]);
+
+  const startChat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userName.trim()) return;
+    setMessages([{ role: 'assistant', content: `Hi ${userName.trim().split(' ')[0]}! 👋 I'm here to help with any questions about our workwear, uniforms, or services. What can I help you with today?` }]);
+    setStage('chatting');
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -66,7 +76,11 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
       const res = await fetch('/api/shop/live-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({
+          messages: next,
+          userName: userName.trim() || undefined,
+          userEmail: userEmail.trim() || undefined,
+        }),
       });
       const data = await res.json();
       const reply: string = data.reply ?? data.error ?? "Sorry, something went wrong. Please try again.";
@@ -77,6 +91,50 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
       setThinking(false);
     }
   };
+
+  if (stage === 'pre-chat') {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="px-4 pt-3 pb-1 shrink-0">
+          <BackButton onClick={onBack} />
+        </div>
+        <form onSubmit={startChat} className="flex flex-col gap-4 px-4 py-4 flex-1">
+          <div>
+            <p className="text-sm font-semibold text-gray-800 mb-0.5">Before we start…</p>
+            <p className="text-xs text-gray-500">Just so we know who we're talking to.</p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-gray-700">Your name *</label>
+            <input
+              autoFocus
+              required
+              value={userName}
+              onChange={e => setUserName(e.target.value)}
+              placeholder="e.g. Sarah"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-gray-700">Email <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input
+              type="email"
+              value={userEmail}
+              onChange={e => setUserEmail(e.target.value)}
+              placeholder="you@company.com"
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!userName.trim()}
+            className="mt-auto w-full bg-primary text-white text-sm font-medium py-2.5 rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Start chat →
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">

@@ -1005,9 +1005,11 @@ export default function ProductDetail() {
     refetchVariants();
   }
 
-  const { data: categoryNames = [] } = useQuery<string[]>({
-    queryKey: ["products-category-names"],
-    queryFn: () => apiFetch("/products/category-names"),
+  // Use product_categories (WooCommerce-synced) so the dropdown shows valid categories
+  // that will map to real WooCommerce category IDs on save.
+  const { data: wooCategories = [] } = useQuery<{ id: number; wooId: number | null; name: string }[]>({
+    queryKey: ["product-categories"],
+    queryFn: () => apiFetch("/product-categories"),
   });
 
   const { data: staffList = [], refetch: refetchStaff } = useQuery<any[]>({
@@ -1598,16 +1600,25 @@ export default function ProductDetail() {
                   </div>
                   <div className="grid gap-2">
                     <Label>Category</Label>
-                    <input
-                      list="product-category-list"
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      placeholder="e.g. Bespoke Ties"
+                    <select
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       value={details.category}
                       onChange={e => handleDetailChange("category", e.target.value)}
-                    />
-                    <datalist id="product-category-list">
-                      {categoryNames.map(name => <option key={name} value={name} />)}
-                    </datalist>
+                    >
+                      <option value="">— None —</option>
+                      {wooCategories.filter(c => c.wooId != null).map(c => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))}
+                      {/* If the current value isn't in the WooCommerce list, still show it */}
+                      {details.category && !wooCategories.some(c => c.name === details.category) && (
+                        <option value={details.category}>{details.category} (local only)</option>
+                      )}
+                    </select>
+                    {details.category && wooCategories.some(c => c.name === details.category && c.wooId) && (
+                      <p className="text-[11px] text-green-600 flex items-center gap-1">
+                        <Cloud className="w-3 h-3" /> Saving will move this product to this category on the website
+                      </p>
+                    )}
                     {details.category === "Bespoke Ties" && (
                       <p className="text-xs text-blue-600">On save, standard variants will be auto-created: <strong>Full Length Tie</strong> ({details.sku ? `${details.sku}-FLT` : "SKU-FLT"}), <strong>Clip-On Tie</strong> ({details.sku ? `${details.sku}-COT` : "SKU-COT"}), <strong>Clip-on Cravat</strong> ({details.sku ? `${details.sku}-COC` : "SKU-COC"}).</p>
                     )}

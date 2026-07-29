@@ -4394,7 +4394,7 @@ router.get("/portal/stock", portalAuth, async (req: Request, res: Response) => {
                AND pv.image_url IS NOT NULL
              LIMIT 1
            ) AS variant_image_url,
-           fi.colour, fi.size, fi.unit_price, fi.special_price, fi.stock_quantity, fi.min_quantity, fi.reorder_quantity,
+           fi.colour, fi.sleeve, fi.size, fi.unit_price, fi.special_price, fi.stock_quantity, fi.min_quantity, fi.reorder_quantity,
            fi.location, fi.notes, fi.finish_id, cf.name AS finish_name, fi.updated_at,
            (SELECT COUNT(*) FROM customer_stock_movements WHERE stock_item_id = fi.id) AS movement_count,
            (SELECT created_at FROM customer_stock_movements WHERE stock_item_id = fi.id ORDER BY created_at DESC LIMIT 1) AS last_movement_at
@@ -4402,7 +4402,7 @@ router.get("/portal/stock", portalAuth, async (req: Request, res: Response) => {
     LEFT JOIN products p ON p.id = fi.product_id
     LEFT JOIN customer_finishes cf ON cf.id = fi.finish_id
     WHERE fi.customer_id = ${customerId}
-    ORDER BY fi.name ASC, fi.colour ASC, fi.size ASC
+    ORDER BY fi.name ASC, fi.colour ASC, fi.sleeve ASC, fi.size ASC
   `);
 
   const processes = await db.execute(sql`

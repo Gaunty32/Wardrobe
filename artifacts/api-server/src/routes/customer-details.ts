@@ -1356,12 +1356,13 @@ router.post("/customers/:customerId/finished-items", async (req, res): Promise<v
       eq(customerFinishedItemsTable.productId, body.data.productId),
       body.data.finishId != null ? eq(customerFinishedItemsTable.finishId, body.data.finishId) : isNull(customerFinishedItemsTable.finishId),
       body.data.colour   ? eq(customerFinishedItemsTable.colour,  body.data.colour)   : isNull(customerFinishedItemsTable.colour),
-      body.data.roleId   != null ? eq(customerFinishedItemsTable.roleId, body.data.roleId)   : isNull(customerFinishedItemsTable.roleId),
+      body.data.roleId   != null ? eq(customerFinishedItemsTable.roleId,  body.data.roleId)   : isNull(customerFinishedItemsTable.roleId),
       body.data.size     ? eq(customerFinishedItemsTable.size,    body.data.size)     : isNull(customerFinishedItemsTable.size),
+      body.data.sleeve   ? eq(customerFinishedItemsTable.sleeve,  body.data.sleeve)   : isNull(customerFinishedItemsTable.sleeve),
     ))
     .limit(1);
   if (existing) {
-    res.status(409).json({ error: "A wardrobe item with the same product, finish, colour, role and size already exists." });
+    res.status(409).json({ error: "A wardrobe item with the same product, finish, colour, role, size and sleeve already exists." });
     return;
   }
 

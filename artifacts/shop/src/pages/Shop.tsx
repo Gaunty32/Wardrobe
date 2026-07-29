@@ -1,29 +1,76 @@
+import { useState } from 'react';
 import { useWcProducts, useWcCategories } from '@/hooks/use-wc';
 import { CategorySidebar } from '@/components/CategorySidebar';
 import { ProductCard } from '@/components/ProductCard';
 import { Link, useSearch } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
 
+const NAVY = "#1a2335";
+
 function CategoryTile({ category }: { category: any }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <Link href={`/category/${category.slug}`}>
-      <div className="group relative overflow-hidden bg-gray-100 aspect-[4/3] cursor-pointer">
-        {/* Image */}
+      <div
+        className="relative overflow-hidden cursor-pointer"
+        style={{ aspectRatio: "4/3", background: "#f3f4f6" }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {/* Product image */}
         {category.image ? (
           <img
             src={category.image}
             alt={category.name}
-            className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out"
+            style={{ transform: hovered ? "scale(1.08)" : "scale(1)" }}
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-gray-200 to-gray-300" />
         )}
 
-        {/* Dark gradient overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        {/* Permanent dark footer — always readable before hover */}
+        <div
+          className="absolute inset-0 transition-opacity duration-400"
+          style={{
+            background: "linear-gradient(to top, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.1) 45%, transparent 70%)",
+            opacity: hovered ? 0 : 1,
+          }}
+        />
 
-        {/* Label */}
-        <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
+        {/* Brand-wash overlay — slides up from bottom on hover */}
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center transition-all duration-500 ease-out"
+          style={{
+            background: NAVY,
+            opacity: hovered ? 0.93 : 0,
+            transform: hovered ? "translateY(0)" : "translateY(6%)",
+          }}
+        >
+          <span
+            className="text-white font-extrabold tracking-widest uppercase text-center px-4 transition-all duration-500"
+            style={{ fontSize: "clamp(0.85rem, 2.5vw, 1.4rem)", transform: hovered ? "translateY(0)" : "translateY(12px)", opacity: hovered ? 1 : 0 }}
+          >
+            {category.name}
+          </span>
+          {/* Animated underline */}
+          <div
+            className="mt-2 bg-white transition-all duration-500"
+            style={{ height: 2, width: hovered ? 50 : 0, transitionDelay: hovered ? "100ms" : "0ms" }}
+          />
+          <span
+            className="mt-3 text-white/75 text-xs tracking-widest uppercase transition-all duration-500"
+            style={{ opacity: hovered ? 1 : 0, transform: hovered ? "translateY(0)" : "translateY(8px)", transitionDelay: hovered ? "160ms" : "0ms" }}
+          >
+            Explore Collection →
+          </span>
+        </div>
+
+        {/* Default label — fades out on hover */}
+        <div
+          className="absolute bottom-0 left-0 right-0 px-3 pb-3 transition-opacity duration-300"
+          style={{ opacity: hovered ? 0 : 1 }}
+        >
           <p className="text-white font-semibold text-sm uppercase tracking-wide leading-tight drop-shadow">
             {category.name}
           </p>
@@ -31,9 +78,6 @@ function CategoryTile({ category }: { category: any }) {
             {category.count} {category.count === 1 ? 'product' : 'products'}
           </p>
         </div>
-
-        {/* Hover border */}
-        <div className="absolute inset-0 ring-2 ring-primary/0 group-hover:ring-primary/60 transition-all duration-300" />
       </div>
     </Link>
   );

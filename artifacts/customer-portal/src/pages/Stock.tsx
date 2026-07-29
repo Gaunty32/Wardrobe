@@ -34,6 +34,7 @@ interface StockItem {
   product_image_url: string | null;
   variant_image_url: string | null;
   colour: string | null;
+  sleeve: string | null;
   size: string | null;
   unit_price: string | null;
   special_price: string | null;
@@ -101,6 +102,7 @@ interface CardGroup {
   productSku: string | null;
   imageUrl: string | null;
   colour: string | null;
+  sleeve: string | null;
   finishId: number | null;
   finishName: string | null;
   location: string | null;
@@ -111,9 +113,9 @@ function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
   const map = new Map<string, CardGroup>();
 
   for (const item of items) {
-    // Primary key includes colour so different coloured variants stay separate.
-    // Null-colour items use an empty string — they will be merged below.
-    const key = `${item.product_id ?? item.name}|${item.colour ?? ""}|${item.finish_id ?? ""}`;
+    // Key includes colour AND sleeve so Long Sleeve / Short Sleeve get separate cards.
+    // Null values use empty string — null-colour/null-sleeve merging handled below.
+    const key = `${item.product_id ?? item.name}|${item.colour ?? ""}|${item.finish_id ?? ""}|${item.sleeve ?? ""}`;
     if (!map.has(key)) {
       map.set(key, {
         key,
@@ -121,6 +123,7 @@ function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
         productSku: item.product_sku ?? null,
         imageUrl: item.variant_image_url ?? item.product_image_url ?? null,
         colour: item.colour,
+        sleeve: item.sleeve,
         finishId: item.finish_id,
         finishName: item.finish_name,
         location: item.location,
@@ -131,18 +134,20 @@ function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
   }
 
   // Merge null-colour groups into a matching named-colour group for the same
-  // product + finish. This collapses cards that were split because some items
-  // were saved without a colour (e.g. "Black" vs null for the same shoe SKU).
+  // product + finish + sleeve. This collapses cards that were split because some
+  // items were saved without a colour (e.g. "Black" vs null for the same shoe SKU).
   for (const [key, group] of map) {
     if (group.colour != null) continue; // only process null-colour groups
     const productPart = `${group.items[0]?.product_id ?? group.displayName}`;
     const finishPart  = `${group.finishId ?? ""}`;
-    // Find the first named-colour group for the same product+finish
+    const sleevePart  = `${group.sleeve ?? ""}`;
+    // Find the first named-colour group for the same product+finish+sleeve
     const target = [...map.values()].find(g =>
       g !== group &&
       g.colour != null &&
       `${g.items[0]?.product_id ?? g.displayName}` === productPart &&
-      `${g.finishId ?? ""}` === finishPart
+      `${g.finishId ?? ""}` === finishPart &&
+      `${g.sleeve ?? ""}` === sleevePart
     );
     if (target) {
       target.items.push(...group.items);
@@ -150,15 +155,15 @@ function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
     }
   }
 
-  // Within each group, deduplicate by size: if the same size appears more than
-  // once (e.g. from duplicate DB records), merge into a single row by summing
-  // stock quantities and keeping the item with the most context for editing.
+  // Within each group, deduplicate by size+sleeve key: if the same combination
+  // appears more than once (e.g. duplicate DB records), merge by summing stock.
   return Array.from(map.values()).map(g => {
     const sizeMap = new Map<string, StockItem>();
     for (const item of g.items) {
-      // Normalise the key so size strings that differ only in case or whitespace
-      // (e.g. "Extra Small" vs "extra small") collapse into the same row.
-      const sizeKey = (item.size ?? "—").toLowerCase().trim();
+      // Include sleeve in dedup key so "Size 8 Long" and "Size 8 Short" stay separate
+      // within a card that contains both (shouldn't happen after the group-key fix, but
+      // keeps the dedup safe if sleeve is null on some items).
+      const sizeKey = `${(item.size ?? "—").toLowerCase().trim()}|${(item.sleeve ?? "").toLowerCase().trim()}`;
       const existing = sizeMap.get(sizeKey);
       if (!existing) {
         sizeMap.set(sizeKey, item);
@@ -324,7 +329,7 @@ function StockCard({
         <div className="min-w-0">
           <p className="font-semibold text-sm leading-snug line-clamp-2">{group.displayName}</p>
           <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-            {[group.colour, group.productSku].filter(Boolean).join(" · ")}
+            {[group.colour, group.sleeve, group.productSku].filter(Boolean).join(" · ")}
           </p>
           {group.finishName && (
             <p className="text-[11px] text-muted-foreground/70 truncate">{group.finishName}</p>

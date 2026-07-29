@@ -1207,6 +1207,8 @@ router.post("/shop/live-chat", async (req: Request, res: Response) => {
       role: z.enum(["user", "assistant"]),
       content: z.string().max(2000),
     })).min(1).max(20),
+    userName: z.string().max(100).optional(),
+    userEmail: z.string().email().max(200).optional(),
   }).safeParse(req.body);
 
   if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
@@ -1215,7 +1217,10 @@ router.post("/shop/live-chat", async (req: Request, res: Response) => {
   const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
   if (!apiKey || !baseUrl) { res.status(503).json({ error: "Chat service not configured" }); return; }
 
-  const system = `You are a friendly, knowledgeable assistant for Select Branding Solutions — a UK workwear and branded uniform supplier based in Leeds.
+  const { userName, userEmail } = parsed.data;
+  const userContext = userName ? `\nYou are speaking with ${userName}${userEmail ? ` (${userEmail})` : ""}. Address them by first name when natural.` : "";
+
+  const system = `You are a friendly, knowledgeable assistant for Select Branding Solutions — a UK workwear and branded uniform supplier based in Leeds.${userContext}
 
 Key facts:
 - We supply workwear, uniforms, and branded clothing to businesses across the UK
@@ -1236,7 +1241,7 @@ Guidelines:
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        model: "claude-sonnet-4-6",
         messages: [{ role: "system", content: system }, ...parsed.data.messages],
         max_tokens: 400,
       }),

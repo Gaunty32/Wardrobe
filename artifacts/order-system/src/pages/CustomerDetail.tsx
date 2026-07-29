@@ -3463,18 +3463,37 @@ function WardrobeTab({ customerId }: { customerId: number }) {
       notes: form.notes || null,
     };
 
-    // Group edit: update shared fields on all items in the group (preserve each item's size)
+    // Group edit: update shared fields on all items; if extra colours selected, create copies for each
     if (editingGroup) {
       setSaving(true);
       try {
+        // Determine target colours — multi-select chips take precedence over free-text colour
+        const targetColours: (string | null)[] = variantColours.length > 0 && selectedColours.length > 0
+          ? selectedColours
+          : [form.colour || null];
+        const [firstColour, ...extraColours] = targetColours;
+
+        // Patch all existing items with the first selected colour (preserving each item's size)
         await Promise.all(editingGroup.items.map(item =>
           apiFetch(`/customers/${customerId}/finished-items/${item.id}`, {
             method: "PATCH",
-            body: JSON.stringify({ ...base, colour: form.colour || null, sleeve: form.sleeve || null, size: item.size }),
+            body: JSON.stringify({ ...base, colour: firstColour ?? null, sleeve: form.sleeve || null, size: item.size }),
           })
         ));
+
+        // Create new items for each additional colour (one per size from the group)
+        for (const colour of extraColours) {
+          for (const item of editingGroup.items) {
+            await apiFetch(`/customers/${customerId}/finished-items`, {
+              method: "POST",
+              body: JSON.stringify({ ...base, colour: colour ?? null, sleeve: form.sleeve || null, size: item.size }),
+            }).catch(() => {}); // Skip silently if the colour+size already exists
+          }
+        }
+
         inv();
-        toast({ title: `Group updated (${editingGroup.items.length} items)` });
+        const colourNote = extraColours.length > 0 ? ` + ${extraColours.length} new colour${extraColours.length > 1 ? "s" : ""} added` : "";
+        toast({ title: `Group updated (${editingGroup.items.length} sizes${colourNote})` });
         setOpen(false); setEditing(null); setEditingGroup(null);
       } catch (e: any) {
         toast({ title: "Error", description: e.message || "Could not save", variant: "destructive" });
@@ -3552,7 +3571,9 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     setEditing(first);
     setEditingGroup(group);
     setProductSearchOpen(false);
-    setVariantColours([]); setVariantSleeves([]); setVariantSizes([]); setSelectedColours([]); setSelectedSleeves([]); setSelectedSizes([]);
+    // Pre-select the group's current colour so it shows as already ticked
+    setVariantColours([]); setVariantSleeves([]); setVariantSizes([]);
+    setSelectedColours(group.colour ? [group.colour] : []); setSelectedSleeves([]); setSelectedSizes([]);
     Promise.all([apiFetch<any[]>(`/products/${group.productId}/variants`), apiFetch<any[]>(`/products/${group.productId}/attributes`)]).then(([variants, attrs]) => {
       const colours = [...new Set(variants.map((x: any) => x.colour).filter(Boolean))] as string[];
       const vs = variants.map((x: any) => x.size).filter(Boolean) as string[];
@@ -3836,9 +3857,29 @@ function WardrobeTab({ customerId }: { customerId: number }) {
             </div>
 
             <div className="grid gap-2">
-              <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour</Label>
-              {editing ? (
-                /* Edit mode — single-select pills matching Add mode */
+              <Label className="flex items-center gap-1"><Palette className="w-3 h-3" /> Colour{editingGroup && <span className="font-normal text-muted-foreground text-[10px] ml-1">(select all that apply — new colours will be added)</span>}</Label>
+              {editingGroup ? (
+                /* Group edit — multi-select so staff can add colours in one step */
+                variantColours.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {variantColours.map(col => (
+                      <button key={col} type="button"
+                        onClick={() => toggleColour(col)}
+                        className={cn("px-2.5 py-1 rounded-full text-xs font-medium border transition-colors", selectedColours.includes(col) ? "bg-primary text-white border-primary" : "bg-muted text-muted-foreground border-border hover:border-primary/50")}
+                      >{col}</button>
+                    ))}
+                    {variantColours.length > 1 && (
+                      <button type="button" onClick={() => setSelectedColours(selectedColours.length === variantColours.length ? [] : [...variantColours])}
+                        className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-muted-foreground/40 text-muted-foreground hover:border-primary/50 transition-colors">
+                        {selectedColours.length === variantColours.length ? "None" : "All"}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <input className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" placeholder="e.g. Navy Blue (optional)" value={form.colour} onChange={e => setForm(f => ({ ...f, colour: e.target.value }))} />
+                )
+              ) : editing ? (
+                /* Single item edit — single-select pills */
                 variantColours.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     <button type="button"
