@@ -645,6 +645,7 @@ export default function Layout({ children }: LayoutProps) {
       label: "Comms",
       items: [
         { name: "Templates", href: "/templates", icon: Mail },
+        { name: "Live Chat", href: "/live-chat", icon: MessageCircle },
       ],
     },
   ];

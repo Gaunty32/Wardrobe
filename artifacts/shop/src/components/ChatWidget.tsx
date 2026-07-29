@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { MessageCircle, X, Send, Loader2, CheckCircle2 } from 'lucide-react';
+import { X, Send, CheckCircle2, MessageCircle, Mail } from 'lucide-react';
+
+const BOT_AVATAR = `${import.meta.env.BASE_URL}chat-bot-avatar.png`;
 
 const WHATSAPP_NUMBER = '441132552694';
 const WHATSAPP_URL = `https://wa.me/${WHATSAPP_NUMBER}`;
@@ -40,9 +42,8 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
   const [stage, setStage] = useState<'pre-chat' | 'chatting'>('pre-chat');
   const [userName, setUserName] = useState('');
   const [userEmail, setUserEmail] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'assistant', content: "Hi! 👋 I'm here to help with any questions about our workwear, uniforms, or services. What can I help you with today?" },
-  ]);
+  const [sessionId, setSessionId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [thinking, setThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -56,11 +57,36 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
     if (stage === 'chatting') setTimeout(() => inputRef.current?.focus(), 80);
   }, [stage]);
 
-  const startChat = (e: React.FormEvent) => {
+  const startChat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userName.trim()) return;
-    setMessages([{ role: 'assistant', content: `Hi ${userName.trim().split(' ')[0]}! 👋 I'm here to help with any questions about our workwear, uniforms, or services. What can I help you with today?` }]);
+    const firstName = userName.trim().split(' ')[0];
+    const greeting: ChatMessage = { role: 'assistant', content: `Hi ${firstName}! 👋 I'm here to help with any questions about our workwear, uniforms, or services. What can I help you with today?` };
+    setMessages([greeting]);
     setStage('chatting');
+    // Create a session record so staff can review it later
+    try {
+      const res = await fetch('/api/shop/live-chat/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactName: userName.trim() || undefined,
+          contactEmail: userEmail.trim() || undefined,
+          pageUrl: window.location.href,
+        }),
+      });
+      const data = await res.json();
+      setSessionId(data.id ?? null);
+    } catch { /* non-critical */ }
+  };
+
+  const persistSession = async (allMessages: ChatMessage[], ended = false) => {
+    if (!sessionId) return;
+    fetch('/api/shop/live-chat/session/' + sessionId, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: allMessages, ended }),
+    }).catch(() => {});
   };
 
   const send = async () => {
@@ -84,7 +110,9 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
       });
       const data = await res.json();
       const reply: string = data.reply ?? data.error ?? "Sorry, something went wrong. Please try again.";
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      const withReply = [...next, { role: 'assistant' as const, content: reply }];
+      setMessages(withReply);
+      persistSession(withReply);
     } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: "Sorry, I couldn't connect right now. Please try WhatsApp or send us a message." }]);
     } finally {
@@ -147,9 +175,7 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             {m.role === 'assistant' && (
-              <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mr-2 mt-0.5">
-                <MessageCircle className="w-3.5 h-3.5 text-primary" />
-              </div>
+              <img src={BOT_AVATAR} alt="Bot" className="w-6 h-6 rounded-full object-cover shrink-0 mr-2 mt-0.5" />
             )}
             <div
               className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
@@ -165,9 +191,7 @@ function LiveChatView({ onBack }: { onBack: () => void }) {
 
         {thinking && (
           <div className="flex justify-start">
-            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mr-2 mt-0.5">
-              <MessageCircle className="w-3.5 h-3.5 text-primary" />
-            </div>
+            <img src={BOT_AVATAR} alt="Bot" className="w-6 h-6 rounded-full object-cover shrink-0 mr-2 mt-0.5" />
             <div className="bg-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1">
               {[0, 1, 2].map(i => (
                 <span key={i} className="w-1.5 h-1.5 rounded-full bg-gray-400 animate-bounce"
@@ -244,7 +268,7 @@ export default function ChatWidget() {
   };
 
   const reset = () => { setForm({ name: '', email: '', message: '' }); setStatus('idle'); setRefNum(''); };
-  const handleClose = () => setOpen(false);
+  const handleClose = () => { setOpen(false); };
   const handleOpen = () => { setView('choice'); reset(); setOpen(true); };
 
   return (
@@ -257,8 +281,8 @@ export default function ChatWidget() {
           {/* Header */}
           <div className="bg-primary px-4 py-3.5 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                <MessageCircle className="w-4 h-4 text-white" />
+              <div className="w-8 h-8 rounded-full bg-white/10 overflow-hidden flex items-center justify-center">
+                <img src={BOT_AVATAR} alt="Bot" className="w-8 h-8 object-cover" />
               </div>
               <div>
                 <p className="text-sm font-bold text-white leading-none">Get in touch</p>
@@ -300,8 +324,8 @@ export default function ChatWidget() {
                   onClick={() => setView('livechat')}
                   className="flex items-center gap-3.5 w-full rounded-xl border-2 border-blue-200 bg-blue-50 hover:bg-blue-100 hover:border-blue-400 transition-all px-4 py-3.5 text-left group"
                 >
-                  <div className="relative w-10 h-10 rounded-full bg-blue-500 flex items-center justify-center shrink-0 shadow-sm">
-                    <MessageCircle className="w-5 h-5 text-white" />
+                  <div className="relative w-10 h-10 rounded-full overflow-hidden shrink-0 shadow-sm">
+                    <img src={BOT_AVATAR} alt="Bot" className="w-10 h-10 object-cover" />
                     <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-green-400 border-2 border-white rounded-full" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -317,7 +341,7 @@ export default function ChatWidget() {
                   className="flex items-center gap-3.5 w-full rounded-xl border-2 border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all px-4 py-3.5 text-left group"
                 >
                   <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-sm">
-                    <MessageCircle className="w-5 h-5 text-white" />
+                    <Mail className="w-5 h-5 text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-gray-900 text-sm leading-snug">Send a message</p>
@@ -403,7 +427,7 @@ export default function ChatWidget() {
       >
         {open
           ? <X className="w-5 h-5" />
-          : <><MessageCircle className="w-5 h-5" /><span className="text-sm font-bold">Chat with us</span></>
+          : <><img src={BOT_AVATAR} alt="" className="w-5 h-5 rounded-full object-cover" /><span className="text-sm font-bold">Chat with us</span></>
         }
       </button>
     </div>

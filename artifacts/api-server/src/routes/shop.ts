@@ -1200,6 +1200,97 @@ router.patch("/shop/team-members", async (req: Request, res: Response) => {
   }
 });
 
+// ─── POST /shop/live-chat/session ─────────────────────────────────────────────
+router.post("/shop/live-chat/session", async (req: Request, res: Response) => {
+  const parsed = z.object({
+    contactName: z.string().max(200).optional(),
+    contactEmail: z.string().email().max(200).optional(),
+    pageUrl: z.string().max(500).optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+  const { contactName, contactEmail, pageUrl } = parsed.data;
+  const result = await db.execute(sql`
+    INSERT INTO live_chat_sessions (contact_name, contact_email, page_url, started_at)
+    VALUES (${contactName ?? null}, ${contactEmail ?? null}, ${pageUrl ?? null}, NOW())
+    RETURNING id
+  `);
+  const id = (result.rows[0] as any).id;
+  res.json({ id });
+});
+
+// ─── PATCH /shop/live-chat/session/:id ────────────────────────────────────────
+router.patch("/shop/live-chat/session/:id", async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const parsed = z.object({
+    messages: z.array(z.object({ role: z.enum(["user","assistant"]), content: z.string() })).optional(),
+    ended: z.boolean().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+  const { messages, ended } = parsed.data;
+  await db.execute(sql`
+    UPDATE live_chat_sessions
+    SET
+      messages = COALESCE(${messages ? JSON.stringify(messages) : null}::jsonb, messages),
+      message_count = COALESCE(${messages ? messages.length : null}, message_count),
+      last_message_at = CASE WHEN ${messages != null} THEN NOW() ELSE last_message_at END,
+      ended_at = CASE WHEN ${ended === true} THEN NOW() ELSE ended_at END
+    WHERE id = ${id}
+  `);
+  res.json({ ok: true });
+});
+
+// ─── GET /shop/live-chat/sessions ─────────────────────────────────────────────
+router.get("/shop/live-chat/sessions", async (req: Request, res: Response) => {
+  const flagged = req.query.flagged === "true";
+  const rows = await db.execute(sql`
+    SELECT id, contact_name, contact_email, message_count, messages,
+           started_at, last_message_at, ended_at, page_url,
+           flagged_for_training, training_notes
+    FROM live_chat_sessions
+    ${flagged ? sql`WHERE flagged_for_training = TRUE` : sql``}
+    ORDER BY started_at DESC
+    LIMIT 200
+  `);
+  res.json({ sessions: rows.rows });
+});
+
+// ─── PATCH /shop/live-chat/sessions/:id/flag ──────────────────────────────────
+router.patch("/shop/live-chat/sessions/:id/flag", async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const parsed = z.object({
+    flagged: z.boolean(),
+    notes: z.string().max(2000).optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+  await db.execute(sql`
+    UPDATE live_chat_sessions
+    SET flagged_for_training = ${parsed.data.flagged},
+        training_notes = COALESCE(${parsed.data.notes ?? null}, training_notes)
+    WHERE id = ${id}
+  `);
+  res.json({ ok: true });
+});
+
+// ─── GET /shop/live-chat/system-prompt ────────────────────────────────────────
+router.get("/shop/live-chat/system-prompt", async (_req: Request, res: Response) => {
+  const rows = await db.execute(sql`SELECT value FROM settings WHERE key = 'live_chat_system_prompt' LIMIT 1`);
+  const custom = (rows.rows[0] as any)?.value ?? null;
+  res.json({ systemPrompt: custom });
+});
+
+// ─── PATCH /shop/live-chat/system-prompt ──────────────────────────────────────
+router.patch("/shop/live-chat/system-prompt", async (req: Request, res: Response) => {
+  const parsed = z.object({ systemPrompt: z.string().min(10).max(5000) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+  await db.execute(sql`
+    INSERT INTO settings (key, value) VALUES ('live_chat_system_prompt', ${parsed.data.systemPrompt})
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+  `);
+  res.json({ ok: true });
+});
+
 // ─── POST /shop/live-chat ─────────────────────────────────────────────────────
 router.post("/shop/live-chat", async (req: Request, res: Response) => {
   const parsed = z.object({
@@ -1220,7 +1311,9 @@ router.post("/shop/live-chat", async (req: Request, res: Response) => {
   const { userName, userEmail } = parsed.data;
   const userContext = userName ? `\nYou are speaking with ${userName}${userEmail ? ` (${userEmail})` : ""}. Address them by first name when natural.` : "";
 
-  const system = `You are a friendly, knowledgeable assistant for Select Branding Solutions — a UK workwear and branded uniform supplier based in Leeds.${userContext}
+  // Use custom system prompt from settings if set, otherwise fall back to default
+  const promptRow = await db.execute(sql`SELECT value FROM settings WHERE key = 'live_chat_system_prompt' LIMIT 1`);
+  const basePrompt = (promptRow.rows[0] as any)?.value ?? `You are a friendly, knowledgeable assistant for Select Branding Solutions — a UK workwear and branded uniform supplier based in Leeds.
 
 Key facts:
 - We supply workwear, uniforms, and branded clothing to businesses across the UK
@@ -1235,6 +1328,8 @@ Guidelines:
 - Never invent specific product prices; say "prices vary by quantity and product — call us or send a message for a quote"
 - For complex orders or bespoke quotes, suggest: call 0113 255 2694, WhatsApp, or click "Send a message"
 - Keep replies short (2-4 sentences max unless a list is clearer)`;
+
+  const system = `${basePrompt}${userContext}`;
 
   try {
     const aiRes = await fetch(`${baseUrl}/chat/completions`, {
