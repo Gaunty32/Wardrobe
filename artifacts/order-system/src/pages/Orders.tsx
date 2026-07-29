@@ -754,7 +754,13 @@ export default function Orders() {
                           </TableCell>
                           <TableCell className="text-muted-foreground text-sm">{formatDate(order.orderDate)}</TableCell>
                           <TableCell className="font-medium text-foreground">{toTitleCase(order.customerName) || 'Unknown'}</TableCell>
-                          <TableCell className="text-sm font-mono text-muted-foreground">{(order as any).poNumber ?? <span className="italic text-muted-foreground/50">—</span>}</TableCell>
+                          <TableCell onClick={e => e.stopPropagation()}>
+                            <PoPendingInline
+                              orderId={order.id}
+                              current={(order as any).poNumber ?? null}
+                              onSaved={() => queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey() })}
+                            />
+                          </TableCell>
                           <TableCell><StatusBadge status={order.status} /></TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
