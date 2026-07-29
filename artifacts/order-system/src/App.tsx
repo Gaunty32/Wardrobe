@@ -77,6 +77,7 @@ import Enquiries from "@/pages/Enquiries";
 import Feedback from "@/pages/Feedback";
 import Chat from "@/pages/Chat";
 import Templates from "@/pages/Templates";
+import CategoryManager from "@/pages/CategoryManager";
 import NotFound from "@/pages/not-found";
 import DemoGate from "@/pages/DemoGate";
 import DemoDashboard from "@/pages/DemoDashboard";
@@ -176,6 +177,7 @@ function Router() {
       <Route path="/feedback" component={Feedback} />
       <Route path="/chat" component={Chat} />
       <Route path="/templates" component={Templates} />
+      <Route path="/categories" component={CategoryManager} />
       <Route component={NotFound} />
     </Switch>
   );

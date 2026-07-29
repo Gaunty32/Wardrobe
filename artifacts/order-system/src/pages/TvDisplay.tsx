@@ -136,22 +136,24 @@ function PillCard({ pill }: { pill: PillItem }) {
   const v = urgencyVariant(pill.urgency);
   const s = STYLES[v];
   return (
+    // min-w-0 + overflow-hidden prevent the grid-blowout where content forces
+    // the cell wider than its 1fr share, pushing the last column off-screen.
     <div
-      className={`rounded-3xl border-4 ${s.card} flex flex-col justify-between h-full`}
-      style={{ padding: "clamp(1rem, 2vw, 2.5rem)" }}
+      className={`rounded-3xl border-4 ${s.card} flex flex-col justify-between h-full min-w-0 overflow-hidden`}
+      style={{ padding: "clamp(0.8rem, 1.6vw, 2rem)" }}
     >
       {/* Top row: urgency tag */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2 shrink-0">
         <span
-          className={`font-black uppercase tracking-widest ${s.tag}`}
-          style={{ fontSize: "clamp(0.65rem, 1vw, 1.15rem)" }}
+          className={`font-black uppercase tracking-widest truncate ${s.tag}`}
+          style={{ fontSize: "clamp(0.6rem, 0.9vw, 1.05rem)" }}
         >
           {urgencyLabel(pill.urgency, pill.daysUntilDue)}
         </span>
         {pill.worksheetNumber && (
           <span
-            className={`font-mono font-semibold ${s.ws}`}
-            style={{ fontSize: "clamp(0.65rem, 0.95vw, 1.05rem)" }}
+            className={`font-mono font-semibold shrink-0 ${s.ws}`}
+            style={{ fontSize: "clamp(0.6rem, 0.85vw, 1rem)" }}
           >
             {pill.worksheetNumber}
           </span>
@@ -160,23 +162,23 @@ function PillCard({ pill }: { pill: PillItem }) {
 
       {/* Centre: finish name — the star of the show */}
       <div
-        className="font-black text-white leading-tight break-words"
-        style={{ fontSize: "clamp(1.4rem, 2.8vw, 3.8rem)" }}
+        className="font-black text-white leading-tight break-words overflow-hidden flex-1 flex items-center py-1"
+        style={{ fontSize: "clamp(1.1rem, 2.2vw, 3.2rem)", minHeight: 0 }}
       >
         {pill.finishName}
       </div>
 
       {/* Bottom row: customer + qty */}
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex items-end justify-between gap-2 shrink-0 min-w-0">
         <span
-          className={`font-semibold truncate ${s.label}`}
-          style={{ fontSize: "clamp(0.85rem, 1.5vw, 2rem)", maxWidth: "65%" }}
+          className={`font-semibold truncate min-w-0 ${s.label}`}
+          style={{ fontSize: "clamp(0.75rem, 1.3vw, 1.8rem)" }}
         >
           {pill.customerName}
         </span>
         <span
-          className={`font-black tabular-nums leading-none ${s.qty}`}
-          style={{ fontSize: "clamp(2rem, 4.5vw, 6rem)" }}
+          className={`font-black tabular-nums leading-none shrink-0 ${s.qty}`}
+          style={{ fontSize: "clamp(1.8rem, 3.8vw, 5.5rem)" }}
         >
           {pill.qty}
         </span>

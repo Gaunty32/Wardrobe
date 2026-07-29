@@ -28,7 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatCurrency } from "@/lib/utils";
 import { usePriceConfirm } from "@/components/PriceConfirmDialog";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore, AlertTriangle, ImageOff as NoImageIcon, BellOff } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore, AlertTriangle, ImageOff as NoImageIcon, BellOff, FolderTree } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -409,7 +409,7 @@ export default function Products() {
               <img
                 src={cat.imageUrl}
                 alt={cat.name}
-                className="absolute inset-0 w-full h-full object-contain p-3 transition-transform duration-300 group-hover:scale-105"
+                className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
               />
             ) : (
@@ -527,9 +527,14 @@ export default function Products() {
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-medium">&#9679; &lt;60%</span>
             </div>
             {viewMode === "catalogue" && (
-              <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
-                <Plus className="w-4 h-4 mr-2" /> Add Product
-              </Button>
+              <>
+                <Button onClick={() => navigate("/categories")} variant="outline" className="hidden sm:flex">
+                  <FolderTree className="w-4 h-4 mr-2" /> Manage Categories
+                </Button>
+                <Button onClick={openCreateDialog} className="shadow-lg shadow-primary/20 transition-all hover:shadow-primary/30">
+                  <Plus className="w-4 h-4 mr-2" /> Add Product
+                </Button>
+              </>
             )}
           </div>
         </div>

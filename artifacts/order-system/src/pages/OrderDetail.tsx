@@ -1405,9 +1405,13 @@ export default function OrderDetail() {
     }
   };
 
-  // Add ALL currently configured wardrobe items in one shot (used by the bottom "Add to Order" button)
-  const handleWardrobeAddAll = async () => {
-    if (!wardrobeData || wardrobeRecipient === null) return;
+  // Add ALL currently configured wardrobe items in one shot (used by the bottom "Add to Order" button).
+  // Accepts an optional `forRecipient` to support the save-and-add flow where the recipient is
+  // freshly created and React state hasn't updated yet.
+  const handleWardrobeAddAll = async (forRecipient?: CustomerEmployee | "stock") => {
+    const effectiveRecipient = forRecipient ?? wardrobeRecipient;
+    if (!wardrobeData || effectiveRecipient === null) return;
+    const wardrobeRecipient = effectiveRecipient; // shadow for the rest of this function
     const wiItems = (wardrobeData.items ?? []).filter((wi: any) =>
       wardrobeRecipient === "stock" ||
       wi.effective_role_id === null ||
@@ -2267,12 +2271,12 @@ export default function OrderDetail() {
                           </TableHead>
                         ))}
                         <TableHead className="w-[72px] text-right text-muted-foreground font-normal text-xs">GP%</TableHead>
-                        <TableHead className="w-[90px] text-right text-muted-foreground font-normal text-xs">VAT</TableHead>
+                        <TableHead className="w-[36px]" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredItems.map((orderItem) => (
-                        <TableRow key={orderItem.id}>
+                        <TableRow key={orderItem.id} className="group/row">
                           <TableCell>
                             <p className="font-medium text-foreground">
                               {orderItem.productName}
@@ -2447,6 +2451,19 @@ export default function OrderDetail() {
                                 <MessageSquare className="w-3 h-3" /> Add notes
                               </button>
                             )}
+                            {/* VAT selector — subtle, appears on row hover */}
+                            <div className="mt-1.5 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                              <select
+                                value={String((orderItem as any).vatRate ?? 0.20)}
+                                onChange={e => updateItemVatRateMutation.mutate({ itemId: orderItem.id, vatRate: parseFloat(e.target.value) })}
+                                className="text-xs rounded px-1 py-0.5 border border-border/40 bg-transparent text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none"
+                                title="VAT rate"
+                              >
+                                <option value="0.2">20% VAT</option>
+                                <option value="0.05">5% VAT</option>
+                                <option value="0">0% VAT</option>
+                              </select>
+                            </div>
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {editingItemPrice?.id === orderItem.id ? (
@@ -2573,28 +2590,10 @@ export default function OrderDetail() {
                               );
                             })()}
                           </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              {(() => {
-                                const vr = (orderItem as any).vatRate ?? 0.20;
-                                const pct = Math.round(vr * 100);
-                                return (
-                                  <select
-                                    value={String(vr)}
-                                    onChange={e => updateItemVatRateMutation.mutate({ itemId: orderItem.id, vatRate: parseFloat(e.target.value) })}
-                                    className="text-xs rounded px-1 py-0.5 border border-border/50 bg-transparent text-muted-foreground hover:text-foreground cursor-pointer focus:outline-none"
-                                    title="VAT rate"
-                                  >
-                                    <option value="0.2">20% VAT</option>
-                                    <option value="0.05">5% VAT</option>
-                                    <option value="0">0% VAT</option>
-                                  </select>
-                                );
-                              })()}
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-red-500 hover:bg-red-50" onClick={() => handleDeleteItem(orderItem.id)}>
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
-                            </div>
+                          <TableCell className="w-[36px] p-1 text-center">
+                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-red-600 hover:bg-red-50 opacity-0 group-hover/row:opacity-100 transition-opacity" title="Delete line" onClick={() => handleDeleteItem(orderItem.id)}>
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -4010,9 +4009,9 @@ export default function OrderDetail() {
                                     {oneSize ? (
                                       /* One size — just qty */
                                       <div className="flex items-center border rounded-md h-8 overflow-hidden">
-                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(0, (s[id] ?? 0) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
                                         <span className="flex-1 text-center text-sm font-semibold">{currentQty}</span>
-                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
+                                        <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 0) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
                                       </div>
                                     ) : isBulk ? (
                                       /* Bulk entry grid */
@@ -4091,9 +4090,9 @@ export default function OrderDetail() {
                                           </Select>
                                         )}
                                         <div className="flex items-center border rounded-md h-8 overflow-hidden">
-                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(1, (s[id] ?? 1) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: Math.max(0, (s[id] ?? 0) - 1) }))}><Minus className="w-3.5 h-3.5" /></button>
                                           <span className="flex-1 text-center text-sm font-semibold">{currentQty}</span>
-                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 1) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
+                                          <button className="px-2 h-full text-muted-foreground hover:bg-muted/60 transition-colors" onClick={() => setWardrobeItemQtys(s => ({ ...s, [id]: (s[id] ?? 0) + 1 }))}><Plus className="w-3.5 h-3.5" /></button>
                                         </div>
                                       </>
                                     )}
@@ -4488,11 +4487,37 @@ export default function OrderDetail() {
             <DialogFooter className="shrink-0 border-t border-border/40 pt-4 mt-2">
               <Button variant="outline" onClick={resetDialog}>Cancel</Button>
               <Button
-                onClick={dialogTab === "wardrobe" ? handleWardrobeAddAll : handleAddItem}
+                onClick={async () => {
+                  // Wardrobe tab — new recipient form open: save the employee then add in one step
+                  if (dialogTab === "wardrobe" && addRecipientOpen && addRecipientForm.firstName.trim()) {
+                    setAddRecipientSaving(true);
+                    try {
+                      const newEmp = await apiFetch(`/customers/${customerId}/employees`, {
+                        method: "POST",
+                        body: JSON.stringify({
+                          firstName: addRecipientForm.firstName.trim(),
+                          lastName: addRecipientForm.lastName.trim() || null,
+                          jobTitle: addRecipientForm.jobTitle.trim() || null,
+                          deliveryAddressId: addRecipientForm.deliveryAddressId ?? null,
+                        }),
+                      });
+                      await queryClient.invalidateQueries({ queryKey: ["customer-employees", customerId] });
+                      setAddRecipientOpen(false);
+                      setAddRecipientForm({ firstName: "", lastName: "", jobTitle: "", deliveryAddressId: null });
+                      await handleWardrobeAddAll(newEmp as CustomerEmployee);
+                    } catch {
+                      toast({ title: "Could not create recipient", variant: "destructive" });
+                    } finally {
+                      setAddRecipientSaving(false);
+                    }
+                    return;
+                  }
+                  dialogTab === "wardrobe" ? handleWardrobeAddAll() : handleAddItem();
+                }}
                 disabled={
-                  addItemMutation.isPending || isAddingMulti ||
+                  addItemMutation.isPending || isAddingMulti || addRecipientSaving ||
                   (dialogTab === "wardrobe"
-                    ? wardrobeRecipient === null
+                    ? wardrobeRecipient === null && !(addRecipientOpen && addRecipientForm.firstName.trim())
                     : !item.unitPrice ||
                       (dialogTab === "service" ? !item.productName.trim() : !item.productId) ||
                       (colours.length > 0 && dialogTab === "custom" && !item.colour) ||

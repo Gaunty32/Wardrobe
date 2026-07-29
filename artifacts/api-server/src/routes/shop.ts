@@ -530,7 +530,7 @@ router.get("/shop/wc/categories", async (_req, res): Promise<void> => {
         image_url AS image
       FROM product_categories
       WHERE product_count > 0
-      ORDER BY product_count DESC, name ASC
+      ORDER BY display_order ASC, name ASC
     `);
 
     const cats = (rows.rows as any[]).map((r) => ({
@@ -1197,6 +1197,60 @@ router.patch("/shop/team-members", async (req: Request, res: Response) => {
     res.json({ ok: true });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── POST /shop/live-chat ─────────────────────────────────────────────────────
+router.post("/shop/live-chat", async (req: Request, res: Response) => {
+  const parsed = z.object({
+    messages: z.array(z.object({
+      role: z.enum(["user", "assistant"]),
+      content: z.string().max(2000),
+    })).min(1).max(20),
+  }).safeParse(req.body);
+
+  if (!parsed.success) { res.status(400).json({ error: "Invalid request" }); return; }
+
+  const apiKey  = process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL;
+  if (!apiKey || !baseUrl) { res.status(503).json({ error: "Chat service not configured" }); return; }
+
+  const system = `You are a friendly, knowledgeable assistant for Select Branding Solutions — a UK workwear and branded uniform supplier based in Leeds.
+
+Key facts:
+- We supply workwear, uniforms, and branded clothing to businesses across the UK
+- Services: in-house embroidery, heat-seal printing, on-site measuring, bespoke uniform management portals, free logo digitisation
+- Online corporate ordering portal: wardrobe.selectbranding.co.uk
+- UK delivery: £8.50 per order, next-day available
+- Phone: 0113 255 2694
+- Ethical sourcing: SA8000 and ISO14000 certified factories
+
+Guidelines:
+- Be concise, warm, and helpful — this is a live chat widget
+- Never invent specific product prices; say "prices vary by quantity and product — call us or send a message for a quote"
+- For complex orders or bespoke quotes, suggest: call 0113 255 2694, WhatsApp, or click "Send a message"
+- Keep replies short (2-4 sentences max unless a list is clearer)`;
+
+  try {
+    const aiRes = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-5",
+        messages: [{ role: "system", content: system }, ...parsed.data.messages],
+        max_tokens: 400,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!aiRes.ok) throw new Error(`AI API ${aiRes.status}`);
+    const data: any = await aiRes.json();
+    const reply: string = data.choices?.[0]?.message?.content?.trim()
+      ?? "Sorry, I couldn't process that right now. Please try again or contact us directly.";
+    res.json({ reply });
+  } catch (err) {
+    logger.error({ err }, "[live-chat] error");
+    res.status(500).json({ error: "Chat temporarily unavailable — please use WhatsApp or send us a message." });
   }
 });
 

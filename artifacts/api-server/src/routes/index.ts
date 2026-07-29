@@ -40,6 +40,7 @@ import messageTemplatesRouter from "./message-templates";
 import shopRouter from "./shop";
 import shopAuthRouter from "./shop-auth";
 import reviewsRouter from "./reviews";
+import categoryManagementRouter from "./category-management";
 
 const router: IRouter = Router();
 
@@ -84,5 +85,6 @@ router.use(messageTemplatesRouter);
 router.use(shopRouter);
 router.use(shopAuthRouter);
 router.use(reviewsRouter);
+router.use(categoryManagementRouter);
 
 export default router;

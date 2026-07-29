@@ -2996,4 +2996,20 @@ export async function refreshProductIssues(): Promise<void> {
     )
   `);
   console.log("[startup] linkedin_shared_posts table ensured");
+
+  // ── product_categories.display_order — custom sort order ─────────────────
+  await db.execute(sql`
+    ALTER TABLE product_categories ADD COLUMN IF NOT EXISTS display_order INTEGER NOT NULL DEFAULT 0
+  `);
+  // Seed display_order from product_count ranking (only for rows still at 0)
+  await db.execute(sql`
+    UPDATE product_categories pc
+    SET display_order = ranked.rn
+    FROM (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY product_count DESC, name ASC) AS rn
+      FROM product_categories
+    ) ranked
+    WHERE pc.id = ranked.id AND pc.display_order = 0
+  `);
+  console.log("[startup] product_categories.display_order ensured");
 }
