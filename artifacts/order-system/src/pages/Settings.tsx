@@ -1421,13 +1421,18 @@ export default function Settings() {
   const [fbTokenError, setFbTokenError] = useState<string | null>(null);
   const [fbIsPageToken, setFbIsPageToken] = useState(false);
 
-  // LinkedIn fields
-  const [liAccessToken, setLiAccessToken] = useState("");
-  const [liFormLoaded, setLiFormLoaded] = useState(false);
-  const [savingLi, setSavingLi] = useState(false);
-  const [checkingLiToken, setCheckingLiToken] = useState(false);
-  type LiTokenResult = { memberName?: string; personUrn?: string; error?: string };
-  const [liTokenResult, setLiTokenResult] = useState<LiTokenResult | null>(null);
+  // LinkedIn OAuth fields
+  const [liClientId, setLiClientId] = useState("");
+  const [liClientSecret, setLiClientSecret] = useState("");
+  const [liCredentialsSaving, setLiCredentialsSaving] = useState(false);
+  const [liManualOrgUrn, setLiManualOrgUrn] = useState("");
+  const [liManualOrgName, setLiManualOrgName] = useState("");
+  type LiStatus = {
+    connected: boolean; personName?: string; personUrn?: string;
+    orgUrn?: string; orgName?: string; orgs?: { urn: string; name: string }[];
+    postToProfile: boolean; postToPage: boolean;
+    tokenExpiresAt?: number; hasRefreshToken: boolean;
+  };
 
   // Google Business Profile fields
   const [gbpClientId, setGbpClientId] = useState("");
@@ -1543,6 +1548,15 @@ export default function Settings() {
       toast({ title: "Google connection failed", description: msg ?? "Unknown error", variant: "destructive" });
       window.history.replaceState({}, "", window.location.pathname);
     }
+    const liParam = params.get("li");
+    if (liParam === "connected") {
+      toast({ title: "LinkedIn connected!", description: "Your LinkedIn account is now linked. Configure posting preferences below." });
+      window.history.replaceState({}, "", window.location.pathname);
+      queryClient.invalidateQueries({ queryKey: ["linkedin-status"] });
+    } else if (liParam === "error") {
+      toast({ title: "LinkedIn connection failed", description: msg ?? "Unknown error", variant: "destructive" });
+      window.history.replaceState({}, "", window.location.pathname);
+    }
   }, []);
 
   const { data: xeroStatus } = useQuery<XeroStatus>({
@@ -1566,6 +1580,18 @@ export default function Settings() {
   const { data: gbpStatus, refetch: refetchGbpStatus } = useQuery<{ connected: boolean; locationName?: string; locationTitle?: string }>({
     queryKey: ["gbp-status"],
     queryFn: () => apiFetch("/gbp/status"),
+    refetchInterval: 60_000,
+  });
+
+  // LinkedIn OAuth status + redirect URI
+  const { data: liRedirectUriData } = useQuery<{ redirectUri: string }>({
+    queryKey: ["linkedin-redirect-uri"],
+    queryFn: () => apiFetch("/linkedin/redirect-uri"),
+    staleTime: Infinity,
+  });
+  const { data: liStatus, refetch: refetchLiStatus } = useQuery<LiStatus>({
+    queryKey: ["linkedin-status"],
+    queryFn: () => apiFetch("/linkedin/status"),
     refetchInterval: 60_000,
   });
 
@@ -1691,35 +1717,10 @@ export default function Settings() {
   }, [rawSettings, fbFormLoaded]);
 
   useEffect(() => {
-    if (rawSettings && !liFormLoaded) {
-      setLiAccessToken(rawSettings["linkedin_access_token"] ?? "");
-      setLiFormLoaded(true);
+    if (rawSettings && !liClientId) {
+      setLiClientId(rawSettings["linkedin_client_id"] ?? "");
     }
-  }, [rawSettings, liFormLoaded]);
-
-  async function saveLinkedInSettings(personUrn?: string) {
-    if (!liAccessToken) {
-      toast({ title: "Missing token", description: "Paste your LinkedIn Access Token first.", variant: "destructive" });
-      return;
-    }
-    setSavingLi(true);
-    try {
-      const body: Record<string, string> = { linkedin_access_token: liAccessToken };
-      if (personUrn) body.linkedin_person_urn = personUrn;
-      const res = await fetch(`${API_BASE}/settings`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
-      toast({ title: "LinkedIn settings saved" });
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-    } catch (e: any) {
-      toast({ title: "Failed to save LinkedIn settings", description: e?.message ?? "Unknown error", variant: "destructive" });
-    } finally {
-      setSavingLi(false);
-    }
-  }
+  }, [rawSettings]);
 
   async function saveFacebookSettings(overridePageId?: string, overrideToken?: string) {
     const pageId = (typeof overridePageId === "string" ? overridePageId : undefined) ?? fbPageId;
@@ -3274,82 +3275,236 @@ export default function Settings() {
                 <div>
                   <h2 className="font-semibold text-base flex items-center gap-2">
                     <svg className="w-4 h-4 text-[#0A66C2]" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                    LinkedIn Profile
+                    LinkedIn
                   </h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    When a new article is published to the Knowledge Centre blog, it will automatically be shared to your personal LinkedIn profile.
+                    Automatically share new Knowledge Centre articles to your personal LinkedIn profile and/or company page. Tokens refresh automatically — no manual renewal needed.
                   </p>
                 </div>
 
-                <div className="grid gap-2">
-                  <Label>Access Token</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      type="password"
-                      value={liAccessToken}
-                      onChange={e => { setLiAccessToken(e.target.value); setLiTokenResult(null); }}
-                      placeholder="AQV…"
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="outline"
-                      disabled={!liAccessToken || checkingLiToken}
-                      onClick={async () => {
-                        setCheckingLiToken(true);
-                        setLiTokenResult(null);
-                        try {
-                          const data = await apiFetch<LiTokenResult>("/linkedin/check-token", {
-                            method: "POST",
-                            body: JSON.stringify({ accessToken: liAccessToken }),
-                          });
-                          setLiTokenResult(data);
-                          // Auto-save both the token and the person URN together
-                          if (data.personUrn) {
-                            await saveLinkedInSettings(data.personUrn);
+                {liStatus?.connected ? (
+                  /* ── Connected state ── */
+                  <div className="space-y-4">
+                    <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+                      <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                      <div>
+                        <span>Connected as <strong>{liStatus.personName ?? "LinkedIn user"}</strong></span>
+                        {!liStatus.hasRefreshToken && (
+                          <p className="text-amber-700 mt-1 text-xs">⚠ Manually-set token — reconnect via OAuth for automatic renewal.</p>
+                        )}
+                        {liStatus.tokenExpiresAt && (
+                          <p className="text-xs text-green-600 mt-0.5">
+                            Token valid until {new Date(liStatus.tokenExpiresAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Post-to toggles */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">Post to personal profile</p>
+                          <p className="text-xs text-muted-foreground">Posts appear on {liStatus.personName ?? "your"}'s feed</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={liStatus.postToProfile}
+                          className="h-4 w-4 accent-primary cursor-pointer"
+                          onChange={async (e) => {
+                            await apiFetch("/linkedin/preferences", { method: "POST", body: JSON.stringify({ postToProfile: e.target.checked }) });
+                            queryClient.invalidateQueries({ queryKey: ["linkedin-status"] });
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">Post to company page</p>
+                          <p className="text-xs text-muted-foreground">Posts appear on your LinkedIn company page</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={liStatus.postToPage}
+                          className="h-4 w-4 accent-primary cursor-pointer"
+                          onChange={async (e) => {
+                            await apiFetch("/linkedin/preferences", { method: "POST", body: JSON.stringify({ postToPage: e.target.checked }) });
+                            queryClient.invalidateQueries({ queryKey: ["linkedin-status"] });
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Company page selector */}
+                    {liStatus.postToPage && (
+                      <div className="space-y-2 pl-1 border-l-2 border-primary/20 ml-1">
+                        {liStatus.orgs && liStatus.orgs.length > 0 ? (
+                          <div className="grid gap-1.5">
+                            <Label className="text-xs">Company page</Label>
+                            <select
+                              className="border border-input rounded-md px-3 py-1.5 text-sm bg-background"
+                              value={liStatus.orgUrn ?? ""}
+                              onChange={async (e) => {
+                                const org = liStatus.orgs!.find(o => o.urn === e.target.value);
+                                if (!org) return;
+                                await apiFetch("/linkedin/org", { method: "POST", body: JSON.stringify({ urn: org.urn, name: org.name }) });
+                                queryClient.invalidateQueries({ queryKey: ["linkedin-status"] });
+                              }}
+                            >
+                              {liStatus.orgs.map(o => (
+                                <option key={o.urn} value={o.urn}>{o.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <Label className="text-xs">Organisation URN</Label>
+                            <p className="text-xs text-muted-foreground">No pages auto-detected (scope may need LinkedIn approval). Enter manually: find your company page at linkedin.com/company/XXXXX and prefix with <code>urn:li:organization:</code></p>
+                            <div className="flex gap-2">
+                              <Input
+                                value={liManualOrgUrn}
+                                onChange={e => setLiManualOrgUrn(e.target.value)}
+                                placeholder="urn:li:organization:12345678"
+                                className="flex-1 text-xs"
+                              />
+                              <Input
+                                value={liManualOrgName}
+                                onChange={e => setLiManualOrgName(e.target.value)}
+                                placeholder="Company name"
+                                className="w-36 text-xs"
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!liManualOrgUrn.startsWith("urn:li:organization:")}
+                                onClick={async () => {
+                                  await apiFetch("/linkedin/org", { method: "POST", body: JSON.stringify({ urn: liManualOrgUrn, name: liManualOrgName || liManualOrgUrn }) });
+                                  queryClient.invalidateQueries({ queryKey: ["linkedin-status"] });
+                                  setLiManualOrgUrn("");
+                                  setLiManualOrgName("");
+                                }}
+                              >Save</Button>
+                            </div>
+                            {liStatus.orgUrn && (
+                              <p className="text-xs text-green-700">Currently posting to: <strong>{liStatus.orgName ?? liStatus.orgUrn}</strong></p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { window.location.href = `${API_BASE}/linkedin/connect`; }}
+                      >
+                        Reconnect
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={async () => {
+                          await apiFetch("/linkedin/disconnect", { method: "POST" });
+                          queryClient.invalidateQueries({ queryKey: ["linkedin-status"] });
+                          toast({ title: "LinkedIn disconnected" });
+                        }}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  /* ── Not connected state ── */
+                  <div className="space-y-4">
+                    {/* Step 1: App credentials */}
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Step 1 — App credentials</p>
+                      <div className="grid gap-2">
+                        <Label className="text-sm">Client ID</Label>
+                        <Input
+                          value={liClientId}
+                          onChange={e => setLiClientId(e.target.value)}
+                          placeholder="77avatb8o22ang"
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label className="text-sm">Primary Client Secret</Label>
+                        <Input
+                          type="password"
+                          value={liClientSecret}
+                          onChange={e => setLiClientSecret(e.target.value)}
+                          placeholder="••••••••••••••••"
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!liClientId || !liClientSecret || liCredentialsSaving}
+                        onClick={async () => {
+                          setLiCredentialsSaving(true);
+                          try {
+                            await apiFetch("/linkedin/credentials", { method: "POST", body: JSON.stringify({ clientId: liClientId, clientSecret: liClientSecret }) });
+                            setLiClientSecret("");
+                            toast({ title: "Credentials saved", description: "Now complete Step 2 and 3 below." });
+                            queryClient.invalidateQueries({ queryKey: ["linkedin-redirect-uri"] });
+                          } catch (e: any) {
+                            toast({ title: "Failed to save credentials", description: e?.message, variant: "destructive" });
+                          } finally {
+                            setLiCredentialsSaving(false);
                           }
-                        } catch (e: any) {
-                          setLiTokenResult({ error: e?.message ?? "Request failed" });
-                        } finally {
-                          setCheckingLiToken(false);
-                        }
-                      }}
-                      className="shrink-0 gap-1.5"
-                    >
-                      {checkingLiToken ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                      Check &amp; Save
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Generate a token from the <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noreferrer" className="underline">LinkedIn Developer Portal</a>. Your app needs the <strong>w_member_social</strong> and <strong>openid</strong> + <strong>profile</strong> permissions. The token is linked to the profile that authorised it.
-                  </p>
-                </div>
+                        }}
+                        className="gap-2"
+                      >
+                        {liCredentialsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                        Save Credentials
+                      </Button>
+                    </div>
 
-                {/* Token check result */}
-                {liTokenResult?.error && (
-                  <div className="flex items-start gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span><strong>Token error:</strong> {liTokenResult.error}</span>
-                  </div>
-                )}
-                {liTokenResult && !liTokenResult.error && (
-                  <div className="flex items-start gap-2 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
-                    <CheckCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                    <span>Connected as <strong>{liTokenResult.memberName}</strong> — token and profile saved.</span>
-                  </div>
-                )}
+                    {/* Step 2: Redirect URI */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Step 2 — Add redirect URL in LinkedIn Developer Portal</p>
+                      <p className="text-xs text-muted-foreground">
+                        Go to <a href="https://www.linkedin.com/developers/apps" target="_blank" rel="noreferrer" className="underline">linkedin.com/developers/apps</a> → your app → <strong>Auth</strong> tab → <strong>Authorised redirect URLs</strong> and add:
+                      </p>
+                      <div className="flex gap-2 items-center">
+                        <code className="flex-1 text-xs bg-muted px-3 py-2 rounded border break-all">
+                          {liRedirectUriData?.redirectUri ?? "Loading…"}
+                        </code>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            if (liRedirectUriData?.redirectUri) {
+                              navigator.clipboard.writeText(liRedirectUriData.redirectUri);
+                              toast({ title: "Copied to clipboard" });
+                            }
+                          }}
+                        >
+                          Copy
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Also add the OAuth 2.0 scopes: <strong>openid</strong>, <strong>profile</strong>, <strong>email</strong>, <strong>w_member_social</strong>, <strong>w_organization_social</strong>, <strong>r_organization_social</strong>
+                      </p>
+                    </div>
 
-                {/* Manual save (e.g. after pasting a new token without re-checking) */}
-                {!liTokenResult && (
-                  <Button
-                    type="button"
-                    onClick={() => saveLinkedInSettings()}
-                    disabled={savingLi || !liAccessToken}
-                    variant="outline"
-                    className="gap-2"
-                  >
-                    {savingLi ? <Loader2 className="w-4 h-4 animate-spin" /> : <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>}
-                    Save Token
-                  </Button>
+                    {/* Step 3: Connect */}
+                    <div className="space-y-2">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Step 3 — Authorise</p>
+                      <Button
+                        className="gap-2 bg-[#0A66C2] hover:bg-[#004182] text-white"
+                        disabled={!liClientId}
+                        onClick={() => { window.location.href = `${API_BASE}/linkedin/connect`; }}
+                      >
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                        Connect with LinkedIn
+                      </Button>
+                      {!liClientId && <p className="text-xs text-muted-foreground">Save your credentials first (Step 1).</p>}
+                    </div>
+                  </div>
                 )}
               </div>
 

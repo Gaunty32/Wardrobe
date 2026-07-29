@@ -8,6 +8,10 @@ import {
   getGbpStatus, listGbpLocations, publishGbpPost, disconnectGbp,
   autoGbpRedirectUri,
 } from "../services/google-business.js";
+import {
+  autoLinkedInRedirectUri, generateLinkedInAuthUrl, handleLinkedInCallback,
+  getLinkedInAccessToken, getLinkedInStatus, disconnectLinkedIn,
+} from "../services/linkedin-oauth.js";
 import { db as _db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { sendEmail } from "../services/email.js";
@@ -64,12 +68,11 @@ async function getFbSettings() {
 }
 
 async function getLinkedInSettings(): Promise<{ linkedin_access_token: string; linkedin_person_urn: string } | null> {
-  const rows = await db.execute(sql`SELECT key, value FROM settings WHERE key IN ('linkedin_access_token','linkedin_person_urn')`);
-  const map: Record<string, string> = {};
-  for (const r of (rows.rows ?? rows) as any[]) map[r.key] = r.value;
-  return map.linkedin_access_token && map.linkedin_person_urn
-    ? { linkedin_access_token: map.linkedin_access_token, linkedin_person_urn: map.linkedin_person_urn }
-    : null;
+  const [token, personUrn] = await Promise.all([
+    getLinkedInAccessToken(),
+    getSetting("linkedin_person_urn"),
+  ]);
+  return token && personUrn ? { linkedin_access_token: token, linkedin_person_urn: personUrn } : null;
 }
 
 async function publishToLinkedIn(
@@ -155,6 +158,86 @@ router.post("/linkedin/check-token", async (req, res): Promise<void> => {
   } catch (e: any) {
     res.status(500).json({ error: e?.message ?? "Request failed" });
   }
+});
+
+// ── LinkedIn OAuth routes ─────────────────────────────────────────────────────
+
+// Save Client ID + Secret (write-only; secret never returned to frontend)
+router.post("/linkedin/credentials", async (req, res): Promise<void> => {
+  const parsed = z.object({
+    clientId: z.string().min(1),
+    clientSecret: z.string().min(1),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  await setSetting("linkedin_client_id", parsed.data.clientId);
+  await setSetting("linkedin_client_secret", parsed.data.clientSecret);
+  res.json({ ok: true });
+});
+
+// Return the redirect URI the user must add to LinkedIn Developer Portal
+router.get("/linkedin/redirect-uri", (req, res): void => {
+  res.json({ redirectUri: autoLinkedInRedirectUri(req) });
+});
+
+// Start the OAuth flow (browser redirect)
+router.get("/linkedin/connect", async (req, res): Promise<void> => {
+  try {
+    const redirectUri = autoLinkedInRedirectUri(req);
+    const url = await generateLinkedInAuthUrl(redirectUri);
+    res.redirect(url);
+  } catch (err) {
+    res.status(400).send(`<h2>LinkedIn Connect Error</h2><p>${err instanceof Error ? err.message : "Unknown error"}</p>`);
+  }
+});
+
+// OAuth callback — exchange code, fetch profile + orgs, redirect back to Settings
+router.get("/linkedin/oauth/callback", async (req, res): Promise<void> => {
+  const { code, state, error, error_description } = req.query as Record<string, string>;
+  if (error) {
+    const msg = error_description ?? error;
+    res.redirect(`/settings?li=error&msg=${encodeURIComponent(msg)}`);
+    return;
+  }
+  if (!code || !state) { res.redirect("/settings?li=error&msg=Missing+code"); return; }
+  try {
+    const redirectUri = autoLinkedInRedirectUri(req);
+    await handleLinkedInCallback(code, state, redirectUri);
+    res.redirect("/settings?li=connected");
+  } catch (err) {
+    res.redirect(`/settings?li=error&msg=${encodeURIComponent(err instanceof Error ? err.message : "Unknown error")}`);
+  }
+});
+
+// Connection status
+router.get("/linkedin/status", async (_req, res): Promise<void> => {
+  res.json(await getLinkedInStatus());
+});
+
+// Select / update the organisation to post to
+router.post("/linkedin/org", async (req, res): Promise<void> => {
+  const parsed = z.object({ urn: z.string().min(1), name: z.string().min(1) }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  await setSetting("linkedin_org_urn", parsed.data.urn);
+  await setSetting("linkedin_org_name", parsed.data.name);
+  res.json({ ok: true });
+});
+
+// Update post-to-profile / post-to-page toggles
+router.post("/linkedin/preferences", async (req, res): Promise<void> => {
+  const parsed = z.object({
+    postToProfile: z.boolean().optional(),
+    postToPage: z.boolean().optional(),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+  if (parsed.data.postToProfile !== undefined) await setSetting("linkedin_post_to_profile", String(parsed.data.postToProfile));
+  if (parsed.data.postToPage    !== undefined) await setSetting("linkedin_post_to_page",    String(parsed.data.postToPage));
+  res.json({ ok: true });
+});
+
+// Disconnect
+router.post("/linkedin/disconnect", async (_req, res): Promise<void> => {
+  await disconnectLinkedIn();
+  res.json({ ok: true });
 });
 
 // ── Facebook token checker — returns pages the token can manage ────────────
@@ -1121,24 +1204,45 @@ export function startWordPressLinkedInScheduler(): void {
         // Build commentary: title + excerpt (truncated to LinkedIn's 3000-char limit)
         const commentary = `${title}\n\n${excerpt}`.slice(0, 3000);
 
-        const result = await publishToLinkedIn(
-          liSettings.linkedin_person_urn,
-          liSettings.linkedin_access_token,
-          title,
-          commentary,
-          articleUrl,
-          imageUrl,
-        );
+        // Get posting preferences
+      const liStatusNow = await getLinkedInStatus();
+      const token = liSettings.linkedin_access_token;
+      let anyOk = false;
+
+      // Post to personal profile
+      if (liStatusNow.postToProfile && liSettings.linkedin_person_urn) {
+        const r = await publishToLinkedIn(liSettings.linkedin_person_urn, token, title, commentary, articleUrl, imageUrl);
+        if (r.ok) {
+          anyOk = true;
+          console.log(`[linkedin] Shared WP post ${post.id} to personal profile: "${title}"`);
+        } else {
+          console.warn(`[linkedin] Personal profile post failed for WP post ${post.id}: ${r.error}`);
+        }
+      }
+
+      // Post to company page
+      const orgUrn = await getSetting("linkedin_org_urn");
+      if (liStatusNow.postToPage && orgUrn) {
+        const r = await publishToLinkedIn(orgUrn, token, title, commentary, articleUrl, imageUrl);
+        if (r.ok) {
+          anyOk = true;
+          console.log(`[linkedin] Shared WP post ${post.id} to company page (${orgUrn}): "${title}"`);
+        } else {
+          console.warn(`[linkedin] Company page post failed for WP post ${post.id}: ${r.error}`);
+        }
+      }
+
+      const result = { ok: anyOk };
 
         if (result.ok) {
           await db.execute(sql`
             INSERT INTO linkedin_shared_posts (wp_post_id, wp_title, linkedin_post_urn)
-            VALUES (${post.id}, ${title}, ${result.postUrn ?? null})
+            VALUES (${post.id}, ${title}, NULL)
             ON CONFLICT (wp_post_id) DO NOTHING
           `);
-          console.log(`[linkedin] Shared WP post ${post.id}: "${title}"`);
+          console.log(`[linkedin] Marked WP post ${post.id} as shared`);
         } else {
-          console.warn(`[linkedin] Failed to share WP post ${post.id}: ${result.error}`);
+          console.warn(`[linkedin] All targets failed for WP post ${post.id}: "${title}"`);
         }
 
         // Share only one new post per run
