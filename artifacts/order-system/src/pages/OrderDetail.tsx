@@ -680,6 +680,7 @@ export default function OrderDetail() {
     let result = q
       ? allItems.filter((oi: any) =>
           oi.productName?.toLowerCase().includes(q) ||
+          oi.productSku?.toLowerCase().includes(q) ||
           oi.recipientName?.toLowerCase().includes(q) ||
           oi.colour?.toLowerCase().includes(q) ||
           oi.size?.toLowerCase().includes(q)
@@ -731,6 +732,29 @@ export default function OrderDetail() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }),
     onError: (e: Error) => toast({ title: "Failed to update VAT rate", description: e.message, variant: "destructive" }),
   });
+
+  // ── Bulk price update (applies to all currently-filtered items) ───────────────
+  const [bulkPriceInput, setBulkPriceInput] = useState("");
+  const [bulkPricePending, setBulkPricePending] = useState(false);
+  const applyBulkPrice = async (items: any[]) => {
+    const v = parseFloat(bulkPriceInput);
+    if (isNaN(v) || v < 0) return;
+    setBulkPricePending(true);
+    try {
+      await Promise.all(
+        items.map((oi: any) =>
+          apiFetch(`/orders/${orderId}/items/${oi.id}`, { method: "PATCH", body: JSON.stringify({ unitPrice: v }) })
+        )
+      );
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: `Price updated to £${v.toFixed(2)} on ${items.length} line${items.length !== 1 ? "s" : ""}` });
+      setBulkPriceInput("");
+    } catch (e: any) {
+      toast({ title: "Bulk price update failed", description: e.message, variant: "destructive" });
+    } finally {
+      setBulkPricePending(false);
+    }
+  };
 
   const [editingSizeColour, setEditingSizeColour] = useState<{ itemId: number; size: string; colour: string } | null>(null);
   const updateItemSizeColourMutation = useMutation({
@@ -2085,7 +2109,7 @@ export default function OrderDetail() {
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                   <input
                     type="text"
-                    placeholder="Filter by name or recipient…"
+                    placeholder="Filter by SKU, name or recipient…"
                     value={lineFilter}
                     onChange={e => setLineFilter(e.target.value)}
                     className="pl-8 pr-3 py-1 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring w-52"
@@ -2105,6 +2129,39 @@ export default function OrderDetail() {
                 </Button>
               </div>
             </CardHeader>
+
+            {/* ── Bulk price bar — shown when a filter is active ─────────────── */}
+            {lineFilter.trim() && filteredItems.length > 0 && (
+              <div className="flex items-center gap-3 px-6 py-2.5 bg-primary/5 border-b border-primary/20">
+                <span className="text-sm text-muted-foreground">
+                  <span className="font-semibold text-foreground">{filteredItems.length}</span> line{filteredItems.length !== 1 ? "s" : ""} selected
+                </span>
+                <span className="text-muted-foreground/40">·</span>
+                <span className="text-sm text-muted-foreground">Set price for all:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm text-muted-foreground">£</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={bulkPriceInput}
+                    onChange={e => setBulkPriceInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") applyBulkPrice(filteredItems); }}
+                    className="w-24 h-7 text-sm border border-input rounded px-2 focus:outline-none focus:ring-1 focus:ring-ring bg-background"
+                  />
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs px-3"
+                    disabled={!bulkPriceInput || bulkPricePending}
+                    onClick={() => applyBulkPrice(filteredItems)}
+                  >
+                    {bulkPricePending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Apply to all"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {(() => {
               // Outstanding items = undispatched non-service lines (only shown on confirmed orders)
               if (order.status === "draft") return null;
