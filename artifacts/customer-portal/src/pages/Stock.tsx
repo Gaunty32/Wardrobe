@@ -320,32 +320,25 @@ function StockCard({
 
       {/* Card body */}
       <div className="p-3 flex flex-col gap-2 flex-1">
-        {/* Name + colour + SKU + edit button */}
-        <div className="flex items-start gap-1">
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm leading-snug line-clamp-2">{group.displayName}</p>
-            {(group.colour || group.productSku) && (
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {[group.colour, group.productSku].filter(Boolean).join(" · ")}
-              </p>
-            )}
-            {group.finishName && (
-              <p className="text-[11px] text-muted-foreground mt-0.5 italic">{group.finishName}</p>
-            )}
-          </div>
+        {/* Name + colour + SKU */}
+        <div className="min-w-0">
+          <p className="font-semibold text-sm leading-snug line-clamp-2">{group.displayName}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+            {[group.colour, group.productSku].filter(Boolean).join(" · ")}
+          </p>
+          {group.finishName && (
+            <p className="text-[11px] text-muted-foreground/70 truncate">{group.finishName}</p>
+          )}
         </div>
 
-        {/* Process badges */}
+        {/* Process badges — show type + placement only (finish name already shown above) */}
         {groupProcesses.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {groupProcesses.map(p => (
-              <div key={p.process_id} className="flex items-center gap-1 rounded border bg-muted/50 px-1.5 py-0.5">
+              <div key={p.process_id} className="flex items-center gap-1 rounded-full border bg-muted/40 px-2 py-0.5">
                 {p.process_type && <ProcessBadge type={p.process_type} />}
-                {p.item_finish_name && (
-                  <span className="text-[10px] text-foreground/70 font-medium">{p.item_finish_name}</span>
-                )}
                 {p.placement && (
-                  <span className="text-[10px] text-muted-foreground">· {p.placement}</span>
+                  <span className="text-[10px] text-muted-foreground font-medium">{p.placement}</span>
                 )}
               </div>
             ))}
@@ -370,18 +363,16 @@ function StockCard({
               : "bg-muted/30 hover:bg-muted/50 text-foreground"
           )}
         >
-          <span className="flex items-center gap-2">
-            <span className="font-semibold">
+          <span className="flex items-center gap-1.5 min-w-0 truncate">
+            <span className="font-semibold shrink-0">
               {group.items.length} size{group.items.length !== 1 ? "s" : ""}
             </span>
-            <span className="text-muted-foreground">
-              · {totalStock} in stock
-              {sizesInStock > 0 && sizesInStock < group.items.length && (
-                <span className="ml-1">({sizesInStock} non-zero)</span>
-              )}
-            </span>
+            <span className="text-muted-foreground shrink-0">· {totalStock} in stock</span>
+            {sizesInStock > 0 && sizesInStock < group.items.length && (
+              <span className="text-muted-foreground/70 text-[10px] shrink-0">({sizesInStock} non-zero)</span>
+            )}
             {hasLow && (
-              <span className="inline-flex items-center gap-0.5 text-amber-600 font-semibold">
+              <span className="inline-flex items-center gap-0.5 text-amber-600 font-semibold shrink-0">
                 <TrendingDown className="w-3 h-3" /> Low
               </span>
             )}
