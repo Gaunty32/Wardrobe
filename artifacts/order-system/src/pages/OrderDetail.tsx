@@ -485,6 +485,7 @@ export default function OrderDetail() {
   const [addRecipientForm, setAddRecipientForm] = useState({ firstName: "", lastName: "", jobTitle: "", deliveryAddressId: null as number | null });
   const [addRecipientSaving, setAddRecipientSaving] = useState(false);
   const [wardrobeItemSleeves, setWardrobeItemSleeves] = useState<Record<number, string>>({});
+  const [wardrobeSearch, setWardrobeSearch] = useState("");
   const [wardrobeItemQtys, setWardrobeItemQtys] = useState<Record<number, number>>({});
   const [wardrobeBulkModes, setWardrobeBulkModes] = useState<Record<number, boolean>>({});
   const [wardrobeBulkQtys, setWardrobeBulkQtys] = useState<Record<number, Record<string, number>>>({});
@@ -3933,7 +3934,7 @@ export default function OrderDetail() {
                     {/* Header / breadcrumb */}
                     <div className="flex items-center gap-3 pb-1 border-b border-border/50">
                       <button
-                        onClick={() => { setWardrobeRecipient(null); setWardrobeItemSizes({}); setWardrobeItemQtys({}); }}
+                        onClick={() => { setWardrobeRecipient(null); setWardrobeItemSizes({}); setWardrobeItemQtys({}); setWardrobeSearch(""); }}
                         className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                       >
                         <ChevronLeft className="w-3.5 h-3.5" /> Back
@@ -3958,17 +3959,36 @@ export default function OrderDetail() {
                       </div>
                     </div>
 
+                    {/* Search box */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                      <input
+                        type="text"
+                        placeholder="Search by name or SKU…"
+                        value={wardrobeSearch}
+                        onChange={e => setWardrobeSearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-1.5 text-sm border border-input rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+
                     {/* Card grid — matches portal wardrobe layout */}
                     {(() => {
-                      const wiItems = (wardrobeData?.items ?? []).filter((wi: any) =>
-                        wardrobeRecipient === "stock" ||
-                        wi.effective_role_id == null ||
-                        wi.effective_role_id === (wardrobeRecipient as CustomerEmployee).roleId
-                      );
+                      const wq = wardrobeSearch.toLowerCase().trim();
+                      const wiItems = (wardrobeData?.items ?? []).filter((wi: any) => {
+                        const roleMatch = wardrobeRecipient === "stock" ||
+                          wi.effective_role_id == null ||
+                          wi.effective_role_id === (wardrobeRecipient as CustomerEmployee).roleId;
+                        if (!roleMatch) return false;
+                        if (!wq) return true;
+                        return (
+                          (wi.product_name ?? wi.name ?? "").toLowerCase().includes(wq) ||
+                          (wi.product_sku ?? "").toLowerCase().includes(wq)
+                        );
+                      });
                       if (wardrobeData && wiItems.length === 0) return (
                         <div className="py-8 text-center text-muted-foreground">
                           <ShoppingBag className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                          <p className="text-sm">No items for this role</p>
+                          <p className="text-sm">{wq ? "No items match your search" : "No items for this role"}</p>
                         </div>
                       );
                       return (
