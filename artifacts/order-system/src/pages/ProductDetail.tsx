@@ -155,7 +155,7 @@ function SupplierSelect({ value, onChange, suppliers, placeholder = "Select supp
 // ── Variant row ─────────────────────────────────────────────────────────────
 function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpload, productSupplierId, productSecondaryId, productSupplierCode, productSupplierPrice }: {
   variant: any; suppliers: any[]; productId: number; onRefresh: () => void;
-  onColourImageUpload: (colour: string | null, imageUrl: string) => void;
+  onColourImageUpload: (colour: string | null, sleeve: string | null, imageUrl: string) => void;
   productSupplierId?: number | null; productSecondaryId?: number | null;
   productSupplierCode?: string; productSupplierPrice?: string;
 }) {
@@ -185,7 +185,7 @@ function VariantRow({ variant, suppliers, productId, onRefresh, onColourImageUpl
     onSuccess: (res) => {
       const url = `/api/storage${res.objectPath}`;
       setEditImageUrl(url);
-      onColourImageUpload(variant.colour ?? null, url);
+      onColourImageUpload(variant.colour ?? null, variant.sleeve ?? null, url);
     },
     onError: () => toast({ title: "Image upload failed", variant: "destructive" }),
   });
@@ -989,9 +989,10 @@ export default function ProductDetail() {
   });
 
   // Upload one image and apply it to every variant that shares the same colour
-  async function handleColourImageUpload(colour: string | null, imageUrl: string) {
+  async function handleColourImageUpload(colour: string | null, sleeve: string | null, imageUrl: string) {
     const siblings = (variants as any[]).filter((v) =>
-      colour == null ? v.colour == null : v.colour === colour
+      (colour == null ? v.colour == null : v.colour === colour) &&
+      (sleeve == null ? v.sleeve == null : v.sleeve === sleeve)
     );
     await Promise.all(
       siblings.map((v) =>
