@@ -17,7 +17,7 @@ import {
 import {
   AlertTriangle, Plus, ArrowUpCircle, ArrowDownCircle, History,
   Pencil, Trash2, Package, MapPin, TrendingDown, RefreshCw, Shirt,
-  ShoppingCart,
+  ShoppingCart, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sortBySizeWithOrder, sortSizes } from "@/lib/sizeUtils";
@@ -269,6 +269,11 @@ function StockCard({
     : [];
 
   const hasLow = group.items.some(i => i.min_quantity > 0 && i.stock_quantity <= i.min_quantity);
+  const totalStock = group.items.reduce((sum, i) => sum + i.stock_quantity, 0);
+  const sizesInStock = group.items.filter(i => i.stock_quantity > 0).length;
+
+  // Collapsible size table — open by default when any size is low stock
+  const [sizeOpen, setSizeOpen] = useState(hasLow);
 
   // Local state for inline min/reorder editing
   // Key = itemId, value = { min: string; reorder: string }
@@ -363,108 +368,144 @@ function StockCard({
           </p>
         )}
 
-        {/* Column headers for size rows */}
-        <div className="grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 px-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground min-w-[2.5rem]">Size</span>
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Stock</span>
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Min</span>
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Reorder</span>
-          <span className="w-14" />
-        </div>
+        {/* Collapsible size table toggle */}
+        <button
+          onClick={() => setSizeOpen(o => !o)}
+          className={cn(
+            "w-full flex items-center justify-between rounded-lg px-2 py-1.5 text-xs font-medium transition-colors",
+            sizeOpen
+              ? "bg-muted/50 text-foreground"
+              : "bg-muted/30 hover:bg-muted/50 text-foreground"
+          )}
+        >
+          <span className="flex items-center gap-2">
+            <span className="font-semibold">
+              {group.items.length} size{group.items.length !== 1 ? "s" : ""}
+            </span>
+            <span className="text-muted-foreground">
+              · {totalStock} in stock
+              {sizesInStock > 0 && sizesInStock < group.items.length && (
+                <span className="ml-1">({sizesInStock} non-zero)</span>
+              )}
+            </span>
+            {hasLow && (
+              <span className="inline-flex items-center gap-0.5 text-amber-600 font-semibold">
+                <TrendingDown className="w-3 h-3" /> Low
+              </span>
+            )}
+          </span>
+          {sizeOpen
+            ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+            : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+          }
+        </button>
 
-        <div className="border-t" />
+        {sizeOpen && (
+          <>
+            {/* Column headers */}
+            <div className="grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 px-1 -mb-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground min-w-[2.5rem]">Size</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Stock</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Min</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Reorder</span>
+              <span className="w-14" />
+            </div>
 
-        {/* Per-size rows */}
-        <div className="flex flex-col gap-1">
-          {group.items.map(item => {
-            const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
-            return (
-              <div
-                key={item.id}
-                className={cn(
-                  "grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 rounded-lg px-1.5 py-1.5",
-                  isLow ? "bg-amber-50 border border-amber-200" : "bg-muted/30"
-                )}
-              >
-                {/* Size chip — abbreviated so e.g. "Extra Small" → "XS" fits without wrapping */}
-                <span
-                  className={cn(
-                    "rounded-md px-1.5 py-0.5 text-[11px] font-semibold shrink-0 min-w-[2.5rem] text-center",
-                    isLow ? "bg-amber-200 text-amber-800" : "bg-background border text-foreground"
-                  )}
-                  title={item.size ?? undefined}
-                >
-                  {abbrevSize(item.size ?? "—")}
-                </span>
+            <div className="border-t" />
 
-                {/* Quantity */}
-                <div className="flex items-center gap-1">
-                  <span className={cn(
-                    "font-bold text-sm tabular-nums",
-                    isLow ? "text-amber-700" : "text-foreground"
-                  )}>
-                    {item.stock_quantity}
-                  </span>
-                  {isLow && <TrendingDown className="w-3 h-3 text-amber-500 shrink-0" />}
-                </div>
-
-                {/* Min qty — inline editable */}
-                <input
-                  type="number"
-                  min="0"
-                  value={getLimit(item, "min")}
-                  onChange={e => setLimit(item, "min", e.target.value)}
-                  onBlur={() => commitLimit(item)}
-                  onKeyDown={e => e.key === "Enter" && (e.currentTarget.blur())}
-                  className="w-full h-7 rounded border border-transparent bg-background/60 hover:border-border focus:border-primary focus:outline-none text-center text-xs font-medium tabular-nums px-1 transition-colors"
-                  title="Minimum stock level — alert when stock reaches this"
-                />
-
-                {/* Reorder qty — inline editable */}
-                <input
-                  type="number"
-                  min="0"
-                  value={getLimit(item, "reorder")}
-                  onChange={e => setLimit(item, "reorder", e.target.value)}
-                  onBlur={() => commitLimit(item)}
-                  onKeyDown={e => e.key === "Enter" && (e.currentTarget.blur())}
-                  className="w-full h-7 rounded border border-transparent bg-background/60 hover:border-border focus:border-primary focus:outline-none text-center text-xs font-medium tabular-nums px-1 transition-colors"
-                  title="How many to order when restocking"
-                />
-
-                {/* Row actions */}
-                <div className="flex items-center gap-0">
-                  <button
-                    onClick={() => onAdjust(item)}
-                    className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
-                    title="Adjust stock"
+            {/* Per-size rows */}
+            <div className="flex flex-col gap-1">
+              {group.items.map(item => {
+                const isLow = item.min_quantity > 0 && item.stock_quantity <= item.min_quantity;
+                return (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 rounded-lg px-1.5 py-1.5",
+                      isLow ? "bg-amber-50 border border-amber-200" : "bg-muted/30"
+                    )}
                   >
-                    <ArrowUpCircle className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => onHistory(item)}
-                    className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
-                    title="Movement history"
-                  >
-                    <History className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => onDelete(item)}
-                    className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
-                    title="Remove"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                    {/* Size chip — abbreviated so e.g. "Extra Small" → "XS" fits without wrapping */}
+                    <span
+                      className={cn(
+                        "rounded-md px-1.5 py-0.5 text-[11px] font-semibold shrink-0 min-w-[2.5rem] text-center",
+                        isLow ? "bg-amber-200 text-amber-800" : "bg-background border text-foreground"
+                      )}
+                      title={item.size ?? undefined}
+                    >
+                      {abbrevSize(item.size ?? "—")}
+                    </span>
 
-        {/* Hint text */}
-        <p className="text-[10px] text-muted-foreground/60 text-center -mt-0.5">
-          Click Min / Reorder numbers to edit · Enter to save
-        </p>
+                    {/* Quantity */}
+                    <div className="flex items-center gap-1">
+                      <span className={cn(
+                        "font-bold text-sm tabular-nums",
+                        isLow ? "text-amber-700" : "text-foreground"
+                      )}>
+                        {item.stock_quantity}
+                      </span>
+                      {isLow && <TrendingDown className="w-3 h-3 text-amber-500 shrink-0" />}
+                    </div>
+
+                    {/* Min qty — inline editable */}
+                    <input
+                      type="number"
+                      min="0"
+                      value={getLimit(item, "min")}
+                      onChange={e => setLimit(item, "min", e.target.value)}
+                      onBlur={() => commitLimit(item)}
+                      onKeyDown={e => e.key === "Enter" && (e.currentTarget.blur())}
+                      className="w-full h-7 rounded border border-transparent bg-background/60 hover:border-border focus:border-primary focus:outline-none text-center text-xs font-medium tabular-nums px-1 transition-colors"
+                      title="Minimum stock level — alert when stock reaches this"
+                    />
+
+                    {/* Reorder qty — inline editable */}
+                    <input
+                      type="number"
+                      min="0"
+                      value={getLimit(item, "reorder")}
+                      onChange={e => setLimit(item, "reorder", e.target.value)}
+                      onBlur={() => commitLimit(item)}
+                      onKeyDown={e => e.key === "Enter" && (e.currentTarget.blur())}
+                      className="w-full h-7 rounded border border-transparent bg-background/60 hover:border-border focus:border-primary focus:outline-none text-center text-xs font-medium tabular-nums px-1 transition-colors"
+                      title="How many to order when restocking"
+                    />
+
+                    {/* Row actions */}
+                    <div className="flex items-center gap-0">
+                      <button
+                        onClick={() => onAdjust(item)}
+                        className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
+                        title="Adjust stock"
+                      >
+                        <ArrowUpCircle className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => onHistory(item)}
+                        className="p-1 rounded hover:bg-background transition-colors text-muted-foreground hover:text-foreground"
+                        title="Movement history"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => onDelete(item)}
+                        className="p-1 rounded hover:bg-red-50 transition-colors text-muted-foreground hover:text-red-600"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Hint text */}
+            <p className="text-[10px] text-muted-foreground/60 text-center -mt-0.5">
+              Click Min / Reorder numbers to edit · Enter to save
+            </p>
+          </>
+        )}
 
         {/* Reorder button */}
         {group.items.some(i => i.product_id != null) && (
