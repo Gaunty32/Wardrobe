@@ -1348,19 +1348,20 @@ router.post("/customers/:customerId/finished-items", async (req, res): Promise<v
   const body = finishedItemBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
 
-  // Duplicate check: same customer + product + finish + colour + role already exists
+  // Duplicate check: exact same product + finish + colour + role + size already exists
   const [existing] = await db.select({ id: customerFinishedItemsTable.id })
     .from(customerFinishedItemsTable)
     .where(and(
       eq(customerFinishedItemsTable.customerId, p.data.customerId),
       eq(customerFinishedItemsTable.productId, body.data.productId),
       body.data.finishId != null ? eq(customerFinishedItemsTable.finishId, body.data.finishId) : isNull(customerFinishedItemsTable.finishId),
-      body.data.colour   ? eq(customerFinishedItemsTable.colour, body.data.colour)     : isNull(customerFinishedItemsTable.colour),
-      body.data.roleId   != null ? eq(customerFinishedItemsTable.roleId, body.data.roleId) : isNull(customerFinishedItemsTable.roleId),
+      body.data.colour   ? eq(customerFinishedItemsTable.colour,  body.data.colour)   : isNull(customerFinishedItemsTable.colour),
+      body.data.roleId   != null ? eq(customerFinishedItemsTable.roleId, body.data.roleId)   : isNull(customerFinishedItemsTable.roleId),
+      body.data.size     ? eq(customerFinishedItemsTable.size,    body.data.size)     : isNull(customerFinishedItemsTable.size),
     ))
     .limit(1);
   if (existing) {
-    res.status(409).json({ error: "A wardrobe item with the same product, finish, colour and role already exists." });
+    res.status(409).json({ error: "A wardrobe item with the same product, finish, colour, role and size already exists." });
     return;
   }
 
