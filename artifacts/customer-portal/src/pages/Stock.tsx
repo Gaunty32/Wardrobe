@@ -109,7 +109,10 @@ interface CardGroup {
 
 function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
   const map = new Map<string, CardGroup>();
+
   for (const item of items) {
+    // Primary key includes colour so different coloured variants stay separate.
+    // Null-colour items use an empty string — they will be merged below.
     const key = `${item.product_id ?? item.name}|${item.colour ?? ""}|${item.finish_id ?? ""}`;
     if (!map.has(key)) {
       map.set(key, {
@@ -126,7 +129,50 @@ function groupItems(items: StockItem[], sizeOrder: string[]): CardGroup[] {
     }
     map.get(key)!.items.push(item);
   }
-  return Array.from(map.values()).map(g => ({ ...g, items: sortBySizeWithOrder(g.items, i => i.size, sizeOrder) }));
+
+  // Merge null-colour groups into a matching named-colour group for the same
+  // product + finish. This collapses cards that were split because some items
+  // were saved without a colour (e.g. "Black" vs null for the same shoe SKU).
+  for (const [key, group] of map) {
+    if (group.colour != null) continue; // only process null-colour groups
+    const productPart = `${group.items[0]?.product_id ?? group.displayName}`;
+    const finishPart  = `${group.finishId ?? ""}`;
+    // Find the first named-colour group for the same product+finish
+    const target = [...map.values()].find(g =>
+      g !== group &&
+      g.colour != null &&
+      `${g.items[0]?.product_id ?? g.displayName}` === productPart &&
+      `${g.finishId ?? ""}` === finishPart
+    );
+    if (target) {
+      target.items.push(...group.items);
+      map.delete(key);
+    }
+  }
+
+  // Within each group, deduplicate by size: if the same size appears more than
+  // once (e.g. from duplicate DB records), merge into a single row by summing
+  // stock quantities and keeping the item with the most context for editing.
+  return Array.from(map.values()).map(g => {
+    const sizeMap = new Map<string, StockItem>();
+    for (const item of g.items) {
+      // Normalise the key so size strings that differ only in case or whitespace
+      // (e.g. "Extra Small" vs "extra small") collapse into the same row.
+      const sizeKey = (item.size ?? "—").toLowerCase().trim();
+      const existing = sizeMap.get(sizeKey);
+      if (!existing) {
+        sizeMap.set(sizeKey, item);
+      } else {
+        // Sum stock quantities; keep the item with the higher id for editing
+        sizeMap.set(sizeKey, {
+          ...existing,
+          stock_quantity: existing.stock_quantity + item.stock_quantity,
+        });
+      }
+    }
+    const deduped = [...sizeMap.values()];
+    return { ...g, items: sortBySizeWithOrder(deduped, i => i.size, sizeOrder) };
+  });
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -319,7 +365,7 @@ function StockCard({
 
         {/* Column headers for size rows */}
         <div className="grid grid-cols-[auto_1fr_52px_52px_auto] items-center gap-1 px-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground w-10">Size</span>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground min-w-[2.5rem]">Size</span>
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Stock</span>
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Min</span>
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground text-center">Reorder</span>
@@ -340,12 +386,15 @@ function StockCard({
                   isLow ? "bg-amber-50 border border-amber-200" : "bg-muted/30"
                 )}
               >
-                {/* Size chip */}
-                <span className={cn(
-                  "rounded-md px-1.5 py-0.5 text-[11px] font-semibold shrink-0 w-10 text-center",
-                  isLow ? "bg-amber-200 text-amber-800" : "bg-background border text-foreground"
-                )}>
-                  {item.size ?? "—"}
+                {/* Size chip — abbreviated so e.g. "Extra Small" → "XS" fits without wrapping */}
+                <span
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 text-[11px] font-semibold shrink-0 min-w-[2.5rem] text-center",
+                    isLow ? "bg-amber-200 text-amber-800" : "bg-background border text-foreground"
+                  )}
+                  title={item.size ?? undefined}
+                >
+                  {abbrevSize(item.size ?? "—")}
                 </span>
 
                 {/* Quantity */}

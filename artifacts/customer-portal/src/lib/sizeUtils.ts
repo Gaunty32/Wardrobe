@@ -27,10 +27,15 @@ function normalise(s: string): string {
 
 function baseRank(token: string): number {
   const n = normalise(token);
-  const idx = SIZE_ORDER.findIndex(r => normalise(r) === n);
-  if (idx !== -1) return idx;
+  // Pure numeric sizes (shoe sizes, collar sizes, etc.) always sort numerically
+  // together, regardless of SIZE_ORDER. This prevents even numbers that happen
+  // to appear in SIZE_ORDER (4,6,8,10,12 — clothing sizes) from ranking before
+  // odd numbers (3,5,7,9) that fall outside it.
   const num = parseFloat(n);
   if (!isNaN(num) && String(num) === n) return 500 + num;
+  // Named sizes: look up the predefined order
+  const idx = SIZE_ORDER.findIndex(r => normalise(r) === n);
+  if (idx !== -1) return idx;
   return 9999;
 }
 
