@@ -17,6 +17,7 @@ import { generateInvoicePDF, buildAcknowledgementEmail, generateOrderAcknowledge
 import { SBS_LOGO_DATA_URL, SBS_LOGO_COLOUR_DATA_URL } from "../assets/logo-data.js";
 import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
 import { notifyCustomerManagers, notifyPortalUserByEmail, notifyAllPortalUsers, sendMobileInstructionsEmail } from "../services/notifications.js";
+import { fireWorkflow } from "../services/workflow-engine.js";
 import { ObjectStorageService } from "../lib/objectStorage.js";
 
 const router: IRouter = Router();
@@ -2609,6 +2610,14 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
     return;
   }
   const approvedOrder = approveResult.rows[0] as any;
+
+  // Fire workflow automation (non-blocking)
+  fireWorkflow("portal_order_submitted", {
+    order_number: approvedOrder?.order_number ?? "",
+    customer_name: (await db.execute(sql`SELECT name FROM customers WHERE id = ${customerId} LIMIT 1`)).rows[0]?.name ?? "",
+    contact_email: approvedOrder?.portal_submitted_by_email ?? mgrEmail ?? null,
+    contact_name: approvedOrder?.portal_submitted_by_name ?? mgrName ?? null,
+  }).catch(() => {});
 
   // Notify the person who originally submitted the order
   if (approvedOrder?.portal_submitted_by_email) {

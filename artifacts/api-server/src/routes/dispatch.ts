@@ -9,6 +9,7 @@ import {
 import { bookDpdConsignment, reprrintDpdLabel, isDpdConfigured, isChannelIslandsPostcode } from "../services/dpd.js";
 import { logOrderAction, getActor } from "../services/orderLog";
 import { notifyAllPortalUsers } from "../services/notifications.js";
+import { fireWorkflow } from "../services/workflow-engine.js";
 import { getWooSettings, wooUpdateOrderStatus } from "./woo.js";
 import { sendInvoiceEmail } from "../services/email.js";
 
@@ -740,6 +741,28 @@ router.patch("/dispatch/orders/:id/dispatch", async (req, res): Promise<void> =>
       invoiceEmailError = err instanceof Error ? err.message : "Invoice email failed";
       console.error("[dispatch] Auto invoice email failed:", err);
     }
+  }
+
+  // Fire workflow automation (non-blocking) — look up customer email/phone
+  if (updated.customerId) {
+    db.select({ email: customersTable.email, phone: (customersTable as any).phone })
+      .from(customersTable)
+      .where(eq(customersTable.id, updated.customerId))
+      .then(([cust]) => {
+        fireWorkflow("order_dispatched", {
+          order_number: updated.orderNumber,
+          customer_name: updated.customerName ?? "",
+          contact_email: (cust as any)?.email ?? null,
+          contact_phone: (cust as any)?.phone ?? null,
+          tracking_number: dpdResult?.consignmentNumber ?? null,
+        }).catch(() => {});
+      }).catch(() => {});
+  } else {
+    fireWorkflow("order_dispatched", {
+      order_number: updated.orderNumber,
+      customer_name: updated.customerName ?? "",
+      tracking_number: dpdResult?.consignmentNumber ?? null,
+    }).catch(() => {});
   }
 
   res.json({

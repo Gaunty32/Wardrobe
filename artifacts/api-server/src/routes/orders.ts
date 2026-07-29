@@ -11,6 +11,7 @@ import {
   productVariantsTable,
 } from "@workspace/db";
 import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
+import { fireWorkflow } from "../services/workflow-engine.js";
 import { buildInviteEmail } from "./portal.js";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data.js";
 import { ObjectStorageService } from "../lib/objectStorage";
@@ -388,6 +389,12 @@ router.post("/orders", async (req, res): Promise<void> => {
   const [updatedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, order.id));
 
   await logOrderAction(order.id, "Order created", getActor(req), `Order ${order.orderNumber} created${customerName ? ` for ${customerName}` : ""}`);
+
+  // Fire workflow automation (non-blocking)
+  fireWorkflow("order_created", {
+    order_number: order.orderNumber,
+    customer_name: customerName ?? "",
+  }).catch(() => {});
 
   res.status(201).json({ ...updatedOrder, totalAmount: numericToFloat(updatedOrder.totalAmount) });
 });

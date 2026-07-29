@@ -122,26 +122,26 @@ function GuidancePanel({ guidance }: { guidance: any }) {
   return (
     <div className="space-y-3 mb-6">
       {hasRatings && (
-        <div className="rounded p-4 flex gap-6 flex-wrap" style={{ background: 'linear-gradient(135deg,#1e3a5f,#2d5491)' }}>
+        <div className="rounded-2xl p-5 flex gap-6 flex-wrap shadow-sm" style={{ background: 'linear-gradient(135deg,#1e3a5f 0%,#2d5491 60%,#3a6bc4 100%)' }}>
           {valueRating > 0 && (
             <div className="text-center flex-1 min-w-[90px]">
-              <div className="text-xs font-bold text-blue-200 uppercase tracking-widest mb-1">Value for Money</div>
+              <div className="text-[11px] font-bold text-blue-200 uppercase tracking-widest mb-1.5">Value for Money</div>
               <StarRating value={valueRating} />
-              <div className="text-xs text-blue-200 mt-0.5">{valueRating} / 5</div>
+              <div className="text-xs text-blue-300 mt-1">{valueRating} / 5</div>
             </div>
           )}
           {durabilityRating > 0 && (
             <div className="text-center flex-1 min-w-[90px]">
-              <div className="text-xs font-bold text-blue-200 uppercase tracking-widest mb-1">Durability</div>
+              <div className="text-[11px] font-bold text-blue-200 uppercase tracking-widest mb-1.5">Durability</div>
               <StarRating value={durabilityRating} />
-              <div className="text-xs text-blue-200 mt-0.5">{durabilityRating} / 5</div>
+              <div className="text-xs text-blue-300 mt-1">{durabilityRating} / 5</div>
             </div>
           )}
           {technicalRating > 0 && (
             <div className="text-center flex-1 min-w-[90px]">
-              <div className="text-xs font-bold text-blue-200 uppercase tracking-widest mb-1">Technical Features</div>
+              <div className="text-[11px] font-bold text-blue-200 uppercase tracking-widest mb-1.5">Technical Features</div>
               <StarRating value={technicalRating} />
-              <div className="text-xs text-blue-200 mt-0.5">{technicalRating} / 5</div>
+              <div className="text-xs text-blue-300 mt-1">{technicalRating} / 5</div>
             </div>
           )}
         </div>
@@ -152,7 +152,7 @@ function GuidancePanel({ guidance }: { guidance: any }) {
           {badges.map((b: string) => {
             const cfg = BADGE_CONFIG[b] ?? { icon: '✔', bg: '#1e3a5f', color: '#fff' };
             return (
-              <span key={b} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
+              <span key={b} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shadow-sm"
                 style={{ background: cfg.bg, color: cfg.color }}>
                 {cfg.icon} {b}
               </span>
@@ -166,7 +166,7 @@ function GuidancePanel({ guidance }: { guidance: any }) {
           {tags.map((t: string) => {
             const cfg = TAG_CONFIG[t] ?? { icon: '🏷', color: '#334155', border: '#94a3b8' };
             return (
-              <span key={t} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 bg-white"
+              <span key={t} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border-2 bg-white shadow-sm"
                 style={{ color: cfg.color, borderColor: cfg.border }}>
                 {cfg.icon} {t}
               </span>
@@ -176,12 +176,18 @@ function GuidancePanel({ guidance }: { guidance: any }) {
       )}
 
       {hasBestFor && (
-        <div className="rounded overflow-hidden border border-green-200">
-          <div className="bg-green-700 text-white px-3 py-2 text-sm font-bold flex items-center gap-2">✅ Best For</div>
-          <div className="bg-white px-4 py-3">
-            <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+        <div className="rounded-2xl border border-green-200 bg-green-50/50 overflow-hidden">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-green-200">
+            <span className="text-base">✅</span>
+            <span className="text-sm font-bold text-green-800">Best For</span>
+          </div>
+          <div className="px-4 py-3">
+            <ul className="space-y-1.5 text-sm text-gray-700">
               {bestFor.trim().split(/\r?\n/).filter(Boolean).map((line: string, i: number) => (
-                <li key={i}>{line}</li>
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-0.5 text-green-500 shrink-0">•</span>
+                  <span>{line}</span>
+                </li>
               ))}
             </ul>
           </div>
@@ -189,12 +195,18 @@ function GuidancePanel({ guidance }: { guidance: any }) {
       )}
 
       {hasNIF && (
-        <div className="rounded overflow-hidden border border-orange-200">
-          <div className="bg-red-700 text-white px-3 py-2 text-sm font-bold flex items-center gap-2">⚠️ Not Ideal For</div>
-          <div className="bg-white px-4 py-3">
-            <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+        <div className="rounded-2xl border border-orange-200 bg-orange-50/40 overflow-hidden">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-orange-200">
+            <span className="text-base">⚠️</span>
+            <span className="text-sm font-bold text-orange-800">Not Ideal For</span>
+          </div>
+          <div className="px-4 py-3">
+            <ul className="space-y-1.5 text-sm text-gray-700">
               {notIdealFor.trim().split(/\r?\n/).filter(Boolean).map((line: string, i: number) => (
-                <li key={i}>{line}</li>
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-0.5 text-orange-400 shrink-0">•</span>
+                  <span>{line}</span>
+                </li>
               ))}
             </ul>
           </div>
@@ -202,11 +214,12 @@ function GuidancePanel({ guidance }: { guidance: any }) {
       )}
 
       {hasStaffRec && (
-        <div className="rounded overflow-hidden border border-blue-200">
-          <div className="bg-primary text-white px-3 py-2 text-sm font-bold flex items-center gap-2">
-            👤 Staff Recommendation
+        <div className="rounded-2xl border border-blue-200 bg-blue-50/50 overflow-hidden">
+          <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-blue-200">
+            <span className="text-base">👤</span>
+            <span className="text-sm font-bold text-blue-800">Staff Recommendation</span>
           </div>
-          <div className="bg-blue-50 px-4 py-3 text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+          <div className="px-4 py-3 text-sm text-gray-700 leading-relaxed whitespace-pre-line">
             {staffRecommendation.trim()}
           </div>
         </div>
@@ -560,14 +573,14 @@ export default function ProductDetail() {
       <div className="flex flex-col md:flex-row gap-12 mb-16">
         {/* ── Images column ── */}
         <div className="w-full md:w-1/2">
-          <div className="aspect-square bg-gray-100 mb-3 overflow-hidden relative border border-gray-200">
+          <div className="aspect-square bg-gray-50 mb-3 overflow-hidden relative rounded-2xl border border-gray-200 shadow-sm">
             {currentImage ? (
-              <img src={currentImage} alt={product.name} className="w-full h-full object-contain p-2" />
+              <img src={currentImage} alt={product.name} className="w-full h-full object-contain p-4" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>
             )}
             {product.onSale && (
-              <span className="absolute top-3 left-3 bg-red-600 text-white text-xs font-bold px-2 py-1 uppercase">
+              <span className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2.5 py-1 rounded-full uppercase shadow-sm">
                 Sale!
               </span>
             )}
@@ -576,7 +589,6 @@ export default function ProductDetail() {
           {images.length > 1 && (
             <div className="grid grid-cols-5 gap-2 mt-3">
               {images.slice(0, 10).map((img: string, idx: number) => {
-                // Is this thumbnail the active one?
                 const matchingColour = Object.entries(colourImages).find(([, url]) => url === img)?.[0];
                 const isActive = matchingColour
                   ? selectedColour === matchingColour
@@ -587,15 +599,14 @@ export default function ProductDetail() {
                     onClick={() => {
                       setMainImageIdx(idx);
                       if (matchingColour && colourAttr) {
-                        // Auto-select the matching colour
                         setSelectedOptions(prev => ({ ...prev, [colourAttr.name]: matchingColour }));
                       } else {
                         setSelectedOptions({});
                       }
                     }}
-                    className={`aspect-square border-2 overflow-hidden transition-all cursor-pointer hover:opacity-90 ${
+                    className={`aspect-square border-2 rounded-xl overflow-hidden transition-all cursor-pointer hover:opacity-90 ${
                       isActive
-                        ? 'border-primary'
+                        ? 'border-primary shadow-sm'
                         : 'border-gray-200 hover:border-gray-400'
                     }`}
                     title={matchingColour ?? `Image ${idx + 1}`}
@@ -626,8 +637,8 @@ export default function ProductDetail() {
 
           {/* ── Pricing tiers table ── */}
           {priceBreaks.length > 0 && (
-            <div className="mb-5 rounded border border-gray-200 overflow-hidden">
-              <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center gap-1.5">
+            <div className="mb-5 rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+              <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex items-center gap-1.5">
                 <Tag className="w-3.5 h-3.5 text-primary" />
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Quantity Pricing</span>
                 {cartQtyForProduct > 0 && (
@@ -793,8 +804,8 @@ export default function ProductDetail() {
 
           {/* ── Branding positions ── */}
           {effectiveBrandingOptions.length > 0 && (
-            <div className="mb-5 rounded border border-gray-200 overflow-hidden">
-              <div className="bg-gray-50 px-3 py-2 border-b border-gray-200 flex items-center gap-1.5">
+            <div className="mb-5 rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+              <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200 flex items-center gap-1.5">
                 <Palette className="w-3.5 h-3.5 text-primary" />
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Logo Positions</span>
                 <span className="ml-2 text-xs text-gray-400">Select where your logo(s) will appear</span>
@@ -859,7 +870,7 @@ export default function ProductDetail() {
           )}
 
           {/* Wearer name */}
-          <div className="pt-4 border-t border-gray-200 mb-4">
+          <div className="pt-4 border-t border-gray-100 mb-4">
             <label className="flex items-center gap-1.5 text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
               Wearer name <span className="text-gray-400 normal-case font-normal tracking-normal">(optional)</span>
@@ -870,12 +881,12 @@ export default function ProductDetail() {
                 value={wearerName}
                 onChange={e => setWearerName(e.target.value)}
                 placeholder="Leave blank for bulk / enter a name"
-                className="flex-1 border border-gray-300 h-10 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                className="flex-1 border border-gray-200 rounded-xl h-10 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
               />
               {wearerName.trim() && (
                 <button
                   onClick={() => setWearerName('')}
-                  className="px-3 h-10 border border-gray-300 text-xs text-gray-500 hover:bg-gray-100 transition-colors"
+                  className="px-3 h-10 border border-gray-200 rounded-xl text-xs text-gray-500 hover:bg-gray-100 transition-colors"
                 >Bulk</button>
               )}
             </div>
@@ -886,7 +897,7 @@ export default function ProductDetail() {
 
           {/* Quantity + Add to cart */}
           <div className="flex items-stretch gap-3 mb-4">
-            <div className="flex border-2 border-gray-300 h-12">
+            <div className="flex border-2 border-gray-200 rounded-xl h-12 overflow-hidden">
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
                 className="px-3 text-gray-600 hover:bg-gray-100 transition-colors font-bold text-lg"
@@ -895,7 +906,7 @@ export default function ProductDetail() {
                 type="number"
                 value={quantity}
                 onChange={e => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-12 text-center focus:outline-none font-bold text-sm border-x border-gray-300"
+                className="w-12 text-center focus:outline-none font-bold text-sm border-x border-gray-200"
                 min="1"
               />
               <button
@@ -906,7 +917,7 @@ export default function ProductDetail() {
 
             <Button
               size="lg"
-              className="flex-1 h-12 rounded-none font-bold tracking-wider uppercase text-sm"
+              className="flex-1 h-12 rounded-xl font-bold tracking-wider uppercase text-sm"
               onClick={handleAddToCart}
             >
               {addedMsg ? '✓ Added to Cart' : 'Add to Cart'}

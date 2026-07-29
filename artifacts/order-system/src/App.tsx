@@ -79,6 +79,7 @@ import Chat from "@/pages/Chat";
 import Templates from "@/pages/Templates";
 import LiveChatSessions from "@/pages/LiveChatSessions";
 import CategoryManager from "@/pages/CategoryManager";
+import WorkflowEditor from "@/pages/WorkflowEditor";
 import NotFound from "@/pages/not-found";
 import DemoGate from "@/pages/DemoGate";
 import DemoDashboard from "@/pages/DemoDashboard";
@@ -180,6 +181,8 @@ function Router() {
       <Route path="/live-chat" component={LiveChatSessions} />
       <Route path="/templates" component={Templates} />
       <Route path="/categories" component={CategoryManager} />
+      <Route path="/workflows/new" component={WorkflowEditor} />
+      <Route path="/workflows/:id" component={WorkflowEditor} />
       <Route component={NotFound} />
     </Switch>
   );

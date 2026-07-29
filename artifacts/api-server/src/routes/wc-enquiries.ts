@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { sendEmail } from "../services/email.js";
+import { fireWorkflow } from "../services/workflow-engine.js";
 import jwt from "jsonwebtoken";
 
 const router = Router();
@@ -113,6 +114,15 @@ router.post("/wc-enquiries", async (req: Request, res: Response): Promise<void> 
       console.error("[wc-enquiries] Failed to send notification email:", err?.message);
     });
   }
+
+  // Fire workflow automation (non-blocking)
+  fireWorkflow("enquiry_received", {
+    contact_name: customer_name,
+    contact_email: email,
+    contact_phone: phone ?? null,
+    product_name: product_name ?? null,
+    message,
+  }).catch(() => {});
 
   res.json({ ok: true });
 });

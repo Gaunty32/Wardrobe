@@ -1435,7 +1435,11 @@ export default function OrderDetail() {
   // freshly created and React state hasn't updated yet.
   const handleWardrobeAddAll = async (forRecipient?: CustomerEmployee | "stock") => {
     const effectiveRecipient = forRecipient ?? wardrobeRecipient;
-    if (!wardrobeData || effectiveRecipient === null) return;
+    if (!wardrobeData) {
+      toast({ title: "Wardrobe not loaded", description: "Wardrobe data is still loading — please try again.", variant: "destructive" });
+      return;
+    }
+    if (effectiveRecipient === null) return;
     const wardrobeRecipient = effectiveRecipient; // shadow for the rest of this function
     const wiItems = (wardrobeData.items ?? []).filter((wi: any) =>
       wardrobeRecipient === "stock" ||
@@ -1448,6 +1452,8 @@ export default function OrderDetail() {
       : "";
     const recipientEmployeeId = isPersonRecipient ? (wardrobeRecipient as CustomerEmployee).id : null;
 
+    console.log("[wardrobeAddAll] recipient:", wardrobeRecipient, "items:", wiItems.length, "bulkModes:", wardrobeBulkModes, "bulkQtys:", wardrobeBulkQtys);
+
     type AddLine = { wi: any; size: string | null; qty: number };
     const lines: AddLine[] = [];
 
@@ -1458,6 +1464,8 @@ export default function OrderDetail() {
       const byColour = (wardrobeData as any).sizesMap?.[String(wi.product_id)];
       const sizeOpts: string[] = byColour ? [...new Set(Object.values(byColour).flat() as string[])] : [];
       const oneSize = sizeOpts.length === 0;
+
+      console.log(`[wardrobeAddAll] item id=${id} product_id=${wi.product_id} isBulk=${isBulk} sizeOpts=`, sizeOpts, "qtys=", wardrobeBulkQtys[id]);
 
       if (isBulk) {
         const qtys = wardrobeBulkQtys[id] ?? {};
@@ -1476,6 +1484,8 @@ export default function OrderDetail() {
         if ((oneSize || size) && singleQty > 0) lines.push({ wi, size, qty: singleQty });
       }
     }
+
+    console.log("[wardrobeAddAll] lines to add:", lines);
 
     if (lines.length === 0) {
       toast({ title: "Nothing to add", description: "Select a size or enter quantities first.", variant: "destructive" });
@@ -4006,7 +4016,7 @@ export default function OrderDetail() {
                             const isBulk = wardrobeBulkModes[id] ?? false;
                             const currentSize = wardrobeItemSizes[id] ?? "";
                             const currentSleeve = wardrobeItemSleeves[id] ?? "";
-                            const currentQty = wardrobeItemQtys[id] ?? 0;
+                            const currentQty = wardrobeItemQtys[id] ?? 1;
                             const bulkComboOpts = sleeveOpts.length > 0
                               ? sizeOpts.flatMap(s => sleeveOpts.map(sl => `${s}/${sl}`))
                               : sizeOpts;

@@ -4,7 +4,7 @@ import {
   Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart, Star, BookMarked,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
   UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy,
-  Shield, ShieldCheck, UserCog, ChevronRight, Plus, Palette, MessageSquarePlus,
+  Shield, ShieldCheck, UserCog, ChevronRight, Plus, Palette, MessageSquarePlus, GitBranch,
 } from "lucide-react";
 import { staffAuthHeader, getStaffJwtPayload } from "@/lib/staff-auth";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import Layout from "@/components/Layout";
 import { formatDate } from "@/lib/utils";
 import { getListProductsQueryKey } from "@workspace/api-client-react";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLocation } from "wouter";
 
 const API_BASE = "/api";
 
@@ -1970,6 +1971,9 @@ export default function Settings() {
             <TabsTrigger value="shop" className="gap-2">
               <Globe className="w-4 h-4" /> Shop Page
             </TabsTrigger>
+            <TabsTrigger value="workflows" className="gap-2">
+              <GitBranch className="w-4 h-4" /> Workflows
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="woocommerce" className="mt-6">
@@ -3655,6 +3659,10 @@ export default function Settings() {
             <ShopTab />
           </TabsContent>
 
+          <TabsContent value="workflows" className="mt-6">
+            <WorkflowsTab />
+          </TabsContent>
+
         </Tabs>
       </div>
     </Layout>
@@ -3874,7 +3882,7 @@ function DpdTab() {
 
 // ── Shop Page tab ─────────────────────────────────────────────────────────────
 
-interface TeamMember { name: string; role: string; photoUrl: string; }
+interface TeamMember { name: string; role: string; photoUrl: string; email?: string; phone?: string; }
 
 function ShopTab() {
   const { toast } = useToast();
@@ -3906,7 +3914,7 @@ function ShopTab() {
     }
   };
 
-  const addMember = () => setMembers(prev => [...prev, { name: "", role: "", photoUrl: "" }]);
+  const addMember = () => setMembers(prev => [...prev, { name: "", role: "", photoUrl: "", email: "", phone: "" }]);
   const removeMember = (i: number) => setMembers(prev => prev.filter((_, idx) => idx !== i));
   const updateMember = (i: number, field: keyof TeamMember, value: string) =>
     setMembers(prev => prev.map((m, idx) => idx === i ? { ...m, [field]: value } : m));
@@ -3957,6 +3965,26 @@ function ShopTab() {
                     />
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Email</Label>
+                    <Input
+                      type="email"
+                      value={m.email ?? ""}
+                      onChange={e => updateMember(i, "email", e.target.value)}
+                      placeholder="james@selectbranding.co.uk"
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">Phone</Label>
+                    <Input
+                      type="tel"
+                      value={m.phone ?? ""}
+                      onChange={e => updateMember(i, "phone", e.target.value)}
+                      placeholder="+441132552694"
+                    />
+                  </div>
+                </div>
                 <div className="flex items-end gap-2">
                   <div className="flex-1 grid gap-1.5">
                     <Label className="text-xs">Photo URL</Label>
@@ -4002,6 +4030,146 @@ function ShopTab() {
           In your WordPress admin, go to <strong>Media Library</strong>, click a photo, and copy the <strong>File URL</strong>.
           The section won't appear on the About Us page until at least one team member is saved.
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Workflows Tab ─────────────────────────────────────────────────────────────
+
+const TRIGGER_LABELS: Record<string, string> = {
+  order_dispatched: "Order Dispatched",
+  order_created: "Order Created",
+  portal_order_submitted: "Portal Order Submitted",
+  enquiry_received: "Enquiry Received",
+};
+
+interface WorkflowListItem {
+  id: number;
+  name: string;
+  trigger_type: string;
+  is_active: boolean;
+  step_count: number;
+  created_at: string;
+}
+
+function WorkflowsTab() {
+  const [, navigate] = useLocation();
+  const [toggling, setToggling] = useState<number | null>(null);
+  const { toast } = useToast();
+
+  const { data: workflows = [], isLoading, refetch } = useQuery<WorkflowListItem[]>({
+    queryKey: ["workflows"],
+    queryFn: () => apiFetch("/workflows", { headers: staffAuthHeader() }),
+  });
+
+  async function toggleActive(wf: WorkflowListItem) {
+    setToggling(wf.id);
+    try {
+      await apiFetch(`/workflows/${wf.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: !wf.is_active }),
+        headers: staffAuthHeader(),
+      });
+      refetch();
+    } catch (e: any) {
+      toast({ title: "Failed to update", description: e.message, variant: "destructive" });
+    } finally {
+      setToggling(null);
+    }
+  }
+
+  async function deleteWorkflow(wf: WorkflowListItem) {
+    if (!confirm(`Delete workflow "${wf.name}"? This cannot be undone.`)) return;
+    try {
+      await apiFetch(`/workflows/${wf.id}`, { method: "DELETE", headers: staffAuthHeader() });
+      refetch();
+      toast({ title: "Workflow deleted" });
+    } catch (e: any) {
+      toast({ title: "Delete failed", description: e.message, variant: "destructive" });
+    }
+  }
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-semibold text-base">Workflow Automations</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Automate emails and WhatsApp messages based on business events.
+            </p>
+          </div>
+          <Button size="sm" onClick={() => navigate("/workflows/new")} className="gap-1.5">
+            <Plus className="w-4 h-4" /> New Workflow
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : workflows.length === 0 ? (
+          <div className="py-12 text-center border-2 border-dashed rounded-lg">
+            <GitBranch className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm text-muted-foreground">No workflows yet.</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Create one to automatically send emails or WhatsApp messages when orders are dispatched, enquiries arrive, and more.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {workflows.map(wf => (
+              <div key={wf.id} className="py-3 flex items-center gap-3">
+                <button
+                  onClick={() => navigate(`/workflows/${wf.id}`)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">{wf.name}</span>
+                    <Badge variant="outline" className={`text-xs ${wf.is_active ? "border-green-400 text-green-700 bg-green-50" : "text-muted-foreground"}`}>
+                      {wf.is_active ? "Active" : "Inactive"}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {TRIGGER_LABELS[wf.trigger_type] ?? wf.trigger_type} · {wf.step_count} step{wf.step_count !== 1 ? "s" : ""}
+                  </p>
+                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1"
+                    disabled={toggling === wf.id}
+                    onClick={() => toggleActive(wf)}
+                  >
+                    {toggling === wf.id
+                      ? <Loader2 className="w-3 h-3 animate-spin" />
+                      : wf.is_active ? "Deactivate" : "Activate"}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-red-500 hover:bg-red-50"
+                    onClick={() => deleteWorkflow(wf)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-lg border bg-muted/30 p-4 text-sm space-y-2">
+        <p className="font-medium">Available merge tags by trigger</p>
+        <div className="grid gap-2 text-xs text-muted-foreground">
+          <div><span className="font-medium text-foreground">Order Dispatched:</span> {"{{"} order_number {"}}"}, {"{{"} customer_name {"}}"}, {"{{"} contact_email {"}}"}, {"{{"} contact_phone {"}}"}, {"{{"} tracking_number {"}}"}</div>
+          <div><span className="font-medium text-foreground">Order Created:</span> {"{{"} order_number {"}}"}, {"{{"} customer_name {"}}"}</div>
+          <div><span className="font-medium text-foreground">Portal Order Submitted:</span> {"{{"} order_number {"}}"}, {"{{"} customer_name {"}}"}, {"{{"} contact_email {"}}"}, {"{{"} contact_name {"}}"}</div>
+          <div><span className="font-medium text-foreground">Enquiry Received:</span> {"{{"} contact_name {"}}"}, {"{{"} contact_email {"}}"}, {"{{"} contact_phone {"}}"}, {"{{"} product_name {"}}"}, {"{{"} message {"}}"}</div>
+        </div>
       </div>
     </div>
   );

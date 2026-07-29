@@ -41,6 +41,7 @@ import shopRouter from "./shop";
 import shopAuthRouter from "./shop-auth";
 import reviewsRouter from "./reviews";
 import categoryManagementRouter from "./category-management";
+import workflowsRouter from "./workflows";
 
 const router: IRouter = Router();
 
@@ -86,5 +87,6 @@ router.use(shopRouter);
 router.use(shopAuthRouter);
 router.use(reviewsRouter);
 router.use(categoryManagementRouter);
+router.use(workflowsRouter);
 
 export default router;

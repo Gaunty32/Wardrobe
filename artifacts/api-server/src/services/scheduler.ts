@@ -1,5 +1,6 @@
 import { schedule, type ScheduledTask } from "node-cron";
 import { db, settingsTable, customersTable, ordersTable, tasksTable } from "@workspace/db";
+import { processWorkflowExecutions } from "./workflow-engine.js";
 import { eq, sql, and, or, isNull, lt, lte, isNotNull } from "drizzle-orm";
 import { runWooSync } from "./woo-sync";
 import { runSeoHealthCheck } from "./seo-check.js";
@@ -637,6 +638,16 @@ schedule("* * * * *", async () => {
     }
   } catch (err) {
     console.error("[invoice-followup] Job failed:", err);
+  }
+});
+
+// ─── Workflow automation engine ───────────────────────────────────────────────
+// Every minute: advance any pending workflow_execution records through their steps.
+schedule("* * * * *", async () => {
+  try {
+    await processWorkflowExecutions();
+  } catch (err) {
+    console.error("[workflow-engine] Per-minute processor failed:", err);
   }
 });
 

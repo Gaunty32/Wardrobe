@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db, settingsTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { sendEmail } from "../services/email.js";
+import { fireWorkflow } from "../services/workflow-engine.js";
 import { getUncachableStripeClient, getStripePublishableKey } from "../services/stripeClient.js";
 
 const router: IRouter = Router();
@@ -510,6 +511,15 @@ router.post("/shop/product-enquiry", async (req, res): Promise<void> => {
       html: `<p>Hi ${d.name},</p><p>Thanks for your message — we'll get back to you shortly.</p><p>Your reference number is <strong>${refNum}</strong>.</p><p>${businessName}</p>`,
     });
   } catch (e) { logger.warn({ err: e }, "[shop/product-enquiry] Failed to send confirmation email"); }
+
+  // Fire workflow automation (non-blocking)
+  fireWorkflow("enquiry_received", {
+    contact_name: d.name,
+    contact_email: d.email,
+    contact_phone: d.phone ?? null,
+    product_name: d.productName ?? null,
+    message: d.message,
+  }).catch(() => {});
 
   res.json({ success: true, referenceNumber: refNum });
 });

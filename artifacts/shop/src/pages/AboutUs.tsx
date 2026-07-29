@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSEO } from '@/hooks/useSEO';
 import { useSubmitShopEnquiry } from '@workspace/api-client-react';
-import { CheckCircle2, Tag, Award, Megaphone } from 'lucide-react';
+import { CheckCircle2, Tag, Award, Megaphone, Mail, Phone } from 'lucide-react';
 
 interface TeamMember {
   name: string;
   role: string;
   photoUrl?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 const WHY_UNIFORM = [
@@ -201,8 +203,32 @@ export default function AboutUs() {
                       </div>
                     )}
                   </div>
-                  <h3 className="font-bold text-gray-900">{member.name}</h3>
-                  <p className="text-primary text-xs font-semibold mt-0.5">{member.role}</p>
+                  <h3 className="font-bold text-gray-900 uppercase text-sm tracking-wide">{member.name}</h3>
+                  <p className="text-gray-500 text-xs font-semibold mt-0.5 uppercase tracking-wide">{member.role}</p>
+                  {(member.email || member.phone) && (
+                    <div className="flex items-center justify-center gap-3 mt-2">
+                      {member.email && (
+                        <a
+                          href={`mailto:${member.email}`}
+                          className="text-gray-400 hover:text-primary transition-colors"
+                          title={`Email ${member.name}`}
+                          aria-label={`Email ${member.name}`}
+                        >
+                          <Mail className="w-4 h-4" />
+                        </a>
+                      )}
+                      {member.phone && (
+                        <a
+                          href={`tel:${member.phone}`}
+                          className="text-gray-400 hover:text-primary transition-colors"
+                          title={`Call ${member.name}`}
+                          aria-label={`Call ${member.name}`}
+                        >
+                          <Phone className="w-4 h-4" />
+                        </a>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

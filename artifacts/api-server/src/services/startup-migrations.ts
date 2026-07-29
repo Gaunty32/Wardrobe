@@ -3012,4 +3012,50 @@ export async function refreshProductIssues(): Promise<void> {
     WHERE pc.id = ranked.id AND pc.display_order = 0
   `);
   console.log("[startup] product_categories.display_order ensured");
+
+  // ── Workflow automation tables ────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS workflows (
+      id           SERIAL PRIMARY KEY,
+      name         TEXT NOT NULL,
+      trigger_type TEXT NOT NULL,
+      is_active    BOOLEAN NOT NULL DEFAULT false,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS workflow_steps (
+      id          SERIAL PRIMARY KEY,
+      workflow_id INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+      position    INTEGER NOT NULL DEFAULT 0,
+      step_type   TEXT NOT NULL,
+      config      JSONB NOT NULL DEFAULT '{}'
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS workflow_steps_workflow_id_idx ON workflow_steps (workflow_id)
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS workflow_executions (
+      id              SERIAL PRIMARY KEY,
+      workflow_id     INTEGER NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+      contact_email   TEXT,
+      contact_name    TEXT,
+      contact_phone   TEXT,
+      context_data    JSONB NOT NULL DEFAULT '{}',
+      current_step    INTEGER NOT NULL DEFAULT 0,
+      status          TEXT NOT NULL DEFAULT 'running',
+      next_run_at     TIMESTAMPTZ,
+      started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at    TIMESTAMPTZ,
+      error           TEXT
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS workflow_executions_status_next_run_idx
+    ON workflow_executions (status, next_run_at)
+    WHERE status = 'running'
+  `);
+  console.log("[startup] workflow automation tables ensured");
 }
