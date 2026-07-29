@@ -2,6 +2,7 @@ import { schedule, type ScheduledTask } from "node-cron";
 import { db, settingsTable, customersTable, ordersTable, tasksTable } from "@workspace/db";
 import { eq, sql, and, or, isNull, lt, lte, isNotNull } from "drizzle-orm";
 import { runWooSync } from "./woo-sync";
+import { runSeoHealthCheck } from "./seo-check.js";
 import { sendInvoiceEmail, buildCheckInEmail, sendEmail, isEmailConfigured, fetchLogoDataUrl, buildDeliveryFollowupEmail } from "./email.js";
 import { getTemplate, applyVars } from "./template-engine.js";
 import { postInvoiceToXero } from "./xero.js";
@@ -636,5 +637,17 @@ schedule("* * * * *", async () => {
     }
   } catch (err) {
     console.error("[invoice-followup] Job failed:", err);
+  }
+});
+
+// ─── Weekly SEO & Performance Health Check ────────────────────────────────────
+// Every Monday at 8:00 AM — fetches the live shop, verifies meta tags,
+// structured data, API response times, and emails a report to staff.
+schedule("0 8 * * 1", async () => {
+  console.log("[seo-check] Weekly SEO health check triggered");
+  try {
+    await runSeoHealthCheck();
+  } catch (err) {
+    console.error("[seo-check] Weekly check failed:", err);
   }
 });
