@@ -1322,8 +1322,21 @@ router.get("/customers/:customerId/wardrobe-data", async (req, res): Promise<voi
     }
   } catch { /* best-effort */ }
 
-  const custRow = await db.execute(sql`SELECT default_shipping_option FROM customers WHERE id = ${customerId} LIMIT 1`);
-  const defaultShippingOption = (custRow.rows[0] as any)?.default_shipping_option ?? null;
+  const custRow = await db.execute(sql`SELECT default_shipping_option, default_shipping_service FROM customers WHERE id = ${customerId} LIMIT 1`);
+  const row0 = custRow.rows[0] as any;
+
+  // Prefer the portal-specific default_shipping_option; fall back to mapping default_shipping_service
+  function mapShippingService(svc: string | null): string | null {
+    if (!svc) return null;
+    const v = svc.toLowerCase();
+    if (v.startsWith("dpd") || v === "courier") return "courier";
+    if (v.startsWith("local")) return "local_delivery";
+    if (v.startsWith("office")) return "office_collection";
+    if (v.startsWith("warehouse")) return "warehouse_collection";
+    return null;
+  }
+  const defaultShippingOption: string | null =
+    row0?.default_shipping_option ?? mapShippingService(row0?.default_shipping_service ?? null);
 
   res.json({ items: items.rows, processes: processes.rows, sizesMap, sleevesMap, defaultShippingOption });
 });

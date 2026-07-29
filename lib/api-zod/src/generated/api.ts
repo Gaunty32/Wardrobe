@@ -53,6 +53,10 @@ export const CreateCustomerBody = zod.object({
   state: zod.string().nullish(),
   postcode: zod.string().nullish(),
   notes: zod.string().nullish(),
+  logoUrl: zod.string().nullish(),
+  defaultShippingService: zod.string().nullish(),
+  highLevelContactId: zod.string().nullish(),
+  poNumberRequired: zod.boolean().optional(),
 });
 
 /**
@@ -90,7 +94,6 @@ export const UpdateCustomerBody = zod.object({
   contactFirstName: zod.string().nullish(),
   contactLastName: zod.string().nullish(),
   email: zod.string().nullish(),
-  billingEmail: zod.string().nullish(),
   phone: zod.string().nullish(),
   address: zod.string().nullish(),
   city: zod.string().nullish(),
@@ -101,13 +104,6 @@ export const UpdateCustomerBody = zod.object({
   defaultShippingService: zod.string().nullish(),
   highLevelContactId: zod.string().nullish(),
   poNumberRequired: zod.boolean().optional(),
-  requiresPrepayment: zod.boolean().optional(),
-  zeroVat: zod.boolean().optional(),
-  hasReviewed: zod.boolean().optional(),
-  invoiceName: zod.string().nullish(),
-  invoiceAddress: zod.string().nullish(),
-  invoiceCity: zod.string().nullish(),
-  invoicePostcode: zod.string().nullish(),
 });
 
 export const UpdateCustomerResponse = zod.object({

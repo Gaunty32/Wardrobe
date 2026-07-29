@@ -390,53 +390,6 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
                     Shipping Method <span className="text-destructive">*</span>
                   </Label>
 
-                  {/* Customer default callout */}
-                  {customerDefaultShipping && (
-                    shippingMethod === customerDefaultShipping ? (
-                      <div className="flex items-center justify-between gap-2 rounded-md px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm">
-                        <span className="flex items-center gap-1.5">
-                          <Truck className="w-3.5 h-3.5 shrink-0" />
-                          Using customer default: <strong>{SHIPPING_OPTIONS.find(o => o.value === customerDefaultShipping)?.label ?? customerDefaultShipping}</strong>
-                        </span>
-                        <button
-                          type="button"
-                          className="text-[11px] underline underline-offset-2 text-blue-500 hover:text-blue-700 shrink-0"
-                          onClick={() => setShippingMethod("")}
-                        >
-                          Change
-                        </button>
-                      </div>
-                    ) : shippingMethod ? (
-                      <div className="flex items-center justify-between gap-2 rounded-md px-3 py-2 bg-amber-50 border border-amber-200 text-amber-700 text-sm">
-                        <span className="flex items-center gap-1.5">
-                          <Truck className="w-3.5 h-3.5 shrink-0" />
-                          Customer default is <strong>{SHIPPING_OPTIONS.find(o => o.value === customerDefaultShipping)?.label ?? customerDefaultShipping}</strong> — changed for this order
-                        </span>
-                        <button
-                          type="button"
-                          className="text-[11px] underline underline-offset-2 text-amber-600 hover:text-amber-800 shrink-0"
-                          onClick={() => setShippingMethod(customerDefaultShipping)}
-                        >
-                          Revert
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-2 rounded-md px-3 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm">
-                        <span className="flex items-center gap-1.5">
-                          <Truck className="w-3.5 h-3.5 shrink-0" />
-                          Customer default: <strong>{SHIPPING_OPTIONS.find(o => o.value === customerDefaultShipping)?.label ?? customerDefaultShipping}</strong>
-                        </span>
-                        <button
-                          type="button"
-                          className="text-[11px] font-semibold bg-blue-600 text-white px-2 py-0.5 rounded hover:bg-blue-700 shrink-0"
-                          onClick={() => setShippingMethod(customerDefaultShipping)}
-                        >
-                          Use this
-                        </button>
-                      </div>
-                    )
-                  )}
-
                   <Select value={shippingMethod} onValueChange={setShippingMethod}>
                     <SelectTrigger id="shipping-method" className={!shippingMethod ? "border-destructive/50 ring-destructive/20" : ""}>
                       <SelectValue placeholder="Select shipping method…" />
@@ -447,8 +400,22 @@ export function ConfirmOrderDialog({ open, onOpenChange, order, onConfirmed, cus
                       ))}
                     </SelectContent>
                   </Select>
+
+                  {/* Show context beneath the dropdown */}
                   {!shippingMethod && (
                     <p className="text-[11px] text-destructive">A shipping method is required to confirm</p>
+                  )}
+                  {shippingMethod && customerDefaultShipping && shippingMethod !== customerDefaultShipping && (
+                    <div className="flex items-center justify-between gap-2 rounded-md px-3 py-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+                      <span>Customer default is <strong>{SHIPPING_OPTIONS.find(o => o.value === customerDefaultShipping)?.label ?? customerDefaultShipping}</strong></span>
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 text-amber-600 hover:text-amber-800 shrink-0"
+                        onClick={() => setShippingMethod(customerDefaultShipping)}
+                      >
+                        Revert
+                      </button>
+                    </div>
                   )}
                 </div>
                 <div className="grid gap-1.5">

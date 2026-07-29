@@ -58,6 +58,13 @@ export interface CreateCustomerBody {
   postcode?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  defaultShippingService?: string | null;
+  /** @nullable */
+  highLevelContactId?: string | null;
+  poNumberRequired?: boolean;
 }
 
 export interface UpdateCustomerBody {
@@ -80,6 +87,13 @@ export interface UpdateCustomerBody {
   postcode?: string | null;
   /** @nullable */
   notes?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  /** @nullable */
+  defaultShippingService?: string | null;
+  /** @nullable */
+  highLevelContactId?: string | null;
+  poNumberRequired?: boolean;
 }
 
 export interface Product {

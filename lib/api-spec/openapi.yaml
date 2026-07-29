@@ -814,6 +814,14 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+        logoUrl:
+          type: ["string", "null"]
+        defaultShippingService:
+          type: ["string", "null"]
+        highLevelContactId:
+          type: ["string", "null"]
+        poNumberRequired:
+          type: boolean
       required:
         - name
 
@@ -840,6 +848,14 @@ components:
           type: ["string", "null"]
         notes:
           type: ["string", "null"]
+        logoUrl:
+          type: ["string", "null"]
+        defaultShippingService:
+          type: ["string", "null"]
+        highLevelContactId:
+          type: ["string", "null"]
+        poNumberRequired:
+          type: boolean
 
     # ─── Product ───────────────────────────────────────────────────────────────
     Product:
