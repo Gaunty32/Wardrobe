@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@workspace/db";
 import {
@@ -1347,6 +1347,23 @@ router.post("/customers/:customerId/finished-items", async (req, res): Promise<v
   if (!await getCustomer(p.data.customerId)) { res.status(404).json({ error: "Customer not found" }); return; }
   const body = finishedItemBody.safeParse(req.body);
   if (!body.success) { res.status(400).json({ error: body.error.message }); return; }
+
+  // Duplicate check: same customer + product + finish + colour + role already exists
+  const [existing] = await db.select({ id: customerFinishedItemsTable.id })
+    .from(customerFinishedItemsTable)
+    .where(and(
+      eq(customerFinishedItemsTable.customerId, p.data.customerId),
+      eq(customerFinishedItemsTable.productId, body.data.productId),
+      body.data.finishId != null ? eq(customerFinishedItemsTable.finishId, body.data.finishId) : isNull(customerFinishedItemsTable.finishId),
+      body.data.colour   ? eq(customerFinishedItemsTable.colour, body.data.colour)     : isNull(customerFinishedItemsTable.colour),
+      body.data.roleId   != null ? eq(customerFinishedItemsTable.roleId, body.data.roleId) : isNull(customerFinishedItemsTable.roleId),
+    ))
+    .limit(1);
+  if (existing) {
+    res.status(409).json({ error: "A wardrobe item with the same product, finish, colour and role already exists." });
+    return;
+  }
+
   const [row] = await db.insert(customerFinishedItemsTable)
     .values({
       ...body.data,
