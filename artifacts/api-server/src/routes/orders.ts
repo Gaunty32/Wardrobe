@@ -2449,6 +2449,7 @@ function chunkBase64(b64: string): string[] {
 }
 
 router.post("/orders/:id/items", async (req, res): Promise<void> => {
+  try {
   const params = AddOrderItemParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -2699,6 +2700,10 @@ router.post("/orders/:id/items", async (req, res): Promise<void> => {
     lineTotal: numericToFloat(item.lineTotal),
     vatRate: parseFloat(String(item.vatRate ?? 0.20)),
   });
+  } catch (err: any) {
+    console.error("[POST /orders/:id/items] Unhandled error:", err?.message ?? err, "body:", JSON.stringify(req.body));
+    res.status(500).json({ error: err?.message ?? "Internal server error" });
+  }
 });
 
 const UpdateOrderItemBodyExtended = z.object({
