@@ -908,8 +908,16 @@ export default function OrderDetail() {
   const updateShippingMethodMutation = useMutation({
     mutationFn: (method: string | null) =>
       apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ shippingMethod: method }) }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+    onSuccess: (_data, method) => {
+      // Auto-default carriage to £8.50 when switching to a courier method with no carriage set
+      const currentCarriage = parseFloat(String((order as any)?.carriageAmount ?? "0"));
+      if (DPD_METHODS.has(method ?? "") && currentCarriage === 0) {
+        apiFetch(`/orders/${orderId}`, { method: "PATCH", body: JSON.stringify({ carriageAmount: 8.50 }) })
+          .then(() => queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) }))
+          .catch(() => {});
+      } else {
+        queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      }
       setEditingShippingMethod(false);
       toast({ title: "Shipping method updated" });
     },
