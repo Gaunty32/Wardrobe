@@ -1487,7 +1487,7 @@ export default function OrderDetail() {
         const waist = wardrobeItemSizes[id] ?? "";
         const sleeve = wardrobeItemSleeves[id] ?? "";
         const size = oneSize ? null : sleeveOpts.length > 0 && sleeve ? `${waist}/${sleeve}` : waist || null;
-        const singleQty = wardrobeItemQtys[id] ?? 1;
+        const singleQty = wardrobeItemQtys[id] ?? 0;
         if ((oneSize || size) && singleQty > 0) lines.push({ wi, size, qty: singleQty });
       }
     }
@@ -4023,7 +4023,7 @@ export default function OrderDetail() {
                             const isBulk = wardrobeBulkModes[id] ?? false;
                             const currentSize = wardrobeItemSizes[id] ?? "";
                             const currentSleeve = wardrobeItemSleeves[id] ?? "";
-                            const currentQty = wardrobeItemQtys[id] ?? 1;
+                            const currentQty = wardrobeItemQtys[id] ?? 0;
                             const bulkComboOpts = sleeveOpts.length > 0
                               ? sizeOpts.flatMap(s => sleeveOpts.map(sl => `${s}/${sl}`))
                               : sizeOpts;
