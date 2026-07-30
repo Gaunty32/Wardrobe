@@ -1444,6 +1444,45 @@ router.delete("/portal/stripe/payment-methods/:pmId", portalAuth, async (req: Re
   }
 });
 
+// ─── portal: basket stock availability ───────────────────────────────────────
+// Returns how many units of each basket item are available in customer finished
+// stock, so the portal can warn the customer before they submit.
+
+router.post("/portal/basket/stock-availability", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const parsed = z.object({
+    items: z.array(z.object({
+      productId: z.number().nullable().optional(),
+      colour: z.string().optional(),
+      size: z.string().optional(),
+      quantity: z.number().int().positive(),
+    })).min(1),
+  }).safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: "Invalid" }); return; }
+
+  const availability: Array<{ available: number; location: string | null }> = [];
+  for (const item of parsed.data.items) {
+    if (!item.productId) { availability.push({ available: 0, location: null }); continue; }
+    const rows = await db.execute(sql`
+      SELECT stock_quantity, location
+      FROM customer_finished_items
+      WHERE customer_id = ${customerId}
+        AND product_id = ${item.productId}
+        AND stock_quantity > 0
+        AND (size IS NULL OR lower(size) = lower(${item.size ?? ""}))
+        AND (colour IS NULL OR lower(colour) = lower(${item.colour ?? ""}))
+      ORDER BY stock_quantity DESC
+      LIMIT 1
+    `);
+    const row = rows.rows[0] as any;
+    availability.push({
+      available: row ? Math.min(Number(row.stock_quantity), item.quantity) : 0,
+      location: row?.location ?? null,
+    });
+  }
+  res.json({ availability });
+});
+
 // ─── portal: create order ────────────────────────────────────────────────────
 
 router.post("/portal/orders", portalAuth, async (req: Request, res: Response) => {
@@ -1508,69 +1547,14 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
     stockItemId: number; itemName: string; colour: string | null; size: string | null;
     quantity: number; recipientName: string | null; location: string | null;
   }> = [];
-  let sbsItems = body.items;
-
-  if (portalRole === "manager") {
-    sbsItems = [];
-    for (const item of body.items) {
-      let allocatedFromStock = 0;
-      if (item.productId) {
-        const stockRows = await db.execute(sql`
-          SELECT id, name, stock_quantity, location
-          FROM customer_finished_items
-          WHERE customer_id = ${customerId}
-            AND product_id = ${item.productId}
-            AND stock_quantity > 0
-            AND (size IS NULL OR lower(size) = lower(${item.size ?? ""}))
-            AND (colour IS NULL OR lower(colour) = lower(${item.colour ?? ""}))
-          ORDER BY stock_quantity DESC
-          LIMIT 1
-        `);
-        if (stockRows.rows.length > 0) {
-          const si = stockRows.rows[0] as any;
-          allocatedFromStock = Math.min(Number(si.stock_quantity), item.quantity);
-          if (allocatedFromStock > 0) {
-            await db.execute(sql`
-              UPDATE customer_finished_items
-              SET stock_quantity = stock_quantity - ${allocatedFromStock}, updated_at = now()
-              WHERE id = ${si.id}
-            `);
-            pickingNoteItems.push({
-              stockItemId: si.id, itemName: item.productName, colour: item.colour ?? null,
-              size: item.size ?? null, quantity: allocatedFromStock,
-              recipientName: item.recipientName ?? null, location: si.location ?? null,
-            });
-          }
-        }
-      }
-      const remainingQty = item.quantity - allocatedFromStock;
-      if (remainingQty > 0) sbsItems.push({ ...item, quantity: remainingQty });
-    }
-    if (pickingNoteItems.length > 0) pickingNoteRef = `PN-${Date.now()}`;
-  }
-
-  // If all items were fulfilled from stock, skip creating an SBS order
-  if (sbsItems.length === 0 && pickingNoteRef) {
-    // Record movements against the picking note reference
-    const portalUserId = (req as any).portalUserId;
-    const userRowsPN = await db.execute(sql`SELECT email FROM customer_portal_users WHERE id = ${portalUserId} LIMIT 1`);
-    const mgrEmailPN: string | null = (userRowsPN.rows[0] as any)?.email ?? null;
-    const mgrNamePN: string = mgrEmailPN ? mgrEmailPN.split("@")[0].replace(/[._]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) : "Manager";
-    for (const pi of pickingNoteItems) {
-      await db.execute(sql`
-        INSERT INTO customer_stock_movements (customer_id, stock_item_id, movement_type, quantity, reference, recipient_name, notes, created_by_name, created_at)
-        VALUES (${customerId}, ${pi.stockItemId}, 'issue', ${-pi.quantity}, ${pickingNoteRef}, ${pi.recipientName}, 'Issued via order', ${mgrNamePN}, now())
-      `);
-    }
-    res.status(201).json({ allFromStock: true, pickingNote: { ref: pickingNoteRef, items: pickingNoteItems } });
-    return;
-  }
-
-  const itemsTotal = sbsItems.reduce((sum, i) => sum + i.quantity * i.unitPrice, 0);
-  // Carriage is derived server-side from the shipping option so it can't be zero'd by the client.
+  // Stock allocation, financial totals, PO deduction, order insertion, and item flags
+  // are all resolved inside a single atomic transaction so a PO failure or any other
+  // error rolls back every write — no orphaned stock deductions or split order states.
+  // These outer vars are populated by the transaction result.
+  let allFromStock = false;
+  let totalAmount = 0;
+  let carriageAmount = 0;
   const SHIPPING_CARRIAGE: Record<string, number> = { dpd_next_day: 8.50 };
-  const carriageAmount = SHIPPING_CARRIAGE[body.shippingOption ?? ""] ?? (body.shippingCost ?? 0);
-  const totalAmount = itemsTotal; // total_amount stores items subtotal; carriage_amount is separate
 
   // ── Open PO state (check + deduction happens atomically inside the order transaction below) ──
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -1691,24 +1675,76 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   }
   if (!attentionOfName) attentionOfName = submitterName;
 
-  // Managers submit directly; dept_managers/members save for manager review
-  const portalStatus = portalRole === "manager" ? "submitted" : "pending_review";
-  const orderStatus = portalRole === "manager" ? "portal_pending" : "portal_draft";
-
-  // ── Atomic transaction: PO lock/check/deduct + order insert + items insert ─────────────────
-  // db.transaction() pins all statements to a single pooled connection, so FOR UPDATE
-  // row-locking is honoured and any failure automatically rolls back all writes.
+  // ── Fully atomic transaction: stock allocation + PO check + order + items + flags ──────────
+  // Everything that modifies state lives here so a PO failure or any DB error rolls back all
+  // writes — customer stock deductions, PO balance, order rows, and item flags are all undone
+  // together, preventing orphaned stock deductions or split order states.
   let orderId: number;
   let orderNumber: string;
   try {
     const txResult = await db.transaction(async (tx) => {
-      // 1. Auto-expire overdue POs
+      // ── Step 1 (manager only): allocate from customer finished stock ─────────────────────────
+      // Uses FOR UPDATE row-locks to prevent concurrent double-allocation.
+      // All writes happen inside the transaction so a later failure rolls them back.
+      const stockAllocatedByIndex: number[] = new Array(body.items.length).fill(0);
+      const txPickingItems: typeof pickingNoteItems = [];
+
+      if (portalRole === "manager") {
+        for (let i = 0; i < body.items.length; i++) {
+          const item = body.items[i];
+          if (!item.productId) continue;
+          const stockRows = await tx.execute(sql`
+            SELECT id, stock_quantity, location
+            FROM customer_finished_items
+            WHERE customer_id = ${customerId}
+              AND product_id = ${item.productId}
+              AND stock_quantity > 0
+              AND (size IS NULL OR lower(size) = lower(${item.size ?? ""}))
+              AND (colour IS NULL OR lower(colour) = lower(${item.colour ?? ""}))
+            ORDER BY stock_quantity DESC
+            LIMIT 1
+            FOR UPDATE
+          `);
+          if (stockRows.rows.length > 0) {
+            const si = stockRows.rows[0] as any;
+            const allocatedFromStock = Math.min(Number(si.stock_quantity), item.quantity);
+            if (allocatedFromStock > 0) {
+              await tx.execute(sql`
+                UPDATE customer_finished_items
+                SET stock_quantity = stock_quantity - ${allocatedFromStock}, updated_at = now()
+                WHERE id = ${si.id}
+              `);
+              stockAllocatedByIndex[i] = allocatedFromStock;
+              txPickingItems.push({
+                stockItemId: si.id, itemName: item.productName, colour: item.colour ?? null,
+                size: item.size ?? null, quantity: allocatedFromStock,
+                recipientName: item.recipientName ?? null, location: si.location ?? null,
+              });
+            }
+          }
+        }
+      }
+
+      // ── Step 2: compute shortfall-based financial totals ─────────────────────────────────────
+      // Stock-covered portions were already deducted above — SBS only charges for the shortfall.
+      const txAllFromStock = body.items.length > 0 &&
+        body.items.every((_item, i) => stockAllocatedByIndex[i] >= body.items[i].quantity);
+      const txItemsTotal = body.items.reduce((sum, item, i) => {
+        const shortfall = item.quantity - stockAllocatedByIndex[i];
+        return shortfall > 0 ? sum + shortfall * item.unitPrice : sum;
+      }, 0);
+      // No carriage when everything ships from customer stock.
+      const txCarriage = txAllFromStock ? 0 : (SHIPPING_CARRIAGE[body.shippingOption ?? ""] ?? (body.shippingCost ?? 0));
+      const txTotal = txItemsTotal;
+
+      const txPortalStatus = txAllFromStock ? "confirmed" : (portalRole === "manager" ? "submitted" : "pending_review");
+      const txOrderStatus  = txAllFromStock ? "confirmed"  : (portalRole === "manager" ? "portal_pending" : "portal_draft");
+
+      // ── Step 3: PO lock / check / deduct ────────────────────────────────────────────────────
       await tx.execute(sql`
         UPDATE customer_open_pos SET status = 'expired', updated_at = now()
         WHERE customer_id = ${customerId} AND status = 'active' AND expiry_date < ${todayStr}
       `);
-
-      // 2. Row-lock the active PO to prevent concurrent overspend
       const activePoRows = await tx.execute(sql`
         SELECT id, po_number, remaining_value, total_value, expiry_date
         FROM customer_open_pos
@@ -1720,10 +1756,9 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       let txEffectivePoNumber: string | null = body.poNumber ?? null;
 
       if (txActivePo) {
-        const orderGross = totalAmount + carriageAmount;
+        const orderGross = txTotal + txCarriage;
         const remaining = parseFloat(txActivePo.remaining_value);
         if (orderGross > remaining + 0.005) {
-          // Throw to abort the transaction; caught outside to return 422
           throw Object.assign(new Error("open_po_insufficient"), {
             code: "open_po_insufficient",
             poNumber: txActivePo.po_number,
@@ -1746,19 +1781,19 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       activePo = txActivePo;
       effectivePoNumber = txEffectivePoNumber;
 
-      // 3. Insert order
+      // ── Step 4: Insert order ──────────────────────────────────────────────────────────────────
       const orderResult = await tx.execute(sql`
         INSERT INTO orders (order_number, customer_id, customer_name, status, source, portal_status, portal_notes, total_amount, carriage_amount, notes, order_date, required_date, shipping_method, po_number, delivery_address_id, attention_of, portal_submitted_by_email, portal_submitted_by_name, portal_submitted_by_employee_id, portal_submitted_at, attachments, add_to_stores)
         VALUES (
           'P-' || gen_random_uuid()::text,
           ${customerId},
           ${customerName},
-          ${orderStatus},
+          ${txOrderStatus},
           'portal',
-          ${portalStatus},
+          ${txPortalStatus},
           ${body.portalNotes ?? null},
-          ${totalAmount.toFixed(2)},
-          ${carriageAmount.toFixed(2)},
+          ${txTotal.toFixed(2)},
+          ${txCarriage.toFixed(2)},
           ${body.notes ?? null},
           now(),
           ${body.requiredDate ? new Date(body.requiredDate).toISOString() : null},
@@ -1779,10 +1814,11 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       const newOrderNumber = `P${newOrderId}`;
       await tx.execute(sql`UPDATE orders SET order_number = ${newOrderNumber} WHERE id = ${newOrderId}`);
 
-      // 4. Insert order items
-      for (const item of sbsItems) {
+      // ── Step 5: Insert order items ────────────────────────────────────────────────────────────
+      const insertedItemIds: number[] = [];
+      for (const item of body.items) {
         const lineTotal = item.quantity * item.unitPrice;
-        await tx.execute(sql`
+        const ins = await tx.execute(sql`
           INSERT INTO order_items (order_id, product_id, product_name, colour, size, finish_id, finish_name, recipient_type, recipient_name, recipient_employee_id, quantity, unit_price, line_total)
           VALUES (
             ${newOrderId},
@@ -1799,14 +1835,45 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
             ${item.unitPrice.toFixed(2)},
             ${lineTotal.toFixed(2)}
           )
+          RETURNING id
         `);
+        insertedItemIds.push((ins.rows[0] as any).id as number);
       }
 
-      return { orderId: newOrderId, orderNumber: newOrderNumber };
+      // ── Step 6: Mark allocation flags (inside tx — atomic with everything above) ─────────────
+      // • Fully covered  → stock_status='allocated', purchase_required=false
+      // • Partially covered → purchase_required=true, purchase_quantity=shortfall
+      //   (confirm route reads purchase_quantity to avoid re-allocating already-covered units)
+      for (let i = 0; i < body.items.length; i++) {
+        const allocated = stockAllocatedByIndex[i];
+        const total = body.items[i].quantity;
+        const itemId = insertedItemIds[i];
+        if (allocated >= total) {
+          await tx.execute(sql`
+            UPDATE order_items
+            SET stock_status = 'allocated', stock_allocated_at = now(), purchase_required = false
+            WHERE id = ${itemId}
+          `);
+        } else if (allocated > 0) {
+          await tx.execute(sql`
+            UPDATE order_items
+            SET purchase_required = true, purchase_quantity = ${total - allocated}
+            WHERE id = ${itemId}
+          `);
+        }
+      }
+
+      return { orderId: newOrderId, orderNumber: newOrderNumber, txAllFromStock, txTotal, txCarriage, txPickingItems };
     });
 
     orderId = txResult.orderId;
     orderNumber = txResult.orderNumber;
+    allFromStock = txResult.txAllFromStock;
+    totalAmount  = txResult.txTotal;
+    carriageAmount = txResult.txCarriage;
+    // Populate outer picking-note vars used for movement logging and the response
+    pickingNoteItems.push(...txResult.txPickingItems);
+    if (pickingNoteItems.length > 0) pickingNoteRef = `PN-${Date.now()}`;
   } catch (err: any) {
     if (err?.code === "open_po_insufficient") {
       res.status(422).json({
@@ -1862,7 +1929,10 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   }
 
   // ── Notifications ──────────────────────────────────────────────────────────
-  if (portalStatus === "pending_review") {
+  // portalStatus is determined inside the transaction; use the outer derived flags here.
+  const resolvedPortalStatus = allFromStock ? "confirmed"
+    : (portalRole === "manager" ? "submitted" : "pending_review");
+  if (resolvedPortalStatus === "pending_review") {
     // Employee/dept-manager submitted → notify all managers this order needs approval
     notifyCustomerManagers({
       customerId,
@@ -1871,7 +1941,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       link: "/orders",
       type: "needs_approval",
     }).catch(() => {});
-  } else if (portalStatus === "submitted") {
+  } else if (resolvedPortalStatus === "submitted") {
     // Manager submitted directly to SBS → no approval step needed, no extra notification
   }
 
@@ -1900,7 +1970,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
       if (offerRows.rows.length > 0) {
         const offer = offerRows.rows[0] as any;
         const minSpend = parseFloat(offer.min_spend);
-        const itemsTotalExVat = sbsItems.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
+        const itemsTotalExVat = totalAmount; // shortfall-only total computed atomically inside the transaction
         if (itemsTotalExVat >= minSpend) {
           await db.execute(sql`
             INSERT INTO select_extra_claims (offer_id, customer_id, order_id, order_number, customer_name)
@@ -1918,6 +1988,7 @@ router.post("/portal/orders", portalAuth, async (req: Request, res: Response) =>
   res.status(201).json({
     id: order.id,
     orderNumber: order.order_number,
+    allFromStock,
     stripeCharge,
     selectExtraClaimed,
     pickingNote: pickingNoteRef ? { ref: pickingNoteRef, items: pickingNoteItems } : null,
@@ -2432,14 +2503,15 @@ router.patch("/portal/manager/orders/:id/items", portalAuth, async (req: Request
     `);
   }
 
-  // Recalculate order total from remaining items
+  // Recalculate order total from remaining items.
+  // total_amount stores the items subtotal only; carriage_amount is a separate column.
+  // Keeping them separate ensures the PO re-credit in manager-submit can derive the correct
+  // shortfall without accidentally double-counting carriage.
   const totalRows = await db.execute(sql`
     SELECT COALESCE(SUM(line_total::numeric), 0) AS subtotal FROM order_items WHERE order_id = ${orderId}
   `);
   const subtotal = parseFloat((totalRows.rows[0] as any)?.subtotal ?? "0");
-  const carriageRows = await db.execute(sql`SELECT carriage_amount FROM orders WHERE id = ${orderId}`);
-  const carriage = parseFloat((carriageRows.rows[0] as any)?.carriage_amount ?? "0");
-  const newTotal = (subtotal + carriage).toFixed(2);
+  const newTotal = subtotal.toFixed(2);
 
   await db.execute(sql`
     UPDATE orders SET total_amount = ${newTotal}, updated_at = now() WHERE id = ${orderId}
@@ -2483,133 +2555,181 @@ router.post("/portal/manager/orders/:id/submit", portalAuth, async (req: Request
     }
   }
 
-  // ── Stock check: allocate from customer stores before forwarding to SBS ────
-  const orderItemsRows = await db.execute(sql`
-    SELECT id, product_id, product_name, colour, size, quantity, unit_price, recipient_name
-    FROM order_items WHERE order_id = ${orderId}
-  `);
-  const orderItems = orderItemsRows.rows as any[];
-
+  // ── Atomic transaction: stock allocation + item flags + total recalc + PO re-credit + status ─
+  // Everything in one rollback boundary so a failure can't leave stock deducted without an order
+  // update, or leave the PO balance inconsistent with the order total.
   type PickingLine = { stockItemId: number; itemName: string; colour: string | null; size: string | null; quantity: number; recipientName: string | null; location: string | null };
+  let allFromStock = false;
+  let pickingNoteRef: string | null = null;
   const pickingNoteLines: PickingLine[] = [];
-  const itemUpdates: { id: number; newQty: number }[] = [];
-  let allFromStock = orderItems.length > 0;
+  let approvedOrder: any;
 
-  for (const item of orderItems) {
-    let allocatedFromStock = 0;
-    if (item.product_id) {
-      const stockRows = await db.execute(sql`
-        SELECT id, stock_quantity, location
-        FROM customer_finished_items
-        WHERE customer_id = ${customerId}
-          AND product_id = ${item.product_id}
-          AND stock_quantity > 0
-          AND (size IS NULL OR lower(size) = lower(${item.size ?? ""}))
-          AND (colour IS NULL OR lower(colour) = lower(${item.colour ?? ""}))
-        ORDER BY stock_quantity DESC
-        LIMIT 1
+  try {
+    const txResult = await db.transaction(async (tx) => {
+      // 1. Read current order financials and items (inside tx for consistency)
+      const orderRows = await tx.execute(sql`
+        SELECT total_amount, carriage_amount FROM orders
+        WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+        FOR UPDATE
       `);
-      if (stockRows.rows.length > 0) {
-        const si = stockRows.rows[0] as any;
-        allocatedFromStock = Math.min(Number(si.stock_quantity), Number(item.quantity));
-        if (allocatedFromStock > 0) {
-          await db.execute(sql`
-            UPDATE customer_finished_items
-            SET stock_quantity = stock_quantity - ${allocatedFromStock}, updated_at = now()
-            WHERE id = ${si.id}
+      if (!orderRows.rows.length) throw Object.assign(new Error("order_not_found"), { code: "order_not_found" });
+      const origTotal    = parseFloat((orderRows.rows[0] as any).total_amount ?? "0");
+      const origCarriage = parseFloat((orderRows.rows[0] as any).carriage_amount ?? "0");
+
+      const oiRows = await tx.execute(sql`
+        SELECT id, product_id, product_name, colour, size, quantity, unit_price, recipient_name
+        FROM order_items WHERE order_id = ${orderId}
+      `);
+      const orderItems = oiRows.rows as any[];
+
+      // 2. Allocate from customer finished stock (FOR UPDATE row-locks)
+      const itemUpdates: { id: number; newQty: number }[] = [];
+      const txPickingLines: PickingLine[] = [];
+      let txAllFromStock = orderItems.length > 0;
+
+      for (const item of orderItems) {
+        let allocatedFromStock = 0;
+        if (item.product_id) {
+          const stockRows = await tx.execute(sql`
+            SELECT id, stock_quantity, location
+            FROM customer_finished_items
+            WHERE customer_id = ${customerId}
+              AND product_id = ${item.product_id}
+              AND stock_quantity > 0
+              AND (size IS NULL OR lower(size) = lower(${item.size ?? ""}))
+              AND (colour IS NULL OR lower(colour) = lower(${item.colour ?? ""}))
+            ORDER BY stock_quantity DESC
+            LIMIT 1
+            FOR UPDATE
           `);
-          pickingNoteLines.push({
-            stockItemId: si.id,
-            itemName: item.product_name,
-            colour: item.colour ?? null,
-            size: item.size ?? null,
-            quantity: allocatedFromStock,
-            recipientName: item.recipient_name ?? null,
-            location: si.location ?? null,
-          });
+          if (stockRows.rows.length > 0) {
+            const si = stockRows.rows[0] as any;
+            allocatedFromStock = Math.min(Number(si.stock_quantity), Number(item.quantity));
+            if (allocatedFromStock > 0) {
+              await tx.execute(sql`
+                UPDATE customer_finished_items
+                SET stock_quantity = stock_quantity - ${allocatedFromStock}, updated_at = now()
+                WHERE id = ${si.id}
+              `);
+              txPickingLines.push({
+                stockItemId: si.id,
+                itemName: item.product_name,
+                colour: item.colour ?? null,
+                size: item.size ?? null,
+                quantity: allocatedFromStock,
+                recipientName: item.recipient_name ?? null,
+                location: si.location ?? null,
+              });
+            }
+          }
+        }
+        const remainingQty = Number(item.quantity) - allocatedFromStock;
+        if (remainingQty > 0) txAllFromStock = false;
+        itemUpdates.push({ id: item.id, newQty: remainingQty });
+      }
+
+      // 3. Mark item allocation flags
+      for (const upd of itemUpdates) {
+        if (upd.newQty === 0) {
+          await tx.execute(sql`
+            UPDATE order_items
+            SET stock_status = 'allocated', stock_allocated_at = now(), purchase_required = false
+            WHERE id = ${upd.id}
+          `);
+        } else if (upd.newQty !== Number(orderItems.find(i => i.id === upd.id)?.quantity)) {
+          await tx.execute(sql`
+            UPDATE order_items
+            SET purchase_required = true, purchase_quantity = ${upd.newQty}
+            WHERE id = ${upd.id}
+          `);
         }
       }
-    }
-    const remainingQty = Number(item.quantity) - allocatedFromStock;
-    if (remainingQty > 0) {
-      allFromStock = false;
-    }
-    itemUpdates.push({ id: item.id, newQty: remainingQty });
-  }
 
-  // Record stock movements and build picking note reference
-  let pickingNoteRef: string | null = null;
-  if (pickingNoteLines.length > 0) {
-    pickingNoteRef = `PN-${Date.now()}`;
-    for (const pl of pickingNoteLines) {
-      await db.execute(sql`
-        INSERT INTO customer_stock_movements
-          (customer_id, stock_item_id, movement_type, quantity, reference, recipient_name, notes, created_by_name, created_at)
-        VALUES
-          (${customerId}, ${pl.stockItemId}, 'issue', ${-pl.quantity}, ${pickingNoteRef}, ${pl.recipientName},
-           'Issued via portal order approval', ${mgrName}, now())
+      // 4. Recalculate order total to shortfall-only
+      const sbsTotal = orderItems.reduce((sum, item) => {
+        const upd = itemUpdates.find(u => u.id === item.id);
+        const shortfall = upd !== undefined ? upd.newQty : Number(item.quantity);
+        return shortfall > 0 ? sum + shortfall * parseFloat(item.unit_price ?? "0") : sum;
+      }, 0);
+      const newCarriage = txAllFromStock ? 0 : origCarriage;
+      await tx.execute(sql`
+        UPDATE orders
+        SET total_amount = ${sbsTotal.toFixed(2)}, carriage_amount = ${newCarriage.toFixed(2)}, updated_at = now()
+        WHERE id = ${orderId}
       `);
-    }
-  }
 
-  // Apply item quantity changes: delete fully-covered lines, reduce partial ones
-  for (const upd of itemUpdates) {
-    if (upd.newQty === 0) {
-      await db.execute(sql`DELETE FROM order_items WHERE id = ${upd.id}`);
-    } else if (upd.newQty !== Number(orderItems.find(i => i.id === upd.id)?.quantity)) {
-      await db.execute(sql`
-        UPDATE order_items
-        SET quantity = ${upd.newQty},
-            line_total = (unit_price * ${upd.newQty})::numeric(10,2)
-        WHERE id = ${upd.id}
+      // 5. Re-credit PO balance for the amount deducted at order creation that is no longer needed.
+      // origTotal already had PO deducted; if the manager now allocates from stock, SBS needs less.
+      // origTotal is items-only (total_amount never includes carriage after the item-edit fix).
+      // sbsTotal is also items-only. Re-credit the difference against the exact PO that was
+      // charged when this order was created (matched by orders.po_number → customer_open_pos.po_number).
+      const creditBack = (origTotal + origCarriage) - (sbsTotal + newCarriage);
+      if (creditBack > 0.005) {
+        await tx.execute(sql`
+          UPDATE customer_open_pos
+          SET remaining_value = LEAST(total_value, remaining_value + ${creditBack.toFixed(2)}),
+              status = CASE
+                WHEN status = 'exhausted' THEN 'active'
+                ELSE status
+              END,
+              updated_at = now()
+          WHERE customer_id = ${customerId}
+            AND po_number = (SELECT po_number FROM orders WHERE id = ${orderId})
+            AND po_number IS NOT NULL
+        `);
+      }
+
+      // 6. Update order status
+      const txStockNote = txPickingLines.length > 0
+        ? (txAllFromStock
+            ? `All items fulfilled from store stock.`
+            : `${txPickingLines.length} line(s) fulfilled from store stock; remainder forwarded to SBS.`)
+        : null;
+      const finalPortalStatus = txAllFromStock ? 'confirmed' : 'submitted';
+      const finalOrderStatus  = txAllFromStock ? 'confirmed'  : 'portal_pending';
+
+      const approveRows = await tx.execute(sql`
+        UPDATE orders SET portal_status = ${finalPortalStatus}, status = ${finalOrderStatus}, updated_at = now(),
+          portal_approved_by_email = ${mgrEmail},
+          portal_approved_by_name = ${mgrName},
+          portal_approved_at = now(),
+          po_number = COALESCE(${poNumber}, po_number),
+          notes = CASE WHEN ${txStockNote}::text IS NOT NULL
+                       THEN COALESCE(notes || E'\n', '') || ${txStockNote ?? ''}::text
+                       ELSE notes END
+        WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
+        RETURNING order_number, portal_submitted_by_email, portal_submitted_by_name
       `);
+
+      return { approvedRow: approveRows.rows[0] as any, txAllFromStock, txPickingLines };
+    });
+
+    allFromStock = txResult.txAllFromStock;
+    pickingNoteLines.push(...txResult.txPickingLines);
+    approvedOrder = txResult.approvedRow;
+
+    // Stock movement log (audit-only, outside transaction — no financial consequence if this fails)
+    if (pickingNoteLines.length > 0) {
+      pickingNoteRef = `PN-${Date.now()}`;
+      for (const pl of pickingNoteLines) {
+        await db.execute(sql`
+          INSERT INTO customer_stock_movements
+            (customer_id, stock_item_id, movement_type, quantity, reference, recipient_name, notes, created_by_name, created_at)
+          VALUES
+            (${customerId}, ${pl.stockItemId}, 'issue', ${-pl.quantity}, ${pickingNoteRef}, ${pl.recipientName},
+             'Issued via portal order approval', ${mgrName}, now())
+        `);
+      }
     }
-  }
-
-  // Recalculate order total if any lines changed
-  if (itemUpdates.some(u => u.newQty !== Number(orderItems.find(i => i.id === u.id)?.quantity))) {
-    await db.execute(sql`
-      UPDATE orders
-      SET total_amount = COALESCE((SELECT SUM(line_total) FROM order_items WHERE order_id = ${orderId}), 0)
-      WHERE id = ${orderId}
-    `);
-  }
-
-  // ── Decide final status ────────────────────────────────────────────────────
-  const stockNote = pickingNoteRef
-    ? (allFromStock
-        ? `All items fulfilled from store stock (${pickingNoteRef}).`
-        : `${pickingNoteLines.length} line(s) fulfilled from store stock (${pickingNoteRef}); remainder forwarded to SBS.`)
-    : null;
-
-  const finalPortalStatus = allFromStock ? 'confirmed' : 'submitted';
-  const finalOrderStatus  = allFromStock ? 'confirmed'  : 'portal_pending';
-
-  let approveResult: any;
-  try {
-    approveResult = await db.execute(sql`
-      UPDATE orders SET portal_status = ${finalPortalStatus}, status = ${finalOrderStatus}, updated_at = now(),
-        portal_approved_by_email = ${mgrEmail},
-        portal_approved_by_name = ${mgrName},
-        portal_approved_at = now(),
-        po_number = COALESCE(${poNumber}, po_number),
-        notes = CASE WHEN ${stockNote}::text IS NOT NULL
-                     THEN COALESCE(notes || E'\n', '') || ${stockNote ?? ''}::text
-                     ELSE notes END
-      WHERE id = ${orderId} AND customer_id = ${customerId} AND source = 'portal' AND portal_status = 'pending_review'
-      RETURNING order_number, portal_submitted_by_email, portal_submitted_by_name
-    `);
   } catch (err: any) {
-    console.error('[portal submit] UPDATE orders failed. orderId=%d customerId=%d finalPortalStatus=%s finalOrderStatus=%s poNumber=%s stockNote=%s',
-      orderId, customerId, finalPortalStatus, finalOrderStatus, poNumber, stockNote);
-    console.error('[portal submit] PG error message:', err?.message);
-    console.error('[portal submit] PG error cause:', err?.cause?.message ?? err?.cause ?? '(no cause)');
-    console.error('[portal submit] PG error detail:', err?.detail ?? err?.cause?.detail ?? '(no detail)');
-    console.error('[portal submit] Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+    if (err?.code === "order_not_found") {
+      res.status(404).json({ error: "Order not found or not pending review" });
+      return;
+    }
+    console.error('[portal submit] transaction failed. orderId=%d customerId=%d', orderId, customerId, err);
     res.status(500).json({ error: 'Failed to approve order' });
     return;
   }
-  const approvedOrder = approveResult.rows[0] as any;
 
   // Fire workflow automation (non-blocking)
   fireWorkflow("portal_order_submitted", {
@@ -2881,20 +3001,31 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
         colour: orderItemsTable.colour,
         size: orderItemsTable.size,
         quantity: orderItemsTable.quantity,
+        purchaseQuantity: orderItemsTable.purchaseQuantity,
         finishId: orderItemsTable.finishId,
         finishName: orderItemsTable.finishName,
         recipientType: orderItemsTable.recipientType,
         recipientName: orderItemsTable.recipientName,
+        stockStatus: orderItemsTable.stockStatus,
       })
       .from(orderItemsTable)
       .where(eq(orderItemsTable.orderId, orderId));
 
-    const productIds = [...new Set(allItems.map(i => i.productId).filter(Boolean))] as number[];
+    // Items already allocated from customer finished stock must NOT be deducted from
+    // SBS warehouse stock — they were already removed from customer_finished_items at
+    // order creation / manager-submit time.
+    const sbsItems = allItems.filter(i => i.stockStatus !== 'allocated');
+
+    const productIds = [...new Set(sbsItems.map(i => i.productId).filter(Boolean))] as number[];
     const allocatedItemIds: number[] = [];
 
     // Items with no product link go straight to production
-    for (const item of allItems) {
+    for (const item of sbsItems) {
       if (!item.productId) allocatedItemIds.push(item.id);
+    }
+    // Customer-stock-allocated items also go straight to production (picking list)
+    for (const item of allItems) {
+      if (item.stockStatus === 'allocated') allocatedItemIds.push(item.id);
     }
 
     if (productIds.length > 0) {
@@ -2934,7 +3065,7 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
         remainingStock.set(k, Number(r.stock_quantity) || 0);
       }
 
-      for (const item of allItems) {
+      for (const item of sbsItems) {
         if (!item.productId) continue;
         const sup = supplierMap.get(item.productId);
 
@@ -2945,7 +3076,10 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
                         : (remainingStock.get(plainK) ?? 0);
         const activeKey = remainingStock.has(k) ? k : plainK;
 
-        const qty = item.quantity ?? 0;
+        // Use purchase_quantity (shortfall recorded when customer stock was partially allocated)
+        // rather than the full line quantity, to avoid double-allocating units already
+        // deducted from customer_finished_items at order create / manager-submit time.
+        const qty = item.purchaseQuantity != null ? Number(item.purchaseQuantity) : (item.quantity ?? 0);
         const allocatedQty = Math.min(available, qty);
         const shortfall = qty - allocatedQty;
         remainingStock.set(activeKey, available - allocatedQty);
@@ -2955,6 +3089,8 @@ router.post("/portal/admin/orders/:id/confirm", async (req: Request, res: Respon
           purchaseQuantity: shortfall > 0 ? shortfall : null,
           supplierId: shortfall > 0 ? (sup?.supplierId ?? null) : null,
           supplierName: shortfall > 0 ? (sup?.supplierName ?? null) : null,
+          // Persist exactly how many SBS units were deducted so unconfirm can reverse it precisely.
+          sbsStockAllocatedQty: allocatedQty > 0 ? allocatedQty : null,
         }).where(eq(orderItemsTable.id, item.id));
 
         if (shortfall === 0) allocatedItemIds.push(item.id);
@@ -3235,30 +3371,71 @@ router.post("/portal/admin/orders/:id/unconfirm", async (req: Request, res: Resp
   if (ord.status !== "confirmed") { res.status(400).json({ error: "Order is not in confirmed status" }); return; }
 
   // ── Restore stock allocations ─────────────────────────────────────────────
+  // Use sbs_stock_allocated_qty which was persisted at confirm time to record exactly
+  // how many SBS warehouse units were deducted per item. Items fulfilled entirely from
+  // customer_finished_items have stock_status='allocated' and sbs_stock_allocated_qty=NULL,
+  // so they contribute 0 to the restore total — SBS stock was never touched for them.
   const itemRows = await db.execute(sql`
-    SELECT id, product_id, quantity, purchase_required, purchase_quantity
+    SELECT id, product_id, colour, size, quantity, purchase_required, purchase_quantity, stock_status, sbs_stock_allocated_qty
     FROM order_items WHERE order_id = ${orderId} AND product_id IS NOT NULL
   `);
   const items = itemRows.rows as any[];
 
-  // Calculate how much stock was decremented per product during confirmation
-  const stockRestore = new Map<number, number>();
+  // Build restore map keyed by "productId|colour|size" (variant-aware, matching what confirm deducted)
+  const vKey = (pid: number, c: string | null, s: string | null) => `${pid}|${c ?? ""}|${s ?? ""}`;
+  const stockRestore = new Map<string, { productId: number; colour: string | null; size: string | null; qty: number }>();
   for (const item of items) {
     if (!item.product_id) continue;
-    const qty = Number(item.quantity ?? 0);
-    const purchaseQty = Number(item.purchase_quantity ?? 0);
-    // Stock decremented = quantity - purchase_quantity (items fulfilled from stock)
-    const allocated = item.purchase_required ? qty - purchaseQty : qty;
-    if (allocated > 0) {
-      stockRestore.set(item.product_id, (stockRestore.get(item.product_id) ?? 0) + allocated);
+    // sbs_stock_allocated_qty is the exact amount confirm took from SBS stock.
+    // Falls back to the old inference for orders confirmed before this column existed.
+    let sbsDeducted: number;
+    if (item.sbs_stock_allocated_qty != null) {
+      sbsDeducted = Number(item.sbs_stock_allocated_qty);
+    } else if (item.stock_status === 'allocated') {
+      sbsDeducted = 0; // customer-stock-only item, never touched SBS
+    } else {
+      // Legacy fallback: derive from purchase flags (only correct for non-customer-allocated items)
+      const qty = Number(item.quantity ?? 0);
+      const purchaseQty = Number(item.purchase_quantity ?? 0);
+      sbsDeducted = item.purchase_required ? qty - purchaseQty : qty;
+    }
+    if (sbsDeducted <= 0) continue;
+    const k = vKey(Number(item.product_id), item.colour ?? null, item.size ?? null);
+    const existing = stockRestore.get(k);
+    if (existing) {
+      existing.qty += sbsDeducted;
+    } else {
+      stockRestore.set(k, { productId: Number(item.product_id), colour: item.colour ?? null, size: item.size ?? null, qty: sbsDeducted });
     }
   }
 
-  for (const [productId, restoreQty] of stockRestore.entries()) {
-    await db.execute(sql`
-      UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${restoreQty}
-      WHERE id = ${productId}
-    `);
+  for (const { productId, colour, size, qty: restoreQty } of stockRestore.values()) {
+    const colourVal = colour || null;
+    const sizeVal = size || null;
+    if (colourVal !== null || sizeVal !== null) {
+      // Restore variant stock then roll up to product
+      await db.execute(sql`
+        UPDATE product_variants
+        SET stock_quantity = COALESCE(stock_quantity, 0) + ${restoreQty}
+        WHERE product_id = ${productId}
+          AND (colour IS NOT DISTINCT FROM ${colourVal})
+          AND (size   IS NOT DISTINCT FROM ${sizeVal})
+      `);
+      await db.execute(sql`
+        UPDATE products
+        SET stock_quantity = (
+          SELECT COALESCE(SUM(stock_quantity), 0)
+          FROM product_variants WHERE product_id = ${productId}
+        )
+        WHERE id = ${productId}
+      `);
+    } else {
+      // Plain product (no variants)
+      await db.execute(sql`
+        UPDATE products SET stock_quantity = COALESCE(stock_quantity, 0) + ${restoreQty}
+        WHERE id = ${productId}
+      `);
+    }
   }
 
   // ── Reset purchase requirement flags on all items ─────────────────────────
@@ -4898,6 +5075,57 @@ router.get("/portal/stock/picking-note/:ref", portalAuth, async (req: Request, r
     ORDER BY fi.name ASC, fi.size ASC
   `);
   res.json({ ref, items: rows.rows });
+});
+
+// ─── Portal: stores allocation log (manager-only) ────────────────────────────
+// Returns all stock issues (picks from customer_finished_items) with recipient,
+// department and supervisor info resolved from customer_employees by name match.
+
+router.get("/portal/admin/stores-log", portalAuth, async (req: Request, res: Response) => {
+  const customerId = (req as any).portalCustomerId;
+  const portalRole = (req as any).portalRole;
+  if (portalRole !== "manager") { res.status(403).json({ error: "Manager access required" }); return; }
+
+  const from  = typeof req.query.from  === "string" ? req.query.from  : null;
+  const to    = typeof req.query.to    === "string" ? req.query.to    : null;
+  const search = typeof req.query.q   === "string" ? req.query.q.trim() : "";
+
+  const rows = await db.execute(sql`
+    SELECT
+      csm.id,
+      csm.quantity,
+      csm.reference,
+      csm.recipient_name,
+      csm.notes,
+      csm.created_by_name,
+      csm.created_at,
+      cfi.name          AS item_name,
+      cfi.colour,
+      cfi.size,
+      cfi.product_name,
+      e.department,
+      e.job_title,
+      NULLIF(TRIM(CONCAT(m.first_name, ' ', COALESCE(m.last_name, ''))), '') AS supervisor_name
+    FROM customer_stock_movements csm
+    JOIN customer_finished_items cfi ON cfi.id = csm.stock_item_id
+    LEFT JOIN customer_employees e ON e.customer_id = csm.customer_id
+      AND LOWER(TRIM(CONCAT(e.first_name, ' ', COALESCE(e.last_name, '')))) = LOWER(TRIM(COALESCE(csm.recipient_name, '')))
+    LEFT JOIN customer_employees m ON m.id = e.manager_id
+    WHERE csm.customer_id = ${customerId}
+      AND csm.movement_type = 'issue'
+      ${from  ? sql`AND csm.created_at >= ${from}::timestamptz`  : sql``}
+      ${to    ? sql`AND csm.created_at <  (${to}::date + interval '1 day')` : sql``}
+      ${search ? sql`AND (
+        LOWER(csm.recipient_name) LIKE ${'%' + search.toLowerCase() + '%'}
+        OR LOWER(cfi.name) LIKE ${'%' + search.toLowerCase() + '%'}
+        OR LOWER(COALESCE(cfi.product_name,'')) LIKE ${'%' + search.toLowerCase() + '%'}
+        OR LOWER(COALESCE(e.department,'')) LIKE ${'%' + search.toLowerCase() + '%'}
+        OR LOWER(COALESCE(csm.reference,'')) LIKE ${'%' + search.toLowerCase() + '%'}
+      )` : sql``}
+    ORDER BY csm.created_at DESC
+    LIMIT 500
+  `);
+  res.json(rows.rows);
 });
 
 export default router;

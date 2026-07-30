@@ -3058,4 +3058,30 @@ export async function refreshProductIssues(): Promise<void> {
     WHERE status = 'running'
   `);
   console.log("[startup] workflow automation tables ensured");
+
+  // ── order_items.sbs_stock_allocated_qty column ────────────────────────────
+  await db.execute(sql`
+    ALTER TABLE order_items ADD COLUMN IF NOT EXISTS sbs_stock_allocated_qty integer
+  `);
+
+  // ── O311: status was manually set to 'shipped' via the status dropdown ────
+  // The order was never dispatched through the normal flow — dispatched_at is
+  // NULL on both the order and all items — so it should sit in the Despatch
+  // queue at 'confirmed' until the user is ready to send it.
+  const fixO311Flag = await db.execute(sql`
+    SELECT 1 FROM _migration_flags WHERE name = 'fix_o311_wrong_shipped_status'
+  `);
+  if (fixO311Flag.rows.length === 0) {
+    await db.execute(sql`
+      UPDATE orders
+        SET status = 'confirmed', dispatched_at = NULL, updated_at = now()
+      WHERE order_number = 'O311'
+        AND status = 'shipped'
+        AND dispatched_at IS NULL
+    `);
+    await db.execute(sql`
+      INSERT INTO _migration_flags (name) VALUES ('fix_o311_wrong_shipped_status')
+    `);
+    console.log("[startup] O311 reverted from shipped → confirmed (dispatched_at was null)");
+  }
 }

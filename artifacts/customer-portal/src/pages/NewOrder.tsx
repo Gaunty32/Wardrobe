@@ -2097,6 +2097,21 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
     staleTime: 30_000,
   });
 
+  // Stock availability — check customer finished stock for each basket item
+  const stockAvailQuery = useQuery<{ availability: Array<{ available: number; location: string | null }> }>({
+    queryKey: ["portal-stock-availability", basket.map(i => `${i.productId}|${i.colour}|${i.size}|${i.quantity}`).join(",")],
+    queryFn: () => apiFetch("/portal/basket/stock-availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        items: basket.map(i => ({ productId: i.productId, colour: i.colour, size: i.size, quantity: i.quantity })),
+      }),
+    }),
+    enabled: basket.some(i => !!i.productId),
+    staleTime: 30_000,
+  });
+  const stockAvail = stockAvailQuery.data?.availability ?? [];
+
   useEffect(() => {
     if (pmData?.paymentMethods?.length) {
       setPaymentChoice("card");
@@ -2194,6 +2209,31 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
       </div>
       <p className="text-muted-foreground text-sm mb-4">Check everything looks right before submitting.</p>
 
+      {/* In-stock banner — shown when any basket item has customer stock available */}
+      {stockAvail.some(s => s.available > 0) && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 flex gap-3">
+          <Boxes className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="text-sm text-emerald-800">
+            <p className="font-semibold mb-1">Some items are already in your store</p>
+            <ul className="space-y-0.5 text-[13px]">
+              {basket.map((item, idx) => {
+                const avail = stockAvail[idx];
+                if (!avail || avail.available === 0) return null;
+                return (
+                  <li key={idx}>
+                    <span className="font-medium">{avail.available} × {item.productName}</span>
+                    {item.colour ? ` · ${item.colour}` : ""}
+                    {item.size ? ` · ${item.size}` : ""}
+                    {avail.location ? <span className="text-emerald-600 ml-1">({avail.location})</span> : ""}
+                    {" — will be picked from stock"}
+                  </li>
+                );
+              }).filter(Boolean)}
+            </ul>
+          </div>
+        </div>
+      )}
+
       {/* Per-employee rolling 12-month spend strip */}
       {employeeSpendMap && (() => {
         const empIds = [...new Set(
@@ -2266,6 +2306,12 @@ function ReviewStep({ basket, setBasket, onSubmit, submitting, portalRole, onAdd
                         <div>{item.productName}</div>
                         {item.sku && (
                           <div className="text-[11px] text-muted-foreground font-mono mt-0.5">{item.sku}</div>
+                        )}
+                        {stockAvail[idx]?.available > 0 && (
+                          <div className="mt-1 inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            <Boxes className="w-2.5 h-2.5" />
+                            {stockAvail[idx].available} in stock
+                          </div>
                         )}
                         {item.finishName && (
                           <div className="mt-1 space-y-0.5">

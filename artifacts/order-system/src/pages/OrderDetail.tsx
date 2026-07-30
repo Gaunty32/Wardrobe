@@ -490,6 +490,19 @@ export default function OrderDetail() {
   const [wardrobeBulkModes, setWardrobeBulkModes] = useState<Record<number, boolean>>({});
   const [wardrobeBulkQtys, setWardrobeBulkQtys] = useState<Record<number, Record<string, number>>>({});
 
+  // ── Wardrobe bulk price-break prompt ──────────────────────────────────────
+  type WardrobePBSuggestion = {
+    wiId: number; productName: string; colour: string | null;
+    totalQty: number; tierQty: number; currentPrice: number; breakPrice: number;
+  };
+  type WardrobePBDialog = {
+    suggestions: WardrobePBSuggestion[];
+    lines: Array<{ wi: any; size: string | null; qty: number }>;
+    recipientCtx: { isPersonRecipient: boolean; recipientName: string; recipientEmployeeId: number | null };
+    applySet: Set<number>;
+  };
+  const [wardrobePBDialog, setWardrobePBDialog] = useState<WardrobePBDialog | null>(null);
+
   const [isSendToProductionOpen, setIsSendToProductionOpen] = useState(false);
   const [productionNotes, setProductionNotes] = useState("");
 
@@ -1438,6 +1451,46 @@ export default function OrderDetail() {
     }
   };
 
+  // ── Post wardrobe lines (shared by direct-add and price-break dialog confirm) ──
+  const doPostWardrobeLines = async (
+    lines: Array<{ wi: any; size: string | null; qty: number }>,
+    recipientCtx: { isPersonRecipient: boolean; recipientName: string; recipientEmployeeId: number | null },
+    priceOverrides: Map<number, number>,
+  ) => {
+    setIsAddingMulti(true);
+    try {
+      await Promise.all(lines.map(({ wi, size, qty }) => {
+        const basePrice = wi.special_price != null
+          ? parseFloat(String(wi.special_price))
+          : parseFloat(String(wi.unit_price ?? "0"));
+        const effectivePrice = priceOverrides.has(wi.id) ? priceOverrides.get(wi.id)! : basePrice;
+        return apiFetch(`/orders/${orderId}/items`, {
+          method: "POST",
+          body: JSON.stringify({
+            productId: wi.product_id,
+            productName: wi.product_name ?? wi.name,
+            colour: wi.colour ?? null,
+            size,
+            finishId: wi.finish_id ?? null,
+            finishName: wi.finish_name ?? null,
+            recipientType: recipientCtx.isPersonRecipient ? "person" : "stock",
+            recipientName: recipientCtx.isPersonRecipient ? recipientCtx.recipientName : null,
+            recipientEmployeeId: recipientCtx.recipientEmployeeId,
+            quantity: qty,
+            unitPrice: effectivePrice,
+          }),
+        });
+      }));
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      toast({ title: "Items Added", description: `${lines.length} line${lines.length !== 1 ? "s" : ""} added to order.` });
+      resetDialog();
+    } catch (err: any) {
+      toast({ title: "Error adding items", description: err.message, variant: "destructive" });
+    } finally {
+      setIsAddingMulti(false);
+    }
+  };
+
   // Add ALL currently configured wardrobe items in one shot (used by the bottom "Add to Order" button).
   // Accepts an optional `forRecipient` to support the save-and-add flow where the recipient is
   // freshly created and React state hasn't updated yet.
@@ -1458,8 +1511,7 @@ export default function OrderDetail() {
       ? [(effectiveRecipient as CustomerEmployee).firstName, (effectiveRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
       : "";
     const recipientEmployeeId = isPersonRecipient ? (effectiveRecipient as CustomerEmployee).id : null;
-
-    console.log("[wardrobeAddAll] recipient:", effectiveRecipient, "items:", wiItems.length, "bulkModes:", wardrobeBulkModes, "bulkQtys:", wardrobeBulkQtys);
+    const recipientCtx = { isPersonRecipient, recipientName, recipientEmployeeId };
 
     type AddLine = { wi: any; size: string | null; qty: number };
     const lines: AddLine[] = [];
@@ -1471,8 +1523,6 @@ export default function OrderDetail() {
       const byColour = (wardrobeData as any).sizesMap?.[String(wi.product_id)];
       const sizeOpts: string[] = byColour ? [...new Set(Object.values(byColour).flat() as string[])] : [];
       const oneSize = sizeOpts.length === 0;
-
-      console.log(`[wardrobeAddAll] item id=${id} product_id=${wi.product_id} isBulk=${isBulk} sizeOpts=`, sizeOpts, "qtys=", wardrobeBulkQtys[id]);
 
       if (isBulk) {
         const qtys = wardrobeBulkQtys[id] ?? {};
@@ -1492,44 +1542,60 @@ export default function OrderDetail() {
       }
     }
 
-    console.log("[wardrobeAddAll] lines to add:", lines);
-
     if (lines.length === 0) {
       toast({ title: "Nothing to add", description: "Select a size or enter quantities first.", variant: "destructive" });
       return;
     }
 
-    setIsAddingMulti(true);
-    try {
-      await Promise.all(lines.map(({ wi, size, qty }) => {
-        const effectivePrice = wi.special_price != null
-          ? parseFloat(String(wi.special_price))
-          : parseFloat(String(wi.unit_price ?? "0"));
-        return apiFetch(`/orders/${orderId}/items`, {
-          method: "POST",
-          body: JSON.stringify({
-            productId: wi.product_id,
-            productName: wi.product_name ?? wi.name,
-            colour: wi.colour ?? null,
-            size,
-            finishId: wi.finish_id ?? null,
-            finishName: wi.finish_name ?? null,
-            recipientType: isPersonRecipient ? "person" : "stock",
-            recipientName: isPersonRecipient ? recipientName : null,
-            recipientEmployeeId,
-            quantity: qty,
-            unitPrice: effectivePrice,
-          }),
-        });
-      }));
-      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-      toast({ title: "Items Added", description: `${lines.length} line${lines.length !== 1 ? "s" : ""} added to order.` });
-      resetDialog();
-    } catch (err: any) {
-      toast({ title: "Error adding items", description: err.message, variant: "destructive" });
-    } finally {
-      setIsAddingMulti(false);
+    // ── Check for quantity-discount price breaks ───────────────────────────
+    // Aggregate total qty per wardrobe item id, then find the best qualifying tier.
+    const qtyByWiId = new Map<number, number>();
+    for (const { wi, qty } of lines) qtyByWiId.set(wi.id, (qtyByWiId.get(wi.id) ?? 0) + qty);
+
+    const suggestions: WardrobePBSuggestion[] = [];
+    const seenWiIds = new Set<number>();
+    for (const { wi } of lines) {
+      if (seenWiIds.has(wi.id)) continue;
+      seenWiIds.add(wi.id);
+      const breaks: { qty: number; price: number }[] | null = wi.price_breaks
+        ? (Array.isArray(wi.price_breaks) ? wi.price_breaks : JSON.parse(String(wi.price_breaks)))
+        : null;
+      if (!breaks || breaks.length === 0) continue;
+      const totalQty = qtyByWiId.get(wi.id) ?? 0;
+      const currentPrice = wi.special_price != null
+        ? parseFloat(String(wi.special_price))
+        : parseFloat(String(wi.unit_price ?? "0"));
+      // Best qualifying tier: highest qty threshold that totalQty meets, with a lower price
+      const qualifying = breaks
+        .map(pb => ({ qty: Number(pb.qty), price: parseFloat(String(pb.price)) }))
+        .filter(pb => !isNaN(pb.price) && pb.qty <= totalQty && pb.price < currentPrice)
+        .sort((a, b) => b.qty - a.qty);
+      if (qualifying.length === 0) continue;
+      const best = qualifying[0];
+      suggestions.push({
+        wiId: wi.id,
+        productName: wi.product_name ?? wi.name ?? "Item",
+        colour: wi.colour ?? null,
+        totalQty,
+        tierQty: best.qty,
+        currentPrice,
+        breakPrice: best.price,
+      });
     }
+
+    if (suggestions.length > 0) {
+      // Show the price-break dialog; posting happens after user confirms
+      setWardrobePBDialog({
+        suggestions,
+        lines,
+        recipientCtx,
+        applySet: new Set(suggestions.map(s => s.wiId)), // all checked by default
+      });
+      return;
+    }
+
+    // No qualifying breaks — post directly
+    await doPostWardrobeLines(lines, recipientCtx, new Map());
   };
 
   const handleWardrobeSelect = (fi: CustomerFinishedItem) => {
@@ -4148,14 +4214,18 @@ export default function OrderDetail() {
                                             </div>
                                           );
                                         }
+                                        {/* Columns chosen to avoid orphaned rows:
+                                            1-4 → exact count; 5-6 → 3 cols; 7-8 → 4 cols; 9-10 → 5 cols */}
+                                        const n = sizeOpts.length;
+                                        const cols = n <= 4 ? n : n <= 6 ? 3 : n <= 8 ? 4 : 5;
                                         return (
-                                          <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${Math.min(sizeOpts.length, 4)}, 1fr)` }}>
+                                          <div className="grid gap-x-1 gap-y-1.5" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
                                             {sizeOpts.map(sz => (
                                               <div key={sz} className="flex flex-col items-center gap-0.5">
-                                                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{abbreviateSizeLabel(sz)}</span>
+                                                <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wide leading-none">{abbreviateSizeLabel(sz)}</span>
                                                 <input type="number" min={0} value={qtys[sz] || ""} placeholder="0"
                                                   onChange={e => { const v = parseInt(e.target.value, 10); setWardrobeBulkQtys(q => ({ ...q, [id]: { ...(q[id] ?? {}), [sz]: isNaN(v) || v < 0 ? 0 : v } })); }}
-                                                  className="w-full h-8 text-center text-sm font-semibold rounded-md border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                                  className="w-full h-7 text-center text-xs font-semibold rounded border border-input bg-transparent outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                                 />
                                               </div>
                                             ))}
@@ -5045,6 +5115,93 @@ export default function OrderDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* ── Wardrobe bulk price-break prompt ──────────────────────────────── */}
+      <Dialog open={!!wardrobePBDialog} onOpenChange={open => { if (!open) setWardrobePBDialog(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BadgePercent className="w-5 h-5 text-green-600" />
+              Quantity discounts available
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground pt-1">
+              The quantities you've ordered qualify for special pricing. Select the discounts you'd like to apply.
+            </p>
+          </DialogHeader>
+          {wardrobePBDialog && (
+            <div className="space-y-2 py-1 max-h-72 overflow-y-auto pr-1">
+              {wardrobePBDialog.suggestions.map(s => {
+                const checked = wardrobePBDialog.applySet.has(s.wiId);
+                const saving = (s.currentPrice - s.breakPrice) * s.totalQty;
+                return (
+                  <button
+                    key={s.wiId}
+                    type="button"
+                    onClick={() => setWardrobePBDialog(prev => {
+                      if (!prev) return prev;
+                      const next = new Set(prev.applySet);
+                      if (next.has(s.wiId)) next.delete(s.wiId); else next.add(s.wiId);
+                      return { ...prev, applySet: next };
+                    })}
+                    className={`w-full text-left rounded-lg border p-3 transition-colors ${checked ? "border-green-500 bg-green-50/60 dark:bg-green-950/30" : "border-border bg-muted/30"}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 w-4 h-4 rounded flex items-center justify-center border shrink-0 ${checked ? "bg-green-600 border-green-600" : "border-muted-foreground/40"}`}>
+                        {checked && <svg viewBox="0 0 10 8" className="w-2.5 h-2.5 text-white fill-current"><path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold leading-tight truncate">{s.productName}{s.colour ? ` · ${s.colour}` : ""}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{s.totalQty} items ordered — qualifies for {s.tierQty}+ price tier</p>
+                        <div className="flex items-center gap-3 mt-1.5">
+                          <span className="text-sm line-through text-muted-foreground">£{s.currentPrice.toFixed(2)}</span>
+                          <span className="text-base font-bold text-green-600">£{s.breakPrice.toFixed(2)}</span>
+                          <span className="text-[11px] text-green-700 font-medium ml-auto">saves £{saving.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                if (!wardrobePBDialog) return;
+                const { lines, recipientCtx } = wardrobePBDialog;
+                setWardrobePBDialog(null);
+                doPostWardrobeLines(lines, recipientCtx, new Map());
+              }}
+            >
+              Keep original prices
+            </Button>
+            <Button
+              className="flex-1 bg-green-600 hover:bg-green-700"
+              disabled={isAddingMulti || (wardrobePBDialog?.applySet.size ?? 0) === 0}
+              onClick={() => {
+                if (!wardrobePBDialog) return;
+                const { lines, recipientCtx, applySet, suggestions } = wardrobePBDialog;
+                const overrides = new Map<number, number>(
+                  suggestions
+                    .filter(s => applySet.has(s.wiId))
+                    .map(s => [s.wiId, s.breakPrice])
+                );
+                setWardrobePBDialog(null);
+                doPostWardrobeLines(lines, recipientCtx, overrides);
+              }}
+            >
+              {isAddingMulti
+                ? <><Loader2 className="w-4 h-4 animate-spin mr-1.5" />Adding…</>
+                : wardrobePBDialog?.applySet.size === wardrobePBDialog?.suggestions.length
+                  ? "Apply all discounts & add"
+                  : `Apply ${wardrobePBDialog?.applySet.size ?? 0} discount${(wardrobePBDialog?.applySet.size ?? 0) !== 1 ? "s" : ""} & add`
+              }
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Price-break apply dialog ───────────────────────────────────────── */}
       <Dialog open={!!priceBreakPrompt} onOpenChange={open => { if (!open) setPriceBreakPrompt(null); }}>
         <DialogContent className="sm:max-w-md">

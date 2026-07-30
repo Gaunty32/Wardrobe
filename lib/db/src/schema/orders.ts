@@ -89,6 +89,10 @@ export const orderItemsTable = pgTable("order_items", {
   purchasingQueuedAt: timestamp("purchasing_queued_at", { withTimezone: true }),
   /** Set when this item is dispatched; null = not yet shipped. Used for part-shipment tracking. */
   dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+  /** Units deducted from SBS warehouse stock during portal order confirmation.
+   *  Populated by the confirm route; used by unconfirm to restore exactly what was taken.
+   *  NULL for items fulfilled entirely from customer_finished_items (stock_status='allocated'). */
+  sbsStockAllocatedQty: integer("sbs_stock_allocated_qty"),
 });
 
 export const purchaseOrdersTable = pgTable("purchase_orders", {
