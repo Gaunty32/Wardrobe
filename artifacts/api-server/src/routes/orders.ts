@@ -10,11 +10,10 @@ import {
   customerProcessesTable, customerFinishProcessesTable, processStockTable,
   productVariantsTable,
 } from "@workspace/db";
-import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured } from "../services/email";
+import { buildAcknowledgementEmail, generateOrderAcknowledgementPdf, sendEmail, isEmailConfigured, fetchLogoBuffer, fetchLogoDataUrl } from "../services/email";
 import { fireWorkflow } from "../services/workflow-engine.js";
 import { buildInviteEmail } from "./portal.js";
 import { SBS_LOGO_DATA_URL } from "../assets/logo-data.js";
-import { ObjectStorageService } from "../lib/objectStorage";
 import { logOrderAction, getActor } from "../services/orderLog";
 import { getUncachableStripeClient } from "../services/stripeClient.js";
 import {
@@ -44,35 +43,6 @@ const CreateOrderBodyFixed = z.object({
 });
 
 const router: IRouter = Router();
-const _objectStorageService = new ObjectStorageService();
-
-// Read a customer logo from wherever it's stored — handles relative object storage
-// paths like /api/storage/objects/... as well as absolute http(s) URLs.
-async function readLogoForSending(logoUrl: string): Promise<{ buffer: Buffer; contentType: string } | null> {
-  if (!logoUrl) return null;
-  try {
-    // Relative object-storage path: read directly from GCS without an HTTP round-trip
-    if (logoUrl.startsWith("/api/storage/objects/")) {
-      const objectPath = logoUrl.replace("/api/storage", ""); // /objects/uploads/<uuid>.ext
-      const file = await _objectStorageService.getObjectEntityFile(objectPath);
-      const [metadata] = await file.getMetadata();
-      const contentType = (metadata.contentType as string | undefined)?.trim() || "image/png";
-      const chunks: Buffer[] = [];
-      await new Promise<void>((resolve, reject) => {
-        file.createReadStream()
-          .on("data", (c: Buffer) => chunks.push(c))
-          .on("end", resolve)
-          .on("error", reject);
-      });
-      return { buffer: Buffer.concat(chunks), contentType };
-    }
-    // Absolute URL fallback
-    const resp = await fetch(logoUrl, { signal: AbortSignal.timeout(5000) });
-    if (!resp.ok) return null;
-    const ct = resp.headers.get("content-type") ?? "image/png";
-    return { buffer: Buffer.from(await resp.arrayBuffer()), contentType: ct };
-  } catch { return null; }
-}
 
 async function generateOrderNumber(): Promise<string> {
   const rows = await db.execute(sql`
@@ -1643,11 +1613,10 @@ router.post("/orders/:id/send-acknowledgement", async (req, res): Promise<void> 
 
   // Read customer logo directly from storage (URL is a relative object-storage path, not a public URL)
   if (customerLogoUrl) {
-    const logoResult = await readLogoForSending(customerLogoUrl);
-    if (logoResult) {
-      customerLogoBuffer = logoResult.buffer;
-      customerLogoDataUrl = `data:${logoResult.contentType};base64,${logoResult.buffer.toString("base64")}`;
-    }
+    [customerLogoBuffer, customerLogoDataUrl] = await Promise.all([
+      fetchLogoBuffer(customerLogoUrl),
+      fetchLogoDataUrl(customerLogoUrl),
+    ]);
   }
 
   // Resolve delivery address if linked
@@ -1926,8 +1895,7 @@ router.get("/orders/:id/acknowledgement-pdf", async (req, res): Promise<void> =>
     customerPostcode = customer?.postcode ?? null;
     customerZeroVat = customer?.zeroVat ?? false;
     if (customer?.logoUrl) {
-      const logoResult = await readLogoForSending(customer.logoUrl);
-      if (logoResult) customerLogoBuffer = logoResult.buffer;
+      customerLogoBuffer = await fetchLogoBuffer(customer.logoUrl);
     }
   }
 
@@ -3210,10 +3178,7 @@ router.get("/orders/:id/delivery-note", async (req, res): Promise<void> => {
     const [cust] = await db.select({ logoUrl: customersTable.logoUrl, address: customersTable.address, city: customersTable.city, postcode: customersTable.postcode, contactFirstName: customersTable.contactFirstName, contactLastName: customersTable.contactLastName, phone: customersTable.phone })
       .from(customersTable).where(eq(customersTable.id, order.customerId));
     if (cust?.logoUrl) {
-      try {
-        const logo = await readLogoForSending(cust.logoUrl);
-        if (logo) customerLogoDataUrl = `data:${logo.contentType};base64,${logo.buffer.toString("base64")}`;
-      } catch {}
+      customerLogoDataUrl = await fetchLogoDataUrl(cust.logoUrl).catch(() => null);
     }
     customerPostalAddress = cust?.address ?? null;
     customerPostalCity = cust?.city ?? null;
