@@ -685,7 +685,7 @@ export async function generateOrderAcknowledgementPdf(order: AckOrderData): Prom
           ? (item.isBundleHeader
               ? `__BDL_HDR__:${item.bundleRef}`
               : `__BDL_CMP__:${item.bundleRef}:${item.productName}||${item.finishName ?? ""}`)
-          : `${item.productName}||${item.finishName ?? ""}||${item.recipientName ?? ""}`;
+          : `${item.productName}||${item.finishName ?? ""}||${item.recipientName ?? ""}||${item.unitPrice}`;
         if (!rGroups.has(gk)) {
           rGroupKeys.push(gk);
           rGroups.set(gk, { productName: item.productName, sku: item.sku ?? null, finishName: item.finishName ?? null, recipientName: item.recipientName ?? null, unitPrice: item.unitPrice, colours: [], sizes: [], qty: new Map(), lineTotal: 0, vatRate: item.vatRate ?? 0.20, bundleRef: item.bundleRef ?? null, isBundleHeader: item.isBundleHeader ?? false });
