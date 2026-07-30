@@ -1440,19 +1440,18 @@ export default function OrderDetail() {
       return;
     }
     if (effectiveRecipient === null) return;
-    const wardrobeRecipient = effectiveRecipient; // shadow for the rest of this function
     const wiItems = (wardrobeData.items ?? []).filter((wi: any) =>
-      wardrobeRecipient === "stock" ||
+      effectiveRecipient === "stock" ||
       wi.effective_role_id === null ||
-      wi.effective_role_id === (wardrobeRecipient as CustomerEmployee).roleId
+      wi.effective_role_id === (effectiveRecipient as CustomerEmployee).roleId
     );
-    const isPersonRecipient = wardrobeRecipient !== "stock";
+    const isPersonRecipient = effectiveRecipient !== "stock";
     const recipientName = isPersonRecipient
-      ? [(wardrobeRecipient as CustomerEmployee).firstName, (wardrobeRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
+      ? [(effectiveRecipient as CustomerEmployee).firstName, (effectiveRecipient as CustomerEmployee).lastName].filter(Boolean).join(" ")
       : "";
-    const recipientEmployeeId = isPersonRecipient ? (wardrobeRecipient as CustomerEmployee).id : null;
+    const recipientEmployeeId = isPersonRecipient ? (effectiveRecipient as CustomerEmployee).id : null;
 
-    console.log("[wardrobeAddAll] recipient:", wardrobeRecipient, "items:", wiItems.length, "bulkModes:", wardrobeBulkModes, "bulkQtys:", wardrobeBulkQtys);
+    console.log("[wardrobeAddAll] recipient:", effectiveRecipient, "items:", wiItems.length, "bulkModes:", wardrobeBulkModes, "bulkQtys:", wardrobeBulkQtys);
 
     type AddLine = { wi: any; size: string | null; qty: number };
     const lines: AddLine[] = [];
