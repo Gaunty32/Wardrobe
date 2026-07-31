@@ -304,6 +304,22 @@ export async function runStartupMigrations(): Promise<void> {
     ALTER TABLE customer_portal_users ADD COLUMN IF NOT EXISTS linked_employee_id integer REFERENCES customer_employees(id) ON DELETE SET NULL;
   `);
 
+  // Seed the Google review URL from the known Maps CID if not already set
+  const existingReviewUri = await db.execute(sql`SELECT value FROM settings WHERE key = 'gbp_new_review_uri'`);
+  const hasRealUri = (existingReviewUri.rows[0] as any)?.value?.includes("lrd=");
+  if (!hasRealUri) {
+    await db.execute(sql`
+      INSERT INTO settings (key, value, updated_at)
+      VALUES ('gbp_new_review_uri',
+        'https://www.google.com/maps/place/Select+Uniforms+-+Showroom/@53.8328195,-1.7171273,17z/data=!4m6!3m5!1s0x48795f52e0bbd22d:0xda5a1a52eba2b012!8m2!3d53.8328195!4d-1.7171273!16s%2Fg%2F1tgnr5by#lrd=0x48795f52e0bbd22d:0xda5a1a52eba2b012,1',
+        NOW())
+      ON CONFLICT (key) DO UPDATE SET
+        value = EXCLUDED.value,
+        updated_at = NOW()
+    `);
+    console.log("[startup] GBP review URL seeded from Maps CID");
+  }
+
   console.log("[startup] Migrations complete");
 
   // ── Repair Bespoke Ties variants ────────────────────────────────────────────

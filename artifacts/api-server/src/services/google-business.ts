@@ -118,7 +118,18 @@ function parseGbpError(status: number, errText: string, context: string): Error 
   return new Error(`${context} error ${status}: ${errText}`);
 }
 
+// ── Shared in-memory cache for location list (5-min TTL) ─────────────────────
+// Prevents multiple concurrent callers (reviews, settings page, social posts)
+// from each hitting the low-quota Account Management API independently.
+let _locationsCache: { locations: { name: string; title: string }[]; at: number } | null = null;
+const LOCATIONS_TTL = 5 * 60_000;
+
 export async function listGbpLocations(accessToken: string): Promise<{ name: string; title: string }[]> {
+  const now = Date.now();
+  if (_locationsCache && now - _locationsCache.at < LOCATIONS_TTL) {
+    return _locationsCache.locations;
+  }
+
   const accRes = await fetch(`${GBP_ACCOUNT_API}/accounts`, { headers: { Authorization: `Bearer ${accessToken}` } });
   if (!accRes.ok) {
     throw parseGbpError(accRes.status, await accRes.text(), "GBP accounts API");
@@ -139,7 +150,14 @@ export async function listGbpLocations(accessToken: string): Promise<{ name: str
       locations.push({ name: loc.name, title: loc.title ?? loc.name });
     }
   }
+
+  _locationsCache = { locations, at: now };
   return locations;
+}
+
+/** Invalidate the in-process locations cache (call after saving a new location). */
+export function invalidateLocationsCache(): void {
+  _locationsCache = null;
 }
 
 

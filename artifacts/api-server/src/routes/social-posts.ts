@@ -6,7 +6,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import {
   generateGbpAuthUrl, handleGbpCallback, getGbpAccessToken,
   getGbpStatus, getGbpDiagnostics, listGbpLocations, publishGbpPost, disconnectGbp,
-  autoGbpRedirectUri,
+  autoGbpRedirectUri, invalidateLocationsCache,
 } from "../services/google-business.js";
 import {
   autoLinkedInRedirectUri, generateLinkedInAuthUrl, handleLinkedInCallback,
@@ -656,6 +656,14 @@ router.post("/gbp/location", async (req, res): Promise<void> => {
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   await setSetting("gbp_location_name", parsed.data.name);
   await setSetting("gbp_location_title", parsed.data.title);
+  // Also cache the account name if the location name is a full path
+  if (parsed.data.name.includes("/locations/")) {
+    const accountName = parsed.data.name.split("/locations/")[0];
+    await setSetting("gbp_account_name", accountName);
+  }
+  // Clear backoff and invalidate locations cache so next review refresh uses the new location
+  await setSetting("gbp_location_resolve_retry_after", "0");
+  invalidateLocationsCache();
   res.json({ ok: true });
 });
 
