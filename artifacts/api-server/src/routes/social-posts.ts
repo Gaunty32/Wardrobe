@@ -195,16 +195,16 @@ router.get("/linkedin/oauth/callback", async (req, res): Promise<void> => {
   const { code, state, error, error_description } = req.query as Record<string, string>;
   if (error) {
     const msg = error_description ?? error;
-    res.redirect(`/settings?li=error&msg=${encodeURIComponent(msg)}`);
+    res.redirect(`/order-system/settings?li=error&msg=${encodeURIComponent(msg)}`);
     return;
   }
-  if (!code || !state) { res.redirect("/settings?li=error&msg=Missing+code"); return; }
+  if (!code || !state) { res.redirect("/order-system/settings?li=error&msg=Missing+code"); return; }
   try {
     const redirectUri = autoLinkedInRedirectUri(req);
     await handleLinkedInCallback(code, state, redirectUri);
-    res.redirect("/settings?li=connected");
+    res.redirect("/order-system/settings?li=connected");
   } catch (err) {
-    res.redirect(`/settings?li=error&msg=${encodeURIComponent(err instanceof Error ? err.message : "Unknown error")}`);
+    res.redirect(`/order-system/settings?li=error&msg=${encodeURIComponent(err instanceof Error ? err.message : "Unknown error")}`);
   }
 });
 
@@ -550,14 +550,14 @@ router.get("/gbp/connect", async (req, res): Promise<void> => {
 
 router.get("/gbp/callback", async (req, res): Promise<void> => {
   const { code, error } = req.query as Record<string, string>;
-  if (error) { res.redirect(`/settings?gbp=error&msg=${encodeURIComponent(error)}`); return; }
-  if (!code) { res.redirect("/settings?gbp=error&msg=Missing+code"); return; }
+  if (error) { res.redirect(`/order-system/settings?gbp=error&msg=${encodeURIComponent(error)}`); return; }
+  if (!code) { res.redirect("/order-system/settings?gbp=error&msg=Missing+code"); return; }
   try {
     const redirectUri = autoGbpRedirectUri(req);
     await handleGbpCallback(code, redirectUri);
-    res.redirect("/settings?gbp=connected");
+    res.redirect("/order-system/settings?gbp=connected");
   } catch (err) {
-    res.redirect(`/settings?gbp=error&msg=${encodeURIComponent(err instanceof Error ? err.message : "Unknown error")}`);
+    res.redirect(`/order-system/settings?gbp=error&msg=${encodeURIComponent(err instanceof Error ? err.message : "Unknown error")}`);
   }
 });
 
