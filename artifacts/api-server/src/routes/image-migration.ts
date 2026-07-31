@@ -278,14 +278,16 @@ router.post("/image-migration/download-from-wp", async (req: Request, res: Respo
         const [exists] = await file.exists();
         if (exists) { urlMap.set(wpUrl, newPublicUrl(filename)); skipped++; return; }
 
-        // Build the fetch URL — use direct IP to bypass DNS if supplied
+        // Build the fetch URL — use direct IP + http:// to bypass DNS & cert issues
         let fetchUrl = wpUrl;
         const fetchHeaders: Record<string, string> = {};
         if (wpDirectIp) {
           try {
             const parsed = new URL(wpUrl);
-            fetchHeaders["Host"] = parsed.hostname;
+            fetchHeaders["Host"] = parsed.hostname;   // tell WP which vhost we want
+            parsed.protocol = "http:";                // avoid SSL cert mismatch on raw IP
             parsed.hostname = wpDirectIp;
+            parsed.port = "80";
             fetchUrl = parsed.toString();
           } catch { /* keep original URL */ }
         }

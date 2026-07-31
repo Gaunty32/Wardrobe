@@ -81,28 +81,57 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   // If the stored location name is a bare number (manually entered from the URL),
   // resolve it to the full accounts/.../locations/... resource name via the API.
+  // We use a cached account name to avoid hitting the account-management API quota
+  // on every refresh — only fall back to listing accounts when we have no cached name.
   if (!locationName.includes("/")) {
-    try {
-      console.log(`[reviews] Location name "${locationName}" is not a full resource path — resolving via API…`);
-      const locations = await listGbpLocations(token);
-      const match = locations.find(l => l.name.endsWith(`/${locationName}`)) ?? (locations.length === 1 ? locations[0] : null);
-      if (match) {
-        locationName = match.name;
-        await setSetting("gbp_location_name", locationName);
-        console.log(`[reviews] Resolved GBP location to: ${locationName}`);
-      } else if (locations.length > 0) {
-        // Use first location as fallback and log a warning
-        locationName = locations[0].name;
-        await setSetting("gbp_location_name", locationName);
-        await setSetting("gbp_location_title", locations[0].title);
-        console.warn(`[reviews] Could not match location ID — falling back to first location: ${locationName}`);
-      } else {
-        console.warn("[reviews] No GBP locations found during resolution — skipping Google reviews.");
+    // Check if we already know the account name (cached from a previous resolution)
+    const cachedAccountName = await getSetting("gbp_account_name");
+    if (cachedAccountName) {
+      locationName = `${cachedAccountName}/locations/${locationName}`;
+      await setSetting("gbp_location_name", locationName);
+      console.log(`[reviews] Constructed GBP location path from cached account: ${locationName}`);
+    } else {
+      // Before calling the accounts API, honour any quota backoff
+      const retryAfter = parseInt(await getSetting("gbp_location_resolve_retry_after") ?? "0");
+      if (Date.now() < retryAfter) {
+        console.warn(`[reviews] GBP location resolution on backoff until ${new Date(retryAfter).toISOString()} — skipping Google reviews.`);
         return [];
       }
-    } catch (err) {
-      console.warn("[reviews] Could not resolve GBP location name (API may be rate-limited) — skipping Google reviews:", (err as Error).message);
-      return [];
+
+      try {
+        console.log(`[reviews] Location name "${locationName}" is not a full resource path — resolving via API…`);
+        const locations = await listGbpLocations(token);
+        const match = locations.find(l => l.name.endsWith(`/${locationName}`)) ?? (locations.length === 1 ? locations[0] : null);
+        if (match) {
+          locationName = match.name;
+          // Cache the account portion so we never need to list accounts again
+          const accountName = locationName.split("/locations/")[0];
+          await Promise.all([
+            setSetting("gbp_location_name", locationName),
+            setSetting("gbp_account_name", accountName),
+          ]);
+          console.log(`[reviews] Resolved GBP location to: ${locationName} (account cached)`);
+        } else if (locations.length > 0) {
+          locationName = locations[0].name;
+          const accountName = locationName.split("/locations/")[0];
+          await Promise.all([
+            setSetting("gbp_location_name", locationName),
+            setSetting("gbp_location_title", locations[0].title),
+            setSetting("gbp_account_name", accountName),
+          ]);
+          console.warn(`[reviews] Could not match location ID — falling back to first location: ${locationName}`);
+        } else {
+          console.warn("[reviews] No GBP locations found during resolution — skipping Google reviews.");
+          return [];
+        }
+      } catch (err) {
+        const msg = (err as Error).message ?? "";
+        const isQuota = msg.includes("Quota") || msg.includes("quota") || msg.includes("RESOURCE_EXHAUSTED");
+        // Back off for 30 minutes on quota errors to avoid hammering the API
+        await setSetting("gbp_location_resolve_retry_after", String(Date.now() + (isQuota ? 30 : 5) * 60_000));
+        console.warn("[reviews] Could not resolve GBP location name — skipping Google reviews:", msg);
+        return [];
+      }
     }
   }
 
