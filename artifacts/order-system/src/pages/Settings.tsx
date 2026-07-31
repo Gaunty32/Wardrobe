@@ -5,6 +5,7 @@ import {
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
   UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy,
   Shield, ShieldCheck, UserCog, ChevronRight, Plus, Palette, MessageSquarePlus, GitBranch,
+  Download,
 } from "lucide-react";
 import { staffAuthHeader, getStaffJwtPayload } from "@/lib/staff-auth";
 import { Button } from "@/components/ui/button";
@@ -1525,6 +1526,25 @@ export default function Settings() {
     }
   }, [toast]);
 
+  // Image migration from WordPress
+  const [imageMigrating, setImageMigrating] = useState(false);
+  type ImageMigrationResult = { totalUrls: number; downloaded: number; skipped: number; dbUpdated: number; totalErrors: number; message: string };
+  const [imageMigrationResult, setImageMigrationResult] = useState<ImageMigrationResult | null>(null);
+
+  const handleImageMigration = useCallback(async () => {
+    setImageMigrating(true);
+    setImageMigrationResult(null);
+    try {
+      const result = await apiFetch<ImageMigrationResult>("/image-migration/download-from-wp", { method: "POST" });
+      setImageMigrationResult(result);
+      toast({ title: "Image migration complete", description: result.message });
+    } catch (err: any) {
+      toast({ title: "Image migration failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImageMigrating(false);
+    }
+  }, [toast]);
+
   // Re-engagement email settings
   const [checkinEnabled, setCheckinEnabled] = useState(false);
   const [checkinLastRun, setCheckinLastRun] = useState<string | null>(null);
@@ -2266,6 +2286,49 @@ export default function Settings() {
                           {bundleSyncResult.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
                           {bundleSyncResult.errors.length > 5 && <li>…and {bundleSyncResult.errors.length - 5} more</li>}
                         </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Migrate Images from WordPress ────────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <Download className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-semibold text-base">Migrate Images from WordPress</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Downloads every product, variant, and category image from WordPress and saves them
+                      to SBS's own storage — so the shop never depends on the old WooCommerce server again.
+                      Safe to re-run; already-migrated images are skipped. This may take a few minutes.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    variant="outline"
+                    onClick={handleImageMigration}
+                    disabled={imageMigrating}
+                    className="gap-2"
+                  >
+                    {imageMigrating
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Downloading images…</>
+                      : <><Download className="w-4 h-4" />Migrate Images from WordPress</>}
+                  </Button>
+                  {imageMigrating && (
+                    <span className="text-sm text-muted-foreground">This will take a few minutes — don't close the page.</span>
+                  )}
+                </div>
+                {imageMigrationResult && !imageMigrating && (
+                  <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-sm ${imageMigrationResult.totalErrors > 0 ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-green-50 border-green-200 text-green-800"}`}>
+                    {imageMigrationResult.totalErrors > 0
+                      ? <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      : <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                    <div>
+                      <p className="font-medium">{imageMigrationResult.downloaded} downloaded · {imageMigrationResult.skipped} already cached · {imageMigrationResult.dbUpdated} DB rows updated</p>
+                      {imageMigrationResult.totalErrors > 0 && (
+                        <p className="text-xs mt-0.5">{imageMigrationResult.totalErrors} image{imageMigrationResult.totalErrors !== 1 ? "s" : ""} could not be downloaded (they may have already been deleted from WordPress).</p>
                       )}
                     </div>
                   </div>
