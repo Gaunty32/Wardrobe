@@ -42,6 +42,7 @@ import shopAuthRouter from "./shop-auth";
 import reviewsRouter from "./reviews";
 import categoryManagementRouter from "./category-management";
 import workflowsRouter from "./workflows";
+import imageMigrationRouter from "./image-migration";
 
 const router: IRouter = Router();
 
@@ -88,5 +89,6 @@ router.use(shopAuthRouter);
 router.use(reviewsRouter);
 router.use(categoryManagementRouter);
 router.use(workflowsRouter);
+router.use(imageMigrationRouter);
 
 export default router;
