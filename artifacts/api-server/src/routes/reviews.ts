@@ -108,7 +108,7 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   try {
     const res = await fetch(
-      `https://mybusiness.googleapis.com/v4/${locationName}/reviews?pageSize=50`,
+      `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews?pageSize=50`,
       { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
     );
     if (!res.ok) {
