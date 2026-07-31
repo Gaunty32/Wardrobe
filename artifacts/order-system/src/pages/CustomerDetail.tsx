@@ -21,7 +21,7 @@ import { useSizeOrder } from "@/hooks/useSizeOrder";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet, Warehouse, Mail } from "lucide-react";
+import { ArrowLeft, Plus, Edit2, Trash2, Loader2, X, Building2, MapPin, Users, History, Layers, Shirt, UserCheck, Boxes, PoundSterling, ShoppingBag, Check, ChevronsUpDown, Palette, Ruler, Sparkles, TrendingUp, AlertCircle, ImageIcon, Upload, Eye, Globe, Copy, CheckCircle2, LogIn, UserX, CreditCard, Phone, Package, Tag, ChevronDown, ChevronRight, Smartphone, BookOpen, Camera, FileText, FileSpreadsheet, Warehouse, Mail, Search } from "lucide-react";
 import { ImportSpreadsheetDialog } from "@/components/ImportSpreadsheetDialog";
 import { FileDropZone, FileDropZoneContent } from "@/components/FileDropZone";
 
@@ -2492,6 +2492,7 @@ interface WardrobeGroup {
   finishId: number | null;
   finishName: string | null;
   colour: string | null;
+  colours: string[];
   sleeve: string | null;
   unitPrice: number;
   productUnitPrice: number | null;
@@ -3286,6 +3287,7 @@ function WardrobeTab({ customerId }: { customerId: number }) {
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [freeTextColours, setFreeTextColours] = useState<string[]>([""]);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [wardrobeSearch, setWardrobeSearch] = useState("");
   const [saving, setSaving] = useState(false);
 
   const blank = { name: "", roleId: null as number | null, productId: 0, finishId: null as number | null, colour: "", sleeve: "", size: "", unitPrice: "", specialPrice: "", stockQuantity: "0", notes: "" };
@@ -3543,24 +3545,34 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     }
   };
 
+  const wardrobeQ = wardrobeSearch.toLowerCase().trim();
   const filteredItems = items?.filter(item => {
-    if (roleFilter === "all") return true;
-    if (roleFilter === null) return item.roleId === null;
-    return item.roleId === roleFilter;
+    const roleMatch = roleFilter === "all" ? true : roleFilter === null ? item.roleId === null : item.roleId === roleFilter;
+    if (!roleMatch) return false;
+    if (!wardrobeQ) return true;
+    return (
+      item.name?.toLowerCase().includes(wardrobeQ) ||
+      item.productName?.toLowerCase().includes(wardrobeQ) ||
+      item.finishName?.toLowerCase().includes(wardrobeQ) ||
+      item.colour?.toLowerCase().includes(wardrobeQ) ||
+      item.productSku?.toLowerCase().includes(wardrobeQ)
+    );
   }) ?? [];
 
   const groups = useMemo<WardrobeGroup[]>(() => {
     const map = new Map<string, WardrobeGroup>();
     for (const item of filteredItems) {
-      const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? "", item.colour ?? ""].join("|");
+      // Key excludes colour so same item in multiple colours collapses to one row
+      const key = [item.name, item.roleId ?? "", item.productId, item.finishId ?? ""].join("|");
       if (!map.has(key)) {
-        map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, sleeve: item.sleeve ?? null, unitPrice: item.unitPrice, productUnitPrice: item.productUnitPrice ?? null, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
+        map.set(key, { key, items: [], name: item.name, roleId: item.roleId, roleName: item.roleName, productId: item.productId, productName: item.productName, productSku: item.productSku, finishId: item.finishId, finishName: item.finishName, colour: item.colour, colours: [], sleeve: item.sleeve ?? null, unitPrice: item.unitPrice, productUnitPrice: item.productUnitPrice ?? null, specialPrice: item.specialPrice, totalStock: 0, sizes: [] });
       }
       const g = map.get(key)!;
       if (g.sleeve !== (item.sleeve ?? null)) g.sleeve = null;
       g.items.push(item);
       g.totalStock += (item.stockQuantity ?? 0);
       g.sizes.push(item.size);
+      if (item.colour && !g.colours.includes(item.colour)) g.colours.push(item.colour);
     }
     return [...map.values()];
   }, [filteredItems]);
@@ -3659,21 +3671,30 @@ function WardrobeTab({ customerId }: { customerId: number }) {
               : <span className="text-muted-foreground/50">Plain</span>}
           </TableCell>
           <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-            {isMulti ? (
-              <div className="space-y-0.5">
-                {[group.colour, group.sleeve].filter(Boolean).map((v, i) => (
-                  <span key={i} className="text-foreground/70">{v} </span>
-                ))}
+            <div className="space-y-0.5">
+              {group.colours.length > 1 ? (
                 <div className="flex flex-wrap gap-0.5">
-                  {sortSizesWithOrder(group.sizes.filter(Boolean), sizeOrder).map((sz, i) => (
+                  {group.colours.map((c, i) => (
+                    <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 border border-blue-200 font-medium text-blue-700">{c}</span>
+                  ))}
+                </div>
+              ) : (
+                [group.colour, group.sleeve].filter(Boolean).map((v, i) => (
+                  <span key={i} className="text-foreground/70">{v} </span>
+                ))
+              )}
+              {isMulti && (
+                <div className="flex flex-wrap gap-0.5">
+                  {sortSizesWithOrder([...new Set(group.sizes.filter(Boolean) as string[])], sizeOrder).map((sz, i) => (
                     <span key={i} className="px-1.5 py-0.5 rounded text-[10px] bg-muted border border-border font-medium text-foreground/60">{sz}</span>
                   ))}
                   {group.sizes.some(s => !s) && <span className="px-1.5 py-0.5 rounded text-[10px] bg-muted border border-border font-medium text-foreground/60">—</span>}
                 </div>
-              </div>
-            ) : (
-              [group.colour, group.sleeve, group.items[0].size].filter(Boolean).join(" / ") || "—"
-            )}
+              )}
+              {!isMulti && (
+                <span>{group.items[0].size || ""}</span>
+              )}
+            </div>
           </TableCell>
           <TableCell className="text-right tabular-nums text-sm text-muted-foreground">{formatCurrency(group.productUnitPrice ?? group.unitPrice)}</TableCell>
           <TableCell className="text-right tabular-nums">
@@ -3690,8 +3711,8 @@ function WardrobeTab({ customerId }: { customerId: number }) {
           </TableCell>
           <TableCell className="text-right">
             <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-              {!isMulti && <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted" title="Duplicate" onClick={() => dup.mutate(group.items[0])} disabled={dup.isPending}><Copy className="w-3 h-3" /></Button>}
-              <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" title={isMulti ? "Edit group" : "Edit"} onClick={() => isMulti ? openGroupEdit(group) : openEdit(group.items[0])}><Edit2 className="w-3 h-3" /></Button>
+              {!isMulti && group.colours.length <= 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-muted" title="Duplicate" onClick={() => dup.mutate(group.items[0])} disabled={dup.isPending}><Copy className="w-3 h-3" /></Button>}
+              {group.colours.length <= 1 && <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-600 hover:bg-blue-50" title={isMulti ? "Edit group" : "Edit"} onClick={() => isMulti ? openGroupEdit(group) : openEdit(group.items[0])}><Edit2 className="w-3 h-3" /></Button>}
               <Button variant="ghost" size="icon" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={deleteGroup}><Trash2 className="w-3 h-3" /></Button>
             </div>
           </TableCell>
@@ -3700,6 +3721,9 @@ function WardrobeTab({ customerId }: { customerId: number }) {
           <TableRow key={item.id} className="bg-muted/20 hover:bg-muted/30 group">
             <TableCell colSpan={3} className="pl-8 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
+                {group.colours.length > 1 && item.colour && (
+                  <span className="px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200 font-medium text-blue-700">{item.colour}</span>
+                )}
                 <span className="px-1.5 py-0.5 rounded bg-muted border border-border font-medium text-foreground/60">{item.size || "—"}</span>
               </span>
             </TableCell>
@@ -3724,7 +3748,18 @@ function WardrobeTab({ customerId }: { customerId: number }) {
     <>
       <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
         <p className="text-sm text-muted-foreground">Pre-configured items — company-wide or specific to a role.</p>
-        <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Item</Button>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={wardrobeSearch}
+              onChange={e => setWardrobeSearch(e.target.value)}
+              placeholder="Search items…"
+              className="pl-8 h-8 text-sm w-48"
+            />
+          </div>
+          <Button size="sm" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add Item</Button>
+        </div>
       </div>
 
       {(roles as any[])?.length > 0 && (
