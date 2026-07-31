@@ -79,6 +79,33 @@ async function fetchGoogleReviews(): Promise<Review[]> {
 
   if (!locationName) return [];
 
+  // If the stored location name is a bare number (manually entered from the URL),
+  // resolve it to the full accounts/.../locations/... resource name via the API.
+  if (!locationName.includes("/")) {
+    try {
+      console.log(`[reviews] Location name "${locationName}" is not a full resource path — resolving via API…`);
+      const locations = await listGbpLocations(token);
+      const match = locations.find(l => l.name.endsWith(`/${locationName}`)) ?? (locations.length === 1 ? locations[0] : null);
+      if (match) {
+        locationName = match.name;
+        await setSetting("gbp_location_name", locationName);
+        console.log(`[reviews] Resolved GBP location to: ${locationName}`);
+      } else if (locations.length > 0) {
+        // Use first location as fallback and log a warning
+        locationName = locations[0].name;
+        await setSetting("gbp_location_name", locationName);
+        await setSetting("gbp_location_title", locations[0].title);
+        console.warn(`[reviews] Could not match location ID — falling back to first location: ${locationName}`);
+      } else {
+        console.warn("[reviews] No GBP locations found during resolution — skipping Google reviews.");
+        return [];
+      }
+    } catch (err) {
+      console.warn("[reviews] Could not resolve GBP location name (API may be rate-limited) — skipping Google reviews:", (err as Error).message);
+      return [];
+    }
+  }
+
   try {
     const res = await fetch(
       `https://mybusiness.googleapis.com/v4/${locationName}/reviews?pageSize=50`,

@@ -1224,12 +1224,20 @@ router.get("/shop/image-proxy", async (req: Request, res: Response): Promise<voi
       res.send(cached.buf);
       return;
     }
-    const upstream = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const upstream = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: { "Referer": "https://www.selectuniforms.co.uk/" },
+    });
     if (!upstream.ok) {
       res.status(502).json({ error: `Upstream returned ${upstream.status}` });
       return;
     }
-    const contentType = upstream.headers.get("content-type") ?? "image/jpeg";
+    const contentType = upstream.headers.get("content-type") ?? "";
+    // Reject hotlink-block HTML pages masquerading as images
+    if (!contentType.startsWith("image/") && !contentType.startsWith("application/octet-stream")) {
+      res.status(404).json({ error: "Upstream did not return an image" });
+      return;
+    }
     const buf = Buffer.from(await upstream.arrayBuffer());
     _imageProxyCache.set(url, { buf, contentType, ts: Date.now() });
     res.set("Content-Type", contentType);
