@@ -1103,14 +1103,25 @@ router.post("/shop/orders", async (req, res): Promise<void> => {
 // Proxies the WordPress REST API so the shop avoids CORS issues and can cache.
 // Strategy: _embed alone doesn't populate _embedded unless _embedded is listed
 // in _fields too. We try that first; fall back to a separate batch media fetch.
+let _blogPostsCache: { posts: any[]; ts: number } | null = null;
+const BLOG_POSTS_TTL_MS = 60 * 60 * 1000; // 1 hour server-side cache
+
 router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
+  // Serve from server-side cache if fresh
+  if (_blogPostsCache && Date.now() - _blogPostsCache.ts < BLOG_POSTS_TTL_MS) {
+    res.setHeader("Cache-Control", "public, max-age=900");
+    res.json(_blogPostsCache.posts);
+    return;
+  }
   try {
     // Include _embedded in _fields so WordPress doesn't strip it out
     const postsUrl =
       "https://www.selectuniforms.co.uk/wp-json/wp/v2/posts" +
       "?per_page=9&_fields=id,title,excerpt,date,link,slug,featured_media,_embedded&_embed=wp:featuredmedia";
-    const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(10000) });
+    const wpRes = await fetch(postsUrl, { signal: AbortSignal.timeout(4000) });
     if (!wpRes.ok) {
+      // Return stale cache rather than an error if we have one
+      if (_blogPostsCache) { res.setHeader("Cache-Control", "public, max-age=60"); res.json(_blogPostsCache.posts); return; }
       res.status(wpRes.status).json({ error: "WordPress API error" });
       return;
     }
@@ -1178,11 +1189,18 @@ router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
       "[shop/blog-posts] response"
     );
 
-    // Cache for 15 minutes
+    // Save to server-side cache and respond
+    _blogPostsCache = { posts: cleaned, ts: Date.now() };
     res.setHeader("Cache-Control", "public, max-age=900");
     res.json(cleaned);
   } catch (e: any) {
     logger.warn({ err: e }, "[shop/blog-posts] Failed to fetch WordPress posts");
+    // Serve stale cache rather than erroring, if available
+    if (_blogPostsCache) {
+      res.setHeader("Cache-Control", "public, max-age=60");
+      res.json(_blogPostsCache.posts);
+      return;
+    }
     res.status(502).json({ error: "Could not fetch blog posts" });
   }
 });

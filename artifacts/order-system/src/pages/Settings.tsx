@@ -1596,7 +1596,7 @@ export default function Settings() {
     queryFn: () => apiFetch("/gbp/redirect-uri"),
   });
 
-  const { data: gbpStatus, refetch: refetchGbpStatus } = useQuery<{ connected: boolean; locationName?: string; locationTitle?: string }>({
+  const { data: gbpStatus, refetch: refetchGbpStatus } = useQuery<{ connected: boolean; locationName?: string; locationTitle?: string; hasClientId?: boolean; hasClientSecret?: boolean; hasRefreshToken?: boolean }>({
     queryKey: ["gbp-status"],
     queryFn: () => apiFetch("/gbp/status"),
     refetchInterval: 60_000,
@@ -2989,6 +2989,19 @@ export default function Settings() {
                       Connected to Google Business Profile
                       {gbpStatus.locationTitle && <span className="ml-1 font-medium">— {gbpStatus.locationTitle}</span>}
                     </div>
+
+                    {/* Warn if client credentials are missing — token exists but API calls will fail */}
+                    {gbpStatus.connected && (gbpStatus.hasClientId === false || gbpStatus.hasClientSecret === false) && (
+                      <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span>
+                          <strong>Credentials missing.</strong>{" "}
+                          {!gbpStatus.hasClientId && !gbpStatus.hasClientSecret ? "Google Client ID and Secret are" : !gbpStatus.hasClientId ? "Google Client ID is" : "Google Client Secret is"} not saved.
+                          Enter them in the fields below and click Save, then reconnect.
+                        </span>
+                      </div>
+                    )}
+
                     {!gbpStatus.locationName && (
                       <div className="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
                         <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -3022,7 +3035,32 @@ export default function Settings() {
                       }
                       const isRateLimit = parsedMsg.includes("RATE_LIMIT_EXCEEDED") || parsedMsg.includes("429") || parsedMsg.includes("Quota exceeded") || parsedMsg.includes("rateLimitExceeded");
                       let content: React.ReactNode;
-                      if (parsedMsg.startsWith("SERVICE_DISABLED:")) {
+                      if (parsedMsg.startsWith("MISSING_CREDENTIALS:")) {
+                        content = (
+                          <div className="space-y-1">
+                            <p><strong>Client ID or Secret not saved.</strong> Enter your Google OAuth credentials in the fields below and click Save, then click Disconnect and reconnect.</p>
+                          </div>
+                        );
+                      } else if (parsedMsg.startsWith("INVALID_CLIENT:")) {
+                        content = (
+                          <div className="space-y-1">
+                            <p><strong>Client credentials are wrong.</strong> Check your Google Client ID and Secret in the fields below match your Google Cloud Console OAuth client exactly.</p>
+                          </div>
+                        );
+                      } else if (parsedMsg.startsWith("TOKEN_EXPIRED:")) {
+                        content = (
+                          <div className="space-y-1">
+                            <p><strong>Authorisation has expired or been revoked.</strong> Click Disconnect below, then click Connect Google to reauthorise.</p>
+                          </div>
+                        );
+                      } else if (parsedMsg.startsWith("TOKEN_REFRESH_FAILED:")) {
+                        content = (
+                          <div className="space-y-1">
+                            <p><strong>Could not refresh access token:</strong> {parsedMsg.replace("TOKEN_REFRESH_FAILED:", "").trim()}</p>
+                            <p className="text-xs text-red-500">Try disconnecting and reconnecting to Google.</p>
+                          </div>
+                        );
+                      } else if (parsedMsg.startsWith("SERVICE_DISABLED:")) {
                         const activationUrl = parsedMsg.replace("SERVICE_DISABLED:", "");
                         content = (
                           <div className="space-y-1">

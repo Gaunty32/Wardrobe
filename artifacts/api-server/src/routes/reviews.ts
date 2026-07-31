@@ -41,7 +41,13 @@ const GBP_STAR: Record<string, number> = {
 // ── Google Business Profile reviews ───────────────────────────────────────────
 
 async function fetchGoogleReviews(): Promise<Review[]> {
-  const token = await getGbpAccessToken();
+  let token: string | null;
+  try {
+    token = await getGbpAccessToken();
+  } catch (err) {
+    console.warn("[reviews] Cannot get GBP access token:", (err as Error).message);
+    return [];
+  }
   if (!token) return [];
 
   let locationName = await getSetting("gbp_location_name");

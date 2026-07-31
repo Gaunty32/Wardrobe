@@ -63,7 +63,8 @@ export async function getGbpAccessToken(): Promise<string | null> {
   const clientId = await getSetting("gbp_client_id");
   const clientSecret = await getSetting("gbp_client_secret");
   const refreshToken = await getSetting("gbp_refresh_token");
-  if (!clientId || !clientSecret || !refreshToken) return null;
+  if (!refreshToken) return null;
+  if (!clientId || !clientSecret) throw new Error("MISSING_CREDENTIALS: Google Client ID and Secret must be entered in Settings → Social Media → Google Business Profile before the connection can be used.");
 
   const expiresAt = parseInt(await getSetting("gbp_token_expires_at") ?? "0");
   if (Date.now() < expiresAt - 60_000) {
@@ -76,10 +77,24 @@ export async function getGbpAccessToken(): Promise<string | null> {
     body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: "refresh_token" }),
   });
   const data: any = await res.json();
-  if (!res.ok) return null;
+  if (!res.ok) {
+    const reason = data?.error_description ?? data?.error ?? `HTTP ${res.status}`;
+    if (data?.error === "invalid_client") throw new Error("INVALID_CLIENT: The Google Client ID or Secret is incorrect. Re-enter your credentials in Settings → Social Media and reconnect.");
+    if (data?.error === "invalid_grant") throw new Error("TOKEN_EXPIRED: The Google authorisation has expired or been revoked. Click Disconnect and reconnect to Google.");
+    throw new Error(`TOKEN_REFRESH_FAILED: ${reason}`);
+  }
   await setSetting("gbp_access_token", data.access_token);
   await setSetting("gbp_token_expires_at", String(Date.now() + (data.expires_in ?? 3600) * 1000));
   return data.access_token;
+}
+
+/** Structured diagnostic info for the settings UI */
+export async function getGbpDiagnostics(): Promise<{ hasClientId: boolean; hasClientSecret: boolean; hasRefreshToken: boolean }> {
+  return {
+    hasClientId: !!(await getSetting("gbp_client_id")),
+    hasClientSecret: !!(await getSetting("gbp_client_secret")),
+    hasRefreshToken: !!(await getSetting("gbp_refresh_token")),
+  };
 }
 
 export async function getGbpStatus(): Promise<{ connected: boolean; locationName?: string; locationTitle?: string }> {

@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import Anthropic from "@anthropic-ai/sdk";
 import {
   generateGbpAuthUrl, handleGbpCallback, getGbpAccessToken,
-  getGbpStatus, listGbpLocations, publishGbpPost, disconnectGbp,
+  getGbpStatus, getGbpDiagnostics, listGbpLocations, publishGbpPost, disconnectGbp,
   autoGbpRedirectUri,
 } from "../services/google-business.js";
 import {
@@ -521,7 +521,9 @@ async function pickRescheduleDate(productId?: number, season?: string | null): P
 // ── Google Business Profile OAuth routes ──────────────────────────────────────
 
 router.get("/gbp/status", async (_req, res): Promise<void> => {
-  res.json(await getGbpStatus());
+  const status = await getGbpStatus();
+  const diag = await getGbpDiagnostics();
+  res.json({ ...status, ...diag });
 });
 
 router.post("/gbp/credentials", async (req, res): Promise<void> => {
@@ -612,7 +614,13 @@ router.get("/gbp/locations", async (req, res): Promise<void> => {
   }
 
   try {
-    const token = await getGbpAccessToken();
+    let token: string | null;
+    try {
+      token = await getGbpAccessToken();
+    } catch (tokenErr: any) {
+      res.status(401).json({ error: tokenErr.message ?? "Could not obtain access token" });
+      return;
+    }
     if (!token) { res.status(401).json({ error: "Not connected to Google Business Profile" }); return; }
 
     const locations = await listGbpLocations(token);
@@ -676,10 +684,11 @@ router.post("/social-posts/test", async (req, res): Promise<void> => {
   }
 
   // Google Business Profile
-  const token = await getGbpAccessToken();
-  if (!token) {
+  let token: string | null;
+  try { token = await getGbpAccessToken(); } catch (e: any) { token = null; results.google = { ok: false, skipped: true, error: e.message }; }
+  if (token === null && !results.google) {
     results.google = { ok: false, skipped: true, error: "Not connected — connect Google Business Profile in Settings → Social Media" };
-  } else if (!gbpStatus.locationName) {
+  } else if (token && !gbpStatus.locationName) {
     results.google = { ok: false, skipped: true, error: "Connected but no business location selected — open Settings → Social Media and choose a location from the dropdown, then click Save Location" };
   } else {
     results.google = await publishGbpPost(gbpStatus.locationName, token, testMessage, null);
@@ -1072,7 +1081,9 @@ export function startSocialPostScheduler(): void {
         }
 
         if (platforms.includes("google") && gbpStatus.locationName) {
-          const token = await getGbpAccessToken();
+          let gbpToken: string | null = null;
+          try { gbpToken = await getGbpAccessToken(); } catch (e: any) { console.warn(`[social] GBP token error: ${e.message}`); }
+          const token = gbpToken;
           if (token) {
             const googleMessage = post.google_content || post.facebook_content;
             const gbpResult = await publishGbpPost(gbpStatus.locationName, token, googleMessage, imageUrl);

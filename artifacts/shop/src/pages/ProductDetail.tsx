@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useSEO } from '@/hooks/useSEO';
 import { useWcProduct, useBrandingOptions } from '@/hooks/use-wc';
+import { proxyImageUrl } from '@/lib/imageProxy';
 import { Link, useParams } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
@@ -605,7 +606,7 @@ export default function ProductDetail() {
         <div className="w-full md:w-1/2">
           <div className="aspect-square bg-gray-50 mb-3 overflow-hidden relative rounded-2xl border border-gray-200 shadow-sm">
             {currentImage ? (
-              <img src={currentImage} alt={product.name} className="w-full h-full object-contain p-4" />
+              <img src={proxyImageUrl(currentImage) ?? ''} alt={product.name} className="w-full h-full object-contain p-4" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>
             )}
@@ -641,7 +642,7 @@ export default function ProductDetail() {
                     }`}
                     title={matchingColour ?? `Image ${idx + 1}`}
                   >
-                    <img src={img} alt={matchingColour ?? ''} className="w-full h-full object-contain p-1" />
+                    <img src={proxyImageUrl(img) ?? ''} alt={matchingColour ?? ''} className="w-full h-full object-contain p-1" />
                   </button>
                 );
               })}

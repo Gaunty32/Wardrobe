@@ -4,6 +4,7 @@ import { CategorySidebar } from '@/components/CategorySidebar';
 import { ProductCard } from '@/components/ProductCard';
 import { Link, useSearch } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
+import { proxyImageUrl } from '@/lib/imageProxy';
 
 const NAVY = "#1a2335";
 
@@ -20,7 +21,7 @@ function CategoryTile({ category }: { category: any }) {
         {/* Product image */}
         {category.image ? (
           <img
-            src={category.image}
+            src={proxyImageUrl(category.image) ?? ''}
             alt={category.name}
             className="absolute inset-0 w-full h-full object-contain transition-transform duration-700 ease-out"
             style={{ transform: hovered ? "scale(1.08)" : "scale(1)", padding: "8px" }}

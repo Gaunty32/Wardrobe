@@ -1,8 +1,9 @@
 import { Link } from 'wouter';
 import { Card, CardContent } from '@/components/ui/card';
+import { proxyImageUrl } from '@/lib/imageProxy';
 
 export function ProductCard({ product, priority = false }: { product: any; priority?: boolean }) {
-  const image = product.images?.[0] || product.image;
+  const image = proxyImageUrl(product.images?.[0] || product.image);
 
   return (
     <Link href={`/product/${product.slug || product.id}`} className="group block">
