@@ -37,7 +37,7 @@ import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { pdfToJpegBlob } from "@/lib/pdf-thumbnail";
-import { useGetCustomer, useListProducts, useCreateOrder } from "@workspace/api-client-react";
+import { useGetCustomer, useListProducts, useCreateOrder, getGetCustomerQueryKey } from "@workspace/api-client-react";
 import { useUpload } from "@workspace/object-storage-web";
 import { Link } from "wouter";
 
@@ -5012,7 +5012,7 @@ export default function CustomerDetail() {
     mutationFn: (data: typeof editInfoForm) =>
       apiFetch(`/customers/${customerId}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["customer", customerId] });
+      queryClient.invalidateQueries({ queryKey: getGetCustomerQueryKey(customerId) });
       setEditInfoOpen(false);
       toast({ title: "Customer details updated" });
     },
