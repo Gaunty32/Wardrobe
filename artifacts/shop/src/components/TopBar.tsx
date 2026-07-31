@@ -20,7 +20,7 @@ export function TopBar() {
         </div>
         <div className="flex items-center gap-4 text-[11px] font-semibold tracking-wider">
           <a href={settings?.portalUrl || '#'} className="hover:text-accent transition-colors">CORPORATE PORTAL</a>
-          <a href="https://www.selectuniforms.co.uk/embroidery-portal/" className="hover:text-accent transition-colors" target="_blank" rel="noreferrer">EMBROIDERY PORTAL</a>
+          <a href="https://production.selectbranding.co.uk" className="hover:text-accent transition-colors" target="_blank" rel="noreferrer">EMBROIDERY PORTAL</a>
         </div>
       </div>
     </div>

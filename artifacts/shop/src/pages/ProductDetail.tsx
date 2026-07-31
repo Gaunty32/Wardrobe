@@ -225,25 +225,32 @@ function GuidancePanel({ guidance }: { guidance: any }) {
             <span className="text-xs font-bold text-blue-800 uppercase tracking-widest">Staff Recommendations</span>
           </div>
           <div className="divide-y divide-blue-100">
-            {quotesArr.map((q, i) => (
-              <div key={i} className="flex items-start gap-4 px-4 py-4">
-                {/* Avatar */}
-                <div className="shrink-0 flex flex-col items-center text-center w-16">
-                  <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-primary/30 bg-primary/10 flex items-center justify-center mb-1.5">
-                    {q.imageUrl
-                      ? <img src={q.imageUrl} alt={q.name} className="w-full h-full object-cover object-top" />
-                      : <span className="text-xl font-bold text-primary">{(q.name || '?')[0].toUpperCase()}</span>
-                    }
+            {quotesArr.map((q, i) => {
+              const proxyUrl = q.imageUrl
+                ? `/api/shop/image-proxy?url=${encodeURIComponent(q.imageUrl)}`
+                : null;
+              return (
+                <div key={i} className="px-5 py-5">
+                  <div className="flex items-center gap-4 mb-3">
+                    {/* Avatar — large */}
+                    <div className="shrink-0 w-20 h-20 rounded-full overflow-hidden border-4 border-white shadow-md bg-primary/10 flex items-center justify-center">
+                      {proxyUrl
+                        ? <img src={proxyUrl} alt={q.name} className="w-full h-full object-cover object-top" loading="eager" />
+                        : <span className="text-3xl font-bold text-primary">{(q.name || '?')[0].toUpperCase()}</span>
+                      }
+                    </div>
+                    <div>
+                      {q.name && <p className="font-bold text-gray-900 text-base leading-tight">{q.name}</p>}
+                      {q.role && <p className="text-sm text-primary font-semibold mt-0.5">{q.role}</p>}
+                    </div>
                   </div>
-                  {q.name && <p className="text-[11px] font-bold text-gray-800 leading-tight">{q.name}</p>}
-                  {q.role && <p className="text-[10px] text-gray-500 leading-tight">{q.role}</p>}
+                  {/* Quote */}
+                  <blockquote className="text-sm text-gray-700 leading-relaxed italic border-l-4 border-primary/40 pl-4 py-0.5">
+                    "{q.quote}"
+                  </blockquote>
                 </div>
-                {/* Quote */}
-                <blockquote className="flex-1 text-sm text-gray-700 leading-relaxed italic border-l-4 border-primary/40 pl-3 py-1">
-                  "{q.quote}"
-                </blockquote>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

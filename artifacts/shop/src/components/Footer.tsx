@@ -14,7 +14,7 @@ export function Footer() {
           <Link href="/privacy" className="hover:text-primary transition-colors">PRIVACY</Link>
           <Link href="/cookie-policy" className="hover:text-primary transition-colors">COOKIE POLICY</Link>
           <a href={settings?.portalUrl || '#'} className="hover:text-primary transition-colors">CORPORATE PORTAL</a>
-          <a href="https://www.selectuniforms.co.uk/embroidery-portal/" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">EMBROIDERY PORTAL</a>
+          <a href="https://production.selectbranding.co.uk" target="_blank" rel="noreferrer" className="hover:text-primary transition-colors">EMBROIDERY PORTAL</a>
         </div>
         
         <div className="flex flex-col items-center md:items-end gap-2 text-xs text-gray-400">

@@ -6,7 +6,7 @@
 import { Router } from "express";
 import { db, settingsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { getGbpAccessToken } from "../services/google-business.js";
+import { getGbpAccessToken, listGbpLocations } from "../services/google-business.js";
 
 const router = Router();
 
@@ -42,8 +42,36 @@ const GBP_STAR: Record<string, number> = {
 
 async function fetchGoogleReviews(): Promise<Review[]> {
   const token = await getGbpAccessToken();
-  const locationName = await getSetting("gbp_location_name");
-  if (!token || !locationName) return [];
+  if (!token) return [];
+
+  let locationName = await getSetting("gbp_location_name");
+
+  // Auto-detect location when credentials are valid but location was never selected
+  if (!locationName) {
+    try {
+      const locations = await listGbpLocations(token);
+      if (locations.length === 1) {
+        locationName = locations[0].name;
+        await setSetting("gbp_location_name", locationName);
+        await setSetting("gbp_location_title", locations[0].title);
+        // Bust the reviews cache so the next call fetches fresh data including Google
+        memCache = null;
+        await setSetting("shop_reviews_cache_at", "0");
+        console.log(`[reviews] Auto-saved GBP location: ${locations[0].title} (${locationName})`);
+      } else if (locations.length > 1) {
+        console.warn(`[reviews] GBP has ${locations.length} locations — cannot auto-select. Go to Settings → Social Media to pick one.`);
+        return [];
+      } else {
+        console.warn("[reviews] GBP has no locations accessible via the API.");
+        return [];
+      }
+    } catch (err) {
+      console.warn("[reviews] Could not auto-detect GBP location:", err);
+      return [];
+    }
+  }
+
+  if (!locationName) return [];
 
   try {
     const res = await fetch(

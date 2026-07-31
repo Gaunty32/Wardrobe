@@ -1958,6 +1958,11 @@ export async function refreshProductIssues(): Promise<void> {
     )
   `);
 
+  // woo_id on bundles — used to match WooCommerce yith_bundle products to local bundle rows
+  await db.execute(sql`
+    ALTER TABLE bundles ADD COLUMN IF NOT EXISTS woo_id INTEGER
+  `);
+
   await db.execute(sql`
     ALTER TABLE order_items
       ADD COLUMN IF NOT EXISTS bundle_ref      TEXT,
@@ -3091,7 +3096,10 @@ export async function refreshProductIssues(): Promise<void> {
     SELECT value FROM settings WHERE key = 'shop_team_members'
   `);
   const existingTeam = (teamSetting.rows as any[])[0]?.value;
-  if (!existingTeam || existingTeam === '[]' || existingTeam === 'null') {
+  let parsedTeam: any[] = [];
+  try { parsedTeam = JSON.parse(existingTeam || '[]'); } catch { /* */ }
+  const teamMissingEmails = parsedTeam.length === 0 || parsedTeam.some((m: any) => !m.email);
+  if (!existingTeam || existingTeam === '[]' || existingTeam === 'null' || teamMissingEmails) {
     const defaultTeam = JSON.stringify([
       { name: "James",  role: "Sales Manager",           photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/JAMES.jpg",   email: "james@selectbranding.co.uk",  phone: "+441132552694" },
       { name: "Chris",  role: "Marketing Manager",        photoUrl: "https://www.selectuniforms.co.uk/wp-content/uploads/CHRIS.jpg",   email: "chris@selectbranding.co.uk",  phone: "+441132552694" },

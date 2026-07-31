@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Settings2, RefreshCw, CheckCircle, AlertTriangle, AlertCircle, Play,
-  Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart, Star, BookMarked,
+  Eye, EyeOff, Loader2, Wifi, WifiOff, ShoppingCart, Star, BookMarked, Package,
   Link2, Unlink2, Users, ExternalLink, BookOpen, Mail, Send, Lock, GripVertical, Ruler,
   UserPlus, Trash2, UserCheck, Zap, Phone, Printer, Truck, Share2, Globe, Copy,
   Shield, ShieldCheck, UserCog, ChevronRight, Plus, Palette, MessageSquarePlus, GitBranch,
@@ -1488,6 +1488,24 @@ export default function Settings() {
     }
   }, [toast]);
 
+  // ── Bundle sync state ─────────────────────────────────────────────────────
+  const [bundleSyncing, setBundleSyncing] = useState(false);
+  const [bundleSyncResult, setBundleSyncResult] = useState<{ created: number; updated: number; errors: string[] } | null>(null);
+
+  const handleBundleSync = useCallback(async () => {
+    setBundleSyncing(true);
+    setBundleSyncResult(null);
+    try {
+      const result = await apiFetch<{ created: number; updated: number; errors: string[] }>("/woo/sync/bundles", { method: "POST" });
+      setBundleSyncResult(result);
+      toast({ title: "Bundle sync complete", description: `${result.created} created, ${result.updated} updated.` });
+    } catch (err: any) {
+      toast({ title: "Bundle sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setBundleSyncing(false);
+    }
+  }, [toast]);
+
   // ── Customer import state ─────────────────────────────────────────────────
   const [customerImporting, setCustomerImporting] = useState(false);
   type CustomerImportResult = { created: number; skipped: number; errors: string[] };
@@ -2202,6 +2220,51 @@ export default function Settings() {
                         <ul className="mt-1 space-y-0.5 text-xs">
                           {guidanceErrors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
                           {guidanceErrors.length > 5 && <li>…and {guidanceErrors.length - 5} more</li>}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Sync Bundle Definitions ──────────────────────────────────── */}
+              <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <Package className="w-5 h-5 text-primary mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-semibold text-base">Sync Bundle Definitions</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Imports bundle product names, prices, and component lists from WooCommerce (YITH bundles)
+                      into your local Bundles catalogue. Existing bundles are updated; components are replaced.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Button
+                    variant="outline"
+                    onClick={handleBundleSync}
+                    disabled={bundleSyncing || !isConnected}
+                    className="gap-2"
+                  >
+                    {bundleSyncing
+                      ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing bundles…</>
+                      : <><Package className="w-4 h-4" />Sync Bundles from WooCommerce</>}
+                  </Button>
+                </div>
+                {bundleSyncResult && !bundleSyncing && (
+                  <div className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border text-sm ${bundleSyncResult.errors.length ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-green-50 border-green-200 text-green-800"}`}>
+                    {bundleSyncResult.errors.length
+                      ? <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      : <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+                    <div>
+                      <p className="font-medium">
+                        {bundleSyncResult.created} bundle{bundleSyncResult.created !== 1 ? "s" : ""} created
+                        · {bundleSyncResult.updated} updated
+                      </p>
+                      {bundleSyncResult.errors.length > 0 && (
+                        <ul className="mt-1 space-y-0.5 text-xs">
+                          {bundleSyncResult.errors.slice(0, 5).map((e, i) => <li key={i}>{e}</li>)}
+                          {bundleSyncResult.errors.length > 5 && <li>…and {bundleSyncResult.errors.length - 5} more</li>}
                         </ul>
                       )}
                     </div>

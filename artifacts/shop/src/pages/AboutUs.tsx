@@ -74,6 +74,53 @@ export default function AboutUs() {
         </h1>
       </section>
 
+      {/* ── Our Team ── */}
+      {teamMembers.length > 0 && (
+        <section className="py-16 bg-white">
+          <div className="container mx-auto px-4 max-w-6xl">
+            <h2 className="text-3xl font-bold text-center text-primary mb-2">Meet the Team</h2>
+            <p className="text-center text-gray-500 mb-12">The people behind Select Branding Solutions.</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-10">
+              {teamMembers.map((member, i) => (
+                <div key={i} className="text-center group">
+                  <div className="aspect-square bg-gray-100 mb-5 overflow-hidden rounded-full max-w-[200px] mx-auto border-4 border-gray-200 group-hover:border-primary transition-colors duration-300">
+                    {member.photoUrl ? (
+                      <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-extrabold text-4xl">
+                        {member.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                  <h3 className="font-bold text-gray-900 text-lg">{member.name}</h3>
+                  <p className="text-primary text-sm font-semibold mt-0.5 uppercase tracking-wide">{member.role}</p>
+                  <div className="flex flex-col items-center gap-1.5 mt-3">
+                    {member.email && (
+                      <a
+                        href={`mailto:${member.email}`}
+                        className="flex items-center gap-1.5 text-gray-500 hover:text-primary transition-colors text-sm"
+                      >
+                        <Mail className="w-3.5 h-3.5 shrink-0" />
+                        {member.email}
+                      </a>
+                    )}
+                    {member.phone && (
+                      <a
+                        href={`tel:${member.phone}`}
+                        className="flex items-center gap-1.5 text-gray-500 hover:text-primary transition-colors text-sm"
+                      >
+                        <Phone className="w-3.5 h-3.5 shrink-0" />
+                        {member.phone}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ── Intro paragraphs ── */}
       <section className="py-16 container mx-auto px-4 max-w-4xl text-gray-700 leading-relaxed text-lg space-y-6">
         <p>
@@ -185,56 +232,6 @@ export default function AboutUs() {
           </div>
         </div>
       </section>
-
-      {/* ── Our Team ── */}
-      {teamMembers.length > 0 && (
-        <section className="py-16 bg-gray-50 border-t border-gray-200">
-          <div className="container mx-auto px-4 max-w-5xl">
-            <h2 className="text-3xl font-bold text-center text-primary mb-12">Our Team</h2>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
-              {teamMembers.map((member, i) => (
-                <div key={i} className="text-center group">
-                  <div className="aspect-square bg-gray-200 mb-4 overflow-hidden rounded-full max-w-[120px] mx-auto border-4 border-transparent group-hover:border-primary transition-colors">
-                    {member.photoUrl ? (
-                      <img src={member.photoUrl} alt={member.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-primary/10 text-primary font-extrabold text-2xl">
-                        {member.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                  </div>
-                  <h3 className="font-bold text-gray-900 uppercase text-sm tracking-wide">{member.name}</h3>
-                  <p className="text-gray-500 text-xs font-semibold mt-0.5 uppercase tracking-wide">{member.role}</p>
-                  {(member.email || member.phone) && (
-                    <div className="flex items-center justify-center gap-3 mt-2">
-                      {member.email && (
-                        <a
-                          href={`mailto:${member.email}`}
-                          className="text-gray-400 hover:text-primary transition-colors"
-                          title={`Email ${member.name}`}
-                          aria-label={`Email ${member.name}`}
-                        >
-                          <Mail className="w-4 h-4" />
-                        </a>
-                      )}
-                      {member.phone && (
-                        <a
-                          href={`tel:${member.phone}`}
-                          className="text-gray-400 hover:text-primary transition-colors"
-                          title={`Call ${member.name}`}
-                          aria-label={`Call ${member.name}`}
-                        >
-                          <Phone className="w-4 h-4" />
-                        </a>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
 
       {/* ── Book a Discovery Call ── */}
       <section className="py-16 border-t border-gray-200">

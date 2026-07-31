@@ -607,4 +607,16 @@ router.post("/woo/customers/sync", async (req: Request, res: Response): Promise<
   res.json({ created, skipped, errors: errors.slice(0, 10) });
 });
 
+// ─── Sync bundle definitions from WooCommerce ────────────────────────────────
+// Fetches all yith_bundle products and upserts local bundles + bundle_components.
+router.post("/woo/sync/bundles", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    const { runBundleSync } = await import("../services/woo-sync.js");
+    const result = await runBundleSync();
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

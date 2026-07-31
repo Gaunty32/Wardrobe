@@ -1187,6 +1187,41 @@ router.get("/shop/blog-posts", async (_req: Request, res: Response) => {
   }
 });
 
+// ─── GET /shop/image-proxy ────────────────────────────────────────────────────
+// Fetches an external image (e.g. WordPress staff photo) and serves it with
+// a long cache TTL so the browser only hits the origin once per day.
+const _imageProxyCache = new Map<string, { buf: Buffer; contentType: string; ts: number }>();
+router.get("/shop/image-proxy", async (req: Request, res: Response): Promise<void> => {
+  const url = req.query.url as string;
+  if (!url || !/^https?:\/\//.test(url)) {
+    res.status(400).json({ error: "Missing or invalid url param" });
+    return;
+  }
+  try {
+    const cached = _imageProxyCache.get(url);
+    const TTL = 24 * 60 * 60 * 1000; // 24 h in-memory cache
+    if (cached && Date.now() - cached.ts < TTL) {
+      res.set("Content-Type", cached.contentType);
+      res.set("Cache-Control", "public, max-age=86400");
+      res.send(cached.buf);
+      return;
+    }
+    const upstream = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!upstream.ok) {
+      res.status(502).json({ error: `Upstream returned ${upstream.status}` });
+      return;
+    }
+    const contentType = upstream.headers.get("content-type") ?? "image/jpeg";
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    _imageProxyCache.set(url, { buf, contentType, ts: Date.now() });
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(buf);
+  } catch (err: any) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // ─── GET /shop/team-members ───────────────────────────────────────────────────
 router.get("/shop/team-members", async (_req: Request, res: Response) => {
   try {

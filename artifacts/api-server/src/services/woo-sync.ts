@@ -93,6 +93,99 @@ async function fetchBundleProducts(baseUrl: string, ck: string, cs: string): Pro
 }
 
 /**
+ * Sync YITH bundle products → local `bundles` + `bundle_components` tables.
+ * Matches bundles by woo_id; creates new rows on first sync, replaces components on re-sync.
+ */
+export async function syncBundleDefinitions(bundleProducts: WooProduct[]): Promise<{ created: number; updated: number; errors: string[] }> {
+  let created = 0; let updated = 0; const errors: string[] = [];
+
+  for (const p of bundleProducts) {
+    if (p.type !== "yith_bundle") continue;
+    try {
+      const bundleDataMeta = p.meta_data?.find(m => m.key === "_yith_wcpb_bundle_data");
+      const rawBundleData = bundleDataMeta?.value as Record<string, {
+        product_id?: string;
+        quantity?: string;
+        bp_min_qty?: string;
+        optional?: string;
+      }> | null;
+
+      if (!rawBundleData || typeof rawBundleData !== "object") continue;
+
+      const bundlePrice = parseFloat(
+        (p.on_sale && p.sale_price) ? p.sale_price : (p.price || p.regular_price || "0")
+      ) || 0;
+
+      // Upsert the bundle header by woo_id
+      const existing = await db.execute(sql`SELECT id FROM bundles WHERE woo_id = ${p.id}`);
+      let bundleId: number;
+      if ((existing.rows as any[]).length > 0) {
+        bundleId = (existing.rows as any[])[0].id;
+        await db.execute(sql`
+          UPDATE bundles
+          SET name = ${p.name}, sku = ${p.sku || null}, price = ${String(bundlePrice)},
+              description = ${stripHtml(p.short_description || p.description) || null}
+          WHERE id = ${bundleId}
+        `);
+        updated++;
+      } else {
+        const ins = await db.execute(sql`
+          INSERT INTO bundles (name, sku, description, price, woo_id, is_active)
+          VALUES (${p.name}, ${p.sku || null},
+                  ${stripHtml(p.short_description || p.description) || null},
+                  ${String(bundlePrice)}, ${p.id}, true)
+          RETURNING id
+        `);
+        bundleId = (ins.rows as any[])[0].id;
+        created++;
+      }
+
+      // Build component list from bundle data items
+      const components: { wooProductId: number; quantity: number }[] = [];
+      for (const item of Object.values(rawBundleData)) {
+        const wooProductId = item.product_id ? parseInt(item.product_id, 10) : null;
+        // Per-bundle quantity; fall back to bp_min_qty if quantity not set
+        const qty = item.quantity ? parseInt(item.quantity, 10)
+          : item.bp_min_qty ? parseInt(item.bp_min_qty, 10) : 1;
+        if (!wooProductId || isNaN(qty) || qty < 1) continue;
+        components.push({ wooProductId, quantity: qty });
+      }
+
+      if (components.length === 0) continue;
+
+      // Resolve local product IDs from WooCommerce product IDs
+      const wooIds = [...new Set(components.map(c => c.wooProductId))];
+      const productRows = await db.execute(sql`
+        SELECT id, name, woo_commerce_id FROM products
+        WHERE woo_commerce_id = ANY(${wooIds}::int[])
+      `);
+      const productByWooId = new Map<number, { id: number; name: string }>(
+        (productRows.rows as any[]).map(r => [r.woo_commerce_id, { id: r.id, name: r.name }])
+      );
+
+      // Replace components — delete WooCommerce-sourced ones (notes = '__wc_sync'), re-insert
+      await db.execute(sql`
+        DELETE FROM bundle_components
+        WHERE bundle_id = ${bundleId} AND (notes = '__wc_sync' OR notes IS NULL)
+      `);
+
+      for (const comp of components) {
+        const product = productByWooId.get(comp.wooProductId);
+        const productName = product?.name ?? `WC Product #${comp.wooProductId}`;
+        const productId = product?.id ?? null;
+        await db.execute(sql`
+          INSERT INTO bundle_components (bundle_id, product_id, product_name, quantity, notes)
+          VALUES (${bundleId}, ${productId}, ${productName}, ${comp.quantity}, '__wc_sync')
+        `);
+      }
+    } catch (err: any) {
+      errors.push(`Bundle woo_id=${p.id} (${p.name}): ${err.message}`);
+    }
+  }
+  return { created, updated, errors };
+}
+
+/**
  * Parse YITH bundle products and return price breaks to apply to their parent products.
  * A bundle like "24 x Baseball Cap @ £144 sale" → priceBreak { qty: 24, price: 6.00 }
  */
@@ -536,7 +629,7 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
       await reportProgress(index + 1, products.length);
     }
 
-    // Apply price breaks derived from YITH bundle products (fetched separately — small set)
+    // Apply price breaks AND sync bundle definitions from YITH bundle products
     const bundleProducts = await fetchBundleProducts(baseUrl, ck, cs);
     const bundlePriceBreaks = extractBundlePriceBreaks(bundleProducts);
     for (const [wooProductId, breaks] of bundlePriceBreaks) {
@@ -549,6 +642,10 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
         errors.push(`Price breaks for woo_id=${wooProductId}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+
+    // Sync bundle definitions (name, price, components) from WooCommerce into local bundles table
+    const bundleSyncResult = await syncBundleDefinitions(bundleProducts);
+    errors.push(...bundleSyncResult.errors);
 
     // Save sync start time so next incremental sync can use it as its cutoff
     await db.insert(settingsTable)
@@ -575,4 +672,16 @@ export async function runWooSync(options?: { full?: boolean }): Promise<{ create
 
 export async function runWooSyncFull(): Promise<ReturnType<typeof runWooSync>> {
   return runWooSync({ full: true });
+}
+
+/** Standalone bundle sync — fetches yith_bundle products from WooCommerce and upserts local bundle definitions. */
+export async function runBundleSync(): Promise<{ created: number; updated: number; errors: string[] }> {
+  const settings = await getSettings();
+  const baseUrl = settings["woo_base_url"] ?? "";
+  const ck      = settings["woo_consumer_key"] ?? "";
+  const cs      = settings["woo_consumer_secret"] ?? "";
+  if (!baseUrl || !ck || !cs) throw new Error("WooCommerce not configured");
+
+  const bundleProducts = await fetchBundleProducts(baseUrl, ck, cs);
+  return syncBundleDefinitions(bundleProducts);
 }
