@@ -211,6 +211,10 @@ router.post("/image-migration/download-from-wp", async (req: Request, res: Respo
   const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
   if (!bucketId) { res.status(500).json({ error: "DEFAULT_OBJECT_STORAGE_BUCKET_ID not set" }); return; }
 
+  // Optional: bypass DNS by fetching via the WP server's direct IP.
+  // Useful after the domain has been pointed away from the old WP host.
+  const wpDirectIp: string | undefined = req.body?.wpDirectIp?.trim() || undefined;
+
   // Collect all unique WP image URLs across products, variants, categories
   const [prodRows, varRows, catRows] = await Promise.all([
     db.execute(sql`SELECT id, image_url, gallery_images FROM products WHERE image_url LIKE '%wp-content%' OR (gallery_images::text LIKE '%wp-content%')`),
@@ -274,7 +278,19 @@ router.post("/image-migration/download-from-wp", async (req: Request, res: Respo
         const [exists] = await file.exists();
         if (exists) { urlMap.set(wpUrl, newPublicUrl(filename)); skipped++; return; }
 
-        const res2 = await fetch(wpUrl, { signal: AbortSignal.timeout(15000) });
+        // Build the fetch URL — use direct IP to bypass DNS if supplied
+        let fetchUrl = wpUrl;
+        const fetchHeaders: Record<string, string> = {};
+        if (wpDirectIp) {
+          try {
+            const parsed = new URL(wpUrl);
+            fetchHeaders["Host"] = parsed.hostname;
+            parsed.hostname = wpDirectIp;
+            fetchUrl = parsed.toString();
+          } catch { /* keep original URL */ }
+        }
+
+        const res2 = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
         if (!res2.ok) { errors.push(`${filename}: HTTP ${res2.status}`); return; }
         const ct = res2.headers.get("content-type") ?? "";
         if (!ct.startsWith("image/") && !ct.startsWith("application/octet-stream")) {

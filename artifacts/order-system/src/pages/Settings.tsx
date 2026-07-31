@@ -1528,6 +1528,7 @@ export default function Settings() {
 
   // Image migration from WordPress
   const [imageMigrating, setImageMigrating] = useState(false);
+  const [wpDirectIp, setWpDirectIp] = useState("213.165.231.127");
   type ImageMigrationResult = { totalUrls: number; downloaded: number; skipped: number; dbUpdated: number; totalErrors: number; message: string };
   const [imageMigrationResult, setImageMigrationResult] = useState<ImageMigrationResult | null>(null);
 
@@ -1535,7 +1536,11 @@ export default function Settings() {
     setImageMigrating(true);
     setImageMigrationResult(null);
     try {
-      const result = await apiFetch<ImageMigrationResult>("/image-migration/download-from-wp", { method: "POST" });
+      const result = await apiFetch<ImageMigrationResult>("/image-migration/download-from-wp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wpDirectIp: wpDirectIp.trim() || undefined }),
+      });
       setImageMigrationResult(result);
       toast({ title: "Image migration complete", description: result.message });
     } catch (err: any) {
@@ -1543,7 +1548,7 @@ export default function Settings() {
     } finally {
       setImageMigrating(false);
     }
-  }, [toast]);
+  }, [toast, wpDirectIp]);
 
   // Re-engagement email settings
   const [checkinEnabled, setCheckinEnabled] = useState(false);
@@ -2304,6 +2309,19 @@ export default function Settings() {
                       Safe to re-run; already-migrated images are skipped. This may take a few minutes.
                     </p>
                   </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">WordPress server IP</label>
+                  <input
+                    type="text"
+                    value={wpDirectIp}
+                    onChange={(e) => setWpDirectIp(e.target.value)}
+                    placeholder="e.g. 213.165.231.127"
+                    className="w-60 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Direct IP of the old WP server — bypasses DNS so images are fetched from the original host even after the domain was pointed to this site.
+                  </p>
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                   <Button
