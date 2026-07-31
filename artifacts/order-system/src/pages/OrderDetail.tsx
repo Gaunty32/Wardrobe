@@ -369,6 +369,7 @@ export default function OrderDetail() {
   });
 
   // Must be declared BEFORE the bundleDetails useQuery that references addBundleId
+  const [isAddBundleOpen, setIsAddBundleOpen] = useState(false);
   const [addBundleId, setAddBundleId] = useState<number | null>(null);
   const [addBundleWearerName, setAddBundleWearerName] = useState("");
   const [compOverrides, setCompOverrides] = useState<Record<number, { colour: string; size: string; finishId?: number | null; finishName?: string | null }>>({});
@@ -416,8 +417,9 @@ export default function OrderDetail() {
         body: JSON.stringify({ quantity: 1, wearerName: wearerName || null, componentOverrides }),
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["order", orderId] });
-      // Keep dialog open — reset wearer + overrides so the next person can be added immediately
+      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
+      setIsAddBundleOpen(false);
+      setAddBundleId(null);
       setAddBundleWearerName("");
       setCompOverrides({});
       toast({ title: "Bundle added", description: addBundleWearerName ? `Added for ${addBundleWearerName}` : "Bundle added to order" });
@@ -459,7 +461,6 @@ export default function OrderDetail() {
   const { data: customerInvoiceAddresses } = useCustomerInvoiceAddresses(customerId);
 
   const [isAddItemOpen, setIsAddItemOpen] = useState(false);
-  const [isAddBundleOpen, setIsAddBundleOpen] = useState(false);
   const [productSearchOpen, setProductSearchOpen] = useState(false);
   const [serviceProductSearchOpen, setServiceProductSearchOpen] = useState(false);
   const [dialogTab, setDialogTab] = useState<"wardrobe" | "custom" | "service">("wardrobe");
