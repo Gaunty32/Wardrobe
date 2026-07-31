@@ -171,7 +171,8 @@ export default function Home() {
                 <img
                   src={cat.url}
                   alt={cat.label}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105"
+                  style={{ padding: '8px' }}
                 />
                 <div className="absolute inset-0 bg-black/30 group-hover:bg-black/50 transition-colors" />
                 <div className="absolute inset-0 flex items-center justify-center">

@@ -13,7 +13,7 @@ function CategoryTile({ category }: { category: any }) {
     <Link href={`/category/${category.slug}`}>
       <div
         className="relative overflow-hidden cursor-pointer"
-        style={{ aspectRatio: "4/3", background: "#f3f4f6" }}
+        style={{ aspectRatio: "4/3", background: "#ffffff" }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
@@ -22,8 +22,8 @@ function CategoryTile({ category }: { category: any }) {
           <img
             src={category.image}
             alt={category.name}
-            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out"
-            style={{ transform: hovered ? "scale(1.08)" : "scale(1)" }}
+            className="absolute inset-0 w-full h-full object-contain transition-transform duration-700 ease-out"
+            style={{ transform: hovered ? "scale(1.08)" : "scale(1)", padding: "8px" }}
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-gray-200 to-gray-300" />
