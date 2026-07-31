@@ -402,13 +402,13 @@ export default function Products() {
           <button
             key={cat.id}
             onClick={() => onSelect(cat)}
-            className="group relative rounded-xl overflow-hidden border border-border/60 bg-card shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-200 aspect-[4/3] text-left"
+            className="group relative rounded-xl overflow-hidden border border-border/60 bg-white shadow-sm hover:shadow-md hover:border-primary/40 transition-all duration-200 aspect-[4/3] text-left"
           >
             {cat.imageUrl ? (
               <img
                 src={cat.imageUrl}
                 alt={cat.name}
-                className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                className="absolute inset-0 w-full h-full object-contain p-3 transition-transform duration-300 group-hover:scale-105"
                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
               />
             ) : (
@@ -416,7 +416,7 @@ export default function Products() {
                 <ImageOff className="w-10 h-10 text-muted-foreground/30" />
               </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
             <div className="absolute bottom-0 left-0 right-0 p-3">
               <p className="text-white font-semibold text-sm leading-tight line-clamp-2 drop-shadow">{cat.name}</p>
               <p className="text-white/70 text-xs mt-0.5">{cat.liveCount} products</p>

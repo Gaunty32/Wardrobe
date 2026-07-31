@@ -106,17 +106,34 @@ async function fetchGoogleReviews(): Promise<Review[]> {
     }
   }
 
+  // Fetch location metadata (newReviewUri) and reviews in parallel
   try {
-    const res = await fetch(
-      `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews?pageSize=50`,
-      { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
-    );
-    if (!res.ok) {
-      const err = await res.text();
-      console.warn(`[reviews] GBP reviews fetch failed (${res.status}): ${err.slice(0, 200)}`);
+    const [reviewsRes, metaRes] = await Promise.all([
+      fetch(
+        `https://mybusinessreviews.googleapis.com/v1/${locationName}/reviews?pageSize=50`,
+        { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15_000) },
+      ),
+      fetch(
+        `https://mybusinessbusinessinformation.googleapis.com/v1/${locationName}?readMask=metadata`,
+        { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) },
+      ),
+    ]);
+
+    // Persist the review URL so the shop can link to it
+    if (metaRes.ok) {
+      try {
+        const meta: any = await metaRes.json();
+        const reviewUri: string | undefined = meta?.metadata?.newReviewUri;
+        if (reviewUri) await setSetting("gbp_new_review_uri", reviewUri);
+      } catch { /* non-fatal */ }
+    }
+
+    if (!reviewsRes.ok) {
+      const err = await reviewsRes.text();
+      console.warn(`[reviews] GBP reviews fetch failed (${reviewsRes.status}): ${err.slice(0, 200)}`);
       return [];
     }
-    const data: any = await res.json();
+    const data: any = await reviewsRes.json();
     const reviews: Review[] = [];
     for (const r of (data.reviews ?? [])) {
       if (!r.comment?.trim()) continue;   // skip no-text reviews
@@ -241,8 +258,11 @@ async function getReviews(): Promise<Review[]> {
 
 router.get("/shop/reviews", async (_req, res): Promise<void> => {
   try {
-    const reviews = await getReviews();
-    res.json({ reviews });
+    const [reviews, googleReviewUrl] = await Promise.all([
+      getReviews(),
+      getSetting("gbp_new_review_uri"),
+    ]);
+    res.json({ reviews, googleReviewUrl: googleReviewUrl ?? null });
   } catch (err) {
     console.error("[reviews] Route error:", err);
     res.status(500).json({ error: "Failed to fetch reviews" });
