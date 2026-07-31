@@ -278,27 +278,55 @@ router.post("/image-migration/download-from-wp", async (req: Request, res: Respo
         const [exists] = await file.exists();
         if (exists) { urlMap.set(wpUrl, newPublicUrl(filename)); skipped++; return; }
 
-        // Build the fetch URL — use direct IP + http:// to bypass DNS & cert issues
-        let fetchUrl = wpUrl;
-        const fetchHeaders: Record<string, string> = {};
+        // Fetch the image — when a direct IP is given, use Node's https module with
+        // rejectUnauthorized:false so we can connect to the raw IP even though the
+        // TLS cert is for the domain name.  WordPress forces HTTPS so we can't use http://.
+        let buf: Buffer;
         if (wpDirectIp) {
-          try {
+          buf = await new Promise<Buffer>((resolve, reject) => {
+            const https = require("https");
             const parsed = new URL(wpUrl);
-            fetchHeaders["Host"] = parsed.hostname;   // tell WP which vhost we want
-            parsed.protocol = "http:";                // avoid SSL cert mismatch on raw IP
-            parsed.hostname = wpDirectIp;
-            parsed.port = "80";
-            fetchUrl = parsed.toString();
-          } catch { /* keep original URL */ }
+            const options = {
+              hostname: wpDirectIp,
+              port: 443,
+              path: parsed.pathname + parsed.search,
+              method: "GET",
+              headers: { Host: parsed.hostname },
+              rejectUnauthorized: false,   // cert is for domain, not raw IP
+              timeout: 15000,
+            };
+            const req = https.request(options, (resp: any) => {
+              if (resp.statusCode >= 300 && resp.statusCode < 400) {
+                reject(new Error(`HTTP ${resp.statusCode} (redirect — WP may be misconfigured)`));
+                resp.resume(); return;
+              }
+              if (resp.statusCode !== 200) {
+                reject(new Error(`HTTP ${resp.statusCode}`));
+                resp.resume(); return;
+              }
+              const ct: string = resp.headers["content-type"] ?? "";
+              if (!ct.startsWith("image/") && !ct.startsWith("application/octet-stream")) {
+                reject(new Error(`not an image (${ct})`));
+                resp.resume(); return;
+              }
+              const chunks: Buffer[] = [];
+              resp.on("data", (c: Buffer) => chunks.push(c));
+              resp.on("end", () => resolve(Buffer.concat(chunks)));
+              resp.on("error", reject);
+            });
+            req.on("error", reject);
+            req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+            req.end();
+          });
+        } else {
+          const res2 = await fetch(wpUrl, { signal: AbortSignal.timeout(15000) });
+          if (!res2.ok) { errors.push(`${filename}: HTTP ${res2.status}`); return; }
+          const ct = res2.headers.get("content-type") ?? "";
+          if (!ct.startsWith("image/") && !ct.startsWith("application/octet-stream")) {
+            errors.push(`${filename}: not an image (${ct})`); return;
+          }
+          buf = Buffer.from(await res2.arrayBuffer());
         }
-
-        const res2 = await fetch(fetchUrl, { headers: fetchHeaders, signal: AbortSignal.timeout(15000) });
-        if (!res2.ok) { errors.push(`${filename}: HTTP ${res2.status}`); return; }
-        const ct = res2.headers.get("content-type") ?? "";
-        if (!ct.startsWith("image/") && !ct.startsWith("application/octet-stream")) {
-          errors.push(`${filename}: not an image (${ct})`); return;
-        }
-        const buf = Buffer.from(await res2.arrayBuffer());
         await file.save(buf, { contentType: MIME_MAP[ext] ?? "image/jpeg", resumable: false });
         urlMap.set(wpUrl, newPublicUrl(filename));
         downloaded++;
@@ -312,6 +340,9 @@ router.post("/image-migration/download-from-wp", async (req: Request, res: Respo
   }
 
   console.log(`[image-migration] Download done: ${downloaded} new, ${skipped} cached, ${errors.length} errors`);
+  if (errors.length > 0) {
+    console.log(`[image-migration] First errors:`, errors.slice(0, 5).join(" | "));
+  }
 
   // Rewrite DB URLs
   let dbUpdated = 0;
