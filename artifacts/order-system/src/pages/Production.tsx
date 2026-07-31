@@ -21,8 +21,7 @@ import { formatDate, formatCurrency } from "@/lib/utils";
 import { sortSizes } from "@/lib/sizeUtils";
 import { printWorksheetFromData as printWorksheetFromDataShared, printWorksheetsFromData } from "@/utils/printWorksheet";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const API_BASE = `${BASE}/api`;
+const API_BASE = "/api";
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {

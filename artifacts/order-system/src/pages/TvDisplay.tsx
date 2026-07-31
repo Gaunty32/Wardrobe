@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const API_BASE = `${BASE}/api`;
+const API_BASE = "/api";
 
 // ── Config (override via URL params) ─────────────────────────────────────────
 function getParam(key: string, fallback: number) {

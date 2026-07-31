@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2, Circle, Clock, Plus, RefreshCw, Trash2, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const API_BASE = "/api";
 
 interface Task {
   id: number;
@@ -49,7 +49,7 @@ const statusIcon = (s: Task["status"]) => {
 };
 
 async function apiFetch(path: string, opts?: RequestInit) {
-  const res = await fetch(`${BASE}/api${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });

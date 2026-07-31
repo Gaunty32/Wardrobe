@@ -793,6 +793,13 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
       try { const r = JSON.parse(String(v)); return Array.isArray(r) ? r : []; } catch { return []; }
     };
 
+    // Build staff photo map so guidance quotes always show the current profile photo
+    const staffPhotoRows = await db.execute(sql`SELECT id, profile_image_url FROM staff_members`);
+    const staffPhotoMap: Record<number, string | null> = {};
+    for (const row of staffPhotoRows.rows as any[]) {
+      staffPhotoMap[row.id] = row.profile_image_url ?? null;
+    }
+
     res.json({
       id: p.id,
       name: p.name,
@@ -841,7 +848,8 @@ router.get("/shop/wc/products/:identifier", async (req, res): Promise<void> => {
           return raw.map((q: any) => ({
             name:     (q.staffName ?? q.name ?? "").trim(),
             role:     (q.staffRole ?? q.role ?? "").trim(),
-            imageUrl: (q.staffImageUrl ?? q.imageUrl ?? null) as string | null,
+            // Prefer current staff_members photo (keyed by staffId) over stale JSONB snapshot
+            imageUrl: (q.staffId ? (staffPhotoMap[q.staffId] ?? q.staffImageUrl ?? q.imageUrl) : (q.staffImageUrl ?? q.imageUrl ?? null)) as string | null,
             quote:    (q.rewritten ?? q.draft ?? "").trim(),
           })).filter((q: any) => q.quote);
         })(),

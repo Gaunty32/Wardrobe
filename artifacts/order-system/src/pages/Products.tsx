@@ -31,7 +31,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit2, Trash2, PackageSearch, Package, Loader2, ArrowLeft, ImageOff, Globe, Lock, Upload, X, Copy, Wand2, BarChart2, TrendingUp, Wrench, Archive, ArchiveRestore, AlertTriangle, ImageOff as NoImageIcon, BellOff, FolderTree } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const UNCATEGORISED = "Uncategorised";
 
 interface ProductAnalytics {
@@ -59,7 +58,7 @@ interface ProductCategory {
 type ProductWithCategory = Product & { category?: string | null };
 
 async function apiFetch<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}/api${path}`);
+  const res = await fetch(`/api${path}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -133,7 +132,7 @@ export default function Products() {
   const [snoozingId, setSnoozingId] = useState<number | null>(null);
   const snoozeMutation = useMutation({
     mutationFn: (id: number) =>
-      fetch(`${BASE}/api/products/${id}/snooze-issue`, { method: "POST" })
+      fetch(`/api/products/${id}/snooze-issue`, { method: "POST" })
         .then(async r => { if (!r.ok) throw new Error((await r.json()).error ?? r.statusText); return r.json(); }),
     onMutate: (id) => setSnoozingId(id),
     onSettled: () => setSnoozingId(null),
@@ -146,7 +145,7 @@ export default function Products() {
   const [pushingPrice, setPushingPrice] = useState<Record<number, boolean>>({});
   const pushPriceMutation = useMutation({
     mutationFn: ({ id, newPrice }: { id: number; newPrice: number }) =>
-      fetch(`${BASE}/api/products/${id}/push-woo-price`, {
+      fetch(`/api/products/${id}/push-woo-price`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ newPrice }),
@@ -347,7 +346,7 @@ export default function Products() {
 
   const handleDuplicate = async (id: number) => {
     try {
-      const res = await fetch(`${BASE}/api/products/${id}/duplicate`, { method: "POST" });
+      const res = await fetch(`/api/products/${id}/duplicate`, { method: "POST" });
       if (!res.ok) throw new Error(await res.text());
       const created = await res.json();
       queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
@@ -368,7 +367,7 @@ export default function Products() {
 
   const autoFillBspSku = async () => {
     try {
-      const res = await fetch(`${BASE}/api/products/next-bsp-sku`);
+      const res = await fetch(`/api/products/next-bsp-sku`);
       const data = await res.json();
       setFormData((f) => ({ ...f, sku: data.sku }));
     } catch {
@@ -378,7 +377,7 @@ export default function Products() {
 
   const autoFillFccSku = async () => {
     try {
-      const res = await fetch(`${BASE}/api/products/next-fcc-sku`);
+      const res = await fetch(`/api/products/next-fcc-sku`);
       const data = await res.json();
       setFormData((f) => ({ ...f, sku: data.sku }));
     } catch {

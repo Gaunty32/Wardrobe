@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const API_BASE = "/api";
 
 interface ManagedCategory {
   id: number;
@@ -36,7 +36,7 @@ interface ManagedProduct {
 }
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}/api${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     ...opts,
     headers: { "Content-Type": "application/json", ...(opts?.headers ?? {}) },
   });
