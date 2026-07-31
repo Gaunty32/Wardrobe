@@ -32,7 +32,7 @@ export default function OrderComplete() {
         )}
 
         <div>
-          <Link href="/shop">
+          <Link href="/">
             <Button size="lg" className="rounded-none font-bold px-8">CONTINUE SHOPPING</Button>
           </Link>
         </div>

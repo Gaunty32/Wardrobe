@@ -1,5 +1,5 @@
 kind = "web"
-previewPath = "/shop/"
+previewPath = "/"
 title = "SBS Shop"
 version = "1.0.0"
 id = "artifacts/shop"
@@ -7,7 +7,7 @@ router = "path"
 
 [[services]]
 name = "web"
-paths = [ "/shop/" ]
+paths = [ "/" ]
 localPort = 24349
 
 [services.development]
@@ -24,4 +24,4 @@ to = "/index.html"
 
 [services.env]
 PORT = "24349"
-BASE_PATH = "/shop/"
+BASE_PATH = "/"

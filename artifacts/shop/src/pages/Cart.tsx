@@ -28,7 +28,7 @@ export default function Cart() {
       {items.length === 0 ? (
         <div className="text-center py-16">
           <p className="text-gray-500 mb-6 text-lg">Your basket is currently empty.</p>
-          <Link href="/shop">
+          <Link href="/">
             <Button size="lg" className="rounded-none font-bold px-8">RETURN TO SHOP</Button>
           </Link>
         </div>
@@ -62,7 +62,7 @@ export default function Cart() {
                       {item.image && <img src={item.image} alt={item.name} className="w-16 h-16 object-cover border border-gray-200" />}
                     </td>
                     <td className="py-6 min-w-[200px]">
-                      <Link href={`/shop/product/${item.wcProductId}`} className="font-bold text-primary hover:text-accent transition-colors">
+                      <Link href={`/product/${item.wcProductId}`} className="font-bold text-primary hover:text-accent transition-colors">
                         {item.name}
                       </Link>
                       <div className="text-sm text-gray-500 mt-1">
