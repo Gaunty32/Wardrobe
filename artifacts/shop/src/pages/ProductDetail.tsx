@@ -361,7 +361,7 @@ function attrLabel(name: string): string {
     Colour:  'Colour',
     Color:   'Colour',
     Size:    'Size',
-    Sleeve:  'Sleeve',
+    Sleeve:  'Length',
   };
   return map[name] ?? name;
 }
@@ -673,7 +673,7 @@ export default function ProductDetail() {
                 <Tag className="w-3.5 h-3.5 text-primary" />
                 <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Quantity Pricing</span>
                 {cartQtyForProduct > 0 && (
-                  <span className="ml-auto text-xs text-gray-500">{cartQtyForProduct} already in cart</span>
+                  <span className="ml-auto text-xs text-gray-500">{cartQtyForProduct} already in basket</span>
                 )}
               </div>
               <table className="w-full text-sm">
@@ -951,12 +951,12 @@ export default function ProductDetail() {
               className="flex-1 h-12 rounded-xl font-bold tracking-wider uppercase text-sm"
               onClick={handleAddToCart}
             >
-              {addedMsg ? '✓ Added to Cart' : 'Add to Cart'}
+              {addedMsg ? '✓ Added to Basket' : 'Add to Basket'}
             </Button>
           </div>
 
           {addedMsg && (
-            <p className="text-green-700 text-sm font-semibold mb-3">Item added to your cart!</p>
+            <p className="text-green-700 text-sm font-semibold mb-3">Item added to your basket!</p>
           )}
 
           <div className="flex items-center gap-4">

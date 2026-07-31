@@ -65,6 +65,14 @@ function Router() {
           <Route path="/uniform-management" component={UniformManagement} />
           <Route path="/logo-conversions" component={LogoConversions} />
           <Route path="/latest-news">{() => <Redirect to="/knowledge-centre" />}</Route>
+          {/* Legacy redirects — strip old /shop prefix from any URL */}
+          <Route path="/shop/product/:slug">{(p: any) => <Redirect to={`/product/${p.slug}`} />}</Route>
+          <Route path="/shop/category/:slug">{(p: any) => <Redirect to={`/category/${p.slug}`} />}</Route>
+          <Route path="/shop/cart">{() => <Redirect to="/cart" />}</Route>
+          <Route path="/shop/checkout">{() => <Redirect to="/checkout" />}</Route>
+          <Route path="/shop/knowledge-centre">{() => <Redirect to="/knowledge-centre" />}</Route>
+          <Route path="/shop">{() => <Redirect to="/products" />}</Route>
+          <Route path="/shop/:rest*">{(p: any) => <Redirect to={`/${p.rest ?? ''}`} />}</Route>
           <Route component={NotFound} />
         </Switch>
       </Suspense>

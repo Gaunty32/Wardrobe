@@ -67,7 +67,7 @@ export function Header() {
           </form>
         </div>
 
-        {/* Cart */}
+        {/* Basket */}
         <Link href="/cart" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
           <div className="text-right hidden sm:block">
             <div className="text-sm font-semibold text-primary">£{subtotal.toFixed(2)}</div>

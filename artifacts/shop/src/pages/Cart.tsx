@@ -18,7 +18,7 @@ export default function Cart() {
     <div className="container mx-auto px-4 py-12">
       {/* 3-step Breadcrumb */}
       <div className="flex items-center justify-center gap-4 mb-16 text-sm sm:text-base md:text-xl font-bold">
-        <span className="text-gray-900">① SHOPPING CART</span>
+        <span className="text-gray-900">① BASKET</span>
         <span className="text-gray-300">→</span>
         <span className="text-gray-400">② CHECKOUT DETAILS</span>
         <span className="text-gray-300">→</span>
@@ -34,7 +34,7 @@ export default function Cart() {
         </div>
       ) : (
         <div className="flex flex-col lg:flex-row gap-12">
-          {/* Cart Table */}
+          {/* Basket Table */}
           <div className="flex-1 overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -129,10 +129,10 @@ export default function Cart() {
             </table>
           </div>
 
-          {/* Cart Totals */}
+          {/* Basket Totals */}
           <div className="w-full lg:w-[400px]">
             <div className="border border-gray-200 p-8">
-              <h2 className="text-xl font-bold text-gray-900 mb-6 uppercase tracking-wide">Cart totals</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-6 uppercase tracking-wide">Basket totals</h2>
               
               <div className="flex justify-between py-4 border-b border-gray-100">
                 <span className="font-bold text-gray-700">Subtotal</span>

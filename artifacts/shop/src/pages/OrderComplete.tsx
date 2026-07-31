@@ -10,7 +10,7 @@ export default function OrderComplete() {
     <div className="container mx-auto px-4 py-12">
       {/* 3-step Breadcrumb */}
       <div className="flex items-center justify-center gap-4 mb-16 text-sm sm:text-base md:text-xl font-bold">
-        <span className="text-gray-400">① SHOPPING CART</span>
+        <span className="text-gray-400">① BASKET</span>
         <span className="text-gray-300">→</span>
         <span className="text-gray-400">② CHECKOUT DETAILS</span>
         <span className="text-gray-300">→</span>

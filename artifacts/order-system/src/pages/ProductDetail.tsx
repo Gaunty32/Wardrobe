@@ -644,6 +644,12 @@ export default function ProductDetail() {
     enabled: !!productId,
   });
 
+  const { data: globalBrandingPositions = [] } = useQuery<{ id: string; name: string; surcharge: number; notes_field?: boolean }[]>({
+    queryKey: ["shop-branding-options"],
+    queryFn: () => apiFetch("/shop/branding-options"),
+    staleTime: 10 * 60_000,
+  });
+
   const { data: variantsData, refetch: refetchVariants } = useQuery({
     queryKey: ["product", productId, "variants"],
     queryFn: () => apiFetch(`/products/${productId}/variants`),
@@ -1043,6 +1049,7 @@ export default function ProductDetail() {
   // Per-product branding override: 'global' = use defaults, 'disabled' = no branding, 'custom' = override list
   const [brandingMode, setBrandingMode] = useState<'global' | 'disabled' | 'custom'>('global');
   const [brandingOverrideDirty, setBrandingOverrideDirty] = useState(false);
+  const [customBrandingIds, setCustomBrandingIds] = useState<Set<string>>(new Set());
   const [socialDraft, setSocialDraft] = useState<{
     facebookContent: string; googleContent: string; hashtags: string;
     platforms: string[]; autoReschedule: boolean; editingId: number | null;
@@ -1126,7 +1133,10 @@ export default function ProductDetail() {
         const ov = (p as any).brandingPositionsOverride;
         if (ov === null || ov === undefined) setBrandingMode('global');
         else if (Array.isArray(ov) && ov.length === 0) setBrandingMode('disabled');
-        else setBrandingMode('custom');
+        else {
+          setBrandingMode('custom');
+          setCustomBrandingIds(new Set((ov as any[]).map((pos: any) => pos.id)));
+        }
       }
     }
   }, [product, details, guidance, brandingOverrideDirty]);
@@ -2643,10 +2653,34 @@ export default function ProductDetail() {
                       </p>
                     )}
                     {brandingMode === 'custom' && (
-                      <p className="text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded px-3 py-2">
-                        Custom positions not yet configurable here — use Settings → Branding to set the global defaults, then switch to "Custom" to suppress specific positions via a future update.
-                        For now, selecting "Custom" will apply the current global positions as the override baseline.
-                      </p>
+                      <div className="space-y-2">
+                        <p className="text-xs text-muted-foreground">Tick the positions that apply to this product:</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {globalBrandingPositions.map(pos => (
+                            <label key={pos.id} className="flex items-center gap-2 cursor-pointer p-2 rounded border border-border hover:bg-muted/40 text-sm">
+                              <input
+                                type="checkbox"
+                                checked={customBrandingIds.has(pos.id)}
+                                onChange={e => {
+                                  setCustomBrandingIds(prev => {
+                                    const next = new Set(prev);
+                                    e.target.checked ? next.add(pos.id) : next.delete(pos.id);
+                                    return next;
+                                  });
+                                  setBrandingOverrideDirty(true);
+                                }}
+                                className="rounded"
+                              />
+                              <span className="flex-1">{pos.name}</span>
+                              {pos.surcharge > 0 && <span className="text-xs text-muted-foreground">+£{pos.surcharge.toFixed(2)}</span>}
+                              {pos.surcharge === 0 && !pos.notes_field && <span className="text-xs text-green-600">Included</span>}
+                            </label>
+                          ))}
+                        </div>
+                        {globalBrandingPositions.length === 0 && (
+                          <p className="text-xs text-muted-foreground italic">No global positions configured — go to Settings → Branding first.</p>
+                        )}
+                      </div>
                     )}
                     <Button
                       size="sm"
@@ -2656,7 +2690,7 @@ export default function ProductDetail() {
                         const override =
                           brandingMode === 'global' ? null
                           : brandingMode === 'disabled' ? []
-                          : (product as any).brandingPositionsOverride ?? null;
+                          : globalBrandingPositions.filter(pos => customBrandingIds.has(pos.id));
                         updateMutation.mutate(
                           { brandingPositionsOverride: override } as any,
                           { onSuccess: () => setBrandingOverrideDirty(false) }
