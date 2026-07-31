@@ -203,4 +203,137 @@ router.post(
   }
 );
 
+// ── POST /image-migration/download-from-wp ───────────────────────────────────
+// Server-side: reads all WP image URLs from the DB, fetches each one,
+// uploads to object storage, and rewrites DB rows.
+// Safe to re-run — skips URLs that are already non-WP.
+router.post("/image-migration/download-from-wp", async (req: Request, res: Response): Promise<void> => {
+  const bucketId = process.env.DEFAULT_OBJECT_STORAGE_BUCKET_ID;
+  if (!bucketId) { res.status(500).json({ error: "DEFAULT_OBJECT_STORAGE_BUCKET_ID not set" }); return; }
+
+  // Collect all unique WP image URLs across products, variants, categories
+  const [prodRows, varRows, catRows] = await Promise.all([
+    db.execute(sql`SELECT id, image_url, gallery_images FROM products WHERE image_url LIKE '%wp-content%' OR (gallery_images::text LIKE '%wp-content%')`),
+    db.execute(sql`SELECT id, image_url FROM product_variants WHERE image_url LIKE '%wp-content%'`),
+    db.execute(sql`SELECT id, image_url FROM product_categories WHERE image_url LIKE '%wp-content%'`),
+  ]);
+
+  // Build set of unique URLs to fetch
+  const urlSet = new Set<string>();
+  for (const r of prodRows.rows as any[]) {
+    if (r.image_url?.includes("wp-content")) urlSet.add(r.image_url);
+    const gallery: string[] = Array.isArray(r.gallery_images) ? r.gallery_images : (r.gallery_images ? JSON.parse(r.gallery_images) : []);
+    for (const u of gallery) if (u?.includes("wp-content")) urlSet.add(u);
+  }
+  for (const r of [...(varRows.rows as any[]), ...(catRows.rows as any[])]) {
+    if (r.image_url?.includes("wp-content")) urlSet.add(r.image_url);
+  }
+
+  const urls = [...urlSet];
+  console.log(`[image-migration] ${urls.length} unique WP URLs to download`);
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Transfer-Encoding", "chunked");
+
+  const { Storage } = await import("@google-cloud/storage");
+  const SIDECAR = "http://127.0.0.1:1106";
+  const gcs = new Storage({
+    credentials: {
+      audience: "replit", subject_token_type: "access_token",
+      token_url: `${SIDECAR}/token`, type: "external_account",
+      credential_source: { url: `${SIDECAR}/credential`, format: { type: "json", subject_token_field_name: "access_token" } },
+      universe_domain: "googleapis.com",
+    },
+    projectId: "",
+  });
+  const bucket = gcs.bucket(bucketId);
+
+  // url → new public-serving URL
+  const urlMap = new Map<string, string>();
+  let downloaded = 0, skipped = 0;
+  const errors: string[] = [];
+
+  const MIME_MAP: Record<string, string> = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+    ".bmp": "image/bmp",
+  };
+
+  function newPublicUrl(filename: string): string {
+    return `/api/storage/public-objects/product-images/${filename}`;
+  }
+
+  const BATCH = 8;
+  for (let i = 0; i < urls.length; i += BATCH) {
+    const batch = urls.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (wpUrl) => {
+      try {
+        const filename = path.basename(wpUrl.split("?")[0]);
+        const ext = path.extname(filename).toLowerCase();
+        // Skip if already uploaded (check object exists)
+        const file = bucket.file(`public/product-images/${filename}`);
+        const [exists] = await file.exists();
+        if (exists) { urlMap.set(wpUrl, newPublicUrl(filename)); skipped++; return; }
+
+        const res2 = await fetch(wpUrl, { signal: AbortSignal.timeout(15000) });
+        if (!res2.ok) { errors.push(`${filename}: HTTP ${res2.status}`); return; }
+        const ct = res2.headers.get("content-type") ?? "";
+        if (!ct.startsWith("image/") && !ct.startsWith("application/octet-stream")) {
+          errors.push(`${filename}: not an image (${ct})`); return;
+        }
+        const buf = Buffer.from(await res2.arrayBuffer());
+        await file.save(buf, { contentType: MIME_MAP[ext] ?? "image/jpeg", resumable: false });
+        urlMap.set(wpUrl, newPublicUrl(filename));
+        downloaded++;
+        if ((downloaded + skipped) % 50 === 0) {
+          console.log(`[image-migration] ${downloaded} downloaded, ${skipped} cached, ${errors.length} errors (${i + batch.length}/${urls.length})`);
+        }
+      } catch (err: any) {
+        errors.push(`${wpUrl.split("/").pop()}: ${err.message}`);
+      }
+    }));
+  }
+
+  console.log(`[image-migration] Download done: ${downloaded} new, ${skipped} cached, ${errors.length} errors`);
+
+  // Rewrite DB URLs
+  let dbUpdated = 0;
+
+  function resolveUrl(old: string | null): string | null {
+    if (!old) return null;
+    return urlMap.get(old) ?? null;
+  }
+
+  for (const r of prodRows.rows as any[]) {
+    const newPrimary = resolveUrl(r.image_url);
+    const gallery: string[] = Array.isArray(r.gallery_images) ? r.gallery_images : (r.gallery_images ? JSON.parse(r.gallery_images) : []);
+    const newGallery = gallery.map((u) => resolveUrl(u) ?? u);
+    const galleryChanged = JSON.stringify(newGallery) !== JSON.stringify(gallery);
+    if (newPrimary) {
+      await db.execute(sql`UPDATE products SET image_url = ${newPrimary} WHERE id = ${r.id}`);
+      dbUpdated++;
+    }
+    if (galleryChanged) {
+      await db.execute(sql`UPDATE products SET gallery_images = ${JSON.stringify(newGallery)}::jsonb WHERE id = ${r.id}`);
+      if (!newPrimary) dbUpdated++;
+    }
+  }
+  for (const r of varRows.rows as any[]) {
+    const n = resolveUrl(r.image_url); if (!n) continue;
+    await db.execute(sql`UPDATE product_variants SET image_url = ${n} WHERE id = ${r.id}`);
+    dbUpdated++;
+  }
+  for (const r of catRows.rows as any[]) {
+    const n = resolveUrl(r.image_url); if (!n) continue;
+    await db.execute(sql`UPDATE product_categories SET image_url = ${n} WHERE id = ${r.id}`);
+    dbUpdated++;
+  }
+
+  console.log(`[image-migration] DB updated: ${dbUpdated} rows`);
+  res.end(JSON.stringify({
+    totalUrls: urls.length, downloaded, skipped, dbUpdated,
+    errors: errors.slice(0, 30), totalErrors: errors.length,
+    message: `Done. ${downloaded} images downloaded, ${skipped} already cached, ${dbUpdated} DB rows updated.`,
+  }));
+});
+
 export default router;
